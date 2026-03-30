@@ -1,0 +1,124 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Department {
+  id        Int        @id @default(autoincrement())
+  name      String     @unique
+  employees Employee[]
+}
+
+model Employee {
+  id                  Int          @id @default(autoincrement())
+  empCode             String?
+  firstName           String
+  middleName          String?
+  lastName            String
+  fatherName          String?
+  dob                 String?
+  gender              String?
+  maritalStatus       String?
+  spouseName          String?
+  nic                 String?
+  birthPlace          String?
+  beneficiaryName     String?
+  beneficiaryRelation String?
+  address             String?
+  city                String?
+  phone               String?
+  email               String?      @unique
+  reference1          String?
+  reference2          String?
+  
+  departmentId        Int?
+  department          Department?  @relation(fields: [departmentId], references: [id])
+  departmentText      String?
+  role                String?
+  status              String?
+  appointmentDate     String?
+  weeklyHoliday       String?
+  workingDays         String?
+  disbursement        String?
+  salaryMonthly       Float        @default(0)
+  allowances          Json?        @default("[]")
+  
+  dutyType            String?
+  dutyRoster          Json?        @default("[]")
+  
+  photo               String?      @db.Text
+  emergencyContact    String?
+  emergencyPhone      String?
+  emergencyRelation   String?
+  notes               String?
+
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  
+  attendances   Attendance[]
+  gatepasses    Gatepass[]
+  shortleaves   Shortleave[]
+  advanceLoans  AdvanceLoan[]
+}
+
+model Attendance {
+  id               Int       @id @default(autoincrement())
+  employeeId       Int
+  employee         Employee  @relation(fields: [employeeId], references: [id])
+  date             DateTime
+  status           String    @default("present")
+  scheduledIn      DateTime?
+  scheduledOut     DateTime?
+  actualIn         DateTime?
+  actualOut        DateTime?
+  lateMinutes      Int       @default(0)
+  overtimeMinutes  Int       @default(0)
+  lateDeduction    Float     @default(0)
+  overtimeAmount   Float     @default(0)
+  netAdjustment    Float     @default(0)
+  note             String?
+  createdAt        DateTime  @default(now())
+
+  @@unique([employeeId, date])
+}
+
+model Gatepass {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  reason      String
+  issuedAt    DateTime
+  validTill   DateTime?
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+}
+
+model Shortleave {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  fromTime    DateTime
+  toTime      DateTime
+  reason      String?
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+}
+
+model AdvanceLoan {
+  id          Int       @id @default(autoincrement())
+  employeeId  Int
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+  amount      Float
+  type        String    @default("advance") // 'advance' or 'loan'
+  reason      String?
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+}

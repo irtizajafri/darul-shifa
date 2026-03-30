@@ -1,0 +1,10 @@
+-- Suggested schema (edit as needed before running):
+-- CREATE TABLE gatepass (
+--   id SERIAL PRIMARY KEY,
+--   employee_id INT NOT NULL REFERENCES employees(id),
+--   reason TEXT NOT NULL,
+--   issued_at TIMESTAMPTZ NOT NULL,
+--   valid_till TIMESTAMPTZ,
+--   status TEXT DEFAULT 'pending',
+--   created_at TIMESTAMPTZ DEFAULT now()
+-- );

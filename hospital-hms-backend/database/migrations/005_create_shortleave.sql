@@ -1,0 +1,10 @@
+-- Suggested schema (edit as needed before running):
+-- CREATE TABLE shortleave (
+--   id SERIAL PRIMARY KEY,
+--   employee_id INT NOT NULL REFERENCES employees(id),
+--   from_time TIMESTAMPTZ NOT NULL,
+--   to_time TIMESTAMPTZ NOT NULL,
+--   reason TEXT,
+--   status TEXT DEFAULT 'pending',
+--   created_at TIMESTAMPTZ DEFAULT now()
+-- );

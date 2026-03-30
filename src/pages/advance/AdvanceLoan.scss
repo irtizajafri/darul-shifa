@@ -1,0 +1,92 @@
+@use '../../styles/variables' as *;
+
+.advance-page {
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid $border;
+      background: white;
+      cursor: pointer;
+
+      &.active {
+        background: $primary;
+        color: white;
+      }
+    }
+  }
+
+  .data-table {
+    width: 100%;
+
+    th, td {
+      padding: 0.75rem 1rem;
+    }
+
+    th {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: $text-muted;
+    }
+  }
+
+  .action-btn {
+    color: $primary;
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .form-input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+  }
+
+  .radio-group {
+    display: flex;
+    gap: 1.5rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .schedule-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+  }
+
+  .schedule-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    background: $card-bg;
+
+    input {
+      width: 90px;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid $border;
+      border-radius: 6px;
+      text-align: right;
+      font-size: 0.85rem;
+    }
+  }
+}

@@ -1,0 +1,472 @@
+@use '../../styles/variables' as *;
+
+.reports-page {
+  .print-hidden {
+    @media print {
+      display: none !important;
+    }
+  }
+
+  .print-area {
+    @media print {
+      box-shadow: none !important;
+      border: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      max-width: none !important;
+    }
+  }
+
+  .report-types {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .report-type-card {
+    cursor: pointer;
+    padding: 1rem !important;
+
+    &.active {
+      border-color: $primary;
+      background: $primary-light;
+    }
+  }
+
+  .report-type-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    color: $text-main;
+
+    svg {
+      color: $primary;
+    }
+  }
+
+  .report-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+
+    h3 {
+      font-size: 1.125rem;
+      font-weight: 700;
+    }
+  }
+
+  .export-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .filters-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: flex-end;
+  }
+
+  .filter-select {
+    padding: 0.5rem 1rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+    background: white;
+  }
+
+  .pill-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    padding: 0.5rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid $border;
+    background: white;
+    font-size: 0.875rem;
+    color: $text-muted;
+    transition: 0.15s ease;
+
+    &:hover {
+      background: $primary-light;
+      color: $primary;
+    }
+
+    &.active {
+      background: $primary;
+      border-color: $primary;
+      color: white;
+      font-weight: 600;
+    }
+  }
+
+  .subtabs {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+
+    button {
+      padding: 0.5rem 0.9rem;
+      border-radius: 10px;
+      border: 1px solid $border;
+      background: white;
+      font-size: 0.875rem;
+      color: $text-muted;
+      transition: 0.15s ease;
+
+      &:hover {
+        background: $primary-light;
+        color: $primary;
+      }
+
+      &.active {
+        background: $primary;
+        border-color: $primary;
+        color: white;
+        font-weight: 600;
+      }
+    }
+  }
+
+  .payslip-preview {
+    border: 1px solid $border;
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 600px;
+  }
+
+  .payslip-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .payslip-table {
+    width: 100%;
+    margin-bottom: 1rem;
+
+    th, td {
+      padding: 0.5rem;
+      text-align: left;
+    }
+
+    th {
+      font-size: 0.75rem;
+      color: $text-muted;
+      text-transform: uppercase;
+    }
+  }
+
+  .net-salary {
+    font-size: 1.25rem;
+    color: $primary;
+    margin: 1rem 0;
+  }
+
+  .amount-words {
+    font-size: 0.875rem;
+    color: $text-muted;
+  }
+
+  .payslip-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .payslip-detailed {
+    border: 1px solid $border;
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+
+  .sheet-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding-bottom: 1rem;
+    border-bottom: 1px dashed $border;
+    margin-bottom: 1rem;
+  }
+
+  .sheet-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    min-width: 320px;
+    width: 100%;
+    max-width: 520px;
+  }
+
+  .summary-box {
+    border: 1px solid $border;
+    border-radius: 10px;
+    padding: 0.75rem;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .muted {
+    color: $text-muted;
+    font-size: 0.875rem;
+  }
+
+  .section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid $border;
+    border-radius: 12px;
+    background: white;
+  }
+
+  .data-table {
+    width: 100%;
+    min-width: 980px;
+    border-collapse: collapse;
+
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid $border;
+      font-size: 0.875rem;
+      white-space: nowrap;
+    }
+
+    th {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: $text-muted;
+      background: #f8fafc;
+    }
+
+    tbody tr:hover {
+      background: #f8fafc;
+    }
+  }
+
+  .sheet-totals {
+    margin-top: 1rem;
+  }
+
+  .totals-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+
+  .totals-item {
+    border: 1px solid $border;
+    border-radius: 10px;
+    padding: 0.75rem;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .sheet-footer {
+    padding: 0.75rem 1rem;
+  }
+
+  .paper-sheet {
+    border: 1px solid $border;
+    border-radius: 12px;
+    background: white;
+    padding: 1.25rem;
+  }
+
+  .paper-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding-bottom: 1rem;
+    border-bottom: 1px dashed $border;
+    margin-bottom: 1rem;
+  }
+
+  .paper-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    margin: 0.25rem 0;
+  }
+
+  .paper-boxes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 520px;
+  }
+
+  .paper-box {
+    border: 1px solid $border;
+    border-radius: 10px;
+    padding: 0.75rem;
+    background: #ffffff;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .paper-footer {
+    margin-top: 1rem;
+  }
+
+  .sign-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .sign {
+    border-top: 1px solid $border;
+    padding-top: 0.5rem;
+    text-align: center;
+    color: $text-muted;
+    font-size: 0.875rem;
+  }
+
+  .cr-sheet {
+    border: 1px solid $border;
+    border-radius: 12px;
+    padding: 1.5rem;
+    background: white;
+  }
+
+  .cr-title {
+    padding-bottom: 1rem;
+    border-bottom: 1px dashed $border;
+    margin-bottom: 1rem;
+
+    h4 {
+      font-size: 1.1rem;
+      font-weight: 800;
+    }
+  }
+
+  .cr-section {
+    margin-bottom: 1.25rem;
+    overflow-x: auto;
+
+    h5 {
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+    }
+  }
+
+  .cr-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .form-table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid $border;
+    border-radius: 12px;
+    overflow: hidden;
+
+    td {
+      border-bottom: 1px solid $border;
+      border-right: 1px solid $border;
+      padding: 0.75rem 0.9rem;
+      font-size: 0.875rem;
+      white-space: nowrap;
+    }
+
+    tr td:nth-child(odd) {
+      background: #f8fafc;
+      color: $text-muted;
+      font-weight: 600;
+      width: 180px;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+  }
+
+  .cr-sheet {
+    .data-table {
+      min-width: 0;
+    }
+  }
+
+  @media print {
+    .reports-page {
+      padding: 0 !important;
+    }
+
+    .table-wrap {
+      border: 0 !important;
+    }
+
+    .data-table {
+      min-width: 0 !important;
+      th, td {
+        white-space: normal !important;
+      }
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .sheet-summary {
+      grid-template-columns: 1fr;
+      max-width: none;
+    }
+
+    .cr-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .totals-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .paper-boxes {
+      grid-template-columns: 1fr;
+      max-width: none;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .report-types {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .payslip-preview,
+    .payslip-detailed,
+    .cr-sheet {
+      padding: 1rem;
+    }
+
+    .data-table {
+      min-width: 980px;
+    }
+  }
+}

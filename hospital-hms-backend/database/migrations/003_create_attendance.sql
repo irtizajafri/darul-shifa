@@ -1,0 +1,16 @@
+-- Suggested schema (edit as needed before running):
+-- CREATE TABLE attendance (
+--   id SERIAL PRIMARY KEY,
+--   employee_id INT NOT NULL REFERENCES employees(id),
+--   scheduled_in TIMESTAMPTZ,
+--   scheduled_out TIMESTAMPTZ,
+--   actual_in TIMESTAMPTZ,
+--   actual_out TIMESTAMPTZ,
+--   late_minutes INT DEFAULT 0,
+--   overtime_minutes INT DEFAULT 0,
+--   late_deduction NUMERIC(12,2) DEFAULT 0,
+--   overtime_amount NUMERIC(12,2) DEFAULT 0,
+--   net_adjustment NUMERIC(12,2) DEFAULT 0,
+--   note TEXT,
+--   created_at TIMESTAMPTZ DEFAULT now()
+-- );

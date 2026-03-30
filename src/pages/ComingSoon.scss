@@ -1,0 +1,35 @@
+@use '../styles/variables' as *;
+
+.coming-soon-page {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  .coming-soon-icon {
+    width: 80px;
+    height: 80px;
+    color: $warning;
+    margin-bottom: 1.5rem;
+  }
+
+  h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .subtitle {
+    font-size: 1.125rem;
+    color: $text-muted;
+    margin-bottom: 0.5rem;
+  }
+
+  .desc {
+    font-size: 0.875rem;
+    color: $text-muted;
+    margin-bottom: 2rem;
+    max-width: 400px;
+  }
+}

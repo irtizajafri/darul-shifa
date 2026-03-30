@@ -1,0 +1,10 @@
+-- Suggested schema (edit as needed before running):
+-- CREATE TABLE advance_loan (
+--   id SERIAL PRIMARY KEY,
+--   employee_id INT NOT NULL REFERENCES employees(id),
+--   amount NUMERIC(12,2) NOT NULL,
+--   type TEXT DEFAULT 'advance', -- advance | loan
+--   reason TEXT,
+--   status TEXT DEFAULT 'pending',
+--   created_at TIMESTAMPTZ DEFAULT now()
+-- );

@@ -1,0 +1,155 @@
+@use '../../styles/variables' as *;
+
+.employee-module-dashboard {
+  .breadcrumb {
+    font-size: 0.875rem;
+    color: $text-muted;
+    margin-bottom: 1.5rem;
+
+    .sep {
+      margin: 0 0.5rem;
+    }
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .stat-card {
+    padding: 1.5rem !important;
+  }
+
+  .stat-content {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .stat-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &.blue { background: rgba(37, 99, 235, 0.15); color: $primary; }
+    &.green { background: rgba(16, 185, 129, 0.15); color: $success; }
+    &.amber { background: rgba(245, 158, 11, 0.15); color: $warning; }
+    &.purple { background: rgba(139, 92, 246, 0.15); color: $purple; }
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: $text-muted;
+  }
+
+  .dashboard-header {
+    margin-bottom: 2rem;
+
+    h1 {
+      font-size: 1.75rem;
+      margin-bottom: 0.25rem;
+    }
+
+    p {
+      color: $text-muted;
+      font-size: 0.875rem;
+    }
+  }
+
+  .submodule-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .submodule-card {
+    padding: 1.5rem !important;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .submodule-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 12px;
+      background: $primary-light;
+      color: $primary;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+
+    h3 {
+      font-size: 1.125rem;
+      margin-bottom: 0.5rem;
+    }
+
+    p {
+      font-size: 0.875rem;
+      color: $text-muted;
+      margin-bottom: 0.5rem;
+    }
+
+    .submodule-stat {
+      font-size: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .submodule-btn {
+      width: 100%;
+    }
+  }
+
+  .recent-activity {
+    table {
+      th {
+        text-align: left;
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: $text-muted;
+      }
+
+      td {
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+      }
+
+      .status-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+
+        &.present { background: rgba(16, 185, 129, 0.15); color: $success; }
+        &.late { background: rgba(245, 158, 11, 0.15); color: $warning; }
+        &.absent { background: rgba(239, 68, 68, 0.15); color: $danger; }
+      }
+    }
+  }
+
+  @media (max-width: 1024px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .submodule-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  @media (max-width: 768px) {
+    .stats-row { grid-template-columns: 1fr; }
+    .submodule-grid { grid-template-columns: 1fr; }
+  }
+}

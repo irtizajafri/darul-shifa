@@ -1,0 +1,54 @@
+@use '../../styles/variables' as *;
+
+.employee-list-page {
+  .filters-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+  }
+
+  .filter-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 0.5rem 1rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+  }
+
+  .filter-select {
+    padding: 0.5rem 1rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+    min-width: 150px;
+  }
+
+  .status-pills {
+    display: flex;
+    gap: 0.5rem;
+
+    .pill {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      border: 1px solid $border;
+      background: white;
+      cursor: pointer;
+
+      &.active {
+        background: $primary-light;
+        border-color: $primary;
+        color: $primary;
+        font-weight: 500;
+      }
+    }
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    justify-content: flex-end;
+  }
+}

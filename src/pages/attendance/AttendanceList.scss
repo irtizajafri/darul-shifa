@@ -1,0 +1,157 @@
+@use '../../styles/variables' as *;
+
+.attendance-page {
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+
+    button {
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid $border;
+      background: white;
+      cursor: pointer;
+
+      &.active {
+        background: $primary;
+        color: white;
+        border-color: $primary;
+      }
+    }
+  }
+
+  .info-banner {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+
+    &.blue {
+      background: rgba(37, 99, 235, 0.1);
+      color: $primary;
+    }
+
+    &.amber {
+      background: rgba(245, 158, 11, 0.15);
+      color: #d97706;
+    }
+  }
+
+  .filters-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .date-scroll {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.5rem 0;
+    margin-bottom: 1rem;
+
+    &::-webkit-scrollbar {
+      height: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: $border;
+      border-radius: 999px;
+    }
+  }
+
+  .date-pill {
+    min-width: 64px;
+    border: 1px solid $border;
+    background: white;
+    border-radius: 10px;
+    padding: 0.4rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &.active {
+      background: $primary;
+      color: white;
+      border-color: $primary;
+    }
+
+    .date-day {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .date-week {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+    }
+  }
+
+  .filter-input,
+  .filter-select {
+    padding: 0.5rem 1rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+    min-width: 140px;
+  }
+
+  .data-table {
+    width: 100%;
+    min-width: 800px;
+
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+    }
+
+    th {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: $text-muted;
+    }
+  }
+
+  .edit-btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: $primary;
+    background: $primary-light;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+
+    label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .form-select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid $border;
+    border-radius: 8px;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+}

@@ -1,0 +1,29 @@
+$primary: #2563EB;
+$primary-light: #EFF6FF;
+$background: #F8FAFC;
+$sidebar-bg: #FFFFFF;
+$card-bg: #FFFFFF;
+$text-main: #0F172A;
+$text-muted: #64748B;
+$border: #E2E8F0;
+$success: #10B981;
+$warning: #F59E0B;
+$danger: #EF4444;
+$purple: #8B5CF6;
+$dark-blue: #1E3A5F;
+
+:root {
+  --primary: #{$primary};
+  --primary-light: #{$primary-light};
+  --background: #{$background};
+  --sidebar-bg: #{$sidebar-bg};
+  --card-bg: #{$card-bg};
+  --text-main: #{$text-main};
+  --text-muted: #{$text-muted};
+  --border: #{$border};
+  --success: #{$success};
+  --warning: #{$warning};
+  --danger: #{$danger};
+  --purple: #{$purple};
+  --dark-blue: #{$dark-blue};
+}

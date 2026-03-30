@@ -1,0 +1,15 @@
+-- Suggested schema (edit as needed before running):
+-- CREATE TABLE employees (
+--   id SERIAL PRIMARY KEY,
+--   first_name TEXT NOT NULL,
+--   last_name TEXT NOT NULL,
+--   email TEXT UNIQUE NOT NULL,
+--   phone TEXT,
+--   salary_monthly NUMERIC(12,2) NOT NULL,
+--   department TEXT,
+--   role TEXT,
+--   status TEXT,
+--   allowances JSONB DEFAULT '[]'::jsonb,
+--   created_at TIMESTAMPTZ DEFAULT now(),
+--   updated_at TIMESTAMPTZ DEFAULT now()
+-- );
