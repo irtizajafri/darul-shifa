@@ -36,5 +36,44 @@ export const useAdvanceLoanStore = create((set) => ({
       set({ error: err.message, loading: false });
       throw err;
     }
+  },
+
+  updateAdvanceLoan: async (id, payload) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch(`${API_URL}/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json.message || 'Failed to update record');
+      const record = json.data || json;
+      set((state) => ({
+        records: state.records.map((r) => (String(r.id) === String(record.id) ? { ...r, ...record } : r)),
+        loading: false
+      }));
+      return record;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  deleteAdvanceLoan: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) throw new Error(json.message || 'Failed to delete record');
+      set((state) => ({
+        records: state.records.filter((r) => String(r.id) !== String(id)),
+        loading: false
+      }));
+      return true;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
   }
 }));

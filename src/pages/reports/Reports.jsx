@@ -57,9 +57,11 @@ export default function Reports() {
   const [empCode, setEmpCode] = useState("");
   const [empSearch, setEmpSearch] = useState("");
   const [apiAttendance, setApiAttendance] = useState([]);
+  const [hrManualTimes, setHrManualTimes] = useState([]);
   const now = new Date();
   const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
   const [year, setYear] = useState(String(now.getFullYear()));
+  const [selectedShift, setSelectedShift] = useState("All"); // All | Shift 1 | Shift 2
   const [payslipView, setPayslipView] = useState("concentrated"); // concentrated | detailed
   const [payrollTab, setPayrollTab] = useState("detailed"); // detailed | consolidated | register
   const { setModule } = useModuleStore();
@@ -117,10 +119,24 @@ export default function Reports() {
     return false;
   }, [getRosterForDate]);
 
+  // Filter Attendance for this specific month & year!
+  const empAttendance = useMemo(() => {
+    if (!emp || !attendanceRecords) return [];
+    return attendanceRecords.filter((record) => {
+      const recDate = new Date(record.date);
+      return (
+        record.employeeId === emp.id &&
+        recDate.getMonth() + 1 === parseInt(month, 10) &&
+        recDate.getFullYear() === parseInt(year, 10)
+      );
+    });
+  }, [emp, attendanceRecords, month, year]);
+
   useEffect(() => {
     const fetchApiAttendance = async () => {
       if (!emp?.empCode) {
         setApiAttendance([]);
+        setHrManualTimes([]);
         return;
       }
       try {
@@ -132,6 +148,18 @@ export default function Reports() {
           body: JSON.stringify({ Dates: toApiDate(startDate), DatesTo: toApiDate(endDate) })
         });
         const json = await res.json();
+
+        // Check and fetch dual shift data
+        if (emp?.dutyRoster?.some(r => r.shift1 && r.shift2)) {
+          try {
+            const hrRes = await fetch(`http://localhost:5001/api/attendance/manual-times?empCode=${emp.empCode}&month=${month}&year=${year}`);
+            if (hrRes.ok) {
+              const hrJson = await hrRes.json();
+              setHrManualTimes(Array.isArray(hrJson.data) ? hrJson.data : []);
+            }
+          } catch(e) { console.error('HR fetch err', e); setHrManualTimes([]); }
+        }
+
         if (json.status === 200 && Array.isArray(json.data)) {
           const target = normalizeEmpCode(emp.empCode);
           const raw = json.data.filter((row) => normalizeEmpCode(row.enrollid || row.enrollId) === target);
@@ -181,26 +209,13 @@ export default function Reports() {
     };
 
     fetchApiAttendance();
-  }, [emp?.empCode, month, year, toApiDate, normalizeEmpCode, getRosterForDate, toRosterDateTime, isRosterOff]);
+  }, [emp?.empCode, month, year, toApiDate, normalizeEmpCode, getRosterForDate, toRosterDateTime, isRosterOff, selectedShift, empAttendance, gatepasses]);
 
   // Connect real math to real employee
   const basic = Number(emp?.basicSalary) || 0;
   const allowances = emp?.allowances || [];
   const totalAllow = allowances.reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const baseTotalSal = basic + totalAllow; // Base Salary + Allowances completely raw
-
-  // Filter Attendance for this specific month & year!
-  const empAttendance = useMemo(() => {
-    if (!emp || !attendanceRecords) return [];
-    return attendanceRecords.filter((record) => {
-      const recDate = new Date(record.date);
-      return (
-        record.employeeId === emp.id &&
-        recDate.getMonth() + 1 === parseInt(month, 10) &&
-        recDate.getFullYear() === parseInt(year, 10)
-      );
-    });
-  }, [emp, attendanceRecords, month, year]);
 
   const effectiveAttendance = empAttendance.length ? empAttendance : apiAttendance;
 
@@ -230,24 +245,44 @@ export default function Reports() {
     }
   })();
 
-  const effectiveAttendanceWithOverrides = useMemo(() => {
-    if (!emp?.empCode) return effectiveAttendance;
-    const targetCode = normalizeEmpCode(emp.empCode);
-    return effectiveAttendance.map((record) => {
-      const dateStr = new Date(record.date).toISOString().split('T')[0];
-      const override = overrides.find((o) => normalizeEmpCode(o.empCode) === targetCode && o.date === dateStr);
-      if (!override) return record;
-      return {
-        ...record,
-        actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : record.actualIn,
-        actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : record.actualOut,
-        status: override.status || record.status
-      };
-    });
-  }, [effectiveAttendance, emp, normalizeEmpCode, overrides]);
+    const effectiveAttendanceWithOverrides = useMemo(() => {
+      if (!emp?.empCode) return effectiveAttendance;
+      const targetCode = normalizeEmpCode(emp.empCode);
+      return effectiveAttendance.map((record) => {
+        const dateStr = new Date(record.date).toISOString().split('T')[0];
+        const override = overrides.find((o) => normalizeEmpCode(o.empCode) === targetCode && o.date === dateStr);
+        
+        let modifiedRecord = { ...record };
+        if (override) {
+          modifiedRecord = {
+            ...record,
+            actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : record.actualIn,
+            actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : record.actualOut,
+            status: override.status || record.status
+          };
+        }
 
-  // Dynamic calculations specifically for this employee's month
-  const graceMinutes = 10;
+        // Apply Shift Time Rules for Split Shift overriding the generic machine punches
+        const roster = getRosterForDate(dateStr);
+        if (roster?.splitShift) {
+          if (selectedShift === "Shift 1") {
+            const shift1EndLimit = toRosterDateTime(dateStr, roster.shift1End || '15:00');
+            // If they punched out later than their shift end limit or didn't punch out, assume they left at the shift 1 end
+            if (!modifiedRecord.actualOut || (modifiedRecord.actualOut && shift1EndLimit && modifiedRecord.actualOut > shift1EndLimit)) {
+              modifiedRecord.actualOut = shift1EndLimit;
+            }
+          } else if (selectedShift === "Shift 2") {
+            const shift2StartLimit = toRosterDateTime(dateStr, roster.shift2Start || '15:00');
+            // If they punched in earlier than shift 2 start, assume they started at shift 2 start
+            if (!modifiedRecord.actualIn || (modifiedRecord.actualIn && shift2StartLimit && modifiedRecord.actualIn < shift2StartLimit)) {
+              modifiedRecord.actualIn = shift2StartLimit;
+            }
+          }
+        }
+        
+        return modifiedRecord;
+      });
+    }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime]);  // Dynamic calculations specifically for this employee's month
   const minutesBetween = useCallback((start, end) => {
     if (!start || !end) return 0;
     const diff = (new Date(end) - new Date(start)) / 60000;
@@ -262,21 +297,35 @@ export default function Reports() {
   const getLateMinutes = useCallback((record) => {
     const status = record.status?.toLowerCase();
     if (['holiday', 'festival', 'off', 'future'].includes(status)) return 0;
-    const raw = typeof record.lateMinutes === 'number'
+    return typeof record.lateMinutes === 'number'
       ? record.lateMinutes
       : (record.actualIn && record.scheduledIn && new Date(record.actualIn) > new Date(record.scheduledIn)
         ? minutesBetween(record.scheduledIn, record.actualIn)
         : 0);
-    return Math.max(raw - graceMinutes, 0);
-  }, [graceMinutes, minutesBetween]);
+  }, [minutesBetween]);
+
   const getOvertimeMinutes = useCallback((record) => {
     const status = record.status?.toLowerCase();
-    if (['holiday', 'festival', 'off', 'future'].includes(status)) return 0;
+    if (status === 'future') return 0;
     if (typeof record.overtimeMinutes === 'number') return record.overtimeMinutes;
-    if (record.actualOut && record.scheduledOut && new Date(record.actualOut) > new Date(record.scheduledOut)) {
-      return minutesBetween(record.scheduledOut, record.actualOut);
+    
+    let ot = 0;
+    const isHolidayOrOff = ['holiday', 'festival', 'off'].includes(status);
+
+    if (isHolidayOrOff) {
+      if (record.actualIn && record.actualOut) {
+        return minutesBetween(record.actualIn, record.actualOut);
+      }
+      return 0;
     }
-    return 0;
+
+    if (record.actualOut && record.scheduledOut && new Date(record.actualOut) > new Date(record.scheduledOut)) {    
+      ot += minutesBetween(record.scheduledOut, record.actualOut);
+    }
+    if (record.actualIn && record.scheduledIn && new Date(record.actualIn) < new Date(record.scheduledIn)) {      
+      ot += minutesBetween(record.actualIn, record.scheduledIn);
+    }
+    return ot;
   }, [minutesBetween]);
   const getWorkedMinutes = useCallback((record) => {
     if (!record.actualIn || !record.actualOut) return 0;
@@ -293,14 +342,24 @@ export default function Reports() {
   const totalLates = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getLateMinutes(r), 0);
   const totalOvertime = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getOvertimeMinutes(r), 0);
 
-  const perDayRate = baseTotalSal > 0 ? (baseTotalSal / 30) : 0;
+  const daysInSelectedMonth = new Date(year, month, 0).getDate();
+  const perDayRate = baseTotalSal > 0 ? (baseTotalSal / daysInSelectedMonth) : 0;
 
   // Financial Cuts & Additions based on Attendance
   const absentDeduction = totalAbsents * perDayRate;
-  const lateDeduction = effectiveAttendanceWithOverrides.reduce((sum, r) => {
-    const scheduledMinutes = getScheduledMinutes(r);
-    const perMinuteRate = scheduledMinutes > 0 ? perDayRate / scheduledMinutes : 0;
-    return sum + (getLateMinutes(r) * perMinuteRate);
+    const lateDeduction = effectiveAttendanceWithOverrides.reduce((sum, r) => {
+      const status = r.status?.toLowerCase();
+      if (['holiday', 'festival', 'off', 'future', 'absent'].includes(status)) return sum;
+      
+      const scheduledMinutes = getScheduledMinutes(r);
+      const workedMins = getWorkedMinutes(r);
+      if (scheduledMinutes <= 0 || workedMins <= 0 || workedMins >= scheduledMinutes) return sum;
+
+      const wrkHrsRounded = parseFloat((workedMins / 60).toFixed(1));
+      const earnedMinsByWorkedHrs = Math.round(wrkHrsRounded * 60);
+      const missedMinsCalculated = scheduledMinutes > earnedMinsByWorkedHrs ? scheduledMinutes - earnedMinsByWorkedHrs : 0;
+
+      const perMinuteRate = perDayRate / scheduledMinutes;    return sum + (missedMinsCalculated * perMinuteRate);
   }, 0);
   const gatepassDeduction = Math.round((gatepassMinutes * (perDayRate / (8 * 60))));
   const currentMonthKey = `${year}-${month}`;
@@ -371,27 +430,27 @@ export default function Reports() {
       return sum + (mins * perMinute);
     }, 0));
 
-  const totalDeductions = Math.round(absentDeduction + lateDeduction + gatepassDeduction + advanceDeduction + loanDeduction + shortLeaveDeduction);
+  const totalDeductions = Math.round(absentDeduction + lateDeduction + (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0));
   const overtimeAddition = Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
     const scheduledMinutes = getScheduledMinutes(r);
-    const perMinuteRate = scheduledMinutes > 0 ? perDayRate / scheduledMinutes : 0;
+    const perMinuteRate = scheduledMinutes > 0 ? scheduledMinutes / perDayRate : 0;
     return sum + (getOvertimeMinutes(r) * perMinuteRate);
   }, 0));
 
   const offDayBonus = Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
-    const dateStr = new Date(r.date).toISOString().split('T')[0];
-    if (!isRosterOff(dateStr)) return sum;
-    const workedMinutes = getWorkedMinutes(r);
-    if (workedMinutes <= 0) return sum;
-    const scheduledMinutes = getScheduledMinutes(r);
-    const perMinuteRate = scheduledMinutes > 0 ? perDayRate / scheduledMinutes : 0;
-    return sum + perDayRate + (workedMinutes * perMinuteRate);
+    // Overtime from holidays and off days are now handled by getOvertimeMinutes 
+    // and correctly added in overtimeAddition.
+    return sum;
   }, 0));
 
   // Final Generated Net Salary specifically tailored for this slip!
-  const finalSal = emp ? Math.max(0, Math.round(baseTotalSal - totalDeductions + overtimeAddition + offDayBonus)) : 0;
+  const finalSal = emp ? Math.max(0, Math.round(baseTotalSal - totalDeductions + overtimeAddition)) : 0;
   const totalSal = finalSal;
 
+
+  const getDualShiftData = useCallback((dateStr, apiPunches, hrTimes) => {
+    return { error: 'Not fully integrated, please provide precise dual-shift rules here.' };
+  }, []);
 
   const detailedAttendanceRows = useMemo(() => {
     // If we have actual DB records, map them instead of fake dummy data
@@ -413,34 +472,50 @@ export default function Reports() {
         
   const scheduledMinutes = getScheduledMinutes(record);
   const lateMinutes = offDay || isFuture || isHoliday ? 0 : getLateMinutes(record);
-  const overtimeMinutes = offDay || isFuture || isHoliday ? 0 : getOvertimeMinutes(record);
+  const overtimeMinutes = isFuture ? 0 : getOvertimeMinutes(record);
   const perMinuteRate = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
   const workedMinutes = record.actualIn && record.actualOut
     ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
     : 0;
-  const offDayExtra = offDay && workedMinutes > 0 ? Math.round(workedMinutes * perMinuteRate) : 0;
-
+  const offDayExtra = (offDay || isHoliday) && workedMinutes > 0 ? Math.round(workedMinutes * perMinuteRate) : 0;
+  
   const isLate = lateMinutes > 0 ? "Y" : "N";
   const otHrs = overtimeMinutes ? (overtimeMinutes / 60).toFixed(2) : "0.00";
         
         // Per-day calculation visualization for layout
         const grossPerDay = Math.round(perDayRate);
+
+        const wrkHrsRaw = workedMinutes / 60;
+        const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
+        const wrkHrsDisplay = isFuture ? "0.00" : wrkHrsRounded.toFixed(2);
+        
+        const earnedMinsByWorkedHrs = Math.round(wrkHrsRounded * 60);
+        const missedMinsCalculated = (scheduledMinutes > 0 && earnedMinsByWorkedHrs < scheduledMinutes)
+          ? scheduledMinutes - earnedMinsByWorkedHrs 
+          : 0;
+
+        const currLateDed = (offDay || isFuture || isHoliday || record.status?.toLowerCase() === 'absent' || workedMinutes <= 0)
+          ? 0 
+          : Math.round(missedMinsCalculated * perMinuteRate);
+
         const ded = offDay || isFuture || isHoliday
           ? 0
-          : Math.round((record.status?.toLowerCase() === 'absent' ? perDayRate : 0) + (lateMinutes * perMinuteRate));
-  const otVal = Math.round(overtimeMinutes * perMinuteRate);
+          : Math.round((record.status?.toLowerCase() === 'absent' ? perDayRate : 0) + currLateDed);
+
+        const otVal = Math.round(overtimeMinutes * perMinuteRate);
 
         return {
           date: dayStr,
           timeIn: tIn,
           timeOut: tOut,
-          dutyHrs: offDay && workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : (offDay || isFuture || isHoliday ? "0.00" : (record.status?.toLowerCase() === 'absent' ? "0.00" : (scheduledMinutes / 60).toFixed(2))),
-          ot: offDay || isFuture || isHoliday ? "0.00" : otHrs,
+          dutyHrs: (offDay || isHoliday) && workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : (offDay || isFuture || isHoliday ? "0.00" : (record.status?.toLowerCase() === 'absent' ? "0.00" : (scheduledMinutes / 60).toFixed(2))),
+          wrkHrs: wrkHrsDisplay,
+          ot: isFuture ? "0.00" : otHrs,
           late: offDay || isFuture || isHoliday ? "N" : isLate,
           status: isFuture ? "Future" : (offDay ? "Off" : (isHoliday ? record.status : (record.status || "Present"))),
           salary: String(grossPerDay),
           ded: String(ded),
-          total: String(Math.max(0, grossPerDay - ded + otVal + offDayExtra)),
+          total: String(Math.max(0, grossPerDay - ded + otVal)),
         };
       }).sort((a,b) => a.date.localeCompare(b.date)); // Sort chronologically
     }
@@ -452,6 +527,7 @@ export default function Reports() {
       timeIn: i % 6 === 0 ? "--" : "08:00",
       timeOut: i % 6 === 0 ? "--" : "16:00",
       dutyHrs: i % 6 === 0 ? "0.00" : "8.00",
+      wrkHrs: i % 6 === 0 ? "0.00" : "8.00",
       ot: i % 4 === 0 ? "1.00" : "0.00",
       late: i % 5 === 0 ? "Y" : "N",
       status: i % 6 === 0 ? "Absent" : i % 5 === 0 ? "Late" : "Duty",
@@ -537,7 +613,12 @@ export default function Reports() {
     pdf.text(`Tel: ${exportMeta.phone}`, margin + 80, 74);
     pdf.text(`WhatsApp: ${exportMeta.whatsapp}`, margin + 80, 90);
     pdf.setFontSize(11);
-    pdf.text(title, margin, 120);
+    
+    // In payslip layout we don't print title here, because we handle formatting manually below to avoid overlap
+    if (title !== "Detailed Payslip" && title !== "Payslip Report") {
+        pdf.text(title, margin, 120);
+    }
+    
     return 140;
   };
 
@@ -550,20 +631,61 @@ export default function Reports() {
     pdf.text(`Tel: ${exportMeta.phone} | WhatsApp: ${exportMeta.whatsapp}`, margin, footerY + 12);
   };
 
+  const createUrduTextImage = (text) => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const scale = 2; // for higher resolution
+    canvas.width = 1100 * scale; 
+    canvas.height = 50 * scale; 
+    
+    // Clear background (transparent)
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#000000";
+    ctx.font = 'bold 16px Arial, Helvetica, "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", sans-serif';
+    ctx.textAlign = "right"; // RTL
+    ctx.textBaseline = "top";
+    
+    // Draw the text
+    ctx.fillText(text, 1080, 10);
+    
+    return canvas.toDataURL("image/png");
+  };
+
   const addPdfSignatures = (pdf) => {
     const margin = 40;
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const baseY = (pdf.lastAutoTable?.finalY || 140) + 30;
-    const y = Math.min(baseY, pageHeight - 80);
+    let baseY = (pdf.lastAutoTable?.finalY || 140) + 40;
+
+    // Check if we need a new page to avoid overlapping
+    if (baseY + 120 > pageHeight) {
+      pdf.addPage();
+      baseY = 60;
+    }
+
+    // Add English Declaration
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+    const engFallback = "I confirm that the salary generated is correct and I have no objections. Please pay my salary.";
+    pdf.text(engFallback, margin, baseY);
+
+    // Add Urdu Declaration via Browser Canvas (Fixes layout and font issues)
+    const declaration = "میں تصدیق کرتا / کرتی ہوں کہ بنائی گئی تنخواہ درست ہے اور مجھے اس پر کوئی اعتراض نہیں ہے۔ برائے مہربانی میری اوپر بنائی گئی تنخواہ ادا کر دی جائے۔";
+    const urduImage = createUrduTextImage(declaration);
+    // x = margin, y = baseY + 5, width matches page, height scaled properly
+    pdf.addImage(urduImage, "PNG", margin - 20, baseY + 9, pageWidth - margin * 2, 25);
+
+    const y = baseY + 80;
     const colWidth = (pageWidth - margin * 2) / 3;
     const labels = ["Prepared By", "Administrator", "Employee"];
     pdf.setLineWidth(0.5);
     labels.forEach((label, index) => {
       const x = margin + index * colWidth;
       pdf.line(x, y, x + colWidth - 12, y);
-      pdf.setFontSize(8);
-      pdf.text(label, x + 4, y + 12);
+      pdf.setFontSize(10);
+      pdf.text(label, x + 4, y + 15);
     });
   };
 
@@ -584,70 +706,84 @@ export default function Reports() {
 
     startY = addPdfHeader(pdf, titleMap[scope] || "Report", logoData);
 
-    if (scope === "payslip" || scope === "payslip-detailed") {
-      const summaryRows = [
-        ["Emp Code", emp?.empCode || "-", "Month", `${year}-${month}`],
-        ["Name", `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim() || "-", "Designation", emp?.designation || "-"],
-        ["Department", emp?.department || "-", "Status", emp?.status || "-"],
-      ];
-      autoTable(pdf, {
-        startY,
-        head: [["Field", "Value", "Field", "Value"]],
-        body: summaryRows,
-        styles: { fontSize: 9 },
-        columnStyles: { 0: { fontStyle: "bold" }, 2: { fontStyle: "bold" } },
-        headStyles: { fillColor: [37, 99, 235] },
-      });
+      if (scope === "payslip" || scope === "payslip-detailed") {
+        // Enforce detailed layout structure matching user image requirements
+        
+        pdf.setFontSize(8);
+        const doj = emp?.appointmentDate ? new Date(emp.appointmentDate).toISOString().split('T')[0].split('-').reverse().join('-') : '-';
+        pdf.text(`DOJ: ${doj}`, 40, 110);
+        
+        pdf.setFontSize(12);
+        pdf.text("Detailed Payslip", 40, 130, { fontStyle: "bold" });
+        pdf.setFontSize(10);
+        pdf.text(new Date().toISOString().split('T')[0].split('-').reverse().join('-'), 130, 130);
 
-      const earningsRows = [
-        ["Basic Salary", basic.toLocaleString()],
-        ["Allowances", totalAllow.toLocaleString()],
-        ["Off Day Bonus", offDayBonus.toLocaleString()],
-        ["Overtime Addition", overtimeAddition.toLocaleString()],
-      ];
-      const deductionsRows = [
-        ["Absent", Math.round(absentDeduction).toLocaleString()],
-        ["Late", Math.round(lateDeduction).toLocaleString()],
-        ["Gate Pass", gatepassDeduction.toLocaleString()],
-        ["Advance", advanceDeduction.toLocaleString()],
-        ["Loan", loanDeduction.toLocaleString()],
-        ["Short Leave", shortLeaveDeduction.toLocaleString()],
-        ["Total Deduction", totalDeductions.toLocaleString()],
-      ];
+        pdf.setFontSize(10);
+        const empTitle = `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim().toUpperCase() + ` - ${emp?.empCode || "-"}`;
+        pdf.text(empTitle, pdf.internal.pageSize.getWidth() / 2, 110, { align: "center", fontStyle: "bold" });
+        pdf.setFontSize(9);
+        pdf.text(emp?.designation || "-", pdf.internal.pageSize.getWidth() / 2, 125, { align: "center" });
+        const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        pdf.text(`${monthNames[parseInt(month)]} ${year}`, pdf.internal.pageSize.getWidth() / 2, 140, { align: "center", fontStyle: "bold" });
 
-      autoTable(pdf, {
-        startY: pdf.lastAutoTable.finalY + 14,
-        head: [["Earnings", "Amount"]],
-        body: earningsRows,
-        styles: { fontSize: 9 },
-        columnStyles: { 0: { fontStyle: "bold" } },
-        headStyles: { fillColor: [59, 130, 246] },
-      });
+        pdf.setFontSize(10);
+        pdf.text(`DUTY HOURS: 8`, pdf.internal.pageSize.getWidth() - 40, 110, { align: "right" });
+        const perHourSal = (baseTotalSal / (new Date(year, month, 0).getDate() * 8)).toFixed(2);
+        pdf.text(`PERHOUR SALARY: ${perHourSal}`, pdf.internal.pageSize.getWidth() - 40, 130, { align: "right" });        pdf.setFontSize(22);
+        pdf.setTextColor(200);
+        pdf.text("ONLY FOR REPORTING", pdf.internal.pageSize.getWidth() / 2, 155, { align: "center" });
+        pdf.setTextColor(0);
 
-      autoTable(pdf, {
-        startY: pdf.lastAutoTable.finalY + 12,
-        head: [["Deductions", "Amount"]],
-        body: deductionsRows,
-        styles: { fontSize: 9 },
-        columnStyles: { 0: { fontStyle: "bold" } },
-        headStyles: { fillColor: [30, 64, 175] },
-      });
+        // Sub summary stats inline top header
+        pdf.setFontSize(9);
+        pdf.text(`CURRENT MONTH SALARY`, 40, 180, { fontStyle: "bold" });
+        pdf.text(`TOTAL : ${baseTotalSal.toLocaleString()}`, 40, 195);
+        pdf.text(`CURRUENT SALARY : ${totalSal.toLocaleString()}`, 40, 210);
+        pdf.text(`CURRUENT OVER TIME : ${(overtimeAddition).toLocaleString()}`, 40, 225);
+        pdf.text(`DAILY DED : ${totalDeductions.toLocaleString()}`, 40, 240);
 
-      pdf.setFontSize(11);
-      pdf.text(`Net Salary: PKR ${totalSal.toLocaleString()}`, 40, pdf.lastAutoTable.finalY + 24);
+        pdf.text(`CURR. MONTH DEDUCTION`, 360, 180, { fontStyle: "bold" });
+        pdf.text(`TOTAL : ${totalDeductions.toLocaleString()}`, 360, 195);
 
-      if (scope === "payslip-detailed") {
+        pdf.text(`NET SALARY`, pdf.internal.pageSize.getWidth() - 120, 180, { fontStyle: "bold" });
+        pdf.text(`NET SALARY : ${totalSal.toLocaleString()}`, pdf.internal.pageSize.getWidth() - 120, 195);
+
+        // Small Base vs Allowances block
         autoTable(pdf, {
-          startY: pdf.lastAutoTable.finalY + 36,
-          head: [["Date", "In", "Out", "Status", "Late", "OT", "Ded", "Total"]],
-          body: detailedAttendanceRows.map((r) => [r.date, r.timeIn, r.timeOut, r.status, r.late, r.ot, r.ded, r.total]),
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [37, 99, 235] },
+          startY: 255,
+          margin: { left: 80 },
+          head: [["BASIC", "CONV", "Total"]],
+          body: [[basic.toLocaleString(), totalAllow.toLocaleString(), baseTotalSal.toLocaleString()]],
+          tableWidth: 200,
+          styles: { fontSize: 8, halign: 'center' },
+          headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], lineColor: [0,0,0], lineWidth: 0.5 },
+          bodyStyles: { lineColor: [0,0,0], lineWidth: 0.5 }
         });
-      }
-    }
 
-    if (scope === "payroll-detailed") {
+        // Watermark again
+        pdf.setFontSize(22);
+        pdf.setTextColor(200);
+        pdf.text("ONLY FOR REPORTING", pdf.internal.pageSize.getWidth() / 2, 285, { align: "center" });
+        pdf.setTextColor(0);
+
+        // Main Attendance Table with comprehensive columns matching image
+        autoTable(pdf, {
+          startY: pdf.lastAutoTable.finalY + 15,
+          head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "Dty Hrs", "Wrk Days", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
+          body: detailedAttendanceRows.map((r) => {
+            const dutyHrs = r.dutyHrs;
+            const wrdDays = new Date(year, month, 0).getDate();
+            const otAmnt = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((baseTotalSal / wrdDays)/8)).toString();
+            return [r.date, r.timeIn, r.timeOut, r.status, r.late, dutyHrs, wrdDays, r.wrkHrs, r.ot, Math.round(baseTotalSal/wrdDays).toString(), r.salary, otAmnt, r.ded, r.total];
+          }),
+          styles: { fontSize: 7, cellPadding: 2, halign: 'center' },
+          headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], fontStyle: "bold" },
+          columnStyles: { 0: { halign: 'left' }}
+        });
+
+        // Add 3 Signatures and Urdu Text at the end
+        addPdfSignatures(pdf);
+      }    if (scope === "payroll-detailed") {
       autoTable(pdf, {
         startY,
         head: [["Emp ID", "Duty Dt", "Time In", "Time Out", "Duty Sts", "Late", "Duty Hrs", "Wrk Days", "OT", "Per Day", "Salary", "OT Amt", "Ded", "Total"]],
@@ -700,16 +836,6 @@ export default function Reports() {
         styles: { fontSize: 9 },
         columnStyles: { 0: { fontStyle: "bold" }, 2: { fontStyle: "bold" } },
         headStyles: { fillColor: [37, 99, 235] },
-      });
-
-      autoTable(pdf, {
-        startY: pdf.lastAutoTable.finalY + 16,
-        head: [["Date", "Previous Salary", "New Salary", "Approved By"]],
-        body: [
-          ["-", "0", "0", "-"],
-        ],
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [30, 64, 175] },
       });
 
       autoTable(pdf, {
@@ -877,6 +1003,18 @@ export default function Reports() {
                 </option>
               ))}
             </select>
+            {emp?.dutyRoster?.some((d) => d.splitShift) && (
+              <select 
+                value={selectedShift} 
+                onChange={(e) => setSelectedShift(e.target.value)} 
+                className="filter-select"
+                style={{ borderColor: '#3b82f6', borderWidth: '2px' }}
+              >
+                <option value="All">All Shifts</option>
+                <option value="Shift 1">Shift 1 Only</option>
+                <option value="Shift 2">Shift 2 Only</option>
+              </select>
+            )}
             <div className="pill-group">
               <button
                 type="button"
@@ -1057,6 +1195,7 @@ export default function Reports() {
                       <th>Time In</th>
                       <th>Time Out</th>
                       <th>Duty Hrs</th>
+                        <th>Wrk Hrs</th>
                       <th>Late</th>
                       <th>OT</th>
                       <th>Status</th>
@@ -1072,6 +1211,7 @@ export default function Reports() {
                         <td>{r.timeIn}</td>
                         <td>{r.timeOut}</td>
                         <td>{r.dutyHrs}</td>
+                          <td>{r.wrkHrs}</td>
                         <td>{r.late}</td>
                         <td>{r.ot}</td>
                         <td>{r.status}</td>
@@ -1253,6 +1393,7 @@ export default function Reports() {
                         <th>Duty Sts</th>
                         <th>Late</th>
                         <th>Duty Hrs</th>
+                        <th>Wrk Hrs</th>
                         <th>Wrk Days</th>
                         <th>O.T</th>
                         <th>Per Day</th>
@@ -1272,6 +1413,7 @@ export default function Reports() {
                           <td>{r.dutySts}</td>
                           <td>{r.late}</td>
                           <td>{r.dutyHrs}</td>
+                          <td>{r.wrkHrs}</td>
                           <td>{r.wrkDays}</td>
                           <td>{r.ot}</td>
                           <td>{r.perDay}</td>

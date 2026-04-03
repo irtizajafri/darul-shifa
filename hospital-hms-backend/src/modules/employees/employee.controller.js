@@ -1,6 +1,19 @@
 const service = require('./employee.service');
 const { success, fail } = require('../../utils/response');
 
+function handlePrismaError(err, res) {
+  if (err?.code === 'P2002') {
+    const target = Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : 'unique field';
+    return fail(res, 409, `Duplicate value for ${target}. Please use a different value.`);
+  }
+
+  if (err?.code === 'P2025') {
+    return fail(res, 404, 'Employee not found');
+  }
+
+  return null;
+}
+
 async function ping(_req, res, next) {
   try {
     res.json({ module: 'employees', ok: true });
@@ -37,6 +50,8 @@ async function create(req, res, next) {
     const created = await service.create(req.body);
     return success(res, created, 'employee created');
   } catch (err) {
+    const handled = handlePrismaError(err, res);
+    if (handled) return handled;
     next(err);
   }
 }
@@ -47,6 +62,8 @@ async function update(req, res, next) {
     if (!updated) return fail(res, 404, 'Employee not found');
     return success(res, updated, 'employee updated');
   } catch (err) {
+    const handled = handlePrismaError(err, res);
+    if (handled) return handled;
     next(err);
   }
 }
@@ -57,6 +74,8 @@ async function remove(req, res, next) {
     if (!ok) return fail(res, 404, 'Employee not found');
     return success(res, { id: req.params.id }, 'employee deleted');
   } catch (err) {
+    const handled = handlePrismaError(err, res);
+    if (handled) return handled;
     next(err);
   }
 }

@@ -32,6 +32,7 @@ export default function AttendanceList() {
   const [apiRows, setApiRows] = useState([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState('');
+  const [searchName, setSearchName] = useState('');
   const { setModule } = useModuleStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { employees, fetchEmployees } = useEmployeeStore();
@@ -51,6 +52,33 @@ export default function AttendanceList() {
     localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
   };
 
+  const toInputTimeValue = (value) => {
+    if (!value || value === '-') return '';
+    const raw = String(value).trim();
+
+    // Already HH:mm or HH:mm:ss
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) return raw.slice(0, 5);
+
+    // DateTime string: 2026-03-01T08:30:00 or 2026-03-01 08:30:00
+    const timePart = raw.includes('T')
+      ? raw.split('T')[1]
+      : (raw.includes(' ') ? raw.split(' ').pop() : raw);
+    if (/^\d{2}:\d{2}(:\d{2})?$/.test(timePart)) return timePart.slice(0, 5);
+
+    // 12-hour value like 08:30 AM
+    const match = raw.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
+    if (match) {
+      let hh = Number(match[1]);
+      const mm = match[2];
+      const ampm = match[3].toUpperCase();
+      if (ampm === 'PM' && hh < 12) hh += 12;
+      if (ampm === 'AM' && hh === 12) hh = 0;
+      return `${String(hh).padStart(2, '0')}:${mm}`;
+    }
+
+    return '';
+  };
+
   useEffect(() => {
     setModule('employee');
     fetchEmployees();
@@ -61,11 +89,11 @@ export default function AttendanceList() {
   useEffect(() => {
     if (!editModal) return;
     reset({
-      employee: employees.find((e) => e.empCode === editModal.empCode)?.id || '',
+      employee: employees.find((e) => String(e.empCode) === String(editModal.empCode))?.id || '',
       dateIn: editModal.date || '',
       dateOut: editModal.date || '',
-      timeIn: editModal.timeIn && editModal.timeIn !== '-' ? editModal.timeIn : '',
-      timeOut: editModal.timeOut && editModal.timeOut !== '-' ? editModal.timeOut : '',
+      timeIn: toInputTimeValue(editModal.timeIn),
+      timeOut: toInputTimeValue(editModal.timeOut),
       status: editModal.status || 'present'
     });
   }, [editModal, employees, reset]);
@@ -228,7 +256,7 @@ export default function AttendanceList() {
   const upsertOverride = (payload) => {
     const dateValue = payload.date || payload.dateIn || payload.dateOut;
     if (!payload.empCode || !dateValue) return;
-    const next = overrides.filter((o) => !(o.empCode === payload.empCode && o.date === dateValue));
+    const next = overrides.filter((o) => !(String(o.empCode) === String(payload.empCode) && o.date === dateValue));
     next.unshift({
       id: payload.id || Date.now(),
       empCode: payload.empCode,
@@ -249,8 +277,8 @@ export default function AttendanceList() {
     upsertOverride({
       empCode: emp.empCode,
       date: data.dateIn || data.dateOut,
-      timeIn: data.timeIn,
-      timeOut: data.timeOut,
+      timeIn: data.timeIn || toInputTimeValue(editModal?.timeIn),
+      timeOut: data.timeOut || toInputTimeValue(editModal?.timeOut),
       status: data.status
     });
     toast.success('Attendance updated');
@@ -276,7 +304,7 @@ export default function AttendanceList() {
     reset();
   };
 
-  const getOverride = (empCode, date) => overrides.find((o) => o.empCode === empCode && o.date === date);
+  const getOverride = (empCode, date) => overrides.find((o) => String(o.empCode) === String(empCode) && o.date === date);
   const apiTimesByEmp = useMemo(() => {
     const map = {};
     apiRows.forEach((row) => {
@@ -372,9 +400,21 @@ export default function AttendanceList() {
     });
   }, [selectedDate]);
 
-  const filteredRecords = selectedDate
-    ? combinedRecords.filter((row) => row.date === selectedDate)
-    : combinedRecords;
+  const filteredRecords = useMemo(() => {
+    let result = combinedRecords;
+    if (selectedDate) {
+      result = result.filter((row) => row.date === selectedDate);
+    }
+    if (searchName) {
+      const q = searchName.toLowerCase();
+      result = result.filter(
+        (row) =>
+          (row.name || '').toLowerCase().includes(q) ||
+          String(row.empCode || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [combinedRecords, selectedDate, searchName]);
 
   if (loading) return <PageLoader />;
 
@@ -478,6 +518,13 @@ export default function AttendanceList() {
                 setSelectedDate(e.target.value);
                 setApiDateUi(e.target.value);
               }}
+            />
+            <input
+              type="text"
+              placeholder="Search by name or code..."
+              className="filter-input"
+              value={searchName}
+              onChange={(e) => setSearchName(e.target.value)}
             />
             <Button label="+ Add Manual Entry" onClick={() => setAddModal(true)} />
           </div>

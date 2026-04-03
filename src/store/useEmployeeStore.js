@@ -46,7 +46,10 @@ export const useEmployeeStore = create((set, get) => ({
         body: JSON.stringify(employee) // Sends all 4-tabs data exactly as collected by react-hook-form
       });
       
-      if (!res.ok) throw new Error('Failed to add employee');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message || 'Failed to add employee');
+      }
       await get().fetchEmployees(); // refetch after adding
       set({ loading: false });
     } catch (err) {
@@ -59,14 +62,44 @@ export const useEmployeeStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const payload = {
+        empCode: updates.empCode,
         firstName: updates.firstName,
+        middleName: updates.middleName,
         lastName: updates.lastName,
+        fatherName: updates.fatherName,
+        dob: updates.dob,
+        gender: updates.gender,
+        maritalStatus: updates.maritalStatus,
+        spouseName: updates.spouseName,
+        nic: updates.nic,
+        birthPlace: updates.birthPlace,
+        beneficiaryName: updates.beneficiaryName,
+        beneficiaryRelation: updates.beneficiaryRelation,
+        address: updates.address,
+        city: updates.city,
         email: updates.email,
         phone: updates.phone,
+        reference1: updates.reference1,
+        reference2: updates.reference2,
+        department: updates.department,
         salaryMonthly: updates.basicSalary,
+        basicSalary: updates.basicSalary,
         role: updates.designation,
+        designation: updates.designation,
         status: updates.status,
+        appointmentDate: updates.appointmentDate,
+        weeklyHoliday: updates.weeklyHoliday,
+        workingDays: updates.workingDays,
+        disbursement: updates.disbursement,
         allowances: updates.allowances
+        ,
+        dutyType: updates.dutyType,
+        dutyRoster: updates.dutyRoster,
+        photo: updates.photo,
+        emergencyContact: updates.emergencyContact,
+        emergencyPhone: updates.emergencyPhone,
+        emergencyRelation: updates.emergencyRelation,
+        notes: updates.notes
       };
 
       const res = await fetch(`${API_URL}/${id}`, {
@@ -74,7 +107,10 @@ export const useEmployeeStore = create((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      if (!res.ok) throw new Error('Failed to update employee');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.message || 'Failed to update employee');
+      }
       await get().fetchEmployees();
       set({ loading: false });
     } catch (err) {

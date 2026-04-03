@@ -25,10 +25,27 @@ export default function AddEmployee({ edit }) {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
 
-  const { employees, getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
+  const { getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
     useEmployeeStore();
 
   const existing = edit && id ? getEmployeeById(id) : null;
+  const normalizeRoster = (rows = []) => {
+    const byDay = Object.fromEntries((rows || []).map((r) => [r.day, r]));
+    return DAYS.map((d, i) => {
+      const row = byDay[d] || {};
+      return {
+        day: d,
+        timeIn: row.timeIn ?? (i < 6 ? '08:00' : 'OFF'),
+        timeOut: row.timeOut ?? (i < 6 ? '16:00' : 'OFF'),
+        hours: Number.isFinite(Number(row.hours)) ? Number(row.hours) : (i < 6 ? 8 : 0),
+        splitShift: Boolean(row.splitShift),
+        shift1End: row.shift1End || '15:00',
+        shift2Start: row.shift2Start || '16:00',
+        shift1Hours: Number.isFinite(Number(row.shift1Hours)) ? Number(row.shift1Hours) : 4,
+        shift2Hours: Number.isFinite(Number(row.shift2Hours)) ? Number(row.shift2Hours) : 4,
+      };
+    });
+  };
 
   const {
     register,
@@ -44,24 +61,14 @@ export default function AddEmployee({ edit }) {
           allowances: existing.allowances || [],
           photo: existing.photo || null,
           dutyType: 'normal',
-          dutyRoster: DAYS.map((d, i) => ({
-            day: d,
-            timeIn: i < 6 ? '08:00' : 'OFF',
-            timeOut: i < 6 ? '16:00' : 'OFF',
-            hours: i < 6 ? 8 : 0,
-          })),
+          dutyRoster: normalizeRoster(existing.dutyRoster || []),
         }
       : {
           empCode: getNextEmpCode(),
           allowances: [],
           photo: null,
           dutyType: 'normal',
-          dutyRoster: DAYS.map((d, i) => ({
-            day: d,
-            timeIn: i < 6 ? '08:00' : 'OFF',
-            timeOut: i < 6 ? '16:00' : 'OFF',
-            hours: i < 6 ? 8 : 0,
-          })),
+          dutyRoster: normalizeRoster([]),
         },
   });
 
@@ -70,6 +77,8 @@ export default function AddEmployee({ edit }) {
 
   const basicSalary = watch('basicSalary') || 0;
   const allowances = watch('allowances') || [];
+  const dutyType = watch('dutyType') || 'normal';
+  const isSplitDuty = dutyType === 'split' || dutyType === 'alternate';
   const totalSalary = getTotalSalary(basicSalary, allowances);
   const photo = watch('photo');
 
@@ -96,7 +105,7 @@ export default function AddEmployee({ edit }) {
       }
       navigate('/employees');
     } catch (error) {
-      toast.error('Failed to save employee data.');
+      toast.error(error?.message || 'Failed to save employee data.');
     } finally {
       setSaving(false);
     }
@@ -332,45 +341,128 @@ export default function AddEmployee({ edit }) {
           <Card title="Duty Roster" className="form-card">
             <div className="mb-4 flex gap-4">
               <label><input type="radio" value="normal" {...register('dutyType')} /> Normal Duty</label>
-              <label><input type="radio" value="alternate" {...register('dutyType')} /> Alternate Duty</label>
+              <label><input type="radio" value="split" {...register('dutyType')} /> Split Shifts</label>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr>
                     <th>Day</th>
-                    <th>Time In</th>
-                    <th>Time Out</th>
-                    <th>Hours</th>
+                    {isSplitDuty ? (
+                      <>
+                        <th>Split Shift</th>
+                        <th>Shift 1 In</th>
+                        <th>Shift 1 Out</th>
+                        <th>Shift 1 Hrs</th>
+                        <th>Shift 2 In</th>
+                        <th>Shift 2 Out</th>
+                        <th>Shift 2 Hrs</th>
+                        <th>Total Hrs</th>
+                      </>
+                    ) : (
+                      <>
+                        <th>Time In</th>
+                        <th>Time Out</th>
+                        <th>Hours</th>
+                      </>
+                    )}
                   </tr>
                 </thead>
                 <tbody>
                   {rosterFields.map((f, i) => (
                     <tr key={f.id}>
                       <td>{watch(`dutyRoster.${i}.day`)}</td>
-                      <td>
-                        <input
-                          type="text"
-                          {...register(`dutyRoster.${i}.timeIn`)}
-                          className="form-input w-24"
-                          placeholder="08:00 or OFF"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          {...register(`dutyRoster.${i}.timeOut`)}
-                          className="form-input w-24"
-                          placeholder="16:00 or OFF"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          {...register(`dutyRoster.${i}.hours`, { valueAsNumber: true })}
-                          className="form-input w-16"
-                        />
-                      </td>
+                      {isSplitDuty ? (
+                        <>
+                          <td>
+                            <input
+                              type="checkbox"
+                              {...register(`dutyRoster.${i}.splitShift`)}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              {...register(`dutyRoster.${i}.timeIn`)}
+                              className="form-input w-24"
+                              placeholder="08:00 or OFF"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              {...register(`dutyRoster.${i}.shift1End`)}
+                              className="form-input w-24"
+                              placeholder="15:00"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              {...register(`dutyRoster.${i}.shift1Hours`, { valueAsNumber: true })}
+                              className="form-input w-16"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              {...register(`dutyRoster.${i}.shift2Start`)}
+                              className="form-input w-24"
+                              placeholder="16:00"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              {...register(`dutyRoster.${i}.timeOut`)}
+                              className="form-input w-24"
+                              placeholder="23:00 or OFF"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              {...register(`dutyRoster.${i}.shift2Hours`, { valueAsNumber: true })}
+                              className="form-input w-16"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              {...register(`dutyRoster.${i}.hours`, { valueAsNumber: true })}
+                              className="form-input w-16"
+                              placeholder="8"
+                            />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td>
+                            <input
+                              type="text"
+                              {...register(`dutyRoster.${i}.timeIn`)}
+                              className="form-input w-24"
+                              placeholder="08:00 or OFF"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              {...register(`dutyRoster.${i}.timeOut`)}
+                              className="form-input w-24"
+                              placeholder="16:00 or OFF"
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              {...register(`dutyRoster.${i}.hours`, { valueAsNumber: true })}
+                              className="form-input w-16"
+                              placeholder="8"
+                            />
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

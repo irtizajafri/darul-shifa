@@ -31,4 +31,28 @@ async function create(req, res, next) {
   }
 }
 
-module.exports = { ping, list, create };
+async function update(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return fail(res, 400, 'Invalid id');
+
+    const record = await service.update(id, req.body || {});
+    return success(res, record, 'advance/loan updated');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function remove(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return fail(res, 400, 'Invalid id');
+
+    await service.remove(id);
+    return success(res, { id }, 'advance/loan deleted');
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { ping, list, create, update, remove };

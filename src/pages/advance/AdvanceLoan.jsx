@@ -18,17 +18,18 @@ import './AdvanceLoan.scss';
 export default function AdvanceLoan() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
   const [schedule, setSchedule] = useState([]);
   const [apiAttendance, setApiAttendance] = useState([]);
   const { setModule } = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
-  const { records, fetchAdvanceLoans, createAdvanceLoan } = useAdvanceLoanStore();
+  const { records, fetchAdvanceLoans, createAdvanceLoan, updateAdvanceLoan, deleteAdvanceLoan } = useAdvanceLoanStore();
 
   const now = new Date();
   const defaultDate = now.toISOString().slice(0, 10);
-  const { register, handleSubmit, watch, setValue } = useForm({
+  const { register, handleSubmit, watch, reset } = useForm({
     defaultValues: { type: 'Advance', amount: 0, installmentMonths: 12, issueDate: defaultDate },
   });
   const amount = watch('amount', 0) || 0;
@@ -182,18 +183,62 @@ export default function AdvanceLoan() {
       return;
     }
     try {
-      await createAdvanceLoan({
+      const payload = {
         employeeId: selectedEmployee.id,
         amount,
         type: data.type.toLowerCase(),
         status: 'active',
         schedule,
         remarks: data.remarks
-      });
-      toast.success('Record saved');
+      };
+
+      if (editingRecord?.id) {
+        await updateAdvanceLoan(editingRecord.id, payload);
+        toast.success('Record updated');
+      } else {
+        await createAdvanceLoan(payload);
+        toast.success('Record saved');
+      }
+      await fetchAdvanceLoans();
       setModalOpen(false);
+      setEditingRecord(null);
+      reset({ type: 'Advance', amount: 0, installmentMonths: 12, issueDate: defaultDate, empCode: '', remarks: '' });
     } catch (err) {
       toast.error(err.message || 'Failed to save record');
+    }
+  };
+
+  const onEdit = (row) => {
+    const normalizedType = String(row.type || 'advance').toLowerCase() === 'loan' ? 'Loan' : 'Advance';
+    let issue = row?.createdAt ? new Date(row.createdAt).toISOString().slice(0, 10) : defaultDate;
+    if (Array.isArray(row.schedule) && row.schedule.length > 0) {
+      const [y, m] = String(row.schedule[0].month || '').split('-');
+      if (y && m) issue = `${y}-${m}-01`;
+    }
+    const monthsCount = (row.schedule || []).filter((s) => Number(s.amount) > 0).length || (row.schedule?.length || 12);
+
+    reset({
+      empCode: row?.employee?.empCode || '',
+      type: normalizedType,
+      amount: Number(row.amount || 0),
+      installmentMonths: monthsCount,
+      issueDate: issue,
+      remarks: row?.remarks || ''
+    });
+    if (Array.isArray(row.schedule) && row.schedule.length > 0) {
+      setSchedule(row.schedule.map((s) => ({ month: s.month, amount: Number(s.amount) || 0 })));
+    }
+    setEditingRecord(row);
+    setModalOpen(true);
+  };
+
+  const onDelete = async (row) => {
+    if (!window.confirm(`Delete ${row.type} record #${row.id}?`)) return;
+    try {
+      await deleteAdvanceLoan(row.id);
+      toast.success('Record deleted');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete record');
     }
   };
 
@@ -219,7 +264,11 @@ export default function AdvanceLoan() {
         ]}
         title="Advance & Loan"
         actionLabel="+ New"
-        onAction={() => setModalOpen(true)}
+        onAction={() => {
+          setEditingRecord(null);
+          reset({ type: 'Advance', amount: 0, installmentMonths: 12, issueDate: defaultDate, empCode: '', remarks: '' });
+          setModalOpen(true);
+        }}
       />
       <div className="tabs">
         <button className={activeTab === 0 ? 'active' : ''} onClick={() => setActiveTab(0)}>
@@ -260,7 +309,10 @@ export default function AdvanceLoan() {
                   <td>
                     <Badge label={a.status} variant={a.status === 'active' ? 'info' : 'success'} />
                   </td>
-                  <td><button className="action-btn">Edit</button></td>
+                  <td>
+                    <button className="action-btn" onClick={() => onEdit(a)}>Edit</button>
+                    <button className="action-btn" onClick={() => onDelete(a)} style={{ marginLeft: 8 }}>Delete</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -269,8 +321,11 @@ export default function AdvanceLoan() {
       </Card>
       <Modal
         isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="New Advance / Loan"
+        onClose={() => {
+          setModalOpen(false);
+          setEditingRecord(null);
+        }}
+        title={editingRecord ? 'Edit Advance / Loan' : 'New Advance / Loan'}
         size="md"
       >
         <form onSubmit={handleSubmit(onSave)}>
@@ -327,7 +382,7 @@ export default function AdvanceLoan() {
           <Input label="Remarks" {...register('remarks')} />
           <div className="modal-actions">
             <Button type="button" label="Cancel" variant="ghost" onClick={() => setModalOpen(false)} />
-            <Button type="submit" label="Save" />
+            <Button type="submit" label={editingRecord ? 'Update' : 'Save'} />
           </div>
         </form>
       </Modal>
