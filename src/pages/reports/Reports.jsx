@@ -13,13 +13,13 @@ import toast from "react-hot-toast";
 import { AlertCircle, BarChart3, FileText, User } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import logo from "../../assets/logo.jpg";
 import { formatDate, getTotalSalary } from "../../utils/helpers";
 import "./Reports.scss";
 
 const reportTypes = [
   { id: "payslip", label: "Payslip", icon: FileText },
   { id: "payroll", label: "Payroll", icon: BarChart3 },
+  { id: "test-attendance-raw", label: "Test Attendance Raw", icon: BarChart3 },
   { id: "missing", label: "Missing Salary", icon: AlertCircle },
   { id: "cr", label: "Employee CR", icon: User },
 ];
@@ -57,13 +57,14 @@ export default function Reports() {
   const [empCode, setEmpCode] = useState("");
   const [empSearch, setEmpSearch] = useState("");
   const [apiAttendance, setApiAttendance] = useState([]);
+  const [rawPunchRows, setRawPunchRows] = useState([]);
   const [hrManualTimes, setHrManualTimes] = useState([]);
   const now = new Date();
   const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
   const [year, setYear] = useState(String(now.getFullYear()));
-  const [selectedShift, setSelectedShift] = useState("All"); // All | Shift 1 | Shift 2
-  const [payslipView, setPayslipView] = useState("concentrated"); // concentrated | detailed
-  const [payrollTab, setPayrollTab] = useState("detailed"); // detailed | consolidated | register
+  const [selectedShift, setSelectedShift] = useState("All");
+  const [payslipView, setPayslipView] = useState("concentrated");
+  const [payrollTab, setPayrollTab] = useState("detailed");
   const { setModule } = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
@@ -80,7 +81,6 @@ export default function Reports() {
       .toLowerCase()
       .replace(/[^a-z0-9]/g, ''), []);
 
-  // Find the exact employee from the real database matching empCode
   const emp = useMemo(() => {
     if (!employees || !empCode) return null;
     const target = normalizeEmpCode(empCode);
@@ -103,6 +103,13 @@ export default function Reports() {
     return new Date(`${dateStr}T${timeStr}:00`);
   }, []);
 
+  const normalizePayrollStatus = useCallback((statusRaw) => {
+    const status = String(statusRaw || '').toLowerCase();
+    if (status === 'festival' || status === 'holiday') return 'holiday_avail';
+    if (status === 'off') return 'off_avail';
+    return status;
+  }, []);
+
   const getRosterForDate = useCallback((dateStr) => {
     if (!emp?.dutyRoster || !Array.isArray(emp.dutyRoster)) return null;
     const dayIndex = new Date(dateStr).getDay();
@@ -119,7 +126,21 @@ export default function Reports() {
     return false;
   }, [getRosterForDate]);
 
-  // Filter Attendance for this specific month & year!
+  // ─── Roster se scheduled minutes nikalo (night shift ke liye) ──────────────
+  const getRosterScheduledMinutes = useCallback((dateStr) => {
+    const roster = getRosterForDate(dateStr);
+    if (!roster) return 8 * 60; // default 8 hrs
+    if (roster.hours !== undefined && Number(roster.hours) > 0) {
+      return Number(roster.hours) * 60;
+    }
+    if (roster.timeIn && roster.timeOut && roster.timeIn !== 'OFF' && roster.timeOut !== 'OFF') {
+      const diff = (new Date(`1970-01-01T${roster.timeOut}`) - new Date(`1970-01-01T${roster.timeIn}`)) / 60000;
+      // Night shift: timeOut < timeIn toh +24 hrs
+      return diff > 0 ? diff : diff + (24 * 60);
+    }
+    return 8 * 60;
+  }, [getRosterForDate]);
+
   const empAttendance = useMemo(() => {
     if (!emp || !attendanceRecords) return [];
     return attendanceRecords.filter((record) => {
@@ -134,22 +155,23 @@ export default function Reports() {
 
   useEffect(() => {
     const fetchApiAttendance = async () => {
-      if (!emp?.empCode) {
-        setApiAttendance([]);
-        setHrManualTimes([]);
-        return;
-      }
+      if (!emp || !month || !year) return;
+
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+
       try {
-        const startDate = new Date(`${year}-${month}-01T00:00:00`);
-        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-        const res = await fetch('http://localhost:5001/api/attendance/external', {
+        const res = await fetch('http://localhost:5001/api/attendance/test-pairing', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ Dates: toApiDate(startDate), DatesTo: toApiDate(endDate) })
+          body: JSON.stringify({
+            startDate: `${year}-${month}-01`,
+            endDate: `${year}-${month}-${String(endDate.getDate()).padStart(2, '0')}`,
+            employeeId: emp.empCode
+          })
         });
         const json = await res.json();
 
-        // Check and fetch dual shift data
         if (emp?.dutyRoster?.some(r => r.shift1 && r.shift2)) {
           try {
             const hrRes = await fetch(`http://localhost:5001/api/attendance/manual-times?empCode=${emp.empCode}&month=${month}&year=${year}`);
@@ -160,43 +182,86 @@ export default function Reports() {
           } catch(e) { console.error('HR fetch err', e); setHrManualTimes([]); }
         }
 
-        if (json.status === 200 && Array.isArray(json.data)) {
-          const target = normalizeEmpCode(emp.empCode);
-          const raw = json.data.filter((row) => normalizeEmpCode(row.enrollid || row.enrollId) === target);
-          const byDate = raw.reduce((acc, row) => {
-            const dateKey = String(row.arrive_date || row.date || '').split(' ')[0];
-            if (!dateKey) return acc;
-            let timeVal = String(row.arrive_time || row.time_in || '').trim();
-            if (timeVal.includes(' ')) {
-              timeVal = timeVal.split(' ').pop();
-            }
-            if (!acc[dateKey]) acc[dateKey] = [];
-            if (timeVal) acc[dateKey].push(timeVal);
-            return acc;
-          }, {});
-
+        if (Array.isArray(json.data)) {
+          const raw = json.data;
           const daysInMonth = endDate.getDate();
+          const toDateKey = (value) => {
+            if (!value) return "";
+            const s = String(value);
+            const iso = s.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (iso) return iso[1];
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return "";
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            return `${y}-${m}-${day}`;
+          };
+
           const mapped = Array.from({ length: daysInMonth }, (_, i) => {
             const dateStr = `${year}-${month}-${String(i + 1).padStart(2, '0')}`;
-            const punches = byDate[dateStr] || [];
-            const sorted = punches.slice().sort();
-            const inTime = sorted[0] || null;
-            const outTime = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+            const matchedPair =
+              raw.find((r) => toDateKey(r.logicalDate) === dateStr) ||
+              raw.find((r) => toDateKey(r.date) === dateStr) ||
+              raw.find((r) => toDateKey(r.timeIn) === dateStr);
+
+            const inTime  = matchedPair?.timeIn  ? new Date(matchedPair.timeIn)  : null;
+            const outTime = matchedPair?.timeOut ? new Date(matchedPair.timeOut) : null;
+
+            // ─── FIX 1: Night shift crossing — actualOut next day ho sakta hai ──
+            // Backend already ISO dates deta hai, lekin agar inTime > outTime ho
+            // toh outTime next day ka hai
+            let fixedOutTime = outTime;
+            if (inTime && outTime && outTime < inTime) {
+              fixedOutTime = new Date(outTime);
+              fixedOutTime.setDate(fixedOutTime.getDate() + 1);
+            }
+
             const roster = getRosterForDate(dateStr);
-            const scheduledIn = toRosterDateTime(dateStr, roster?.timeIn || '08:00');
+            const scheduledIn  = toRosterDateTime(dateStr, roster?.timeIn  || '08:00');
             const scheduledOut = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
-            const actualIn = inTime ? new Date(`${dateStr}T${inTime}`) : null;
-            const actualOut = outTime ? new Date(`${dateStr}T${outTime}`) : null;
-            const isOff = isRosterOff(dateStr);
+
+            if (scheduledIn && scheduledOut && scheduledOut < scheduledIn) {
+              scheduledOut.setDate(scheduledOut.getDate() + 1);
+            }
+
+            const isOff    = isRosterOff(dateStr);
             const isFuture = new Date(`${dateStr}T23:59:59`) > new Date();
 
+            // ─── FIX 2: DB ka status priority pe hona chahiye ─────────────────
+            // Pehle: status = isFuture ? 'Future' : (isOff ? 'Off' : (inTime ? 'Present' : 'Absent'))
+            // Masla: DB mein agar 'missed_out', 'leave', 'off_not_avail' etc. save hai
+            //        toh woh ignore ho raha tha
+            // Fix: DB ka status use karo — sirf Future/Off override karo
+            let resolvedStatus;
+            if (isFuture) {
+              resolvedStatus = 'Future';
+            } else if (matchedPair?.status && matchedPair.status !== 'present') {
+              // DB se jo bhi non-present status aaya — wahi use karo
+              resolvedStatus = matchedPair.status;
+            } else if (isOff && !inTime) {
+              // Off day aur koi punch bhi nahi = off_avail
+              resolvedStatus = 'off_avail';
+            } else if (isOff && inTime) {
+              // Off day par aaya = off_not_avail
+              resolvedStatus = 'off_not_avail';
+            } else if (!inTime) {
+              resolvedStatus = 'absent';
+            } else {
+              resolvedStatus = 'present';
+            }
+
             return {
-              date: new Date(dateStr),
+              date:         new Date(dateStr),
               scheduledIn,
               scheduledOut,
-              actualIn,
-              actualOut,
-              status: isFuture ? 'Future' : (isOff ? 'Off' : (punches.length ? 'Present' : 'Absent')),
+              actualIn:     inTime,
+              actualOut:    fixedOutTime,
+              // ─── FIX 3: rosterScheduledMinutes attach karo ─────────────────
+              // DB records mein scheduledIn/Out null hote hain (syncAttendance ne save nahi kiye)
+              // getScheduledMinutes default 8*60 deta hai — night 12hr shift ke liye galat
+              rosterScheduledMinutes: getRosterScheduledMinutes(dateStr),
+              status: resolvedStatus,
             };
           });
           setApiAttendance(mapped);
@@ -209,15 +274,45 @@ export default function Reports() {
     };
 
     fetchApiAttendance();
-  }, [emp?.empCode, month, year, toApiDate, normalizeEmpCode, getRosterForDate, toRosterDateTime, isRosterOff, selectedShift, empAttendance, gatepasses]);
+  }, [emp?.empCode, month, year, toApiDate, normalizeEmpCode, getRosterForDate, toRosterDateTime, isRosterOff, selectedShift, empAttendance, gatepasses, getRosterScheduledMinutes]);
 
-  // Connect real math to real employee
-  const basic = Number(emp?.basicSalary) || 0;
+  useEffect(() => {
+    const fetchRawPunchRows = async () => {
+      if (!month || !year) return;
+
+      const selectedEmpCode = String(emp?.empCode || empCode || '').trim();
+      const shouldFetchForRawTab = activeReport === "test-attendance-raw";
+      const shouldFetchForPayslip = activeReport === "payslip" && Boolean(selectedEmpCode);
+      if (!shouldFetchForRawTab && !shouldFetchForPayslip) return;
+
+      try {
+        const endDate = new Date(Number(year), Number(month), 0).getDate();
+        const res = await fetch('http://localhost:5001/api/attendance/test-raw-punches', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            startDate: `${year}-${month}-01`,
+            endDate: `${year}-${month}-${String(endDate).padStart(2, '0')}`,
+            employeeId: selectedEmpCode || undefined,
+          }),
+        });
+
+        const json = await res.json();
+        setRawPunchRows(Array.isArray(json?.data) ? json.data : []);
+      } catch {
+        setRawPunchRows([]);
+      }
+    };
+
+    fetchRawPunchRows();
+  }, [activeReport, emp?.empCode, empCode, month, year]);
+
+  const basic      = Number(emp?.basicSalary) || 0;
   const allowances = emp?.allowances || [];
   const totalAllow = allowances.reduce((s, a) => s + (Number(a.amount) || 0), 0);
-  const baseTotalSal = basic + totalAllow; // Base Salary + Allowances completely raw
+  const baseTotalSal = basic + totalAllow;
 
-  const effectiveAttendance = empAttendance.length ? empAttendance : apiAttendance;
+  const effectiveAttendance = apiAttendance.length ? apiAttendance : empAttendance;
 
   const gatepassMinutes = useMemo(() => {
     if (!emp) return 0;
@@ -230,161 +325,348 @@ export default function Reports() {
       })
       .reduce((sum, g) => {
         const outAt = new Date(g.issuedAt || g.outAt);
-        const inAt = g.validTill || g.inAt ? new Date(g.validTill || g.inAt) : new Date();
+        const inAt  = g.validTill || g.inAt ? new Date(g.validTill || g.inAt) : new Date();
         if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return sum;
-        const minutes = Math.max(0, Math.round((inAt - outAt) / 60000));
-        return sum + minutes;
+        return sum + Math.max(0, Math.round((inAt - outAt) / 60000));
       }, 0);
   }, [emp, gatepasses, month, year]);
 
   const overrides = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('attendanceOverrides')) || [];
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem('attendanceOverrides')) || []; }
+    catch { return []; }
   })();
 
-    const effectiveAttendanceWithOverrides = useMemo(() => {
-      if (!emp?.empCode) return effectiveAttendance;
-      const targetCode = normalizeEmpCode(emp.empCode);
-      return effectiveAttendance.map((record) => {
-        const dateStr = new Date(record.date).toISOString().split('T')[0];
-        const override = overrides.find((o) => normalizeEmpCode(o.empCode) === targetCode && o.date === dateStr);
-        
+  const effectiveAttendanceWithOverrides = useMemo(() => {
+    if (!emp?.empCode) return effectiveAttendance;
+    const targetCode = normalizeEmpCode(emp.empCode);
+    const toDateKey = (value) => {
+      if (!value) return '';
+      const s = String(value).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+      const pref = s.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (pref) return pref[1];
+      const d = new Date(s);
+      if (Number.isNaN(d.getTime())) return '';
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    // Find all overrides for this employee on each date
+    const result = [];
+    
+    // Step 1: Collect dates that exist in API attendance
+    const existingDates = new Set(
+      effectiveAttendance.map((r) => toDateKey(r.date)).filter(Boolean)
+    );
+    
+    // Step 2: Process existing attendance records with their overrides
+    effectiveAttendance.forEach((record) => {
+      const dateStr = toDateKey(record.date);
+      const dateOverrides = overrides.filter((o) => 
+        normalizeEmpCode(o.empCode) === targetCode && toDateKey(o.dateIn || o.date) === dateStr
+      );
+
+      if (dateOverrides.length === 0) {
+        // No override, use original record
         let modifiedRecord = { ...record };
-        if (override) {
-          modifiedRecord = {
-            ...record,
-            actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : record.actualIn,
-            actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : record.actualOut,
-            status: override.status || record.status
-          };
+        
+        // Night crossing check
+        if (modifiedRecord.actualIn && modifiedRecord.actualOut) {
+          const inMs = new Date(modifiedRecord.actualIn).getTime();
+          const outMs = new Date(modifiedRecord.actualOut).getTime();
+          if (outMs < inMs) {
+            const fixedOut = new Date(modifiedRecord.actualOut);
+            fixedOut.setDate(fixedOut.getDate() + 1);
+            modifiedRecord.actualOut = fixedOut;
+          }
         }
 
-        // Apply Shift Time Rules for Split Shift overriding the generic machine punches
+        // Split shift logic
         const roster = getRosterForDate(dateStr);
         if (roster?.splitShift) {
           if (selectedShift === "Shift 1") {
             const shift1EndLimit = toRosterDateTime(dateStr, roster.shift1End || '15:00');
-            // If they punched out later than their shift end limit or didn't punch out, assume they left at the shift 1 end
             if (!modifiedRecord.actualOut || (modifiedRecord.actualOut && shift1EndLimit && modifiedRecord.actualOut > shift1EndLimit)) {
               modifiedRecord.actualOut = shift1EndLimit;
             }
           } else if (selectedShift === "Shift 2") {
             const shift2StartLimit = toRosterDateTime(dateStr, roster.shift2Start || '15:00');
-            // If they punched in earlier than shift 2 start, assume they started at shift 2 start
             if (!modifiedRecord.actualIn || (modifiedRecord.actualIn && shift2StartLimit && modifiedRecord.actualIn < shift2StartLimit)) {
               modifiedRecord.actualIn = shift2StartLimit;
             }
           }
         }
-        
-        return modifiedRecord;
-      });
-    }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime]);  // Dynamic calculations specifically for this employee's month
+
+        result.push(modifiedRecord);
+      } else {
+        // Multiple overrides for same date (split shifts)
+        dateOverrides.forEach((override) => {
+          const overrideManualDeduction = Number(override.manualDeduction);
+          let modifiedRecord = {
+            ...record,
+            actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : record.actualIn,
+            actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : record.actualOut,
+            status: override.status || record.status,
+            manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
+            waiveDeduction: Boolean(override.waiveDeduction),
+          };
+
+          // Night crossing check after override
+          if (modifiedRecord.actualIn && modifiedRecord.actualOut) {
+            const inMs = new Date(modifiedRecord.actualIn).getTime();
+            const outMs = new Date(modifiedRecord.actualOut).getTime();
+            if (outMs < inMs) {
+              const fixedOut = new Date(modifiedRecord.actualOut);
+              fixedOut.setDate(fixedOut.getDate() + 1);
+              modifiedRecord.actualOut = fixedOut;
+            }
+          }
+
+          result.push(modifiedRecord);
+        });
+      }
+    });
+
+    // Step 3: Add manual-only overrides (dates not in API attendance)
+    // Filter by selected month/year
+    const manualOnlyOverrides = overrides.filter((o) => {
+      if (normalizeEmpCode(o.empCode) !== targetCode) return false;
+      const overrideDateKey = toDateKey(o.dateIn || o.date);
+      if (!overrideDateKey) return false;
+      if (existingDates.has(overrideDateKey)) return false;
+      
+      // Check if override date is in selected month/year
+      const [overrideYear, overrideMonth] = overrideDateKey.split('-');
+      
+      return overrideMonth === month && overrideYear === year;
+    });
+
+    manualOnlyOverrides.forEach((override) => {
+      const dateStr = toDateKey(override.dateIn || override.date);
+      if (!dateStr) return;
+      const roster = getRosterForDate(dateStr);
+      const overrideManualDeduction = Number(override.manualDeduction);
+      
+      const scheduledInTime = toRosterDateTime(dateStr, roster?.timeIn || '08:00');
+      const scheduledOutTime = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
+      
+      // Calculate scheduled minutes inline
+      let rosterScheduledMinutes = 8 * 60; // default
+      if (scheduledInTime && scheduledOutTime) {
+        const diff = (new Date(scheduledOutTime) - new Date(scheduledInTime)) / 60000;
+        if (diff > 0) rosterScheduledMinutes = Math.round(diff);
+      }
+      
+      const manualRecord = {
+        date: new Date(dateStr),
+        scheduledIn: scheduledInTime,
+        scheduledOut: scheduledOutTime,
+        actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : null,
+        actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : null,
+        status: override.status || 'present',
+        rosterScheduledMinutes: rosterScheduledMinutes,
+        manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
+        waiveDeduction: Boolean(override.waiveDeduction),
+      };
+
+      // Night crossing check for manual entries
+      if (manualRecord.actualIn && manualRecord.actualOut) {
+        const inMs = new Date(manualRecord.actualIn).getTime();
+        const outMs = new Date(manualRecord.actualOut).getTime();
+        if (outMs < inMs) {
+          const fixedOut = new Date(manualRecord.actualOut);
+          fixedOut.setDate(fixedOut.getDate() + 1);
+          manualRecord.actualOut = fixedOut;
+        }
+      }
+
+      result.push(manualRecord);
+    });
+
+    // Sort all results by date
+    return result.sort((a, b) => {
+      const dateA = new Date(a.date);
+      const dateB = new Date(b.date);
+      return dateA - dateB;
+    });
+  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year]);
+
   const minutesBetween = useCallback((start, end) => {
     if (!start || !end) return 0;
     const diff = (new Date(end) - new Date(start)) / 60000;
     return diff > 0 ? Math.round(diff) : 0;
   }, []);
+
+  // ─── FIX 5: getScheduledMinutes — rosterScheduledMinutes ko priority do ───
+  // Pehle sirf scheduledIn/scheduledOut dekhta tha, jo DB records mein null hote hain
+  // Ab rosterScheduledMinutes bhi dekhta hai jo fetchApiAttendance mein attach kiya
   const getScheduledMinutes = useCallback((record) => {
     if (record.scheduledIn && record.scheduledOut) {
       return minutesBetween(record.scheduledIn, record.scheduledOut);
     }
-    return 8 * 60;
+    // DB record mein scheduledIn/Out null — roster se lo
+    if (record.rosterScheduledMinutes && record.rosterScheduledMinutes > 0) {
+      return record.rosterScheduledMinutes;
+    }
+    return 8 * 60; // last fallback
   }, [minutesBetween]);
+
+  const getTieredPenaltyMinutes = useCallback((minutes) => {
+    const safeMinutes = Math.max(0, Math.round(Number(minutes) || 0));
+    if (safeMinutes <= 10) return safeMinutes;
+    return 10 + ((safeMinutes - 10) * 2);
+  }, []);
+
+  const getTimingPenaltyMinutes = useCallback((record) => {
+    if (record?.waiveDeduction) return 0;
+    const status = normalizePayrollStatus(record.status);
+    if (['holiday_avail', 'off_avail', 'holiday_not_avail', 'off_not_avail', 'future', 'absent', 'leave', 'leave_with_pay', 'missed_out'].includes(status)) {
+      return 0;
+    }
+
+    if (!record.scheduledIn || !record.scheduledOut || !record.actualIn || !record.actualOut) return 0;
+
+    const scheduledIn = new Date(record.scheduledIn);
+    const scheduledOut = new Date(record.scheduledOut);
+    const actualIn = new Date(record.actualIn);
+    const actualOut = new Date(record.actualOut);
+
+    const lateInMinutes = actualIn > scheduledIn ? minutesBetween(scheduledIn, actualIn) : 0;
+    const earlyOutMinutes = actualOut < scheduledOut ? minutesBetween(actualOut, scheduledOut) : 0;
+
+    return getTieredPenaltyMinutes(lateInMinutes) + getTieredPenaltyMinutes(earlyOutMinutes);
+  }, [getTieredPenaltyMinutes, minutesBetween, normalizePayrollStatus]);
+
   const getLateMinutes = useCallback((record) => {
-    const status = record.status?.toLowerCase();
-    if (['holiday', 'festival', 'off', 'future'].includes(status)) return 0;
+    const status = normalizePayrollStatus(record.status);
+    if (['holiday_avail', 'off_avail', 'holiday_not_avail', 'off_not_avail', 'future', 'absent', 'leave', 'leave_with_pay', 'missed_out'].includes(status)) return 0;
     return typeof record.lateMinutes === 'number'
       ? record.lateMinutes
       : (record.actualIn && record.scheduledIn && new Date(record.actualIn) > new Date(record.scheduledIn)
         ? minutesBetween(record.scheduledIn, record.actualIn)
         : 0);
-  }, [minutesBetween]);
+  }, [minutesBetween, normalizePayrollStatus]);
 
+  // ─── FIX 6: getOvertimeMinutes — sirf scheduled se zyada waqt OT hai ──────
   const getOvertimeMinutes = useCallback((record) => {
-    const status = record.status?.toLowerCase();
+    const status = normalizePayrollStatus(record.status);
     if (status === 'future') return 0;
     if (typeof record.overtimeMinutes === 'number') return record.overtimeMinutes;
-    
-    let ot = 0;
-    const isHolidayOrOff = ['holiday', 'festival', 'off'].includes(status);
 
-    if (isHolidayOrOff) {
-      if (record.actualIn && record.actualOut) {
-        return minutesBetween(record.actualIn, record.actualOut);
-      }
-      return 0;
-    }
+    const isWorkedExtra = ['holiday_not_avail', 'off_not_avail'].includes(status);
+    const isAvailOff    = ['holiday_avail', 'off_avail', 'leave_with_pay', 'leave', 'absent', 'missed_out'].includes(status);
 
-    if (record.actualOut && record.scheduledOut && new Date(record.actualOut) > new Date(record.scheduledOut)) {    
-      ot += minutesBetween(record.scheduledOut, record.actualOut);
+    if (isWorkedExtra) {
+      return (record.actualIn && record.actualOut)
+        ? minutesBetween(record.actualIn, record.actualOut)
+        : 0;
     }
-    if (record.actualIn && record.scheduledIn && new Date(record.actualIn) < new Date(record.scheduledIn)) {      
-      ot += minutesBetween(record.actualIn, record.scheduledIn);
-    }
-    return ot;
-  }, [minutesBetween]);
+    if (isAvailOff) return 0;
+
+    // Normal present — sirf scheduled se zyada time OT
+    const workedMins    = record.actualIn && record.actualOut ? minutesBetween(record.actualIn, record.actualOut) : 0;
+    const scheduledMins = getScheduledMinutes(record);
+
+    return workedMins > scheduledMins ? workedMins - scheduledMins : 0;
+  }, [minutesBetween, normalizePayrollStatus, getScheduledMinutes]);
+
   const getWorkedMinutes = useCallback((record) => {
     if (!record.actualIn || !record.actualOut) return 0;
     return minutesBetween(record.actualIn, record.actualOut);
   }, [minutesBetween]);
 
+  const hasManualDeduction = useCallback((record) => (
+    typeof record?.manualDeduction === 'number' && Number.isFinite(record.manualDeduction)
+  ), []);
+
+  const shouldSkipAutoDeduction = useCallback((record) => (
+    Boolean(record?.waiveDeduction) || hasManualDeduction(record)
+  ), [hasManualDeduction]);
+
   const totalAbsents = effectiveAttendanceWithOverrides.filter((r) => {
-    const status = r.status?.toLowerCase();
+    if (shouldSkipAutoDeduction(r)) return false;
+    const status = normalizePayrollStatus(r.status);
     if (status !== 'absent') return false;
     const dateStr = new Date(r.date).toISOString().split('T')[0];
     if (new Date(`${dateStr}T23:59:59`) > new Date()) return false;
     return !isRosterOff(dateStr);
   }).length;
-  const totalLates = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getLateMinutes(r), 0);
+
+  // ─── FIX 7: missed_out = sirf timeIn hai, timeOut missing ─────────────────
+  // Yeh absent nahi — deduction partial hona chahiye ya HR decide kare
+  // Filhaal missed_out ko absent ki tarah treat karo (1x per day, not 2x)
+  const totalMissedOut = effectiveAttendanceWithOverrides.filter((r) => {
+    if (shouldSkipAutoDeduction(r)) return false;
+    const status = normalizePayrollStatus(r.status);
+    return status === 'missed_out';
+  }).length;
+
+  const totalLeaves = effectiveAttendanceWithOverrides.filter((r) => {
+    if (shouldSkipAutoDeduction(r)) return false;
+    const status = normalizePayrollStatus(r.status);
+    if (status !== 'leave') return false;
+    const dateStr = new Date(r.date).toISOString().split('T')[0];
+    if (new Date(`${dateStr}T23:59:59`) > new Date()) return false;
+    return true;
+  }).length;
+
+  const totalLates   = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + (shouldSkipAutoDeduction(r) ? 0 : getTimingPenaltyMinutes(r)), 0);
   const totalOvertime = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getOvertimeMinutes(r), 0);
 
   const daysInSelectedMonth = new Date(year, month, 0).getDate();
-  const perDayRate = baseTotalSal > 0 ? (baseTotalSal / daysInSelectedMonth) : 0;
+  
+  // ─── Alternative Shift Logic: double per-day salary ───────────────────────
+  // Employee jo alternate days aata hai (Mon, Wed, Fri...) uski salary 2x hogi
+  const isAlternativeShift = emp?.dutyType?.toLowerCase() === 'alternative';
+  const basePerDayRate = baseTotalSal > 0 ? (baseTotalSal / daysInSelectedMonth) : 0;
+  const perDayRate = isAlternativeShift ? (basePerDayRate * 2) : basePerDayRate;
 
-  // Financial Cuts & Additions based on Attendance
-  const absentDeduction = totalAbsents * perDayRate;
-    const lateDeduction = effectiveAttendanceWithOverrides.reduce((sum, r) => {
-      const status = r.status?.toLowerCase();
-      if (['holiday', 'festival', 'off', 'future', 'absent'].includes(status)) return sum;
-      
-      const scheduledMinutes = getScheduledMinutes(r);
-      const workedMins = getWorkedMinutes(r);
-      if (scheduledMinutes <= 0 || workedMins <= 0 || workedMins >= scheduledMinutes) return sum;
+  const absentDeduction   = totalAbsents * (perDayRate * 2);
+  const missedOutDeduction = totalMissedOut * perDayRate; // 1x deduction for missed punch
+  const leaveDeduction    = totalLeaves * perDayRate;
 
-      const wrkHrsRounded = parseFloat((workedMins / 60).toFixed(1));
-      const earnedMinsByWorkedHrs = Math.round(wrkHrsRounded * 60);
-      const missedMinsCalculated = scheduledMinutes > earnedMinsByWorkedHrs ? scheduledMinutes - earnedMinsByWorkedHrs : 0;
+  const lateDeduction = effectiveAttendanceWithOverrides.reduce((sum, r) => {
+    if (shouldSkipAutoDeduction(r)) return sum;
+    const scheduledMinutes = getScheduledMinutes(r);
+    if (scheduledMinutes <= 0) return sum;
 
-      const perMinuteRate = perDayRate / scheduledMinutes;    return sum + (missedMinsCalculated * perMinuteRate);
+    const timingPenaltyMinutes = getTimingPenaltyMinutes(r);
+    if (timingPenaltyMinutes <= 0) return sum;
+
+    const perMinuteRate = perDayRate / scheduledMinutes;
+    return sum + (timingPenaltyMinutes * perMinuteRate);
   }, 0);
-  const gatepassDeduction = Math.round((gatepassMinutes * (perDayRate / (8 * 60))));
-  const currentMonthKey = `${year}-${month}`;
+
+  const manualDeductionTotal = effectiveAttendanceWithOverrides.reduce((sum, r) => {
+    if (Boolean(r?.waiveDeduction)) return sum;
+    if (!hasManualDeduction(r)) return sum;
+    return sum + Math.max(0, Number(r.manualDeduction) || 0);
+  }, 0);
+
+  const gatepassDeduction  = Math.round(gatepassMinutes * (perDayRate / (8 * 60)));
+  const currentMonthKey    = `${year}-${month}`;
+
   const advanceDeduction = Math.round(advanceLoans
     .filter((a) => a.employeeId === emp?.id && String(a.status || '').toLowerCase() === 'active')
     .filter((a) => String(a.type || '').toLowerCase() === 'advance')
     .reduce((sum, a) => {
-      const schedule = a.schedule || [];
-      const entry = schedule.find((s) => s.month === currentMonthKey);
+      const entry = (a.schedule || []).find((s) => s.month === currentMonthKey);
       return sum + (Number(entry?.amount) || 0);
     }, 0));
+
   const loanDeduction = Math.round(advanceLoans
     .filter((a) => a.employeeId === emp?.id && String(a.status || '').toLowerCase() === 'active')
     .filter((a) => String(a.type || '').toLowerCase() === 'loan')
     .reduce((sum, a) => {
-      const schedule = a.schedule || [];
-      const entry = schedule.find((s) => s.month === currentMonthKey);
+      const entry = (a.schedule || []).find((s) => s.month === currentMonthKey);
       return sum + (Number(entry?.amount) || 0);
     }, 0));
+
   const shortLeaveRecords = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('shortLeaveRecords')) || [];
-    } catch {
-      return [];
-    }
+    try { return JSON.parse(localStorage.getItem('shortLeaveRecords')) || []; }
+    catch { return []; }
   })();
 
   const getRosterMinutesForDate = (dateStr) => {
@@ -407,10 +689,9 @@ export default function Reports() {
     .reduce((sum, s) => {
       if (!s.timeOut || !s.timeIn) return sum;
       const outAt = new Date(`${s.date}T${s.timeOut}`);
-      const inAt = new Date(`${s.date}T${s.timeIn}`);
+      const inAt  = new Date(`${s.date}T${s.timeIn}`);
       if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return sum;
-      const mins = Math.max(0, Math.round((inAt - outAt) / 60000));
-      return sum + mins;
+      return sum + Math.max(0, Math.round((inAt - outAt) / 60000));
     }, 0);
 
   const shortLeaveDeduction = Math.round(shortLeaveRecords
@@ -422,210 +703,235 @@ export default function Reports() {
     .reduce((sum, s) => {
       if (!s.timeOut || !s.timeIn) return sum;
       const outAt = new Date(`${s.date}T${s.timeOut}`);
-      const inAt = new Date(`${s.date}T${s.timeIn}`);
+      const inAt  = new Date(`${s.date}T${s.timeIn}`);
       if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return sum;
-      const mins = Math.max(0, Math.round((inAt - outAt) / 60000));
-      const rosterMinutes = getRosterMinutesForDate(s.date);
-      const perMinute = rosterMinutes > 0 ? perDayRate / rosterMinutes : 0;
+      const mins         = Math.max(0, Math.round((inAt - outAt) / 60000));
+      const rosterMins   = getRosterMinutesForDate(s.date);
+      const perMinute    = rosterMins > 0 ? perDayRate / rosterMins : 0;
       return sum + (mins * perMinute);
     }, 0));
 
-  const totalDeductions = Math.round(absentDeduction + lateDeduction + (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0));
+  const totalDeductions = Math.round(
+    absentDeduction + missedOutDeduction + leaveDeduction + lateDeduction +
+    (manualDeductionTotal || 0) + (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0)
+  );
+
   const overtimeAddition = Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
     const scheduledMinutes = getScheduledMinutes(r);
-    const perMinuteRate = scheduledMinutes > 0 ? scheduledMinutes / perDayRate : 0;
+    const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
     return sum + (getOvertimeMinutes(r) * perMinuteRate);
   }, 0));
 
-  const offDayBonus = Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
-    // Overtime from holidays and off days are now handled by getOvertimeMinutes 
-    // and correctly added in overtimeAddition.
-    return sum;
-  }, 0));
+  const offDayBonus = 0;
 
-  // Final Generated Net Salary specifically tailored for this slip!
   const finalSal = emp ? Math.max(0, Math.round(baseTotalSal - totalDeductions + overtimeAddition)) : 0;
   const totalSal = finalSal;
 
-
-  const getDualShiftData = useCallback((dateStr, apiPunches, hrTimes) => {
+  const getDualShiftData = useCallback((_dateStr, _apiPunches, _hrTimes) => {
     return { error: 'Not fully integrated, please provide precise dual-shift rules here.' };
   }, []);
 
-  const detailedAttendanceRows = useMemo(() => {
-    // If we have actual DB records, map them instead of fake dummy data
-    if (effectiveAttendanceWithOverrides.length > 0) {
-      return effectiveAttendanceWithOverrides.map((record) => {
-        const d = new Date(record.date);
-        const dayStr = d.toISOString().split('T')[0];
-  const offDay = isRosterOff(dayStr);
-  const isFuture = new Date(`${dayStr}T23:59:59`) > new Date();
-  const isHoliday = ['holiday', 'festival'].includes(record.status?.toLowerCase());
-        
-        let tIn = "--"; let tOut = "--";
-        if (record.actualIn) {
-          tIn = new Date(record.actualIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-        }
-        if (record.actualOut) {
-          tOut = new Date(record.actualOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-        }
-        
-  const scheduledMinutes = getScheduledMinutes(record);
-  const lateMinutes = offDay || isFuture || isHoliday ? 0 : getLateMinutes(record);
-  const overtimeMinutes = isFuture ? 0 : getOvertimeMinutes(record);
-  const perMinuteRate = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
-  const workedMinutes = record.actualIn && record.actualOut
-    ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
-    : 0;
-  const offDayExtra = (offDay || isHoliday) && workedMinutes > 0 ? Math.round(workedMinutes * perMinuteRate) : 0;
-  
-  const isLate = lateMinutes > 0 ? "Y" : "N";
-  const otHrs = overtimeMinutes ? (overtimeMinutes / 60).toFixed(2) : "0.00";
-        
-        // Per-day calculation visualization for layout
-        const grossPerDay = Math.round(perDayRate);
+  const rawPunchTimesByDate = useMemo(() => {
+    if (!emp?.empCode || !rawPunchRows.length) return new Map();
 
-        const wrkHrsRaw = workedMinutes / 60;
-        const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
-        const wrkHrsDisplay = isFuture ? "0.00" : wrkHrsRounded.toFixed(2);
-        
-        const earnedMinsByWorkedHrs = Math.round(wrkHrsRounded * 60);
-        const missedMinsCalculated = (scheduledMinutes > 0 && earnedMinsByWorkedHrs < scheduledMinutes)
-          ? scheduledMinutes - earnedMinsByWorkedHrs 
+    const targetCode = normalizeEmpCode(emp.empCode);
+    const map = new Map();
+
+    rawPunchRows.forEach((row) => {
+      if (normalizeEmpCode(row.empCode) !== targetCode) return;
+      if (!row.punchDate) return;
+
+      const punches = Array.from({ length: 12 }, (_, i) => row[`Punch${i + 1}`])
+        .map((v) => String(v || '').trim())
+        .filter((v) => /^\d{2}:\d{2}$/.test(v));
+
+      map.set(String(row.punchDate), punches);
+    });
+
+    return map;
+  }, [emp?.empCode, normalizeEmpCode, rawPunchRows]);
+
+  const detailedAttendanceRows = useMemo(() => {
+    if (effectiveAttendanceWithOverrides.length > 0) {
+      return effectiveAttendanceWithOverrides.flatMap((record) => {
+        const d      = new Date(record.date);
+        const dayStr = d.toISOString().split('T')[0];
+
+        const offDay       = isRosterOff(dayStr);
+        const isFuture     = new Date(`${dayStr}T23:59:59`) > new Date();
+        const actStatus    = normalizePayrollStatus(record.status);
+        const isAvailOff   = ['holiday_avail', 'off_avail', 'leave_with_pay'].includes(actStatus);
+        const isWorkedExtra = ['holiday_not_avail', 'off_not_avail'].includes(actStatus);
+        const isMissedOut  = actStatus === 'missed_out';
+
+        let tIn = "--"; let tOut = "--";
+        if (record.actualIn)  tIn  = new Date(record.actualIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        if (record.actualOut) tOut = new Date(record.actualOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+        const scheduledMinutes = getScheduledMinutes(record);
+  const lateMinutes      = offDay || isFuture || isAvailOff || isWorkedExtra || isMissedOut ? 0 : getTimingPenaltyMinutes(record);
+        const overtimeMinutes  = isFuture ? 0 : getOvertimeMinutes(record);
+        const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
+
+        const workedMinutes = record.actualIn && record.actualOut
+          ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
           : 0;
 
-        const currLateDed = (offDay || isFuture || isHoliday || record.status?.toLowerCase() === 'absent' || workedMinutes <= 0)
-          ? 0 
-          : Math.round(missedMinsCalculated * perMinuteRate);
+        const isLate      = lateMinutes > 0 ? "Y" : "N";
+        const otHrs       = overtimeMinutes ? (overtimeMinutes / 60).toFixed(2) : "0.00";
+        const grossPerDay = Math.round(perDayRate);
 
-        const ded = offDay || isFuture || isHoliday
+        const wrkHrsRaw     = workedMinutes / 60;
+        const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
+        const wrkHrsDisplay = isFuture ? "0.00" : wrkHrsRounded.toFixed(2);
+
+        const currLateDed = (isAvailOff || isWorkedExtra || offDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut)
           ? 0
-          : Math.round((record.status?.toLowerCase() === 'absent' ? perDayRate : 0) + currLateDed);
+          : Math.round(lateMinutes * perMinuteRate);
+
+        let dailyDeduction = 0;
+        if (actStatus === 'absent')      dailyDeduction = perDayRate * 2;
+        else if (actStatus === 'leave')  dailyDeduction = perDayRate;
+        else if (isMissedOut)            dailyDeduction = perDayRate; // 1x for missing punch
+
+        const computedDeduction = (isAvailOff || isWorkedExtra || offDay || isFuture)
+          ? 0
+          : Math.round(dailyDeduction + currLateDed);
+
+        const ded = Boolean(record?.waiveDeduction)
+          ? 0
+          : (hasManualDeduction(record) ? Math.max(0, Math.round(Number(record.manualDeduction) || 0)) : computedDeduction);
 
         const otVal = Math.round(overtimeMinutes * perMinuteRate);
 
-        return {
-          date: dayStr,
-          timeIn: tIn,
+        // ─── Status display — missed_out clearly dikhao ────────────────────
+        let displayStatus;
+        if (isFuture)          displayStatus = "Future";
+        else if (isAvailOff || isWorkedExtra) displayStatus = actStatus;
+        else if (offDay)       displayStatus = "Off";
+        else if (isMissedOut)  displayStatus = "Missed Punch";
+        else                   displayStatus = actStatus || "present";
+
+        const baseRow = {
+          date:    dayStr,
+          timeIn:  tIn,
           timeOut: tOut,
-          dutyHrs: (offDay || isHoliday) && workedMinutes > 0 ? (workedMinutes / 60).toFixed(2) : (offDay || isFuture || isHoliday ? "0.00" : (record.status?.toLowerCase() === 'absent' ? "0.00" : (scheduledMinutes / 60).toFixed(2))),
-          wrkHrs: wrkHrsDisplay,
-          ot: isFuture ? "0.00" : otHrs,
-          late: offDay || isFuture || isHoliday ? "N" : isLate,
-          status: isFuture ? "Future" : (offDay ? "Off" : (isHoliday ? record.status : (record.status || "Present"))),
-          salary: String(grossPerDay),
-          ded: String(ded),
-          total: String(Math.max(0, grossPerDay - ded + otVal)),
+          dutyHrs: (isAvailOff || isWorkedExtra || offDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut)
+            ? "0.00"
+            : (scheduledMinutes / 60).toFixed(2),
+          wrkHrs:  wrkHrsDisplay,
+          ot:      isFuture ? "0.00" : otHrs,
+          late:    (isAvailOff || isWorkedExtra || offDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
+          status:  displayStatus,
+          salary:  String(grossPerDay),
+          ded:     String(ded),
+          total:   String(Math.max(0, grossPerDay - ded + otVal)),
         };
-      }).sort((a,b) => a.date.localeCompare(b.date)); // Sort chronologically
+
+        const rawPunches = rawPunchTimesByDate.get(dayStr) || [];
+        if (rawPunches.length <= 2) {
+          return [baseRow];
+        }
+
+        const extraRows = [];
+        for (let i = 2; i < rawPunches.length; i += 2) {
+          const extraIn = rawPunches[i] || '--';
+          const extraOut = rawPunches[i + 1] || '--';
+
+          extraRows.push({
+            date: dayStr,
+            timeIn: extraIn,
+            timeOut: extraOut,
+            dutyHrs: '0.00',
+            wrkHrs: '0.00',
+            ot: '0.00',
+            late: 'N',
+            status: 'Extra Punch (Manual Check)',
+            salary: '0',
+            ded: '0',
+            total: '0',
+          });
+        }
+
+        return [baseRow, ...extraRows];
+      }).sort((a, b) => a.date.localeCompare(b.date));
     }
-    
-    // Fallback if no records found yet
+
     const fallbackPerMinute = perDayRate > 0 ? (perDayRate / (8 * 60)) : 0;
     return Array.from({ length: 10 }, (_, i) => ({
-      date: `${year}-${month}-${String(i + 1).padStart(2, "0")}`,
-      timeIn: i % 6 === 0 ? "--" : "08:00",
+      date:    `${year}-${month}-${String(i + 1).padStart(2, "0")}`,
+      timeIn:  i % 6 === 0 ? "--" : "08:00",
       timeOut: i % 6 === 0 ? "--" : "16:00",
       dutyHrs: i % 6 === 0 ? "0.00" : "8.00",
-      wrkHrs: i % 6 === 0 ? "0.00" : "8.00",
-      ot: i % 4 === 0 ? "1.00" : "0.00",
-      late: i % 5 === 0 ? "Y" : "N",
-      status: i % 6 === 0 ? "Absent" : i % 5 === 0 ? "Late" : "Duty",
-      salary: i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
-      ded: i % 5 === 0 ? Math.round(15 * fallbackPerMinute).toString() : "0",
-      total: i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
+      wrkHrs:  i % 6 === 0 ? "0.00" : "8.00",
+      ot:      i % 4 === 0 ? "1.00" : "0.00",
+      late:    i % 5 === 0 ? "Y" : "N",
+      status:  i % 6 === 0 ? "Absent" : i % 5 === 0 ? "Late" : "Duty",
+      salary:  i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
+      ded:     i % 5 === 0 ? Math.round(15 * fallbackPerMinute).toString() : "0",
+      total:   i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
     }));
-  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, getScheduledMinutes, getLateMinutes, getOvertimeMinutes, isRosterOff]);
+  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, getScheduledMinutes, getTimingPenaltyMinutes, getOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction]);
 
   const missingSalaryRows = useMemo(() => {
     return employees.slice(0, 20).map((e, i) => ({
-      code: e.empCode,
-      name: `${e.firstName} ${e.lastName}`,
-      active: e.status === "Active" ? "Y" : "N",
-      ot: i % 3 === 0 ? "Y" : "N",
-      month: `${year}-${month}`,
-      amount: `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
-      flag: i % 4 === 0 ? "Y" : "N",
+      code:    e.empCode,
+      name:    `${e.firstName} ${e.lastName}`,
+      active:  e.status === "Active" ? "Y" : "N",
+      ot:      i % 3 === 0 ? "Y" : "N",
+      month:   `${year}-${month}`,
+      amount:  `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
+      flag:    i % 4 === 0 ? "Y" : "N",
       voucher: i % 2 === 0 ? `V-${String(1000 + i)}` : "",
     }));
   }, [employees, month, year]);
 
   const payrollDetailedRows = useMemo(() => {
-    // UI-only: mimic paper-like detailed payroll grid
     return detailedAttendanceRows.map((r, idx) => ({
       empCode: emp?.empCode || "-",
-      dutyDt: r.date,
-      timeIn: r.timeIn,
+      dutyDt:  r.date,
+      timeIn:  r.timeIn,
       timeOut: r.timeOut,
       dutySts: r.status,
-      late: r.late,
+      late:    r.late,
       dutyHrs: r.dutyHrs,
       wrkDays: idx === 0 ? '28' : '12',
-      ot: r.ot,
-      perDay: '893',
-      salary: r.salary,
-      otAmt: idx % 4 === 0 ? '15' : '0',
-      ded: r.ded,
-      total: r.total,
+      ot:      r.ot,
+      perDay:  '893',
+      salary:  r.salary,
+      otAmt:   idx % 4 === 0 ? '15' : '0',
+      ded:     r.ded,
+      total:   r.total,
     }));
   }, [detailedAttendanceRows, emp]);
 
   const payrollConsolidatedRows = useMemo(() => {
     return employees.slice(0, 12).map((e) => ({
-      code: e.empCode,
-      name: `${e.firstName} ${e.lastName}`,
+      code:      e.empCode,
+      name:      `${e.firstName} ${e.lastName}`,
       netSalary: `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
     }));
   }, [employees]);
 
   const exportMeta = {
-    address: "C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210",
-    phone: "021-34508390",
-    whatsapp: "+92 334 2225746",
-  };
+    address:   "C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210",phone:"021-34508390",whatsapp:  "+92 334 2225746",};
 
-  const loadImageDataUrl = async (src) => {
-    if (!src) return null;
-    try {
-      const res = await fetch(src);
-      const blob = await res.blob();
-      return await new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve(null);
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      return null;
-    }
-  };
-
-  const addPdfHeader = (pdf, title, logoData) => {
-    const margin = 40;
+  const addPdfHeader = (pdf, title) => {
+    const margin    = 40;
     const pageWidth = pdf.internal.pageSize.getWidth();
-    if (logoData) {
-      pdf.addImage(logoData, "PNG", margin, 18, 60, 60);
-    }
     pdf.setFontSize(14);
-    pdf.text("Darul Shifa Imam Khomeini", margin + 80, 40);
-    pdf.setFontSize(9);
-    pdf.text(exportMeta.address, margin + 80, 58, { maxWidth: pageWidth - margin * 2 - 80 });
-    pdf.text(`Tel: ${exportMeta.phone}`, margin + 80, 74);
-    pdf.text(`WhatsApp: ${exportMeta.whatsapp}`, margin + 80, 90);
+    pdf.text("Darul Shifa Imam Khomeini", pageWidth / 2, 40, { align: "center" });
     pdf.setFontSize(11);
-    
-    // In payslip layout we don't print title here, because we handle formatting manually below to avoid overlap
     if (title !== "Detailed Payslip" && title !== "Payslip Report") {
-        pdf.text(title, margin, 120);
+      pdf.text(title, margin, 120);
     }
-    
     return 140;
   };
 
   const addPdfFooter = (pdf) => {
-    const margin = 40;
+    const margin    = 40;
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const footerY = pdf.internal.pageSize.getHeight() - 40;
+    const footerY   = pdf.internal.pageSize.getHeight() - 40;
     pdf.setFontSize(8);
     pdf.text(exportMeta.address, margin, footerY, { maxWidth: pageWidth - margin * 2 });
     pdf.text(`Tel: ${exportMeta.phone} | WhatsApp: ${exportMeta.whatsapp}`, margin, footerY + 12);
@@ -633,53 +939,38 @@ export default function Reports() {
 
   const createUrduTextImage = (text) => {
     const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const scale = 2; // for higher resolution
-    canvas.width = 1100 * scale; 
-    canvas.height = 50 * scale; 
-    
-    // Clear background (transparent)
+    const ctx    = canvas.getContext("2d");
+    const scale  = 2;
+    canvas.width  = 1100 * scale;
+    canvas.height = 50 * scale;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
     ctx.scale(scale, scale);
-    ctx.fillStyle = "#000000";
-    ctx.font = 'bold 16px Arial, Helvetica, "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", sans-serif';
-    ctx.textAlign = "right"; // RTL
+    ctx.fillStyle    = "#000000";
+    ctx.font         = 'bold 16px Arial, Helvetica, "Jameel Noori Nastaleeq", "Noto Nastaliq Urdu", sans-serif';
+    ctx.textAlign    = "right";
     ctx.textBaseline = "top";
-    
-    // Draw the text
     ctx.fillText(text, 1080, 10);
-    
     return canvas.toDataURL("image/png");
   };
 
   const addPdfSignatures = (pdf) => {
-    const margin = 40;
-    const pageWidth = pdf.internal.pageSize.getWidth();
+    const margin     = 40;
+    const pageWidth  = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     let baseY = (pdf.lastAutoTable?.finalY || 140) + 40;
+    if (baseY + 120 > pageHeight - 50) { pdf.addPage(); baseY = 60; }
 
-    // Check if we need a new page to avoid overlapping
-    if (baseY + 120 > pageHeight) {
-      pdf.addPage();
-      baseY = 60;
-    }
-
-    // Add English Declaration
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(10);
-    const engFallback = "I confirm that the salary generated is correct and I have no objections. Please pay my salary.";
-    pdf.text(engFallback, margin, baseY);
+    pdf.text("I confirm that the salary generated is correct and I have no objections. Please pay my salary.", margin, baseY);
 
-    // Add Urdu Declaration via Browser Canvas (Fixes layout and font issues)
     const declaration = "میں تصدیق کرتا / کرتی ہوں کہ بنائی گئی تنخواہ درست ہے اور مجھے اس پر کوئی اعتراض نہیں ہے۔ برائے مہربانی میری اوپر بنائی گئی تنخواہ ادا کر دی جائے۔";
-    const urduImage = createUrduTextImage(declaration);
-    // x = margin, y = baseY + 5, width matches page, height scaled properly
+    const urduImage   = createUrduTextImage(declaration);
     pdf.addImage(urduImage, "PNG", margin - 20, baseY + 9, pageWidth - margin * 2, 25);
 
-    const y = baseY + 80;
+    const y        = baseY + 80;
     const colWidth = (pageWidth - margin * 2) / 3;
-    const labels = ["Prepared By", "Administrator", "Employee"];
+    const labels   = ["Prepared By", "Administrator", "Employee"];
     pdf.setLineWidth(0.5);
     labels.forEach((label, index) => {
       const x = margin + index * colWidth;
@@ -690,106 +981,100 @@ export default function Reports() {
   };
 
   const exportReportPdf = async (scope, { autoPrint = false } = {}) => {
-    const pdf = new jsPDF("p", "pt", "a4");
-    const logoData = await loadImageDataUrl(logo);
-    let startY = 140;
+    const pdf      = new jsPDF("p", "pt", "a4");
+    let startY     = 140;
 
     const titleMap = {
-      payslip: "Payslip Report",
-      "payslip-detailed": "Detailed Payslip",
-      "payroll-detailed": "Payroll Detailed",
-      "payroll-consolidated": "Payroll Consolidated",
-      "salary-register": "Salary Register",
-      missing: "Missing Salary",
-      cr: "Employee CR",
+      payslip:               "Payslip Report",
+      "payslip-detailed":    "Detailed Payslip",
+      "payroll-detailed":    "Payroll Detailed",
+      "payroll-consolidated":"Payroll Consolidated",
+      "salary-register":     "Salary Register",
+      missing:               "Missing Salary",
+      cr:                    "Employee CR",
     };
 
-    startY = addPdfHeader(pdf, titleMap[scope] || "Report", logoData);
+  startY = addPdfHeader(pdf, titleMap[scope] || "Report");
 
-      if (scope === "payslip" || scope === "payslip-detailed") {
-        // Enforce detailed layout structure matching user image requirements
-        
-        pdf.setFontSize(8);
-        const doj = emp?.appointmentDate ? new Date(emp.appointmentDate).toISOString().split('T')[0].split('-').reverse().join('-') : '-';
-        pdf.text(`DOJ: ${doj}`, 40, 110);
-        
-        pdf.setFontSize(12);
-        pdf.text("Detailed Payslip", 40, 130, { fontStyle: "bold" });
-        pdf.setFontSize(10);
-        pdf.text(new Date().toISOString().split('T')[0].split('-').reverse().join('-'), 130, 130);
+    if (scope === "payslip" || scope === "payslip-detailed") {
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const headerTopY = 78;
+      pdf.setFontSize(8);
+      const doj = emp?.appointmentDate ? new Date(emp.appointmentDate).toISOString().split('T')[0].split('-').reverse().join('-') : '-';
+      pdf.text(`DOJ: ${doj}`, 40, headerTopY);
+      pdf.setFontSize(12);
+      pdf.text("Detailed Payslip", 40, headerTopY + 18, { fontStyle: "bold" });
+      pdf.setFontSize(10);
+      pdf.text(new Date().toISOString().split('T')[0].split('-').reverse().join('-'), 130, headerTopY + 18);
+      const empTitle = `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim().toUpperCase() + ` - ${emp?.empCode || "-"}`;
+      pdf.text(empTitle, pageWidth / 2, headerTopY, { align: "center", fontStyle: "bold" });
+      pdf.setFontSize(9);
+      pdf.text(emp?.designation || "-", pageWidth / 2, headerTopY + 14, { align: "center" });
+      const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      pdf.text(`${monthNames[parseInt(month)]} ${year}`, pageWidth / 2, headerTopY + 28, { align: "center", fontStyle: "bold" });
+      pdf.setFontSize(10);
+      pdf.text(`DUTY HOURS: 8`, pageWidth - 40, headerTopY, { align: "right" });
+      const perHourSal = (baseTotalSal / (new Date(year, month, 0).getDate() * 8)).toFixed(2);
+      pdf.text(`PERHOUR SALARY: ${perHourSal}`, pageWidth - 40, headerTopY + 18, { align: "right" });
+      pdf.setFontSize(22); pdf.setTextColor(200);
+      pdf.text("ONLY FOR REPORTING", pageWidth / 2, headerTopY + 40, { align: "center" });
+      pdf.setTextColor(0);
+      pdf.setFontSize(9);
+      const summaryTopY = headerTopY + 58;
+      const rightColX = pageWidth - 205;
+      pdf.text(`CURRENT MONTH SALARY`, 40, summaryTopY, { fontStyle: "bold" });
+      pdf.text(`TOTAL : ${baseTotalSal.toLocaleString()}`, 40, summaryTopY + 15);
+      pdf.text(`CURRUENT SALARY : ${totalSal.toLocaleString()}`, 40, summaryTopY + 30);
+      pdf.text(`CURRUENT OVER TIME : ${overtimeAddition.toLocaleString()}`, 40, summaryTopY + 45);
+      pdf.text(`DAILY DED : ${totalDeductions.toLocaleString()}`, 40, summaryTopY + 60);
+      pdf.text(`CURR. MONTH DEDUCTION`, rightColX, summaryTopY, { fontStyle: "bold" });
+      pdf.text(`TOTAL : ${totalDeductions.toLocaleString()}`, rightColX, summaryTopY + 15);
+      pdf.text(`NET SALARY`, rightColX, summaryTopY + 34, { fontStyle: "bold" });
+      pdf.text(`NET SALARY : ${totalSal.toLocaleString()}`, rightColX, summaryTopY + 49);
 
-        pdf.setFontSize(10);
-        const empTitle = `${emp?.firstName || ""} ${emp?.lastName || ""}`.trim().toUpperCase() + ` - ${emp?.empCode || "-"}`;
-        pdf.text(empTitle, pdf.internal.pageSize.getWidth() / 2, 110, { align: "center", fontStyle: "bold" });
-        pdf.setFontSize(9);
-        pdf.text(emp?.designation || "-", pdf.internal.pageSize.getWidth() / 2, 125, { align: "center" });
-        const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        pdf.text(`${monthNames[parseInt(month)]} ${year}`, pdf.internal.pageSize.getWidth() / 2, 140, { align: "center", fontStyle: "bold" });
+      const dynamicAllowanceRows = (emp?.allowances || [])
+        .map((a) => {
+          const amount = Number(String(a?.amount ?? 0).replace(/,/g, "")) || 0;
+          return { label: (a?.type || "Allowance").toUpperCase(), amount };
+        })
+        .filter((a) => a.amount > 0);
 
-        pdf.setFontSize(10);
-        pdf.text(`DUTY HOURS: 8`, pdf.internal.pageSize.getWidth() - 40, 110, { align: "right" });
-        const perHourSal = (baseTotalSal / (new Date(year, month, 0).getDate() * 8)).toFixed(2);
-        pdf.text(`PERHOUR SALARY: ${perHourSal}`, pdf.internal.pageSize.getWidth() - 40, 130, { align: "right" });        pdf.setFontSize(22);
-        pdf.setTextColor(200);
-        pdf.text("ONLY FOR REPORTING", pdf.internal.pageSize.getWidth() / 2, 155, { align: "center" });
-        pdf.setTextColor(0);
+      const allowanceInlineParts = [
+        { label: "BASIC", amount: basic },
+        ...dynamicAllowanceRows,
+        { label: "TOTAL", amount: baseTotalSal },
+      ];
+      const allowanceLineRaw = allowanceInlineParts
+        .map((p) => `${p.label}: ${Number(p.amount || 0).toLocaleString()}`)
+        .join("   |   ");
+      const allowanceLine = allowanceLineRaw.length > 130 ? `${allowanceLineRaw.slice(0, 127)}...` : allowanceLineRaw;
 
-        // Sub summary stats inline top header
-        pdf.setFontSize(9);
-        pdf.text(`CURRENT MONTH SALARY`, 40, 180, { fontStyle: "bold" });
-        pdf.text(`TOTAL : ${baseTotalSal.toLocaleString()}`, 40, 195);
-        pdf.text(`CURRUENT SALARY : ${totalSal.toLocaleString()}`, 40, 210);
-        pdf.text(`CURRUENT OVER TIME : ${(overtimeAddition).toLocaleString()}`, 40, 225);
-        pdf.text(`DAILY DED : ${totalDeductions.toLocaleString()}`, 40, 240);
+      const allowanceLineY = summaryTopY + 78;
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "bold");
+      pdf.text(allowanceLine, 40, allowanceLineY);
+      pdf.setFont("helvetica", "normal");
 
-        pdf.text(`CURR. MONTH DEDUCTION`, 360, 180, { fontStyle: "bold" });
-        pdf.text(`TOTAL : ${totalDeductions.toLocaleString()}`, 360, 195);
+      autoTable(pdf, {
+        startY: allowanceLineY + 16,
+        head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "Dty Hrs", "Wrk Days", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
+        body: detailedAttendanceRows.map((r) => {
+          const wrdDays = new Date(year, month, 0).getDate();
+          const otAmnt  = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((baseTotalSal / wrdDays) / 8)).toString();
+          return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, Math.round(baseTotalSal / wrdDays).toString(), r.salary, otAmnt, r.ded, r.total];
+        }),
+        styles: { fontSize: 7, cellPadding: 2, halign: 'center' },
+        headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], fontStyle: "bold" },
+        columnStyles: { 0: { halign: 'left' } }
+      });
+    }
 
-        pdf.text(`NET SALARY`, pdf.internal.pageSize.getWidth() - 120, 180, { fontStyle: "bold" });
-        pdf.text(`NET SALARY : ${totalSal.toLocaleString()}`, pdf.internal.pageSize.getWidth() - 120, 195);
-
-        // Small Base vs Allowances block
-        autoTable(pdf, {
-          startY: 255,
-          margin: { left: 80 },
-          head: [["BASIC", "CONV", "Total"]],
-          body: [[basic.toLocaleString(), totalAllow.toLocaleString(), baseTotalSal.toLocaleString()]],
-          tableWidth: 200,
-          styles: { fontSize: 8, halign: 'center' },
-          headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], lineColor: [0,0,0], lineWidth: 0.5 },
-          bodyStyles: { lineColor: [0,0,0], lineWidth: 0.5 }
-        });
-
-        // Watermark again
-        pdf.setFontSize(22);
-        pdf.setTextColor(200);
-        pdf.text("ONLY FOR REPORTING", pdf.internal.pageSize.getWidth() / 2, 285, { align: "center" });
-        pdf.setTextColor(0);
-
-        // Main Attendance Table with comprehensive columns matching image
-        autoTable(pdf, {
-          startY: pdf.lastAutoTable.finalY + 15,
-          head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "Dty Hrs", "Wrk Days", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
-          body: detailedAttendanceRows.map((r) => {
-            const dutyHrs = r.dutyHrs;
-            const wrdDays = new Date(year, month, 0).getDate();
-            const otAmnt = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((baseTotalSal / wrdDays)/8)).toString();
-            return [r.date, r.timeIn, r.timeOut, r.status, r.late, dutyHrs, wrdDays, r.wrkHrs, r.ot, Math.round(baseTotalSal/wrdDays).toString(), r.salary, otAmnt, r.ded, r.total];
-          }),
-          styles: { fontSize: 7, cellPadding: 2, halign: 'center' },
-          headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], fontStyle: "bold" },
-          columnStyles: { 0: { halign: 'left' }}
-        });
-
-        // Add 3 Signatures and Urdu Text at the end
-        addPdfSignatures(pdf);
-      }    if (scope === "payroll-detailed") {
+    if (scope === "payroll-detailed") {
       autoTable(pdf, {
         startY,
         head: [["Emp ID", "Duty Dt", "Time In", "Time Out", "Duty Sts", "Late", "Duty Hrs", "Wrk Days", "OT", "Per Day", "Salary", "OT Amt", "Ded", "Total"]],
         body: payrollDetailedRows.map((r) => [r.empCode, r.dutyDt, r.timeIn, r.timeOut, r.dutySts, r.late, r.dutyHrs, r.wrkDays, r.ot, r.perDay, r.salary, r.otAmt, r.ded, r.total]),
-        styles: { fontSize: 7 },
-        headStyles: { fillColor: [37, 99, 235] },
+        styles: { fontSize: 7 }, headStyles: { fillColor: [37, 99, 235] },
       });
     }
 
@@ -798,8 +1083,7 @@ export default function Reports() {
         startY,
         head: [["Code", "Name", "Net Salary"]],
         body: payrollConsolidatedRows.map((r) => [r.code, r.name, r.netSalary]),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [37, 99, 235] },
+        styles: { fontSize: 9 }, headStyles: { fillColor: [37, 99, 235] },
       });
     }
 
@@ -808,8 +1092,7 @@ export default function Reports() {
         startY,
         head: [["Code", "Name", "Amount"]],
         body: salaryRegisterRows.map((r) => [r.code, r.name, r.amount]),
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [37, 99, 235] },
+        styles: { fontSize: 9 }, headStyles: { fillColor: [37, 99, 235] },
       });
     }
 
@@ -818,8 +1101,7 @@ export default function Reports() {
         startY,
         head: [["Code", "Name", "Active", "OT", "Month", "Amount", "Flag", "Voucher"]],
         body: missingSalaryRows.map((r) => [r.code, r.name, r.active, r.ot, r.month, r.amount, r.flag, r.voucher || "-"]),
-        styles: { fontSize: 8 },
-        headStyles: { fillColor: [37, 99, 235] },
+        styles: { fontSize: 8 }, headStyles: { fillColor: [37, 99, 235] },
       });
     }
 
@@ -837,53 +1119,41 @@ export default function Reports() {
         columnStyles: { 0: { fontStyle: "bold" }, 2: { fontStyle: "bold" } },
         headStyles: { fillColor: [37, 99, 235] },
       });
-
       autoTable(pdf, {
         startY: pdf.lastAutoTable.finalY + 16,
         head: [["Working Days", "Late", "Short Leave", "Gate Pass", "Overtime", "Net Salary"]],
         body: [["26", "2", "1", "1", "4", `PKR ${totalSal.toLocaleString()}`]],
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [59, 130, 246] },
+        styles: { fontSize: 9 }, headStyles: { fillColor: [59, 130, 246] },
       });
-
       autoTable(pdf, {
         startY: pdf.lastAutoTable.finalY + 16,
         head: [["Criteria", "Rating", "Remarks"]],
-        body: [
-          ["Punctuality", "4", "Very Good"],
-          ["Work Quality", "4", "Consistent"],
-          ["Team Work", "5", "Excellent"],
-        ],
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [37, 99, 235] },
+        body: [["Punctuality", "4", "Very Good"], ["Work Quality", "4", "Consistent"], ["Team Work", "5", "Excellent"]],
+        styles: { fontSize: 9 }, headStyles: { fillColor: [37, 99, 235] },
       });
-
       autoTable(pdf, {
         startY: pdf.lastAutoTable.finalY + 16,
         head: [["Date", "Action Type", "Reason"]],
         body: [["-", "-", "-"]],
-        styles: { fontSize: 9 },
-        headStyles: { fillColor: [30, 64, 175] },
+        styles: { fontSize: 9 }, headStyles: { fillColor: [30, 64, 175] },
       });
     }
 
-  addPdfSignatures(pdf);
-  addPdfFooter(pdf);
+    addPdfSignatures(pdf);
+    addPdfFooter(pdf);
 
     if (autoPrint) {
       pdf.autoPrint();
-      const url = pdf.output("bloburl");
-      window.open(url, "_blank");
+      window.open(pdf.output("bloburl"), "_blank");
       return;
     }
-
     pdf.save(`${scope}-${year}-${month}.pdf`);
   };
 
   const salaryRegisterRows = useMemo(() => {
     return employees.slice(0, 15).map((e) => ({
-      code: e.empCode,
-      name: `${e.firstName} ${e.lastName}`,
+      code:   e.empCode,
+      name:   `${e.firstName} ${e.lastName}`,
       amount: `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
     }));
   }, [employees]);
@@ -895,42 +1165,35 @@ export default function Reports() {
         exportReportPdf(pdfScope, { autoPrint: type === "print" });
         return;
       }
-
       let rows = [];
-      if (scope === "missing") rows = missingSalaryRows;
-      if (scope === "payroll-detailed") rows = payrollDetailedRows;
+      if (scope === "missing")              rows = missingSalaryRows;
+  if (scope === "test-attendance-raw")  rows = rawPunchRows;
+      if (scope === "payroll-detailed")     rows = payrollDetailedRows;
       if (scope === "payroll-consolidated") rows = payrollConsolidatedRows;
-      if (scope === "salary-register") rows = salaryRegisterRows;
+      if (scope === "salary-register")      rows = salaryRegisterRows;
       if (scope === "payslip") {
         rows = [
-          { field: "Emp Code", value: emp?.empCode },
-          { field: "Name", value: `${emp?.firstName} ${emp?.lastName}` },
+          { field: "Emp Code",    value: emp?.empCode },
+          { field: "Name",        value: `${emp?.firstName} ${emp?.lastName}` },
           { field: "Designation", value: emp?.designation },
-          { field: "Month", value: `${year}-${month}` },
-          { field: "Basic Salary", value: basic },
-          { field: "Allowances", value: totalAllow },
-          { field: "Net Salary", value: totalSal },
+          { field: "Month",       value: `${year}-${month}` },
+          { field: "Basic Salary",value: basic },
+          { field: "Allowances",  value: totalAllow },
+          { field: "Net Salary",  value: totalSal },
         ];
       }
       if (scope === "cr") {
         rows = [
-          { field: "Emp Code", value: emp?.empCode },
-          { field: "Employee", value: `${emp?.firstName} ${emp?.lastName}` },
-          { field: "Department", value: emp?.department },
-          { field: "Designation", value: emp?.designation },
+          { field: "Emp Code",  value: emp?.empCode },
+          { field: "Employee",  value: `${emp?.firstName} ${emp?.lastName}` },
+          { field: "Department",value: emp?.department },
+          { field: "Designation",value: emp?.designation },
         ];
       }
-
       if (type === "excel") {
-        downloadFile({
-          filename: `${scope}-${year}-${month}.csv`,
-          content: toCSV(rows),
-          mimeType: "text/csv;charset=utf-8",
-        });
+        downloadFile({ filename: `${scope}-${year}-${month}.csv`, content: toCSV(rows), mimeType: "text/csv;charset=utf-8" });
         toast.success("Excel (CSV) downloaded");
-        return;
       }
-
     } catch {
       toast.error("Export failed (dummy)");
     }
@@ -941,24 +1204,14 @@ export default function Reports() {
   return (
     <div className="reports-page">
       <PageHeader
-        breadcrumbs={[
-          { link: "/employee-module", label: "Dashboard" },
-          { label: "Reports" },
-        ]}
+        breadcrumbs={[{ link: "/employee-module", label: "Dashboard" }, { label: "Reports" }]}
         title="Reports"
       />
 
       <div className="report-types print-hidden">
         {reportTypes.map((r) => (
-          <Card
-            key={r.id}
-            className={`report-type-card ${activeReport === r.id ? "active" : ""}`}
-          >
-            <button
-              onClick={() => setActiveReport(r.id)}
-              className="report-type-btn"
-              type="button"
-            >
+          <Card key={r.id} className={`report-type-card ${activeReport === r.id ? "active" : ""}`}>
+            <button onClick={() => setActiveReport(r.id)} className="report-type-btn" type="button">
               <r.icon className="w-8 h-8" />
               <span>{r.label}</span>
             </button>
@@ -972,64 +1225,40 @@ export default function Reports() {
             <h3>Payslip Report</h3>
             <div className="export-actions print-hidden">
               <Button label="Excel" variant="outline" onClick={() => handleExport("excel", "payslip")} />
-              <Button label="PDF" variant="outline" onClick={() => handleExport("pdf", "payslip")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   "payslip")} />
               <Button label="Print" variant="outline" onClick={() => handleExport("print", "payslip")} />
             </div>
           </div>
 
           <div className="filters-row print-hidden">
             <Input
-              label="Emp Code"
-              value={empSearch}
+              label="Emp Code" value={empSearch}
               onChange={(e) => setEmpSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') applyEmpSearch();
-              }}
-              placeholder="EMP-001 or 251"
-              className="w-full sm:w-72"
+              onKeyDown={(e) => { if (e.key === 'Enter') applyEmpSearch(); }}
+              placeholder="EMP-001 or 251" className="w-full sm:w-72"
             />
             <Button label="Search" variant="outline" onClick={applyEmpSearch} />
             <select value={month} onChange={(e) => setMonth(e.target.value)} className="filter-select">
               {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
+                <option key={m} value={m}>{m}</option>
               ))}
             </select>
             <select value={year} onChange={(e) => setYear(e.target.value)} className="filter-select">
               {[String(now.getFullYear()), String(now.getFullYear() - 1), String(now.getFullYear() - 2)].map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
+                <option key={y} value={y}>{y}</option>
               ))}
             </select>
             {emp?.dutyRoster?.some((d) => d.splitShift) && (
-              <select 
-                value={selectedShift} 
-                onChange={(e) => setSelectedShift(e.target.value)} 
-                className="filter-select"
-                style={{ borderColor: '#3b82f6', borderWidth: '2px' }}
-              >
+              <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)}
+                className="filter-select" style={{ borderColor: '#3b82f6', borderWidth: '2px' }}>
                 <option value="All">All Shifts</option>
                 <option value="Shift 1">Shift 1 Only</option>
                 <option value="Shift 2">Shift 2 Only</option>
               </select>
             )}
             <div className="pill-group">
-              <button
-                type="button"
-                className={`pill ${payslipView === "concentrated" ? "active" : ""}`}
-                onClick={() => setPayslipView("concentrated")}
-              >
-                Concentrated
-              </button>
-              <button
-                type="button"
-                className={`pill ${payslipView === "detailed" ? "active" : ""}`}
-                onClick={() => setPayslipView("detailed")}
-              >
-                Detailed
-              </button>
+              <button type="button" className={`pill ${payslipView === "concentrated" ? "active" : ""}`} onClick={() => setPayslipView("concentrated")}>Concentrated</button>
+              <button type="button" className={`pill ${payslipView === "detailed" ? "active" : ""}`} onClick={() => setPayslipView("detailed")}>Detailed</button>
             </div>
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "payslip")} />
           </div>
@@ -1037,125 +1266,50 @@ export default function Reports() {
           {payslipView === "concentrated" ? (
             <div className="payslip-preview print-area">
               <div className="payslip-header">
-                <p>
-                  <strong>{emp?.empCode}</strong> | {emp?.firstName} {emp?.lastName} |{" "}
-                  {emp?.designation}
-                </p>
-                <p>
-                  Pay Slip for the Month of: <strong>{month}/{year}</strong>
-                </p>
+                <p><strong>{emp?.empCode}</strong> | {emp?.firstName} {emp?.lastName} | {emp?.designation}</p>
+                <p>Pay Slip for the Month of: <strong>{month}/{year}</strong></p>
                 <p>Appointment: {formatDate(emp?.appointmentDate)}</p>
               </div>
-
               <div className="payslip-body">
                 <table className="payslip-table">
-                  <thead>
-                    <tr>
-                      <th>Payments</th>
-                      <th>Std Amount</th>
-                      <th>This Month</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Payments</th><th>Std Amount</th><th>This Month</th></tr></thead>
                   <tbody>
-                    <tr>
-                      <td>Basic</td>
-                      <td>{basic.toLocaleString()}</td>
-                      <td>{basic.toLocaleString()}</td>
-                    </tr>
+                    <tr><td>Basic</td><td>{basic.toLocaleString()}</td><td>{basic.toLocaleString()}</td></tr>
                     {allowances.map((a) => (
-                      <tr key={a.type}>
-                        <td>{a.type}</td>
-                        <td>{a.amount?.toLocaleString()}</td>
-                        <td>{a.amount?.toLocaleString()}</td>
-                      </tr>
+                      <tr key={a.type}><td>{a.type}</td><td>{a.amount?.toLocaleString()}</td><td>{a.amount?.toLocaleString()}</td></tr>
                     ))}
-                    {offDayBonus > 0 && (
-                      <tr>
-                        <td>Off Day Bonus</td>
-                        <td>{offDayBonus.toLocaleString()}</td>
-                        <td>{offDayBonus.toLocaleString()}</td>
-                      </tr>
-                    )}
-                    <tr>
-                      <td>
-                        <strong>Total Payments</strong>
-                      </td>
-                      <td></td>
-                      <td>
-                        <strong>{totalSal.toLocaleString()}</strong>
-                      </td>
-                    </tr>
+                    <tr><td><strong>Total Payments</strong></td><td></td><td><strong>{totalSal.toLocaleString()}</strong></td></tr>
                   </tbody>
                 </table>
-
                 <table className="payslip-table">
-                  <thead>
-                    <tr>
-                      <th>Deductions</th>
-                      <th></th>
-                      <th></th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Deductions</th><th></th><th></th></tr></thead>
                   <tbody>
-                    <tr>
-                      <td>Absents ({totalAbsents} days)</td>
-                      <td></td>
-                      <td>{Math.round(absentDeduction).toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Late Arrivals ({totalLates} mins)</td>
-                      <td></td>
-                      <td>{Math.round(lateDeduction).toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Advance</td>
-                      <td></td>
-                      <td>{advanceDeduction.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Loan</td>
-                      <td></td>
-                      <td>{loanDeduction.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Gate Pass (Personal) ({gatepassMinutes} mins)</td>
-                      <td></td>
-                      <td>{gatepassDeduction.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Short Leave ({shortLeaveMinutes} mins)</td>
-                      <td></td>
-                      <td>{shortLeaveDeduction.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Total Deductions</td>
-                      <td></td>
-                      <td>{totalDeductions.toLocaleString()}</td>
-                    </tr>
+                    <tr><td>Absents x2 ({totalAbsents} days)</td><td></td><td>{Math.round(absentDeduction).toLocaleString()}</td></tr>
+                    {totalMissedOut > 0 && (
+                      <tr><td>Missing Punch ({totalMissedOut} days)</td><td></td><td>{Math.round(missedOutDeduction).toLocaleString()}</td></tr>
+                    )}
+                    {totalLeaves > 0 && (
+                      <tr><td>Leaves Unpaid ({totalLeaves} days)</td><td></td><td>{Math.round(leaveDeduction).toLocaleString()}</td></tr>
+                    )}
+                    <tr><td>Late Arrivals ({totalLates} mins)</td><td></td><td>{Math.round(lateDeduction).toLocaleString()}</td></tr>
+                    <tr><td>Advance</td><td></td><td>{advanceDeduction.toLocaleString()}</td></tr>
+                    <tr><td>Loan</td><td></td><td>{loanDeduction.toLocaleString()}</td></tr>
+                    <tr><td>Gate Pass (Personal) ({gatepassMinutes} mins)</td><td></td><td>{gatepassDeduction.toLocaleString()}</td></tr>
+                    <tr><td>Short Leave ({shortLeaveMinutes} mins)</td><td></td><td>{shortLeaveDeduction.toLocaleString()}</td></tr>
+                    <tr><td>Total Deductions</td><td></td><td>{totalDeductions.toLocaleString()}</td></tr>
                   </tbody>
                 </table>
-
-                <div className="net-salary">
-                  <strong>NET SALARY: PKR {totalSal.toLocaleString()}</strong>
-                </div>
+                <div className="net-salary"><strong>NET SALARY: PKR {totalSal.toLocaleString()}</strong></div>
                 <p className="amount-words">Amount in words: {totalSal.toLocaleString()} Only</p>
-                
                 {overtimeAddition > 0 && (
-                  <p className="amount-words" style={{color: 'green', marginTop: '5px'}}>
-                    Includes Overtime Bonus: PKR {overtimeAddition.toLocaleString()} ({Math.round(totalOvertime/60)} hrs)
+                  <p className="amount-words" style={{ color: 'green', marginTop: '5px' }}>
+                    Includes Overtime Bonus: PKR {overtimeAddition.toLocaleString()} ({Math.round(totalOvertime / 60)} hrs)
                   </p>
                 )}
-
                 <div className="sign-row">
-                  <div className="sign">
-                    <span>Prepared By</span>
-                  </div>
-                  <div className="sign">
-                    <span>Administrator</span>
-                  </div>
-                  <div className="sign">
-                    <span>Receiver</span>
-                  </div>
+                  <div className="sign"><span>Prepared By</span></div>
+                  <div className="sign"><span>Administrator</span></div>
+                  <div className="sign"><span>Receiver</span></div>
                 </div>
               </div>
             </div>
@@ -1164,97 +1318,48 @@ export default function Reports() {
               <div className="sheet-header">
                 <div>
                   <h4>Detailed Payroll / Payslip</h4>
-                  <p className="muted">
-                    Employee: <strong>{emp?.empCode}</strong> — {emp?.firstName} {emp?.lastName}
-                  </p>
-                  <p className="muted">
-                    Month: <strong>{month}/{year}</strong>
-                  </p>
+                  <p className="muted">Employee: <strong>{emp?.empCode}</strong> — {emp?.firstName} {emp?.lastName}</p>
+                  <p className="muted">Month: <strong>{month}/{year}</strong></p>
                 </div>
                 <div className="sheet-summary">
-                  <div className="summary-box">
-                    <span className="muted">Current Month Salary</span>
-                    <strong>PKR {Math.round(baseTotalSal).toLocaleString()}</strong>
-                  </div>
-                  <div className="summary-box">
-                    <span className="muted">Current Month Deduction</span>
-                    <strong>PKR {totalDeductions.toLocaleString()}</strong>
-                  </div>
-                  <div className="summary-box">
-                    <span className="muted">Net Salary</span>
-                    <strong>PKR {totalSal.toLocaleString()}</strong>
-                  </div>
+                  <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(baseTotalSal).toLocaleString()}</strong></div>
+                  <div className="summary-box"><span className="muted">Current Month Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
+                  <div className="summary-box"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
                 </div>
               </div>
-
               <div className="table-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
-                      <th>Date</th>
-                      <th>Time In</th>
-                      <th>Time Out</th>
-                      <th>Duty Hrs</th>
-                        <th>Wrk Hrs</th>
-                      <th>Late</th>
-                      <th>OT</th>
-                      <th>Status</th>
-                      <th>Salary</th>
-                      <th>Ded</th>
-                      <th>Total</th>
+                      <th>Date</th><th>Time In</th><th>Time Out</th><th>Duty Hrs</th>
+                      <th>Wrk Hrs</th><th>Late</th><th>OT</th><th>Status</th>
+                      <th>Salary</th><th>Ded</th><th>Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {detailedAttendanceRows.map((r) => (
-                      <tr key={r.date}>
-                        <td>{r.date}</td>
-                        <td>{r.timeIn}</td>
-                        <td>{r.timeOut}</td>
-                        <td>{r.dutyHrs}</td>
-                          <td>{r.wrkHrs}</td>
-                        <td>{r.late}</td>
-                        <td>{r.ot}</td>
-                        <td>{r.status}</td>
-                        <td>{r.salary}</td>
-                        <td>{r.ded}</td>
-                        <td>{r.total}</td>
+                    {detailedAttendanceRows.map((r, idx) => (
+                      <tr key={`${r.date}-${r.timeIn}-${r.timeOut}-${idx}`}>
+                        <td>{r.date}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
+                        <td>{r.dutyHrs}</td><td>{r.wrkHrs}</td><td>{r.late}</td>
+                        <td>{r.ot}</td><td>{r.status}</td><td>{r.salary}</td>
+                        <td>{r.ded}</td><td>{r.total}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-
               <div className="sheet-totals">
                 <div className="totals-grid">
-                  <div className="totals-item">
-                    <span className="muted">Total Salary</span>
-                    <strong>PKR {Math.round(baseTotalSal).toLocaleString()}</strong>
-                  </div>
-                  <div className="totals-item">
-                    <span className="muted">Total Deduction</span>
-                    <strong>PKR {totalDeductions.toLocaleString()}</strong>
-                  </div>
-                  <div className="totals-item">
-                    <span className="muted">Total Overtime Bonus</span>
-                    <strong>PKR {overtimeAddition.toLocaleString()}</strong>
-                  </div>
-                  <div className="totals-item">
-                    <span className="muted">Net Salary</span>
-                    <strong>PKR {totalSal.toLocaleString()}</strong>
-                  </div>
+                  <div className="totals-item"><span className="muted">Total Salary</span><strong>PKR {Math.round(baseTotalSal).toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Total Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Total Overtime Bonus</span><strong>PKR {overtimeAddition.toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
                 </div>
               </div>
-
               <div className="sign-row">
-                <div className="sign">
-                  <span>Accountant</span>
-                </div>
-                <div className="sign">
-                  <span>Administrator</span>
-                </div>
-                <div className="sign">
-                  <span>Employee</span>
-                </div>
+                <div className="sign"><span>Accountant</span></div>
+                <div className="sign"><span>Administrator</span></div>
+                <div className="sign"><span>Employee</span></div>
               </div>
             </div>
           )}
@@ -1266,167 +1371,58 @@ export default function Reports() {
           <div className="report-head">
             <h3>Payroll Report</h3>
             <div className="export-actions print-hidden">
-              <Button
-                label="Excel"
-                variant="outline"
-                onClick={() =>
-                  handleExport(
-                    "excel",
-                    payrollTab === "detailed"
-                      ? "payroll-detailed"
-                      : payrollTab === "consolidated"
-                      ? "payroll-consolidated"
-                      : "salary-register"
-                  )
-                }
-              />
-              <Button
-                label="PDF"
-                variant="outline"
-                onClick={() =>
-                  handleExport(
-                    "pdf",
-                    payrollTab === "detailed"
-                      ? "payroll-detailed"
-                      : payrollTab === "consolidated"
-                      ? "payroll-consolidated"
-                      : "salary-register"
-                  )
-                }
-              />
-              <Button
-                label="Print"
-                variant="outline"
-                onClick={() =>
-                  handleExport(
-                    "print",
-                    payrollTab === "detailed"
-                      ? "payroll-detailed"
-                      : payrollTab === "consolidated"
-                      ? "payroll-consolidated"
-                      : "salary-register"
-                  )
-                }
-              />
+              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", payrollTab === "detailed" ? "payroll-detailed" : payrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   payrollTab === "detailed" ? "payroll-detailed" : payrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
+              <Button label="Print" variant="outline" onClick={() => handleExport("print", payrollTab === "detailed" ? "payroll-detailed" : payrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
             </div>
           </div>
-
           <div className="filters-row print-hidden">
             <select value={month} onChange={(e) => setMonth(e.target.value)} className="filter-select">
-              {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
+              {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (<option key={m} value={m}>{m}</option>))}
             </select>
             <select value={year} onChange={(e) => setYear(e.target.value)} className="filter-select">
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
+              <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
             </select>
-            <select className="filter-select">
-              <option>All Departments</option>
-            </select>
+            <select className="filter-select"><option>All Departments</option></select>
           </div>
-
           <div className="subtabs print-hidden">
-            <button
-              type="button"
-              className={payrollTab === "detailed" ? "active" : ""}
-              onClick={() => setPayrollTab("detailed")}
-            >
-              Detailed Payroll
-            </button>
-            <button
-              type="button"
-              className={payrollTab === "consolidated" ? "active" : ""}
-              onClick={() => setPayrollTab("consolidated")}
-            >
-              Consolidated Payroll
-            </button>
-            <button
-              type="button"
-              className={payrollTab === "register" ? "active" : ""}
-              onClick={() => setPayrollTab("register")}
-            >
-              Salary Register
-            </button>
+            <button type="button" className={payrollTab === "detailed"     ? "active" : ""} onClick={() => setPayrollTab("detailed")}>Detailed Payroll</button>
+            <button type="button" className={payrollTab === "consolidated" ? "active" : ""} onClick={() => setPayrollTab("consolidated")}>Consolidated Payroll</button>
+            <button type="button" className={payrollTab === "register"     ? "active" : ""} onClick={() => setPayrollTab("register")}>Salary Register</button>
           </div>
-
           {payrollTab === "detailed" && (
             <div className="print-area">
               <div className="paper-sheet">
                 <div className="paper-top">
                   <div className="paper-meta">
                     <p className="muted">Date: {new Date().toISOString().slice(0, 10)}</p>
-                    <h4 className="paper-title">
-                      {emp?.firstName} {emp?.lastName} — <span className="muted">{emp?.empCode}</span>
-                    </h4>
+                    <h4 className="paper-title">{emp?.firstName} {emp?.lastName} — <span className="muted">{emp?.empCode}</span></h4>
                     <p className="muted">{emp?.designation || 'Employee'} • {emp?.department || 'Department'}</p>
-                    <p className="muted">
-                      Month: <strong>{month}/{year}</strong>
-                    </p>
-                  </div>
-                  <div className="paper-boxes">
-                    <div className="paper-box">
-                      <span className="muted">Current Month Salary</span>
-                      <strong>PKR {totalSal.toLocaleString()}</strong>
-                    </div>
-                    <div className="paper-box">
-                      <span className="muted">Curr. Month Deduction</span>
-                      <strong>PKR 0</strong>
-                    </div>
-                    <div className="paper-box">
-                      <span className="muted">Net Salary</span>
-                      <strong>PKR {totalSal.toLocaleString()}</strong>
-                    </div>
+                    <p className="muted">Month: <strong>{month}/{year}</strong></p>
                   </div>
                 </div>
-
-                <div className="table-wrap">
-                  <table className="data-table">
+                <div className="table-responsive">
+                  <table className="rep-table small-print">
                     <thead>
                       <tr>
-                        <th>Emp ID</th>
-                        <th>Duty Dt</th>
-                        <th>Time In</th>
-                        <th>Time Out</th>
-                        <th>Duty Sts</th>
-                        <th>Late</th>
-                        <th>Duty Hrs</th>
-                        <th>Wrk Hrs</th>
-                        <th>Wrk Days</th>
-                        <th>O.T</th>
-                        <th>Per Day</th>
-                        <th>Salary</th>
-                        <th>O.T</th>
-                        <th>Ded</th>
-                        <th>Total</th>
+                        <th>Emp Code</th><th>Duty Date</th><th>Time In</th><th>Time Out</th>
+                        <th>Duty Sts</th><th>Late</th><th>Duty Hrs</th><th>Wrk Hrs</th>
+                        <th>Wrk Days</th><th>O.T</th><th>Per Day</th><th>Salary</th>
+                        <th>O.T</th><th>Ded</th><th>Total</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {payrollDetailedRows.map((r) => (
-                        <tr key={r.dutyDt}>
-                          <td>{r.empCode}</td>
-                          <td>{r.dutyDt}</td>
-                          <td>{r.timeIn}</td>
-                          <td>{r.timeOut}</td>
-                          <td>{r.dutySts}</td>
-                          <td>{r.late}</td>
-                          <td>{r.dutyHrs}</td>
-                          <td>{r.wrkHrs}</td>
-                          <td>{r.wrkDays}</td>
-                          <td>{r.ot}</td>
-                          <td>{r.perDay}</td>
-                          <td>{r.salary}</td>
-                          <td>{r.otAmt}</td>
-                          <td>{r.ded}</td>
-                          <td>{r.total}</td>
+                      {payrollDetailedRows.map((r, idx) => (
+                        <tr key={`${r.empCode}-${r.dutyDt}-${r.timeIn}-${r.timeOut}-${idx}`}>
+                          <td>{r.empCode}</td><td>{r.dutyDt}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
+                          <td>{r.dutySts}</td><td>{r.late}</td><td>{r.dutyHrs}</td><td>{r.wrkHrs}</td>
+                          <td>{r.wrkDays}</td><td>{r.ot}</td><td>{r.perDay}</td><td>{r.salary}</td>
+                          <td>{r.otAmt}</td><td>{r.ded}</td><td>{r.total}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-
                 <div className="paper-footer">
                   <div className="sign-row">
                     <div className="sign"><span>Accountant</span></div>
@@ -1437,55 +1433,88 @@ export default function Reports() {
               </div>
             </div>
           )}
-
           {payrollTab === "consolidated" && (
             <div className="table-wrap print-area">
-              <h4 className="section-title">Consolidated Payroll (3 columns)</h4>
+              <h4 className="section-title">Consolidated Payroll</h4>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Emp Code</th>
-                    <th>Name</th>
-                    <th>Net Salary</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {payrollConsolidatedRows.map((r) => (
-                    <tr key={r.code}>
-                      <td>{r.code}</td>
-                      <td>{r.name}</td>
-                      <td>{r.netSalary}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <thead><tr><th>Emp Code</th><th>Name</th><th>Net Salary</th></tr></thead>
+                <tbody>{payrollConsolidatedRows.map((r) => (<tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.netSalary}</td></tr>))}</tbody>
               </table>
             </div>
           )}
-
           {payrollTab === "register" && (
             <div className="table-wrap print-area">
-              <h4 className="section-title">Salary Register (3 columns)</h4>
+              <h4 className="section-title">Salary Register</h4>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Emp Code</th>
-                    <th>Name</th>
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {salaryRegisterRows.map((r) => (
-                    <tr key={r.code}>
-                      <td>{r.code}</td>
-                      <td>{r.name}</td>
-                      <td>{r.amount}</td>
-                    </tr>
-                  ))}
-                </tbody>
+                <thead><tr><th>Emp Code</th><th>Name</th><th>Amount</th></tr></thead>
+                <tbody>{salaryRegisterRows.map((r) => (<tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.amount}</td></tr>))}</tbody>
               </table>
               <div className="sheet-footer muted">Total employees: {salaryRegisterRows.length}</div>
             </div>
           )}
+        </Card>
+      )}
+
+      {activeReport === "test-attendance-raw" && (
+        <Card>
+          <div className="report-head">
+            <h3>Test Attendance Raw (Machine Punches)</h3>
+            <div className="export-actions print-hidden">
+              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", "test-attendance-raw")} />
+            </div>
+          </div>
+
+          <div className="filters-row print-hidden">
+            <Input
+              label="Emp Code" value={empCode}
+              onChange={(e) => setEmpCode(e.target.value)}
+              placeholder="EMP-001 or 104" className="w-full sm:w-72"
+            />
+            <select value={month} onChange={(e) => setMonth(e.target.value)} className="filter-select">
+              {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <select value={year} onChange={(e) => setYear(e.target.value)} className="filter-select">
+              {[String(now.getFullYear()), String(now.getFullYear() - 1), String(now.getFullYear() - 2)].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="table-wrap print-area">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Emp Code</th>
+                  <th>Name</th>
+                  <th>Punch Date</th>
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <th key={`punch-head-${i + 1}`}>{`Punch${i + 1}`}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rawPunchRows.map((row, idx) => (
+                  <tr key={`${row.empCode}-${row.punchDate}-${idx}`}>
+                    <td>{row.empCode}</td>
+                    <td>{row.name}</td>
+                    <td>{row.punchDate}</td>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <td key={`punch-cell-${row.empCode}-${row.punchDate}-${i + 1}`}>{row[`Punch${i + 1}`] || ""}</td>
+                    ))}
+                  </tr>
+                ))}
+                {!rawPunchRows.length && (
+                  <tr>
+                    <td colSpan={15} className="muted" style={{ textAlign: "center" }}>
+                      No raw machine punches found for selected filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 
@@ -1495,51 +1524,24 @@ export default function Reports() {
             <h3>Missing Salary Report</h3>
             <div className="export-actions print-hidden">
               <Button label="Excel" variant="outline" onClick={() => handleExport("excel", "missing")} />
-              <Button label="PDF" variant="outline" onClick={() => handleExport("pdf", "missing")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   "missing")} />
               <Button label="Print" variant="outline" onClick={() => handleExport("print", "missing")} />
             </div>
           </div>
-
           <div className="filters-row print-hidden">
             <select value={month} onChange={(e) => setMonth(e.target.value)} className="filter-select">
-              {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
+              {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (<option key={m} value={m}>{m}</option>))}
             </select>
             <select value={year} onChange={(e) => setYear(e.target.value)} className="filter-select">
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
+              <option value="2026">2026</option><option value="2025">2025</option><option value="2024">2024</option>
             </select>
           </div>
-
           <div className="table-wrap print-area">
             <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Name</th>
-                  <th>Active</th>
-                  <th>OT</th>
-                  <th>Month</th>
-                  <th>Amount</th>
-                  <th>Flag</th>
-                  <th>Voucher</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Code</th><th>Name</th><th>Active</th><th>OT</th><th>Month</th><th>Amount</th><th>Flag</th><th>Voucher</th></tr></thead>
               <tbody>
                 {missingSalaryRows.map((r) => (
-                  <tr key={r.code}>
-                    <td>{r.code}</td>
-                    <td>{r.name}</td>
-                    <td>{r.active}</td>
-                    <td>{r.ot}</td>
-                    <td>{r.month}</td>
-                    <td>{r.amount}</td>
-                    <td>{r.flag}</td>
-                    <td>{r.voucher || "-"}</td>
-                  </tr>
+                  <tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.active}</td><td>{r.ot}</td><td>{r.month}</td><td>{r.amount}</td><td>{r.flag}</td><td>{r.voucher || "-"}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -1553,192 +1555,78 @@ export default function Reports() {
             <h3>Employee CR Report</h3>
             <div className="export-actions print-hidden">
               <Button label="Excel" variant="outline" onClick={() => handleExport("excel", "cr")} />
-              <Button label="PDF" variant="outline" onClick={() => handleExport("pdf", "cr")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   "cr")} />
               <Button label="Print" variant="outline" onClick={() => handleExport("print", "cr")} />
             </div>
           </div>
-
           <div className="filters-row print-hidden">
-            <Input
-              label="Search by Emp Code"
-              value={empCode}
-              onChange={(e) => setEmpCode(e.target.value)}
-              placeholder="EMP-001"
-              className="w-full sm:w-72"
-            />
+            <Input label="Search by Emp Code" value={empCode} onChange={(e) => setEmpCode(e.target.value)} placeholder="EMP-001" className="w-full sm:w-72" />
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "cr")} />
           </div>
-
           <div className="cr-sheet print-area">
             <div className="cr-title">
               <h4>Employee Confidential Report (CR)</h4>
               <p className="muted">Printable form — UI only</p>
             </div>
-
             <div className="cr-section">
               <h5>1. Employee Basic Information</h5>
               <table className="form-table">
                 <tbody>
-                  <tr>
-                    <td>Employee ID</td>
-                    <td>{emp?.empCode}</td>
-                    <td>Employee Name</td>
-                    <td>{emp?.firstName} {emp?.lastName}</td>
-                  </tr>
-                  <tr>
-                    <td>Father Name</td>
-                    <td>{emp?.fatherName || "-"}</td>
-                    <td>CNIC</td>
-                    <td>{emp?.nic || "-"}</td>
-                  </tr>
-                  <tr>
-                    <td>Department</td>
-                    <td>{emp?.department || "-"}</td>
-                    <td>Designation</td>
-                    <td>{emp?.designation || "-"}</td>
-                  </tr>
-                  <tr>
-                    <td>Date of Joining</td>
-                    <td>{formatDate(emp?.joiningDate)}</td>
-                    <td>Employment Status</td>
-                    <td>{emp?.status || "-"}</td>
-                  </tr>
+                  <tr><td>Employee ID</td><td>{emp?.empCode}</td><td>Employee Name</td><td>{emp?.firstName} {emp?.lastName}</td></tr>
+                  <tr><td>Father Name</td><td>{emp?.fatherName || "-"}</td><td>CNIC</td><td>{emp?.nic || "-"}</td></tr>
+                  <tr><td>Department</td><td>{emp?.department || "-"}</td><td>Designation</td><td>{emp?.designation || "-"}</td></tr>
+                  <tr><td>Date of Joining</td><td>{formatDate(emp?.joiningDate)}</td><td>Employment Status</td><td>{emp?.status || "-"}</td></tr>
                 </tbody>
               </table>
             </div>
-
             <div className="cr-section">
               <h5>2. Salary Increment History</h5>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Previous Salary</th>
-                    <th>New Salary</th>
-                    <th>Approved By</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Date</th><th>Previous Salary</th><th>New Salary</th><th>Approved By</th></tr></thead>
                 <tbody>
-                  <tr>
-                    <td>2024-01-01</td>
-                    <td>PKR 50,000</td>
-                    <td>PKR 55,000</td>
-                    <td>HR Manager</td>
-                  </tr>
-                  <tr>
-                    <td>2025-01-01</td>
-                    <td>PKR 55,000</td>
-                    <td>PKR 60,000</td>
-                    <td>Administrator</td>
-                  </tr>
+                  <tr><td>2024-01-01</td><td>PKR 50,000</td><td>PKR 55,000</td><td>HR Manager</td></tr>
+                  <tr><td>2025-01-01</td><td>PKR 55,000</td><td>PKR 60,000</td><td>Administrator</td></tr>
                 </tbody>
               </table>
             </div>
-
             <div className="cr-section">
               <h5>3. Attendance & Salary Summary</h5>
               <table className="form-table">
                 <tbody>
-                  <tr>
-                    <td>Working Days</td>
-                    <td>26</td>
-                    <td>Late</td>
-                    <td>2</td>
-                  </tr>
-                  <tr>
-                    <td>Short Leave</td>
-                    <td>1</td>
-                    <td>Gate Pass</td>
-                    <td>1</td>
-                  </tr>
-                  <tr>
-                    <td>Overtime (Hours)</td>
-                    <td>4</td>
-                    <td>Net Salary</td>
-                    <td>PKR {totalSal.toLocaleString()}</td>
-                  </tr>
+                  <tr><td>Working Days</td><td>26</td><td>Late</td><td>2</td></tr>
+                  <tr><td>Short Leave</td><td>1</td><td>Gate Pass</td><td>1</td></tr>
+                  <tr><td>Overtime (Hours)</td><td>4</td><td>Net Salary</td><td>PKR {totalSal.toLocaleString()}</td></tr>
                 </tbody>
               </table>
             </div>
-
             <div className="cr-grid">
               <div className="cr-section">
                 <h5>4. Performance (1–5 scale)</h5>
                 <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Criteria</th>
-                      <th>Rating</th>
-                      <th>Remarks</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Criteria</th><th>Rating</th><th>Remarks</th></tr></thead>
                   <tbody>
-                    <tr>
-                      <td>Punctuality</td>
-                      <td>4</td>
-                      <td>Very Good</td>
-                    </tr>
-                    <tr>
-                      <td>Work Quality</td>
-                      <td>4</td>
-                      <td>Consistent</td>
-                    </tr>
-                    <tr>
-                      <td>Team Work</td>
-                      <td>5</td>
-                      <td>Excellent</td>
-                    </tr>
+                    <tr><td>Punctuality</td><td>4</td><td>Very Good</td></tr>
+                    <tr><td>Work Quality</td><td>4</td><td>Consistent</td></tr>
+                    <tr><td>Team Work</td><td>5</td><td>Excellent</td></tr>
                   </tbody>
                 </table>
               </div>
-
               <div className="cr-section">
                 <h5>5. Disciplinary Actions / Warnings</h5>
                 <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Action Type</th>
-                      <th>Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>-</td>
-                      <td>-</td>
-                      <td>-</td>
-                    </tr>
-                  </tbody>
+                  <thead><tr><th>Date</th><th>Action Type</th><th>Reason</th></tr></thead>
+                  <tbody><tr><td>-</td><td>-</td><td>-</td></tr></tbody>
                 </table>
               </div>
             </div>
-
             <div className="cr-section">
               <h5>6. Final Approval</h5>
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Signature</th>
-                    <th>Date</th>
-                  </tr>
-                </thead>
+                <thead><tr><th>Name</th><th>Signature</th><th>Date</th></tr></thead>
                 <tbody>
-                  <tr>
-                    <td>Reporting Manager</td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td>HR Manager</td>
-                    <td></td>
-                    <td></td>
-                  </tr>
-                  <tr>
-                    <td>Admin Approval</td>
-                    <td></td>
-                    <td></td>
-                  </tr>
+                  <tr><td>Reporting Manager</td><td></td><td></td></tr>
+                  <tr><td>HR Manager</td><td></td><td></td></tr>
+                  <tr><td>Admin Approval</td><td></td><td></td></tr>
                 </tbody>
               </table>
             </div>

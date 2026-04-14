@@ -18,12 +18,120 @@ import logo from '../../assets/logo.jpg';
 import { format } from 'date-fns';
 import './AttendanceList.scss';
 
+const STATUS_OPTIONS = [
+  { value: 'present', label: 'Present' },
+  { value: 'absent', label: 'Absent' },
+  { value: 'holiday_not_avail', label: 'Holiday Not Avail' },
+  { value: 'holiday_avail', label: 'Holiday Avail' },
+  { value: 'off_avail', label: 'Off Avail' },
+  { value: 'off_not_avail', label: 'Off Not Avail' },
+  { value: 'leave', label: 'Leave' },
+  { value: 'leave_with_pay', label: 'Leave With Pay' },
+];
+
+const toStatusLabel = (status) => {
+  const key = String(status || '').toLowerCase();
+  const opt = STATUS_OPTIONS.find((o) => o.value === key);
+  if (opt) return opt.label;
+  if (!key) return 'Present';
+  return key
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+};
+
+const toStatusVariant = (status) => {
+  const key = String(status || '').toLowerCase();
+  if (key === 'present' || key === 'leave_with_pay' || key === 'holiday_avail' || key === 'off_avail') return 'success';
+  if (key === 'absent' || key === 'leave') return 'danger';
+  if (key === 'holiday_not_avail' || key === 'off_not_avail') return 'info';
+  return 'warning';
+};
+
+const toDateOnly = (value) => {
+  if (!value) return '';
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const ymdPrefix = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (ymdPrefix) return ymdPrefix[1];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const timeToMinutes = (value) => {
+  if (!value) return null;
+  const t = String(value).slice(0, 5);
+  const [hh, mm] = t.split(':').map(Number);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  return hh * 60 + mm;
+};
+
+const normalize24HourTime = (value) => {
+  if (!value || value === '-') return '';
+  let raw = String(value).trim().replace(/\(\+\d+d\)/gi, '').trim();
+
+  if (!raw) return '';
+
+  const hhmmOrHhmm = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (hhmmOrHhmm) {
+    const hh = Number(hhmmOrHhmm[1]);
+    const mm = Number(hhmmOrHhmm[2]);
+    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+  }
+
+  const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
+  if (ampm) {
+    let hh = Number(ampm[1]);
+    const mm = Number(ampm[2]);
+    const meridiem = ampm[3].toUpperCase();
+    if (hh < 1 || hh > 12 || mm < 0 || mm > 59) return '';
+    if (meridiem === 'PM' && hh < 12) hh += 12;
+    if (meridiem === 'AM' && hh === 12) hh = 0;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  const datePartCandidate = raw.includes('T')
+    ? raw.split('T')[1]
+    : (raw.includes(' ') && raw.split(' ').pop().includes(':') ? raw.split(' ').pop() : '');
+  if (datePartCandidate) {
+    return normalize24HourTime(datePartCandidate);
+  }
+
+  return '';
+};
+
+const inferDateOut = ({ dateIn, dateOut, timeIn, timeOut }) => {
+  const inDate = toDateOnly(dateIn);
+  const outDate = toDateOnly(dateOut);
+  if (outDate) return outDate;
+  if (!inDate) return '';
+
+  const inM = timeToMinutes(timeIn);
+  const outM = timeToMinutes(timeOut);
+  if (inM == null || outM == null) return inDate;
+
+  // Overnight case: e.g. 21:00 -> 09:00 means checkout on next day
+  if (outM <= inM) {
+    const d = new Date(`${inDate}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+  return inDate;
+};
+
 export default function AttendanceList() {
   const today = new Date();
   const defaultApiDate = today.toISOString().slice(0, 10);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
   const [editModal, setEditModal] = useState(null);
+  const [editRows, setEditRows] = useState([]); // Multiple rows for split shifts
   const [addModal, setAddModal] = useState(false);
   const [overrides, setOverrides] = useState([]);
   const [apiDateUi, setApiDateUi] = useState(defaultApiDate);
@@ -37,7 +145,100 @@ export default function AttendanceList() {
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { employees, fetchEmployees } = useEmployeeStore();
 
-  const { register, handleSubmit, reset } = useForm();
+  const [monthlyEmpCode, setMonthlyEmpCode] = useState('');
+  const [monthlyMonth, setMonthlyMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [monthlyYear, setMonthlyYear] = useState(String(new Date().getFullYear()));
+  const [monthlyApiData, setMonthlyApiData] = useState([]);
+  const [monthlyLoading, setMonthlyLoading] = useState(false);
+
+  const fetchMonthlyApiData = async () => {
+    if (!monthlyEmpCode) return alert("Please enter Employee Code");
+    setMonthlyLoading(true);
+    try {
+      const mm = monthlyMonth.padStart(2, '0');
+      const startDate = `${monthlyYear}/${mm}/01`;
+      const yyyyNum = parseInt(monthlyYear);
+      const mmNum = parseInt(mm);
+      const nextEndDate = new Date(yyyyNum, mmNum, 1);
+      const endDateStr = `${nextEndDate.getFullYear()}/${String(nextEndDate.getMonth() + 1).padStart(2,'0')}/01`;
+
+      const res = await fetch('http://localhost:5001/api/attendance/external', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ Dates: startDate, DatesTo: endDateStr })
+      });
+      const json = await res.json();
+      
+      if (json.status === 200 && Array.isArray(json.data)) {
+          const target = monthlyEmpCode.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const filtered = json.data.filter(row => {
+            const id = String(row.enrollid || row.enrollId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            return id === target;
+          });
+
+          const allPunches = [];
+          filtered.forEach((row) => {
+            const d = String(row.arrive_date || row.date || '').split(' ')[0];
+            let t = String(row.arrive_time || row.time_in || '').trim();
+            if (t.includes(' ')) t = t.split(' ').pop();
+            t = normalize24HourTime(t);
+            if (d && t) {
+              const dt = new Date(`${d}T${t}`);
+              if (!Number.isNaN(dt.getTime())) {
+                allPunches.push(dt);
+              }
+            }
+          });
+
+          allPunches.sort((a, b) => a.getTime() - b.getTime());
+
+          const pairs = [];
+          let currentIn = null;
+          for (let p of allPunches) {
+            if (!currentIn) {
+              currentIn = p;
+            } else {
+              const diffHours = (p.getTime() - currentIn.getTime()) / 3600000;
+              if (diffHours < 0.2) {
+                // Ignore double tap
+              } else if (diffHours <= 16) {
+                pairs.push({ inTemp: currentIn, outTemp: p });
+                currentIn = null;
+              } else {
+                pairs.push({ inTemp: currentIn, outTemp: null });
+                currentIn = p;
+              }
+            }
+          }
+          if (currentIn) {
+            pairs.push({ inTemp: currentIn, outTemp: null });
+          }
+
+          const tableData = pairs.map((p, i) => {
+            return {
+              date: p.inTemp ? p.inTemp.toISOString().split('T')[0] : '-',
+              timeIn: p.inTemp ? format(p.inTemp, 'dd-MM-yyyy HH:mm') : '-',
+              timeOut: p.outTemp ? format(p.outTemp, 'dd-MM-yyyy HH:mm') : 'Missed OUT',
+              allPunches: `Shift #${i + 1}`,
+            };
+          });
+
+          setMonthlyApiData(tableData);
+          if(tableData.length === 0) alert("No records found for this month");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Failed to fetch API");
+    }
+    setMonthlyLoading(false);
+  };
+
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
+
+  const register24Hour = (fieldName) => register(fieldName, {
+    setValueAs: (v) => normalize24HourTime(v),
+    validate: (v) => !v || /^([01]\d|2[0-3]):([0-5]\d)$/.test(v) || 'Use 24-hour HH:mm'
+  });
 
   const OVERRIDE_KEY = 'attendanceOverrides';
   const loadOverrides = () => {
@@ -53,31 +254,10 @@ export default function AttendanceList() {
   };
 
   const toInputTimeValue = (value) => {
-    if (!value || value === '-') return '';
-    const raw = String(value).trim();
-
-    // Already HH:mm or HH:mm:ss
-    if (/^\d{2}:\d{2}(:\d{2})?$/.test(raw)) return raw.slice(0, 5);
-
-    // DateTime string: 2026-03-01T08:30:00 or 2026-03-01 08:30:00
-    const timePart = raw.includes('T')
-      ? raw.split('T')[1]
-      : (raw.includes(' ') ? raw.split(' ').pop() : raw);
-    if (/^\d{2}:\d{2}(:\d{2})?$/.test(timePart)) return timePart.slice(0, 5);
-
-    // 12-hour value like 08:30 AM
-    const match = raw.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
-    if (match) {
-      let hh = Number(match[1]);
-      const mm = match[2];
-      const ampm = match[3].toUpperCase();
-      if (ampm === 'PM' && hh < 12) hh += 12;
-      if (ampm === 'AM' && hh === 12) hh = 0;
-      return `${String(hh).padStart(2, '0')}:${mm}`;
-    }
-
-    return '';
+    return normalize24HourTime(value);
   };
+
+  const addModalWaiveDeduction = watch('waiveDeduction');
 
   useEffect(() => {
     setModule('employee');
@@ -87,16 +267,68 @@ export default function AttendanceList() {
   }, [setModule]);
 
   useEffect(() => {
-    if (!editModal) return;
+    if (!editModal) {
+      setEditRows([]);
+      return;
+    }
+    
+  const modalDate = toDateOnly(editModal.dateIn || editModal.date || editModal.dateOut);
+  const modalEmpCode = String(editModal.empCode || '').trim();
+    
+    // Find ALL overrides for this employee on this date
+    const savedOverrides = overrides.filter((o) => 
+      String(o.empCode || '').trim() === modalEmpCode && 
+      toDateOnly(o.dateIn || o.date) === modalDate
+    );
+    
+    if (savedOverrides.length > 0) {
+      // Load all saved overrides into editRows
+      setEditRows(savedOverrides.map(override => ({
+        id: override.id || `existing-${Date.now()}-${Math.random()}`,
+        dateIn: override.dateIn || override.date || modalDate,
+        dateOut: override.dateOut || override.date || modalDate,
+        timeIn: toInputTimeValue(override.timeIn),
+        timeOut: toInputTimeValue(override.timeOut),
+        status: override.status || 'present',
+        manualWrkHrs: override.manualWrkHrs || '',
+        manualOvertime: override.manualOvertime || '',
+        manualDeduction: override.manualDeduction || '',
+        manualTotal: override.manualTotal || '',
+        waiveDeduction: Boolean(override.waiveDeduction),
+        isManual: true, // All saved overrides can be edited/deleted
+      })));
+    } else {
+      // No overrides found, initialize with original row from editModal
+      setEditRows([{
+        id: `initial-${Date.now()}`,
+        dateIn: editModal.dateIn || editModal.date || '',
+        dateOut: editModal.dateOut || editModal.date || '',
+        timeIn: toInputTimeValue(editModal.timeIn),
+        timeOut: toInputTimeValue(editModal.timeOut),
+        status: editModal.status || 'present',
+        manualWrkHrs: editModal.manualWrkHrs || '',
+        manualOvertime: editModal.manualOvertime || '',
+        manualDeduction: editModal.manualDeduction || '',
+        manualTotal: editModal.manualTotal || '',
+        waiveDeduction: Boolean(editModal.waiveDeduction),
+        isManual: false, // Original row
+      }]);
+    }
+    
     reset({
       employee: employees.find((e) => String(e.empCode) === String(editModal.empCode))?.id || '',
-      dateIn: editModal.date || '',
-      dateOut: editModal.date || '',
+      dateIn: editModal.dateIn || editModal.date || '',
+      dateOut: editModal.dateOut || editModal.date || '',
       timeIn: toInputTimeValue(editModal.timeIn),
       timeOut: toInputTimeValue(editModal.timeOut),
-      status: editModal.status || 'present'
+      status: editModal.status || 'present',
+      manualWrkHrs: editModal.manualWrkHrs || '',
+      manualOvertime: editModal.manualOvertime || '',
+      manualDeduction: editModal.manualDeduction || '',
+      manualTotal: editModal.manualTotal || '',
+      waiveDeduction: Boolean(editModal.waiveDeduction),
     });
-  }, [editModal, employees, reset]);
+  }, [editModal, employees, reset, overrides]);
 
   const exportMeta = {
     address: 'C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210',
@@ -223,12 +455,22 @@ export default function AttendanceList() {
     }
     setApiLoading(true);
     setApiError('');
-    const apiDate = toApiDate(dateValue);
+    const apiDateObj = new Date(dateValue);
+    
+    const startDateObj = new Date(apiDateObj);
+    startDateObj.setDate(startDateObj.getDate() - 1);
+    
+    const endDateObj = new Date(apiDateObj);
+    endDateObj.setDate(endDateObj.getDate() + 1);
+
+    const apiDateFrom = toApiDate(startDateObj.toISOString().split('T')[0]);
+    const apiDateTo = toApiDate(endDateObj.toISOString().split('T')[0]);
+
     try {
       const res = await fetch('http://localhost:5001/api/attendance/external', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Dates: apiDate, DatesTo: apiDate })
+        body: JSON.stringify({ Dates: apiDateFrom, DatesTo: apiDateTo })
       });
       const json = await res.json();
       if (json.status === 200 && Array.isArray(json.data)) {
@@ -249,21 +491,58 @@ export default function AttendanceList() {
   }, [apiDateUi]);
 
   const normalizedStaffId = apiStaffId.trim();
-  const filteredApiRows = normalizedStaffId
-    ? apiRows.filter((row) => String(row.enrollid || row.enrollId || '').trim() === normalizedStaffId)
-    : apiRows;
+  const filteredApiRows = useMemo(() => {
+    let filtered = normalizedStaffId
+      ? apiRows.filter((row) => String(row.enrollid || row.enrollId || '').trim() === normalizedStaffId)
+      : apiRows;
+    
+    // Daily View must follow apiDateUi date selection
+    const targetDate = toDateOnly(apiDateUi || selectedDate);
+    if (targetDate) {
+      filtered = filtered.filter((row) => {
+        const rowDate = toDateOnly(row.arrive_date || row.date);
+        return rowDate === targetDate;
+      });
+    }
+    
+    return filtered;
+  }, [apiRows, normalizedStaffId, apiDateUi, selectedDate]);
 
   const upsertOverride = (payload) => {
-    const dateValue = payload.date || payload.dateIn || payload.dateOut;
-    if (!payload.empCode || !dateValue) return;
-    const next = overrides.filter((o) => !(String(o.empCode) === String(payload.empCode) && o.date === dateValue));
+    const dateIn = toDateOnly(payload.dateIn || payload.date || payload.dateOut);
+    const dateOut = inferDateOut({
+      dateIn,
+      dateOut: payload.dateOut,
+      timeIn: payload.timeIn,
+      timeOut: payload.timeOut
+    });
+    if (!payload.empCode || !dateIn) return;
+    
+    // If payload has an ID, replace that specific record
+    // Otherwise, allow multiple entries for same date (split shifts)
+    const next = overrides.filter((o) => {
+      // If we're updating an existing override (has matching ID), remove it
+      if (payload.id && o.id === payload.id) {
+        return false;
+      }
+      // Keep all other overrides (even if same empCode + date)
+      return true;
+    });
+    
     next.unshift({
-      id: payload.id || Date.now(),
+      id: payload.id || `${Date.now()}-${Math.random()}`,
       empCode: payload.empCode,
-      date: dateValue,
+      date: dateIn, // backward compatibility for old consumers
+      dateIn,
+      dateOut,
       timeIn: payload.timeIn || '',
       timeOut: payload.timeOut || '',
-      status: payload.status || 'present'
+      status: payload.status || 'present',
+      manualWrkHrs: payload.manualWrkHrs,
+      manualOvertime: payload.manualOvertime,
+      manualDeduction: payload.manualDeduction,
+      manualTotal: payload.manualTotal,
+      waiveDeduction: Boolean(payload.waiveDeduction),
     });
     saveOverrides(next);
   };
@@ -274,15 +553,64 @@ export default function AttendanceList() {
       toast.error('Employee not found');
       return;
     }
-    upsertOverride({
-      empCode: emp.empCode,
-      date: data.dateIn || data.dateOut,
-      timeIn: data.timeIn || toInputTimeValue(editModal?.timeIn),
-      timeOut: data.timeOut || toInputTimeValue(editModal?.timeOut),
-      status: data.status
+
+    const modalDate = toDateOnly(editModal?.dateIn || editModal?.date || editModal?.dateOut);
+    const normalizedRows = editRows
+      .map((row, idx) => {
+        const dateIn = toDateOnly(row.dateIn || row.date || modalDate);
+        if (!dateIn) return null;
+
+        const timeIn = normalize24HourTime(row.timeIn);
+        const timeOut = normalize24HourTime(row.timeOut);
+        const dateOut = inferDateOut({
+          dateIn,
+          dateOut: row.dateOut,
+          timeIn,
+          timeOut,
+        });
+
+        const existingId = String(row.id || '');
+        const id = existingId && !existingId.startsWith('initial-')
+          ? existingId
+          : `${Date.now()}-${idx}-${Math.random()}`;
+
+        return {
+          id,
+          empCode: emp.empCode,
+          date: dateIn,
+          dateIn,
+          dateOut,
+          timeIn: timeIn || '',
+          timeOut: timeOut || '',
+          status: row.status || 'present',
+          manualWrkHrs: row.manualWrkHrs ? parseFloat(row.manualWrkHrs) : null,
+          manualOvertime: row.manualOvertime ? parseFloat(row.manualOvertime) : null,
+          manualDeduction: row.waiveDeduction ? null : (row.manualDeduction ? parseFloat(row.manualDeduction) : null),
+          manualTotal: row.manualTotal ? parseFloat(row.manualTotal) : null,
+          waiveDeduction: Boolean(row.waiveDeduction),
+        };
+      })
+      .filter(Boolean);
+
+    if (!normalizedRows.length) {
+      toast.error('At least one valid row is required');
+      return;
+    }
+
+    const datesToReplace = new Set(normalizedRows.map((r) => toDateOnly(r.dateIn || r.date)));
+    if (modalDate) datesToReplace.add(modalDate);
+
+    const retained = overrides.filter((o) => {
+      const sameEmp = String(o.empCode || '').trim() === String(emp.empCode || '').trim();
+      const oDate = toDateOnly(o.dateIn || o.date);
+      return !(sameEmp && datesToReplace.has(oDate));
     });
-    toast.success('Attendance updated');
+
+    saveOverrides([...normalizedRows, ...retained]);
+    
+    toast.success(`${editRows.length} attendance row(s) updated`);
     setEditModal(null);
+    setEditRows([]);
     reset();
   };
 
@@ -294,24 +622,30 @@ export default function AttendanceList() {
     }
     upsertOverride({
       empCode: emp.empCode,
-      date: data.dateIn || data.dateOut,
+      dateIn: data.dateIn,
+      dateOut: data.dateOut,
       timeIn: data.timeIn,
       timeOut: data.timeOut,
-      status: data.status
+      status: data.status,
+      manualWrkHrs: data.manualWrkHrs ? parseFloat(data.manualWrkHrs) : null,
+      manualOvertime: data.manualOvertime ? parseFloat(data.manualOvertime) : null,
+      manualDeduction: data.waiveDeduction ? null : (data.manualDeduction ? parseFloat(data.manualDeduction) : null),
+      waiveDeduction: Boolean(data.waiveDeduction),
     });
     toast.success('Manual entry added');
     setAddModal(false);
     reset();
   };
 
-  const getOverride = (empCode, date) => overrides.find((o) => String(o.empCode) === String(empCode) && o.date === date);
+  const getOverride = (empCode, date) => overrides.find((o) => String(o.empCode) === String(empCode) && toDateOnly(o.dateIn || o.date) === date);
   const apiTimesByEmp = useMemo(() => {
     const map = {};
+    const selected = toDateOnly(selectedDate);
     apiRows.forEach((row) => {
       const enrollId = String(row.enrollid || row.enrollId || '').trim();
       if (!enrollId) return;
-      const dateKey = String(row.arrive_date || row.date || '').split(' ')[0];
-      if (selectedDate && dateKey && dateKey !== selectedDate) return;
+      const dateKey = toDateOnly(row.arrive_date || row.date);
+      if (selected && dateKey && dateKey !== selected) return;
       let timeVal = String(row.arrive_time || row.time_in || '').trim();
       if (timeVal.includes(' ')) {
         timeVal = timeVal.split(' ').pop();
@@ -337,7 +671,7 @@ export default function AttendanceList() {
       if (!value || !selectedDate) return '';
       const dt = new Date(`${selectedDate}T${value}`);
       if (Number.isNaN(dt.getTime())) return value;
-      return format(dt, 'hh:mm a');
+      return format(dt, 'HH:mm');
     };
     return {
       timeIn: toDisplay(raw.timeIn),
@@ -346,46 +680,111 @@ export default function AttendanceList() {
     };
   };
   const combinedRecords = (() => {
+    const normalizeCode = (v) => String(v ?? '').trim();
+  const selectedDateOnly = toDateOnly(selectedDate);
+
     const attendanceByEmpDate = attendanceRecords.reduce((acc, record) => {
-      const dateValue = record.date ? format(new Date(record.date), 'yyyy-MM-dd') : '';
-      if (!record.employee?.empCode || !dateValue) return acc;
-      const key = `${record.employee.empCode}-${dateValue}`;
+      const dateValue = toDateOnly(record.date);
+      const empCode = normalizeCode(record.employee?.empCode);
+      if (!empCode || !dateValue) return acc;
+      const key = `${empCode}-${dateValue}`;
       acc[key] = record;
       return acc;
     }, {});
 
-    const base = employees.map((emp) => {
-      const dateValue = selectedDate || '';
-      const key = `${emp.empCode}-${dateValue}`;
-      const record = attendanceByEmpDate[key];
-      const override = getOverride(emp.empCode, dateValue);
-      const apiTimes = getApiTimes(emp.empCode);
+    // Strictly keep overrides of selected date only (fixes random date leakage)
+    const overridesForSelectedDate = overrides.filter((o) =>
+      toDateOnly(o.dateIn || o.date) === selectedDateOnly
+    );
 
-      return {
-        key: `row-${emp.empCode}-${dateValue}`,
+    const overridesByEmp = overridesForSelectedDate.reduce((acc, o) => {
+      const code = normalizeCode(o.empCode);
+      if (!code) return acc;
+      if (!acc[code]) acc[code] = [];
+      acc[code].push(o);
+      return acc;
+    }, {});
+
+    const base = employees.flatMap((emp) => {
+      const empCode = normalizeCode(emp.empCode);
+      const dateValue = selectedDateOnly || '';
+      const key = `${empCode}-${dateValue}`;
+      const record = attendanceByEmpDate[key];
+      const apiTimes = getApiTimes(emp.empCode);
+      const empOverrides = overridesByEmp[empCode] || [];
+
+      // If there are one or more saved overrides for selected date, show them all.
+      if (empOverrides.length > 0) {
+        return empOverrides.map((o, idx) => {
+          const dateInVal = toDateOnly(o.dateIn || o.date) || dateValue;
+          const timeInVal = o.timeIn || '-';
+          const timeOutVal = String(o.timeOut || '-').replace(' (+1d)', '');
+          const dateOutVal = toDateOnly(o.dateOut) || inferDateOut({
+            dateIn: selectedDateOnly || dateInVal,
+            dateOut: '',
+            timeIn: timeInVal,
+            timeOut: timeOutVal,
+          });
+
+          return {
+            key: `override-${o.id || `${empCode}-${dateInVal}-${idx}`}`,
+            empCode: emp.empCode,
+            name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+            date: selectedDateOnly || dateInVal,
+            actualDateOut: dateOutVal || dateInVal,
+            timeIn: timeInVal,
+            timeOut: timeOutVal,
+            status: o.status || 'present',
+          };
+        });
+      }
+
+      // Otherwise fallback to DB/API for selected date.
+      const parsedIn = record?.actualIn ? new Date(record.actualIn) : null;
+      const parsedOut = record?.actualOut ? new Date(record.actualOut) : null;
+
+      const timeInVal = parsedIn ? format(parsedIn, 'HH:mm') : (apiTimes.timeIn || '');
+      let timeOutVal = parsedOut ? format(parsedOut, 'HH:mm') : (apiTimes.timeOut || '');
+      timeOutVal = String(timeOutVal || '').replace(' (+1d)', '');
+
+      let dateOutVal = inferDateOut({ dateIn: dateValue, dateOut: '', timeIn: timeInVal, timeOut: timeOutVal });
+
+      return [{
+        key: `row-${empCode}-${dateValue}`,
         empCode: emp.empCode,
         name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
         date: dateValue,
-        timeIn: override?.timeIn || (record?.actualIn ? format(new Date(record.actualIn), 'hh:mm a') : (apiTimes.timeIn || '-')),
-        timeOut: override?.timeOut || (record?.actualOut ? format(new Date(record.actualOut), 'hh:mm a') : (apiTimes.timeOut || '-')),
-        status: override?.status || record?.status || (apiTimes.hasData ? 'present' : 'absent')
-      };
+        actualDateOut: dateOutVal || dateValue,
+        timeIn: timeInVal || '-',
+        timeOut: timeOutVal || '-',
+        status: record?.status || (apiTimes.hasData ? 'present' : 'absent')
+      }];
     });
 
-    const extra = overrides.filter((o) => !employees.some((emp) => emp.empCode === o.empCode)).map((o) => {
-      const emp = employees.find((e) => e.empCode === o.empCode);
-      return {
-        key: `override-${o.id}`,
-        empCode: o.empCode,
-        name: emp ? `${emp.firstName} ${emp.lastName}` : '-',
-        date: o.date,
-        timeIn: o.timeIn || '-',
-        timeOut: o.timeOut || '-',
-        status: o.status || 'present'
-      };
-    });
+    // Overrides whose empCode is not present in employee list (still only selected date)
+    const extra = overridesForSelectedDate
+      .filter((o) => !employees.some((emp) => normalizeCode(emp.empCode) === normalizeCode(o.empCode)))
+      .map((o) => {
+        const dateInVal = toDateOnly(o.dateIn || o.date) || selectedDateOnly;
+        const dateOutVal = toDateOnly(o.dateOut) || dateInVal;
+        const outTime = String(o.timeOut || '-').replace(' (+1d)', '');
+        return {
+          key: `override-extra-${o.id}`,
+          empCode: o.empCode,
+          name: '-',
+          date: selectedDateOnly || dateInVal,
+          actualDateOut: dateOutVal,
+          timeIn: o.timeIn || '-',
+          timeOut: outTime,
+          status: o.status || 'present'
+        };
+      });
 
-    return [...extra, ...base];
+    // Final hard guard: never allow rows outside selected date in All Records
+    return [...extra, ...base].filter((row) => {
+      if (!selectedDateOnly) return true;
+      return toDateOnly(row.date) === selectedDateOnly;
+    });
   })();
 
   const dateOptions = useMemo(() => {
@@ -403,7 +802,8 @@ export default function AttendanceList() {
   const filteredRecords = useMemo(() => {
     let result = combinedRecords;
     if (selectedDate) {
-      result = result.filter((row) => row.date === selectedDate);
+      const selected = toDateOnly(selectedDate);
+      result = result.filter((row) => toDateOnly(row.date) === selected);
     }
     if (searchName) {
       const q = searchName.toLowerCase();
@@ -433,6 +833,9 @@ export default function AttendanceList() {
         </button>
         <button className={activeTab === 1 ? 'active' : ''} onClick={() => setActiveTab(1)}>
           All Records
+        </button>
+        <button className={activeTab === 2 ? 'active' : ''} onClick={() => setActiveTab(2)}>
+          Monthly API Logs
         </button>
       </div>
 
@@ -550,9 +953,8 @@ export default function AttendanceList() {
                 <tr>
                   <th>Code</th>
                   <th>Name</th>
-                  <th>Date</th>
-                  <th>Time In</th>
-                  <th>Time Out</th>
+                  <th>Time IN</th>
+                  <th>Time OUT</th>
                   <th>Status</th>
                   <th>Edit</th>
                 </tr>
@@ -562,13 +964,18 @@ export default function AttendanceList() {
                   <tr key={row.key}>
                     <td>{row.empCode || '-'}</td>
                     <td>{row.name}</td>
-                    <td>{row.date ? format(new Date(row.date), 'dd MMM yyyy') : '-'}</td>
-                    <td>{row.timeIn || '-'}</td>
-                    <td>{row.timeOut || '-'}</td>
+                    <td>
+                      {row.date ? format(new Date(row.date), 'dd MMM yyyy') : '-'}
+                      {row.timeIn !== '-' && <span className="ml-2 font-semibold"> {row.timeIn}</span>}
+                    </td>
+                    <td>
+                      {row.actualDateOut ? format(new Date(row.actualDateOut), 'dd MMM yyyy') : '-'}
+                      {row.timeOut !== '-' && <span className="ml-2 font-semibold"> {row.timeOut}</span>}
+                    </td>
                     <td>
                       <Badge
-                        label={row.status || 'Present'}
-                        variant={row.status === 'present' ? 'success' : row.status === 'absent' ? 'danger' : row.status === 'holiday' || row.status === 'festival' ? 'info' : 'warning'}
+                        label={toStatusLabel(row.status)}
+                        variant={toStatusVariant(row.status)}
                       />
                     </td>
                     <td>
@@ -584,8 +991,58 @@ export default function AttendanceList() {
         </Card>
       )}
 
+      {activeTab === 2 && (
+        <Card>
+          <div className="info-banner blue flex justify-between items-center">
+            <p>Monthly API Logs - Check all live punches directly from the machine</p>
+          </div>
+          <div className="filters-row mt-4">
+            <input
+              type="text"
+              placeholder="Staff ID (e.g. 251)"
+              className="filter-input"
+              value={monthlyEmpCode}
+              onChange={(e) => setMonthlyEmpCode(e.target.value)}
+            />
+            <select className="filter-input" value={monthlyMonth} onChange={(e) => setMonthlyMonth(e.target.value)}>
+              {["01","02","03","04","05","06","07","08","09","10","11","12"].map(m => (
+                <option key={m} value={m}>{new Date(2000, parseInt(m)-1, 1).toLocaleString('default', { month: 'long' })} ({m})</option>
+              ))}
+            </select>
+            <select className="filter-input" value={monthlyYear} onChange={(e) => setMonthlyYear(e.target.value)}>
+              {['2025', '2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+            <Button onClick={fetchMonthlyApiData} disabled={monthlyLoading} label={monthlyLoading ? "Fetching..." : "Get Live Data"} variant="primary" />
+          </div>
+          <div className="overflow-x-auto mt-4">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date (API)</th>
+                  <th>First Punch (IN)</th>
+                  <th>Last Punch (OUT)</th>
+                  <th>All Raw Punches (Trace)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyApiData.length === 0 ? (
+                  <tr><td colSpan="4" className="text-center py-4">{monthlyLoading ? "Loading..." : "No Data"}</td></tr>
+                ) : monthlyApiData.map((row, i) => (
+                  <tr key={i}>
+                    <td className="font-semibold">{row.date}</td>
+                    <td className="text-green-600 font-bold">{row.timeIn}</td>
+                    <td className="text-red-500 font-bold">{row.timeOut}</td>
+                    <td className="text-gray-500 text-sm">{row.allPunches}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
-      <Modal isOpen={!!editModal} onClose={() => setEditModal(null)} title="Edit Attendance" size="md">
+
+      <Modal isOpen={!!editModal} onClose={() => setEditModal(null)} title="Edit Attendance" size="lg">
         {editModal && (
           <form onSubmit={handleSubmit(onEditSave)}>
             <div className="form-group">
@@ -598,26 +1055,240 @@ export default function AttendanceList() {
                 ))}
               </select>
             </div>
-            <div className="form-row">
-              <Input label="Date IN" type="date" {...register('dateIn')} />
-              <Input label="Time IN" type="time" {...register('timeIn')} />
+            
+            {/* Multiple Rows for Split Shifts */}
+            {editRows.map((row, index) => {
+              return (
+              <div key={row.id} className="mb-4 p-4 border rounded bg-gray-50">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-semibold">Row {index + 1}</h4>
+                  {(editRows.length > 1 && row.isManual) && (
+                    <Button 
+                      type="button" 
+                      label="Delete" 
+                      variant="ghost" 
+                      onClick={() => {
+                        setEditRows(prev => prev.filter(r => r.id !== row.id));
+                      }} 
+                    />
+                  )}
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Date IN</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={row.dateIn}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, dateIn: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Time IN (24hr)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="21:00"
+                      maxLength={5}
+                      className="form-input"
+                      value={row.timeIn}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, timeIn: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                      onBlur={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, timeIn: normalize24HourTime(e.target.value) } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Date OUT</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={row.dateOut}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, dateOut: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Time OUT (24hr)</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="09:00"
+                      maxLength={5}
+                      className="form-input"
+                      value={row.timeOut}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, timeOut: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                      onBlur={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, timeOut: normalize24HourTime(e.target.value) } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Status</label>
+                  <select 
+                    className="form-select"
+                    value={row.status}
+                    onChange={(e) => {
+                      const updated = editRows.map((r, i) => 
+                        i === index ? { ...r, status: e.target.value } : r
+                      );
+                      setEditRows(updated);
+                    }}
+                  >
+                    {STATUS_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row">
+                  {/* <div className="form-group">
+                    <label>Work Hrs (Manual)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="form-input"
+                      value={row.manualWrkHrs}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, manualWrkHrs: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                      placeholder="e.g. 8"
+                    />
+                  </div> */}
+                  {/* <div className="form-group">
+                    <label>Overtime Hrs (Manual)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      className="form-input"
+                      value={row.manualOvertime}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, manualOvertime: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                      placeholder="e.g. 2.5"
+                    />
+                  </div> */}
+                </div>
+                <div className="form-row">
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '28px' }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(row.waiveDeduction)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        const updated = editRows.map((r, i) =>
+                          i === index
+                            ? { ...r, waiveDeduction: checked, manualDeduction: checked ? '' : r.manualDeduction }
+                            : r
+                        );
+                        setEditRows(updated);
+                      }}
+                    />
+                    <label style={{ margin: 0 }}>Waive Deduction</label>
+                  </div>
+                </div>
+                <div className="form-row">
+                  {/* <div className="form-group">
+                    <label>Deduction (Rs)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      className="form-input"
+                      value={row.manualDeduction}
+                      disabled={Boolean(row.waiveDeduction)}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, manualDeduction: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                      placeholder="e.g. 500"
+                    />
+                  </div> */}
+                  {/* <div className="form-group">
+                    <label>Total Amount (Rs)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      className="form-input"
+                      value={row.manualTotal}
+                      onChange={(e) => {
+                        const updated = editRows.map((r, i) => 
+                          i === index ? { ...r, manualTotal: e.target.value } : r
+                        );
+                        setEditRows(updated);
+                      }}
+                      placeholder="Editable Total"
+                    />
+                  </div> */}
+                </div>
+              </div>
+              );
+            })}
+            
+            {/* Add New Row Button */}
+            {/* <div className="mb-4">
+              <Button 
+                type="button" 
+                label="+ Add New Row (Split Shift)" 
+                variant="outline" 
+                onClick={() => {
+                  const newRow = {
+                    id: `${Date.now()}-${Math.random()}`,
+                    dateIn: editRows[0]?.dateIn || '',
+                    dateOut: editRows[0]?.dateOut || '',
+                    timeIn: '',
+                    timeOut: '',
+                    status: 'present',
+                    manualWrkHrs: '',
+                    manualOvertime: '',
+                    manualDeduction: '',
+                    manualTotal: '',
+                    isManual: true,
+                  };
+                  setEditRows(prev => [...prev.map(r => ({ ...r })), newRow]);
+                }}
+              />
             </div>
-            <div className="form-row">
-              <Input label="Date OUT" type="date" {...register('dateOut')} />
-              <Input label="Time OUT" type="time" {...register('timeOut')} />
-            </div>
-            <div className="form-group">
-              <label>Status</label>
-              <select {...register('status')} className="form-select">
-                <option value="present">Present</option>
-                <option value="absent">Absent</option>
-                <option value="holiday">Holiday</option>
-                <option value="festival">Festival</option>
-              </select>
-            </div>
+             */}
             <div className="modal-actions">
               <Button type="button" label="Cancel" variant="ghost" onClick={() => setEditModal(null)} />
-              <Button type="submit" label="Save" />
+              <Button type="submit" label="Save " />
             </div>
           </form>
         )}
@@ -636,20 +1307,51 @@ export default function AttendanceList() {
           </div>
           <div className="form-row">
             <Input label="Date" type="date" {...register('dateIn')} />
-            <Input label="Time IN" type="time" {...register('timeIn')} />
+            <Input label="Date OUT" type="date" {...register('dateOut')} />
           </div>
           <div className="form-row">
-            <Input label="Time OUT" type="time" {...register('timeOut')} />
+            <Input
+              label="Time IN (24hr)"
+              type="text"
+              inputMode="numeric"
+              placeholder="21:00"
+              maxLength={5}
+              {...register24Hour('timeIn')}
+              error={errors.timeIn?.message}
+            />
+            <Input
+              label="Time OUT (24hr)"
+              type="text"
+              inputMode="numeric"
+              placeholder="09:00"
+              maxLength={5}
+              {...register24Hour('timeOut')}
+              error={errors.timeOut?.message}
+            />
             <Input label="Status" type="text" value="" style={{ display: 'none' }} readOnly />
           </div>
           <div className="form-group">
             <label>Status</label>
             <select {...register('status')} className="form-select">
-              <option value="present">Present</option>
-              <option value="absent">Absent</option>
-              <option value="holiday">Holiday</option>
-              <option value="festival">Festival</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
+          </div>
+          <div className="form-row">
+            {/* <Input label="Work Hrs (Manual)" type="number" step="0.1" {...register('manualWrkHrs')} placeholder="e.g. 8" />
+            <Input label="Overtime Hrs (Manual)" type="number" step="0.1" {...register('manualOvertime')} placeholder="e.g. 2.5" /> */}
+          </div>
+          <div className="form-row">
+            <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+              <input type="checkbox" {...register('waiveDeduction')} />
+              <label style={{ margin: 0 }}>Waive Deduction</label>
+            </div>
+          </div>
+          <div className="form-row">
+            <Input label="Deduction (Rs)" type="number" step="1" {...register('manualDeduction')} placeholder="e.g. 500" disabled={Boolean(addModalWaiveDeduction)} />
           </div>
           <div className="modal-actions">
             <Button type="button" label="Cancel" variant="ghost" onClick={() => setAddModal(false)} />
