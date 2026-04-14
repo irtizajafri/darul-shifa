@@ -16,14 +16,36 @@ import './AddEmployee.scss';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+const normalizeDutyType = (value) => {
+  const v = String(value || '').toLowerCase();
+  if (v === 'alternate') return 'alternative';
+  if (v === 'alternative' || v === 'night' || v === 'split' || v === 'normal') return v;
+  return 'normal';
+};
+
+const toHoursFromRange = (timeIn, timeOut) => {
+  const inMatch = String(timeIn || '').match(/^(\d{2}):(\d{2})$/);
+  const outMatch = String(timeOut || '').match(/^(\d{2}):(\d{2})$/);
+  if (!inMatch || !outMatch) return 8;
+
+  const inMinutes = Number(inMatch[1]) * 60 + Number(inMatch[2]);
+  const outMinutes = Number(outMatch[1]) * 60 + Number(outMatch[2]);
+  let diff = outMinutes - inMinutes;
+  if (diff <= 0) diff += 24 * 60;
+  return Number((diff / 60).toFixed(1));
+};
+
 export default function AddEmployee({ edit }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
+  const [allowanceTypeOptions, setAllowanceTypeOptions] = useState(() => allowanceTypes || []);
+  const [newAllowanceHead, setNewAllowanceHead] = useState('');
   const { id } = useParams();
   const { setModule } = useModuleStore();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const signatureInputRef = useRef(null);
 
   const { getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
     useEmployeeStore();
@@ -35,6 +57,7 @@ export default function AddEmployee({ edit }) {
       const row = byDay[d] || {};
       return {
         day: d,
+        nightShift: Boolean(row.nightShift),
         timeIn: row.timeIn ?? (i < 6 ? '08:00' : 'OFF'),
         timeOut: row.timeOut ?? (i < 6 ? '16:00' : 'OFF'),
         hours: Number.isFinite(Number(row.hours)) ? Number(row.hours) : (i < 6 ? 8 : 0),
@@ -60,15 +83,27 @@ export default function AddEmployee({ edit }) {
           ...existing,
           allowances: existing.allowances || [],
           photo: existing.photo || null,
-          dutyType: 'normal',
+          signature: existing.signature || null,
+          dutyType: normalizeDutyType(existing.dutyType),
           dutyRoster: normalizeRoster(existing.dutyRoster || []),
+          isNightShift: existing.isNightShift || false,
+          alternativeTimeIn:
+            normalizeRoster(existing.dutyRoster || []).find((r) => r.timeIn !== 'OFF' && r.timeOut !== 'OFF')?.timeIn ||
+            (existing.isNightShift ? '21:00' : '08:00'),
+          alternativeTimeOut:
+            normalizeRoster(existing.dutyRoster || []).find((r) => r.timeIn !== 'OFF' && r.timeOut !== 'OFF')?.timeOut ||
+            (existing.isNightShift ? '09:00' : '16:00'),
         }
       : {
           empCode: getNextEmpCode(),
           allowances: [],
           photo: null,
+          signature: null,
           dutyType: 'normal',
           dutyRoster: normalizeRoster([]),
+          isNightShift: false,
+          alternativeTimeIn: '08:00',
+          alternativeTimeOut: '16:00',
         },
   });
 
@@ -77,10 +112,12 @@ export default function AddEmployee({ edit }) {
 
   const basicSalary = watch('basicSalary') || 0;
   const allowances = watch('allowances') || [];
-  const dutyType = watch('dutyType') || 'normal';
-  const isSplitDuty = dutyType === 'split' || dutyType === 'alternate';
+  const dutyType = normalizeDutyType(watch('dutyType'));
+  const isSplitDuty = dutyType === 'split';
+  const nightShiftReg = register('isNightShift');
   const totalSalary = getTotalSalary(basicSalary, allowances);
   const photo = watch('photo');
+  const signature = watch('signature');
 
   useEffect(() => {
     setModule('employee');
@@ -91,16 +128,46 @@ export default function AddEmployee({ edit }) {
   // Ensure `photo` is registered so it is included in submit payload.
   useEffect(() => {
     register('photo');
+    register('signature');
   }, [register]);
 
   const onSubmit = async (data) => {
     setSaving(true);
     try {
+      let payload = {
+        ...data,
+        dutyType: normalizeDutyType(data.dutyType),
+      };
+
+      if (payload.dutyType === 'alternative') {
+        const altIn = payload.alternativeTimeIn || (payload.isNightShift ? '21:00' : '08:00');
+        const altOut = payload.alternativeTimeOut || (payload.isNightShift ? '09:00' : '16:00');
+        const hrs = toHoursFromRange(altIn, altOut);
+
+        payload = {
+          ...payload,
+          dutyRoster: DAYS.map((day, index) => {
+            const isOnDay = index % 2 === 0;
+            return {
+              day,
+              splitShift: false,
+              shift1End: '15:00',
+              shift2Start: '16:00',
+              shift1Hours: 0,
+              shift2Hours: 0,
+              timeIn: isOnDay ? altIn : 'OFF',
+              timeOut: isOnDay ? altOut : 'OFF',
+              hours: isOnDay ? hrs : 0,
+            };
+          }),
+        };
+      }
+
       if (edit && id) {
-        await updateEmployee(id, data);
+        await updateEmployee(id, payload);
         toast.success('Employee updated successfully');
       } else {
-        await addEmployee(data);
+        await addEmployee(payload);
         toast.success('Employee added successfully');
       }
       navigate('/employees');
@@ -130,6 +197,47 @@ export default function AddEmployee({ edit }) {
       toast.success('Profile picture selected');
     };
     reader.readAsDataURL(file);
+  };
+
+  const onSignaturePick = async (file) => {
+    if (!file) return;
+    const isAllowed =
+      file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/jpg';
+    if (!isAllowed) {
+      toast.error('Only JPG/PNG allowed');
+      return;
+    }
+    const maxBytes = 2 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast.error('Max file size is 2MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setValue('signature', reader.result, { shouldDirty: true, shouldValidate: false });
+      toast.success('Signature selected');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const addAllowanceHead = () => {
+    const head = String(newAllowanceHead || '').trim();
+    if (!head) {
+      toast.error('Please enter allowance head name');
+      return;
+    }
+
+    const exists = allowanceTypeOptions.some(
+      (t) => String(t).trim().toLowerCase() === head.toLowerCase()
+    );
+    if (exists) {
+      toast.error('Allowance head already exists');
+      return;
+    }
+
+    setAllowanceTypeOptions((prev) => [...prev, head]);
+    setNewAllowanceHead('');
+    toast.success('Allowance head added');
   };
 
   const tabs = [
@@ -175,6 +283,7 @@ export default function AddEmployee({ edit }) {
       >
         {/* Ensures photo is always part of submit payload */}
         <input type="hidden" {...register('photo')} />
+  <input type="hidden" {...register('signature')} />
         {activeTab === 0 && (
           <Card title="Personal Information" className="form-card">
             <div className="form-grid">
@@ -294,7 +403,7 @@ export default function AddEmployee({ edit }) {
                 </div>
               </div>
               <Input label="Basic Salary" type="number" {...register('basicSalary', { required: true, valueAsNumber: true })} error={errors.basicSalary?.message} />
-              <div className="col-span-2">
+              <div className="col-span-2 allowance-section">
                 <div className="flex justify-between items-center mb-2">
                   <label className="font-medium">Allowances</label>
                   <Button
@@ -305,25 +414,41 @@ export default function AddEmployee({ edit }) {
                     onClick={() => append({ type: '', amount: 0 })}
                   />
                 </div>
+                <div className="allowance-head-adder mb-2">
+                  <input
+                    type="text"
+                    className="form-input allowance-head-create-input"
+                    placeholder="Add new allowance head (e.g. House Rent)"
+                    value={newAllowanceHead}
+                    onChange={(e) => setNewAllowanceHead(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    label="+ Add Head"
+                    size="sm"
+                    variant="outline"
+                    onClick={addAllowanceHead}
+                  />
+                </div>
                 <div className="space-y-2">
                   <datalist id="allowanceList">
-                    {allowanceTypes.map((t) => (
+                    {allowanceTypeOptions.map((t) => (
                       <option key={t} value={t} />
                     ))}
                   </datalist>
                   {fields.map((f, i) => (
-                    <div key={f.id} className="flex gap-2 items-center">
+                    <div key={f.id} className="allowance-row">
                       <input
                         type="text"
                         list="allowanceList"
                         {...register(`allowances.${i}.type`)}
-                        className="form-input flex-1"
+                        className="form-input allowance-type-input"
                         placeholder="Allowance Name (e.g. Dearness, Fuel)"
                       />
                       <input
                         type="number"
                         {...register(`allowances.${i}.amount`, { valueAsNumber: true })}
-                        className="form-input w-32"
+                        className="form-input allowance-amount-input"
                         placeholder="Amount"
                       />
                       <button type="button" onClick={() => remove(i)} className="text-danger">✕</button>
@@ -341,8 +466,64 @@ export default function AddEmployee({ edit }) {
           <Card title="Duty Roster" className="form-card">
             <div className="mb-4 flex gap-4">
               <label><input type="radio" value="normal" {...register('dutyType')} /> Normal Duty</label>
-              <label><input type="radio" value="split" {...register('dutyType')} /> Split Shifts</label>
+              <label><input type="radio" value="night" {...register('dutyType')} /> Night Shift</label>
+              {/* <label><input type="radio" value="split" {...register('dutyType')} /> Split Shifts</label> */}
+              <label><input type="radio" value="alternative" {...register('dutyType')} /> Alternative Shift</label>
             </div>
+            
+            {/* Alternative Shift Instructions */}
+            {dutyType === 'alternative' && (
+              <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <strong>Alternative Shift:</strong> Roster table hide rahegi. Sirf timings set karein — system ON/OFF
+                  alternate days khud calculate karega.
+                </p>
+                
+                {/* Night Shift Checkbox */}
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isNightShift"
+                    {...nightShiftReg}
+                    className="w-4 h-4"
+                    onChange={(e) => {
+                      nightShiftReg.onChange(e);
+                      if (e.target.checked) {
+                        setValue('alternativeTimeIn', '21:00');
+                        setValue('alternativeTimeOut', '09:00');
+                      } else {
+                        setValue('alternativeTimeIn', '08:00');
+                        setValue('alternativeTimeOut', '16:00');
+                      }
+                    }}
+                  />
+                  <label htmlFor="isNightShift" className="text-sm font-medium text-gray-700">
+                    Night Shift Enable (Alternative + Night engine)
+                  </label>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Time In</label>
+                    <input
+                      type="time"
+                      {...register('alternativeTimeIn')}
+                      className="form-input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Time Out</label>
+                    <input
+                      type="time"
+                      {...register('alternativeTimeOut')}
+                      className="form-input"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {dutyType !== 'alternative' && (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -468,6 +649,7 @@ export default function AddEmployee({ edit }) {
                 </tbody>
               </table>
             </div>
+            )}
           </Card>
         )}
         {activeTab === 3 && (
@@ -537,6 +719,70 @@ export default function AddEmployee({ edit }) {
               <Input label="Emergency Contact Name" {...register('emergencyContact')} />
               <Input label="Emergency Contact Phone" {...register('emergencyPhone')} />
               <Input label="Emergency Relation" {...register('emergencyRelation')} />
+              <Input label="Bank Name" {...register('bankName')} />
+              <Input label="Bank Account Number/IBAN" {...register('bankAccountNumber')} />
+              <Input label="Account Title" {...register('accountTitle')} />
+
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Employee Signature</label>
+                <div
+                  className="border-2 border-dashed border-[#E2E8F0] rounded-lg p-4 text-center text-[#64748B] cursor-pointer hover:bg-[#F8FAFC] transition-colors"
+                  onClick={() => signatureInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    onSignaturePick(e.dataTransfer.files?.[0]);
+                  }}
+                >
+                  <input
+                    ref={signatureInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    className="sr-only"
+                    onChange={(e) => onSignaturePick(e.target.files?.[0])}
+                  />
+
+                  {signature ? (
+                    <div className="flex flex-col items-center gap-3">
+                      <img
+                        src={signature}
+                        alt="Signature Preview"
+                        className="h-20 object-contain border border-[#E2E8F0] bg-white px-2"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          label="Change"
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            signatureInputRef.current?.click();
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          label="Remove"
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setValue('signature', null);
+                          }}
+                        />
+                      </div>
+                      <p className="text-xs text-[#64748B]">jpg/png, max 2MB</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="font-medium text-[#0F172A]">Drag & drop or click to upload signature</p>
+                      <p className="text-sm">jpg/png, max 2MB</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+
               <div className="col-span-2">
                 <label className="block text-sm font-medium mb-1">Additional Notes</label>
                 <textarea {...register('notes')} className="form-textarea" rows={4} />

@@ -75,6 +75,35 @@
     justify-content: flex-end;
   }
 
+  .allowance-section {
+    .allowance-head-adder {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+
+      .allowance-head-create-input {
+        min-width: 320px;
+        flex: 1;
+      }
+    }
+
+    .allowance-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+
+      .allowance-type-input {
+        flex: 1 1 auto;
+        min-width: 360px;
+      }
+
+      .allowance-amount-input {
+        width: 140px;
+        flex: 0 0 140px;
+      }
+    }
+  }
+
   @media (max-width: 768px) {
     .form-grid {
       grid-template-columns: 1fr;
@@ -82,6 +111,23 @@
 
     .col-span-2 {
       grid-column: span 1;
+    }
+
+    .allowance-section {
+      .allowance-head-adder,
+      .allowance-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .allowance-row {
+        .allowance-type-input,
+        .allowance-amount-input {
+          width: 100%;
+          min-width: 0;
+          flex: 1 1 auto;
+        }
+      }
     }
   }
 }

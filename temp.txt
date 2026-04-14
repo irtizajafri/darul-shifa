@@ -1,0 +1,106 @@
+      return (
+        record.employeeId === emp.id &&
+        recDate.getMonth() + 1 === parseInt(month, 10) &&
+        recDate.getFullYear() === parseInt(year, 10)
+      );
+    });
+  }, [emp, attendanceRecords, month, year]);
+
+  useEffect(() => {
+    const fetchApiAttendance = async () => {
+      if (!emp?.empCode) {
+        setApiAttendance([]);
+        return;
+      }
+      try {
+        const startDate = new Date(`${year}-${month}-01T00:00:00`);
+        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+        const res = await fetch('http://localhost:5001/api/attendance/external', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ Dates: toApiDate(startDate), DatesTo: toApiDate(endDate) })
+        });
+        const json = await res.json();
+
+
+        if (json.status === 200 && Array.isArray(json.data)) {
+          const target = normalizeEmpCode(emp.empCode);
+          const raw = json.data.filter((row) => normalizeEmpCode(row.enrollid || row.enrollId) === target);
+          const byDate = raw.reduce((acc, row) => {
+            const dateKey = String(row.arrive_date || row.date || '').split(' ')[0];
+            if (!dateKey) return acc;
+            let timeVal = String(row.arrive_time || row.time_in || '').trim();
+            if (timeVal.includes(' ')) {
+              timeVal = timeVal.split(' ').pop();
+            }
+            if (!acc[dateKey]) acc[dateKey] = [];
+            if (timeVal) acc[dateKey].push(timeVal);
+            return acc;
+          }, {});
+
+          const daysInMonth = endDate.getDate();
+          const mapped = Array.from({ length: daysInMonth }, (_, i) => {
+            const dateStr = `${year}-${month}-${String(i + 1).padStart(2, '0')}`;
+            const punches = byDate[dateStr] || [];
+            const sorted = punches.slice().sort();
+            const inTime = sorted[0] || null;
+            const outTime = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+            const roster = getRosterForDate(dateStr);
+            const scheduledIn = toRosterDateTime(dateStr, roster?.timeIn || '08:00');
+            const scheduledOut = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
+            const actualIn = inTime ? new Date(`${dateStr}T${inTime}`) : null;
+            const actualOut = outTime ? new Date(`${dateStr}T${outTime}`) : null;
+            const isOff = isRosterOff(dateStr);
+            const isFuture = new Date(`${dateStr}T23:59:59`) > new Date();
+
+            return {
+              date: new Date(dateStr),
+              scheduledIn,
+              scheduledOut,
+              actualIn,
+              actualOut,
+              status: isFuture ? 'Future' : (isOff ? 'Off' : (punches.length ? 'Present' : 'Absent')),
+            };
+          });
+          setApiAttendance(mapped);
+        } else {
+          setApiAttendance([]);
+        }
+      } catch {
+        setApiAttendance([]);
+      }
+    };
+
+    fetchApiAttendance();
+  }, [emp?.empCode, month, year, toApiDate, normalizeEmpCode, getRosterForDate, toRosterDateTime, isRosterOff, empAttendance, gatepasses]);
+
+  // Connect real math to real employee
+  const basic = Number(emp?.basicSalary) || 0;
+  const allowances = emp?.allowances || [];
+  const totalAllow = allowances.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const baseTotalSal = basic + totalAllow; // Base Salary + Allowances completely raw
+
+  const effectiveAttendance = empAttendance.length ? empAttendance : apiAttendance;
+
+  const gatepassMinutes = useMemo(() => {
+    if (!emp) return 0;
+    return gatepasses
+      .filter((g) => g.employeeId === emp.id)
+      .filter((g) => String(g.nature || '').toLowerCase() === 'personal')
+      .filter((g) => {
+        const d = new Date(g.issuedAt || g.outAt);
+        return d.getMonth() + 1 === parseInt(month, 10) && d.getFullYear() === parseInt(year, 10);
+      })
+      .reduce((sum, g) => {
+        const outAt = new Date(g.issuedAt || g.outAt);
+        const inAt = g.validTill || g.inAt ? new Date(g.validTill || g.inAt) : new Date();
+        if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return sum;
+        const minutes = Math.max(0, Math.round((inAt - outAt) / 60000));
+        return sum + minutes;
+      }, 0);
+  }, [emp, gatepasses, month, year]);
+
+  const overrides = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('attendanceOverrides')) || [];
+    } catch {

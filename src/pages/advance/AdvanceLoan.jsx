@@ -124,6 +124,8 @@ export default function AdvanceLoan() {
             return {
               date: new Date(dateStr),
               status: isFuture ? 'Future' : (isOff ? 'Off' : (punches.length ? 'Present' : 'Absent')),
+              actualIn: punches[0]?.timeIn ? new Date(punches[0].timeIn) : null,
+              actualOut: punches[punches.length - 1]?.timeOut ? new Date(punches[punches.length - 1].timeOut) : null
             };
           });
           setApiAttendance(mapped);

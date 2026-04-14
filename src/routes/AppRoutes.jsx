@@ -11,6 +11,7 @@ import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
 import AttendanceList from '../pages/attendance/AttendanceList';
 import TempAttendanceApi from '../pages/attendance/TempAttendanceApi';
+import TestAttendance from '../pages/attendance/TestAttendance';
 import GatePass from '../pages/gatepass/GatePass';
 import ShortLeave from '../pages/shortleave/ShortLeave';
 import AdvanceLoan from '../pages/advance/AdvanceLoan';
@@ -49,6 +50,7 @@ export default function AppRoutes() {
           <Route path="employees/:id/edit" element={<AddEmployee edit />} />
           <Route path="attendance" element={<AttendanceList />} />
           <Route path="attendance-temp" element={<TempAttendanceApi />} />
+          <Route path="test-attendance" element={<TestAttendance />} />
           <Route path="gatepass" element={<GatePass />} />
           <Route path="shortleave" element={<ShortLeave />} />
           <Route path="advance" element={<AdvanceLoan />} />

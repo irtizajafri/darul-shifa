@@ -11,8 +11,11 @@ export const useEmployeeStore = create((set, get) => ({
     set({ loading: true, error: null });
     try {
       const res = await fetch(API_URL);
-      const { data } = await res.json();
-      
+      const json = await res.json().catch(() => ({}));
+      const data = Array.isArray(json.data) ? json.data : [];
+      if (!res.ok || json.ok === false) {
+        throw new Error(json.message || `Failed to load employees (${res.status})`);
+      }
       const formattedData = data.map(e => ({
         ...e,
         empCode: e.empCode || `EMP-${String(e.id).padStart(3, '0')}`,
@@ -95,6 +98,7 @@ export const useEmployeeStore = create((set, get) => ({
         ,
         dutyType: updates.dutyType,
         dutyRoster: updates.dutyRoster,
+  isNightShift: updates.isNightShift,
         photo: updates.photo,
         emergencyContact: updates.emergencyContact,
         emergencyPhone: updates.emergencyPhone,
@@ -122,8 +126,23 @@ export const useEmployeeStore = create((set, get) => ({
   deleteEmployee: async (id) => {
     set({ loading: true, error: null });
     try {
+      // First, get the employee to find their empCode
+      const empToDelete = get().employees.find(e => e.id === id);
+      
       const res = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete employee');
+      
+      // Clean up attendance overrides from localStorage for this employee
+      if (empToDelete?.empCode) {
+        try {
+          const overrides = JSON.parse(localStorage.getItem('attendanceOverrides') || '[]');
+          const filtered = overrides.filter(o => String(o.empCode) !== String(empToDelete.empCode));
+          localStorage.setItem('attendanceOverrides', JSON.stringify(filtered));
+        } catch (e) {
+          console.warn('Failed to clean up attendance overrides:', e);
+        }
+      }
+      
       await get().fetchEmployees();
       set({ loading: false });
     } catch (err) {

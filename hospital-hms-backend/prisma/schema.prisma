@@ -53,6 +53,7 @@ model Employee {
   
   dutyType            String?
   dutyRoster          Json?        @default("[]")
+  isNightShift        Boolean?     @default(false)
   
   photo               String?      @db.Text
   emergencyContact    String?
