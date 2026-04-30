@@ -2,7 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useModuleStore } from '../../store/useModuleStore';
-import { departments, designations, allowanceTypes } from '../../utils/dummyData';
+import { departments, allowanceTypes } from '../../utils/dummyData';
 import { getTotalSalary } from '../../utils/helpers';
 import PageLoader from '../../components/ui/PageLoader';
 import PageHeader from '../../components/shared/PageHeader';
@@ -15,6 +15,9 @@ import { BadgeCheck, Building2, Camera, CalendarClock, User } from 'lucide-react
 import './AddEmployee.scss';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const EMPLOYEE_META_API = 'http://localhost:5001/api/employees';
+
+const normalizeText = (value) => String(value || '').trim();
 
 const normalizeDutyType = (value) => {
   const v = String(value || '').toLowerCase();
@@ -41,11 +44,18 @@ export default function AddEmployee({ edit }) {
   const [activeTab, setActiveTab] = useState(0);
   const [allowanceTypeOptions, setAllowanceTypeOptions] = useState(() => allowanceTypes || []);
   const [newAllowanceHead, setNewAllowanceHead] = useState('');
+  const [departmentRecords, setDepartmentRecords] = useState([]);
+  const [designationRecordsByDepartmentId, setDesignationRecordsByDepartmentId] = useState({});
+  const [mastersLoading, setMastersLoading] = useState(false);
+  const [newDepartmentHead, setNewDepartmentHead] = useState('');
+  const [newDesignationHead, setNewDesignationHead] = useState('');
   const { id } = useParams();
   const { setModule } = useModuleStore();
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const signatureInputRef = useRef(null);
+  const cnicFrontInputRef = useRef(null);
+  const cnicBackInputRef = useRef(null);
 
   const { getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
     useEmployeeStore();
@@ -87,6 +97,18 @@ export default function AddEmployee({ edit }) {
           dutyType: normalizeDutyType(existing.dutyType),
           dutyRoster: normalizeRoster(existing.dutyRoster || []),
           isNightShift: existing.isNightShift || false,
+          cnicFrontDoc: existing.cnicFrontDoc || null,
+          cnicBackDoc: existing.cnicBackDoc || null,
+          cnicExpiryDate: existing.cnicExpiryDate || '',
+          hasEobi: Boolean(existing.hasEobi),
+          hasSocialSecurity: Boolean(existing.hasSocialSecurity),
+          hasHealthCard: Boolean(existing.hasHealthCard),
+          hasOtherBenefit: Boolean(existing.hasOtherBenefit),
+          otherBenefitText: existing.otherBenefitText || '',
+          eobiContribution: Number(existing.eobiContribution || 0),
+          socialSecurityContribution: Number(existing.socialSecurityContribution || 0),
+          healthCardContribution: Number(existing.healthCardContribution || 0),
+          otherBenefitContribution: Number(existing.otherBenefitContribution || 0),
           alternativeTimeIn:
             normalizeRoster(existing.dutyRoster || []).find((r) => r.timeIn !== 'OFF' && r.timeOut !== 'OFF')?.timeIn ||
             (existing.isNightShift ? '21:00' : '08:00'),
@@ -102,6 +124,18 @@ export default function AddEmployee({ edit }) {
           dutyType: 'normal',
           dutyRoster: normalizeRoster([]),
           isNightShift: false,
+          cnicFrontDoc: null,
+          cnicBackDoc: null,
+          cnicExpiryDate: '',
+          hasEobi: false,
+          hasSocialSecurity: false,
+          hasHealthCard: false,
+          hasOtherBenefit: false,
+          otherBenefitText: '',
+          eobiContribution: 0,
+          socialSecurityContribution: 0,
+          healthCardContribution: 0,
+          otherBenefitContribution: 0,
           alternativeTimeIn: '08:00',
           alternativeTimeOut: '16:00',
         },
@@ -113,11 +147,69 @@ export default function AddEmployee({ edit }) {
   const basicSalary = watch('basicSalary') || 0;
   const allowances = watch('allowances') || [];
   const dutyType = normalizeDutyType(watch('dutyType'));
+  const selectedDepartment = normalizeText(watch('department'));
+  const selectedDesignation = normalizeText(watch('designation'));
+  const selectedDepartmentRecord = departmentRecords.find(
+    (dept) => normalizeText(dept?.name).toLowerCase() === selectedDepartment.toLowerCase()
+  ) || null;
+  const selectedDepartmentDesignations = selectedDepartmentRecord
+    ? (designationRecordsByDepartmentId[selectedDepartmentRecord.id] || [])
+    : [];
+  const departmentOptions = Array.from(
+    new Set([
+      ...(departments || []),
+      ...departmentRecords.map((dept) => dept.name),
+      ...(existing?.department ? [existing.department] : []),
+    ].map((item) => normalizeText(item)).filter(Boolean))
+  );
+  const designationOptionsForSelectedDepartment = Array.from(
+    new Set([
+      ...selectedDepartmentDesignations.map((item) => normalizeText(item.name)),
+      ...(selectedDepartment && existing?.department === selectedDepartment && existing?.designation
+        ? [existing.designation]
+        : []),
+      ...(selectedDepartment && existing?.department === selectedDepartment && existing?.role
+        ? [existing.role]
+        : []),
+    ].filter(Boolean))
+  );
   const isSplitDuty = dutyType === 'split';
   const nightShiftReg = register('isNightShift');
   const totalSalary = getTotalSalary(basicSalary, allowances);
   const photo = watch('photo');
   const signature = watch('signature');
+  const cnicFrontDoc = watch('cnicFrontDoc');
+  const cnicBackDoc = watch('cnicBackDoc');
+  const hasOtherBenefit = watch('hasOtherBenefit');
+
+  const readApiData = async (response) => {
+    const json = await response.json().catch(() => null);
+    if (!response.ok || json?.ok === false) {
+      throw new Error(json?.message || 'Request failed');
+    }
+    return json?.data;
+  };
+
+  const loadDepartments = async () => {
+    const res = await fetch(`${EMPLOYEE_META_API}/departments`);
+    const data = await readApiData(res);
+    setDepartmentRecords(Array.isArray(data) ? data : []);
+    return Array.isArray(data) ? data : [];
+  };
+
+  const loadDesignationsByDepartment = async (departmentId) => {
+    if (!departmentId) return [];
+    const res = await fetch(`${EMPLOYEE_META_API}/departments/${departmentId}/designations`);
+    const data = await readApiData(res);
+    const rows = Array.isArray(data) ? data : [];
+
+    setDesignationRecordsByDepartmentId((prev) => ({
+      ...prev,
+      [departmentId]: rows,
+    }));
+
+    return rows;
+  };
 
   useEffect(() => {
     setModule('employee');
@@ -125,11 +217,93 @@ export default function AddEmployee({ edit }) {
     return () => clearTimeout(t);
   }, [setModule]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const initMasters = async () => {
+      setMastersLoading(true);
+      try {
+        const rows = await loadDepartments();
+        if (!cancelled && rows.length) {
+          await Promise.all(rows.map((dept) => loadDesignationsByDepartment(dept.id)));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(error?.message || 'Failed to load department/designation heads');
+        }
+      } finally {
+        if (!cancelled) setMastersLoading(false);
+      }
+    };
+
+    initMasters();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Ensure `photo` is registered so it is included in submit payload.
   useEffect(() => {
     register('photo');
     register('signature');
+    register('cnicFrontDoc');
+    register('cnicBackDoc');
   }, [register]);
+
+  useEffect(() => {
+    if (!hasOtherBenefit) {
+      setValue('otherBenefitText', '');
+      setValue('otherBenefitContribution', 0);
+    }
+  }, [hasOtherBenefit, setValue]);
+
+  useEffect(() => {
+    if (!existing) return;
+
+    const existingDepartment = normalizeText(existing.department);
+    const existingDesignation = normalizeText(existing.designation || existing.role);
+
+    if (existingDepartment) {
+      setDepartmentRecords((prev) => {
+        const found = prev.some((item) => normalizeText(item.name).toLowerCase() === existingDepartment.toLowerCase());
+        if (found) return prev;
+        return [...prev, { id: `legacy-${existingDepartment}`, name: existingDepartment }];
+      });
+    }
+
+    if (existingDepartment && existingDesignation) {
+      setDesignationRecordsByDepartmentId((prev) => {
+        const departmentId = selectedDepartmentRecord?.id || `legacy-${existingDepartment}`;
+        const current = Array.isArray(prev[departmentId]) ? prev[departmentId] : [];
+        const alreadyPresent = current.some(
+          (item) => normalizeText(item?.name).toLowerCase() === existingDesignation.toLowerCase()
+        );
+        if (alreadyPresent) return prev;
+        return {
+          ...prev,
+          [departmentId]: [...current, { id: `legacy-${existingDesignation}`, name: existingDesignation }],
+        };
+      });
+    }
+  }, [existing, selectedDepartmentRecord]);
+
+  useEffect(() => {
+    if (!selectedDepartmentRecord?.id) return;
+    if (designationRecordsByDepartmentId[selectedDepartmentRecord.id]) return;
+
+    loadDesignationsByDepartment(selectedDepartmentRecord.id).catch(() => {
+      // already handled in action toasts
+    });
+  }, [selectedDepartmentRecord, designationRecordsByDepartmentId]);
+
+  useEffect(() => {
+    if (!selectedDepartment) return;
+    if (!selectedDesignation) return;
+    const allowed = designationOptionsForSelectedDepartment;
+    if (!allowed.includes(selectedDesignation)) {
+      setValue('designation', '');
+    }
+  }, [selectedDepartment, selectedDesignation, designationOptionsForSelectedDepartment, setValue]);
 
   const onSubmit = async (data) => {
     setSaving(true);
@@ -220,6 +394,27 @@ export default function AddEmployee({ edit }) {
     reader.readAsDataURL(file);
   };
 
+  const onCnicDocPick = async (file, fieldName, successLabel) => {
+    if (!file) return;
+    const isAllowed =
+      file.type === 'image/jpeg' || file.type === 'image/png' || file.type === 'image/jpg' || file.type === 'application/pdf';
+    if (!isAllowed) {
+      toast.error('Only JPG/PNG/PDF allowed');
+      return;
+    }
+    const maxBytes = 4 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast.error('Max file size is 4MB');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setValue(fieldName, reader.result, { shouldDirty: true, shouldValidate: false });
+      toast.success(`${successLabel} selected`);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const addAllowanceHead = () => {
     const head = String(newAllowanceHead || '').trim();
     if (!head) {
@@ -238,6 +433,151 @@ export default function AddEmployee({ edit }) {
     setAllowanceTypeOptions((prev) => [...prev, head]);
     setNewAllowanceHead('');
     toast.success('Allowance head added');
+  };
+
+  const addDepartmentHead = () => {
+    const run = async () => {
+      const head = normalizeText(newDepartmentHead);
+      if (!head) {
+        toast.error('Please enter department name');
+        return;
+      }
+
+      const created = await readApiData(await fetch(`${EMPLOYEE_META_API}/departments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: head }),
+      }));
+
+      setDepartmentRecords((prev) => [...prev, created]);
+      setDesignationRecordsByDepartmentId((prev) => ({
+        ...prev,
+        [created.id]: prev[created.id] || [],
+      }));
+      setValue('department', created.name, { shouldDirty: true });
+      setValue('designation', '', { shouldDirty: true });
+      setNewDepartmentHead('');
+      toast.success('Department head added');
+    };
+
+    run().catch((error) => {
+      toast.error(error?.message || 'Failed to add department');
+    });
+  };
+
+  const addDesignationHead = () => {
+    const run = async () => {
+      const title = normalizeText(newDesignationHead);
+      if (!selectedDepartmentRecord?.id) {
+        toast.error('Select department first');
+        return;
+      }
+      if (!title) {
+        toast.error('Please enter designation name');
+        return;
+      }
+
+      const created = await readApiData(await fetch(`${EMPLOYEE_META_API}/designations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          departmentId: selectedDepartmentRecord.id,
+          name: title,
+        }),
+      }));
+
+      setDesignationRecordsByDepartmentId((prev) => {
+        const current = Array.isArray(prev[selectedDepartmentRecord.id])
+          ? prev[selectedDepartmentRecord.id]
+          : [];
+
+        return {
+          ...prev,
+          [selectedDepartmentRecord.id]: [...current, { id: created.id, name: created.name }],
+        };
+      });
+
+      setValue('designation', created.name, { shouldDirty: true });
+      setNewDesignationHead('');
+      toast.success('Designation head added');
+    };
+
+    run().catch((error) => {
+      toast.error(error?.message || 'Failed to add designation');
+    });
+  };
+
+  const deleteDesignationHead = () => {
+    const run = async () => {
+      if (!selectedDepartmentRecord?.id) {
+        toast.error('Select department first');
+        return;
+      }
+      if (!selectedDesignation) {
+        toast.error('Select designation to delete');
+        return;
+      }
+
+      const target = selectedDepartmentDesignations.find(
+        (item) => normalizeText(item?.name).toLowerCase() === selectedDesignation.toLowerCase()
+      );
+      if (!target?.id || String(target.id).startsWith('legacy-')) {
+        toast.error('Only saved designation can be deleted');
+        return;
+      }
+
+      const ok = window.confirm(`Delete designation "${selectedDesignation}" from ${selectedDepartment}?`);
+      if (!ok) return;
+
+      await readApiData(await fetch(`${EMPLOYEE_META_API}/designations/${target.id}`, {
+        method: 'DELETE',
+      }));
+
+      setDesignationRecordsByDepartmentId((prev) => {
+        const current = Array.isArray(prev[selectedDepartmentRecord.id]) ? prev[selectedDepartmentRecord.id] : [];
+        return {
+          ...prev,
+          [selectedDepartmentRecord.id]: current.filter((item) => item.id !== target.id),
+        };
+      });
+
+      setValue('designation', '', { shouldDirty: true });
+      toast.success('Designation removed');
+    };
+
+    run().catch((error) => {
+      toast.error(error?.message || 'Failed to delete designation');
+    });
+  };
+
+  const deleteDepartmentHead = () => {
+    const run = async () => {
+      if (!selectedDepartmentRecord?.id || String(selectedDepartmentRecord.id).startsWith('legacy-')) {
+        toast.error('Select saved department to delete');
+        return;
+      }
+
+      const ok = window.confirm(`Delete department "${selectedDepartment}" and its linked designations?`);
+      if (!ok) return;
+
+      await readApiData(await fetch(`${EMPLOYEE_META_API}/departments/${selectedDepartmentRecord.id}`, {
+        method: 'DELETE',
+      }));
+
+      setDepartmentRecords((prev) => prev.filter((item) => item.id !== selectedDepartmentRecord.id));
+      setDesignationRecordsByDepartmentId((prev) => {
+        const next = { ...prev };
+        delete next[selectedDepartmentRecord.id];
+        return next;
+      });
+      setValue('department', '', { shouldDirty: true });
+      setValue('designation', '', { shouldDirty: true });
+      toast.success('Department removed');
+    };
+
+    run().catch((error) => {
+      toast.error(error?.message || 'Failed to delete department');
+    });
   };
 
   const tabs = [
@@ -283,7 +623,9 @@ export default function AddEmployee({ edit }) {
       >
         {/* Ensures photo is always part of submit payload */}
         <input type="hidden" {...register('photo')} />
-  <input type="hidden" {...register('signature')} />
+    <input type="hidden" {...register('signature')} />
+    <input type="hidden" {...register('cnicFrontDoc')} />
+    <input type="hidden" {...register('cnicBackDoc')} />
         {activeTab === 0 && (
           <Card title="Personal Information" className="form-card">
             <div className="form-grid">
@@ -319,6 +661,7 @@ export default function AddEmployee({ edit }) {
                 })}
                 error={errors.nic?.message}
               />
+              <Input label="CNIC Expiry Date" type="date" {...register('cnicExpiryDate')} />
               <Input label="Birth Place" {...register('birthPlace')} />
               <Input label="Beneficiary Name" {...register('beneficiaryName')} />
               <div>
@@ -335,6 +678,64 @@ export default function AddEmployee({ edit }) {
               <Input label="City" {...register('city', { required: 'Required' })} error={errors.city?.message} />
               <Input label="Phone" {...register('phone', { required: 'Required' })} error={errors.phone?.message} />
               <Input label="Email" type="email" {...register('email')} />
+              <div>
+                <label className="block text-sm font-medium mb-1">CNIC Front Upload</label>
+                <div className="doc-upload-row">
+                  <input
+                    ref={cnicFrontInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,application/pdf"
+                    className="sr-only"
+                    onChange={(e) => onCnicDocPick(e.target.files?.[0], 'cnicFrontDoc', 'CNIC Front')}
+                  />
+                  <Button
+                    type="button"
+                    label={cnicFrontDoc ? 'Replace Front' : 'Upload Front'}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => cnicFrontInputRef.current?.click()}
+                  />
+                  {cnicFrontDoc && (
+                    <Button
+                      type="button"
+                      label="Remove"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setValue('cnicFrontDoc', null, { shouldDirty: true })}
+                    />
+                  )}
+                </div>
+                <small className="text-slate-500">{cnicFrontDoc ? 'Front document attached' : 'JPG/PNG/PDF, max 4MB'}</small>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">CNIC Back Upload</label>
+                <div className="doc-upload-row">
+                  <input
+                    ref={cnicBackInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,application/pdf"
+                    className="sr-only"
+                    onChange={(e) => onCnicDocPick(e.target.files?.[0], 'cnicBackDoc', 'CNIC Back')}
+                  />
+                  <Button
+                    type="button"
+                    label={cnicBackDoc ? 'Replace Back' : 'Upload Back'}
+                    size="sm"
+                    variant="outline"
+                    onClick={() => cnicBackInputRef.current?.click()}
+                  />
+                  {cnicBackDoc && (
+                    <Button
+                      type="button"
+                      label="Remove"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setValue('cnicBackDoc', null, { shouldDirty: true })}
+                    />
+                  )}
+                </div>
+                <small className="text-slate-500">{cnicBackDoc ? 'Back document attached' : 'JPG/PNG/PDF, max 4MB'}</small>
+              </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium mb-1">Reference 1</label>
                 <textarea {...register('reference1')} className="form-textarea" rows={2} />
@@ -353,19 +754,70 @@ export default function AddEmployee({ edit }) {
                 <label className="block text-sm font-medium mb-1">Designation *</label>
                 <select {...register('designation', { required: true })} className="form-select">
                   <option value="">Select</option>
-                  {designations.map((d) => (
+                  {designationOptionsForSelectedDepartment.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
+                <div className="head-adder-row">
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder={selectedDepartment ? `Add designation for ${selectedDepartment}` : 'Select department first'}
+                    value={newDesignationHead}
+                    onChange={(e) => setNewDesignationHead(e.target.value)}
+                    disabled={!selectedDepartment}
+                  />
+                  <Button
+                    type="button"
+                    label="+ Add Designation"
+                    size="sm"
+                    variant="outline"
+                    onClick={addDesignationHead}
+                    disabled={!selectedDepartment || mastersLoading}
+                  />
+                  <Button
+                    type="button"
+                    label="Delete"
+                    size="sm"
+                    variant="danger"
+                    onClick={deleteDesignationHead}
+                    disabled={!selectedDepartment || !selectedDesignation || mastersLoading}
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Department *</label>
                 <select {...register('department', { required: true })} className="form-select">
                   <option value="">Select</option>
-                  {departments.map((d) => (
+                  {departmentOptions.map((d) => (
                     <option key={d} value={d}>{d}</option>
                   ))}
                 </select>
+                <div className="head-adder-row">
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Add new department"
+                    value={newDepartmentHead}
+                    onChange={(e) => setNewDepartmentHead(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    label="+ Add Department"
+                    size="sm"
+                    variant="outline"
+                    onClick={addDepartmentHead}
+                    disabled={mastersLoading}
+                  />
+                  <Button
+                    type="button"
+                    label="Delete"
+                    size="sm"
+                    variant="danger"
+                    onClick={deleteDepartmentHead}
+                    disabled={!selectedDepartment || mastersLoading}
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Status *</label>
@@ -722,6 +1174,33 @@ export default function AddEmployee({ edit }) {
               <Input label="Bank Name" {...register('bankName')} />
               <Input label="Bank Account Number/IBAN" {...register('bankAccountNumber')} />
               <Input label="Account Title" {...register('accountTitle')} />
+
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-2">Employee Benefits / Enrollment</label>
+                <div className="benefits-grid">
+                  <label className="benefit-item"><input type="checkbox" {...register('hasEobi')} /> EOBI</label>
+                  <Input label="EOBI Monthly Contribution" type="number" {...register('eobiContribution', { valueAsNumber: true })} />
+
+                  <label className="benefit-item"><input type="checkbox" {...register('hasSocialSecurity')} /> SESSI / Social Security</label>
+                  <Input label="SESSI Monthly Contribution" type="number" {...register('socialSecurityContribution', { valueAsNumber: true })} />
+
+                  <label className="benefit-item"><input type="checkbox" {...register('hasHealthCard')} /> Health Card</label>
+                  <Input label="Health Card Monthly Contribution" type="number" {...register('healthCardContribution', { valueAsNumber: true })} />
+
+                  <label className="benefit-item"><input type="checkbox" {...register('hasOtherBenefit')} /> Other</label>
+                  <Input
+                    label="Other Monthly Contribution"
+                    type="number"
+                    {...register('otherBenefitContribution', { valueAsNumber: true })}
+                    disabled={!hasOtherBenefit}
+                  />
+                </div>
+                <Input
+                  label="Other Benefit Name"
+                  {...register('otherBenefitText')}
+                  disabled={!hasOtherBenefit}
+                />
+              </div>
 
               <div className="col-span-2">
                 <label className="block text-sm font-medium mb-1">Employee Signature</label>

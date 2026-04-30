@@ -7,6 +7,7 @@ const gatepassRoutes = require('./modules/gatepass/gatepass.routes');
 const shortleaveRoutes = require('./modules/shortleave/shortleave.routes');
 const advanceRoutes = require('./modules/advance/advance.routes');
 const reportsRoutes = require('./modules/reports/reports.routes');
+const inventoryRoutes = require('./modules/inventory/inventory.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -25,6 +26,7 @@ app.use('/api/gatepass', gatepassRoutes);
 app.use('/api/shortleave', shortleaveRoutes);
 app.use('/api/advance', advanceRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/inventory', inventoryRoutes);
 
 app.use(errorHandler);
 

@@ -69,6 +69,42 @@
     border-radius: 8px;
   }
 
+  .head-adder-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    align-items: center;
+
+    .form-input {
+      flex: 1;
+      min-width: 180px;
+    }
+  }
+
+  .doc-upload-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  .benefits-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+
+    .benefit-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 500;
+      color: $text-main;
+      min-height: 40px;
+    }
+  }
+
   .form-actions {
     display: flex;
     gap: 1rem;
@@ -114,6 +150,11 @@
     }
 
     .allowance-section {
+      .head-adder-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
       .allowance-head-adder,
       .allowance-row {
         flex-direction: column;
@@ -128,6 +169,10 @@
           flex: 1 1 auto;
         }
       }
+    }
+
+    .benefits-grid {
+      grid-template-columns: 1fr;
     }
   }
 }

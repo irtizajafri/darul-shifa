@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModuleStore } from "../../store/useModuleStore";
 import { useEmployeeStore } from "../../store/useEmployeeStore";
 import { useAttendanceStore } from "../../store/useAttendanceStore";
@@ -10,7 +10,7 @@ import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
 import toast from "react-hot-toast";
-import { AlertCircle, BarChart3, FileText, User } from "lucide-react";
+import { AlertCircle, BarChart3, ChevronDown, FileText, User } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, getTotalSalary } from "../../utils/helpers";
@@ -56,6 +56,7 @@ export default function Reports() {
   const [activeReport, setActiveReport] = useState("payslip");
   const [empCode, setEmpCode] = useState("");
   const [empSearch, setEmpSearch] = useState("");
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [apiAttendance, setApiAttendance] = useState([]);
   const [rawPunchRows, setRawPunchRows] = useState([]);
   const [hrManualTimes, setHrManualTimes] = useState([]);
@@ -70,6 +71,9 @@ export default function Reports() {
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { gatepasses, fetchGatepasses } = useGatePassStore();
   const { records: advanceLoans, fetchAdvanceLoans } = useAdvanceLoanStore();
+  const employeeSearchRef = useRef(null);
+  const apiAttendanceReqRef = useRef(0);
+  const rawPunchReqRef = useRef(0);
 
   useEffect(() => {
     setModule("employee");
@@ -87,9 +91,40 @@ export default function Reports() {
     return employees.find((e) => normalizeEmpCode(e.empCode) === target);
   }, [employees, empCode, normalizeEmpCode]);
 
-  const applyEmpSearch = () => {
-    setEmpCode(empSearch.trim());
-  };
+  const filteredEmployees = useMemo(() => {
+    const q = String(empSearch || '').trim().toLowerCase();
+    if (!q) return employees || [];
+    return (employees || []).filter((e) => {
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      const code = String(e.empCode || '').toLowerCase();
+      return fullName.includes(q) || code.includes(q);
+    });
+  }, [employees, empSearch]);
+
+  const selectedEmpCode = useMemo(
+    () => String(emp?.empCode || empCode || '').trim(),
+    [emp?.empCode, empCode]
+  );
+
+  useEffect(() => {
+    const onClickOutside = (event) => {
+      if (!employeeSearchRef.current) return;
+      if (!employeeSearchRef.current.contains(event.target)) {
+        setEmployeeDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const selectEmployee = useCallback((selected) => {
+    const code = String(selected?.empCode || '').trim();
+    const fullName = `${selected?.firstName || ''} ${selected?.lastName || ''}`.trim();
+    setEmpCode(code);
+    setEmpSearch(`${fullName} (${code || '-'})`);
+    setEmployeeDropdownOpen(false);
+  }, []);
 
   const toApiDate = useCallback((dateObj) => {
     const yearStr = String(dateObj.getFullYear());
@@ -154,16 +189,23 @@ export default function Reports() {
   }, [emp, attendanceRecords, month, year]);
 
   useEffect(() => {
+    if (!emp || !month || !year) return;
+    const reqId = ++apiAttendanceReqRef.current;
+    const controller = new AbortController();
+
     const fetchApiAttendance = async () => {
-      if (!emp || !month || !year) return;
 
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0);
+
+      // Avoid showing previous month rows while new month is loading
+      setApiAttendance([]);
 
       try {
         const res = await fetch('http://localhost:5001/api/attendance/test-pairing', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             startDate: `${year}-${month}-01`,
             endDate: `${year}-${month}-${String(endDate.getDate()).padStart(2, '0')}`,
@@ -171,15 +213,23 @@ export default function Reports() {
           })
         });
         const json = await res.json();
+        if (controller.signal.aborted || reqId !== apiAttendanceReqRef.current) return;
 
         if (emp?.dutyRoster?.some(r => r.shift1 && r.shift2)) {
           try {
-            const hrRes = await fetch(`http://localhost:5001/api/attendance/manual-times?empCode=${emp.empCode}&month=${month}&year=${year}`);
+            const hrRes = await fetch(`http://localhost:5001/api/attendance/manual-times?empCode=${emp.empCode}&month=${month}&year=${year}`, {
+              signal: controller.signal,
+            });
             if (hrRes.ok) {
               const hrJson = await hrRes.json();
+              if (controller.signal.aborted || reqId !== apiAttendanceReqRef.current) return;
               setHrManualTimes(Array.isArray(hrJson.data) ? hrJson.data : []);
             }
-          } catch(e) { console.error('HR fetch err', e); setHrManualTimes([]); }
+          } catch(e) {
+            if (controller.signal.aborted) return;
+            console.error('HR fetch err', e);
+            setHrManualTimes([]);
+          }
         }
 
         if (Array.isArray(json.data)) {
@@ -200,13 +250,29 @@ export default function Reports() {
 
           const mapped = Array.from({ length: daysInMonth }, (_, i) => {
             const dateStr = `${year}-${month}-${String(i + 1).padStart(2, '0')}`;
-            const matchedPair =
-              raw.find((r) => toDateKey(r.logicalDate) === dateStr) ||
-              raw.find((r) => toDateKey(r.date) === dateStr) ||
-              raw.find((r) => toDateKey(r.timeIn) === dateStr);
+            const matchedRows = raw.filter((r) =>
+              toDateKey(r.logicalDate) === dateStr ||
+              toDateKey(r.date) === dateStr ||
+              toDateKey(r.timeIn) === dateStr
+            );
 
-            const inTime  = matchedPair?.timeIn  ? new Date(matchedPair.timeIn)  : null;
-            const outTime = matchedPair?.timeOut ? new Date(matchedPair.timeOut) : null;
+            const inCandidates = matchedRows
+              .map((r) => (r?.timeIn ? new Date(r.timeIn) : null))
+              .filter((d) => d && !Number.isNaN(d.getTime()))
+              .sort((a, b) => a - b);
+
+            const outCandidates = matchedRows
+              .map((r) => (r?.timeOut ? new Date(r.timeOut) : null))
+              .filter((d) => d && !Number.isNaN(d.getTime()))
+              .sort((a, b) => a - b);
+
+            const inTime = inCandidates[0] || null;
+            const outTime = outCandidates.length > 0 ? outCandidates[outCandidates.length - 1] : null;
+            const workedMinutes = matchedRows.reduce((maxVal, r) => {
+              const v = Number(r?.workedMinutes);
+              if (!Number.isFinite(v)) return maxVal;
+              return Math.max(maxVal, Math.max(0, Math.round(v)));
+            }, 0);
 
             // ─── FIX 1: Night shift crossing — actualOut next day ho sakta hai ──
             // Backend already ISO dates deta hai, lekin agar inTime > outTime ho
@@ -236,9 +302,10 @@ export default function Reports() {
             let resolvedStatus;
             if (isFuture) {
               resolvedStatus = 'Future';
-            } else if (matchedPair?.status && matchedPair.status !== 'present') {
+            } else if (matchedRows.some((r) => r?.status && r.status !== 'present')) {
               // DB se jo bhi non-present status aaya — wahi use karo
-              resolvedStatus = matchedPair.status;
+              const nonPresent = matchedRows.find((r) => r?.status && r.status !== 'present');
+              resolvedStatus = nonPresent?.status || 'present';
             } else if (isOff && !inTime) {
               // Off day aur koi punch bhi nahi = off_avail
               resolvedStatus = 'off_avail';
@@ -257,6 +324,7 @@ export default function Reports() {
               scheduledOut,
               actualIn:     inTime,
               actualOut:    fixedOutTime,
+              workedMinutes,
               // ─── FIX 3: rosterScheduledMinutes attach karo ─────────────────
               // DB records mein scheduledIn/Out null hote hain (syncAttendance ne save nahi kiye)
               // getScheduledMinutes default 8*60 deta hai — night 12hr shift ke liye galat
@@ -264,32 +332,46 @@ export default function Reports() {
               status: resolvedStatus,
             };
           });
-          setApiAttendance(mapped);
+          if (!controller.signal.aborted && reqId === apiAttendanceReqRef.current) {
+            setApiAttendance(mapped);
+          }
         } else {
-          setApiAttendance([]);
+          if (!controller.signal.aborted && reqId === apiAttendanceReqRef.current) {
+            setApiAttendance([]);
+          }
         }
-      } catch {
+      } catch (e) {
+        if (controller.signal.aborted) return;
         setApiAttendance([]);
       }
+
     };
 
     fetchApiAttendance();
-  }, [emp?.empCode, month, year, toApiDate, normalizeEmpCode, getRosterForDate, toRosterDateTime, isRosterOff, selectedShift, empAttendance, gatepasses, getRosterScheduledMinutes]);
+    return () => {
+      controller.abort();
+    };
+  }, [emp, month, year, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes]);
 
   useEffect(() => {
-    const fetchRawPunchRows = async () => {
-      if (!month || !year) return;
+    if (!month || !year) return;
+    const reqId = ++rawPunchReqRef.current;
+    const controller = new AbortController();
 
-      const selectedEmpCode = String(emp?.empCode || empCode || '').trim();
+    const fetchRawPunchRows = async () => {
+
       const shouldFetchForRawTab = activeReport === "test-attendance-raw";
       const shouldFetchForPayslip = activeReport === "payslip" && Boolean(selectedEmpCode);
       if (!shouldFetchForRawTab && !shouldFetchForPayslip) return;
+
+      setRawPunchRows([]);
 
       try {
         const endDate = new Date(Number(year), Number(month), 0).getDate();
         const res = await fetch('http://localhost:5001/api/attendance/test-raw-punches', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             startDate: `${year}-${month}-01`,
             endDate: `${year}-${month}-${String(endDate).padStart(2, '0')}`,
@@ -298,14 +380,20 @@ export default function Reports() {
         });
 
         const json = await res.json();
+        if (controller.signal.aborted || reqId !== rawPunchReqRef.current) return;
         setRawPunchRows(Array.isArray(json?.data) ? json.data : []);
-      } catch {
+      } catch (e) {
+        if (controller.signal.aborted) return;
         setRawPunchRows([]);
       }
+
     };
 
     fetchRawPunchRows();
-  }, [activeReport, emp?.empCode, empCode, month, year]);
+    return () => {
+      controller.abort();
+    };
+  }, [activeReport, selectedEmpCode, month, year]);
 
   const basic      = Number(emp?.basicSalary) || 0;
   const allowances = emp?.allowances || [];
@@ -555,24 +643,28 @@ export default function Reports() {
     if (status === 'future') return 0;
     if (typeof record.overtimeMinutes === 'number') return record.overtimeMinutes;
 
+    const workedFromRecord = Number(record?.workedMinutes);
+    const workedMins = Number.isFinite(workedFromRecord)
+      ? Math.max(0, Math.round(workedFromRecord))
+      : ((record.actualIn && record.actualOut) ? minutesBetween(record.actualIn, record.actualOut) : 0);
+
     const isWorkedExtra = ['holiday_not_avail', 'off_not_avail'].includes(status);
     const isAvailOff    = ['holiday_avail', 'off_avail', 'leave_with_pay', 'leave', 'absent', 'missed_out'].includes(status);
 
     if (isWorkedExtra) {
-      return (record.actualIn && record.actualOut)
-        ? minutesBetween(record.actualIn, record.actualOut)
-        : 0;
+      return workedMins;
     }
     if (isAvailOff) return 0;
 
     // Normal present — sirf scheduled se zyada time OT
-    const workedMins    = record.actualIn && record.actualOut ? minutesBetween(record.actualIn, record.actualOut) : 0;
     const scheduledMins = getScheduledMinutes(record);
 
     return workedMins > scheduledMins ? workedMins - scheduledMins : 0;
   }, [minutesBetween, normalizePayrollStatus, getScheduledMinutes]);
 
   const getWorkedMinutes = useCallback((record) => {
+    const workedFromRecord = Number(record?.workedMinutes);
+    if (Number.isFinite(workedFromRecord)) return Math.max(0, Math.round(workedFromRecord));
     if (!record.actualIn || !record.actualOut) return 0;
     return minutesBetween(record.actualIn, record.actualOut);
   }, [minutesBetween]);
@@ -616,11 +708,16 @@ export default function Reports() {
   const totalOvertime = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getOvertimeMinutes(r), 0);
 
   const daysInSelectedMonth = new Date(year, month, 0).getDate();
+  const monthCheckNow = new Date();
+  const selectedMonthStart = new Date(Number(year), Number(month) - 1, 1);
+  const currentMonthStart = new Date(monthCheckNow.getFullYear(), monthCheckNow.getMonth(), 1);
+  const isSelectedMonthFuture = selectedMonthStart > currentMonthStart;
+  const effectiveBaseTotalSal = isSelectedMonthFuture ? 0 : baseTotalSal;
   
   // ─── Alternative Shift Logic: double per-day salary ───────────────────────
   // Employee jo alternate days aata hai (Mon, Wed, Fri...) uski salary 2x hogi
   const isAlternativeShift = emp?.dutyType?.toLowerCase() === 'alternative';
-  const basePerDayRate = baseTotalSal > 0 ? (baseTotalSal / daysInSelectedMonth) : 0;
+  const basePerDayRate = effectiveBaseTotalSal > 0 ? (effectiveBaseTotalSal / daysInSelectedMonth) : 0;
   const perDayRate = isAlternativeShift ? (basePerDayRate * 2) : basePerDayRate;
 
   const absentDeduction   = totalAbsents * (perDayRate * 2);
@@ -648,20 +745,40 @@ export default function Reports() {
   const gatepassDeduction  = Math.round(gatepassMinutes * (perDayRate / (8 * 60)));
   const currentMonthKey    = `${year}-${month}`;
 
-  const advanceDeduction = Math.round(advanceLoans
-    .filter((a) => a.employeeId === emp?.id && String(a.status || '').toLowerCase() === 'active')
+  const isSameEmployee = (recordEmployeeId, selectedEmployeeId) =>
+    String(recordEmployeeId ?? '') === String(selectedEmployeeId ?? '');
+
+  const isOpenLoanStatus = (status) => {
+    const closed = ['closed', 'completed', 'settled', 'cancelled', 'canceled'];
+    return !closed.includes(String(status || '').toLowerCase());
+  };
+
+  const activeEmployeeLoans = advanceLoans
+    .filter((a) => isSameEmployee(a.employeeId, emp?.id) && isOpenLoanStatus(a.status));
+
+  const advanceDeduction = Math.round(activeEmployeeLoans
     .filter((a) => String(a.type || '').toLowerCase() === 'advance')
     .reduce((sum, a) => {
       const entry = (a.schedule || []).find((s) => s.month === currentMonthKey);
       return sum + (Number(entry?.amount) || 0);
     }, 0));
 
-  const loanDeduction = Math.round(advanceLoans
-    .filter((a) => a.employeeId === emp?.id && String(a.status || '').toLowerCase() === 'active')
+  const loanDeduction = Math.round(activeEmployeeLoans
     .filter((a) => String(a.type || '').toLowerCase() === 'loan')
     .reduce((sum, a) => {
       const entry = (a.schedule || []).find((s) => s.month === currentMonthKey);
       return sum + (Number(entry?.amount) || 0);
+    }, 0));
+
+  const loanRemainingBalance = Math.round(activeEmployeeLoans
+    .filter((a) => String(a.type || '').toLowerCase() === 'loan')
+    .reduce((sum, a) => {
+      const principal = Number(a.amount) || 0;
+      const paidTillMonth = (a.schedule || [])
+        .filter((s) => String(s.month || '') <= currentMonthKey)
+        .reduce((subtotal, s) => subtotal + (Number(s.amount) || 0), 0);
+
+      return sum + Math.max(0, principal - paidTillMonth);
     }, 0));
 
   const shortLeaveRecords = (() => {
@@ -724,7 +841,7 @@ export default function Reports() {
 
   const offDayBonus = 0;
 
-  const finalSal = emp ? Math.max(0, Math.round(baseTotalSal - totalDeductions + overtimeAddition)) : 0;
+  const finalSal = emp ? Math.max(0, Math.round(effectiveBaseTotalSal - totalDeductions + overtimeAddition)) : 0;
   const totalSal = finalSal;
 
   const getDualShiftData = useCallback((_dateStr, _apiPunches, _hrTimes) => {
@@ -752,6 +869,19 @@ export default function Reports() {
   }, [emp?.empCode, normalizeEmpCode, rawPunchRows]);
 
   const detailedAttendanceRows = useMemo(() => {
+    const workedHoursFromPair = (inTime, outTime) => {
+      const inMatch = String(inTime || '').match(/^(\d{1,2}):(\d{2})$/);
+      const outMatch = String(outTime || '').match(/^(\d{1,2}):(\d{2})$/);
+      if (!inMatch || !outMatch) return '0.00';
+
+      const inMinutes = (Number(inMatch[1]) * 60) + Number(inMatch[2]);
+      const outMinutes = (Number(outMatch[1]) * 60) + Number(outMatch[2]);
+      let diff = outMinutes - inMinutes;
+      if (diff < 0) diff += 24 * 60; // overnight safety
+
+      return (diff / 60).toFixed(2);
+    };
+
     if (effectiveAttendanceWithOverrides.length > 0) {
       return effectiveAttendanceWithOverrides.flatMap((record) => {
         const d      = new Date(record.date);
@@ -779,7 +909,7 @@ export default function Reports() {
 
         const isLate      = lateMinutes > 0 ? "Y" : "N";
         const otHrs       = overtimeMinutes ? (overtimeMinutes / 60).toFixed(2) : "0.00";
-        const grossPerDay = Math.round(perDayRate);
+  const grossPerDay = isFuture ? 0 : Math.round(perDayRate);
 
         const wrkHrsRaw     = workedMinutes / 60;
         const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
@@ -829,8 +959,17 @@ export default function Reports() {
         };
 
         const rawPunches = rawPunchTimesByDate.get(dayStr) || [];
+        const hasRawPair = rawPunches.length >= 2;
+        const displayBaseIn = hasRawPair ? rawPunches[0] : tIn;
+        const displayBaseOut = hasRawPair ? rawPunches[1] : tOut;
+        const displayBaseWrkHrs = workedHoursFromPair(displayBaseIn, displayBaseOut);
         if (rawPunches.length <= 2) {
-          return [baseRow];
+          return [{
+            ...baseRow,
+            timeIn: displayBaseIn,
+            timeOut: displayBaseOut,
+            wrkHrs: displayBaseWrkHrs,
+          }];
         }
 
         const extraRows = [];
@@ -843,7 +982,7 @@ export default function Reports() {
             timeIn: extraIn,
             timeOut: extraOut,
             dutyHrs: '0.00',
-            wrkHrs: '0.00',
+            wrkHrs: workedHoursFromPair(extraIn, extraOut),
             ot: '0.00',
             late: 'N',
             status: 'Extra Punch (Manual Check)',
@@ -853,8 +992,24 @@ export default function Reports() {
           });
         }
 
-        return [baseRow, ...extraRows];
-      }).sort((a, b) => a.date.localeCompare(b.date));
+        return [{
+          ...baseRow,
+          timeIn: displayBaseIn,
+          timeOut: displayBaseOut,
+          wrkHrs: displayBaseWrkHrs,
+        }, ...extraRows];
+      }).sort((a, b) => {
+        const byDate = a.date.localeCompare(b.date);
+        if (byDate !== 0) return byDate;
+
+        const toMinutes = (timeValue) => {
+          const m = String(timeValue || '').match(/^(\d{1,2}):(\d{2})$/);
+          if (!m) return Number.POSITIVE_INFINITY; // '--' ya invalid values last mein
+          return (Number(m[1]) * 60) + Number(m[2]);
+        };
+
+        return toMinutes(a.timeIn) - toMinutes(b.timeIn);
+      });
     }
 
     const fallbackPerMinute = perDayRate > 0 ? (perDayRate / (8 * 60)) : 0;
@@ -880,11 +1035,11 @@ export default function Reports() {
       active:  e.status === "Active" ? "Y" : "N",
       ot:      i % 3 === 0 ? "Y" : "N",
       month:   `${year}-${month}`,
-      amount:  `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
+      amount:  `PKR ${(isSelectedMonthFuture ? 0 : getTotalSalary(e.basicSalary, e.allowances || [])).toLocaleString()}`,
       flag:    i % 4 === 0 ? "Y" : "N",
       voucher: i % 2 === 0 ? `V-${String(1000 + i)}` : "",
     }));
-  }, [employees, month, year]);
+  }, [employees, month, year, isSelectedMonthFuture]);
 
   const payrollDetailedRows = useMemo(() => {
     return detailedAttendanceRows.map((r, idx) => ({
@@ -897,21 +1052,21 @@ export default function Reports() {
       dutyHrs: r.dutyHrs,
       wrkDays: idx === 0 ? '28' : '12',
       ot:      r.ot,
-      perDay:  '893',
+      perDay:  r.status === 'Future' ? '0' : Math.round(perDayRate).toString(),
       salary:  r.salary,
-      otAmt:   idx % 4 === 0 ? '15' : '0',
+      otAmt:   r.status === 'Future' ? '0' : String(Math.max(0, Math.round(parseFloat(r.total || '0') - parseFloat(r.salary || '0') + parseFloat(r.ded || '0')))),
       ded:     r.ded,
       total:   r.total,
     }));
-  }, [detailedAttendanceRows, emp]);
+  }, [detailedAttendanceRows, emp, perDayRate]);
 
   const payrollConsolidatedRows = useMemo(() => {
     return employees.slice(0, 12).map((e) => ({
       code:      e.empCode,
       name:      `${e.firstName} ${e.lastName}`,
-      netSalary: `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
+      netSalary: `PKR ${(isSelectedMonthFuture ? 0 : getTotalSalary(e.basicSalary, e.allowances || [])).toLocaleString()}`,
     }));
-  }, [employees]);
+  }, [employees, isSelectedMonthFuture]);
 
   const exportMeta = {
     address:   "C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210",phone:"021-34508390",whatsapp:  "+92 334 2225746",};
@@ -953,35 +1108,44 @@ export default function Reports() {
     return canvas.toDataURL("image/png");
   };
 
-  const addPdfSignatures = (pdf) => {
+  const addPdfSignatures = (pdf, options = {}) => {
+    const { forceFirstPage = false, fixedBaseY = null } = options;
     const margin     = 40;
     const pageWidth  = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    let baseY = (pdf.lastAutoTable?.finalY || 140) + 40;
-    if (baseY + 120 > pageHeight - 50) { pdf.addPage(); baseY = 60; }
+    let baseY = fixedBaseY ?? ((pdf.lastAutoTable?.finalY || 140) + 40);
+
+    if (forceFirstPage) {
+      pdf.setPage(1);
+      baseY = fixedBaseY ?? (pageHeight - 165);
+    } else if (baseY + 120 > pageHeight - 50) {
+      pdf.addPage();
+      baseY = 60;
+    }
 
     pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(10);
+    pdf.setFontSize(forceFirstPage ? 9 : 10);
     pdf.text("I confirm that the salary generated is correct and I have no objections. Please pay my salary.", margin, baseY);
 
     const declaration = "میں تصدیق کرتا / کرتی ہوں کہ بنائی گئی تنخواہ درست ہے اور مجھے اس پر کوئی اعتراض نہیں ہے۔ برائے مہربانی میری اوپر بنائی گئی تنخواہ ادا کر دی جائے۔";
     const urduImage   = createUrduTextImage(declaration);
     pdf.addImage(urduImage, "PNG", margin - 20, baseY + 9, pageWidth - margin * 2, 25);
 
-    const y        = baseY + 80;
+    const y        = baseY + (forceFirstPage ? 72 : 80);
     const colWidth = (pageWidth - margin * 2) / 3;
     const labels   = ["Prepared By", "Administrator", "Employee"];
     pdf.setLineWidth(0.5);
     labels.forEach((label, index) => {
       const x = margin + index * colWidth;
       pdf.line(x, y, x + colWidth - 12, y);
-      pdf.setFontSize(10);
+      pdf.setFontSize(forceFirstPage ? 9 : 10);
       pdf.text(label, x + 4, y + 15);
     });
   };
 
   const exportReportPdf = async (scope, { autoPrint = false } = {}) => {
-    const pdf      = new jsPDF("p", "pt", "a4");
+    const isConcentratedPayslip = scope === "payslip";
+    const pdf      = new jsPDF("p", "pt", isConcentratedPayslip ? "a5" : "a4");
     let startY     = 140;
 
     const titleMap = {
@@ -994,7 +1158,124 @@ export default function Reports() {
       cr:                    "Employee CR",
     };
 
-  startY = addPdfHeader(pdf, titleMap[scope] || "Report");
+    if (isConcentratedPayslip) {
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 20;
+      const labelX = margin;
+      const stdX = pageWidth * 0.45;
+      const monthX = pageWidth * 0.74;
+      let y = 30;
+
+      const drawSectionHeader = (left, middle, right) => {
+        pdf.setTextColor(104, 122, 148);
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(9);
+        pdf.text(left, labelX, y);
+        if (middle) pdf.text(middle, stdX, y);
+        if (right) pdf.text(right, monthX, y);
+        y += 24;
+      };
+
+      const drawRow = (label, stdAmount, monthAmount, { bold = false } = {}) => {
+        pdf.setTextColor(31, 41, 55);
+        pdf.setFont("helvetica", bold ? "bold" : "normal");
+        pdf.setFontSize(bold ? 11 : 10);
+        pdf.text(String(label || "-"), labelX, y);
+        if (stdAmount !== null && stdAmount !== undefined && stdAmount !== "") {
+          pdf.text(String(stdAmount), stdX, y);
+        }
+        if (monthAmount !== null && monthAmount !== undefined && monthAmount !== "") {
+          pdf.text(String(monthAmount), monthX, y);
+        }
+        y += bold ? 22 : 20;
+      };
+
+      const paymentRows = [
+        { label: "Basic", std: basic.toLocaleString(), month: basic.toLocaleString() },
+        ...(allowances || []).map((a) => ({
+          label: String(a.type || "Other"),
+          std: Number(a.amount || 0).toLocaleString(),
+          month: Number(a.amount || 0).toLocaleString(),
+        })),
+      ];
+
+      const deductionRows = [
+        { label: `Absents x2 (${totalAbsents} days)`, amount: Math.round(absentDeduction).toLocaleString() },
+        ...(totalMissedOut > 0 ? [{ label: `Missing Punch (${totalMissedOut} days)`, amount: Math.round(missedOutDeduction).toLocaleString() }] : []),
+        ...(totalLeaves > 0 ? [{ label: `Leaves Unpaid (${totalLeaves} days)`, amount: Math.round(leaveDeduction).toLocaleString() }] : []),
+        { label: `Late Arrivals (${totalLates} mins)`, amount: Math.round(lateDeduction).toLocaleString() },
+        { label: "Advance", amount: advanceDeduction.toLocaleString() },
+        { label: "Loan (This Month)", amount: loanDeduction.toLocaleString() },
+        { label: "Loan Remaining", amount: loanRemainingBalance.toLocaleString() },
+        { label: `Gate Pass (Personal) (${gatepassMinutes} mins)`, amount: gatepassDeduction.toLocaleString() },
+        { label: `Short Leave (${shortLeaveMinutes} mins)`, amount: shortLeaveDeduction.toLocaleString() },
+      ];
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(31, 41, 55);
+      pdf.setFontSize(12);
+      pdf.text(`${emp?.empCode || "-"} | ${emp?.firstName || ""} ${emp?.lastName || ""} | ${emp?.designation || "-"}`.trim(), margin, y);
+      y += 20;
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(11);
+      pdf.text(`Pay Slip for the Month of: ${month}/${year}`, margin, y);
+      y += 17;
+      pdf.text(`Appointment: ${formatDate(emp?.appointmentDate)}`, margin, y);
+
+      y += 24;
+      drawSectionHeader("PAYMENTS", "STD AMOUNT", "THIS MONTH");
+      paymentRows.forEach((row) => drawRow(row.label, row.std, row.month));
+      drawRow("Total Payments", "", totalSal.toLocaleString(), { bold: true });
+
+      y += 14;
+      drawSectionHeader("DEDUCTIONS", "", "");
+      deductionRows.forEach((row) => drawRow(row.label, "", row.amount));
+      drawRow("Total Deductions", "", totalDeductions.toLocaleString());
+
+      y += 10;
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(37, 99, 235);
+      pdf.setFontSize(16);
+      pdf.text(`NET SALARY: PKR ${totalSal.toLocaleString()}`, margin, y);
+
+      y += 20;
+      pdf.setTextColor(104, 122, 148);
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(8);
+      pdf.text(`Amount in words: ${totalSal.toLocaleString()} Only`, margin, y);
+
+      if (overtimeAddition > 0) {
+        y += 16;
+        pdf.setTextColor(22, 128, 49);
+        pdf.setFontSize(8);
+        pdf.text(`Includes Overtime Bonus: PKR ${overtimeAddition.toLocaleString()} (${Math.round(totalOvertime / 60)} hrs)`, margin, y);
+      }
+
+      const signY = pageHeight - 38;
+      const signGap = (pageWidth - margin * 2) / 3;
+      const signLabels = ["Prepared By", "Administrator", "Receiver"];
+      pdf.setDrawColor(203, 213, 225);
+      pdf.setTextColor(104, 122, 148);
+      pdf.setFontSize(8);
+
+      signLabels.forEach((label, index) => {
+        const x = margin + (index * signGap);
+        pdf.line(x, signY - 12, x + signGap - 10, signY - 12);
+        pdf.text(label, x + 6, signY + 2);
+      });
+
+      if (autoPrint) {
+        pdf.autoPrint();
+        window.open(pdf.output("bloburl"), "_blank");
+        return;
+      }
+
+      pdf.save(`${scope}-${year}-${month}.pdf`);
+      return;
+    }
+
+    startY = addPdfHeader(pdf, titleMap[scope] || "Report");
 
     if (scope === "payslip" || scope === "payslip-detailed") {
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -1014,7 +1295,7 @@ export default function Reports() {
       pdf.text(`${monthNames[parseInt(month)]} ${year}`, pageWidth / 2, headerTopY + 28, { align: "center", fontStyle: "bold" });
       pdf.setFontSize(10);
       pdf.text(`DUTY HOURS: 8`, pageWidth - 40, headerTopY, { align: "right" });
-      const perHourSal = (baseTotalSal / (new Date(year, month, 0).getDate() * 8)).toFixed(2);
+  const perHourSal = (effectiveBaseTotalSal / (new Date(year, month, 0).getDate() * 8)).toFixed(2);
       pdf.text(`PERHOUR SALARY: ${perHourSal}`, pageWidth - 40, headerTopY + 18, { align: "right" });
       pdf.setFontSize(22); pdf.setTextColor(200);
       pdf.text("ONLY FOR REPORTING", pageWidth / 2, headerTopY + 40, { align: "center" });
@@ -1023,13 +1304,17 @@ export default function Reports() {
       const summaryTopY = headerTopY + 58;
       const rightColX = pageWidth - 205;
       pdf.text(`CURRENT MONTH SALARY`, 40, summaryTopY, { fontStyle: "bold" });
-      pdf.text(`TOTAL : ${baseTotalSal.toLocaleString()}`, 40, summaryTopY + 15);
+  pdf.text(`TOTAL : ${effectiveBaseTotalSal.toLocaleString()}`, 40, summaryTopY + 15);
       pdf.text(`CURRUENT SALARY : ${totalSal.toLocaleString()}`, 40, summaryTopY + 30);
       pdf.text(`CURRUENT OVER TIME : ${overtimeAddition.toLocaleString()}`, 40, summaryTopY + 45);
       pdf.text(`DAILY DED : ${totalDeductions.toLocaleString()}`, 40, summaryTopY + 60);
+      pdf.text(`ADVANCE DED (MONTH) : ${advanceDeduction.toLocaleString()}`, 40, summaryTopY + 75);
+      pdf.text(`LOAN DED (MONTH) : ${loanDeduction.toLocaleString()}`, 40, summaryTopY + 90);
+      pdf.text(`LOAN REMAINING : ${loanRemainingBalance.toLocaleString()}`, 40, summaryTopY + 105);
       pdf.text(`CURR. MONTH DEDUCTION`, rightColX, summaryTopY, { fontStyle: "bold" });
       pdf.text(`TOTAL : ${totalDeductions.toLocaleString()}`, rightColX, summaryTopY + 15);
-      pdf.text(`NET SALARY`, rightColX, summaryTopY + 34, { fontStyle: "bold" });
+      pdf.text(`ADV+LOAN : ${(advanceDeduction + loanDeduction).toLocaleString()}`, rightColX, summaryTopY + 30);
+      // pdf.text(`NET SALARY`, rightColX, summaryTopY + 34, { fontStyle: "bold" });
       pdf.text(`NET SALARY : ${totalSal.toLocaleString()}`, rightColX, summaryTopY + 49);
 
       const dynamicAllowanceRows = (emp?.allowances || [])
@@ -1042,30 +1327,37 @@ export default function Reports() {
       const allowanceInlineParts = [
         { label: "BASIC", amount: basic },
         ...dynamicAllowanceRows,
-        { label: "TOTAL", amount: baseTotalSal },
+  { label: "TOTAL", amount: effectiveBaseTotalSal },
       ];
       const allowanceLineRaw = allowanceInlineParts
         .map((p) => `${p.label}: ${Number(p.amount || 0).toLocaleString()}`)
         .join("   |   ");
       const allowanceLine = allowanceLineRaw.length > 130 ? `${allowanceLineRaw.slice(0, 127)}...` : allowanceLineRaw;
 
-      const allowanceLineY = summaryTopY + 78;
+  const allowanceLineY = summaryTopY + 118;
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "bold");
       pdf.text(allowanceLine, 40, allowanceLineY);
       pdf.setFont("helvetica", "normal");
 
+      const isPayslipScope = scope === "payslip" || scope === "payslip-detailed";
       autoTable(pdf, {
         startY: allowanceLineY + 16,
         head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "Dty Hrs", "Wrk Days", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
         body: detailedAttendanceRows.map((r) => {
           const wrdDays = new Date(year, month, 0).getDate();
-          const otAmnt  = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((baseTotalSal / wrdDays) / 8)).toString();
-          return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, Math.round(baseTotalSal / wrdDays).toString(), r.salary, otAmnt, r.ded, r.total];
+          const otAmnt  = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((effectiveBaseTotalSal / wrdDays) / 8)).toString();
+          return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, Math.round(effectiveBaseTotalSal / wrdDays).toString(), r.salary, otAmnt, r.ded, r.total];
         }),
-        styles: { fontSize: 7, cellPadding: 2, halign: 'center' },
+        styles: {
+          fontSize: isPayslipScope ? 6 : 7,
+          cellPadding: isPayslipScope ? 1 : 2,
+          halign: 'center',
+          lineWidth: 0.1,
+        },
         headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], fontStyle: "bold" },
-        columnStyles: { 0: { halign: 'left' } }
+        columnStyles: { 0: { halign: 'left' } },
+        margin: isPayslipScope ? { left: 28, right: 28, bottom: 172 } : undefined,
       });
     }
 
@@ -1139,7 +1431,11 @@ export default function Reports() {
       });
     }
 
-    addPdfSignatures(pdf);
+    const keepOnFirstPage = scope === "payslip" || scope === "payslip-detailed";
+    addPdfSignatures(pdf, {
+      forceFirstPage: keepOnFirstPage,
+      fixedBaseY: keepOnFirstPage ? (pdf.internal.pageSize.getHeight() - 165) : null,
+    });
     addPdfFooter(pdf);
 
     if (autoPrint) {
@@ -1231,13 +1527,59 @@ export default function Reports() {
           </div>
 
           <div className="filters-row print-hidden">
-            <Input
-              label="Emp Code" value={empSearch}
-              onChange={(e) => setEmpSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') applyEmpSearch(); }}
-              placeholder="EMP-001 or 251" className="w-full sm:w-72"
-            />
-            <Button label="Search" variant="outline" onClick={applyEmpSearch} />
+            <div className="relative w-full sm:w-[30rem] md:w-[34rem]" ref={employeeSearchRef}>
+              <Input
+                label="Search Employee"
+                value={empSearch}
+                onFocus={() => setEmployeeDropdownOpen(true)}
+                onChange={(e) => {
+                  setEmpSearch(e.target.value);
+                  setEmpCode('');
+                  setEmployeeDropdownOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredEmployees[0]) selectEmployee(filteredEmployees[0]);
+                  }
+                }}
+                placeholder="Type name or code"
+                className="w-full"
+                style={{ paddingRight: "2.5rem" }}
+              />
+
+              <button
+                type="button"
+                className="absolute right-3 top-[2.35rem] -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                onClick={() => setEmployeeDropdownOpen((prev) => !prev)}
+                aria-label="Toggle employee dropdown"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+
+              {employeeDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full min-w-[18rem] max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  {filteredEmployees.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-500">No employee found</div>
+                  ) : (
+                    filteredEmployees.map((employee) => {
+                      const fullName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim();
+                      return (
+                        <button
+                          key={employee.id}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                          onClick={() => selectEmployee(employee)}
+                        >
+                          <span className="font-medium text-slate-800">{fullName || '-'}</span>
+                          <span className="ml-2 text-slate-500">({employee.empCode || '-'})</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
             <select value={month} onChange={(e) => setMonth(e.target.value)} className="filter-select">
               {["01","02","03","04","05","06","07","08","09","10","11","12"].map((m) => (
                 <option key={m} value={m}>{m}</option>
@@ -1266,7 +1608,7 @@ export default function Reports() {
           {payslipView === "concentrated" ? (
             <div className="payslip-preview print-area">
               <div className="payslip-header">
-                <p><strong>{emp?.empCode}</strong> | {emp?.firstName} {emp?.lastName} | {emp?.designation}</p>
+                <p><strong>{emp?.empCode}</strong>  {emp?.firstName} {emp?.lastName}  {emp?.designation}</p>
                 <p>Pay Slip for the Month of: <strong>{month}/{year}</strong></p>
                 <p>Appointment: {formatDate(emp?.appointmentDate)}</p>
               </div>
@@ -1293,7 +1635,8 @@ export default function Reports() {
                     )}
                     <tr><td>Late Arrivals ({totalLates} mins)</td><td></td><td>{Math.round(lateDeduction).toLocaleString()}</td></tr>
                     <tr><td>Advance</td><td></td><td>{advanceDeduction.toLocaleString()}</td></tr>
-                    <tr><td>Loan</td><td></td><td>{loanDeduction.toLocaleString()}</td></tr>
+                    <tr><td>Loan (This Month)</td><td></td><td>{loanDeduction.toLocaleString()}</td></tr>
+                    <tr><td>Loan Remaining</td><td></td><td>{loanRemainingBalance.toLocaleString()}</td></tr>
                     <tr><td>Gate Pass (Personal) ({gatepassMinutes} mins)</td><td></td><td>{gatepassDeduction.toLocaleString()}</td></tr>
                     <tr><td>Short Leave ({shortLeaveMinutes} mins)</td><td></td><td>{shortLeaveDeduction.toLocaleString()}</td></tr>
                     <tr><td>Total Deductions</td><td></td><td>{totalDeductions.toLocaleString()}</td></tr>
@@ -1322,8 +1665,9 @@ export default function Reports() {
                   <p className="muted">Month: <strong>{month}/{year}</strong></p>
                 </div>
                 <div className="sheet-summary">
-                  <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(baseTotalSal).toLocaleString()}</strong></div>
+                  <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(effectiveBaseTotalSal).toLocaleString()}</strong></div>
                   <div className="summary-box"><span className="muted">Current Month Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
+                  <div className="summary-box"><span className="muted">Loan Remaining</span><strong>PKR {loanRemainingBalance.toLocaleString()}</strong></div>
                   <div className="summary-box"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
                 </div>
               </div>
@@ -1350,8 +1694,11 @@ export default function Reports() {
               </div>
               <div className="sheet-totals">
                 <div className="totals-grid">
-                  <div className="totals-item"><span className="muted">Total Salary</span><strong>PKR {Math.round(baseTotalSal).toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Total Salary</span><strong>PKR {Math.round(effectiveBaseTotalSal).toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Total Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Advance Deduction (This Month)</span><strong>PKR {advanceDeduction.toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Loan Deduction (This Month)</span><strong>PKR {loanDeduction.toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Loan Remaining</span><strong>PKR {loanRemainingBalance.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Total Overtime Bonus</span><strong>PKR {overtimeAddition.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
                 </div>
@@ -1560,7 +1907,59 @@ export default function Reports() {
             </div>
           </div>
           <div className="filters-row print-hidden">
-            <Input label="Search by Emp Code" value={empCode} onChange={(e) => setEmpCode(e.target.value)} placeholder="EMP-001" className="w-full sm:w-72" />
+            <div className="relative w-full sm:w-[30rem] md:w-[34rem]" ref={employeeSearchRef}>
+              <Input
+                label="Search Employee"
+                value={empSearch}
+                onFocus={() => setEmployeeDropdownOpen(true)}
+                onChange={(e) => {
+                  setEmpSearch(e.target.value);
+                  setEmpCode('');
+                  setEmployeeDropdownOpen(true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredEmployees[0]) selectEmployee(filteredEmployees[0]);
+                  }
+                }}
+                placeholder="Type name or code"
+                className="w-full"
+                style={{ paddingRight: "2.5rem" }}
+              />
+
+              <button
+                type="button"
+                className="absolute right-3 top-[2.35rem] -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                onClick={() => setEmployeeDropdownOpen((prev) => !prev)}
+                aria-label="Toggle employee dropdown"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+
+              {employeeDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full min-w-[18rem] max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  {filteredEmployees.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-500">No employee found</div>
+                  ) : (
+                    filteredEmployees.map((employee) => {
+                      const fullName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim();
+                      return (
+                        <button
+                          key={employee.id}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                          onClick={() => selectEmployee(employee)}
+                        >
+                          <span className="font-medium text-slate-800">{fullName || '-'}</span>
+                          <span className="ml-2 text-slate-500">({employee.empCode || '-'})</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "cr")} />
           </div>
           <div className="cr-sheet print-area">

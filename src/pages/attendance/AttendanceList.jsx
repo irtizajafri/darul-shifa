@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAttendanceStore } from '../../store/useAttendanceStore';
@@ -11,7 +11,7 @@ import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 import toast from 'react-hot-toast';
-import { Download } from 'lucide-react';
+import { ChevronDown, Download } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../../assets/logo.jpg';
@@ -137,19 +137,88 @@ export default function AttendanceList() {
   const [apiDateUi, setApiDateUi] = useState(defaultApiDate);
   const [selectedDate, setSelectedDate] = useState(defaultApiDate);
   const [apiStaffId, setApiStaffId] = useState('');
+  const [dailyEmpQuery, setDailyEmpQuery] = useState('');
+  const [dailyEmpDropdownOpen, setDailyEmpDropdownOpen] = useState(false);
   const [apiRows, setApiRows] = useState([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState('');
   const [searchName, setSearchName] = useState('');
+  const [allRecordsDropdownOpen, setAllRecordsDropdownOpen] = useState(false);
+  const dailyEmpDropdownRef = useRef(null);
+  const allRecordsDropdownRef = useRef(null);
   const { setModule } = useModuleStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { employees, fetchEmployees } = useEmployeeStore();
 
   const [monthlyEmpCode, setMonthlyEmpCode] = useState('');
+  const [monthlyEmpQuery, setMonthlyEmpQuery] = useState('');
+  const [monthlyEmpDropdownOpen, setMonthlyEmpDropdownOpen] = useState(false);
   const [monthlyMonth, setMonthlyMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
   const [monthlyYear, setMonthlyYear] = useState(String(new Date().getFullYear()));
   const [monthlyApiData, setMonthlyApiData] = useState([]);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const monthlyEmpDropdownRef = useRef(null);
+
+  const monthlyFilteredEmployees = useMemo(() => {
+    const q = String(monthlyEmpQuery || '').trim().toLowerCase();
+    if (!q) return employees || [];
+    return (employees || []).filter((e) => {
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      const code = String(e.empCode || '').toLowerCase();
+      return fullName.includes(q) || code.includes(q);
+    });
+  }, [employees, monthlyEmpQuery]);
+
+  const dailyFilteredEmployees = useMemo(() => {
+    const q = String(dailyEmpQuery || '').trim().toLowerCase();
+    if (!q) return employees || [];
+    return (employees || []).filter((e) => {
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      const code = String(e.empCode || '').toLowerCase();
+      return fullName.includes(q) || code.includes(q);
+    });
+  }, [employees, dailyEmpQuery]);
+
+  const allRecordsFilteredEmployees = useMemo(() => {
+    const q = String(searchName || '').trim().toLowerCase();
+    if (!q) return employees || [];
+    return (employees || []).filter((e) => {
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      const code = String(e.empCode || '').toLowerCase();
+      return fullName.includes(q) || code.includes(q);
+    });
+  }, [employees, searchName]);
+
+  useEffect(() => {
+    const onClickOutside = (event) => {
+      if (!monthlyEmpDropdownRef.current) return;
+      if (!monthlyEmpDropdownRef.current.contains(event.target)) setMonthlyEmpDropdownOpen(false);
+      if (dailyEmpDropdownRef.current && !dailyEmpDropdownRef.current.contains(event.target)) setDailyEmpDropdownOpen(false);
+      if (allRecordsDropdownRef.current && !allRecordsDropdownRef.current.contains(event.target)) setAllRecordsDropdownOpen(false);
+    };
+
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const selectMonthlyEmployee = (emp) => {
+    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+    setMonthlyEmpCode(String(emp.empCode || '').trim());
+    setMonthlyEmpQuery(`${fullName} (${emp.empCode || '-'})`);
+    setMonthlyEmpDropdownOpen(false);
+  };
+
+  const selectDailyEmployee = (emp) => {
+    const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+    setApiStaffId(String(emp.empCode || '').trim());
+    setDailyEmpQuery(`${fullName} (${emp.empCode || '-'})`);
+    setDailyEmpDropdownOpen(false);
+  };
+
+  const selectAllRecordsEmployee = (emp) => {
+    setSearchName(String(emp.empCode || '').trim());
+    setAllRecordsDropdownOpen(false);
+  };
 
   const fetchMonthlyApiData = async () => {
     if (!monthlyEmpCode) return alert("Please enter Employee Code");
@@ -851,13 +920,51 @@ export default function AttendanceList() {
               value={apiDateUi}
               onChange={(e) => setApiDateUi(e.target.value)}
             />
-            <input
-              type="text"
-              placeholder="Staff ID"
-              className="filter-input"
-              value={apiStaffId}
-              onChange={(e) => setApiStaffId(e.target.value)}
-            />
+            <div className="relative w-full md:flex-[1.5] md:min-w-[28rem]" ref={dailyEmpDropdownRef}>
+              <input
+                type="text"
+                placeholder="Search employee by name/code"
+                className="filter-input w-full min-w-[320px] pr-10"
+                value={dailyEmpQuery}
+                onFocus={() => setDailyEmpDropdownOpen(true)}
+                onChange={(e) => {
+                  setDailyEmpQuery(e.target.value);
+                  setApiStaffId('');
+                  setDailyEmpDropdownOpen(true);
+                }}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                onClick={() => setDailyEmpDropdownOpen((s) => !s)}
+                aria-label="Toggle employee dropdown"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {dailyEmpDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full min-w-[320px] max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  {dailyFilteredEmployees.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-500">No employee found</div>
+                  ) : (
+                    dailyFilteredEmployees.map((emp) => {
+                      const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+                      return (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                          onClick={() => selectDailyEmployee(emp)}
+                        >
+                          <span className="font-medium text-slate-800">{fullName || '-'}</span>
+                          <span className="ml-2 text-slate-500">({emp.empCode || '-'})</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
             <Button label="Excel" icon={Download} variant="outline" onClick={handleExportExcel} />
             <Button label="PDF" icon={Download} variant="primary" onClick={handleExportPdf} />
           </div>
@@ -922,13 +1029,50 @@ export default function AttendanceList() {
                 setApiDateUi(e.target.value);
               }}
             />
-            <input
-              type="text"
-              placeholder="Search by name or code..."
-              className="filter-input"
-              value={searchName}
-              onChange={(e) => setSearchName(e.target.value)}
-            />
+            <div className="relative w-full md:flex-[1.5] md:min-w-[28rem]" ref={allRecordsDropdownRef}>
+              <input
+                type="text"
+                placeholder="Search by name or code..."
+                className="filter-input w-full min-w-[320px] pr-10"
+                value={searchName}
+                onFocus={() => setAllRecordsDropdownOpen(true)}
+                onChange={(e) => {
+                  setSearchName(e.target.value);
+                  setAllRecordsDropdownOpen(true);
+                }}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                onClick={() => setAllRecordsDropdownOpen((s) => !s)}
+                aria-label="Toggle employee dropdown"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {allRecordsDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full min-w-[320px] max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  {allRecordsFilteredEmployees.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-500">No employee found</div>
+                  ) : (
+                    allRecordsFilteredEmployees.map((emp) => {
+                      const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+                      return (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                          onClick={() => selectAllRecordsEmployee(emp)}
+                        >
+                          <span className="font-medium text-slate-800">{fullName || '-'}</span>
+                          <span className="ml-2 text-slate-500">({emp.empCode || '-'})</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
             <Button label="+ Add Manual Entry" onClick={() => setAddModal(true)} />
           </div>
           <div className="date-scroll">
@@ -997,13 +1141,52 @@ export default function AttendanceList() {
             <p>Monthly API Logs - Check all live punches directly from the machine</p>
           </div>
           <div className="filters-row mt-4">
-            <input
-              type="text"
-              placeholder="Staff ID (e.g. 251)"
-              className="filter-input"
-              value={monthlyEmpCode}
-              onChange={(e) => setMonthlyEmpCode(e.target.value)}
-            />
+            <div className="relative w-full md:flex-[1.5] md:min-w-[28rem]" ref={monthlyEmpDropdownRef}>
+              <input
+                type="text"
+                placeholder="Search employee by name or code"
+                className="filter-input w-full min-w-[320px] pr-10"
+                value={monthlyEmpQuery}
+                onFocus={() => setMonthlyEmpDropdownOpen(true)}
+                onChange={(e) => {
+                  setMonthlyEmpQuery(e.target.value);
+                  setMonthlyEmpCode('');
+                  setMonthlyEmpDropdownOpen(true);
+                }}
+              />
+
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700"
+                onClick={() => setMonthlyEmpDropdownOpen((s) => !s)}
+                aria-label="Toggle employee dropdown"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+
+              {monthlyEmpDropdownOpen && (
+                <div className="absolute z-50 mt-1 w-full min-w-[320px] max-h-60 overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
+                  {monthlyFilteredEmployees.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-slate-500">No employee found</div>
+                  ) : (
+                    monthlyFilteredEmployees.map((emp) => {
+                      const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+                      return (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+                          onClick={() => selectMonthlyEmployee(emp)}
+                        >
+                          <span className="font-medium text-slate-800">{fullName || '-'}</span>
+                          <span className="ml-2 text-slate-500">({emp.empCode || '-'})</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
             <select className="filter-input" value={monthlyMonth} onChange={(e) => setMonthlyMonth(e.target.value)}>
               {["01","02","03","04","05","06","07","08","09","10","11","12"].map(m => (
                 <option key={m} value={m}>{new Date(2000, parseInt(m)-1, 1).toLocaleString('default', { month: 'long' })} ({m})</option>

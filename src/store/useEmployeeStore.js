@@ -19,9 +19,22 @@ export const useEmployeeStore = create((set, get) => ({
       const formattedData = data.map(e => ({
         ...e,
         empCode: e.empCode || `EMP-${String(e.id).padStart(3, '0')}`,
+        department: e.department || e.departmentText || '',
         designation: e.role || e.designation,
         basicSalary: e.basicSalary ?? e.salaryMonthly ?? 0,
         joiningDate: e.createdAt,
+        cnicFrontDoc: e.cnicFrontDoc || null,
+        cnicBackDoc: e.cnicBackDoc || null,
+        cnicExpiryDate: e.cnicExpiryDate || '',
+        hasEobi: Boolean(e.hasEobi),
+        hasSocialSecurity: Boolean(e.hasSocialSecurity),
+        hasHealthCard: Boolean(e.hasHealthCard),
+        hasOtherBenefit: Boolean(e.hasOtherBenefit),
+        otherBenefitText: e.otherBenefitText || '',
+        eobiContribution: Number(e.eobiContribution || 0),
+        socialSecurityContribution: Number(e.socialSecurityContribution || 0),
+        healthCardContribution: Number(e.healthCardContribution || 0),
+        otherBenefitContribution: Number(e.otherBenefitContribution || 0),
       }));
       set({ employees: formattedData, loading: false });
     } catch (err) {
@@ -103,7 +116,19 @@ export const useEmployeeStore = create((set, get) => ({
         emergencyContact: updates.emergencyContact,
         emergencyPhone: updates.emergencyPhone,
         emergencyRelation: updates.emergencyRelation,
-        notes: updates.notes
+        notes: updates.notes,
+        cnicFrontDoc: updates.cnicFrontDoc,
+        cnicBackDoc: updates.cnicBackDoc,
+        cnicExpiryDate: updates.cnicExpiryDate,
+        hasEobi: updates.hasEobi,
+        hasSocialSecurity: updates.hasSocialSecurity,
+        hasHealthCard: updates.hasHealthCard,
+        hasOtherBenefit: updates.hasOtherBenefit,
+        otherBenefitText: updates.otherBenefitText,
+        eobiContribution: updates.eobiContribution,
+        socialSecurityContribution: updates.socialSecurityContribution,
+        healthCardContribution: updates.healthCardContribution,
+        otherBenefitContribution: updates.otherBenefitContribution,
       };
 
       const res = await fetch(`${API_URL}/${id}`, {

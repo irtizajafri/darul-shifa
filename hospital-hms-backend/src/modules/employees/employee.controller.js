@@ -80,4 +80,78 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { ping, list, get, create, update, remove };
+async function listDepartmentHeads(_req, res, next) {
+  try {
+    const data = await service.listDepartmentHeads();
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createDepartmentHead(req, res, next) {
+  try {
+    const created = await service.createDepartmentHead(req.body);
+    return success(res, created, 'department created');
+  } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'error');
+    next(err);
+  }
+}
+
+async function removeDepartmentHead(req, res, next) {
+  try {
+    const ok = await service.removeDepartmentHead(req.params.departmentId);
+    if (!ok) return fail(res, 404, 'Department not found');
+    return success(res, { id: Number(req.params.departmentId) }, 'department deleted');
+  } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'error');
+    next(err);
+  }
+}
+
+async function listDesignationHeads(req, res, next) {
+  try {
+    const data = await service.listDesignationHeadsByDepartment(req.params.departmentId);
+    return success(res, data);
+  } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'error');
+    next(err);
+  }
+}
+
+async function createDesignationHead(req, res, next) {
+  try {
+    const created = await service.createDesignationHead(req.body);
+    return success(res, created, 'designation created');
+  } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'error');
+    next(err);
+  }
+}
+
+async function removeDesignationHead(req, res, next) {
+  try {
+    const ok = await service.removeDesignationHead(req.params.designationId);
+    if (!ok) return fail(res, 404, 'Designation not found');
+    return success(res, { id: Number(req.params.designationId) }, 'designation deleted');
+  } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'error');
+    next(err);
+  }
+}
+
+module.exports = {
+  ping,
+  list,
+  get,
+  create,
+  update,
+  remove,
+  listDepartmentHeads,
+  createDepartmentHead,
+  removeDepartmentHead,
+  listDesignationHeads,
+  createDesignationHead,
+  removeDesignationHead,
+};

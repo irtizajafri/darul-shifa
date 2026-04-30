@@ -19,7 +19,7 @@ const modules = [
     path: '/employee-module',
   },
   { id: 'lab', icon: FlaskConical, title: 'Laboratories', desc: 'Lab tests, results & reporting', active: false },
-  { id: 'inventory', icon: Package, title: 'Inventory', desc: 'Stock, orders, suppliers & assets', active: false },
+  { id: 'inventory', icon: Package, title: 'Inventory', desc: 'Stock, orders, suppliers & assets', active: true, path: '/inventory-module' },
   { id: 'clinic', icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: false },
   { id: 'accounts', icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: false },
 ];
@@ -37,8 +37,14 @@ export default function MainDashboard() {
 
   const handleModuleClick = (m) => {
     if (m.active) {
-      setModule('employee');
-      navigate('/employee-module');
+      if (m.id === 'employee') {
+        setModule('employee');
+      } else if (m.id === 'inventory') {
+        setModule('inventory');
+      } else {
+        clearModule();
+      }
+      navigate(m.path || '/dashboard');
     }
   };
 

@@ -27,6 +27,7 @@ async function create(req, res, next) {
     const record = await service.create(req.body);
     return success(res, record, 'advance/loan created');
   } catch (err) {
+    if (err?.statusCode) return fail(res, err.statusCode, err.message);
     next(err);
   }
 }
@@ -39,6 +40,7 @@ async function update(req, res, next) {
     const record = await service.update(id, req.body || {});
     return success(res, record, 'advance/loan updated');
   } catch (err) {
+    if (err?.statusCode) return fail(res, err.statusCode, err.message);
     next(err);
   }
 }

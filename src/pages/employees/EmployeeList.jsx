@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
-import { departments, designations } from '../../utils/dummyData';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 import PageLoader from '../../components/ui/PageLoader';
 import PageHeader from '../../components/shared/PageHeader';
@@ -45,6 +44,20 @@ export default function EmployeeList() {
       return matchSearch && matchDept && matchDesig && matchStatus;
     });
   }, [employees, search, filterDept, filterDesig, filterStatus]);
+
+  const departmentOptions = useMemo(() => {
+    const values = employees
+      .map((e) => String(e.department || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+  }, [employees]);
+
+  const designationOptions = useMemo(() => {
+    const values = employees
+      .map((e) => String(e.designation || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+  }, [employees]);
 
   const columns = [
     { header: 'Emp Code', accessorKey: 'empCode', cell: (info) => info.getValue() },
@@ -157,13 +170,13 @@ export default function EmployeeList() {
         />
         <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} className="filter-select">
           <option value="">All Departments</option>
-          {departments.map((d) => (
+          {departmentOptions.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>
         <select value={filterDesig} onChange={(e) => setFilterDesig(e.target.value)} className="filter-select">
           <option value="">All Designations</option>
-          {designations.map((d) => (
+          {designationOptions.map((d) => (
             <option key={d} value={d}>{d}</option>
           ))}
         </select>

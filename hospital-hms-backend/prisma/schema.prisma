@@ -123,3 +123,318 @@ model AdvanceLoan {
   status      String    @default("pending")
   createdAt   DateTime  @default(now())
 }
+
+model InventoryCategory {
+  id            Int                    @id @default(autoincrement())
+  code          String                 @unique
+  name          String
+  status        String                 @default("active")
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  subcategories InventorySubcategory[]
+  items         InventoryItem[]
+  purchaseOrders InventoryPurchaseOrder[]
+  grns          InventoryGRN[]
+
+  @@unique([name])
+  @@index([status])
+}
+
+model InventorySubcategory {
+  id          Int               @id @default(autoincrement())
+  code        String            @unique
+  name        String
+  status      String            @default("active")
+  categoryId  Int
+  category    InventoryCategory @relation(fields: [categoryId], references: [id])
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  items       InventoryItem[]
+  purchaseOrders InventoryPurchaseOrder[]
+  grns        InventoryGRN[]
+
+  @@unique([categoryId, name])
+  @@index([status])
+}
+
+model InventorySupplier {
+  id             Int             @id @default(autoincrement())
+  code           String          @unique
+  name           String
+  address        String?
+  contactDetails String?
+  bankingDetails String?
+  status         String          @default("active")
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  items          InventoryItem[]
+  purchaseOrders InventoryPurchaseOrder[]
+  grns           InventoryGRN[]
+
+  @@unique([name])
+  @@index([status])
+}
+
+model InventoryStorage {
+  id               Int             @id @default(autoincrement())
+  code             String          @unique
+  name             String
+  numberAllotment  String?
+  status           String          @default("active")
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  items            InventoryItem[]
+
+  @@unique([name])
+  @@index([status])
+}
+
+model InventoryItem {
+  id             Int                   @id @default(autoincrement())
+  code           String                @unique
+  name           String
+  itemType       String
+  unit           String
+  purchasePrice  Float
+  lastGrnRate    Float?
+  hasExpiry      Boolean               @default(false)
+  reorderLevel   Float                 @default(0)
+  currentStock   Float                 @default(0)
+  status         String                @default("active")
+
+  brand          String?
+  model          String?
+  serialNumber   String?
+  assetLocation  String?
+  purchaseDate   DateTime?
+  warrantyUntil  DateTime?
+  usefulLifeYears Int?
+  assetCondition String?               @default("working")
+  bookValue      Float?
+
+  categoryId     Int
+  category       InventoryCategory     @relation(fields: [categoryId], references: [id])
+  subcategoryId  Int
+  subcategory    InventorySubcategory  @relation(fields: [subcategoryId], references: [id])
+  supplierId     Int
+  supplier       InventorySupplier     @relation(fields: [supplierId], references: [id])
+  storageId      Int?
+  storage        InventoryStorage?     @relation(fields: [storageId], references: [id])
+
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  stockMovements InventoryStockMovement[]
+  reorderAlerts  InventoryReorderAlert[]
+  purchaseOrders InventoryPurchaseOrder[]
+  grns           InventoryGRN[]
+  gds            InventoryGD[]
+  gins           InventoryGIN[]
+  salesInvoices  InventorySalesInvoice[]
+  gdns           InventoryGDN[]
+
+  @@index([status])
+  @@index([name])
+  @@index([assetCondition])
+}
+
+model InventoryStockMovement {
+  id            Int            @id @default(autoincrement())
+  itemId        Int
+  item          InventoryItem  @relation(fields: [itemId], references: [id])
+  movementType  String
+  quantity      Float
+  unitRate      Float?
+  previousStock Float
+  newStock      Float
+  referenceType String?
+  referenceId   String?
+  expiryDate    DateTime?
+  note          String?
+  createdAt     DateTime       @default(now())
+
+  @@index([itemId, createdAt])
+  @@index([movementType])
+  @@index([referenceType])
+}
+
+model InventoryReorderAlert {
+  id           Int            @id @default(autoincrement())
+  itemId        Int
+  item          InventoryItem  @relation(fields: [itemId], references: [id])
+  thresholdQty  Float
+  currentQty    Float
+  status        String         @default("open")
+  message       String
+  createdAt     DateTime       @default(now())
+  resolvedAt    DateTime?
+
+  @@index([itemId, status])
+}
+
+model InventoryDepartment {
+  id        Int           @id @default(autoincrement())
+  code      String        @unique
+  name      String        @unique
+  status    String        @default("active")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  gds       InventoryGD[]
+  gins      InventoryGIN[]
+
+  @@index([status])
+}
+
+model InventoryDemandCategoryType {
+  id        Int           @id @default(autoincrement())
+  code      String        @unique
+  name      String        @unique
+  status    String        @default("active")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  gds       InventoryGD[]
+
+  @@index([status])
+}
+
+model InventoryPurchaseOrder {
+  id                    Int                  @id @default(autoincrement())
+  code                  String               @unique
+  supplierId            Int
+  supplier              InventorySupplier    @relation(fields: [supplierId], references: [id])
+  itemId                Int
+  item                  InventoryItem        @relation(fields: [itemId], references: [id])
+  categoryId            Int
+  category              InventoryCategory    @relation(fields: [categoryId], references: [id])
+  subcategoryId         Int
+  subcategory           InventorySubcategory @relation(fields: [subcategoryId], references: [id])
+  inHandQuantity        Float                @default(0)
+  requiredQuantity      Float
+  orderedRate           Float?
+  expectedDate          DateTime
+  poDate                DateTime             @default(now())
+  lastPurchaseDate      DateTime?
+  lastPurchaseSupplier  String?
+  lastPurchaseRate      Float?
+  lastPurchaseQuantity  Float?
+  status                String               @default("open")
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  grn                   InventoryGRN?
+
+  @@index([supplierId])
+  @@index([itemId])
+  @@index([status])
+}
+
+model InventoryGRN {
+  id               Int                  @id @default(autoincrement())
+  code             String               @unique
+  poId             Int                  @unique
+  purchaseOrder    InventoryPurchaseOrder @relation(fields: [poId], references: [id])
+  supplierId       Int
+  supplier         InventorySupplier    @relation(fields: [supplierId], references: [id])
+  itemId           Int
+  item             InventoryItem        @relation(fields: [itemId], references: [id])
+  categoryId       Int
+  category         InventoryCategory    @relation(fields: [categoryId], references: [id])
+  subcategoryId    Int
+  subcategory      InventorySubcategory @relation(fields: [subcategoryId], references: [id])
+  orderedQuantity  Float
+  orderedRate      Float
+  receivedQuantity Float
+  receivedRate     Float
+  totalAmount      Float
+  receivedDate     DateTime
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([receivedDate])
+  @@index([supplierId])
+  @@index([categoryId, subcategoryId])
+}
+
+model InventoryGD {
+  id                    Int                        @id @default(autoincrement())
+  code                  String                     @unique
+  itemId                Int
+  item                  InventoryItem              @relation(fields: [itemId], references: [id])
+  departmentId          Int
+  department            InventoryDepartment        @relation(fields: [departmentId], references: [id])
+  demandCategoryTypeId  Int
+  demandCategoryType    InventoryDemandCategoryType @relation(fields: [demandCategoryTypeId], references: [id])
+  quantityRequested     Float
+  requestDate           DateTime
+  status                String                     @default("open")
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+
+  gins                  InventoryGIN[]
+
+  @@index([requestDate])
+  @@index([departmentId])
+  @@index([status])
+}
+
+model InventoryGIN {
+  id             Int                 @id @default(autoincrement())
+  code           String              @unique
+  gdId           Int
+  gd             InventoryGD         @relation(fields: [gdId], references: [id])
+  itemId         Int
+  item           InventoryItem       @relation(fields: [itemId], references: [id])
+  departmentId   Int
+  department     InventoryDepartment @relation(fields: [departmentId], references: [id])
+  issuedQuantity Float
+  issueDate      DateTime
+  status         String              @default("issued")
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([issueDate])
+  @@index([departmentId])
+}
+
+model InventorySalesInvoice {
+  id              Int            @id @default(autoincrement())
+  code            String         @unique
+  itemId          Int
+  item            InventoryItem  @relation(fields: [itemId], references: [id])
+  invoiceDate     DateTime       @default(now())
+  customerType    String
+  customerName    String?
+  quantity        Float
+  purchasePrice   Float
+  retailPrice     Float
+  markupPercent   Float
+  saleRate        Float
+  totalAmount     Float
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([invoiceDate])
+  @@index([itemId])
+  @@index([customerType])
+}
+
+model InventoryGDN {
+  id              Int            @id @default(autoincrement())
+  code            String         @unique
+  itemId          Int
+  item            InventoryItem  @relation(fields: [itemId], references: [id])
+  quantity        Float
+  reason          String
+  discardedDate   DateTime       @default(now())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([discardedDate])
+  @@index([itemId])
+}

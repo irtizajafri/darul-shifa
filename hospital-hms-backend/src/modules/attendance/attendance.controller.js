@@ -16,38 +16,73 @@ function pktHour(date, hour) {
 // ─── Shared Punch Pairing Logic ───────────────────────────────────────────────
 // testPairing aur syncAttendance dono mein same logic tha — ab ek jagah hai.
 function pairPunches(punches, isNight) {
+  if (!Array.isArray(punches) || punches.length === 0) {
+    return { timeIn: null, timeOut: null, workedMinutes: 0 };
+  }
+
+  const sortedPunches = punches.slice().sort((a, b) => a - b);
+
+  // Normal duty: strict transition pairing
+  // p1-p2, p3-p4 ... odd last punch => open IN (missed_out)
+  if (!isNight) {
+    const stutterThresholdMs = 2 * 60 * 1000; // machine double-tap guard
+    const deduped = [];
+    for (const p of sortedPunches) {
+      const last = deduped[deduped.length - 1];
+      if (!last || (p.getTime() - last.getTime()) > stutterThresholdMs) {
+        deduped.push(p);
+      }
+    }
+
+    if (deduped.length === 1) {
+      return { timeIn: deduped[0], timeOut: null, workedMinutes: 0 };
+    }
+
+    const pairs = [];
+    for (let i = 0; i < deduped.length; i += 2) {
+      pairs.push({ inPunch: deduped[i], outPunch: deduped[i + 1] || null });
+    }
+
+    const firstIn = pairs[0]?.inPunch || null;
+    const lastCompletePair = [...pairs].reverse().find((p) => Boolean(p.outPunch));
+    const finalOut = lastCompletePair ? lastCompletePair.outPunch : null;
+    const workedMinutes = pairs.reduce((sum, p) => {
+      if (!p.inPunch || !p.outPunch) return sum;
+      const diff = (p.outPunch.getTime() - p.inPunch.getTime()) / 60000;
+      return diff > 0 ? sum + Math.round(diff) : sum;
+    }, 0);
+
+    return { timeIn: firstIn, timeOut: finalOut, workedMinutes };
+  }
+
   let timeIn = null;
   let timeOut = null;
 
-  if (punches.length >= 2) {
-    timeIn = punches[0];
-    timeOut = punches[punches.length - 1];
+  if (sortedPunches.length >= 2) {
+    timeIn = sortedPunches[0];
+    timeOut = sortedPunches[sortedPunches.length - 1];
 
-    // Stutter punch fix: agar pehle aur aakhri punch ka farq 1 ghante se kam ho
-    // toh yeh alag punches nahi, ek hi punch ka double scan hai
+  
     if (timeOut.getTime() - timeIn.getTime() < 3600000) {
       timeOut = null;
-      // NOTE: timeIn null mat karo — stutter case mein timeIn sahi hai
     }
   }
 
   // Agar sirf ek punch hai YA stutter ke baad timeOut null hua
   if (!timeOut) {
     // timeIn jo stutter se mila tha ya pehla punch
-    const punch = timeIn || punches[0];
+    const punch = timeIn || sortedPunches[0];
 
     // Is single punch ko identify karo — timeIn hai ya timeOut?
    if (isNight) {
   const hour = punch.getHours();
   
-  // 1. Time In Logic: Agar punch raat 6 baje (18) se raat 12 baje tak hai
-  // Ya phir midnight ke foran baad (raat 3 baje tak) koi late aaye.
+
   if (hour >= 18 || hour <= 3) { 
     timeIn = punch;
     timeOut = null;
   } 
   
-  // 2. Time Out Logic: Agar punch subah 6 baje (6) se dopahar 12 baje (12) ke darmiyan hai
   else if (hour >= 6 && hour <= 12) {
     timeOut = punch;
     
@@ -67,7 +102,13 @@ function pairPunches(punches, isNight) {
     }
   }
 
-  return { timeIn, timeOut };
+  let workedMinutes = 0;
+  if (timeIn && timeOut) {
+    const diff = (timeOut.getTime() - timeIn.getTime()) / 60000;
+    workedMinutes = diff > 0 ? Math.round(diff) : 0;
+  }
+
+  return { timeIn, timeOut, workedMinutes };
 }
 
 // ─── Shared Window Logic ──────────────────────────────────────────────────────
@@ -261,10 +302,12 @@ async function testPairing(req, res, next) {
           if (!onDay) {
             let offIn = null;
             let offOut = null;
+            let offWorkedMinutes = 0;
             if (punches.length > 0) {
               const pairedOff = pairPunches(punches, applyNightLogic);
               offIn = pairedOff.timeIn;
               offOut = pairedOff.timeOut;
+              offWorkedMinutes = pairedOff.workedMinutes || 0;
             }
             parsedData.push({
               empCode:      staffId,
@@ -272,6 +315,7 @@ async function testPairing(req, res, next) {
               logicalDate:  date.toISOString().split('T')[0],
               timeIn:       offIn ? offIn.toISOString() : null,
               timeOut:      offOut ? offOut.toISOString() : null,
+              workedMinutes: offWorkedMinutes,
               status:       punches.length > 0 ? 'off_not_avail' : 'off_avail',
               punchesCount: punches.length
             });
@@ -280,6 +324,7 @@ async function testPairing(req, res, next) {
 
           let onIn = null;
           let onOut = null;
+          let onWorkedMinutes = 0;
           if (punches.length === 1) {
             // Business rule: ON day par single punch hamesha missed_out
             onIn = punches[0];
@@ -288,6 +333,7 @@ async function testPairing(req, res, next) {
             const pairedOn = pairPunches(punches, applyNightLogic);
             onIn = pairedOn.timeIn;
             onOut = pairedOn.timeOut;
+            onWorkedMinutes = pairedOn.workedMinutes || 0;
           }
 
           parsedData.push({
@@ -296,6 +342,7 @@ async function testPairing(req, res, next) {
             logicalDate:  date.toISOString().split('T')[0],
             timeIn:       onIn ? onIn.toISOString() : null,
             timeOut:      onOut ? onOut.toISOString() : null,
+            workedMinutes: onWorkedMinutes,
             status:       punches.length === 0 ? 'absent' : (onOut ? 'present' : 'missed_out'),
             punchesCount: punches.length
           });
@@ -303,7 +350,7 @@ async function testPairing(req, res, next) {
         }
 
         if (punches.length > 0) {
-          const { timeIn, timeOut } = pairPunches(punches, applyNightLogic);
+          const { timeIn, timeOut, workedMinutes } = pairPunches(punches, applyNightLogic);
 
           parsedData.push({
             empCode:      staffId,
@@ -311,6 +358,7 @@ async function testPairing(req, res, next) {
             logicalDate:  date.toISOString().split('T')[0],
             timeIn:       timeIn  ? timeIn.toISOString()  : null,
             timeOut:      timeOut ? timeOut.toISOString() : null,
+            workedMinutes: workedMinutes || 0,
             status:       !timeOut ? 'missed_out' : 'present',
             punchesCount: punches.length
           });
@@ -470,13 +518,14 @@ async function syncAttendance(req, res, next) {
         const punches = logs.filter(l => l >= windowStart && l <= windowEnd);
 
         if (punches.length > 0) {
-          const { timeIn, timeOut } = pairPunches(punches, isNight);
+          const { timeIn, timeOut, workedMinutes } = pairPunches(punches, isNight);
 
           parsedData.push({
             employeeId: emp.id,
             date:       new Date(date),
             actualIn:   timeIn  ? new Date(timeIn)  : null,
             actualOut:  timeOut ? new Date(timeOut) : null,
+            workedMinutes: workedMinutes || 0,
             status:     !timeOut ? 'missed_out' : 'present'
           });
         }
@@ -495,6 +544,7 @@ async function syncAttendance(req, res, next) {
         update: {
           actualIn:  record.actualIn,
           actualOut: record.actualOut,
+          workedMinutes: record.workedMinutes,
           status:    record.status
         },
         create: {
@@ -502,6 +552,7 @@ async function syncAttendance(req, res, next) {
           date:       record.date,
           actualIn:   record.actualIn,
           actualOut:  record.actualOut,
+          workedMinutes: record.workedMinutes,
           status:     record.status
         }
       });

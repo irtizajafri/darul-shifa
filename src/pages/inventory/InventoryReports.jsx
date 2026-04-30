@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Printer, Download, Filter, BarChart3 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useInventoryStore } from '../../store/useInventoryStore';
 
 const REPORT_TYPES = [
   'Item List', 'Stock Position', 'Item Ledger', 'Reorder Report', 
@@ -11,6 +13,41 @@ const REPORT_TYPES = [
 
 export default function InventoryReports() {
   const [activeReport, setActiveReport] = useState('Stock Position');
+  const { items, reorderAlerts, fetchItems, fetchReorderAlerts } = useInventoryStore();
+
+  useEffect(() => {
+    Promise.all([fetchItems(), fetchReorderAlerts()]).catch((err) => {
+      toast.error(err.message || 'Failed to load inventory reports data');
+    });
+  }, [fetchItems, fetchReorderAlerts]);
+
+  const reportRows = useMemo(() => {
+    if (activeReport === 'Reorder Report') {
+      return (reorderAlerts || []).map((row) => ({
+        key: row.id,
+        code: row.item?.code,
+        name: row.item?.name,
+        category: row.item?.category?.name || '-',
+        stock: row.currentQty,
+        threshold: row.thresholdQty,
+        status: row.status,
+      }));
+    }
+
+    if (activeReport === 'Stock Position') {
+      return (items || []).map((row) => ({
+        key: row.id,
+        code: row.code,
+        name: row.name,
+        category: row.category?.name || '-',
+        stock: row.currentStock,
+        threshold: row.reorderLevel,
+        status: row.status,
+      }));
+    }
+
+    return [];
+  }, [activeReport, items, reorderAlerts]);
 
   return (
     <div className="p-6">
@@ -54,12 +91,45 @@ export default function InventoryReports() {
               <h2 className="font-semibold text-slate-800">{activeReport}</h2>
               <Button variant="outline" size="sm" label="Filters" icon={Filter} />
             </div>
-            <div className="flex-1 flex items-center justify-center text-slate-400 p-12 text-center">
-              <div>
-                <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>Select date ranges and filters to generate the <strong>{activeReport}</strong> data.</p>
+            {reportRows.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                      <th className="px-4 py-3">Code</th>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3">Current Stock</th>
+                      <th className="px-4 py-3">Reorder Level</th>
+                      <th className="px-4 py-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {reportRows.map((row) => (
+                      <tr key={row.key}>
+                        <td className="px-4 py-3">{row.code}</td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
+                        <td className="px-4 py-3">{row.category}</td>
+                        <td className="px-4 py-3">{row.stock}</td>
+                        <td className="px-4 py-3">{row.threshold}</td>
+                        <td className="px-4 py-3 capitalize">{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-slate-400 p-12 text-center">
+                <div>
+                  <BarChart3 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>
+                    {activeReport === 'Stock Position' || activeReport === 'Reorder Report'
+                      ? `No data found for ${activeReport}.`
+                      : `Select date ranges and filters to generate the ${activeReport} data.`}
+                  </p>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       </div>

@@ -15,12 +15,129 @@ import toast from 'react-hot-toast';
 import { formatDate } from '../../utils/helpers';
 import './AdvanceLoan.scss';
 
+const toRoundedNumber = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.round(parsed);
+};
+
+const buildEqualInstallments = (totalAmount, totalMonths) => {
+  const safeMonths = Math.max(0, Number(totalMonths) || 0);
+  const safeAmount = Math.max(0, toRoundedNumber(totalAmount));
+  if (!safeMonths || !safeAmount) return [];
+
+  const base = Math.floor(safeAmount / safeMonths);
+  let remainder = safeAmount - (base * safeMonths);
+
+  return Array.from({ length: safeMonths }, () => {
+    const bump = remainder > 0 ? 1 : 0;
+    remainder = Math.max(0, remainder - bump);
+    return base + bump;
+  });
+};
+
+const toPositiveAmount = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return parsed;
+};
+
+const addMonthsToMonthKey = (monthKey, offset) => {
+  const match = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return null;
+
+  const shifted = new Date(year, month - 1 + offset, 1);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const pickBaseInstallment = (baseSchedule = []) => {
+  const positives = (baseSchedule || [])
+    .map((row) => toPositiveAmount(row?.amount))
+    .filter((amount) => amount > 0);
+
+  if (!positives.length) return 0;
+
+  const freq = new Map();
+  positives.forEach((amount) => {
+    const key = String(amount);
+    freq.set(key, (freq.get(key) || 0) + 1);
+  });
+
+  const ranked = Array.from(freq.entries()).sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return Number(b[0]) - Number(a[0]);
+  });
+
+  return Number(ranked[0]?.[0] || positives[0] || 0);
+};
+
+const buildLiveSchedule = ({ baseSchedule = [], recoveries = [], isLoan = false }) => {
+  if (!Array.isArray(baseSchedule) || !baseSchedule.length) return [];
+
+  const recoveryMap = new Map(
+    (Array.isArray(recoveries) ? recoveries : []).map((row) => [
+      String(row?.month || ''),
+      toPositiveAmount(row?.receivedAmount ?? row?.amount),
+    ])
+  );
+
+  let carryForward = 0;
+  const rows = baseSchedule.map((entry) => {
+    const expected = toPositiveAmount(entry?.amount);
+    const receivedRaw = recoveryMap.has(entry.month) ? recoveryMap.get(entry.month) : expected;
+    const received = Math.min(expected, toPositiveAmount(receivedRaw));
+
+    if (isLoan) {
+      carryForward += Math.max(0, expected - received);
+    }
+
+    return {
+      month: entry.month,
+      amount: received,
+      expected,
+      isShifted: false,
+    };
+  });
+
+  if (!isLoan || carryForward <= 0) return rows;
+
+  const lastMonth = baseSchedule[baseSchedule.length - 1]?.month;
+  if (!lastMonth) return rows;
+
+  const baseInstallment = pickBaseInstallment(baseSchedule) || 1;
+  let offset = 1;
+  let remaining = carryForward;
+
+  while (remaining > 0 && offset < 240) {
+    const month = addMonthsToMonthKey(lastMonth, offset);
+    if (!month) break;
+
+    const shiftedAmount = Math.min(baseInstallment, remaining);
+    rows.push({
+      month,
+      amount: shiftedAmount,
+      expected: shiftedAmount,
+      isShifted: true,
+    });
+
+    remaining -= shiftedAmount;
+    offset += 1;
+  }
+
+  return rows;
+};
+
 export default function AdvanceLoan() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [activeTab, setActiveTab] = useState(0);
   const [schedule, setSchedule] = useState([]);
+  const [recoveries, setRecoveries] = useState([]);
+  const [manualScheduleMode, setManualScheduleMode] = useState(false);
   const [apiAttendance, setApiAttendance] = useState([]);
   const { setModule } = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
@@ -29,15 +146,18 @@ export default function AdvanceLoan() {
 
   const now = new Date();
   const defaultDate = now.toISOString().slice(0, 10);
+
   const { register, handleSubmit, watch, reset } = useForm({
-    defaultValues: { type: 'Advance', amount: 0, installmentMonths: 12, issueDate: defaultDate },
+    defaultValues: { type: 'Advance', amount: '', installmentMonths: '', issueDate: '', empCode: '', remarks: '' },
   });
-  const amount = watch('amount', 0) || 0;
-  const months = watch('installmentMonths', 12) || 12;
-  const issueDate = watch('issueDate', defaultDate);
+  const amount = toRoundedNumber(watch('amount'));
+  const months = Math.max(0, Number(watch('installmentMonths')) || 0);
+  const issueDate = watch('issueDate', '');
+  const recordType = watch('type', 'Advance');
   const empCode = watch('empCode');
   const selectedEmployee = employees.find((e) => String(e.empCode) === String(empCode));
-  const monthlyDed = months > 0 ? Math.round(amount / months) : 0;
+  const installmentPreview = buildEqualInstallments(amount, months);
+  const monthlyDed = installmentPreview[0] || 0;
 
   const normalizeEmpCode = useCallback((value) =>
     String(value || '')
@@ -73,16 +193,33 @@ export default function AdvanceLoan() {
   }, [setModule, fetchEmployees, fetchAttendance, fetchAdvanceLoans]);
 
   useEffect(() => {
+    if (manualScheduleMode) return;
     if (!issueDate) return;
+
+    const installmentValues = buildEqualInstallments(amount, months);
+    if (!installmentValues.length) {
+      setSchedule([]);
+      setRecoveries([]);
+      return;
+    }
+
     const start = new Date(issueDate);
-    const entries = Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(start.getFullYear(), start.getMonth() + i, 1);
+    const entries = Array.from({ length: installmentValues.length }, (_, i) => {
+      const d = new Date(start.getFullYear(), start.getMonth() + i + 1, 1);
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const amountValue = i < months ? monthlyDed : 0;
+      const amountValue = installmentValues[i] || 0;
       return { month: monthKey, amount: amountValue };
     });
+
     setSchedule(entries);
-  }, [issueDate, months, monthlyDed]);
+    setRecoveries((prev) => entries.map((entry) => {
+      const existing = (prev || []).find((r) => r.month === entry.month);
+      return {
+        month: entry.month,
+        receivedAmount: existing ? Number(existing.receivedAmount || 0) : Number(entry.amount || 0),
+      };
+    }));
+  }, [issueDate, months, amount, manualScheduleMode]);
 
   useEffect(() => {
     const fetchApiAttendance = async () => {
@@ -191,6 +328,7 @@ export default function AdvanceLoan() {
         type: data.type.toLowerCase(),
         status: 'active',
         schedule,
+        recoveries,
         remarks: data.remarks
       };
 
@@ -204,7 +342,10 @@ export default function AdvanceLoan() {
       await fetchAdvanceLoans();
       setModalOpen(false);
       setEditingRecord(null);
-      reset({ type: 'Advance', amount: 0, installmentMonths: 12, issueDate: defaultDate, empCode: '', remarks: '' });
+      setManualScheduleMode(false);
+      setSchedule([]);
+      setRecoveries([]);
+      reset({ type: 'Advance', amount: '', installmentMonths: '', issueDate: '', empCode: '', remarks: '' });
     } catch (err) {
       toast.error(err.message || 'Failed to save record');
     }
@@ -213,11 +354,19 @@ export default function AdvanceLoan() {
   const onEdit = (row) => {
     const normalizedType = String(row.type || 'advance').toLowerCase() === 'loan' ? 'Loan' : 'Advance';
     let issue = row?.createdAt ? new Date(row.createdAt).toISOString().slice(0, 10) : defaultDate;
-    if (Array.isArray(row.schedule) && row.schedule.length > 0) {
-      const [y, m] = String(row.schedule[0].month || '').split('-');
-      if (y && m) issue = `${y}-${m}-01`;
+    const rowBaseSchedule = Array.isArray(row.baseSchedule) && row.baseSchedule.length > 0
+      ? row.baseSchedule
+      : (Array.isArray(row.schedule) ? row.schedule : []);
+
+    if (rowBaseSchedule.length > 0) {
+      const [y, m] = String(rowBaseSchedule[0].month || '').split('-');
+      if (y && m) {
+        const firstScheduleMonth = new Date(Number(y), Number(m) - 1, 1);
+        firstScheduleMonth.setMonth(firstScheduleMonth.getMonth() - 1);
+        issue = `${firstScheduleMonth.getFullYear()}-${String(firstScheduleMonth.getMonth() + 1).padStart(2, '0')}-01`;
+      }
     }
-    const monthsCount = (row.schedule || []).filter((s) => Number(s.amount) > 0).length || (row.schedule?.length || 12);
+  const monthsCount = rowBaseSchedule.filter((s) => Number(s.amount) > 0).length || (rowBaseSchedule.length || 0);
 
     reset({
       empCode: row?.employee?.empCode || '',
@@ -227,9 +376,18 @@ export default function AdvanceLoan() {
       issueDate: issue,
       remarks: row?.remarks || ''
     });
-    if (Array.isArray(row.schedule) && row.schedule.length > 0) {
-      setSchedule(row.schedule.map((s) => ({ month: s.month, amount: Number(s.amount) || 0 })));
-    }
+    const nextSchedule = rowBaseSchedule.map((s) => ({ month: s.month, amount: Number(s.amount) || 0 }));
+    const recoveryMap = new Map((Array.isArray(row.recoveries) ? row.recoveries : []).map((r) => [
+      String(r.month || ''),
+      Number(r.receivedAmount ?? r.amount ?? 0) || 0,
+    ]));
+
+    setManualScheduleMode(true);
+    setSchedule(nextSchedule);
+    setRecoveries(nextSchedule.map((s) => ({
+      month: s.month,
+      receivedAmount: recoveryMap.has(s.month) ? recoveryMap.get(s.month) : Number(s.amount || 0),
+    })));
     setEditingRecord(row);
     setModalOpen(true);
   };
@@ -255,6 +413,14 @@ export default function AdvanceLoan() {
   const getRemaining = (row) =>
     Number(row.amount || 0) - getPaidTotal(row);
 
+  const modalTotalRecovered = recoveries.reduce((sum, r) => sum + (Number(r.receivedAmount) || 0), 0);
+  const modalRemaining = Math.max(0, Number(amount || 0) - modalTotalRecovered);
+  const liveSchedule = buildLiveSchedule({
+    baseSchedule: schedule,
+    recoveries,
+    isLoan: String(recordType || '').toLowerCase() === 'loan',
+  });
+
   if (loading) return <PageLoader />;
 
   return (
@@ -268,7 +434,10 @@ export default function AdvanceLoan() {
         actionLabel="+ New"
         onAction={() => {
           setEditingRecord(null);
-          reset({ type: 'Advance', amount: 0, installmentMonths: 12, issueDate: defaultDate, empCode: '', remarks: '' });
+          setManualScheduleMode(false);
+          setSchedule([]);
+          setRecoveries([]);
+          reset({ type: 'Advance', amount: '', installmentMonths: '', issueDate: '', empCode: '', remarks: '' });
           setModalOpen(true);
         }}
       />
@@ -304,7 +473,7 @@ export default function AdvanceLoan() {
                   <td>{a.employee?.firstName} {a.employee?.lastName}</td>
                   <td>{a.amount.toLocaleString()}</td>
                   <td>{formatDate(a.createdAt)}</td>
-                  <td>{a.schedule?.length || 12}</td>
+                  <td>{a.schedule?.length || a.baseSchedule?.length || 0}</td>
                   <td>{getMonthlyDed(a).toLocaleString()}</td>
                   <td>{getPaidTotal(a).toLocaleString()}</td>
                   <td>{getRemaining(a).toLocaleString()}</td>
@@ -326,6 +495,8 @@ export default function AdvanceLoan() {
         onClose={() => {
           setModalOpen(false);
           setEditingRecord(null);
+          setManualScheduleMode(false);
+          setRecoveries([]);
         }}
         title={editingRecord ? 'Edit Advance / Loan' : 'New Advance / Loan'}
         size="md"
@@ -345,7 +516,7 @@ export default function AdvanceLoan() {
           </div>
           <Input label="Amount" type="number" {...register('amount', { required: true, valueAsNumber: true })} />
           <Input label="Issue Date" type="date" {...register('issueDate', { required: true })} />
-          <Input label="Installment Months" type="number" {...register('installmentMonths', { valueAsNumber: true })} />
+          <Input label="Installment Months" type="number" {...register('installmentMonths', { required: true, valueAsNumber: true })} />
           <div className="form-group">
             <label>Monthly Deduction (auto)</label>
             <input type="text" className="form-input" value={monthlyDed} readOnly />
@@ -355,31 +526,54 @@ export default function AdvanceLoan() {
             <input type="text" className="form-input" value={earnedSalary.toLocaleString()} readOnly />
           </div>
           <div className="form-group">
-            <label>Schedule (12 months)</label>
+            <label>Monthly Received (auto-filled, editable)</label>
             <div className="schedule-grid">
-              {schedule.map((s, idx) => (
-                <div key={s.month} className="schedule-row">
-                  <span>{s.month}</span>
+              {liveSchedule.map((s) => (
+                <div key={s.month} className={`schedule-row ${s.isShifted ? 'shifted' : ''}`}>
+                  <span>
+                    {s.month}
+                    {s.isShifted ? ' *' : ''}
+                  </span>
                   <input
                     type="number"
                     value={s.amount}
+                    readOnly={s.isShifted}
                     onChange={(e) => {
-                      const next = [...schedule];
-                      next[idx] = { ...next[idx], amount: Number(e.target.value) || 0 };
-                      setSchedule(next);
+                      if (s.isShifted) return;
+                      const nextReceived = Number(e.target.value) || 0;
+                      setRecoveries((prev) => {
+                        const current = Array.isArray(prev) ? prev : [];
+                        const monthExists = current.some((r) => r.month === s.month);
+                        if (monthExists) {
+                          return current.map((r) => (
+                            r.month === s.month ? { ...r, receivedAmount: nextReceived } : r
+                          ));
+                        }
+                        return [...current, { month: s.month, receivedAmount: nextReceived }];
+                      });
                     }}
                   />
                 </div>
               ))}
             </div>
+            {schedule.length === 0 && (
+              <small style={{ color: '#666' }}>
+                Amount, issue date aur installment months enter karein — schedule auto generate ho jayega.
+              </small>
+            )}
+            {liveSchedule.some((row) => row.isShifted) && (
+              <small style={{ color: '#666' }}>
+                * Star wali rows shortfall se auto add hui hain (last month ke baad).
+              </small>
+            )}
           </div>
           <div className="form-group">
             <label>Total Paid</label>
-            <input type="text" className="form-input" value="0" readOnly />
+            <input type="text" className="form-input" value={Math.round(modalTotalRecovered).toLocaleString()} readOnly />
           </div>
           <div className="form-group">
             <label>Remaining</label>
-            <input type="text" className="form-input" value={amount} readOnly />
+            <input type="text" className="form-input" value={Math.round(modalRemaining).toLocaleString()} readOnly />
           </div>
           <Input label="Remarks" {...register('remarks')} />
           <div className="modal-actions">

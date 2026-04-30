@@ -29,6 +29,7 @@ export default function EmployeeDetail() {
   const emp = getEmployeeById(id);
   const seed = encodeURIComponent(`${emp?.firstName || ''} ${emp?.lastName || ''}`.trim() || emp?.empCode || 'employee');
   const fallbackAvatar = `https://api.dicebear.com/8.x/initials/svg?seed=${seed}&backgroundColor=eff6ff&textColor=2563eb`;
+  const yesNo = (value) => (value ? 'Yes' : 'No');
 
   const downloadFile = ({ filename, content, mimeType }) => {
     const blob = new Blob([content], { type: mimeType });
@@ -108,6 +109,12 @@ export default function EmployeeDetail() {
         ['Name', `${emp.firstName || ''} ${emp.middleName || ''} ${emp.lastName || ''}`.trim(), 'Father Name', emp.fatherName || '-'],
         ['DOB', formatDate(emp.dob), 'Gender', emp.gender || '-'],
         ['NIC', emp.nic || '-', 'Marital Status', emp.maritalStatus || '-'],
+  ['CNIC Expiry', formatDate(emp.cnicExpiryDate), 'CNIC Front', emp.cnicFrontDoc ? 'Attached' : 'Not Attached'],
+  ['CNIC Back', emp.cnicBackDoc ? 'Attached' : 'Not Attached', 'EOBI Enrolled', yesNo(emp.hasEobi)],
+  ['SESSI Enrolled', yesNo(emp.hasSocialSecurity), 'Health Card Enrolled', yesNo(emp.hasHealthCard)],
+  ['Other Benefit Enrolled', yesNo(emp.hasOtherBenefit), 'Other Benefit Name', emp.otherBenefitText || '-'],
+  ['EOBI Contribution', `PKR ${Number(emp.eobiContribution || 0).toLocaleString()}`, 'SESSI Contribution', `PKR ${Number(emp.socialSecurityContribution || 0).toLocaleString()}`],
+  ['Health Card Contribution', `PKR ${Number(emp.healthCardContribution || 0).toLocaleString()}`, 'Other Contribution', `PKR ${Number(emp.otherBenefitContribution || 0).toLocaleString()}`],
         ['Spouse Name', emp.spouseName || '-', 'Birth Place', emp.birthPlace || '-'],
         ['Address', emp.address || '-', 'City', emp.city || '-'],
         ['Phone', emp.phone || '-', 'Email', emp.email || '-'],
@@ -240,6 +247,9 @@ export default function EmployeeDetail() {
                 <p><strong>DOB:</strong> {formatDate(emp.dob)}</p>
                 <p><strong>Gender:</strong> {emp.gender}</p>
                 <p><strong>NIC:</strong> {emp.nic}</p>
+                <p><strong>CNIC Expiry:</strong> {formatDate(emp.cnicExpiryDate)}</p>
+                <p><strong>CNIC Front:</strong> {emp.cnicFrontDoc ? 'Attached' : '-'}</p>
+                <p><strong>CNIC Back:</strong> {emp.cnicBackDoc ? 'Attached' : '-'}</p>
                 <p><strong>Address:</strong> {emp.address}</p>
                 <p><strong>City:</strong> {emp.city}</p>
                 <p><strong>Phone:</strong> {emp.phone}</p>
@@ -253,6 +263,15 @@ export default function EmployeeDetail() {
                 <p><strong>Status:</strong> {emp.status}</p>
                 <p><strong>Appointment Date:</strong> {formatDate(emp.appointmentDate)}</p>
                 <p><strong>Joining Date:</strong> {formatDate(emp.joiningDate)}</p>
+                <p><strong>EOBI:</strong> {emp.hasEobi ? 'Yes' : 'No'}</p>
+                <p><strong>EOBI Monthly Contribution:</strong> PKR {Number(emp.eobiContribution || 0).toLocaleString()}</p>
+                <p><strong>SESSI / Social Security:</strong> {emp.hasSocialSecurity ? 'Yes' : 'No'}</p>
+                <p><strong>SESSI Monthly Contribution:</strong> PKR {Number(emp.socialSecurityContribution || 0).toLocaleString()}</p>
+                <p><strong>Health Card:</strong> {emp.hasHealthCard ? 'Yes' : 'No'}</p>
+                <p><strong>Health Card Monthly Contribution:</strong> PKR {Number(emp.healthCardContribution || 0).toLocaleString()}</p>
+                <p><strong>Other Benefit:</strong> {emp.hasOtherBenefit ? 'Yes' : 'No'}</p>
+                <p><strong>Other Benefit Name:</strong> {emp.otherBenefitText || '-'}</p>
+                <p><strong>Other Monthly Contribution:</strong> PKR {Number(emp.otherBenefitContribution || 0).toLocaleString()}</p>
               </div>
             )}
             {activeInfoTab === 2 && (

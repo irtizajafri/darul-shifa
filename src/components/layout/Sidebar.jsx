@@ -18,6 +18,7 @@ import {
   Truck,
   ArrowUpRight,
   ArrowDownRight,
+  FileText,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -39,6 +40,7 @@ const inventoryNavItems = [
   { path: '/inventory/po', label: 'Purchase Orders', icon: ShoppingCart },
   { path: '/inventory/grn', label: 'Receiving (GRN)', icon: Truck },
   { path: '/inventory/gin', label: 'Issuance (GIN)', icon: ArrowUpRight },
+  { path: '/inventory/sales-invoice', label: 'Sales Invoice', icon: FileText },
   { path: '/inventory/gdn', label: 'Discard (GDN)', icon: ArrowDownRight },
   { path: '/inventory/reports', label: 'Reports', icon: BarChart3 },
 ];
