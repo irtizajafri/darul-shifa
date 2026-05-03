@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
@@ -16,12 +16,24 @@ export default function ShortLeave() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [records, setRecords] = useState([]);
+  const [employeeQuery, setEmployeeQuery] = useState('');
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const { setModule } = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
+  const employeeDropdownRef = useRef(null);
 
-  const { register, handleSubmit, watch, reset } = useForm();
+  const { register, handleSubmit, watch, reset, setValue } = useForm();
   const empCode = watch('empCode');
   const selectedEmployee = employees.find((e) => String(e.empCode) === String(empCode));
+  const filteredEmployees = useMemo(() => {
+    const q = String(employeeQuery || '').trim().toLowerCase();
+    if (!q) return employees || [];
+    return (employees || []).filter((e) => {
+      const code = String(e.empCode || '').toLowerCase();
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      return code.includes(q) || fullName.includes(q);
+    });
+  }, [employees, employeeQuery]);
 
   const STORAGE_KEY = 'shortLeaveRecords';
   const loadRecords = () => {
@@ -43,6 +55,48 @@ export default function ShortLeave() {
       setLoading(false);
     });
   }, [setModule, fetchEmployees]);
+
+  useEffect(() => {
+    const onClickOutside = (event) => {
+      if (!employeeDropdownRef.current) return;
+      if (!employeeDropdownRef.current.contains(event.target)) {
+        setEmployeeDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const findEmployeeByExactQuery = (queryText) => {
+    const q = String(queryText || '').trim().toLowerCase();
+    if (!q) return null;
+    return (employees || []).find((e) => {
+      const code = String(e.empCode || '').trim().toLowerCase();
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      return q === code || q === fullName;
+    }) || null;
+  };
+
+  const selectEmployee = (employee) => {
+    if (!employee) return;
+    const code = String(employee.empCode || '').trim();
+    const fullName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim();
+    setValue('empCode', code, { shouldValidate: true, shouldDirty: true });
+    setEmployeeQuery(`${fullName} (${code})`);
+    setEmployeeDropdownOpen(false);
+  };
+
+  const handleEmployeeInputBlur = () => {
+    if (selectedEmployee) return;
+    const exact = findEmployeeByExactQuery(employeeQuery);
+    if (!exact) return;
+    const code = String(exact.empCode || '').trim();
+    const fullName = `${exact.firstName || ''} ${exact.lastName || ''}`.trim();
+    setValue('empCode', code, { shouldValidate: true, shouldDirty: true });
+    setEmployeeQuery(`${fullName} (${code})`);
+    setEmployeeDropdownOpen(false);
+  };
 
   const onSave = (data) => {
     if (!selectedEmployee) {
@@ -80,7 +134,12 @@ export default function ShortLeave() {
         ]}
         title="Short Leave"
         actionLabel="+ New Short Leave"
-        onAction={() => setModalOpen(true)}
+        onAction={() => {
+          reset({});
+          setEmployeeQuery('');
+          setEmployeeDropdownOpen(false);
+          setModalOpen(true);
+        }}
       />
       <Card>
         <div className="overflow-x-auto">
@@ -123,7 +182,45 @@ export default function ShortLeave() {
         size="md"
       >
         <form onSubmit={handleSubmit(onSave)}>
-          <Input label="Employee Code" {...register('empCode', { required: true })} />
+          <div className="form-group">
+            <label>Employee (Code or Name)</label>
+            <div className="employee-picker" ref={employeeDropdownRef}>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Type employee code or name"
+                value={employeeQuery}
+                onChange={(e) => {
+                  setEmployeeQuery(e.target.value);
+                  setEmployeeDropdownOpen(true);
+                  setValue('empCode', '', { shouldValidate: true, shouldDirty: true });
+                }}
+                onFocus={() => setEmployeeDropdownOpen(true)}
+                onBlur={handleEmployeeInputBlur}
+              />
+              <input type="hidden" {...register('empCode', { required: true })} />
+              {employeeDropdownOpen && (
+                <div className="employee-dropdown">
+                  {filteredEmployees.length === 0 ? (
+                    <div className="employee-empty">No employee found</div>
+                  ) : (
+                    filteredEmployees.map((employee) => (
+                      <button
+                        key={employee.id}
+                        type="button"
+                        className="employee-option"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectEmployee(employee)}
+                      >
+                        <span>{employee.firstName} {employee.lastName}</span>
+                        <small>{employee.empCode}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="form-group mt-4">
             <label>Name (auto-fill)</label>
             <input

@@ -35,6 +35,8 @@ export const useEmployeeStore = create((set, get) => ({
         socialSecurityContribution: Number(e.socialSecurityContribution || 0),
         healthCardContribution: Number(e.healthCardContribution || 0),
         otherBenefitContribution: Number(e.otherBenefitContribution || 0),
+        late: Boolean(e.late),
+        short: Boolean(e.short),
       }));
       set({ employees: formattedData, loading: false });
     } catch (err) {
@@ -112,6 +114,8 @@ export const useEmployeeStore = create((set, get) => ({
         dutyType: updates.dutyType,
         dutyRoster: updates.dutyRoster,
   isNightShift: updates.isNightShift,
+    late: updates.late,
+    short: updates.short,
         photo: updates.photo,
         emergencyContact: updates.emergencyContact,
         emergencyPhone: updates.emergencyPhone,

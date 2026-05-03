@@ -313,7 +313,7 @@ export default function Reports() {
               // Off day par aaya = off_not_avail
               resolvedStatus = 'off_not_avail';
             } else if (!inTime) {
-              resolvedStatus = 'absent';
+              resolvedStatus = 'leave';
             } else {
               resolvedStatus = 'present';
             }
@@ -487,7 +487,7 @@ export default function Reports() {
           }
         }
 
-        result.push(modifiedRecord);
+  result.push({ ...modifiedRecord, fromOverride: false });
       } else {
         // Multiple overrides for same date (split shifts)
         dateOverrides.forEach((override) => {
@@ -499,6 +499,7 @@ export default function Reports() {
             status: override.status || record.status,
             manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
             waiveDeduction: Boolean(override.waiveDeduction),
+            fromOverride: true,
           };
 
           // Night crossing check after override
@@ -557,6 +558,7 @@ export default function Reports() {
         rosterScheduledMinutes: rosterScheduledMinutes,
         manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
         waiveDeduction: Boolean(override.waiveDeduction),
+        fromOverride: true,
       };
 
       // Night crossing check for manual entries
@@ -669,6 +671,77 @@ export default function Reports() {
     return minutesBetween(record.actualIn, record.actualOut);
   }, [minutesBetween]);
 
+  const overtimeMinutesByRecord = useMemo(() => {
+    const map = new WeakMap();
+    if (!Array.isArray(effectiveAttendanceWithOverrides) || effectiveAttendanceWithOverrides.length === 0) {
+      return map;
+    }
+
+    const groups = new Map();
+    effectiveAttendanceWithOverrides.forEach((record) => {
+      const dateKey = new Date(record.date).toISOString().split('T')[0];
+      if (!groups.has(dateKey)) groups.set(dateKey, []);
+      groups.get(dateKey).push(record);
+    });
+
+    groups.forEach((records) => {
+      const sorted = records.slice().sort((a, b) => {
+        const aIn = a.actualIn ? new Date(a.actualIn).getTime() : Number.POSITIVE_INFINITY;
+        const bIn = b.actualIn ? new Date(b.actualIn).getTime() : Number.POSITIVE_INFINITY;
+        if (aIn !== bIn) return aIn - bIn;
+        const aOut = a.actualOut ? new Date(a.actualOut).getTime() : Number.POSITIVE_INFINITY;
+        const bOut = b.actualOut ? new Date(b.actualOut).getTime() : Number.POSITIVE_INFINITY;
+        return aOut - bOut;
+      });
+
+      const scheduledForDay = sorted.reduce((maxVal, rec) => {
+        const s = Math.max(0, Math.round(getScheduledMinutes(rec) || 0));
+        return Math.max(maxVal, s);
+      }, 0);
+
+      let remainingDutyMinutes = scheduledForDay;
+
+      sorted.forEach((record) => {
+        const status = normalizePayrollStatus(record.status);
+        const workedMins = (record.actualIn && record.actualOut)
+          ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
+          : 0;
+
+        if (status === 'future') {
+          map.set(record, 0);
+          return;
+        }
+
+        const isWorkedExtra = ['holiday_not_avail', 'off_not_avail'].includes(status);
+        const isAvailOff = ['holiday_avail', 'off_avail', 'leave_with_pay', 'leave', 'absent', 'missed_out'].includes(status);
+
+        if (isWorkedExtra) {
+          map.set(record, workedMins);
+          return;
+        }
+
+        if (isAvailOff || workedMins <= 0) {
+          map.set(record, 0);
+          return;
+        }
+
+        const dutyCoveredByRow = Math.min(remainingDutyMinutes, workedMins);
+        const rowOvertime = Math.max(0, workedMins - dutyCoveredByRow);
+        remainingDutyMinutes = Math.max(0, remainingDutyMinutes - dutyCoveredByRow);
+        map.set(record, rowOvertime);
+      });
+    });
+
+    return map;
+  }, [effectiveAttendanceWithOverrides, getScheduledMinutes, normalizePayrollStatus]);
+
+  const getAllocatedOvertimeMinutes = useCallback((record) => {
+    if (overtimeMinutesByRecord.has(record)) {
+      return overtimeMinutesByRecord.get(record) || 0;
+    }
+    return getOvertimeMinutes(record);
+  }, [overtimeMinutesByRecord, getOvertimeMinutes]);
+
   const hasManualDeduction = useCallback((record) => (
     typeof record?.manualDeduction === 'number' && Number.isFinite(record.manualDeduction)
   ), []);
@@ -704,8 +777,11 @@ export default function Reports() {
     return true;
   }).length;
 
-  const totalLates   = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + (shouldSkipAutoDeduction(r) ? 0 : getTimingPenaltyMinutes(r)), 0);
-  const totalOvertime = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getOvertimeMinutes(r), 0);
+  const isLateDeductionEnabled = emp?.late === true;
+  const totalLates   = isLateDeductionEnabled
+    ? effectiveAttendanceWithOverrides.reduce((sum, r) => sum + (shouldSkipAutoDeduction(r) ? 0 : getTimingPenaltyMinutes(r)), 0)
+    : 0;
+  const totalOvertime = effectiveAttendanceWithOverrides.reduce((sum, r) => sum + getAllocatedOvertimeMinutes(r), 0);
 
   const daysInSelectedMonth = new Date(year, month, 0).getDate();
   const monthCheckNow = new Date();
@@ -722,19 +798,21 @@ export default function Reports() {
 
   const absentDeduction   = totalAbsents * (perDayRate * 2);
   const missedOutDeduction = totalMissedOut * perDayRate; // 1x deduction for missed punch
-  const leaveDeduction    = totalLeaves * perDayRate;
+  const leaveDeduction    = 0;
 
-  const lateDeduction = effectiveAttendanceWithOverrides.reduce((sum, r) => {
-    if (shouldSkipAutoDeduction(r)) return sum;
-    const scheduledMinutes = getScheduledMinutes(r);
-    if (scheduledMinutes <= 0) return sum;
+  const lateDeduction = isLateDeductionEnabled
+    ? effectiveAttendanceWithOverrides.reduce((sum, r) => {
+      if (shouldSkipAutoDeduction(r)) return sum;
+      const scheduledMinutes = getScheduledMinutes(r);
+      if (scheduledMinutes <= 0) return sum;
 
-    const timingPenaltyMinutes = getTimingPenaltyMinutes(r);
-    if (timingPenaltyMinutes <= 0) return sum;
+      const timingPenaltyMinutes = getTimingPenaltyMinutes(r);
+      if (timingPenaltyMinutes <= 0) return sum;
 
-    const perMinuteRate = perDayRate / scheduledMinutes;
-    return sum + (timingPenaltyMinutes * perMinuteRate);
-  }, 0);
+      const perMinuteRate = perDayRate / scheduledMinutes;
+      return sum + (timingPenaltyMinutes * perMinuteRate);
+    }, 0)
+    : 0;
 
   const manualDeductionTotal = effectiveAttendanceWithOverrides.reduce((sum, r) => {
     if (Boolean(r?.waiveDeduction)) return sum;
@@ -836,7 +914,7 @@ export default function Reports() {
   const overtimeAddition = Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
     const scheduledMinutes = getScheduledMinutes(r);
     const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
-    return sum + (getOvertimeMinutes(r) * perMinuteRate);
+    return sum + (getAllocatedOvertimeMinutes(r) * perMinuteRate);
   }, 0));
 
   const offDayBonus = 0;
@@ -883,6 +961,12 @@ export default function Reports() {
     };
 
     if (effectiveAttendanceWithOverrides.length > 0) {
+      const recordCountByDate = effectiveAttendanceWithOverrides.reduce((acc, rec) => {
+        const dateKey = new Date(rec.date).toISOString().split('T')[0];
+        acc[dateKey] = (acc[dateKey] || 0) + 1;
+        return acc;
+      }, {});
+
       return effectiveAttendanceWithOverrides.flatMap((record) => {
         const d      = new Date(record.date);
         const dayStr = d.toISOString().split('T')[0];
@@ -892,15 +976,15 @@ export default function Reports() {
         const actStatus    = normalizePayrollStatus(record.status);
         const isAvailOff   = ['holiday_avail', 'off_avail', 'leave_with_pay'].includes(actStatus);
         const isWorkedExtra = ['holiday_not_avail', 'off_not_avail'].includes(actStatus);
-        const isMissedOut  = actStatus === 'missed_out';
+    const isMissedOut  = actStatus === 'missed_out';
 
         let tIn = "--"; let tOut = "--";
         if (record.actualIn)  tIn  = new Date(record.actualIn).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         if (record.actualOut) tOut = new Date(record.actualOut).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
 
         const scheduledMinutes = getScheduledMinutes(record);
-  const lateMinutes      = offDay || isFuture || isAvailOff || isWorkedExtra || isMissedOut ? 0 : getTimingPenaltyMinutes(record);
-        const overtimeMinutes  = isFuture ? 0 : getOvertimeMinutes(record);
+  const lateMinutes      = offDay || isFuture || isAvailOff || isWorkedExtra || isMissedOut || !isLateDeductionEnabled ? 0 : getTimingPenaltyMinutes(record);
+  const overtimeMinutes  = isFuture ? 0 : getAllocatedOvertimeMinutes(record);
         const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
 
         const workedMinutes = record.actualIn && record.actualOut
@@ -909,19 +993,35 @@ export default function Reports() {
 
         const isLate      = lateMinutes > 0 ? "Y" : "N";
         const otHrs       = overtimeMinutes ? (overtimeMinutes / 60).toFixed(2) : "0.00";
-  const grossPerDay = isFuture ? 0 : Math.round(perDayRate);
+
+        const isSplitDayRow = (recordCountByDate[dayStr] || 0) > 1;
+        const shouldProrateSplitRow =
+          isSplitDayRow &&
+          !isFuture &&
+          !isAvailOff &&
+          !isWorkedExtra &&
+          !offDay &&
+          actStatus !== 'absent' &&
+          actStatus !== 'leave' &&
+          workedMinutes > 0;
+
+  const baseWorkedMinutes = Math.max(0, workedMinutes - overtimeMinutes);
+  const proratedGross = Math.round(Math.min(perDayRate, Math.max(0, baseWorkedMinutes * perMinuteRate)));
+        const grossPerDay = (isFuture || actStatus === 'leave')
+          ? 0
+          : (shouldProrateSplitRow ? proratedGross : Math.round(perDayRate));
 
         const wrkHrsRaw     = workedMinutes / 60;
         const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
         const wrkHrsDisplay = isFuture ? "0.00" : wrkHrsRounded.toFixed(2);
 
-        const currLateDed = (isAvailOff || isWorkedExtra || offDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut)
+        const currLateDed = (!isLateDeductionEnabled || isAvailOff || isWorkedExtra || offDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut)
           ? 0
           : Math.round(lateMinutes * perMinuteRate);
 
         let dailyDeduction = 0;
         if (actStatus === 'absent')      dailyDeduction = perDayRate * 2;
-        else if (actStatus === 'leave')  dailyDeduction = perDayRate;
+  else if (actStatus === 'leave')  dailyDeduction = 0;
         else if (isMissedOut)            dailyDeduction = perDayRate; // 1x for missing punch
 
         const computedDeduction = (isAvailOff || isWorkedExtra || offDay || isFuture)
@@ -958,12 +1058,13 @@ export default function Reports() {
           total:   String(Math.max(0, grossPerDay - ded + otVal)),
         };
 
-        const rawPunches = rawPunchTimesByDate.get(dayStr) || [];
+        const useRawPunchBreakdown = !Boolean(record?.fromOverride);
+        const rawPunches = useRawPunchBreakdown ? (rawPunchTimesByDate.get(dayStr) || []) : [];
         const hasRawPair = rawPunches.length >= 2;
         const displayBaseIn = hasRawPair ? rawPunches[0] : tIn;
         const displayBaseOut = hasRawPair ? rawPunches[1] : tOut;
         const displayBaseWrkHrs = workedHoursFromPair(displayBaseIn, displayBaseOut);
-        if (rawPunches.length <= 2) {
+        if (!useRawPunchBreakdown || rawPunches.length <= 2) {
           return [{
             ...baseRow,
             timeIn: displayBaseIn,
@@ -1026,7 +1127,7 @@ export default function Reports() {
       ded:     i % 5 === 0 ? Math.round(15 * fallbackPerMinute).toString() : "0",
       total:   i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
     }));
-  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, getScheduledMinutes, getTimingPenaltyMinutes, getOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction]);
+  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled]);
 
   const missingSalaryRows = useMemo(() => {
     return employees.slice(0, 20).map((e, i) => ({
@@ -1203,7 +1304,7 @@ export default function Reports() {
       const deductionRows = [
         { label: `Absents x2 (${totalAbsents} days)`, amount: Math.round(absentDeduction).toLocaleString() },
         ...(totalMissedOut > 0 ? [{ label: `Missing Punch (${totalMissedOut} days)`, amount: Math.round(missedOutDeduction).toLocaleString() }] : []),
-        ...(totalLeaves > 0 ? [{ label: `Leaves Unpaid (${totalLeaves} days)`, amount: Math.round(leaveDeduction).toLocaleString() }] : []),
+  ...(totalLeaves > 0 ? [{ label: `Leaves (${totalLeaves} days)`, amount: Math.round(leaveDeduction).toLocaleString() }] : []),
         { label: `Late Arrivals (${totalLates} mins)`, amount: Math.round(lateDeduction).toLocaleString() },
         { label: "Advance", amount: advanceDeduction.toLocaleString() },
         { label: "Loan (This Month)", amount: loanDeduction.toLocaleString() },
@@ -1631,7 +1732,7 @@ export default function Reports() {
                       <tr><td>Missing Punch ({totalMissedOut} days)</td><td></td><td>{Math.round(missedOutDeduction).toLocaleString()}</td></tr>
                     )}
                     {totalLeaves > 0 && (
-                      <tr><td>Leaves Unpaid ({totalLeaves} days)</td><td></td><td>{Math.round(leaveDeduction).toLocaleString()}</td></tr>
+                      <tr><td>Leaves ({totalLeaves} days)</td><td></td><td>{Math.round(leaveDeduction).toLocaleString()}</td></tr>
                     )}
                     <tr><td>Late Arrivals ({totalLates} mins)</td><td></td><td>{Math.round(lateDeduction).toLocaleString()}</td></tr>
                     <tr><td>Advance</td><td></td><td>{advanceDeduction.toLocaleString()}</td></tr>

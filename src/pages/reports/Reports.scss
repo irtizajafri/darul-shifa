@@ -481,6 +481,25 @@
       max-width: none;
     }
 
+    .payslip-detailed .table-wrap {
+      overflow-x: visible;
+    }
+
+    .payslip-detailed .data-table {
+      min-width: 0;
+      table-layout: fixed;
+    }
+
+    .payslip-detailed .data-table th,
+    .payslip-detailed .data-table td {
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      padding: 0.55rem 0.5rem;
+      font-size: 0.8rem;
+      line-height: 1.25;
+    }
+
     .cr-grid {
       grid-template-columns: 1fr;
     }
@@ -504,6 +523,22 @@
     .payslip-detailed,
     .cr-sheet {
       padding: 1rem;
+    }
+
+    .payslip-detailed .data-table th,
+    .payslip-detailed .data-table td {
+      padding: 0.45rem 0.4rem;
+      font-size: 0.74rem;
+      line-height: 1.2;
+    }
+
+    .payslip-detailed .sheet-header h4 {
+      font-size: 0.95rem;
+    }
+
+    .payslip-detailed .summary-box strong,
+    .payslip-detailed .totals-item strong {
+      font-size: 0.9rem;
     }
 
     .data-table {

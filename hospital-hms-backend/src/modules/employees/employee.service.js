@@ -87,6 +87,8 @@ async function ensureExtendedEmployeeColumns() {
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "socialSecurityContribution" DOUBLE PRECISION DEFAULT 0');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "healthCardContribution" DOUBLE PRECISION DEFAULT 0');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "otherBenefitContribution" DOUBLE PRECISION DEFAULT 0');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "late" BOOLEAN DEFAULT FALSE');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "short" BOOLEAN DEFAULT FALSE');
 
   isExtendedEmployeeColumnsReady = true;
 }
@@ -105,6 +107,8 @@ function normalizeExtendedFields(payload = {}) {
     socialSecurityContribution: normalizeNumber(payload.socialSecurityContribution, 0),
     healthCardContribution: normalizeNumber(payload.healthCardContribution, 0),
     otherBenefitContribution: normalizeNumber(payload.otherBenefitContribution, 0),
+    late: normalizeBoolean(payload.late, false),
+    short: normalizeBoolean(payload.short, false),
   };
 }
 
@@ -123,6 +127,8 @@ function mergeExtendedFields(base, extended = {}) {
     socialSecurityContribution: normalizeNumber(extended.socialSecurityContribution, 0),
     healthCardContribution: normalizeNumber(extended.healthCardContribution, 0),
     otherBenefitContribution: normalizeNumber(extended.otherBenefitContribution, 0),
+    late: Boolean(extended.late),
+    short: Boolean(extended.short),
   };
 }
 
@@ -145,7 +151,9 @@ async function upsertExtendedEmployeeFields(employeeId, payload = {}) {
       "eobiContribution" = ${f.eobiContribution},
       "socialSecurityContribution" = ${f.socialSecurityContribution},
       "healthCardContribution" = ${f.healthCardContribution},
-      "otherBenefitContribution" = ${f.otherBenefitContribution}
+      "otherBenefitContribution" = ${f.otherBenefitContribution},
+      "late" = ${f.late},
+      "short" = ${f.short}
     WHERE id = ${id}
   `;
 
@@ -174,7 +182,9 @@ async function getExtendedFieldsByEmployeeIds(employeeIds = []) {
       "eobiContribution",
       "socialSecurityContribution",
       "healthCardContribution",
-      "otherBenefitContribution"
+      "otherBenefitContribution",
+      "late",
+      "short"
     FROM "Employee"
     WHERE id IN (${ids.join(',')})
   `);

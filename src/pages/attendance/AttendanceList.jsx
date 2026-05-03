@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAttendanceStore } from '../../store/useAttendanceStore';
@@ -326,6 +326,53 @@ export default function AttendanceList() {
     return normalize24HourTime(value);
   };
 
+  const getApiPunchPairsForDate = useCallback((empCode, dateValue) => {
+    const code = String(empCode || '').trim();
+    const dateKey = toDateOnly(dateValue);
+    if (!code || !dateKey) return [];
+
+    const punches = (apiRows || [])
+      .filter((row) => String(row.enrollid || row.enrollId || '').trim() === code)
+      .filter((row) => toDateOnly(row.arrive_date || row.date) === dateKey)
+      .map((row) => {
+        let timeVal = String(row.arrive_time || row.time_in || '').trim();
+        if (timeVal.includes(' ')) timeVal = timeVal.split(' ').pop();
+        const normalizedTime = normalize24HourTime(timeVal);
+        if (!normalizedTime) return null;
+        const dt = new Date(`${dateKey}T${normalizedTime}`);
+        return Number.isNaN(dt.getTime()) ? null : dt;
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    if (!punches.length) return [];
+
+    // Deduplicate accidental machine double-taps within 2 minutes.
+    const deduped = [];
+    punches.forEach((p) => {
+      const last = deduped[deduped.length - 1];
+      if (!last || Math.abs(p.getTime() - last.getTime()) > (2 * 60 * 1000)) {
+        deduped.push(p);
+      }
+    });
+
+    const rows = [];
+    for (let i = 0; i < deduped.length; i += 2) {
+      const inPunch = deduped[i];
+      const outPunch = deduped[i + 1] || null;
+      const dateIn = format(inPunch, 'yyyy-MM-dd');
+      const timeIn = format(inPunch, 'HH:mm');
+      const timeOut = outPunch ? format(outPunch, 'HH:mm') : '';
+      const dateOut = outPunch
+        ? format(outPunch, 'yyyy-MM-dd')
+        : inferDateOut({ dateIn, dateOut: '', timeIn, timeOut });
+
+      rows.push({ dateIn, dateOut, timeIn, timeOut });
+    }
+
+    return rows;
+  }, [apiRows]);
+
   const addModalWaiveDeduction = watch('waiveDeduction');
 
   useEffect(() => {
@@ -367,21 +414,40 @@ export default function AttendanceList() {
         isManual: true, // All saved overrides can be edited/deleted
       })));
     } else {
-      // No overrides found, initialize with original row from editModal
-      setEditRows([{
-        id: `initial-${Date.now()}`,
-        dateIn: editModal.dateIn || editModal.date || '',
-        dateOut: editModal.dateOut || editModal.date || '',
-        timeIn: toInputTimeValue(editModal.timeIn),
-        timeOut: toInputTimeValue(editModal.timeOut),
-        status: editModal.status || 'present',
-        manualWrkHrs: editModal.manualWrkHrs || '',
-        manualOvertime: editModal.manualOvertime || '',
-        manualDeduction: editModal.manualDeduction || '',
-        manualTotal: editModal.manualTotal || '',
-        waiveDeduction: Boolean(editModal.waiveDeduction),
-        isManual: false, // Original row
-      }]);
+      // No saved overrides: prefill from API punch pairs (same employee + same date).
+      const apiPairs = getApiPunchPairsForDate(modalEmpCode, modalDate);
+      if (apiPairs.length > 0) {
+        setEditRows(apiPairs.map((pair, idx) => ({
+          id: `api-${Date.now()}-${idx}-${Math.random()}`,
+          dateIn: pair.dateIn,
+          dateOut: pair.dateOut,
+          timeIn: toInputTimeValue(pair.timeIn),
+          timeOut: toInputTimeValue(pair.timeOut),
+          status: editModal.status || 'present',
+          manualWrkHrs: '',
+          manualOvertime: '',
+          manualDeduction: '',
+          manualTotal: '',
+          waiveDeduction: false,
+          isManual: true,
+        })));
+      } else {
+        // No API pairs found, initialize with original row from editModal
+        setEditRows([{
+          id: `initial-${Date.now()}`,
+          dateIn: editModal.dateIn || editModal.date || '',
+          dateOut: editModal.dateOut || editModal.date || '',
+          timeIn: toInputTimeValue(editModal.timeIn),
+          timeOut: toInputTimeValue(editModal.timeOut),
+          status: editModal.status || 'present',
+          manualWrkHrs: editModal.manualWrkHrs || '',
+          manualOvertime: editModal.manualOvertime || '',
+          manualDeduction: editModal.manualDeduction || '',
+          manualTotal: editModal.manualTotal || '',
+          waiveDeduction: Boolean(editModal.waiveDeduction),
+          isManual: false, // Original row
+        }]);
+      }
     }
     
     reset({
@@ -397,7 +463,7 @@ export default function AttendanceList() {
       manualTotal: editModal.manualTotal || '',
       waiveDeduction: Boolean(editModal.waiveDeduction),
     });
-  }, [editModal, employees, reset, overrides]);
+  }, [editModal, employees, reset, overrides, getApiPunchPairsForDate]);
 
   const exportMeta = {
     address: 'C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210',
@@ -826,7 +892,7 @@ export default function AttendanceList() {
         actualDateOut: dateOutVal || dateValue,
         timeIn: timeInVal || '-',
         timeOut: timeOutVal || '-',
-        status: record?.status || (apiTimes.hasData ? 'present' : 'absent')
+        status: record?.status || (apiTimes.hasData ? 'present' : 'leave')
       }];
     });
 
@@ -1444,12 +1510,11 @@ export default function AttendanceList() {
               );
             })}
             
-            {/* Add New Row Button */}
-            {/* <div className="mb-4">
-              <Button 
-                type="button" 
-                label="+ Add New Row (Split Shift)" 
-                variant="outline" 
+            <div className="mb-4">
+              <Button
+                type="button"
+                label="+ Add New Row (Split Shift)"
+                variant="outline"
                 onClick={() => {
                   const newRow = {
                     id: `${Date.now()}-${Math.random()}`,
@@ -1462,13 +1527,13 @@ export default function AttendanceList() {
                     manualOvertime: '',
                     manualDeduction: '',
                     manualTotal: '',
+                    waiveDeduction: false,
                     isManual: true,
                   };
-                  setEditRows(prev => [...prev.map(r => ({ ...r })), newRow]);
+                  setEditRows((prev) => [...prev.map((r) => ({ ...r })), newRow]);
                 }}
               />
             </div>
-             */}
             <div className="modal-actions">
               <Button type="button" label="Cancel" variant="ghost" onClick={() => setEditModal(null)} />
               <Button type="submit" label="Save " />

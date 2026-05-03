@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { format } from 'date-fns';
 import { useForm } from 'react-hook-form';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -29,9 +29,12 @@ export default function GatePass() {
   const [selectedDate, setSelectedDate] = useState(defaultDate);
   const [filterEmp, setFilterEmp] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [employeeQuery, setEmployeeQuery] = useState('');
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const { setModule } = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
   const { gatepasses, fetchGatepasses, createGatepass, closeGatepass } = useGatePassStore();
+  const employeeDropdownRef = useRef(null);
 
   const { register, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
@@ -48,6 +51,15 @@ export default function GatePass() {
   const nature = watch('nature', 'Personal');
   const empCodeVal = watch('empCode');
   const selectedEmployee = employees.find((e) => String(e.empCode) === String(empCodeVal));
+  const filteredEmployees = useMemo(() => {
+    const q = String(employeeQuery || '').trim().toLowerCase();
+    if (!q) return employees || [];
+    return (employees || []).filter((e) => {
+      const code = String(e.empCode || '').toLowerCase();
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      return code.includes(q) || fullName.includes(q);
+    });
+  }, [employees, employeeQuery]);
   const getRosterHours = (employee, issuedAt) => {
     if (!employee?.dutyRoster || !issuedAt) return 8;
     const dayIndex = new Date(issuedAt).getDay();
@@ -235,6 +247,43 @@ export default function GatePass() {
     }
   }, [returnModal, setReturnValue]);
 
+  useEffect(() => {
+    const onClickOutside = (event) => {
+      if (!employeeDropdownRef.current) return;
+      if (!employeeDropdownRef.current.contains(event.target)) {
+        setEmployeeDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const findEmployeeByExactQuery = (queryText) => {
+    const q = String(queryText || '').trim().toLowerCase();
+    if (!q) return null;
+    return (employees || []).find((e) => {
+      const code = String(e.empCode || '').trim().toLowerCase();
+      const fullName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      return q === code || q === fullName;
+    }) || null;
+  };
+
+  const selectEmployee = (employee) => {
+    if (!employee) return;
+    const code = String(employee.empCode || '').trim();
+    const fullName = `${employee.firstName || ''} ${employee.lastName || ''}`.trim();
+    setValue('empCode', code, { shouldValidate: true, shouldDirty: true });
+    setEmployeeQuery(`${fullName} (${code})`);
+    setEmployeeDropdownOpen(false);
+  };
+
+  const handleEmployeeInputBlur = () => {
+    if (selectedEmployee) return;
+    const exact = findEmployeeByExactQuery(employeeQuery);
+    if (exact) selectEmployee(exact);
+  };
+
   const onSave = async (data) => {
     const target = employees.find((e) => String(e.empCode) === String(data.empCode));
     if (!target) {
@@ -307,6 +356,9 @@ export default function GatePass() {
           const fresh = new Date();
           setValue('date', fresh.toISOString().slice(0, 10));
           setValue('timeOut', fresh.toTimeString().slice(0, 5));
+          setValue('empCode', '');
+          setEmployeeQuery('');
+          setEmployeeDropdownOpen(false);
           setModalOpen(true);
         }}
       />
@@ -405,7 +457,43 @@ export default function GatePass() {
       >
         <form onSubmit={handleSubmit(onSave)}>
           <div className="form-group">
-            <Input label="Employee Code" placeholder="Search employee..." {...register('empCode', { required: true })} />
+            <label>Employee (Code or Name)</label>
+            <div className="employee-picker" ref={employeeDropdownRef}>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Type employee code or name"
+                value={employeeQuery}
+                onChange={(e) => {
+                  setEmployeeQuery(e.target.value);
+                  setEmployeeDropdownOpen(true);
+                  setValue('empCode', '', { shouldValidate: true, shouldDirty: true });
+                }}
+                onFocus={() => setEmployeeDropdownOpen(true)}
+                onBlur={handleEmployeeInputBlur}
+              />
+              <input type="hidden" {...register('empCode', { required: true })} />
+              {employeeDropdownOpen && (
+                <div className="employee-dropdown">
+                  {filteredEmployees.length === 0 ? (
+                    <div className="employee-empty">No employee found</div>
+                  ) : (
+                    filteredEmployees.map((employee) => (
+                      <button
+                        key={employee.id}
+                        type="button"
+                        className="employee-option"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectEmployee(employee)}
+                      >
+                        <span>{employee.firstName} {employee.lastName}</span>
+                        <small>{employee.empCode}</small>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <div className="form-group">
             <label>Name (auto-fill)</label>
