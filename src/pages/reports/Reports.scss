@@ -262,6 +262,15 @@
     tbody tr:hover {
       background: #f8fafc;
     }
+
+    .empty-row td {
+      text-align: center;
+      color: $text-muted;
+      font-style: italic;
+      background: #fff;
+      padding: 1rem;
+      white-space: normal;
+    }
   }
 
   .sheet-totals {
@@ -481,20 +490,14 @@
       max-width: none;
     }
 
-    .payslip-detailed .table-wrap {
-      overflow-x: visible;
-    }
-
     .payslip-detailed .data-table {
-      min-width: 0;
-      table-layout: fixed;
+      min-width: 900px;
+      table-layout: auto;
     }
 
     .payslip-detailed .data-table th,
     .payslip-detailed .data-table td {
-      white-space: normal;
-      word-break: break-word;
-      overflow-wrap: anywhere;
+      white-space: nowrap;
       padding: 0.55rem 0.5rem;
       font-size: 0.8rem;
       line-height: 1.25;

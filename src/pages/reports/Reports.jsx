@@ -256,6 +256,14 @@ export default function Reports() {
               toDateKey(r.timeIn) === dateStr
             );
 
+            const roster = getRosterForDate(dateStr);
+            const scheduledIn  = toRosterDateTime(dateStr, roster?.timeIn  || '08:00');
+            const scheduledOut = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
+
+            if (scheduledIn && scheduledOut && scheduledOut < scheduledIn) {
+              scheduledOut.setDate(scheduledOut.getDate() + 1);
+            }
+
             const inCandidates = matchedRows
               .map((r) => (r?.timeIn ? new Date(r.timeIn) : null))
               .filter((d) => d && !Number.isNaN(d.getTime()))
@@ -266,13 +274,46 @@ export default function Reports() {
               .filter((d) => d && !Number.isNaN(d.getTime()))
               .sort((a, b) => a - b);
 
-            const inTime = inCandidates[0] || null;
-            const outTime = outCandidates.length > 0 ? outCandidates[outCandidates.length - 1] : null;
-            const workedMinutes = matchedRows.reduce((maxVal, r) => {
+            const pickClosestToSchedule = (candidates, scheduleTime, { beforeMinutes = 0, afterMinutes = 0 } = {}) => {
+              if (!Array.isArray(candidates) || candidates.length === 0) return null;
+              if (!scheduleTime) return candidates[0] || null;
+
+              const scheduleMs = new Date(scheduleTime).getTime();
+              const winStart = scheduleMs - (Math.max(0, beforeMinutes) * 60000);
+              const winEnd = scheduleMs + (Math.max(0, afterMinutes) * 60000);
+
+              const inWindow = candidates.filter((d) => {
+                const t = new Date(d).getTime();
+                return t >= winStart && t <= winEnd;
+              });
+
+              const pool = inWindow.length ? inWindow : candidates;
+              return pool.reduce((best, curr) => {
+                if (!best) return curr;
+                const bestDiff = Math.abs(new Date(best).getTime() - scheduleMs);
+                const currDiff = Math.abs(new Date(curr).getTime() - scheduleMs);
+                return currDiff < bestDiff ? curr : best;
+              }, null);
+            };
+
+            const inTime = pickClosestToSchedule(inCandidates, scheduledIn, { beforeMinutes: 180, afterMinutes: 240 }) || null;
+
+            const outPool = outCandidates.filter((d) => {
+              if (!inTime) return true;
+              return new Date(d).getTime() >= new Date(inTime).getTime();
+            });
+            const outTime = (pickClosestToSchedule(outPool, scheduledOut, { beforeMinutes: 240, afterMinutes: 480 })
+              || (outPool.length > 0 ? outPool[outPool.length - 1] : null)
+              || null);
+            const summedWorkedMinutes = matchedRows.reduce((sum, r) => {
               const v = Number(r?.workedMinutes);
-              if (!Number.isFinite(v)) return maxVal;
-              return Math.max(maxVal, Math.max(0, Math.round(v)));
+              if (!Number.isFinite(v)) return sum;
+              return sum + Math.max(0, Math.round(v));
             }, 0);
+
+            const workedMinutes = summedWorkedMinutes > 0
+              ? summedWorkedMinutes
+              : ((inTime && outTime) ? Math.max(0, Math.round((new Date(outTime) - new Date(inTime)) / 60000)) : 0);
 
             // ─── FIX 1: Night shift crossing — actualOut next day ho sakta hai ──
             // Backend already ISO dates deta hai, lekin agar inTime > outTime ho
@@ -281,14 +322,6 @@ export default function Reports() {
             if (inTime && outTime && outTime < inTime) {
               fixedOutTime = new Date(outTime);
               fixedOutTime.setDate(fixedOutTime.getDate() + 1);
-            }
-
-            const roster = getRosterForDate(dateStr);
-            const scheduledIn  = toRosterDateTime(dateStr, roster?.timeIn  || '08:00');
-            const scheduledOut = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
-
-            if (scheduledIn && scheduledOut && scheduledOut < scheduledIn) {
-              scheduledOut.setDate(scheduledOut.getDate() + 1);
             }
 
             const isOff    = isRosterOff(dateStr);
@@ -593,13 +626,15 @@ export default function Reports() {
   // Pehle sirf scheduledIn/scheduledOut dekhta tha, jo DB records mein null hote hain
   // Ab rosterScheduledMinutes bhi dekhta hai jo fetchApiAttendance mein attach kiya
   const getScheduledMinutes = useCallback((record) => {
-    if (record.scheduledIn && record.scheduledOut) {
-      return minutesBetween(record.scheduledIn, record.scheduledOut);
-    }
-    // DB record mein scheduledIn/Out null — roster se lo
+    // Roster ka explicit scheduled minutes (especially roster.hours) authoritative hai
     if (record.rosterScheduledMinutes && record.rosterScheduledMinutes > 0) {
       return record.rosterScheduledMinutes;
     }
+
+    if (record.scheduledIn && record.scheduledOut) {
+      return minutesBetween(record.scheduledIn, record.scheduledOut);
+    }
+
     return 8 * 60; // last fallback
   }, [minutesBetween]);
 
@@ -703,9 +738,7 @@ export default function Reports() {
 
       sorted.forEach((record) => {
         const status = normalizePayrollStatus(record.status);
-        const workedMins = (record.actualIn && record.actualOut)
-          ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
-          : 0;
+        const workedMins = getWorkedMinutes(record);
 
         if (status === 'future') {
           map.set(record, 0);
@@ -733,7 +766,7 @@ export default function Reports() {
     });
 
     return map;
-  }, [effectiveAttendanceWithOverrides, getScheduledMinutes, normalizePayrollStatus]);
+  }, [effectiveAttendanceWithOverrides, getScheduledMinutes, normalizePayrollStatus, getWorkedMinutes]);
 
   const getAllocatedOvertimeMinutes = useCallback((record) => {
     if (overtimeMinutesByRecord.has(record)) {
@@ -919,9 +952,6 @@ export default function Reports() {
 
   const offDayBonus = 0;
 
-  const finalSal = emp ? Math.max(0, Math.round(effectiveBaseTotalSal - totalDeductions + overtimeAddition)) : 0;
-  const totalSal = finalSal;
-
   const getDualShiftData = useCallback((_dateStr, _apiPunches, _hrTimes) => {
     return { error: 'Not fully integrated, please provide precise dual-shift rules here.' };
   }, []);
@@ -994,22 +1024,22 @@ export default function Reports() {
         const isLate      = lateMinutes > 0 ? "Y" : "N";
         const otHrs       = overtimeMinutes ? (overtimeMinutes / 60).toFixed(2) : "0.00";
 
-        const isSplitDayRow = (recordCountByDate[dayStr] || 0) > 1;
-        const shouldProrateSplitRow =
-          isSplitDayRow &&
+        const isPayablePresentRow =
           !isFuture &&
           !isAvailOff &&
           !isWorkedExtra &&
           !offDay &&
           actStatus !== 'absent' &&
           actStatus !== 'leave' &&
-          workedMinutes > 0;
+          actStatus !== 'missed_out' &&
+          scheduledMinutes > 0;
 
-  const baseWorkedMinutes = Math.max(0, workedMinutes - overtimeMinutes);
-  const proratedGross = Math.round(Math.min(perDayRate, Math.max(0, baseWorkedMinutes * perMinuteRate)));
+        const baseWorkedMinutes = Math.max(0, workedMinutes - overtimeMinutes);
+        const proratedGross = Math.round(Math.min(perDayRate, Math.max(0, baseWorkedMinutes * perMinuteRate)));
+
         const grossPerDay = (isFuture || actStatus === 'leave')
           ? 0
-          : (shouldProrateSplitRow ? proratedGross : Math.round(perDayRate));
+          : (isPayablePresentRow ? proratedGross : Math.round(perDayRate));
 
         const wrkHrsRaw     = workedMinutes / 60;
         const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
@@ -1061,10 +1091,11 @@ export default function Reports() {
         const useRawPunchBreakdown = !Boolean(record?.fromOverride);
         const rawPunches = useRawPunchBreakdown ? (rawPunchTimesByDate.get(dayStr) || []) : [];
         const hasRawPair = rawPunches.length >= 2;
-        const displayBaseIn = hasRawPair ? rawPunches[0] : tIn;
-        const displayBaseOut = hasRawPair ? rawPunches[1] : tOut;
+        const shouldUseRawPairAsBase = hasRawPair && tIn === '--' && tOut === '--';
+        const displayBaseIn = shouldUseRawPairAsBase ? rawPunches[0] : tIn;
+        const displayBaseOut = shouldUseRawPairAsBase ? rawPunches[1] : tOut;
         const displayBaseWrkHrs = workedHoursFromPair(displayBaseIn, displayBaseOut);
-        if (!useRawPunchBreakdown || rawPunches.length <= 2) {
+        if (!useRawPunchBreakdown || rawPunches.length <= 2 || !shouldUseRawPairAsBase) {
           return [{
             ...baseRow,
             timeIn: displayBaseIn,
@@ -1128,6 +1159,19 @@ export default function Reports() {
       total:   i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
     }));
   }, [effectiveAttendanceWithOverrides, month, year, perDayRate, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled]);
+
+  const calculatedSalaryFromRows = useMemo(() => {
+    return detailedAttendanceRows.reduce((sum, row) => {
+      const amount = Number(row?.salary);
+      if (!Number.isFinite(amount)) return sum;
+      return sum + Math.max(0, Math.round(amount));
+    }, 0);
+  }, [detailedAttendanceRows]);
+
+  const finalSal = emp
+    ? Math.max(0, Math.round(calculatedSalaryFromRows + overtimeAddition - totalDeductions))
+    : 0;
+  const totalSal = finalSal;
 
   const missingSalaryRows = useMemo(() => {
     return employees.slice(0, 20).map((e, i) => ({
@@ -1766,7 +1810,7 @@ export default function Reports() {
                   <p className="muted">Month: <strong>{month}/{year}</strong></p>
                 </div>
                 <div className="sheet-summary">
-                  <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(effectiveBaseTotalSal).toLocaleString()}</strong></div>
+                  <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(calculatedSalaryFromRows).toLocaleString()}</strong></div>
                   <div className="summary-box"><span className="muted">Current Month Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
                   <div className="summary-box"><span className="muted">Loan Remaining</span><strong>PKR {loanRemainingBalance.toLocaleString()}</strong></div>
                   <div className="summary-box"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
@@ -1782,20 +1826,26 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {detailedAttendanceRows.map((r, idx) => (
-                      <tr key={`${r.date}-${r.timeIn}-${r.timeOut}-${idx}`}>
-                        <td>{r.date}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
-                        <td>{r.dutyHrs}</td><td>{r.wrkHrs}</td><td>{r.late}</td>
-                        <td>{r.ot}</td><td>{r.status}</td><td>{r.salary}</td>
-                        <td>{r.ded}</td><td>{r.total}</td>
+                    {detailedAttendanceRows.length === 0 ? (
+                      <tr className="empty-row">
+                        <td colSpan={11}>Selected month ke liye detailed attendance data available nahi hai.</td>
                       </tr>
-                    ))}
+                    ) : (
+                      detailedAttendanceRows.map((r, idx) => (
+                        <tr key={`${r.date}-${r.timeIn}-${r.timeOut}-${idx}`}>
+                          <td>{r.date}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
+                          <td>{r.dutyHrs}</td><td>{r.wrkHrs}</td><td>{r.late}</td>
+                          <td>{r.ot}</td><td>{r.status}</td><td>{r.salary}</td>
+                          <td>{r.ded}</td><td>{r.total}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
               <div className="sheet-totals">
                 <div className="totals-grid">
-                  <div className="totals-item"><span className="muted">Total Salary</span><strong>PKR {Math.round(effectiveBaseTotalSal).toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Total Salary</span><strong>PKR {Math.round(calculatedSalaryFromRows).toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Total Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Advance Deduction (This Month)</span><strong>PKR {advanceDeduction.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Loan Deduction (This Month)</span><strong>PKR {loanDeduction.toLocaleString()}</strong></div>
