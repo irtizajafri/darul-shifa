@@ -546,6 +546,15 @@ export default function Reports() {
         // Multiple overrides for same date (split shifts)
         dateOverrides.forEach((override) => {
           const overrideManualDeduction = Number(override.manualDeduction);
+          const roster = getRosterForDate(dateStr);
+          const isOffDay = Boolean(
+            roster && (
+              (roster.hours !== undefined && Number(roster.hours) === 0) ||
+              roster.timeIn === 'OFF' ||
+              roster.timeOut === 'OFF'
+            )
+          );
+
           let modifiedRecord = {
             ...record,
             actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : record.actualIn,
@@ -564,6 +573,18 @@ export default function Reports() {
               const fixedOut = new Date(modifiedRecord.actualOut);
               fixedOut.setDate(fixedOut.getDate() + 1);
               modifiedRecord.actualOut = fixedOut;
+            }
+          }
+
+          if (!override.status && modifiedRecord.actualIn && modifiedRecord.actualOut) {
+            modifiedRecord.status = isOffDay ? 'off_not_avail' : 'present';
+          }
+
+          if (modifiedRecord.actualIn && modifiedRecord.actualOut) {
+            const inMs = new Date(modifiedRecord.actualIn).getTime();
+            const outMs = new Date(modifiedRecord.actualOut).getTime();
+            if (Number.isFinite(inMs) && Number.isFinite(outMs)) {
+              modifiedRecord.workedMinutes = Math.max(0, Math.round((outMs - inMs) / 60000));
             }
           }
 
@@ -591,6 +612,13 @@ export default function Reports() {
       if (!dateStr) return;
       const roster = getRosterForDate(dateStr);
       const overrideManualDeduction = Number(override.manualDeduction);
+      const isOffDay = Boolean(
+        roster && (
+          (roster.hours !== undefined && Number(roster.hours) === 0) ||
+          roster.timeIn === 'OFF' ||
+          roster.timeOut === 'OFF'
+        )
+      );
       
       const scheduledInTime = toRosterDateTime(dateStr, roster?.timeIn || '08:00');
       const scheduledOutTime = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
@@ -608,7 +636,7 @@ export default function Reports() {
         scheduledOut: scheduledOutTime,
         actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : null,
         actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : null,
-        status: override.status || 'present',
+        status: override.status || (isOffDay ? 'off_not_avail' : 'present'),
         rosterScheduledMinutes: rosterScheduledMinutes,
         manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
         waiveDeduction: Boolean(override.waiveDeduction),
@@ -623,6 +651,14 @@ export default function Reports() {
           const fixedOut = new Date(manualRecord.actualOut);
           fixedOut.setDate(fixedOut.getDate() + 1);
           manualRecord.actualOut = fixedOut;
+        }
+      }
+
+      if (manualRecord.actualIn && manualRecord.actualOut) {
+        const inMs = new Date(manualRecord.actualIn).getTime();
+        const outMs = new Date(manualRecord.actualOut).getTime();
+        if (Number.isFinite(inMs) && Number.isFinite(outMs)) {
+          manualRecord.workedMinutes = Math.max(0, Math.round((outMs - inMs) / 60000));
         }
       }
 
