@@ -161,10 +161,31 @@ export default function Reports() {
     return false;
   }, [getRosterForDate]);
 
+  const getStandardDutyMinutes = useCallback(() => {
+    const rosterDays = Array.isArray(emp?.dutyRoster) ? emp.dutyRoster : [];
+    if (!rosterDays.length) return 8 * 60;
+
+    for (const roster of rosterDays) {
+      if (roster?.hours !== undefined && Number(roster.hours) > 0) {
+        return Number(roster.hours) * 60;
+      }
+    }
+
+    for (const roster of rosterDays) {
+      if (roster?.timeIn && roster?.timeOut && roster.timeIn !== 'OFF' && roster.timeOut !== 'OFF') {
+        const diff = (new Date(`1970-01-01T${roster.timeOut}`) - new Date(`1970-01-01T${roster.timeIn}`)) / 60000;
+        const mins = diff > 0 ? diff : diff + (24 * 60);
+        if (mins > 0) return mins;
+      }
+    }
+
+    return 8 * 60;
+  }, [emp]);
+
   // ─── Roster se scheduled minutes nikalo (night shift ke liye) ──────────────
   const getRosterScheduledMinutes = useCallback((dateStr) => {
     const roster = getRosterForDate(dateStr);
-    if (!roster) return 8 * 60; // default 8 hrs
+    if (!roster) return getStandardDutyMinutes();
     if (roster.hours !== undefined && Number(roster.hours) > 0) {
       return Number(roster.hours) * 60;
     }
@@ -173,8 +194,8 @@ export default function Reports() {
       // Night shift: timeOut < timeIn toh +24 hrs
       return diff > 0 ? diff : diff + (24 * 60);
     }
-    return 8 * 60;
-  }, [getRosterForDate]);
+    return getStandardDutyMinutes();
+  }, [getRosterForDate, getStandardDutyMinutes]);
 
   const empAttendance = useMemo(() => {
     if (!emp || !attendanceRecords) return [];
@@ -1015,7 +1036,10 @@ export default function Reports() {
         const scheduledMinutes = getScheduledMinutes(record);
   const lateMinutes      = offDay || isFuture || isAvailOff || isWorkedExtra || isMissedOut || !isLateDeductionEnabled ? 0 : getTimingPenaltyMinutes(record);
   const overtimeMinutes  = isFuture ? 0 : getAllocatedOvertimeMinutes(record);
-        const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
+        const overtimeRateMinutes = isWorkedExtra
+          ? Math.max(1, getRosterScheduledMinutes(dayStr))
+          : scheduledMinutes;
+        const perMinuteRate    = overtimeRateMinutes > 0 ? (perDayRate / overtimeRateMinutes) : 0;
 
         const workedMinutes = record.actualIn && record.actualOut
           ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
@@ -1072,11 +1096,19 @@ export default function Reports() {
         else if (isMissedOut)  displayStatus = "Missed Punch";
         else                   displayStatus = actStatus || "present";
 
+        const shouldHideDutyHours =
+          isFuture ||
+          actStatus === 'absent' ||
+          actStatus === 'leave' ||
+          isMissedOut ||
+          isAvailOff ||
+          (offDay && !isWorkedExtra);
+
         const baseRow = {
           date:    dayStr,
           timeIn:  tIn,
           timeOut: tOut,
-          dutyHrs: (isAvailOff || isWorkedExtra || offDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut)
+          dutyHrs: shouldHideDutyHours
             ? "0.00"
             : (scheduledMinutes / 60).toFixed(2),
           wrkHrs:  wrkHrsDisplay,
