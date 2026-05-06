@@ -57,7 +57,7 @@ export default function AddEmployee({ edit }) {
   const cnicFrontInputRef = useRef(null);
   const cnicBackInputRef = useRef(null);
 
-  const { getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
+  const { employees, getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
     useEmployeeStore();
 
   const existing = edit && id ? getEmployeeById(id) : null;
@@ -308,8 +308,25 @@ export default function AddEmployee({ edit }) {
   const onSubmit = async (data) => {
     setSaving(true);
     try {
+      const enteredEmpCode = normalizeText(data.empCode);
+      if (enteredEmpCode) {
+        const duplicateEmp = (employees || []).find((empRow) => {
+          const sameCode = normalizeText(empRow?.empCode).toLowerCase() === enteredEmpCode.toLowerCase();
+          if (!sameCode) return false;
+          if (!edit) return true;
+          return String(empRow?.id) !== String(id);
+        });
+
+        if (duplicateEmp) {
+          toast.error(`Employee code \"${enteredEmpCode}\" already exists`);
+          setSaving(false);
+          return;
+        }
+      }
+
       let payload = {
         ...data,
+        empCode: enteredEmpCode || null,
         dutyType: normalizeDutyType(data.dutyType),
       };
 

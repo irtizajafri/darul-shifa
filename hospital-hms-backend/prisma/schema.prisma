@@ -19,7 +19,7 @@ model Department {
 
 model Employee {
   id                  Int          @id @default(autoincrement())
-  empCode             String?
+  empCode             String?      @unique
   firstName           String
   middleName          String?
   lastName            String

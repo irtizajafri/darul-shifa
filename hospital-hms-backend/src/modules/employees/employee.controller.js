@@ -50,6 +50,7 @@ async function create(req, res, next) {
     const created = await service.create(req.body);
     return success(res, created, 'employee created');
   } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'validation error');
     const handled = handlePrismaError(err, res);
     if (handled) return handled;
     next(err);
@@ -62,6 +63,7 @@ async function update(req, res, next) {
     if (!updated) return fail(res, 404, 'Employee not found');
     return success(res, updated, 'employee updated');
   } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message || 'validation error');
     const handled = handlePrismaError(err, res);
     if (handled) return handled;
     next(err);

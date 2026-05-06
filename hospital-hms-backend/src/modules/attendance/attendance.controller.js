@@ -192,6 +192,47 @@ async function list(_req, res, next) {
   }
 }
 
+async function listOverrides(req, res, next) {
+  try {
+    const records = await service.listOverrides({
+      empCode: req.query.empCode,
+      month: req.query.month,
+      year: req.query.year,
+    });
+    return success(res, records);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function upsertOverride(req, res, next) {
+  try {
+    const record = await service.upsertOverride(req.body || {});
+    return success(res, record, 'attendance override saved');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function bulkUpsertOverrides(req, res, next) {
+  try {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    const saved = await service.bulkUpsertOverrides(rows);
+    return success(res, saved, 'attendance overrides saved');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function replaceOverridesForDates(req, res, next) {
+  try {
+    const result = await service.replaceOverridesForDates(req.body || {});
+    return success(res, result, 'attendance overrides updated');
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function create(req, res, next) {
   try {
     const required = ['employeeId', 'scheduledIn', 'scheduledOut', 'actualIn', 'actualOut', 'monthlySalary'];
@@ -570,5 +611,17 @@ async function syncAttendance(req, res, next) {
   }
 }
 
-module.exports = { ping, list, create, fetchExternal, testPairing, testRawPunches, syncAttendance };
+module.exports = {
+  ping,
+  list,
+  create,
+  fetchExternal,
+  testPairing,
+  testRawPunches,
+  syncAttendance,
+  listOverrides,
+  upsertOverride,
+  bulkUpsertOverrides,
+  replaceOverridesForDates,
+};
 

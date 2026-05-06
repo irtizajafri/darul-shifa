@@ -15,6 +15,8 @@ import toast from 'react-hot-toast';
 import { formatDate } from '../../utils/helpers';
 import './AdvanceLoan.scss';
 
+const ATTENDANCE_API_URL = 'http://localhost:5001/api/attendance';
+
 const toRoundedNumber = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
@@ -40,6 +42,20 @@ const toPositiveAmount = (value) => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return parsed;
+};
+
+const toDateOnly = (value) => {
+  if (!value) return '';
+  const s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const pref = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (pref) return pref[1];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 };
 
 const addMonthsToMonthKey = (monthKey, offset) => {
@@ -139,6 +155,7 @@ export default function AdvanceLoan() {
   const [recoveries, setRecoveries] = useState([]);
   const [manualScheduleMode, setManualScheduleMode] = useState(false);
   const [apiAttendance, setApiAttendance] = useState([]);
+  const [attendanceOverrides, setAttendanceOverrides] = useState([]);
   const { setModule } = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
@@ -277,13 +294,39 @@ export default function AdvanceLoan() {
     fetchApiAttendance();
   }, [selectedEmployee?.empCode, issueDate, normalizeEmpCode, toApiDate, isRosterOff]);
 
-  const overrides = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('attendanceOverrides')) || [];
-    } catch {
-      return [];
+  useEffect(() => {
+    if (!issueDate) {
+      setAttendanceOverrides([]);
+      return;
     }
-  })();
+
+    const d = new Date(issueDate);
+    if (Number.isNaN(d.getTime())) {
+      setAttendanceOverrides([]);
+      return;
+    }
+
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = String(d.getFullYear());
+    const controller = new AbortController();
+
+    const fetchOverrides = async () => {
+      try {
+        const res = await fetch(`${ATTENDANCE_API_URL}/overrides?month=${month}&year=${year}`, {
+          signal: controller.signal,
+        });
+        const json = await res.json();
+        if (controller.signal.aborted) return;
+        setAttendanceOverrides(Array.isArray(json?.data) ? json.data : []);
+      } catch {
+        if (controller.signal.aborted) return;
+        setAttendanceOverrides([]);
+      }
+    };
+
+    fetchOverrides();
+    return () => controller.abort();
+  }, [issueDate]);
 
   const earnedSalary = (() => {
     if (!selectedEmployee) return 0;
@@ -304,7 +347,10 @@ export default function AdvanceLoan() {
       const d = new Date(record.date);
       if (d > issue) return false;
       const dateStr = d.toISOString().split('T')[0];
-      const override = overrides.find((o) => normalizeEmpCode(o.empCode) === normalizeEmpCode(selectedEmployee.empCode) && o.date === dateStr);
+      const override = attendanceOverrides.find((o) => (
+        normalizeEmpCode(o.empCode) === normalizeEmpCode(selectedEmployee.empCode)
+        && toDateOnly(o.dateIn || o.date) === dateStr
+      ));
       const status = (override?.status || record.status || 'present').toLowerCase();
       return status !== 'absent';
     }).length;

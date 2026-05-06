@@ -18,6 +18,8 @@ import logo from '../../assets/logo.jpg';
 import { format } from 'date-fns';
 import './AttendanceList.scss';
 
+const ATTENDANCE_API_URL = 'http://localhost:5001/api/attendance';
+
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
   { value: 'absent', label: 'Absent' },
@@ -310,17 +312,24 @@ export default function AttendanceList() {
   });
 
   const OVERRIDE_KEY = 'attendanceOverrides';
-  const loadOverrides = () => {
-    try {
-      return JSON.parse(localStorage.getItem(OVERRIDE_KEY)) || [];
-    } catch {
-      return [];
-    }
-  };
-  const saveOverrides = (next) => {
-    setOverrides(next);
-    localStorage.setItem(OVERRIDE_KEY, JSON.stringify(next));
-  };
+
+  const fetchOverridesFromDb = useCallback(async () => {
+    const res = await fetch(`${ATTENDANCE_API_URL}/overrides`);
+    const json = await res.json().catch(() => ({}));
+    const rows = Array.isArray(json?.data) ? json.data : [];
+    setOverrides(rows);
+    return rows;
+  }, []);
+
+  const migrateLocalOverridesToDb = useCallback(async (rows = []) => {
+    if (!Array.isArray(rows) || !rows.length) return;
+    await fetch(`${ATTENDANCE_API_URL}/overrides/bulk-upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    });
+    localStorage.removeItem(OVERRIDE_KEY);
+  }, []);
 
   const toInputTimeValue = (value) => {
     return normalize24HourTime(value);
@@ -377,10 +386,25 @@ export default function AttendanceList() {
 
   useEffect(() => {
     setModule('employee');
-    fetchEmployees();
-    fetchAttendance().then(() => setLoading(false));
-    setOverrides(loadOverrides());
-  }, [setModule]);
+    Promise.all([fetchEmployees(), fetchAttendance()])
+      .then(async () => {
+        try {
+          const remote = await fetchOverridesFromDb();
+          if (!remote.length) {
+            const localRows = JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '[]');
+            if (Array.isArray(localRows) && localRows.length) {
+              await migrateLocalOverridesToDb(localRows);
+              await fetchOverridesFromDb();
+            }
+          }
+        } catch {
+          // Keep UI operational even if override API is unavailable
+        } finally {
+          setLoading(false);
+        }
+      })
+      .catch(() => setLoading(false));
+  }, [setModule, fetchEmployees, fetchAttendance, fetchOverridesFromDb, migrateLocalOverridesToDb]);
 
   useEffect(() => {
     if (!editModal) {
@@ -643,7 +667,7 @@ export default function AttendanceList() {
     return filtered;
   }, [apiRows, normalizedStaffId, apiDateUi, selectedDate]);
 
-  const upsertOverride = (payload) => {
+  const upsertOverride = async (payload) => {
     const dateIn = toDateOnly(payload.dateIn || payload.date || payload.dateOut);
     const dateOut = inferDateOut({
       dateIn,
@@ -652,19 +676,8 @@ export default function AttendanceList() {
       timeOut: payload.timeOut
     });
     if (!payload.empCode || !dateIn) return;
-    
-    // If payload has an ID, replace that specific record
-    // Otherwise, allow multiple entries for same date (split shifts)
-    const next = overrides.filter((o) => {
-      // If we're updating an existing override (has matching ID), remove it
-      if (payload.id && o.id === payload.id) {
-        return false;
-      }
-      // Keep all other overrides (even if same empCode + date)
-      return true;
-    });
-    
-    next.unshift({
+
+    const row = {
       id: payload.id || `${Date.now()}-${Math.random()}`,
       empCode: payload.empCode,
       date: dateIn, // backward compatibility for old consumers
@@ -678,11 +691,18 @@ export default function AttendanceList() {
       manualDeduction: payload.manualDeduction,
       manualTotal: payload.manualTotal,
       waiveDeduction: Boolean(payload.waiveDeduction),
+    };
+
+    await fetch(`${ATTENDANCE_API_URL}/overrides/upsert`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(row),
     });
-    saveOverrides(next);
+
+    await fetchOverridesFromDb();
   };
 
-  const onEditSave = (data) => {
+  const onEditSave = async (data) => {
     const emp = employees.find((e) => String(e.id) === String(data.employee));
     if (!emp) {
       toast.error('Employee not found');
@@ -735,13 +755,17 @@ export default function AttendanceList() {
     const datesToReplace = new Set(normalizedRows.map((r) => toDateOnly(r.dateIn || r.date)));
     if (modalDate) datesToReplace.add(modalDate);
 
-    const retained = overrides.filter((o) => {
-      const sameEmp = String(o.empCode || '').trim() === String(emp.empCode || '').trim();
-      const oDate = toDateOnly(o.dateIn || o.date);
-      return !(sameEmp && datesToReplace.has(oDate));
+    await fetch(`${ATTENDANCE_API_URL}/overrides/replace-dates`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        empCode: emp.empCode,
+        dates: Array.from(datesToReplace),
+        rows: normalizedRows,
+      }),
     });
 
-    saveOverrides([...normalizedRows, ...retained]);
+    await fetchOverridesFromDb();
     
     toast.success(`${editRows.length} attendance row(s) updated`);
     setEditModal(null);
@@ -749,13 +773,13 @@ export default function AttendanceList() {
     reset();
   };
 
-  const onAddSave = (data) => {
+  const onAddSave = async (data) => {
     const emp = employees.find((e) => String(e.id) === String(data.employee));
     if (!emp) {
       toast.error('Employee not found');
       return;
     }
-    upsertOverride({
+    await upsertOverride({
       empCode: emp.empCode,
       dateIn: data.dateIn,
       dateOut: data.dateOut,

@@ -89,8 +89,43 @@ async function ensureExtendedEmployeeColumns() {
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "otherBenefitContribution" DOUBLE PRECISION DEFAULT 0');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "late" BOOLEAN DEFAULT FALSE');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "short" BOOLEAN DEFAULT FALSE');
+  await prisma.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_emp_code_unique ON "Employee" ("empCode") WHERE "empCode" IS NOT NULL');
 
   isExtendedEmployeeColumnsReady = true;
+}
+
+async function assertEmpCodeUnique(empCode, { excludeEmployeeId } = {}) {
+  const normalized = normalizeString(empCode, { emptyToNull: true });
+  if (!normalized) return normalized;
+
+  let duplicate = [];
+  if (excludeEmployeeId !== undefined && excludeEmployeeId !== null) {
+    const id = toIntId(excludeEmployeeId, 'employee id');
+    duplicate = await prisma.$queryRaw`
+      SELECT id
+      FROM "Employee"
+      WHERE "empCode" IS NOT NULL
+        AND LOWER("empCode") = LOWER(${normalized})
+        AND id <> ${id}
+      LIMIT 1
+    `;
+  } else {
+    duplicate = await prisma.$queryRaw`
+      SELECT id
+      FROM "Employee"
+      WHERE "empCode" IS NOT NULL
+        AND LOWER("empCode") = LOWER(${normalized})
+      LIMIT 1
+    `;
+  }
+
+  if (duplicate.length) {
+    const err = new Error('Employee code already exists. Please use a unique employee code.');
+    err.status = 409;
+    throw err;
+  }
+
+  return normalized;
 }
 
 function normalizeExtendedFields(payload = {}) {
@@ -269,8 +304,11 @@ async function get(id) {
 }
 
 async function create(payload) {
+  await ensureExtendedEmployeeColumns();
+  const empCode = await assertEmpCodeUnique(payload.empCode);
+
   const data = {
-    empCode: normalizeString(payload.empCode, { emptyToNull: true }),
+    empCode,
     firstName: normalizeString(payload.firstName),
     middleName: normalizeString(payload.middleName, { emptyToNull: true }),
     lastName: normalizeString(payload.lastName),
@@ -320,9 +358,13 @@ async function create(payload) {
 }
 
 async function update(id, payload) {
+  await ensureExtendedEmployeeColumns();
   const data = {};
 
-  setIfDefined(data, 'empCode', normalizeString(payload.empCode, { emptyToNull: true }));
+  if (payload.empCode !== undefined) {
+    const empCode = await assertEmpCodeUnique(payload.empCode, { excludeEmployeeId: id });
+    setIfDefined(data, 'empCode', empCode);
+  }
   setIfDefined(data, 'firstName', normalizeString(payload.firstName));
   setIfDefined(data, 'middleName', normalizeString(payload.middleName, { emptyToNull: true }));
   setIfDefined(data, 'lastName', normalizeString(payload.lastName));
