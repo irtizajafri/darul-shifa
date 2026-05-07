@@ -15,6 +15,7 @@ const ALLOWED_UNITS = [
   'centimeter',
 ];
 const ALLOWED_ASSET_CONDITIONS = ['working', 'under repair', 'condemned', 'in store'];
+const ALLOWED_USEFUL_LIFE_UNITS = ['years', 'months', 'hours'];
 
 function toNormalizedString(value) {
   return String(value || '').trim().toLowerCase();
@@ -237,6 +238,11 @@ async function createItem(req, res, next) {
       if (!Number.isFinite(usefulLifeYears) || usefulLifeYears <= 0) {
         return fail(res, 400, 'usefulLifeYears must be a number > 0');
       }
+
+      const usefulLifeUnit = toNormalizedString(req.body.usefulLifeUnit || 'years');
+      if (!ALLOWED_USEFUL_LIFE_UNITS.includes(usefulLifeUnit)) {
+        return fail(res, 400, `usefulLifeUnit must be one of: ${ALLOWED_USEFUL_LIFE_UNITS.join(', ')}`);
+      }
     }
 
     if (req.body.purchaseDate) {
@@ -264,6 +270,9 @@ async function createItem(req, res, next) {
     });
     return success(res, data, 'item created');
   } catch (err) {
+    if (String(err.message).toLowerCase().includes('already exists for this supplier')) {
+      return fail(res, 409, err.message);
+    }
     if (String(err.message).toLowerCase().includes('unique')) {
       return fail(res, 409, 'Item code must be unique');
     }
@@ -314,12 +323,24 @@ async function listPurchaseOrders(req, res, next) {
 
 async function createPurchaseOrder(req, res, next) {
   try {
-    const required = ['supplierId', 'itemId', 'requiredQuantity', 'expectedDate'];
+    const hasMultiItems = Array.isArray(req.body?.items) && req.body.items.length > 0;
+    const required = hasMultiItems
+      ? ['supplierId', 'expectedDate', 'items']
+      : ['supplierId', 'itemId', 'requiredQuantity', 'expectedDate'];
     const missing = missingFields(req.body || {}, required);
     if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
 
     if (!isNumericId(req.body.supplierId)) return fail(res, 400, 'Invalid supplierId');
-    if (!isNumericId(req.body.itemId)) return fail(res, 400, 'Invalid itemId');
+
+    if (hasMultiItems) {
+      const invalidItem = req.body.items.find((line) => !isNumericId(line?.itemId));
+      if (invalidItem) return fail(res, 400, 'Invalid itemId in one or more lines');
+
+      const invalidQty = req.body.items.find((line) => Number(line?.requiredQuantity) <= 0);
+      if (invalidQty) return fail(res, 400, 'requiredQuantity must be > 0 in all lines');
+    } else {
+      if (!isNumericId(req.body.itemId)) return fail(res, 400, 'Invalid itemId');
+    }
 
     const data = await service.createPurchaseOrder(req.body || {});
     return success(res, data, 'purchase order created');
@@ -509,6 +530,82 @@ async function listItemAddOptions(req, res, next) {
   }
 }
 
+async function listItemLedgerReport(req, res, next) {
+  try {
+    const { itemId, categoryId, subcategoryId, dateFrom, dateTo } = req.query || {};
+
+    if (itemId !== undefined && itemId !== '' && !isNumericId(itemId)) {
+      return fail(res, 400, 'Invalid itemId');
+    }
+
+    if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) {
+      return fail(res, 400, 'Invalid categoryId');
+    }
+
+    if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) {
+      return fail(res, 400, 'Invalid subcategoryId');
+    }
+
+    if (dateFrom) {
+      const parsed = new Date(dateFrom);
+      if (Number.isNaN(parsed.getTime())) return fail(res, 400, 'Invalid dateFrom');
+    }
+
+    if (dateTo) {
+      const parsed = new Date(dateTo);
+      if (Number.isNaN(parsed.getTime())) return fail(res, 400, 'Invalid dateTo');
+    }
+
+    const data = await service.listItemLedgerReport(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listShortExpiryReport(req, res, next) {
+  try {
+    const {
+      itemId,
+      categoryId,
+      subcategoryId,
+      dateFrom,
+      dateTo,
+      dateLog,
+      dateLogFrom,
+      dateLogTo,
+    } = req.query || {};
+
+    if (itemId !== undefined && itemId !== '' && !isNumericId(itemId)) {
+      return fail(res, 400, 'Invalid itemId');
+    }
+
+    if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) {
+      return fail(res, 400, 'Invalid categoryId');
+    }
+
+    if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) {
+      return fail(res, 400, 'Invalid subcategoryId');
+    }
+
+    [dateFrom, dateTo, dateLog, dateLogFrom, dateLogTo].forEach((value) => {
+      if (!value) return;
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new Error('Invalid date value');
+      }
+    });
+
+    const data = await service.listShortExpiryReport(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    if (String(err.message).includes('Invalid date value')) {
+      return fail(res, 400, err.message);
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   ping,
   listCategories,
@@ -542,4 +639,6 @@ module.exports = {
   addStockMovement,
   listOpenReorderAlerts,
   listItemAddOptions,
+  listItemLedgerReport,
+  listShortExpiryReport,
 };

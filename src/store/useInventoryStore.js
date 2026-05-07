@@ -36,6 +36,18 @@ export const useInventoryStore = create((set) => ({
   salesInvoices: [],
   gdns: [],
   reorderAlerts: [],
+  itemLedgerReport: {
+    rows: [],
+    groups: [],
+    summary: {
+      itemCount: 0,
+      openingBalance: 0,
+      totalReceived: 0,
+      totalIssued: 0,
+      closingBalance: 0,
+    },
+  },
+  shortExpiryReportRows: [],
   masterOptions: {
     categories: [],
     subcategories: [],
@@ -221,12 +233,13 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGRNs: async ({ search = '', supplierId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
+  fetchGRNs: async ({ search = '', supplierId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
       if (search) qs.set('search', search);
       if (supplierId) qs.set('supplierId', String(supplierId));
+      if (itemId) qs.set('itemId', String(itemId));
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
   if (dateFrom) qs.set('dateFrom', String(dateFrom));
@@ -271,12 +284,13 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGINs: async ({ search = '', departmentId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
+  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
       if (search) qs.set('search', search);
       if (departmentId) qs.set('departmentId', String(departmentId));
+      if (itemId) qs.set('itemId', String(itemId));
   if (categoryId) qs.set('categoryId', String(categoryId));
   if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
   if (dateFrom) qs.set('dateFrom', String(dateFrom));
@@ -318,12 +332,14 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGDNs: async ({ search = '', itemId = '', dateFrom = '', dateTo = '' } = {}) => {
+  fetchGDNs: async ({ search = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
       if (search) qs.set('search', search);
       if (itemId) qs.set('itemId', String(itemId));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
       if (dateFrom) qs.set('dateFrom', String(dateFrom));
       if (dateTo) qs.set('dateTo', String(dateTo));
       const data = await request(`/gdn?${qs.toString()}`);
@@ -369,6 +385,70 @@ export const useInventoryStore = create((set) => ({
       return data;
     } catch (err) {
       set({ error: err.message });
+      throw err;
+    }
+  },
+
+  fetchItemLedgerReport: async ({ dateFrom = '', dateTo = '', itemId = '', categoryId = '', subcategoryId = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      if (itemId) qs.set('itemId', String(itemId));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+
+      const data = await request(`/reports/item-ledger?${qs.toString()}`);
+      const safeData = {
+        rows: Array.isArray(data?.rows) ? data.rows : [],
+        groups: Array.isArray(data?.groups) ? data.groups : [],
+        summary: {
+          itemCount: Number(data?.summary?.itemCount || 0),
+          openingBalance: Number(data?.summary?.openingBalance || 0),
+          totalReceived: Number(data?.summary?.totalReceived || 0),
+          totalIssued: Number(data?.summary?.totalIssued || 0),
+          closingBalance: Number(data?.summary?.closingBalance || 0),
+        },
+      };
+
+      set({ itemLedgerReport: safeData, loading: false });
+      return safeData;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  fetchShortExpiryReport: async ({
+    dateFrom = '',
+    dateTo = '',
+    dateLog = '',
+    dateLogFrom = '',
+    dateLogTo = '',
+    itemId = '',
+    categoryId = '',
+    subcategoryId = '',
+  } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      if (dateLog) qs.set('dateLog', String(dateLog));
+      if (dateLogFrom) qs.set('dateLogFrom', String(dateLogFrom));
+      if (dateLogTo) qs.set('dateLogTo', String(dateLogTo));
+      if (itemId) qs.set('itemId', String(itemId));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+
+      const data = await request(`/reports/short-expiry?${qs.toString()}`);
+      const rows = Array.isArray(data) ? data : [];
+
+      set({ shortExpiryReportRows: rows, loading: false });
+      return rows;
+    } catch (err) {
+      set({ error: err.message, loading: false });
       throw err;
     }
   },

@@ -50,5 +50,7 @@ router.get('/gdn', controller.listGDNs);
 router.post('/gdn', controller.createGDN);
 
 router.get('/alerts/reorder', controller.listOpenReorderAlerts);
+router.get('/reports/item-ledger', controller.listItemLedgerReport);
+router.get('/reports/short-expiry', controller.listShortExpiryReport);
 
 module.exports = router;

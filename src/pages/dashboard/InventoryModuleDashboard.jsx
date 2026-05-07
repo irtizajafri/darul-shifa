@@ -31,6 +31,7 @@ const subModules = [
 
 export default function InventoryModuleDashboard() {
   const [loading, setLoading] = useState(true);
+  const [showLowStockPopup, setShowLowStockPopup] = useState(false);
   const { setModule } = useModuleStore();
   const { items, reorderAlerts, fetchItems, fetchReorderAlerts } = useInventoryStore();
   const navigate = useNavigate();
@@ -48,6 +49,12 @@ export default function InventoryModuleDashboard() {
     }, 300);
     return () => clearTimeout(init);
   }, [setModule, fetchItems, fetchReorderAlerts]);
+
+  useEffect(() => {
+    if (!loading) {
+      setShowLowStockPopup(true);
+    }
+  }, [loading]);
 
   if (loading) return <PageLoader />;
 
@@ -166,6 +173,67 @@ export default function InventoryModuleDashboard() {
           </table>
         </div>
       </Card>
+
+      {showLowStockPopup && (
+        <div className="low-stock-popup-overlay" role="dialog" aria-modal="true" aria-label="Recent Low Stocks">
+          <div className="low-stock-popup-card">
+            <div className="low-stock-popup-header">
+              <div>
+                <h2>Recent Low Stocks</h2>
+                <p>{openAlerts.length} item(s) currently below reorder level</p>
+              </div>
+              <div className="low-stock-popup-actions">
+                <Button
+                  variant="outline"
+                  label="View All Stock"
+                  onClick={() => {
+                    setShowLowStockPopup(false);
+                    navigate('/inventory/reports');
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  label="Close"
+                  onClick={() => setShowLowStockPopup(false)}
+                />
+              </div>
+            </div>
+
+            <div className="low-stock-popup-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item Code</th>
+                    <th>Item Name</th>
+                    <th>Category</th>
+                    <th>Current Stock</th>
+                    <th>Reorder Level</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openAlerts.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="empty-msg">No reorder alerts right now.</td>
+                    </tr>
+                  ) : (
+                    openAlerts.map((alert) => (
+                      <tr key={`popup-alert-${alert.id}`}>
+                        <td>{alert.item?.code}</td>
+                        <td className="item-name">{alert.item?.name}</td>
+                        <td>{alert.item?.category?.name || '-'}</td>
+                        <td><span className="stock-danger">{alert.currentQty}</span></td>
+                        <td>{alert.thresholdQty}</td>
+                        <td><span className="status-badge pending">Reorder Required</span></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

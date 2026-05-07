@@ -10,6 +10,7 @@ const STATUS_OPTIONS = ['active', 'inactive'];
 const ITEM_TYPES = ['current asset', 'fixed asset'];
 const UNIT_OPTIONS = ['kg', 'liters', 'pieces', 'boxes', 'ml', 'dozen', 'feet', 'inches', 'millimeters', 'centimeter'];
 const FIXED_ASSET_CONDITIONS = ['working', 'under repair', 'condemned', 'in store'];
+const USEFUL_LIFE_UNITS = ['years', 'months', 'hours'];
 
 const EMPTY_FORM = {
   code: '',
@@ -32,6 +33,7 @@ const EMPTY_FORM = {
   purchaseDate: '',
   warrantyUntil: '',
   usefulLifeYears: '',
+  usefulLifeUnit: 'years',
   assetCondition: 'working',
   bookValue: '',
   address: '',
@@ -188,6 +190,19 @@ export default function MasterSetup() {
         return;
       }
 
+      const selectedSupplierId = Number(formData.supplierId);
+      const enteredItemName = String(formData.name || '').trim().toLowerCase();
+      const duplicateItemForSupplier = (items || []).some((item) => {
+        const supplierMatch = Number(item?.supplierId ?? item?.supplier?.id) === selectedSupplierId;
+        const nameMatch = String(item?.name || '').trim().toLowerCase() === enteredItemName;
+        return supplierMatch && nameMatch;
+      });
+
+      if (duplicateItemForSupplier) {
+        toast.error('Selected supplier already has this item');
+        return;
+      }
+
       await saveAndRefresh(createItem, {
         code: formData.code || undefined,
         name: formData.name,
@@ -209,6 +224,7 @@ export default function MasterSetup() {
         purchaseDate: formData.purchaseDate || undefined,
         warrantyUntil: formData.warrantyUntil || undefined,
         usefulLifeYears: formData.usefulLifeYears === '' ? undefined : Number(formData.usefulLifeYears),
+  usefulLifeUnit: formData.usefulLifeUnit || 'years',
         assetCondition: formData.assetCondition || undefined,
         bookValue: formData.bookValue === '' ? undefined : Number(formData.bookValue),
       }, 'Item created');
@@ -736,14 +752,26 @@ export default function MasterSetup() {
                           />
                         </div>
 
-                        <input
-                          placeholder="Useful Life (Years)"
-                          type="number"
-                          min="1"
-                          value={formData.usefulLifeYears}
-                          onChange={(e) => onFormChange('usefulLifeYears', e.target.value)}
-                          className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                        />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:col-span-2">
+                          <input
+                            placeholder="Useful Life"
+                            type="number"
+                            min="1"
+                            value={formData.usefulLifeYears}
+                            onChange={(e) => onFormChange('usefulLifeYears', e.target.value)}
+                            className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                          />
+
+                          <select
+                            value={formData.usefulLifeUnit || 'years'}
+                            onChange={(e) => onFormChange('usefulLifeUnit', e.target.value)}
+                            className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                          >
+                            {USEFUL_LIFE_UNITS.map((unit) => (
+                              <option key={unit} value={unit}>{unit}</option>
+                            ))}
+                          </select>
+                        </div>
 
                         <select
                           value={formData.assetCondition}

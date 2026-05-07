@@ -1519,7 +1519,8 @@ export default function Reports() {
 
     const y        = baseY + (forceFirstPage ? 72 : 80);
     const colWidth = (pageWidth - margin * 2) / 3;
-    const labels   = ["Prepared By", "Administrator", "Employee"];
+  const employeeSignatureLabel = `${emp?.firstName || ''} ${emp?.lastName || ''}`.trim() || "Employee";
+  const labels   = ["Prepared By", "Administrator", employeeSignatureLabel];
     pdf.setLineWidth(0.5);
     labels.forEach((label, index) => {
       const x = margin + index * colWidth;
@@ -1666,6 +1667,8 @@ export default function Reports() {
     if (scope === "payslip" || scope === "payslip-detailed") {
       const pageWidth = pdf.internal.pageSize.getWidth();
       const headerTopY = 78;
+      const standardDutyMinutes = Math.max(1, Math.round(getStandardDutyMinutes() || (8 * 60)));
+      const standardDutyHours = Number((standardDutyMinutes / 60).toFixed(2));
       pdf.setFontSize(8);
       const doj = emp?.appointmentDate ? new Date(emp.appointmentDate).toISOString().split('T')[0].split('-').reverse().join('-') : '-';
       pdf.text(`DOJ: ${doj}`, 40, headerTopY);
@@ -1679,9 +1682,9 @@ export default function Reports() {
       pdf.text(emp?.designation || "-", pageWidth / 2, headerTopY + 14, { align: "center" });
       const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
       pdf.text(`${monthNames[parseInt(month)]} ${year}`, pageWidth / 2, headerTopY + 28, { align: "center", fontStyle: "bold" });
-      pdf.setFontSize(10);
-      pdf.text(`DUTY HOURS: 8`, pageWidth - 40, headerTopY, { align: "right" });
-  const perHourSal = (effectiveBaseTotalSal / (new Date(year, month, 0).getDate() * 8)).toFixed(2);
+    pdf.setFontSize(10);
+    pdf.text(`DUTY HOURS: ${standardDutyHours.toFixed(2)}`, pageWidth - 40, headerTopY, { align: "right" });
+    const perHourSal = (effectiveBaseTotalSal / (new Date(year, month, 0).getDate() * standardDutyHours)).toFixed(2);
       pdf.text(`PERHOUR SALARY: ${perHourSal}`, pageWidth - 40, headerTopY + 18, { align: "right" });
       pdf.setFontSize(22); pdf.setTextColor(200);
       pdf.text("ONLY FOR REPORTING", pageWidth / 2, headerTopY + 40, { align: "center" });
@@ -1727,14 +1730,50 @@ export default function Reports() {
       pdf.setFont("helvetica", "normal");
 
       const isPayslipScope = scope === "payslip" || scope === "payslip-detailed";
+      const toNumber = (value) => {
+        const parsed = Number(String(value ?? "0").replace(/[^0-9.-]/g, ""));
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
+
+      const wrdDays = new Date(year, month, 0).getDate();
+      const perDayAmount = Math.round(effectiveBaseTotalSal / wrdDays).toString();
+      const tableRows = detailedAttendanceRows.map((r) => {
+        const otAmnt = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((effectiveBaseTotalSal / wrdDays) / 8)).toString();
+        return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, perDayAmount, r.salary, otAmnt, r.ded, r.total];
+      });
+
+      const totals = tableRows.reduce((acc, row) => {
+        acc.dutyHrs += toNumber(row[5]);
+        acc.wrkHrs += toNumber(row[7]);
+        acc.otHrs += toNumber(row[8]);
+        acc.salary += toNumber(row[10]);
+        acc.otAmt += toNumber(row[11]);
+        acc.ded += toNumber(row[12]);
+        acc.total += toNumber(row[13]);
+        return acc;
+      }, { dutyHrs: 0, wrkHrs: 0, otHrs: 0, salary: 0, otAmt: 0, ded: 0, total: 0 });
+
+      const totalsRow = [
+        "TOTAL",
+        "",
+        "",
+        "",
+        "",
+        totals.dutyHrs.toFixed(2),
+        "",
+        totals.wrkHrs.toFixed(2),
+        totals.otHrs.toFixed(2),
+        "",
+        Math.round(totals.salary).toString(),
+        Math.round(totals.otAmt).toString(),
+        Math.round(totals.ded).toString(),
+        Math.round(totals.total).toString(),
+      ];
+
       autoTable(pdf, {
         startY: allowanceLineY + 16,
         head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "Dty Hrs", "Wrk Days", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
-        body: detailedAttendanceRows.map((r) => {
-          const wrdDays = new Date(year, month, 0).getDate();
-          const otAmnt  = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((effectiveBaseTotalSal / wrdDays) / 8)).toString();
-          return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, Math.round(effectiveBaseTotalSal / wrdDays).toString(), r.salary, otAmnt, r.ded, r.total];
-        }),
+        body: [...tableRows, totalsRow],
         styles: {
           fontSize: isPayslipScope ? 6 : 7,
           cellPadding: isPayslipScope ? 1 : 2,

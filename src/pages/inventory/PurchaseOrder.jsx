@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Download, FileText, Plus, Search } from 'lucide-react';
+import { Download, FileText, Plus, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
+
+const createEmptyPoLine = () => ({
+  itemId: '',
+  requiredQuantity: '',
+  orderedRate: '',
+});
 
 export default function PurchaseOrder() {
   const [query, setQuery] = useState('');
@@ -18,10 +24,8 @@ export default function PurchaseOrder() {
   });
   const [formData, setFormData] = useState({
     supplierId: '',
-    itemId: '',
-    requiredQuantity: '',
-    orderedRate: '',
     expectedDate: new Date().toISOString().slice(0, 10),
+    items: [createEmptyPoLine()],
   });
 
   const {
@@ -55,24 +59,53 @@ export default function PurchaseOrder() {
     ].some((v) => String(v || '').toLowerCase().includes(q)));
   }, [purchaseOrders, query]);
 
+  const supplierScopedItems = useMemo(() => {
+    const selectedSupplierId = Number(formData.supplierId);
+    if (!selectedSupplierId) return items || [];
+    return (items || []).filter((item) => Number(item.supplierId) === selectedSupplierId);
+  }, [items, formData.supplierId]);
+
   const handleCreatePO = async (e) => {
     e.preventDefault();
     try {
+      const validLines = (formData.items || []).filter((line) => (
+        Number(line.itemId) > 0 && Number(line.requiredQuantity) > 0
+      ));
+
+      if (!Number(formData.supplierId)) {
+        toast.error('Please select supplier');
+        return;
+      }
+
+      if (validLines.length === 0) {
+        toast.error('At least one valid item line is required');
+        return;
+      }
+
+      const duplicateItemIds = validLines
+        .map((line) => Number(line.itemId))
+        .filter((itemId, idx, arr) => arr.indexOf(itemId) !== idx);
+
+      if (duplicateItemIds.length) {
+        toast.error('Same item cannot be added multiple times in one PO');
+        return;
+      }
+
       await createPurchaseOrder({
         supplierId: Number(formData.supplierId),
-        itemId: Number(formData.itemId),
-        requiredQuantity: Number(formData.requiredQuantity),
-        orderedRate: formData.orderedRate === '' ? undefined : Number(formData.orderedRate),
         expectedDate: new Date(formData.expectedDate).toISOString(),
+        items: validLines.map((line) => ({
+          itemId: Number(line.itemId),
+          requiredQuantity: Number(line.requiredQuantity),
+          orderedRate: line.orderedRate === '' ? undefined : Number(line.orderedRate),
+        })),
       });
 
   await fetchPurchaseOrders(filters);
       setFormData({
         supplierId: '',
-        itemId: '',
-        requiredQuantity: '',
-        orderedRate: '',
         expectedDate: new Date().toISOString().slice(0, 10),
+        items: [createEmptyPoLine()],
       });
       setShowCreate(false);
       toast.success('PO created');
@@ -109,6 +142,34 @@ export default function PurchaseOrder() {
     status: row.status,
   })), [filteredRows]);
 
+  const updatePoLine = (index, key, value) => {
+    setFormData((prev) => {
+      const nextItems = [...(prev.items || [])];
+      nextItems[index] = {
+        ...(nextItems[index] || createEmptyPoLine()),
+        [key]: value,
+      };
+      return { ...prev, items: nextItems };
+    });
+  };
+
+  const addPoLine = () => {
+    setFormData((prev) => ({
+      ...prev,
+      items: [...(prev.items || []), createEmptyPoLine()],
+    }));
+  };
+
+  const removePoLine = (index) => {
+    setFormData((prev) => {
+      const nextItems = [...(prev.items || [])].filter((_, idx) => idx !== index);
+      return {
+        ...prev,
+        items: nextItems.length ? nextItems : [createEmptyPoLine()],
+      };
+    });
+  };
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -121,60 +182,91 @@ export default function PurchaseOrder() {
 
       {showCreate && (
         <Card className="mb-4">
-          <form onSubmit={handleCreatePO} className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <select
-              value={formData.supplierId}
-              onChange={(e) => setFormData((p) => ({ ...p, supplierId: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            >
-              <option value="">Select Supplier</option>
-              {(masterOptions.suppliers || []).map((sup) => (
-                <option key={sup.id} value={sup.id}>{sup.name} ({sup.code})</option>
-              ))}
-            </select>
+          <form onSubmit={handleCreatePO} className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <select
+                value={formData.supplierId}
+                onChange={(e) => setFormData((p) => ({ ...p, supplierId: e.target.value }))}
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                required
+              >
+                <option value="">Select Supplier</option>
+                {(masterOptions.suppliers || []).map((sup) => (
+                  <option key={sup.id} value={sup.id}>{sup.name} ({sup.code})</option>
+                ))}
+              </select>
 
-            <select
-              value={formData.itemId}
-              onChange={(e) => setFormData((p) => ({ ...p, itemId: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            >
-              <option value="">Select Item</option>
-              {(items || []).map((item) => (
-                <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-              ))}
-            </select>
+              <input
+                type="date"
+                value={formData.expectedDate}
+                onChange={(e) => setFormData((p) => ({ ...p, expectedDate: e.target.value }))}
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                required
+              />
+            </div>
 
-            <input
-              type="number"
-              min="1"
-              placeholder="Required Quantity"
-              value={formData.requiredQuantity}
-              onChange={(e) => setFormData((p) => ({ ...p, requiredQuantity: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            />
+            <div className="space-y-2">
+              {(formData.items || []).map((line, idx) => {
+                const qty = Number(line.requiredQuantity) || 0;
+                const rate = Number(line.orderedRate) || 0;
+                const amount = qty > 0 && rate > 0 ? (qty * rate) : 0;
 
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Ordered Rate (optional if item has GRN history)"
-              value={formData.orderedRate}
-              onChange={(e) => setFormData((p) => ({ ...p, orderedRate: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-            />
+                return (
+                  <div key={`po-line-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                    <select
+                      value={line.itemId}
+                      onChange={(e) => updatePoLine(idx, 'itemId', e.target.value)}
+                      className="md:col-span-5 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                      required
+                    >
+                      <option value="">Select Item</option>
+                      {supplierScopedItems.map((item) => (
+                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
+                      ))}
+                    </select>
 
-            <input
-              type="date"
-              value={formData.expectedDate}
-              onChange={(e) => setFormData((p) => ({ ...p, expectedDate: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            />
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Qty"
+                      value={line.requiredQuantity}
+                      onChange={(e) => updatePoLine(idx, 'requiredQuantity', e.target.value)}
+                      className="md:col-span-2 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                      required
+                    />
 
-            <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Rate"
+                      value={line.orderedRate}
+                      onChange={(e) => updatePoLine(idx, 'orderedRate', e.target.value)}
+                      className="md:col-span-2 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                    />
+
+                    <div className="md:col-span-2 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md text-slate-700">
+                      {amount > 0 ? amount.toFixed(2) : '-'}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="md:col-span-1 inline-flex items-center justify-center px-2 py-2 border border-slate-300 rounded-md text-slate-500 hover:text-red-600 hover:border-red-300"
+                      onClick={() => removePoLine(idx)}
+                      aria-label="Remove item line"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div>
+              <Button type="button" variant="outline" label="Add Item" icon={Plus} onClick={addPoLine} />
+            </div>
+
+            <div className="flex gap-2 pt-1">
               <Button type="submit" label={loading ? 'Saving...' : 'Save PO'} disabled={loading} />
               <Button type="button" variant="secondary" label="Cancel" onClick={() => setShowCreate(false)} />
             </div>
