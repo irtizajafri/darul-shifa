@@ -220,8 +220,8 @@ model InventoryItem {
   category       InventoryCategory     @relation(fields: [categoryId], references: [id])
   subcategoryId  Int
   subcategory    InventorySubcategory  @relation(fields: [subcategoryId], references: [id])
-  supplierId     Int
-  supplier       InventorySupplier     @relation(fields: [supplierId], references: [id])
+  supplierId     Int?
+  supplier       InventorySupplier?    @relation(fields: [supplierId], references: [id])
   storageId      Int?
   storage        InventoryStorage?     @relation(fields: [storageId], references: [id])
 

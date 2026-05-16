@@ -181,6 +181,9 @@ export default function AddEmployee({ edit }) {
   const cnicFrontDoc = watch('cnicFrontDoc');
   const cnicBackDoc = watch('cnicBackDoc');
   const hasOtherBenefit = watch('hasOtherBenefit');
+  const isCnicFrontPdf = Boolean(cnicFrontDoc && String(cnicFrontDoc).startsWith('data:application/pdf'));
+  const isCnicBackPdf = Boolean(cnicBackDoc && String(cnicBackDoc).startsWith('data:application/pdf'));
+  // const isSignaturePdf = Boolean(signature && String(signature).startsWith('data:application/pdf'));
 
   const readApiData = async (response) => {
     const json = await response.json().catch(() => null);
@@ -723,6 +726,26 @@ export default function AddEmployee({ edit }) {
                   )}
                 </div>
                 <small className="text-slate-500">{cnicFrontDoc ? 'Front document attached' : 'JPG/PNG/PDF, max 4MB'}</small>
+                {cnicFrontDoc && (
+                  <div className="mt-2">
+                    {isCnicFrontPdf ? (
+                      <a
+                        href={cnicFrontDoc}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-blue-600 underline"
+                      >
+                        View CNIC Front (PDF)
+                      </a>
+                    ) : (
+                      <img
+                        src={cnicFrontDoc}
+                        alt="CNIC Front Preview"
+                        className="h-28 w-auto rounded border border-[#E2E8F0] object-contain bg-white"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">CNIC Back Upload</label>
@@ -752,6 +775,26 @@ export default function AddEmployee({ edit }) {
                   )}
                 </div>
                 <small className="text-slate-500">{cnicBackDoc ? 'Back document attached' : 'JPG/PNG/PDF, max 4MB'}</small>
+                {cnicBackDoc && (
+                  <div className="mt-2">
+                    {isCnicBackPdf ? (
+                      <a
+                        href={cnicBackDoc}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-blue-600 underline"
+                      >
+                        View CNIC Back (PDF)
+                      </a>
+                    ) : (
+                      <img
+                        src={cnicBackDoc}
+                        alt="CNIC Back Preview"
+                        className="h-28 w-auto rounded border border-[#E2E8F0] object-contain bg-white"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium mb-1">Reference 1</label>

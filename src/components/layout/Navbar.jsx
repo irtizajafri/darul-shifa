@@ -16,7 +16,7 @@ export default function Navbar({ onMenuClick }) {
     <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 bg-white border-b border-[#E2E8F0]">
       <button
         onClick={onMenuClick}
-        className="lg:hidden p-2 rounded-lg hover:bg-[#F8FAFC]"
+        className="p-2 rounded-lg hover:bg-[#F8FAFC]"
       >
         <Menu className="w-6 h-6 text-[#0F172A]" />
       </button>

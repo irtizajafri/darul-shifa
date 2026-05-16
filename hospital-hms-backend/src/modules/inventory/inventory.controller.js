@@ -197,7 +197,6 @@ async function createItem(req, res, next) {
       'name',
       'categoryId',
       'subcategoryId',
-      'supplierId',
       'itemType',
       'unit',
       'reorderLevel',
@@ -205,9 +204,18 @@ async function createItem(req, res, next) {
     const missing = missingFields(req.body || {}, required);
     if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
 
-  const ids = ['categoryId', 'subcategoryId', 'supplierId'];
+    const ids = ['categoryId', 'subcategoryId'];
     const badId = ids.find((idKey) => !isNumericId(req.body[idKey]));
     if (badId) return fail(res, 400, `Invalid ${badId}`);
+
+    // Validate supplierId if provided (can be array or single ID)
+    if (req.body.supplierId) {
+      const supplierIds = Array.isArray(req.body.supplierId) 
+        ? req.body.supplierId 
+        : [req.body.supplierId];
+      const invalidSuppId = supplierIds.find((id) => !isNumericId(id));
+      if (invalidSuppId) return fail(res, 400, 'Invalid supplierId(s)');
+    }
 
     const itemType = toNormalizedString(req.body.itemType);
     if (!ALLOWED_ITEM_TYPES.includes(itemType)) {
@@ -606,6 +614,30 @@ async function listShortExpiryReport(req, res, next) {
   }
 }
 
+async function listStockPositionReport(req, res, next) {
+  try {
+    const { asOfDate, categoryId, subcategoryId } = req.query || {};
+
+    if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) {
+      return fail(res, 400, 'Invalid categoryId');
+    }
+
+    if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) {
+      return fail(res, 400, 'Invalid subcategoryId');
+    }
+
+    if (asOfDate) {
+      const parsed = new Date(asOfDate);
+      if (Number.isNaN(parsed.getTime())) return fail(res, 400, 'Invalid asOfDate');
+    }
+
+    const data = await service.listStockPositionReport(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   ping,
   listCategories,
@@ -640,5 +672,6 @@ module.exports = {
   listOpenReorderAlerts,
   listItemAddOptions,
   listItemLedgerReport,
+  listStockPositionReport,
   listShortExpiryReport,
 };

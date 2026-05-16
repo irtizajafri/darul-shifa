@@ -100,7 +100,8 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside
         className={clsx(
           'fixed lg:sticky top-0 left-0 z-40 h-screen bg-white border-r border-[#E2E8F0] flex flex-col transition-all duration-300',
-          collapsed ? 'w-[70px]' : 'w-[260px]'
+          collapsed ? 'w-[70px]' : 'w-[260px]',
+          !isOpen && 'hidden'
         )}
       >
         <div className="p-4 border-b border-[#E2E8F0]">
@@ -138,7 +139,8 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside
         className={clsx(
           'fixed lg:sticky top-0 left-0 z-40 h-screen bg-white border-r border-[#E2E8F0] flex flex-col transition-all duration-300',
-          collapsed ? 'w-[70px]' : 'w-[260px]'
+          collapsed ? 'w-[70px]' : 'w-[260px]',
+          !isOpen && 'hidden'
         )}
       >
         <div className="p-4 border-b border-[#E2E8F0]">
@@ -175,7 +177,8 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside
         className={clsx(
           'fixed lg:sticky top-0 left-0 z-40 h-screen bg-white border-r border-[#E2E8F0] flex flex-col transition-all duration-300',
-          collapsed ? 'w-[70px]' : 'w-[260px]'
+          collapsed ? 'w-[70px]' : 'w-[260px]',
+          !isOpen && 'hidden'
         )}
       >
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
@@ -199,7 +202,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       className={clsx(
         'fixed lg:sticky top-0 left-0 z-40 h-screen bg-white border-r border-[#E2E8F0] flex flex-col transition-all duration-300',
         collapsed ? 'w-[70px]' : 'w-[260px]',
-        !isOpen && 'hidden lg:flex'
+        !isOpen && 'hidden'
       )}
     >
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">

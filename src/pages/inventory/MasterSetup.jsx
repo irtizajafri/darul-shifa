@@ -3,6 +3,7 @@ import { Plus, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useInventoryStore } from '../../store/useInventoryStore';
 
 const TABS = ['Items', 'Categories', 'Subcategories', 'Suppliers', 'Storages', 'Departments'];
@@ -192,14 +193,15 @@ export default function MasterSetup() {
 
       const selectedSupplierId = Number(formData.supplierId);
       const enteredItemName = String(formData.name || '').trim().toLowerCase();
-      const duplicateItemForSupplier = (items || []).some((item) => {
-        const supplierMatch = Number(item?.supplierId ?? item?.supplier?.id) === selectedSupplierId;
+      
+      // Check for duplicate item name (supplier-agnostic now since supplierId is optional)
+      const duplicateItem = (items || []).some((item) => {
         const nameMatch = String(item?.name || '').trim().toLowerCase() === enteredItemName;
-        return supplierMatch && nameMatch;
+        return nameMatch;
       });
 
-      if (duplicateItemForSupplier) {
-        toast.error('Selected supplier already has this item');
+      if (duplicateItem) {
+        toast.error('Item with this name already exists');
         return;
       }
 
@@ -208,7 +210,7 @@ export default function MasterSetup() {
         name: formData.name,
         categoryId: Number(formData.categoryId),
         subcategoryId: Number(formData.subcategoryId),
-        supplierId: Number(formData.supplierId),
+        supplierId: formData.supplierId ? Number(formData.supplierId) : undefined,
         storageId: formData.itemType === 'current asset' ? Number(formData.storageId) : undefined,
         itemType: formData.itemType,
         unit: formData.unit,
@@ -575,57 +577,39 @@ export default function MasterSetup() {
 
                 {activeTab === 'Items' && (
                   <>
-                    <select
+                    <SearchableSelect
+                      options={masterOptions.categories || []}
                       value={formData.categoryId}
-                      onChange={(e) => {
-                        const selectedCategoryId = e.target.value;
+                      onChange={(selectedCategoryId) => {
                         setFormData((prev) => ({ ...prev, categoryId: selectedCategoryId, subcategoryId: '' }));
                       }}
-                      className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                      placeholder="Select Category"
                       required
-                    >
-                      <option value="">Select Category</option>
-                      {(masterOptions.categories || []).map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                    />
 
-                    <select
+                    <SearchableSelect
+                      options={filteredSubcategoriesForItem}
                       value={formData.subcategoryId}
-                      onChange={(e) => onFormChange('subcategoryId', e.target.value)}
-                      className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                      onChange={(e) => onFormChange('subcategoryId', e)}
+                      placeholder="Select Subcategory"
                       required
-                    >
-                      <option value="">Select Subcategory</option>
-                      {filteredSubcategoriesForItem.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                    />
 
-                    <select
+                    <SearchableSelect
+                      options={masterOptions.suppliers || []}
                       value={formData.supplierId}
-                      onChange={(e) => onFormChange('supplierId', e.target.value)}
-                      className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                      required
-                    >
-                      <option value="">Select Supplier</option>
-                      {(masterOptions.suppliers || []).map((sup) => (
-                        <option key={sup.id} value={sup.id}>{sup.name} ({sup.code})</option>
-                      ))}
-                    </select>
+                      onChange={(e) => onFormChange('supplierId', e)}
+                      placeholder="Select Suppliers (Optional)"
+                    />
 
                     {formData.itemType === 'current asset' ? (
-                      <select
+                      <SearchableSelect
+                        options={masterOptions.storages || []}
                         value={formData.storageId}
-                        onChange={(e) => onFormChange('storageId', e.target.value)}
-                        className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                        onChange={(e) => onFormChange('storageId', e)}
+                        placeholder="Select Storage"
                         required
-                      >
-                        <option value="">Select Storage</option>
-                        {(masterOptions.storages || []).map((st) => (
-                          <option key={st.id} value={st.id}>{st.name} ({st.code})</option>
-                        ))}
-                      </select>
+                      />
                     ) : (
                       <input
                         value="No shelf required for fixed assets"
@@ -783,15 +767,14 @@ export default function MasterSetup() {
                           ))}
                         </select>
 
-                        <input
-                          placeholder="Book Value (optional/manual)"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={formData.bookValue}
-                          onChange={(e) => onFormChange('bookValue', e.target.value)}
-                          className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                        />
+                        <select
+                        value={formData.bookValue}
+                        onChange={(e) => onFormChange('bookValue', e.target.value)}
+                        className="px-3 py-2 border border-slate-300 rounded-md text-sm bg-white">
+                        <option value="" disabled>Select Status</option>
+                        <option value="New">New</option>
+                        <option value="Used">Used</option>
+                        </select>
                       </>
                     )}
                   </>

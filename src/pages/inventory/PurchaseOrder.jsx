@@ -10,11 +10,13 @@ const createEmptyPoLine = () => ({
   itemId: '',
   requiredQuantity: '',
   orderedRate: '',
+  lastGRNQuantity: '',
 });
 
 export default function PurchaseOrder() {
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [poExportRowsData, setPoExportRowsData] = useState([]);
   const [filters, setFilters] = useState({
     status: '',
     supplierId: '',
@@ -37,6 +39,7 @@ export default function PurchaseOrder() {
     fetchMastersOptions,
     fetchPurchaseOrders,
     createPurchaseOrder,
+    getLastGRNRate,
   } = useInventoryStore();
 
   useEffect(() => {
@@ -59,10 +62,45 @@ export default function PurchaseOrder() {
     ].some((v) => String(v || '').toLowerCase().includes(q)));
   }, [purchaseOrders, query]);
 
+  useEffect(() => {
+    // Populate export rows with GRN data
+    const populateExportRows = async () => {
+      try {
+        const rows = filteredRows || [];
+        const rowsWithGRN = await Promise.all(
+          rows.map(async (row) => {
+            const grnData = await getLastGRNRate(row.itemId, row.supplierId);
+            return {
+              poCode: row.code,
+              supplier: row.supplier?.name || '-',
+              item: row.item?.name || '-',
+              requiredQuantity: row.requiredQuantity,
+              orderedRate: row.orderedRate ?? '-',
+              lastGRNRate: grnData?.rate ? Number(grnData.rate).toFixed(2) : 'N/A',
+              lastGRNQuantity: grnData?.quantity ? Number(grnData.quantity) : 'N/A',
+              expectedDate: row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-',
+              status: row.status,
+            };
+          })
+        );
+        setPoExportRowsData(rowsWithGRN);
+      } catch (err) {
+        console.error('Failed to populate export rows:', err);
+      }
+    };
+
+    populateExportRows();
+  }, [filteredRows, getLastGRNRate]);
+
   const supplierScopedItems = useMemo(() => {
     const selectedSupplierId = Number(formData.supplierId);
     if (!selectedSupplierId) return items || [];
-    return (items || []).filter((item) => Number(item.supplierId) === selectedSupplierId);
+    // Check if item has supplier in its suppliers array
+    return (items || []).filter((item) => {
+      const itemSuppliers = Array.isArray(item.supplierId) ? item.supplierId : [];
+      // If item has no suppliers mapped, show all items; otherwise filter by selected supplier
+      return itemSuppliers.length === 0 || itemSuppliers.includes(selectedSupplierId);
+    });
   }, [items, formData.supplierId]);
 
   const handleCreatePO = async (e) => {
@@ -132,16 +170,6 @@ export default function PurchaseOrder() {
     }
   };
 
-  const poExportRows = useMemo(() => filteredRows.map((row) => ({
-    poCode: row.code,
-    supplier: row.supplier?.name || '-',
-    item: row.item?.name || '-',
-    requiredQuantity: row.requiredQuantity,
-    orderedRate: row.orderedRate ?? '-',
-    expectedDate: row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-',
-    status: row.status,
-  })), [filteredRows]);
-
   const updatePoLine = (index, key, value) => {
     setFormData((prev) => {
       const nextItems = [...(prev.items || [])];
@@ -151,6 +179,29 @@ export default function PurchaseOrder() {
       };
       return { ...prev, items: nextItems };
     });
+
+    // Auto-fill rate and quantity when item is selected
+    if (key === 'itemId' && value) {
+      const supplierId = formData.supplierId;
+      if (supplierId) {
+        getLastGRNRate(value, supplierId).then((grnData) => {
+          if (grnData) {
+            setFormData((prev) => {
+              const nextItems = [...(prev.items || [])];
+              nextItems[index] = {
+                ...(nextItems[index] || createEmptyPoLine()),
+                orderedRate: grnData.rate,
+                lastGRNQuantity: grnData.quantity,
+              };
+              return { ...prev, items: nextItems };
+            });
+          }
+        }).catch((err) => {
+          // Silently fail if rate fetch fails
+          console.error('Failed to fetch last GRN rate:', err);
+        });
+      }
+    }
   };
 
   const addPoLine = () => {
@@ -212,11 +263,11 @@ export default function PurchaseOrder() {
                 const amount = qty > 0 && rate > 0 ? (qty * rate) : 0;
 
                 return (
-                  <div key={`po-line-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                  <div key={`po-line-${idx}`} className="grid grid-cols-1 md:grid-cols-13 gap-2 items-center">
                     <select
                       value={line.itemId}
                       onChange={(e) => updatePoLine(idx, 'itemId', e.target.value)}
-                      className="md:col-span-5 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                      className="md:col-span-4 px-3 py-2 border border-slate-300 rounded-md text-sm"
                       required
                     >
                       <option value="">Select Item</option>
@@ -242,6 +293,15 @@ export default function PurchaseOrder() {
                       placeholder="Rate"
                       value={line.orderedRate}
                       onChange={(e) => updatePoLine(idx, 'orderedRate', e.target.value)}
+                      className="md:col-span-1 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                    />
+
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Last GRN Qty"
+                      value={line.lastGRNQuantity}
+                      onChange={(e) => updatePoLine(idx, 'lastGRNQuantity', e.target.value)}
                       className="md:col-span-2 px-3 py-2 border border-slate-300 rounded-md text-sm"
                     />
 
@@ -350,7 +410,7 @@ export default function PurchaseOrder() {
               onClick={() => exportRowsToExcel({
                 fileName: 'inventory-po-report',
                 sheetName: 'PO',
-                rows: poExportRows,
+                rows: poExportRowsData,
               })}
             />
             <Button
@@ -361,7 +421,7 @@ export default function PurchaseOrder() {
               onClick={() => exportRowsToPdf({
                 fileName: 'inventory-po-report',
                 title: 'Purchase Order Report',
-                rows: poExportRows,
+                rows: poExportRowsData,
               })}
             />
           </div>

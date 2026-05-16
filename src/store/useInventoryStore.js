@@ -47,6 +47,14 @@ export const useInventoryStore = create((set) => ({
       closingBalance: 0,
     },
   },
+  stockPositionReport: {
+    rows: [],
+    total: {
+      itemCount: 0,
+      totalQuantity: 0,
+      totalAmount: 0,
+    },
+  },
   shortExpiryReportRows: [],
   masterOptions: {
     categories: [],
@@ -450,6 +458,52 @@ export const useInventoryStore = create((set) => ({
     } catch (err) {
       set({ error: err.message, loading: false });
       throw err;
+    }
+  },
+
+  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (asOfDate) qs.set('asOfDate', String(asOfDate));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+
+      const data = await request(`/reports/stock-position?${qs.toString()}`);
+      const safeData = {
+        rows: Array.isArray(data?.rows) ? data.rows : [],
+        total: {
+          itemCount: Number(data?.total?.itemCount || 0),
+          totalQuantity: Number(data?.total?.totalQuantity || 0),
+          totalAmount: Number(data?.total?.totalAmount || 0),
+        },
+        asOfDate: data?.asOfDate || null,
+      };
+
+      set({ stockPositionReport: safeData, loading: false });
+      return safeData;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  getLastGRNRate: async (itemId, supplierId) => {
+    try {
+      if (!itemId || !supplierId) return null;
+      // Use existing /grn endpoint and get last record
+      const grnList = await request(`/grn?itemId=${itemId}&supplierId=${supplierId}`);
+      if (!Array.isArray(grnList) || grnList.length === 0) return null;
+      
+      // Get the first/last record (most recent)
+      const lastGRN = grnList[0];
+      return {
+        rate: lastGRN.receivedRate,
+        quantity: lastGRN.receivedQuantity,
+      };
+    } catch (err) {
+      // Silently fail - no rate found is not an error
+      return null;
     }
   },
 }));

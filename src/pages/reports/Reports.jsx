@@ -1294,6 +1294,7 @@ export default function Reports() {
             : (rowDutyMinutes / 60).toFixed(2),
           wrkHrs:  wrkHrsDisplay,
           ot:      isFuture ? "0.00" : otHrs,
+          otAmt:   String(Math.max(0, otVal)),
           late:    (isAvailOff || isWorkedExtra || effectiveOffDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
           status:  displayStatus,
           salary:  String(grossPerDay),
@@ -1351,6 +1352,7 @@ export default function Reports() {
             dutyHrs: shouldHideDutyHours ? '0.00' : (extraDutyMinutes / 60).toFixed(2),
             wrkHrs: workedHoursFromPair(extraIn, extraOut),
             ot: isFuture ? '0.00' : (extraOvertimeMinutes / 60).toFixed(2),
+            otAmt: String(extraOtVal),
             late: 'N',
             status: displayStatus,
             salary: String(extraTotal),
@@ -1738,7 +1740,7 @@ export default function Reports() {
       const wrdDays = new Date(year, month, 0).getDate();
       const perDayAmount = Math.round(effectiveBaseTotalSal / wrdDays).toString();
       const tableRows = detailedAttendanceRows.map((r) => {
-        const otAmnt = r.ot === "0.00" ? "0" : Math.round(parseFloat(r.ot) * ((effectiveBaseTotalSal / wrdDays) / 8)).toString();
+        const otAmnt = String(Math.max(0, Math.round(Number(r.otAmt) || 0)));
         return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, perDayAmount, r.salary, otAmnt, r.ded, r.total];
       });
 
@@ -2102,20 +2104,20 @@ export default function Reports() {
                     <tr>
                       <th>Date</th><th>Time In</th><th>Time Out</th><th>Duty Hrs</th>
                       <th>Wrk Hrs</th><th>Late</th><th>OT</th><th>Status</th>
-                      <th>Salary</th><th>Ded</th><th>Total</th>
+                      <th>OT Amount</th><th>Salary</th><th>Ded</th><th>Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detailedAttendanceRows.length === 0 ? (
                       <tr className="empty-row">
-                        <td colSpan={11}>Selected month ke liye detailed attendance data available nahi hai.</td>
+                        <td colSpan={12}>Selected month ke liye detailed attendance data available nahi hai.</td>
                       </tr>
                     ) : (
                       detailedAttendanceRows.map((r, idx) => (
                         <tr key={`${r.date}-${r.timeIn}-${r.timeOut}-${idx}`}>
                           <td>{r.date}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
                           <td>{r.dutyHrs}</td><td>{r.wrkHrs}</td><td>{r.late}</td>
-                          <td>{r.ot}</td><td>{r.status}</td><td>{(() => {
+                          <td>{r.ot}</td><td>{r.status}</td><td>{Math.max(0, Math.round(Number(r.otAmt) || 0))}</td><td>{(() => {
                             const salaryNum = Number(r.salary);
                             const totalNum = Number(r.total);
                             if (Number.isFinite(salaryNum) && salaryNum > 0) return String(Math.round(salaryNum));

@@ -47,10 +47,16 @@ export default function EmployeeDetail() {
     if (!emp) return;
 
     const pdf = new jsPDF('p', 'pt', 'a4');
+    const getImageFormat = (src) => (String(src || '').startsWith('data:image/png') ? 'PNG' : 'JPEG');
+    const isPdfData = (src) => String(src || '').startsWith('data:application/pdf');
     const img = new Image();
     img.src = logo;
     const photo = new Image();
     photo.src = emp.photo || '';
+    const cnicFront = new Image();
+    cnicFront.src = emp.cnicFrontDoc && !isPdfData(emp.cnicFrontDoc) ? emp.cnicFrontDoc : '';
+    const cnicBack = new Image();
+    cnicBack.src = emp.cnicBackDoc && !isPdfData(emp.cnicBackDoc) ? emp.cnicBackDoc : '';
 
     await Promise.all([
       new Promise((resolve) => {
@@ -64,6 +70,22 @@ export default function EmployeeDetail() {
         }
         photo.onload = resolve;
         photo.onerror = resolve;
+      }),
+      new Promise((resolve) => {
+        if (!cnicFront.src) {
+          resolve();
+          return;
+        }
+        cnicFront.onload = resolve;
+        cnicFront.onerror = resolve;
+      }),
+      new Promise((resolve) => {
+        if (!cnicBack.src) {
+          resolve();
+          return;
+        }
+        cnicBack.onload = resolve;
+        cnicBack.onerror = resolve;
       })
     ]);
 
@@ -136,26 +158,72 @@ export default function EmployeeDetail() {
       headStyles: { fillColor: [37, 99, 235] }
     });
 
+    let cnicStartY = (pdf.lastAutoTable?.finalY || 140) + 16;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const blockHeight = 170;
+    if (cnicStartY + blockHeight > pageHeight - margin) {
+      pdf.addPage();
+      cnicStartY = margin;
+    }
+
+    pdf.setFontSize(11);
+    pdf.text('CNIC Documents', margin, cnicStartY);
+    pdf.setFontSize(9);
+    const imageTop = cnicStartY + 12;
+    const boxWidth = (pageWidth - margin * 2 - 20) / 2;
+    const boxHeight = 130;
+    const leftX = margin;
+    const rightX = margin + boxWidth + 20;
+
+    const drawCnicBlock = (label, src, imageEl, x) => {
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(label, x, imageTop);
+      const boxTop = imageTop + 8;
+
+      if (src && isPdfData(src)) {
+        pdf.setTextColor(59, 130, 246);
+        pdf.text('PDF attached', x, boxTop + 16);
+        pdf.setTextColor(0, 0, 0);
+      } else if (imageEl && imageEl.complete && imageEl.naturalWidth) {
+        pdf.addImage(imageEl, getImageFormat(src), x, boxTop, boxWidth, boxHeight, undefined, 'FAST');
+      } else if (src) {
+        pdf.setTextColor(148, 163, 184);
+        pdf.text('Image not loaded', x, boxTop + 16);
+        pdf.setTextColor(0, 0, 0);
+      } else {
+        pdf.setTextColor(148, 163, 184);
+        pdf.text('Not attached', x, boxTop + 16);
+        pdf.setTextColor(0, 0, 0);
+      }
+    };
+
+    drawCnicBlock('CNIC Front', emp.cnicFrontDoc, cnicFront, leftX);
+    drawCnicBlock('CNIC Back', emp.cnicBackDoc, cnicBack, rightX);
+
+    let nextSectionY = cnicStartY + blockHeight + 16;
+
     if (emp.allowances && emp.allowances.length) {
       autoTable(pdf, {
-        startY: pdf.lastAutoTable.finalY + 16,
+        startY: nextSectionY,
         head: [['Allowance', 'Amount']],
         body: emp.allowances.map((a) => [a.type || '-', Number(a.amount || 0).toLocaleString()]),
         styles: { fontSize: 9 },
         columnStyles: { 0: { fontStyle: 'bold' } },
         headStyles: { fillColor: [30, 64, 175] }
       });
+      nextSectionY = pdf.lastAutoTable.finalY + 16;
     }
 
     if (emp.dutyRoster && emp.dutyRoster.length) {
       autoTable(pdf, {
-        startY: pdf.lastAutoTable.finalY + 16,
+        startY: nextSectionY,
         head: [['Day', 'Time In', 'Time Out', 'Hours']],
         body: emp.dutyRoster.map((d) => [d.day || '-', d.timeIn || '-', d.timeOut || '-', d.hours ?? '-']),
         styles: { fontSize: 9 },
         columnStyles: { 0: { fontStyle: 'bold' } },
         headStyles: { fillColor: [59, 130, 246] }
       });
+      nextSectionY = pdf.lastAutoTable.finalY + 16;
     }
 
     const footerY = pdf.internal.pageSize.getHeight() - 40;

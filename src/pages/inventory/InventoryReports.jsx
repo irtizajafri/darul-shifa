@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Printer, Download, Filter, BarChart3 } from 'lucide-react';
+import { Printer, Download, Filter, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
@@ -14,6 +14,7 @@ const REPORT_TYPES = [
 
 export default function InventoryReports() {
   const [activeReport, setActiveReport] = useState('Stock Position');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ledgerFilters, setLedgerFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -54,6 +55,11 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
   });
+  const [stockPositionFilters, setStockPositionFilters] = useState({
+    asOfDate: '',
+    categoryId: '',
+    subcategoryId: '',
+  });
 
   const {
     items,
@@ -63,6 +69,7 @@ export default function InventoryReports() {
     reorderAlerts,
     masterOptions,
     itemLedgerReport,
+    stockPositionReport,
     shortExpiryReportRows,
     fetchItems,
     fetchGRNs,
@@ -71,6 +78,7 @@ export default function InventoryReports() {
     fetchReorderAlerts,
     fetchMastersOptions,
     fetchItemLedgerReport,
+    fetchStockPositionReport,
     fetchShortExpiryReport,
   } = useInventoryStore();
 
@@ -111,6 +119,14 @@ export default function InventoryReports() {
       toast.error(err.message || 'Failed to load discard report');
     });
   }, [activeReport, fetchGDNs]);
+
+  useEffect(() => {
+    if (activeReport !== 'Stock Position') return;
+
+    fetchStockPositionReport({}).catch((err) => {
+      toast.error(err.message || 'Failed to load stock position report');
+    });
+  }, [activeReport, fetchStockPositionReport]);
 
   useEffect(() => {
     if (activeReport !== 'Short Expiry') return;
@@ -205,6 +221,12 @@ export default function InventoryReports() {
       return Boolean(item.hasExpiry);
     });
   }, [items, shortExpiryFilters.categoryId, shortExpiryFilters.subcategoryId]);
+
+  const stockPositionSubcategoryOptions = useMemo(() => {
+    const selectedCategoryId = Number(stockPositionFilters.categoryId || 0);
+    if (!selectedCategoryId) return masterOptions?.subcategories || [];
+    return (masterOptions?.subcategories || []).filter((sub) => Number(sub.categoryId) === selectedCategoryId);
+  }, [masterOptions?.subcategories, stockPositionFilters.categoryId]);
 
   const updateReceivingFilter = (key, value) => {
     setReceivingFilters((prev) => {
@@ -399,6 +421,38 @@ export default function InventoryReports() {
     });
   };
 
+  const updateStockPositionFilter = (key, value) => {
+    setStockPositionFilters((prev) => {
+      if (key === 'categoryId') {
+        return {
+          ...prev,
+          categoryId: value,
+          subcategoryId: '',
+        };
+      }
+
+      return { ...prev, [key]: value };
+    });
+  };
+
+  const applyStockPositionFilters = () => {
+    fetchStockPositionReport(stockPositionFilters).catch((err) => {
+      toast.error(err.message || 'Failed to load stock position report');
+    });
+  };
+
+  const resetStockPositionFilters = () => {
+    const emptyFilters = {
+      asOfDate: '',
+      categoryId: '',
+      subcategoryId: '',
+    };
+    setStockPositionFilters(emptyFilters);
+    fetchStockPositionReport(emptyFilters).catch((err) => {
+      toast.error(err.message || 'Failed to load stock position report');
+    });
+  };
+
   const updateLedgerFilter = (key, value) => {
     setLedgerFilters((prev) => {
       if (key === 'categoryId') {
@@ -443,6 +497,19 @@ export default function InventoryReports() {
   };
 
   const reportRows = useMemo(() => {
+    if (activeReport === 'Item List') {
+      return (items || []).map((row) => ({
+        key: row.id,
+        code: row.code,
+        name: row.name,
+        category: row.category?.name || '-',
+        subcategory: row.subcategory?.name || '-',
+        unit: row.baseUnit || '-',
+        reorderLevel: row.reorderLevel || 0,
+        status: row.status || 'active',
+      }));
+    }
+
     if (activeReport === 'Reorder Report') {
       return (reorderAlerts || []).map((row) => ({
         key: row.id,
@@ -456,19 +523,21 @@ export default function InventoryReports() {
     }
 
     if (activeReport === 'Stock Position') {
-      return (items || []).map((row) => ({
-        key: row.id,
+      return (stockPositionReport?.rows || []).map((row) => ({
+        key: row.key,
         code: row.code,
         name: row.name,
-        category: row.category?.name || '-',
-        stock: row.currentStock,
-        threshold: row.reorderLevel,
+        category: row.category,
+        stock: row.currentQuantity,
+        amount: row.currentAmount,
+        breakdown: row.breakdown,
+        unit: row.unit,
         status: row.status,
       }));
     }
 
     return [];
-  }, [activeReport, items, reorderAlerts]);
+  }, [activeReport, items, reorderAlerts, stockPositionReport]);
 
   const ledgerExportRows = useMemo(() => {
     return (itemLedgerReport?.rows || []).map((row) => ({
@@ -478,8 +547,14 @@ export default function InventoryReports() {
       Category: row.category,
       Subcategory: row.subcategory,
       'Received Qty': row.receivedQuantity,
+      'Received Rate': row.receivedRate,
+      'Received Amount': row.receivedAmount,
       'Issuance Qty': row.issuanceQuantity,
+      'Issuance Amount': row.issuanceAmount,
+      'Issuance Breakdown': row.issuanceBreakdown,
       'Remaining Qty': row.remainingQuantity,
+      'Remaining Amount': row.remainingAmount,
+      'Remaining Breakdown': row.remainingBreakdown,
       Unit: row.baseUnit,
       Source: row.sourceType,
       Reference: row.referenceNo,
@@ -591,6 +666,19 @@ export default function InventoryReports() {
       'Days Left': row.daysLeft,
     }));
   }, [shortExpiryRows]);
+
+  const stockPositionExportRows = useMemo(() => {
+    return (stockPositionReport?.rows || []).map((row) => ({
+      Code: row.code,
+      Name: row.name,
+      Category: row.category,
+      Quantity: row.currentQuantity,
+      Amount: row.currentAmount,
+      Breakdown: row.breakdown,
+      Unit: row.unit,
+      Status: row.status,
+    }));
+  }, [stockPositionReport?.rows]);
 
   const handleExportPdf = () => {
     if (activeReport === 'Item Ledger') {
@@ -708,19 +796,31 @@ export default function InventoryReports() {
         <div className="flex gap-2">
           <Button variant="outline" label="Export CSV" icon={Download} onClick={handleExportExcel} />
           <Button variant="outline" label="Export PDF" icon={Download} onClick={handleExportPdf} />
-          <Button label="Print" icon={Printer} onClick={() => window.print()} />
         </div>
       </div>
 
-      <div className="flex gap-6">
-        {/* Sidebar menus for reports */}
-        <div className="w-64 flex-shrink-0">
-          <Card className="p-2">
-            <div className="space-y-1">
+      <div className="flex gap-4 lg:gap-6 relative">
+        {/* Mobile Menu Button */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="md:hidden fixed top-24 left-4 z-40 p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50"
+        >
+          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+
+        {/* Sidebar menus for reports - Responsive */}
+        <div className={`fixed md:relative top-0 left-0 h-screen md:h-auto w-64 md:w-64 lg:flex-shrink-0 bg-white md:bg-transparent z-30 md:z-auto transition-all ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}>
+          <Card className="p-2 h-full md:h-auto rounded-none md:rounded-lg">
+            <div className="space-y-1 pt-12 md:pt-0 max-h-screen md:max-h-none overflow-y-auto">
               {REPORT_TYPES.map(report => (
                 <button
                   key={report}
-                  onClick={() => setActiveReport(report)}
+                  onClick={() => {
+                    setActiveReport(report);
+                    setSidebarOpen(false);
+                  }}
                   className={`w-full text-left px-4 py-2.5 rounded-md text-sm transition-colors ${
                     activeReport === report 
                     ? 'bg-blue-50 text-blue-700 font-medium' 
@@ -734,14 +834,117 @@ export default function InventoryReports() {
           </Card>
         </div>
 
+        {/* Overlay for mobile */}
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/30 md:hidden z-20"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
         {/* Report Content */}
-        <div className="flex-1">
+        <div className="flex-1 w-full md:w-auto">
           <Card className="p-0 overflow-hidden h-full min-h-[500px] flex flex-col">
             <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <h2 className="font-semibold text-slate-800">{activeReport}</h2>
               <Button variant="outline" size="sm" label="Filters" icon={Filter} />
             </div>
-            {activeReport === 'Item Ledger' ? (
+            {activeReport === 'Stock Position' ? (
+              <div className="p-4 space-y-4 overflow-y-auto">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">As Of Date</label>
+                    <input
+                      type="date"
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={stockPositionFilters.asOfDate}
+                      onChange={(e) => updateStockPositionFilter('asOfDate', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Category</label>
+                    <select
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={stockPositionFilters.categoryId}
+                      onChange={(e) => updateStockPositionFilter('categoryId', e.target.value)}
+                    >
+                      <option value="">All Categories</option>
+                      {categoryOptions.map((cat) => (
+                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
+                    <select
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={stockPositionFilters.subcategoryId}
+                      onChange={(e) => updateStockPositionFilter('subcategoryId', e.target.value)}
+                    >
+                      <option value="">All Subcategories</option>
+                      {stockPositionSubcategoryOptions.map((sub) => (
+                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button size="sm" label="Apply" onClick={applyStockPositionFilters} />
+                  <Button size="sm" variant="outline" label="Reset" onClick={resetStockPositionFilters} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <Card className="p-3">
+                    <p className="text-xs text-slate-500">Items in Stock</p>
+                    <p className="text-lg font-semibold text-slate-800">{stockPositionReport?.total?.itemCount || 0}</p>
+                  </Card>
+                  <Card className="p-3">
+                    <p className="text-xs text-slate-500">Total Quantity</p>
+                    <p className="text-lg font-semibold text-blue-700">{Number(stockPositionReport?.total?.totalQuantity || 0).toFixed(2)}</p>
+                  </Card>
+                  <Card className="p-3">
+                    <p className="text-xs text-slate-500">Total Amount</p>
+                    <p className="text-lg font-semibold text-emerald-700">Rs. {Number(stockPositionReport?.total?.totalAmount || 0).toFixed(2)}</p>
+                  </Card>
+                </div>
+
+                {(stockPositionReport?.rows || []).length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                          <th className="px-4 py-3">Code</th>
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Category</th>
+                          <th className="px-4 py-3">Quantity</th>
+                          <th className="px-4 py-3">Unit</th>
+                          <th className="px-4 py-3">Amount (Rs.)</th>
+                          <th className="px-4 py-3">FIFO Breakdown</th>
+                          <th className="px-4 py-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(stockPositionReport?.rows || []).map((row) => (
+                          <tr key={row.key}>
+                            <td className="px-4 py-3">{row.code}</td>
+                            <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
+                            <td className="px-4 py-3">{row.category}</td>
+                            <td className="px-4 py-3 text-blue-700">{Number(row.currentQuantity || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3">{row.unit}</td>
+                            <td className="px-4 py-3 text-emerald-700 font-semibold">{Number(row.currentAmount || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600">{row.breakdown || '-'}</td>
+                            <td className="px-4 py-3 capitalize">{row.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center text-slate-400 py-10">No stock found for selected filters.</div>
+                )}
+              </div>
+            ) : activeReport === 'Item Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <div>
@@ -845,27 +1048,39 @@ export default function InventoryReports() {
                           <table className="w-full text-left border-collapse text-sm">
                             <thead>
                               <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                                <th className="px-4 py-3">Date</th>
-                                <th className="px-4 py-3">Item Code</th>
-                                <th className="px-4 py-3">Item Name</th>
-                                <th className="px-4 py-3">Category</th>
-                                <th className="px-4 py-3">Subcategory</th>
-                                <th className="px-4 py-3">Received Qty</th>
-                                <th className="px-4 py-3">Issuance Qty</th>
-                                <th className="px-4 py-3">Remaining Qty</th>
+                                <th className="px-4 py-3 min-w-[100px]">Date</th>
+                                <th className="px-4 py-3 min-w-[80px]">Item Code</th>
+                                <th className="px-4 py-3 min-w-[120px]">Item Name</th>
+                                <th className="px-4 py-3 min-w-[100px]">Category</th>
+                                <th className="px-4 py-3 min-w-[100px]">Subcategory</th>
+                                <th className="px-4 py-3 min-w-[110px]">Received Qty</th>
+                                <th className="px-4 py-3 min-w-[80px]">Rate</th>
+                                <th className="px-4 py-3 min-w-[120px]">Received Amount</th>
+                                <th className="px-4 py-3 min-w-[110px]">Issuance Qty</th>
+                                <th className="px-4 py-3 min-w-[120px]">Issuance Amount</th>
+                                <th className="px-4 py-3 min-w-[150px]">Issuance Breakdown</th>
+                                <th className="px-4 py-3 min-w-[110px] font-bold">Remaining Qty</th>
+                                <th className="px-4 py-3 min-w-[120px]">Remaining Amount</th>
+                                <th className="px-4 py-3 min-w-[150px]">Remaining Breakdown</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                               {(group.rows || []).map((row) => (
-                                <tr key={row.key}>
-                                  <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleString() : '-'}</td>
-                                  <td className="px-4 py-3">{row.itemCode}</td>
-                                  <td className="px-4 py-3 font-medium text-slate-800">{row.itemName}</td>
-                                  <td className="px-4 py-3">{row.category}</td>
-                                  <td className="px-4 py-3">{row.subcategory}</td>
-                                  <td className="px-4 py-3 text-emerald-700">{Number(row.receivedQuantity || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-rose-700">{Number(row.issuanceQuantity || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-blue-700 font-semibold">{Number(row.remainingQuantity || 0).toFixed(2)}</td>
+                                <tr key={row.key} className="hover:bg-slate-50">
+                                  <td className="px-4 py-3 text-xs">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
+                                  <td className="px-4 py-3 text-xs">{row.itemCode}</td>
+                                  <td className="px-4 py-3 font-medium text-slate-800 text-xs">{row.itemName}</td>
+                                  <td className="px-4 py-3 text-xs">{row.category}</td>
+                                  <td className="px-4 py-3 text-xs">{row.subcategory}</td>
+                                  <td className="px-4 py-3 text-emerald-700 text-xs">{Number(row.receivedQuantity || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-xs">{Number(row.receivedRate || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-emerald-700 text-xs">{Number(row.receivedAmount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-rose-700 font-semibold text-xs">{Number(row.issuanceQuantity || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-rose-700 text-xs">{Number(row.issuanceAmount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-xs text-rose-700">{row.issuanceBreakdown || '-'}</td>
+                                  <td className="px-4 py-3 text-blue-700 font-bold text-xs">{Number(row.remainingQuantity || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-blue-700 font-semibold text-xs">{Number(row.remainingAmount || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-xs text-blue-700">{row.remainingBreakdown || '-'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -1341,12 +1556,26 @@ export default function InventoryReports() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                      <th className="px-4 py-3">Code</th>
-                      <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Category</th>
-                      <th className="px-4 py-3">Current Stock</th>
-                      <th className="px-4 py-3">Reorder Level</th>
-                      <th className="px-4 py-3">Status</th>
+                      {activeReport === 'Item List' ? (
+                        <>
+                          <th className="px-4 py-3">Code</th>
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Category</th>
+                          <th className="px-4 py-3">Subcategory</th>
+                          <th className="px-4 py-3">Unit</th>
+                          <th className="px-4 py-3">Reorder Level</th>
+                          <th className="px-4 py-3">Status</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-4 py-3">Code</th>
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Category</th>
+                          <th className="px-4 py-3">Current Stock</th>
+                          <th className="px-4 py-3">Reorder Level</th>
+                          <th className="px-4 py-3">Status</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1355,9 +1584,20 @@ export default function InventoryReports() {
                         <td className="px-4 py-3">{row.code}</td>
                         <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
                         <td className="px-4 py-3">{row.category}</td>
-                        <td className="px-4 py-3">{row.stock}</td>
-                        <td className="px-4 py-3">{row.threshold}</td>
-                        <td className="px-4 py-3 capitalize">{row.status}</td>
+                        {activeReport === 'Item List' ? (
+                          <>
+                            <td className="px-4 py-3">{row.subcategory}</td>
+                            <td className="px-4 py-3">{row.unit}</td>
+                            <td className="px-4 py-3">{row.reorderLevel}</td>
+                            <td className="px-4 py-3 capitalize">{row.status}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3">{row.stock}</td>
+                            <td className="px-4 py-3">{row.threshold}</td>
+                            <td className="px-4 py-3 capitalize">{row.status}</td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
