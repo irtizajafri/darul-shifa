@@ -399,6 +399,15 @@ async function listGDs(req, res, next) {
   }
 }
 
+async function listGDHeaders(req, res, next) {
+  try {
+    const data = await service.listGDHeaders(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createGD(req, res, next) {
   try {
     const required = ['itemId', 'departmentId', 'quantityRequested'];
@@ -420,6 +429,21 @@ async function createGD(req, res, next) {
   }
 }
 
+async function createGDBatch(req, res, next) {
+  try {
+    const { departmentId, items } = req.body || {};
+    if (!isNumericId(departmentId)) return fail(res, 400, 'Invalid departmentId');
+    if (!Array.isArray(items) || items.length === 0) return fail(res, 400, 'items array is required');
+    const data = await service.createGDBatch({ departmentId, items });
+    return success(res, data, 'gd batch created');
+  } catch (err) {
+    if (String(err.message).includes('inactive') || String(err.message).includes('not found') || String(err.message).includes('must') || String(err.message).includes('Invalid')) {
+      return fail(res, 400, err.message);
+    }
+    next(err);
+  }
+}
+
 async function listGINs(req, res, next) {
   try {
     const data = await service.listGINs(req.query || {});
@@ -431,10 +455,14 @@ async function listGINs(req, res, next) {
 
 async function createGIN(req, res, next) {
   try {
-    const hasGdRef = req.body?.gdId || req.body?.gdCode;
-    if (!hasGdRef) return fail(res, 400, 'Missing one of: gdId or gdCode');
-    const missing = missingFields(req.body || {}, ['issuedQuantity']);
-    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const { gdHeaderId, gdId, gdCode } = req.body || {};
+    const hasGdHeaderRef = gdHeaderId && isNumericId(gdHeaderId);
+    const hasGdRef = gdId || gdCode;
+    if (!hasGdHeaderRef && !hasGdRef) return fail(res, 400, 'Missing one of: gdHeaderId or gdId or gdCode');
+    if (!hasGdHeaderRef) {
+      const missing = missingFields(req.body || {}, ['issuedQuantity']);
+      if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    }
 
     const data = await service.createGIN(req.body || {});
     return success(res, data, 'gin created');
@@ -471,6 +499,31 @@ async function createSalesInvoice(req, res, next) {
       return fail(res, 400, err.message);
     }
     if (String(err.message).toLowerCase().includes('unique')) return fail(res, 409, 'Sales invoice code must be unique');
+    next(err);
+  }
+}
+
+async function listSalesInvoiceHeaders(req, res, next) {
+  try {
+    const data = await service.listSalesInvoiceHeaders(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createSalesInvoiceWithItems(req, res, next) {
+  try {
+    const body = req.body || {};
+    if (!body.customerType) return fail(res, 400, 'Missing fields: customerType');
+    if (!Array.isArray(body.items) || body.items.length === 0) return fail(res, 400, 'At least one item is required');
+
+    const data = await service.createSalesInvoiceWithItems(body);
+    return success(res, data, 'sales invoice created');
+  } catch (err) {
+    if (String(err.message).includes('required') || String(err.message).includes('Invalid') || String(err.message).includes('must') || String(err.message).includes('insufficient') || String(err.message).includes('Insufficient') || String(err.message).includes('not found') || String(err.message).includes('inactive')) {
+      return fail(res, 400, err.message);
+    }
     next(err);
   }
 }
@@ -520,9 +573,9 @@ async function addStockMovement(req, res, next) {
   }
 }
 
-async function listOpenReorderAlerts(_req, res, next) {
+async function listOpenReorderAlerts(req, res, next) {
   try {
-    const data = await service.listOpenReorderAlerts();
+    const data = await service.listOpenReorderAlerts(req.query || {});
     return success(res, data);
   } catch (err) {
     next(err);
@@ -532,6 +585,30 @@ async function listOpenReorderAlerts(_req, res, next) {
 async function listItemAddOptions(req, res, next) {
   try {
     const data = await service.listItemAddOptions(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listDailySalesReport(req, res, next) {
+  try {
+    const { dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType } = req.query || {};
+    if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) return fail(res, 400, 'Invalid categoryId');
+    if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) return fail(res, 400, 'Invalid subcategoryId');
+    const data = await service.listDailySalesReport({ dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType });
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listSupplierLedgerReport(req, res, next) {
+  try {
+    const { dateFrom, dateTo, supplierName, categoryId, subcategoryId, assetType } = req.query || {};
+    if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) return fail(res, 400, 'Invalid categoryId');
+    if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) return fail(res, 400, 'Invalid subcategoryId');
+    const data = await service.listSupplierLedgerReport({ dateFrom, dateTo, supplierName, categoryId, subcategoryId, assetType });
     return success(res, data);
   } catch (err) {
     next(err);
@@ -638,6 +715,53 @@ async function listStockPositionReport(req, res, next) {
   }
 }
 
+async function listExpiredItemsReport(req, res, next) {
+  try {
+    const { exactDate, itemId, categoryId, subcategoryId } = req.query || {};
+
+    if (itemId !== undefined && itemId !== '' && !isNumericId(itemId)) {
+      return fail(res, 400, 'Invalid itemId');
+    }
+    if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) {
+      return fail(res, 400, 'Invalid categoryId');
+    }
+    if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) {
+      return fail(res, 400, 'Invalid subcategoryId');
+    }
+    if (exactDate) {
+      const parsed = new Date(exactDate);
+      if (Number.isNaN(parsed.getTime())) return fail(res, 400, 'Invalid exactDate');
+    }
+
+    const data = await service.listExpiredItemsReport(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listMaintenances(req, res, next) {
+  try {
+    const data = await service.listMaintenances(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createMaintenance(req, res, next) {
+  try {
+    const missing = missingFields(req.body || {}, ['itemId', 'supplierId', 'natureOfRepair', 'date']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    if (!isNumericId(req.body.itemId)) return fail(res, 400, 'Invalid itemId');
+    if (!isNumericId(req.body.supplierId)) return fail(res, 400, 'Invalid supplierId');
+    const data = await service.createMaintenance(req.body);
+    return success(res, data, 'maintenance record created');
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   ping,
   listCategories,
@@ -661,17 +785,26 @@ module.exports = {
   listGRNs,
   createGRN,
   listGDs,
+  listGDHeaders,
   createGD,
+  createGDBatch,
   listGINs,
   createGIN,
   listSalesInvoices,
   createSalesInvoice,
+  listSalesInvoiceHeaders,
+  createSalesInvoiceWithItems,
   listGDNs,
   createGDN,
   addStockMovement,
   listOpenReorderAlerts,
   listItemAddOptions,
   listItemLedgerReport,
+  listDailySalesReport,
+  listSupplierLedgerReport,
   listStockPositionReport,
   listShortExpiryReport,
+  listExpiredItemsReport,
+  listMaintenances,
+  createMaintenance,
 };

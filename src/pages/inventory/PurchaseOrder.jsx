@@ -1,10 +1,66 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Download, FileText, Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
-import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
+import { printPODocument } from '../../utils/printPO';
+
+function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
+
+  const selected = options.find((o) => String(getValue(o)) === String(value));
+
+  const filtered = useMemo(
+    () => !search ? options : options.filter((o) => getLabel(o).toLowerCase().includes(search.toLowerCase())),
+    [options, search, getLabel]
+  );
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className={`relative ${className}`}>
+      <input
+        type="text"
+        value={open ? search : (selected ? getLabel(selected) : '')}
+        onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
+        onFocus={() => { setSearch(''); setOpen(true); }}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
+        autoComplete="off"
+      />
+      {open && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-slate-400">No results</div>
+          ) : (
+            filtered.map((o) => (
+              <div
+                key={getValue(o)}
+                onMouseDown={() => { onChange(String(getValue(o))); setSearch(''); setOpen(false); }}
+                className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${String(getValue(o)) === String(value) ? 'bg-blue-50 font-medium' : ''}`}
+              >
+                {getLabel(o)}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const createEmptyPoLine = () => ({
   itemId: '',
@@ -13,10 +69,11 @@ const createEmptyPoLine = () => ({
   lastGRNQuantity: '',
 });
 
+
 export default function PurchaseOrder() {
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [poExportRowsData, setPoExportRowsData] = useState([]);
   const [filters, setFilters] = useState({
     status: '',
     supplierId: '',
@@ -27,8 +84,9 @@ export default function PurchaseOrder() {
   const [formData, setFormData] = useState({
     supplierId: '',
     expectedDate: new Date().toISOString().slice(0, 10),
-    items: [createEmptyPoLine()],
+    items: [],
   });
+  const [draftLine, setDraftLine] = useState(createEmptyPoLine());
 
   const {
     loading,
@@ -63,34 +121,10 @@ export default function PurchaseOrder() {
   }, [purchaseOrders, query]);
 
   useEffect(() => {
-    // Populate export rows with GRN data
-    const populateExportRows = async () => {
-      try {
-        const rows = filteredRows || [];
-        const rowsWithGRN = await Promise.all(
-          rows.map(async (row) => {
-            const grnData = await getLastGRNRate(row.itemId, row.supplierId);
-            return {
-              poCode: row.code,
-              supplier: row.supplier?.name || '-',
-              item: row.item?.name || '-',
-              requiredQuantity: row.requiredQuantity,
-              orderedRate: row.orderedRate ?? '-',
-              lastGRNRate: grnData?.rate ? Number(grnData.rate).toFixed(2) : 'N/A',
-              lastGRNQuantity: grnData?.quantity ? Number(grnData.quantity) : 'N/A',
-              expectedDate: row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-',
-              status: row.status,
-            };
-          })
-        );
-        setPoExportRowsData(rowsWithGRN);
-      } catch (err) {
-        console.error('Failed to populate export rows:', err);
-      }
-    };
-
-    populateExportRows();
-  }, [filteredRows, getLastGRNRate]);
+    if (location.state?.openCreate) {
+      setShowCreate(true);
+    }
+  }, [location.state]);
 
   const supplierScopedItems = useMemo(() => {
     const selectedSupplierId = Number(formData.supplierId);
@@ -103,7 +137,7 @@ export default function PurchaseOrder() {
     });
   }, [items, formData.supplierId]);
 
-  const handleCreatePO = async (e) => {
+  const handleCreatePO = async (e, shouldPrint = false) => {
     e.preventDefault();
     try {
       const validLines = (formData.items || []).filter((line) => (
@@ -129,7 +163,7 @@ export default function PurchaseOrder() {
         return;
       }
 
-      await createPurchaseOrder({
+      const result = await createPurchaseOrder({
         supplierId: Number(formData.supplierId),
         expectedDate: new Date(formData.expectedDate).toISOString(),
         items: validLines.map((line) => ({
@@ -139,12 +173,15 @@ export default function PurchaseOrder() {
         })),
       });
 
-  await fetchPurchaseOrders(filters);
+      if (shouldPrint) printPODocument(result);
+
+      await fetchPurchaseOrders(filters);
       setFormData({
         supplierId: '',
         expectedDate: new Date().toISOString().slice(0, 10),
-        items: [createEmptyPoLine()],
+        items: [],
       });
+      setDraftLine(createEmptyPoLine());
       setShowCreate(false);
       toast.success('PO created');
     } catch (err) {
@@ -170,55 +207,44 @@ export default function PurchaseOrder() {
     }
   };
 
-  const updatePoLine = (index, key, value) => {
-    setFormData((prev) => {
-      const nextItems = [...(prev.items || [])];
-      nextItems[index] = {
-        ...(nextItems[index] || createEmptyPoLine()),
-        [key]: value,
-      };
-      return { ...prev, items: nextItems };
-    });
-
-    // Auto-fill rate and quantity when item is selected
+  const updateDraftLine = (key, value) => {
+    setDraftLine((prev) => ({ ...prev, [key]: value }));
     if (key === 'itemId' && value) {
-      const supplierId = formData.supplierId;
-      if (supplierId) {
-        getLastGRNRate(value, supplierId).then((grnData) => {
-          if (grnData) {
-            setFormData((prev) => {
-              const nextItems = [...(prev.items || [])];
-              nextItems[index] = {
-                ...(nextItems[index] || createEmptyPoLine()),
-                orderedRate: grnData.rate,
-                lastGRNQuantity: grnData.quantity,
-              };
-              return { ...prev, items: nextItems };
-            });
-          }
-        }).catch((err) => {
-          // Silently fail if rate fetch fails
-          console.error('Failed to fetch last GRN rate:', err);
-        });
-      }
+      getLastGRNRate(value, null).then((grnData) => {
+        if (grnData) {
+          setDraftLine((prev) => ({
+            ...prev,
+            orderedRate: grnData.rate,
+            lastGRNQuantity: grnData.quantity,
+          }));
+        }
+      }).catch((err) => console.error('Failed to fetch last GRN rate:', err));
     }
   };
 
-  const addPoLine = () => {
-    setFormData((prev) => ({
-      ...prev,
-      items: [...(prev.items || []), createEmptyPoLine()],
-    }));
+  const handleAddDraftLine = () => {
+    if (!draftLine.itemId) {
+      toast.error('Please select an item');
+      return;
+    }
+    if (!draftLine.requiredQuantity || Number(draftLine.requiredQuantity) < 1) {
+      toast.error('Please enter a valid quantity');
+      return;
+    }
+    const duplicate = (formData.items || []).some((l) => String(l.itemId) === String(draftLine.itemId));
+    if (duplicate) {
+      toast.error('This item is already added');
+      return;
+    }
+    setFormData((prev) => ({ ...prev, items: [...(prev.items || []), { ...draftLine }] }));
+    setDraftLine(createEmptyPoLine());
   };
 
   const removePoLine = (index) => {
-    setFormData((prev) => {
-      const nextItems = [...(prev.items || [])].filter((_, idx) => idx !== index);
-      return {
-        ...prev,
-        items: nextItems.length ? nextItems : [createEmptyPoLine()],
-      };
-    });
+    setFormData((prev) => ({
+      ...prev,
+      items: (prev.items || []).filter((_, idx) => idx !== index),
+    }));
   };
 
   return (
@@ -233,20 +259,17 @@ export default function PurchaseOrder() {
 
       {showCreate && (
         <Card className="mb-4">
-          <form onSubmit={handleCreatePO} className="space-y-3">
+          <form onSubmit={handleCreatePO} className="space-y-4">
+            {/* Header: Supplier + Expected Date */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <select
+              <SearchableSelect
+                options={masterOptions.suppliers || []}
                 value={formData.supplierId}
-                onChange={(e) => setFormData((p) => ({ ...p, supplierId: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                required
-              >
-                <option value="">Select Supplier</option>
-                {(masterOptions.suppliers || []).map((sup) => (
-                  <option key={sup.id} value={sup.id}>{sup.name} ({sup.code})</option>
-                ))}
-              </select>
-
+                onChange={(val) => setFormData((p) => ({ ...p, supplierId: val }))}
+                placeholder="Select Supplier"
+                getLabel={(s) => `${s.name} (${s.code})`}
+                getValue={(s) => s.id}
+              />
               <input
                 type="date"
                 value={formData.expectedDate}
@@ -256,85 +279,113 @@ export default function PurchaseOrder() {
               />
             </div>
 
-            <div className="space-y-2">
-              {(formData.items || []).map((line, idx) => {
-                const qty = Number(line.requiredQuantity) || 0;
-                const rate = Number(line.orderedRate) || 0;
-                const amount = qty > 0 && rate > 0 ? (qty * rate) : 0;
-
-                return (
-                  <div key={`po-line-${idx}`} className="grid grid-cols-1 md:grid-cols-13 gap-2 items-center">
-                    <select
-                      value={line.itemId}
-                      onChange={(e) => updatePoLine(idx, 'itemId', e.target.value)}
-                      className="md:col-span-4 px-3 py-2 border border-slate-300 rounded-md text-sm"
-                      required
-                    >
-                      <option value="">Select Item</option>
-                      {supplierScopedItems.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="Qty"
-                      value={line.requiredQuantity}
-                      onChange={(e) => updatePoLine(idx, 'requiredQuantity', e.target.value)}
-                      className="md:col-span-2 px-3 py-2 border border-slate-300 rounded-md text-sm"
-                      required
-                    />
-
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Rate"
-                      value={line.orderedRate}
-                      onChange={(e) => updatePoLine(idx, 'orderedRate', e.target.value)}
-                      className="md:col-span-1 px-3 py-2 border border-slate-300 rounded-md text-sm"
-                    />
-
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="Last GRN Qty"
-                      value={line.lastGRNQuantity}
-                      onChange={(e) => updatePoLine(idx, 'lastGRNQuantity', e.target.value)}
-                      className="md:col-span-2 px-3 py-2 border border-slate-300 rounded-md text-sm"
-                    />
-
-                    <div className="md:col-span-2 px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-md text-slate-700">
-                      {amount > 0 ? amount.toFixed(2) : '-'}
-                    </div>
-
-                    <button
-                      type="button"
-                      className="md:col-span-1 inline-flex items-center justify-center px-2 py-2 border border-slate-300 rounded-md text-slate-500 hover:text-red-600 hover:border-red-300"
-                      onClick={() => removePoLine(idx)}
-                      aria-label="Remove item line"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                );
-              })}
+            {/* Draft row: add a new item line */}
+            <div className="border border-dashed border-slate-300 rounded-lg p-3 bg-slate-50">
+              <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Add Item</p>
+              <div className="flex flex-wrap gap-2 items-end">
+                <SearchableSelect
+                  options={supplierScopedItems}
+                  value={draftLine.itemId}
+                  onChange={(val) => updateDraftLine('itemId', val)}
+                  placeholder="Select Item"
+                  getLabel={(item) => `${item.name} (${item.code})`}
+                  getValue={(item) => item.id}
+                  className="w-64"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="Quantity"
+                  value={draftLine.requiredQuantity}
+                  onChange={(e) => updateDraftLine('requiredQuantity', e.target.value)}
+                  className="w-28 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="Rate"
+                  value={draftLine.orderedRate}
+                  onChange={(e) => updateDraftLine('orderedRate', e.target.value)}
+                  className="w-28 px-3 py-2 border border-slate-300 rounded-md text-sm"
+                />
+                {draftLine.lastGRNQuantity !== '' && (
+                  <span className="text-xs text-slate-500 self-center">
+                    Last GRN Qty: <strong>{draftLine.lastGRNQuantity}</strong>
+                  </span>
+                )}
+                <Button type="button" label="Add" icon={Plus} onClick={handleAddDraftLine} />
+              </div>
             </div>
 
-            <div>
-              <Button type="button" variant="outline" label="Add Item" icon={Plus} onClick={addPoLine} />
-            </div>
+            {/* Added items table */}
+            {(formData.items || []).length > 0 && (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-500 text-xs uppercase tracking-wide">
+                      <th className="px-4 py-2">#</th>
+                      <th className="px-4 py-2">Item</th>
+                      <th className="px-4 py-2">Qty</th>
+                      <th className="px-4 py-2">Rate</th>
+                      <th className="px-4 py-2">Amount</th>
+                      <th className="px-4 py-2">Last GRN Qty</th>
+                      <th className="px-4 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(formData.items || []).map((line, idx) => {
+                      const qty = Number(line.requiredQuantity) || 0;
+                      const rate = Number(line.orderedRate) || 0;
+                      const amount = qty > 0 && rate > 0 ? qty * rate : 0;
+                      const itemObj = (items || []).find((i) => String(i.id) === String(line.itemId));
+                      return (
+                        <tr key={`added-line-${idx}`} className="hover:bg-slate-50">
+                          <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
+                          <td className="px-4 py-2 font-medium text-slate-800">
+                            {itemObj ? `${itemObj.name} (${itemObj.code})` : '-'}
+                          </td>
+                          <td className="px-4 py-2">{line.requiredQuantity}</td>
+                          <td className="px-4 py-2">{line.orderedRate || '-'}</td>
+                          <td className="px-4 py-2">{amount > 0 ? amount.toFixed(2) : '-'}</td>
+                          <td className="px-4 py-2 text-slate-500">{line.lastGRNQuantity || '-'}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              type="button"
+                              onClick={() => removePoLine(idx)}
+                              className="text-slate-400 hover:text-red-500"
+                              aria-label="Remove"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div className="flex gap-2 pt-1">
-              <Button type="submit" label={loading ? 'Saving...' : 'Save PO'} disabled={loading} />
-              <Button type="button" variant="secondary" label="Cancel" onClick={() => setShowCreate(false)} />
+              <Button
+                type="submit"
+                label={loading ? 'Saving...' : `Save PO (${(formData.items || []).length} item${(formData.items || []).length !== 1 ? 's' : ''})`}
+                disabled={loading || (formData.items || []).length === 0}
+              />
+              <Button
+                type="button"
+                label={loading ? 'Saving...' : 'Save & Print'}
+                disabled={loading || (formData.items || []).length === 0}
+                onClick={(e) => handleCreatePO(e, true)}
+              />
+              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowCreate(false); setDraftLine(createEmptyPoLine()); }} />
             </div>
           </form>
         </Card>
       )}
 
-      <Card className="p-0 overflow-hidden">
+      {/* <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -402,28 +453,6 @@ export default function PurchaseOrder() {
 
           <div className="flex items-center gap-2">
             <p className="text-xs text-slate-500">{filteredRows.length} record(s)</p>
-            <Button
-              label="Excel"
-              icon={Download}
-              size="sm"
-              variant="outline"
-              onClick={() => exportRowsToExcel({
-                fileName: 'inventory-po-report',
-                sheetName: 'PO',
-                rows: poExportRowsData,
-              })}
-            />
-            <Button
-              label="PDF"
-              icon={FileText}
-              size="sm"
-              variant="outline"
-              onClick={() => exportRowsToPdf({
-                fileName: 'inventory-po-report',
-                title: 'Purchase Order Report',
-                rows: poExportRowsData,
-              })}
-            />
           </div>
         </div>
 
@@ -463,7 +492,7 @@ export default function PurchaseOrder() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card> */}
     </div>
   );
 }

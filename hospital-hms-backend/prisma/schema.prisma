@@ -61,6 +61,17 @@ model Employee {
   emergencyRelation   String?
   notes               String?
 
+  hasEobi                   Boolean?     @default(false)
+  eobiContribution          Float?       @default(0)
+  hasSocialSecurity         Boolean?     @default(false)
+  socialSecurityContribution Float?      @default(0)
+  hasHealthCard             Boolean?     @default(false)
+  healthCardContribution    Float?       @default(0)
+  hasOtherBenefit           Boolean?     @default(false)
+  otherBenefitContribution  Float?       @default(0)
+  late                      Float?       @default(0)
+  short                     Float?       @default(0)
+
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   
@@ -173,6 +184,7 @@ model InventorySupplier {
   items          InventoryItem[]
   purchaseOrders InventoryPurchaseOrder[]
   grns           InventoryGRN[]
+  maintenances   InventoryMaintenance[]
 
   @@unique([name])
   @@index([status])
@@ -234,8 +246,10 @@ model InventoryItem {
   grns           InventoryGRN[]
   gds            InventoryGD[]
   gins           InventoryGIN[]
+  ginItems       InventoryGINItem[]
   salesInvoices  InventorySalesInvoice[]
   gdns           InventoryGDN[]
+  maintenances   InventoryMaintenance[]
 
   @@index([status])
   @@index([name])
@@ -286,6 +300,7 @@ model InventoryDepartment {
 
   gds       InventoryGD[]
   gins      InventoryGIN[]
+  gdHeaders InventoryGDHeader[]
 
   @@index([status])
 }
@@ -351,8 +366,12 @@ model InventoryGRN {
   orderedRate      Float
   receivedQuantity Float
   receivedRate     Float
+  retailPrice      Float?
   totalAmount      Float
   receivedDate     DateTime
+  billDate         DateTime?
+  paymentType      String               @default("cash")
+  paymentNote      String?
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
@@ -376,38 +395,99 @@ model InventoryGD {
   createdAt             DateTime                   @default(now())
   updatedAt             DateTime                   @updatedAt
 
+  gdHeaderId            Int?
+  gdHeader              InventoryGDHeader?         @relation(fields: [gdHeaderId], references: [id])
+
   gins                  InventoryGIN[]
+  ginItems              InventoryGINItem[]
+
+  @@index([requestDate])
+  @@index([departmentId])
+  @@index([status])
+  @@index([gdHeaderId])
+}
+
+model InventoryGIN {
+  id             Int                  @id @default(autoincrement())
+  code           String               @unique
+  gdId           Int?
+  gd             InventoryGD?         @relation(fields: [gdId], references: [id])
+  gdHeaderId     Int?
+  gdHeader       InventoryGDHeader?   @relation(fields: [gdHeaderId], references: [id])
+  itemId         Int?
+  item           InventoryItem?       @relation(fields: [itemId], references: [id])
+  departmentId   Int
+  department     InventoryDepartment  @relation(fields: [departmentId], references: [id])
+  issuedQuantity Float?
+  issueDate      DateTime
+  status         String               @default("issued")
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  ginItems       InventoryGINItem[]
+
+  @@index([issueDate])
+  @@index([departmentId])
+  @@index([gdHeaderId])
+}
+
+model InventoryGDHeader {
+  id           Int                 @id @default(autoincrement())
+  code         String              @unique
+  departmentId Int
+  department   InventoryDepartment @relation(fields: [departmentId], references: [id])
+  status       String              @default("open")
+  requestDate  DateTime
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  gdItems      InventoryGD[]
+  gins         InventoryGIN[]
 
   @@index([requestDate])
   @@index([departmentId])
   @@index([status])
 }
 
-model InventoryGIN {
-  id             Int                 @id @default(autoincrement())
-  code           String              @unique
-  gdId           Int
-  gd             InventoryGD         @relation(fields: [gdId], references: [id])
+model InventoryGINItem {
+  id             Int           @id @default(autoincrement())
+  ginId          Int
+  gin            InventoryGIN  @relation(fields: [ginId], references: [id])
+  gdItemId       Int?
+  gdItem         InventoryGD?  @relation(fields: [gdItemId], references: [id])
   itemId         Int
-  item           InventoryItem       @relation(fields: [itemId], references: [id])
-  departmentId   Int
-  department     InventoryDepartment @relation(fields: [departmentId], references: [id])
+  item           InventoryItem @relation(fields: [itemId], references: [id])
   issuedQuantity Float
-  issueDate      DateTime
-  status         String              @default("issued")
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  createdAt      DateTime      @default(now())
 
-  @@index([issueDate])
-  @@index([departmentId])
+  @@index([ginId])
+  @@index([itemId])
+}
+
+model InventorySalesInvoiceHeader {
+  id           Int                      @id @default(autoincrement())
+  code         String                   @unique
+  invoiceDate  DateTime                 @default(now())
+  customerType String
+  customerName String?
+  totalAmount  Float                    @default(0)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+
+  items        InventorySalesInvoice[]
+
+  @@index([invoiceDate])
+  @@index([customerType])
 }
 
 model InventorySalesInvoice {
-  id              Int            @id @default(autoincrement())
-  code            String         @unique
+  id              Int                            @id @default(autoincrement())
+  code            String                         @unique
+  headerId        Int?
+  header          InventorySalesInvoiceHeader?   @relation(fields: [headerId], references: [id])
   itemId          Int
-  item            InventoryItem  @relation(fields: [itemId], references: [id])
-  invoiceDate     DateTime       @default(now())
+  item            InventoryItem                  @relation(fields: [itemId], references: [id])
+  invoiceDate     DateTime                       @default(now())
   customerType    String
   customerName    String?
   quantity        Float
@@ -416,12 +496,13 @@ model InventorySalesInvoice {
   markupPercent   Float
   saleRate        Float
   totalAmount     Float
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime                       @default(now())
+  updatedAt       DateTime                       @updatedAt
 
   @@index([invoiceDate])
   @@index([itemId])
   @@index([customerType])
+  @@index([headerId])
 }
 
 model InventoryGDN {
@@ -437,4 +518,21 @@ model InventoryGDN {
 
   @@index([discardedDate])
   @@index([itemId])
+}
+
+model InventoryMaintenance {
+  id             Int               @id @default(autoincrement())
+  itemId         Int
+  item           InventoryItem     @relation(fields: [itemId], references: [id])
+  supplierId     Int
+  supplier       InventorySupplier @relation(fields: [supplierId], references: [id])
+  natureOfRepair String
+  cost           Float?
+  date           DateTime
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([itemId])
+  @@index([supplierId])
+  @@index([date])
 }

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Download, FileText, Plus, Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Download, FileText, Plus, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -11,169 +11,226 @@ function toDateInput(value) {
   return Number.isNaN(d.getTime()) ? new Date().toISOString().slice(0, 10) : d.toISOString().slice(0, 10);
 }
 
+function SearchableSelect({ options = [], value, onChange, placeholder = 'Search...', disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, search]);
+
+  const selected = options.find((o) => String(o.value) === String(value));
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => { setOpen((o) => !o); setSearch(''); }}
+        className="w-full flex items-center justify-between px-3 py-2 border border-slate-300 rounded-md text-sm bg-white text-left disabled:opacity-50"
+      >
+        <span className={selected ? 'text-slate-800' : 'text-slate-400'}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg">
+          <div className="p-2 border-b border-slate-100">
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Type to search..."
+              className="w-full px-2 py-1 text-sm border border-slate-200 rounded focus:outline-none"
+            />
+          </div>
+          <ul className="max-h-48 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-slate-400">No results</li>
+            ) : (
+              filtered.map((o) => (
+                <li
+                  key={o.value}
+                  onClick={() => { onChange(o.value); setOpen(false); setSearch(''); }}
+                  className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 hover:text-blue-700 ${String(o.value) === String(value) ? 'bg-blue-50 text-blue-700 font-medium' : 'text-slate-700'}`}
+                >
+                  {o.label}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function createEmptyLine() {
+  return { itemId: '', quantity: '', markupPercent: '' };
+}
+
 export default function SalesInvoice() {
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [filters, setFilters] = useState({
-    itemId: '',
-    customerType: '',
-    dateFrom: '',
-    dateTo: '',
-  });
 
-  const [form, setForm] = useState({
-    itemId: '',
+  const [header, setHeader] = useState({
     invoiceDate: toDateInput(),
     customerType: 'walking',
     customerName: '',
-    quantity: '',
-    markupPercent: '',
   });
+
+  const [draftLine, setDraftLine] = useState(createEmptyLine());
+  const [lines, setLines] = useState([]);
+
+  const [filters, setFilters] = useState({ customerType: '', dateFrom: '', dateTo: '' });
 
   const {
     loading,
     items,
-    salesInvoices,
+    salesInvoiceHeaders,
     fetchItems,
-    fetchSalesInvoices,
-    createSalesInvoice,
+    fetchSalesInvoiceHeaders,
+    createSalesInvoiceWithItems,
   } = useInventoryStore();
 
   useEffect(() => {
     Promise.all([
       fetchItems({ status: 'active' }),
-      fetchSalesInvoices(),
-    ]).catch((err) => toast.error(err.message || 'Failed to load sales invoices'));
-  }, [fetchItems, fetchSalesInvoices]);
+      fetchSalesInvoiceHeaders(),
+    ]).catch((err) => toast.error(err.message || 'Failed to load'));
+  }, [fetchItems, fetchSalesInvoiceHeaders]);
 
-  const selectedItem = useMemo(() => {
-    const id = Number(form.itemId);
-    if (!id) return null;
-    return (items || []).find((x) => Number(x.id) === id) || null;
-  }, [items, form.itemId]);
+  const itemOptions = useMemo(() =>
+    (items || []).map((i) => ({ value: i.id, label: `${i.name} (${i.code})` })),
+    [items]
+  );
 
-  const pricingPreview = useMemo(() => {
-    const purchasePrice = Number(selectedItem?.purchasePrice || 0);
-    const retailPrice = Number(selectedItem?.lastGrnRate || selectedItem?.purchasePrice || 0);
-    const percent = Number(form.markupPercent || 0);
-    const quantity = Number(form.quantity || 0);
-    const saleRate = retailPrice * (1 + percent / 100);
-    const total = saleRate * quantity;
+  const getItemById = (id) => (items || []).find((i) => Number(i.id) === Number(id)) || null;
 
-    return {
-      purchasePrice,
-      retailPrice,
-      saleRate,
-      total,
-    };
-  }, [selectedItem, form.markupPercent, form.quantity]);
+  const getPricing = (itemId, qty, markup) => {
+    const item = getItemById(itemId);
+    if (!item) return null;
+    const retailPrice = Number(item.lastGrnRate || item.purchasePrice || 0);
+    const saleRate = retailPrice * (1 + Number(markup || 0) / 100);
+    const total = saleRate * Number(qty || 0);
+    return { retailPrice, saleRate, total };
+  };
 
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rows = salesInvoices || [];
-    if (!q) return rows;
-    return rows.filter((row) => [
-      row.code,
-      row.customerType,
-      row.customerName,
-      row.item?.name,
-      row.item?.code,
-    ].some((v) => String(v || '').toLowerCase().includes(q)));
-  }, [salesInvoices, query]);
+  const draftPricing = useMemo(
+    () => getPricing(draftLine.itemId, draftLine.quantity, draftLine.markupPercent),
+    [draftLine, items]
+  );
 
-  const applyFilters = async () => {
-    try {
-      await fetchSalesInvoices(filters);
-    } catch (err) {
-      toast.error(err.message || 'Failed to apply filters');
+  const handleAddLine = () => {
+    if (!draftLine.itemId) { toast.error('Please select an item'); return; }
+    if (!draftLine.quantity || Number(draftLine.quantity) <= 0) { toast.error('Please enter a valid quantity'); return; }
+    if (draftLine.markupPercent === '' || Number(draftLine.markupPercent) < 0) { toast.error('Please enter markup %'); return; }
+    const duplicate = lines.some((l) => String(l.itemId) === String(draftLine.itemId));
+    if (duplicate) { toast.error('This item is already added'); return; }
+    setLines((prev) => [...prev, { ...draftLine }]);
+    setDraftLine(createEmptyLine());
+  };
+
+  const removeLine = (idx) => setLines((prev) => prev.filter((_, i) => i !== idx));
+
+  const grandTotal = useMemo(() =>
+    lines.reduce((sum, l) => {
+      const p = getPricing(l.itemId, l.quantity, l.markupPercent);
+      return sum + (p ? p.total : 0);
+    }, 0),
+    [lines, items]
+  );
+
+  const handleSave = async () => {
+    if (lines.length === 0) { toast.error('Add at least one item'); return; }
+    if (header.customerType === 'customer' && !header.customerName.trim()) {
+      toast.error('Please enter patient name');
+      return;
     }
-  };
-
-  const resetFilters = async () => {
-    const empty = { itemId: '', customerType: '', dateFrom: '', dateTo: '' };
-    setFilters(empty);
-    try {
-      await fetchSalesInvoices(empty);
-    } catch (err) {
-      toast.error(err.message || 'Failed to reset filters');
-    }
-  };
-
-  const printSingleInvoice = (row) => {
-    const pdfRows = [{
-      invoiceCode: row.code,
-      date: row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString() : '-',
-      shop: 'Fair Price Shop',
-      customerType: row.customerType,
-      customerName: row.customerName || 'Walking Customer',
-      itemCode: row.item?.code || '-',
-      itemName: row.item?.name || '-',
-      quantity: row.quantity,
-      purchasePrice: row.purchasePrice,
-      retailPrice: row.retailPrice,
-      markupPercent: row.markupPercent,
-      saleRate: row.saleRate,
-      totalAmount: row.totalAmount,
-    }];
-
-    exportRowsToPdf({
-      fileName: `sales-invoice-${row.code}`,
-      title: 'Fair Price Shop - Sales Invoice',
-      rows: pdfRows,
-    });
-  };
-
-  const handleCreate = async (e) => {
-    e.preventDefault();
 
     try {
       const payload = {
-        itemId: Number(form.itemId),
-        invoiceDate: form.invoiceDate,
-        customerType: form.customerType,
-        quantity: Number(form.quantity),
-        markupPercent: Number(form.markupPercent),
+        invoiceDate: header.invoiceDate,
+        customerType: header.customerType,
+        customerName: header.customerType === 'customer' ? header.customerName : undefined,
+        items: lines.map((l) => ({
+          itemId: Number(l.itemId),
+          quantity: Number(l.quantity),
+          markupPercent: Number(l.markupPercent),
+        })),
       };
 
-      if (form.customerType === 'customer') {
-        payload.customerName = form.customerName;
-      }
-
-      const created = await createSalesInvoice(payload);
+      const created = await createSalesInvoiceWithItems(payload);
       await Promise.all([
-        fetchSalesInvoices(filters),
+        fetchSalesInvoiceHeaders(filters),
         fetchItems({ status: 'active' }),
       ]);
 
-      setForm({
-        itemId: '',
-        invoiceDate: toDateInput(),
-        customerType: 'walking',
-        customerName: '',
-        quantity: '',
-        markupPercent: '',
-      });
+      setLines([]);
+      setDraftLine(createEmptyLine());
+      setHeader({ invoiceDate: toDateInput(), customerType: 'walking', customerName: '' });
       setShowForm(false);
       toast.success('Sales invoice created');
-      printSingleInvoice(created);
+      printInvoice(created);
     } catch (err) {
       toast.error(err.message || 'Failed to create sales invoice');
     }
   };
 
-  const invoiceExportRows = useMemo(() => filteredRows.map((row) => ({
-    invoiceCode: row.code,
-    date: row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString() : '-',
-    item: row.item?.name || '-',
-    customerType: row.customerType,
-    customerName: row.customerName || 'Walking Customer',
-    quantity: row.quantity,
-    purchasePrice: row.purchasePrice,
-    retailPrice: row.retailPrice,
-    markupPercent: row.markupPercent,
-    saleRate: row.saleRate,
-    totalAmount: row.totalAmount,
-  })), [filteredRows]);
+  const printInvoice = (inv) => {
+    if (!inv) return;
+    const invoiceItems = inv.items || [];
+    const rows = invoiceItems.map((line) => ({
+      'Invoice No': inv.code,
+      Date: inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-',
+      Customer: inv.customerType === 'customer' ? inv.customerName : 'Walking Customer',
+      Item: line.item?.name || '-',
+      'Item Code': line.item?.code || '-',
+      Qty: line.quantity,
+      'Retail Price': Number(line.retailPrice || 0).toFixed(2),
+      'Markup %': Number(line.markupPercent || 0).toFixed(2),
+      'Sale Rate': Number(line.saleRate || 0).toFixed(2),
+      Total: Number(line.totalAmount || 0).toFixed(2),
+    }));
+
+    exportRowsToPdf({
+      fileName: `sales-invoice-${inv.code}`,
+      title: `Fair Price Shop - Sales Invoice ${inv.code}`,
+      rows,
+    });
+  };
+
+  const applyFilters = async () => {
+    try { await fetchSalesInvoiceHeaders(filters); }
+    catch (err) { toast.error(err.message || 'Failed to apply filters'); }
+  };
+
+  const resetFilters = async () => {
+    const empty = { customerType: '', dateFrom: '', dateTo: '' };
+    setFilters(empty);
+    try { await fetchSalesInvoiceHeaders(empty); }
+    catch (err) { toast.error(err.message || 'Failed to reset filters'); }
+  };
+
+  const filteredHeaders = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = salesInvoiceHeaders || [];
+    if (!q) return rows;
+    return rows.filter((h) =>
+      [h.code, h.customerType, h.customerName].some((v) => String(v || '').toLowerCase().includes(q))
+    );
+  }, [salesInvoiceHeaders, query]);
 
   return (
     <div className="p-6">
@@ -186,103 +243,158 @@ export default function SalesInvoice() {
       </div>
 
       {showForm && (
-        <Card className="mb-4" title="Create Sales Invoice (Fair Price Shop)">
-          <form onSubmit={handleCreate} className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <select
-              value={form.itemId}
-              onChange={(e) => setForm((p) => ({ ...p, itemId: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            >
-              <option value="">Select Item</option>
-              {(items || []).map((item) => (
-                <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-              ))}
-            </select>
-
-            <input
-              type="date"
-              value={form.invoiceDate}
-              onChange={(e) => setForm((p) => ({ ...p, invoiceDate: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            />
-
-            <div className="md:col-span-2 border border-slate-200 rounded-md p-3">
+        <Card className="mb-4" title="Create Sales Invoice">
+          {/* Header */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <div className="md:col-span-3 border border-slate-200 rounded-md p-3">
               <p className="text-xs text-slate-500 mb-2">Customer Type</p>
               <div className="flex gap-4">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="radio"
-                    name="customerType"
-                    value="walking"
-                    checked={form.customerType === 'walking'}
-                    onChange={(e) => setForm((p) => ({ ...p, customerType: e.target.value, customerName: '' }))}
-                  />
-                  Walking Customer
-                </label>
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="radio"
-                    name="customerType"
-                    value="customer"
-                    checked={form.customerType === 'customer'}
-                    onChange={(e) => setForm((p) => ({ ...p, customerType: e.target.value }))}
-                  />
-                  Customer
-                </label>
+                {['walking', 'customer'].map((type) => (
+                  <label key={type} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="customerType"
+                      value={type}
+                      checked={header.customerType === type}
+                      onChange={(e) => setHeader((p) => ({ ...p, customerType: e.target.value, customerName: '' }))}
+                    />
+                    {type === 'walking' ? 'Walking Customer' : 'Patient Name'}
+                  </label>
+                ))}
               </div>
             </div>
 
-            {form.customerType === 'customer' && (
+            {header.customerType === 'customer' && (
               <input
                 type="text"
-                placeholder="Customer Name"
-                value={form.customerName}
-                onChange={(e) => setForm((p) => ({ ...p, customerName: e.target.value }))}
+                placeholder="Patient Name"
+                value={header.customerName}
+                onChange={(e) => setHeader((p) => ({ ...p, customerName: e.target.value }))}
                 className="px-3 py-2 border border-slate-300 rounded-md text-sm md:col-span-2"
-                required
               />
             )}
 
             <input
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="Quantity"
-              value={form.quantity}
-              onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
+              type="date"
+              value={header.invoiceDate}
+              onChange={(e) => setHeader((p) => ({ ...p, invoiceDate: e.target.value }))}
               className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
             />
+          </div>
 
-            <input
-              type="number"
-              min="1"
-              max="100"
-              step="0.01"
-              placeholder="Markup % (1 - 100)"
-              value={form.markupPercent}
-              onChange={(e) => setForm((p) => ({ ...p, markupPercent: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              required
-            />
-
-            <div className="md:col-span-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-              <div className="p-2 bg-slate-50 rounded-md"><span className="text-slate-500 block">Purchase</span>{pricingPreview.purchasePrice.toFixed(2)}</div>
-              <div className="p-2 bg-slate-50 rounded-md"><span className="text-slate-500 block">Retail (GRN)</span>{pricingPreview.retailPrice.toFixed(2)}</div>
-              <div className="p-2 bg-slate-50 rounded-md"><span className="text-slate-500 block">Sale Rate</span>{pricingPreview.saleRate.toFixed(2)}</div>
-              <div className="p-2 bg-slate-50 rounded-md"><span className="text-slate-500 block">Total</span>{pricingPreview.total.toFixed(2)}</div>
+          {/* Draft line */}
+          <div className="border border-dashed border-slate-300 rounded-md p-3 mb-3 bg-slate-50">
+            <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Add Item</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+              <div className="md:col-span-2">
+                <SearchableSelect
+                  options={itemOptions}
+                  value={draftLine.itemId}
+                  onChange={(val) => setDraftLine((p) => ({ ...p, itemId: val }))}
+                  placeholder="Select Item"
+                />
+              </div>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="Quantity"
+                value={draftLine.quantity}
+                onChange={(e) => setDraftLine((p) => ({ ...p, quantity: e.target.value }))}
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="Markup %"
+                value={draftLine.markupPercent}
+                onChange={(e) => setDraftLine((p) => ({ ...p, markupPercent: e.target.value }))}
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+              />
             </div>
 
-            <div className="flex gap-2 md:col-span-2">
-              <Button type="submit" label={loading ? 'Saving...' : 'Save Invoice'} disabled={loading} />
-              <Button type="button" label="Cancel" variant="secondary" onClick={() => setShowForm(false)} />
+            {draftPricing && draftLine.itemId && (
+              <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-slate-600">
+                <span className="bg-white border border-slate-200 rounded px-2 py-1">Retail: {draftPricing.retailPrice.toFixed(2)}</span>
+                <span className="bg-white border border-slate-200 rounded px-2 py-1">Sale Rate: {draftPricing.saleRate.toFixed(2)}</span>
+                <span className="bg-white border border-slate-200 rounded px-2 py-1">Total: {draftPricing.total.toFixed(2)}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleAddLine}
+              className="mt-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium"
+            >
+              <Plus className="w-4 h-4" /> Add to Invoice
+            </button>
+          </div>
+
+          {/* Lines table */}
+          {lines.length > 0 && (
+            <div className="border border-slate-200 rounded-md overflow-hidden mb-3">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th className="px-3 py-2">Item</th>
+                    <th className="px-3 py-2">Qty</th>
+                    <th className="px-3 py-2">Retail</th>
+                    <th className="px-3 py-2">Markup %</th>
+                    <th className="px-3 py-2">Sale Rate</th>
+                    <th className="px-3 py-2">Total</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {lines.map((l, idx) => {
+                    const p = getPricing(l.itemId, l.quantity, l.markupPercent);
+                    const item = getItemById(l.itemId);
+                    return (
+                      <tr key={idx}>
+                        <td className="px-3 py-2">{item ? `${item.name} (${item.code})` : '-'}</td>
+                        <td className="px-3 py-2">{l.quantity}</td>
+                        <td className="px-3 py-2">{p ? p.retailPrice.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2">{l.markupPercent}%</td>
+                        <td className="px-3 py-2">{p ? p.saleRate.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2 font-medium">{p ? p.total.toFixed(2) : '-'}</td>
+                        <td className="px-3 py-2">
+                          <button type="button" onClick={() => removeLine(idx)} className="text-red-400 hover:text-red-600">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="bg-slate-50 font-semibold">
+                    <td colSpan={5} className="px-3 py-2 text-right text-slate-600">Grand Total</td>
+                    <td className="px-3 py-2 text-slate-900">{grandTotal.toFixed(2)}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
             </div>
-          </form>
+          )}
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              label={loading ? 'Saving...' : `Save Invoice (${lines.length} item${lines.length !== 1 ? 's' : ''})`}
+              disabled={loading || lines.length === 0}
+              onClick={handleSave}
+            />
+            <Button
+              type="button"
+              label="Cancel"
+              variant="secondary"
+              onClick={() => { setShowForm(false); setLines([]); setDraftLine(createEmptyLine()); }}
+            />
+          </div>
         </Card>
       )}
 
+      {/* List */}
       <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
@@ -296,17 +408,6 @@ export default function SalesInvoice() {
                 className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm w-56"
               />
             </div>
-
-            <select
-              value={filters.itemId}
-              onChange={(e) => setFilters((p) => ({ ...p, itemId: e.target.value }))}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-            >
-              <option value="">All Items</option>
-              {(items || []).map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
 
             <select
               value={filters.customerType}
@@ -336,18 +437,7 @@ export default function SalesInvoice() {
           </div>
 
           <div className="flex items-center gap-2">
-            <p className="text-xs text-slate-500">{filteredRows.length} invoice(s)</p>
-            <Button
-              size="sm"
-              variant="outline"
-              icon={FileText}
-              label="PDF"
-              onClick={() => exportRowsToPdf({
-                fileName: 'sales-invoices',
-                title: 'Fair Price Shop - Sales Invoice Report',
-                rows: invoiceExportRows,
-              })}
-            />
+            <p className="text-xs text-slate-500">{filteredHeaders.length} invoice(s)</p>
           </div>
         </div>
 
@@ -357,35 +447,33 @@ export default function SalesInvoice() {
               <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
                 <th className="px-6 py-4 font-semibold">Invoice No</th>
                 <th className="px-6 py-4 font-semibold">Date</th>
-                <th className="px-6 py-4 font-semibold">Item</th>
                 <th className="px-6 py-4 font-semibold">Customer</th>
-                <th className="px-6 py-4 font-semibold">Qty</th>
-                <th className="px-6 py-4 font-semibold">Retail</th>
-                <th className="px-6 py-4 font-semibold">%</th>
-                <th className="px-6 py-4 font-semibold">Sale Rate</th>
-                <th className="px-6 py-4 font-semibold">Total</th>
+                <th className="px-6 py-4 font-semibold">Items</th>
+                <th className="px-6 py-4 font-semibold">Grand Total</th>
                 <th className="px-6 py-4 font-semibold text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRows.length === 0 ? (
+              {filteredHeaders.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="px-6 py-12 text-center text-slate-500">No sales invoices found.</td>
+                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500">No sales invoices found.</td>
                 </tr>
               ) : (
-                filteredRows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="px-6 py-4">{row.code}</td>
-                    <td className="px-6 py-4">{row.invoiceDate ? new Date(row.invoiceDate).toLocaleDateString() : '-'}</td>
-                    <td className="px-6 py-4">{row.item?.name || '-'} ({row.item?.code || '-'})</td>
-                    <td className="px-6 py-4 capitalize">{row.customerType} - {row.customerName || 'Walking Customer'}</td>
-                    <td className="px-6 py-4">{row.quantity}</td>
-                    <td className="px-6 py-4">{Number(row.retailPrice || 0).toFixed(2)}</td>
-                    <td className="px-6 py-4">{Number(row.markupPercent || 0).toFixed(2)}</td>
-                    <td className="px-6 py-4">{Number(row.saleRate || 0).toFixed(2)}</td>
-                    <td className="px-6 py-4">{Number(row.totalAmount || 0).toFixed(2)}</td>
+                filteredHeaders.map((inv) => (
+                  <tr key={inv.id}>
+                    <td className="px-6 py-4 font-medium">{inv.code}</td>
+                    <td className="px-6 py-4">{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'}</td>
+                    <td className="px-6 py-4 capitalize">{inv.customerType === 'customer' ? inv.customerName : 'Walking Customer'}</td>
+                    <td className="px-6 py-4">
+                      <ul className="text-xs text-slate-600 space-y-0.5">
+                        {(inv.items || []).map((line) => (
+                          <li key={line.id}>{line.item?.name || '-'} × {line.quantity}</li>
+                        ))}
+                      </ul>
+                    </td>
+                    <td className="px-6 py-4 font-semibold">{Number(inv.totalAmount || 0).toFixed(2)}</td>
                     <td className="px-6 py-4 text-right">
-                      <Button size="sm" variant="outline" icon={Download} label="PDF" onClick={() => printSingleInvoice(row)} />
+                      <Button size="sm" variant="outline" icon={Download} label="PDF" onClick={() => printInvoice(inv)} />
                     </td>
                   </tr>
                 ))

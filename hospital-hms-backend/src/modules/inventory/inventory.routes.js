@@ -38,20 +38,30 @@ router.get('/grn', controller.listGRNs);
 router.post('/grn', controller.createGRN);
 
 router.get('/gd', controller.listGDs);
+router.get('/gd/headers', controller.listGDHeaders);
 router.post('/gd', controller.createGD);
+router.post('/gd/batch', controller.createGDBatch);
 
 router.get('/gin', controller.listGINs);
 router.post('/gin', controller.createGIN);
 
 router.get('/sales-invoices', controller.listSalesInvoices);
 router.post('/sales-invoices', controller.createSalesInvoice);
+router.get('/sales-invoice-headers', controller.listSalesInvoiceHeaders);
+router.post('/sales-invoice-headers', controller.createSalesInvoiceWithItems);
 
 router.get('/gdn', controller.listGDNs);
 router.post('/gdn', controller.createGDN);
 
 router.get('/alerts/reorder', controller.listOpenReorderAlerts);
 router.get('/reports/item-ledger', controller.listItemLedgerReport);
+router.get('/reports/daily-sales', controller.listDailySalesReport);
+router.get('/reports/supplier-ledger', controller.listSupplierLedgerReport);
 router.get('/reports/stock-position', controller.listStockPositionReport);
 router.get('/reports/short-expiry', controller.listShortExpiryReport);
+router.get('/reports/expired-items', controller.listExpiredItemsReport);
+
+router.get('/maintenance', controller.listMaintenances);
+router.post('/maintenance', controller.createMaintenance);
 
 module.exports = router;

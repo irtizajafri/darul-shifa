@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   FileText,
+  Wrench,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -37,11 +38,12 @@ const inventoryNavItems = [
   { path: '/dashboard', label: 'Main Dashboard', icon: ArrowLeft, clearModule: true },
   { path: '/inventory-module', label: 'Inventory Dashboard', icon: LayoutDashboard },
   { path: '/inventory/master-setup', label: 'Master Setup', icon: Settings },
-  { path: '/inventory/po', label: 'Purchase Orders', icon: ShoppingCart },
-  { path: '/inventory/grn', label: 'Receiving (GRN)', icon: Truck },
+  { path: '/inventory/po', label: 'Purchase Orders', icon: ShoppingCart, state: { openCreate: true } },
+  { path: '/inventory/grn', label: 'Receiving (GRN)', icon: Truck, state: { openCreate: true } },
   { path: '/inventory/gin', label: 'Issuance (GIN)', icon: ArrowUpRight },
   { path: '/inventory/sales-invoice', label: 'Sales Invoice', icon: FileText },
   { path: '/inventory/gdn', label: 'Discard (GDN)', icon: ArrowDownRight },
+  { path: '/inventory/maintenance', label: 'Maintenance', icon: Wrench },
   { path: '/inventory/reports', label: 'Reports', icon: BarChart3 },
 ];
 
@@ -162,7 +164,12 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
                 {linkContent(item)}
               </NavLink>
             ) : (
-              <NavLink key={item.path + item.label} to={item.path} className={navItemClass}>
+              <NavLink
+                key={item.path + item.label}
+                to={item.state ? { pathname: item.path } : item.path}
+                state={item.state}
+                className={navItemClass}
+              >
                 {linkContent(item)}
               </NavLink>
             )

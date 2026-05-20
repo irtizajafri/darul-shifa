@@ -32,10 +32,21 @@ export const useInventoryStore = create((set) => ({
   purchaseOrders: [],
   grns: [],
   gds: [],
+  gdHeaders: [],
   gins: [],
   salesInvoices: [],
+  salesInvoiceHeaders: [],
   gdns: [],
+  maintenanceRecords: [],
   reorderAlerts: [],
+  dailySalesReport: {
+    invoices: [],
+    summary: { invoiceCount: 0, grandTotalQty: 0, grandTotalPurchase: 0, grandTotalRetail: 0, grandTotalProfit: 0 },
+  },
+  supplierLedgerReport: {
+    rows: [],
+    summary: { totalRecords: 0, totalGrnValue: 0 },
+  },
   itemLedgerReport: {
     rows: [],
     groups: [],
@@ -56,6 +67,7 @@ export const useInventoryStore = create((set) => ({
     },
   },
   shortExpiryReportRows: [],
+  expiryReportRows: [],
   masterOptions: {
     categories: [],
     subcategories: [],
@@ -241,7 +253,7 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGRNs: async ({ search = '', supplierId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
+  fetchGRNs: async ({ search = '', supplierId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -252,6 +264,7 @@ export const useInventoryStore = create((set) => ({
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
   if (dateFrom) qs.set('dateFrom', String(dateFrom));
   if (dateTo) qs.set('dateTo', String(dateTo));
+      if (assetType) qs.set('assetType', String(assetType));
       const data = await request(`/grn?${qs.toString()}`);
       set({ grns: Array.isArray(data) ? data : [], loading: false });
       return data;
@@ -292,7 +305,29 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
+  createGDBatch: async (payload) => request('/gd/batch', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchGDHeaders: async ({ departmentId = '', status = '', dateFrom = '', dateTo = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (departmentId) qs.set('departmentId', String(departmentId));
+      if (status) qs.set('status', String(status));
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      const data = await request(`/gd/headers?${qs.toString()}`);
+      set({ gdHeaders: Array.isArray(data) ? data : [], loading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -303,6 +338,7 @@ export const useInventoryStore = create((set) => ({
   if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
   if (dateFrom) qs.set('dateFrom', String(dateFrom));
   if (dateTo) qs.set('dateTo', String(dateTo));
+      if (assetType) qs.set('assetType', String(assetType));
       const data = await request(`/gin?${qs.toString()}`);
       set({ gins: Array.isArray(data) ? data : [], loading: false });
       return data;
@@ -340,7 +376,29 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGDNs: async ({ search = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
+  fetchSalesInvoiceHeaders: async ({ search = '', customerType = '', dateFrom = '', dateTo = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (search) qs.set('search', search);
+      if (customerType) qs.set('customerType', String(customerType));
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      const data = await request(`/sales-invoice-headers?${qs.toString()}`);
+      set({ salesInvoiceHeaders: Array.isArray(data) ? data : [], loading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  createSalesInvoiceWithItems: async (payload) => request('/sales-invoice-headers', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchGDNs: async ({ search = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -350,6 +408,7 @@ export const useInventoryStore = create((set) => ({
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
       if (dateFrom) qs.set('dateFrom', String(dateFrom));
       if (dateTo) qs.set('dateTo', String(dateTo));
+      if (assetType) qs.set('assetType', String(assetType));
       const data = await request(`/gdn?${qs.toString()}`);
       set({ gdns: Array.isArray(data) ? data : [], loading: false });
       return data;
@@ -360,6 +419,31 @@ export const useInventoryStore = create((set) => ({
   },
 
   createGDN: async (payload) => request('/gdn', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchMaintenanceRecords: async ({ itemId = '', supplierId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (itemId) qs.set('itemId', String(itemId));
+      if (supplierId) qs.set('supplierId', String(supplierId));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      if (assetType) qs.set('assetType', String(assetType));
+      const data = await request(`/maintenance?${qs.toString()}`);
+      set({ maintenanceRecords: Array.isArray(data) ? data : [], loading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  createMaintenanceRecord: async (payload) => request('/maintenance', {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
@@ -386,9 +470,11 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchReorderAlerts: async () => {
+  fetchReorderAlerts: async ({ assetType = '' } = {}) => {
     try {
-      const data = await request('/alerts/reorder');
+      const qs = new URLSearchParams();
+      if (assetType) qs.set('assetType', String(assetType));
+      const data = await request(`/alerts/reorder?${qs.toString()}`);
       set({ reorderAlerts: Array.isArray(data) ? data : [] });
       return data;
     } catch (err) {
@@ -397,7 +483,62 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchItemLedgerReport: async ({ dateFrom = '', dateTo = '', itemId = '', categoryId = '', subcategoryId = '' } = {}) => {
+  fetchSupplierLedgerReport: async ({ dateFrom = '', dateTo = '', supplierName = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      if (supplierName) qs.set('supplierName', String(supplierName));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (assetType) qs.set('assetType', String(assetType));
+      const data = await request(`/reports/supplier-ledger?${qs.toString()}`);
+      const safeData = {
+        rows: Array.isArray(data?.rows) ? data.rows : [],
+        summary: {
+          totalRecords: Number(data?.summary?.totalRecords || 0),
+          totalGrnValue: Number(data?.summary?.totalGrnValue || 0),
+        },
+      };
+      set({ supplierLedgerReport: safeData, loading: false });
+      return safeData;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  fetchDailySalesReport: async ({ dateFrom = '', dateTo = '', customerName = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      if (customerName) qs.set('customerName', String(customerName));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (assetType) qs.set('assetType', String(assetType));
+      const data = await request(`/reports/daily-sales?${qs.toString()}`);
+      const safeData = {
+        invoices: Array.isArray(data?.invoices) ? data.invoices : [],
+        summary: {
+          invoiceCount: Number(data?.summary?.invoiceCount || 0),
+          grandTotalQty: Number(data?.summary?.grandTotalQty || 0),
+          grandTotalPurchase: Number(data?.summary?.grandTotalPurchase || 0),
+          grandTotalRetail: Number(data?.summary?.grandTotalRetail || 0),
+          grandTotalProfit: Number(data?.summary?.grandTotalProfit || 0),
+        },
+      };
+      set({ dailySalesReport: safeData, loading: false });
+      return safeData;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  fetchItemLedgerReport: async ({ dateFrom = '', dateTo = '', itemId = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -406,6 +547,7 @@ export const useInventoryStore = create((set) => ({
       if (itemId) qs.set('itemId', String(itemId));
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (assetType) qs.set('assetType', String(assetType));
 
       const data = await request(`/reports/item-ledger?${qs.toString()}`);
       const safeData = {
@@ -437,6 +579,7 @@ export const useInventoryStore = create((set) => ({
     itemId = '',
     categoryId = '',
     subcategoryId = '',
+    assetType = '',
   } = {}) => {
     set({ loading: true, error: null });
     try {
@@ -449,6 +592,7 @@ export const useInventoryStore = create((set) => ({
       if (itemId) qs.set('itemId', String(itemId));
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (assetType) qs.set('assetType', String(assetType));
 
       const data = await request(`/reports/short-expiry?${qs.toString()}`);
       const rows = Array.isArray(data) ? data : [];
@@ -461,13 +605,34 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '' } = {}) => {
+  fetchExpiryReport: async ({ exactDate = '', itemId = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (exactDate) qs.set('exactDate', String(exactDate));
+      if (itemId) qs.set('itemId', String(itemId));
+      if (categoryId) qs.set('categoryId', String(categoryId));
+      if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (assetType) qs.set('assetType', String(assetType));
+
+      const data = await request(`/reports/expired-items?${qs.toString()}`);
+      const rows = Array.isArray(data) ? data : [];
+      set({ expiryReportRows: rows, loading: false });
+      return rows;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
       if (asOfDate) qs.set('asOfDate', String(asOfDate));
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (assetType) qs.set('assetType', String(assetType));
 
       const data = await request(`/reports/stock-position?${qs.toString()}`);
       const safeData = {
@@ -490,9 +655,9 @@ export const useInventoryStore = create((set) => ({
 
   getLastGRNRate: async (itemId, supplierId) => {
     try {
-      if (!itemId || !supplierId) return null;
-      // Use existing /grn endpoint and get last record
-      const grnList = await request(`/grn?itemId=${itemId}&supplierId=${supplierId}`);
+      if (!itemId) return null;
+      const query = supplierId ? `/grn?itemId=${itemId}&supplierId=${supplierId}` : `/grn?itemId=${itemId}`;
+      const grnList = await request(query);
       if (!Array.isArray(grnList) || grnList.length === 0) return null;
       
       // Get the first/last record (most recent)

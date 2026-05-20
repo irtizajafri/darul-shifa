@@ -25,6 +25,7 @@ import GoodsIssue from '../pages/inventory/GoodsIssue';
 import GoodsDiscard from '../pages/inventory/GoodsDiscard';
 import SalesInvoice from '../pages/inventory/SalesInvoice';
 import InventoryReports from '../pages/inventory/InventoryReports';
+import Maintenance from '../pages/inventory/Maintenance';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuthStore();
@@ -63,6 +64,7 @@ export default function AppRoutes() {
           <Route path="inventory/gin" element={<GoodsIssue />} />
           <Route path="inventory/sales-invoice" element={<SalesInvoice />} />
           <Route path="inventory/gdn" element={<GoodsDiscard />} />
+          <Route path="inventory/maintenance" element={<Maintenance />} />
           <Route path="inventory/reports" element={<InventoryReports />} />
           <Route path="attendance" element={<AttendanceList />} />
           <Route path="attendance-temp" element={<TempAttendanceApi />} />

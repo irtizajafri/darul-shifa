@@ -371,7 +371,7 @@ async function listSuppliers({ search, status }) {
 
 async function createSupplier(payload) {
   const status = normalizeStatus(payload.status);
-  const code = String(payload.code || '').trim() || await generateDateCode('inventorySupplier');
+  const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventorySupplier');
 
   return prisma.inventorySupplier.create({
     data: {
@@ -402,7 +402,7 @@ async function listStorages({ search, status }) {
 
 async function createStorage(payload) {
   const status = normalizeStatus(payload.status);
-  const code = String(payload.code || '').trim() || await generateDateCode('inventoryStorage');
+  const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventoryStorage');
 
   return prisma.inventoryStorage.create({
     data: {
@@ -431,7 +431,7 @@ async function listDepartments({ search, status }) {
 
 async function createDepartment(payload) {
   const status = normalizeStatus(payload.status);
-  const code = String(payload.code || '').trim() || await generateDateCode('inventoryDepartment');
+  const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventoryDepartment');
 
   return prisma.inventoryDepartment.create({
     data: {
@@ -529,7 +529,7 @@ async function validateActiveMasterRecords({ categoryId, subcategoryId, supplier
   if (storage && storage.status !== ACTIVE) throw new Error('Selected storage/shelf is inactive');
 }
 
-async function listItems({ search, status, categoryId, supplierId }) {
+async function listItems({ search, status, categoryId, supplierId, assetType }) {
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSupplierId = parsePositiveNumber(supplierId);
 
@@ -539,6 +539,7 @@ async function listItems({ search, status, categoryId, supplierId }) {
       ...buildSearchFilter(search, ['code', 'name', 'itemType', 'unit']),
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSupplierId ? { supplierId: parsedSupplierId } : {}),
+      ...(assetType ? { itemType: assetType } : {}),
     },
     include: {
       category: true,
@@ -554,7 +555,7 @@ async function listItems({ search, status, categoryId, supplierId }) {
   });
 }
 
-async function listPurchaseOrders({ search, status, supplierId, itemId, dateFrom, dateTo }) {
+async function listPurchaseOrders({ search, status, supplierId, itemId, dateFrom, dateTo, assetType }) {
   const parsedSupplierId = parsePositiveNumber(supplierId);
   const parsedItemId = parsePositiveNumber(itemId);
 
@@ -572,6 +573,7 @@ async function listPurchaseOrders({ search, status, supplierId, itemId, dateFrom
             },
           }
         : {}),
+      ...(assetType ? { item: { itemType: assetType } } : {}),
     },
     include: {
       supplier: true,
@@ -704,7 +706,7 @@ async function createPurchaseOrder(payload) {
   });
 }
 
-async function listGRNs({ search, supplierId, itemId, categoryId, subcategoryId, dateFrom, dateTo }) {
+async function listGRNs({ search, supplierId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType }) {
   const parsedSupplierId = parsePositiveNumber(supplierId);
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
@@ -725,6 +727,7 @@ async function listGRNs({ search, supplierId, itemId, categoryId, subcategoryId,
             },
           }
         : {}),
+      ...(assetType ? { item: { itemType: assetType } } : {}),
     },
     include: {
       purchaseOrder: true,
@@ -775,8 +778,12 @@ async function createGRN(payload) {
   orderedRate: poOrderedRate,
         receivedQuantity,
         receivedRate,
+        retailPrice: payload.retailPrice ? Number(payload.retailPrice) : null,
         totalAmount,
         receivedDate: payload.receivedDate ? new Date(payload.receivedDate) : new Date(),
+        billDate: payload.billDate ? new Date(payload.billDate) : null,
+        paymentType: payload.paymentType === 'installment' ? 'installment' : 'cash',
+        paymentNote: payload.paymentNote ? String(payload.paymentNote).trim() : null,
       },
     });
 
@@ -808,7 +815,7 @@ async function createGRN(payload) {
       where: { id: po.itemId },
       data: {
         currentStock: newStock,
-        lastGrnRate: receivedRate,
+        lastGrnRate: payload.retailPrice ? Number(payload.retailPrice) : receivedRate,
         purchasePrice: receivedRate,
       },
     });
@@ -846,7 +853,29 @@ async function listGDs({ search, departmentId, demandCategoryTypeId, categoryId,
       item: { include: { category: true, subcategory: true } },
       department: true,
       demandCategoryType: true,
+      gdHeader: true,
       gins: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function listGDHeaders({ departmentId, status, dateFrom, dateTo } = {}) {
+  const parsedDepartmentId = parsePositiveNumber(departmentId);
+  return prisma.inventoryGDHeader.findMany({
+    where: {
+      ...(parsedDepartmentId ? { departmentId: parsedDepartmentId } : {}),
+      ...buildStatusFilter(status),
+      ...(dateFrom || dateTo
+        ? { requestDate: { ...(dateFrom ? { gte: new Date(dateFrom) } : {}), ...(dateTo ? { lte: new Date(dateTo) } : {}) } }
+        : {}),
+    },
+    include: {
+      department: true,
+      gdItems: {
+        include: { item: { include: { category: true, subcategory: true } } },
+      },
+      gins: { include: { ginItems: { include: { item: true } } } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -916,7 +945,74 @@ async function createGD(payload) {
   });
 }
 
-async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo }) {
+async function createGDBatch({ departmentId, items = [] }) {
+  const deptId = Number(departmentId);
+  if (!Number.isFinite(deptId) || deptId <= 0) throw new Error('Invalid departmentId');
+  if (!Array.isArray(items) || items.length === 0) throw new Error('items array is required');
+
+  const department = await prisma.inventoryDepartment.findUnique({ where: { id: deptId } });
+  if (!department) throw new Error('Department not found');
+  if (department.status !== ACTIVE) throw new Error('Department is inactive');
+
+  let resolvedDemandType = await prisma.inventoryDemandCategoryType.findFirst({
+    where: { status: ACTIVE },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!resolvedDemandType) {
+    const generatedCode = await generateDateCode('inventoryDemandCategoryType');
+    resolvedDemandType = await prisma.inventoryDemandCategoryType.create({
+      data: { code: generatedCode, name: 'General', status: ACTIVE },
+    });
+  }
+
+  const validatedItems = [];
+  for (const entry of items) {
+    const itemId = Number(entry.itemId);
+    const qty = parsePositiveNumber(entry.quantityRequested);
+    if (!Number.isFinite(itemId) || itemId <= 0) throw new Error(`Invalid itemId: ${entry.itemId}`);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error('quantityRequested must be positive');
+    const item = await prisma.inventoryItem.findUnique({ where: { id: itemId } });
+    if (!item) throw new Error(`Item not found: ${itemId}`);
+    validatedItems.push({ itemId, qty });
+  }
+
+  const headerCode = await generateDocCode('inventoryGDHeader', 'gdh');
+  const header = await prisma.inventoryGDHeader.create({
+    data: {
+      code: headerCode,
+      departmentId: deptId,
+      status: 'open',
+      requestDate: new Date(),
+    },
+  });
+
+  const gdItems = [];
+  for (const { itemId, qty } of validatedItems) {
+    const code = await generateDocCode('inventoryGD', 'gd');
+    const gd = await prisma.inventoryGD.create({
+      data: {
+        code,
+        itemId,
+        departmentId: deptId,
+        gdHeaderId: header.id,
+        demandCategoryTypeId: resolvedDemandType.id,
+        quantityRequested: qty,
+        requestDate: new Date(),
+        status: 'open',
+      },
+      include: { item: { include: { category: true, subcategory: true } } },
+    });
+    gdItems.push(gd);
+  }
+
+  return {
+    ...header,
+    department,
+    gdItems,
+  };
+}
+
+async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType }) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
@@ -929,6 +1025,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       ...(parsedItemId ? { itemId: parsedItemId } : {}),
       ...(parsedCategoryId ? { item: { categoryId: parsedCategoryId } } : {}),
       ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
+      ...(assetType ? { item: { itemType: assetType } } : {}),
       ...(dateFrom || dateTo
         ? {
             issueDate: {
@@ -940,14 +1037,22 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
     },
     include: {
       gd: true,
+      gdHeader: { include: { department: true } },
       department: true,
       item: { include: { category: true, subcategory: true } },
+      ginItems: { include: { item: { include: { category: true, subcategory: true } }, gdItem: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
 }
 
 async function createGIN(payload) {
+  const gdHeaderId = parsePositiveNumber(payload.gdHeaderId);
+
+  if (gdHeaderId) {
+    return createGINFromHeader({ gdHeaderId, items: payload.items, issueDate: payload.issueDate, note: payload.note });
+  }
+
   const issuedQuantity = parsePositiveNumber(payload.issuedQuantity);
   if (!Number.isFinite(issuedQuantity) || issuedQuantity <= 0) {
     throw new Error('issuedQuantity must be a positive number');
@@ -962,17 +1067,11 @@ async function createGIN(payload) {
   const alreadyIssued = (gd.gins || []).reduce((sum, x) => sum + (Number(x.issuedQuantity) || 0), 0);
   const remainingDemand = Number(gd.quantityRequested) - alreadyIssued;
 
-  if (remainingDemand <= 0) {
-    throw new Error('GD already fulfilled');
-  }
-  if (issuedQuantity > remainingDemand) {
-    throw new Error('issuedQuantity cannot exceed remaining GD quantity');
-  }
+  if (remainingDemand <= 0) throw new Error('GD already fulfilled');
+  if (issuedQuantity > remainingDemand) throw new Error('issuedQuantity cannot exceed remaining GD quantity');
 
   const stock = Number(gd.item?.currentStock || 0);
-  if (issuedQuantity > stock) {
-    throw new Error('Insufficient stock for issuance');
-  }
+  if (issuedQuantity > stock) throw new Error('Insufficient stock for issuance');
 
   const code = String(payload.code || '').trim() || await generateDocCode('inventoryGIN', 'gin');
 
@@ -1016,12 +1115,111 @@ async function createGIN(payload) {
     const totalIssuedAfter = alreadyIssued + issuedQuantity;
     await tx.inventoryGD.update({
       where: { id: gd.id },
-      data: {
-        status: totalIssuedAfter >= Number(gd.quantityRequested) ? 'closed' : 'partial',
-      },
+      data: { status: totalIssuedAfter >= Number(gd.quantityRequested) ? 'closed' : 'partial' },
     });
 
     return gin;
+  });
+}
+
+async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note }) {
+  const header = await prisma.inventoryGDHeader.findUnique({
+    where: { id: gdHeaderId },
+    include: {
+      gdItems: { include: { item: true, gins: true } },
+      department: true,
+    },
+  });
+
+  if (!header) throw new Error('GD Header not found');
+  if (header.status === 'closed') throw new Error('GD already fully issued');
+
+  const itemsMap = {};
+  if (Array.isArray(items) && items.length > 0) {
+    for (const entry of items) {
+      itemsMap[Number(entry.gdItemId)] = parsePositiveNumber(entry.issuedQuantity);
+    }
+  }
+
+  const ginCode = await generateDocCode('inventoryGIN', 'gin');
+
+  return prisma.$transaction(async (tx) => {
+    const gin = await tx.inventoryGIN.create({
+      data: {
+        code: ginCode,
+        gdHeaderId: header.id,
+        departmentId: header.departmentId,
+        issueDate: issueDate ? new Date(issueDate) : new Date(),
+        status: 'issued',
+      },
+    });
+
+    for (const gdItem of header.gdItems) {
+      const qty = itemsMap[gdItem.id] ?? parsePositiveNumber(
+        gdItem.quantityRequested - (gdItem.gins || []).reduce((s, g) => s + (Number(g.issuedQuantity) || 0), 0)
+      );
+      if (!qty || qty <= 0) continue;
+
+      const currentItem = await tx.inventoryItem.findUnique({ where: { id: gdItem.itemId } });
+      const stock = Number(currentItem?.currentStock || 0);
+      if (qty > stock) throw new Error(`Insufficient stock for item: ${gdItem.item?.name || gdItem.itemId}`);
+
+      await tx.inventoryGINItem.create({
+        data: {
+          ginId: gin.id,
+          gdItemId: gdItem.id,
+          itemId: gdItem.itemId,
+          issuedQuantity: qty,
+        },
+      });
+
+      const previousStock = stock;
+      const newStock = stock - qty;
+
+      await tx.inventoryStockMovement.create({
+        data: {
+          itemId: gdItem.itemId,
+          movementType: 'OUT',
+          quantity: qty,
+          previousStock,
+          newStock,
+          referenceType: 'GIN',
+          referenceId: gin.code,
+          note: note ? String(note).trim() : null,
+        },
+      });
+
+      const updatedItem = await tx.inventoryItem.update({
+        where: { id: gdItem.itemId },
+        data: { currentStock: newStock },
+      });
+
+      await syncReorderAlert(tx, updatedItem);
+
+      const alreadyIssued = (gdItem.gins || []).reduce((s, g) => s + (Number(g.issuedQuantity) || 0), 0);
+      const totalIssued = alreadyIssued + qty;
+      await tx.inventoryGD.update({
+        where: { id: gdItem.id },
+        data: { status: totalIssued >= Number(gdItem.quantityRequested) ? 'closed' : 'partial' },
+      });
+    }
+
+    const updatedGdItems = await tx.inventoryGD.findMany({ where: { gdHeaderId: header.id } });
+    const allClosed = updatedGdItems.every((g) => g.status === 'closed');
+    const anyClosed = updatedGdItems.some((g) => g.status !== 'open');
+    await tx.inventoryGDHeader.update({
+      where: { id: header.id },
+      data: { status: allClosed ? 'closed' : anyClosed ? 'partial' : 'open' },
+    });
+
+    return tx.inventoryGIN.findUnique({
+      where: { id: gin.id },
+      include: {
+        gdHeader: { include: { department: true } },
+        ginItems: { include: { item: true, gdItem: true } },
+        department: true,
+      },
+    });
   });
 }
 
@@ -1134,7 +1332,157 @@ async function createSalesInvoice(payload) {
   });
 }
 
-async function listGDNs({ search, itemId, categoryId, subcategoryId, dateFrom, dateTo }) {
+async function listSalesInvoiceHeaders({ search, customerType, dateFrom, dateTo }) {
+  const normalizedCustomerType = customerType ? normalizeCustomerType(customerType) : null;
+
+  return prisma.inventorySalesInvoiceHeader.findMany({
+    where: {
+      ...buildSearchFilter(search, ['code', 'customerName']),
+      ...(normalizedCustomerType ? { customerType: normalizedCustomerType } : {}),
+      ...(dateFrom || dateTo
+        ? {
+            invoiceDate: {
+              ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+              ...(dateTo ? { lte: new Date(dateTo) } : {}),
+            },
+          }
+        : {}),
+    },
+    include: {
+      items: {
+        include: {
+          item: { include: { category: true, subcategory: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function createSalesInvoiceWithItems(payload) {
+  const customerType = normalizeCustomerType(payload.customerType);
+  const customerName = payload.customerName ? String(payload.customerName).trim() : '';
+  const invoiceDate = payload.invoiceDate ? new Date(payload.invoiceDate) : new Date();
+  const lineItems = Array.isArray(payload.items) ? payload.items : [];
+
+  if (lineItems.length === 0) throw new Error('At least one item is required');
+
+  if (customerType === 'customer' && !customerName) {
+    throw new Error('customerName is required when customerType is customer');
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const headerCode = await generateDocCode('inventorySalesInvoiceHeader', 'sinv');
+    let grandTotal = 0;
+    const createdLines = [];
+
+    for (let i = 0; i < lineItems.length; i++) {
+      const line = lineItems[i];
+      const itemId = Number(line.itemId);
+      const quantity = parsePositiveNumber(line.quantity);
+      const markupPercent = parsePositiveNumber(line.markupPercent);
+
+      if (!Number.isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Item ${i + 1}: quantity must be a positive number`);
+      }
+      if (!Number.isFinite(markupPercent) || markupPercent < 0 || markupPercent > 100) {
+        throw new Error(`Item ${i + 1}: markupPercent must be between 0 and 100`);
+      }
+
+      const item = await tx.inventoryItem.findUnique({
+        where: { id: itemId },
+        include: { category: true, subcategory: true },
+      });
+
+      if (!item) throw new Error(`Item ${i + 1}: not found`);
+      if (item.status !== ACTIVE) throw new Error(`Item ${i + 1}: ${item.name} is inactive`);
+
+      const stock = Number(item.currentStock || 0);
+      if (quantity > stock) throw new Error(`Item ${i + 1}: insufficient stock for ${item.name} (available: ${stock})`);
+
+      const purchasePrice = Number(item.purchasePrice || 0);
+      const retailPrice = Number(item.lastGrnRate || item.purchasePrice || 0);
+      const saleRate = retailPrice * (1 + (markupPercent / 100));
+      const totalAmount = saleRate * quantity;
+      grandTotal += totalAmount;
+
+      createdLines.push({
+        itemId,
+        quantity,
+        purchasePrice,
+        retailPrice,
+        markupPercent,
+        saleRate,
+        totalAmount,
+        item,
+      });
+    }
+
+    const header = await tx.inventorySalesInvoiceHeader.create({
+      data: {
+        code: headerCode,
+        invoiceDate,
+        customerType,
+        customerName: customerType === 'customer' ? customerName : 'Walking Customer',
+        totalAmount: grandTotal,
+      },
+    });
+
+    const invoiceLines = [];
+    for (let i = 0; i < createdLines.length; i++) {
+      const line = createdLines[i];
+      const lineCode = `${headerCode}-${padTwo(i + 1)}`;
+
+      const invoice = await tx.inventorySalesInvoice.create({
+        data: {
+          code: lineCode,
+          headerId: header.id,
+          itemId: line.itemId,
+          invoiceDate,
+          customerType,
+          customerName: customerType === 'customer' ? customerName : 'Walking Customer',
+          quantity: line.quantity,
+          purchasePrice: line.purchasePrice,
+          retailPrice: line.retailPrice,
+          markupPercent: line.markupPercent,
+          saleRate: line.saleRate,
+          totalAmount: line.totalAmount,
+        },
+        include: {
+          item: { include: { category: true, subcategory: true } },
+        },
+      });
+
+      invoiceLines.push(invoice);
+
+      const newStock = Number(line.item.currentStock || 0) - line.quantity;
+      await tx.inventoryStockMovement.create({
+        data: {
+          itemId: line.itemId,
+          movementType: 'OUT',
+          quantity: line.quantity,
+          unitRate: line.saleRate,
+          previousStock: Number(line.item.currentStock || 0),
+          newStock,
+          referenceType: 'SALES_INVOICE',
+          referenceId: lineCode,
+          note: `Sales invoice for ${customerType}`,
+        },
+      });
+
+      const updatedItem = await tx.inventoryItem.update({
+        where: { id: line.itemId },
+        data: { currentStock: newStock },
+      });
+
+      await syncReorderAlert(tx, updatedItem);
+    }
+
+    return { ...header, items: invoiceLines };
+  });
+}
+
+async function listGDNs({ search, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType }) {
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
@@ -1145,6 +1493,7 @@ async function listGDNs({ search, itemId, categoryId, subcategoryId, dateFrom, d
       ...(parsedItemId ? { itemId: parsedItemId } : {}),
       ...(parsedCategoryId ? { item: { categoryId: parsedCategoryId } } : {}),
       ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
+      ...(assetType ? { item: { itemType: assetType } } : {}),
       ...(dateFrom || dateTo
         ? {
             discardedDate: {
@@ -1629,9 +1978,12 @@ async function addStockMovement(itemId, payload) {
   });
 }
 
-async function listOpenReorderAlerts() {
+async function listOpenReorderAlerts({ assetType } = {}) {
   return prisma.inventoryReorderAlert.findMany({
-    where: { status: 'open' },
+    where: {
+      status: 'open',
+      ...(assetType ? { item: { itemType: assetType } } : {}),
+    },
     include: {
       item: {
         include: {
@@ -1803,7 +2155,7 @@ function formatRemainingBreakdown(lots) {
     .join(' + ');
 }
 
-async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subcategoryId }) {
+async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subcategoryId, assetType }) {
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
@@ -1816,6 +2168,7 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
       ...(parsedItemId ? { id: parsedItemId } : {}),
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
+      ...(assetType ? { itemType: assetType } : {}),
     },
     include: {
       category: true,
@@ -2109,6 +2462,7 @@ async function listShortExpiryReport({
   dateLog,
   dateLogFrom,
   dateLogTo,
+  assetType,
 }) {
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
@@ -2149,6 +2503,7 @@ async function listShortExpiryReport({
       ...(parsedItemId ? { id: parsedItemId } : {}),
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
+      ...(assetType ? { itemType: assetType } : {}),
     },
     include: {
       category: true,
@@ -2345,7 +2700,7 @@ async function listItemAddOptions({ search }) {
   return { categories, subcategories, suppliers, storages, departments, demandCategoryTypes };
 }
 
-async function listStockPositionReport({ asOfDate, categoryId, subcategoryId }) {
+async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, assetType }) {
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
 
@@ -2357,6 +2712,7 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId }) 
     where: {
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
+      ...(assetType ? { itemType: assetType } : {}),
     },
     include: {
       category: true,
@@ -2577,16 +2933,317 @@ module.exports = {
   createGRN,
   listGDs,
   createGD,
+  createGDBatch,
+  listGDHeaders,
   listGINs,
   createGIN,
   listSalesInvoices,
   createSalesInvoice,
+  listSalesInvoiceHeaders,
+  createSalesInvoiceWithItems,
   listGDNs,
   createGDN,
   addStockMovement,
   listOpenReorderAlerts,
   listItemAddOptions,
   listItemLedgerReport,
+  listDailySalesReport,
+  listSupplierLedgerReport,
   listStockPositionReport,
   listShortExpiryReport,
+  listExpiredItemsReport,
+  listMaintenances,
+  createMaintenance,
 };
+
+async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {
+  const where = {};
+
+  if (itemId && Number(itemId) > 0) where.itemId = Number(itemId);
+  if (supplierId && Number(supplierId) > 0) where.supplierId = Number(supplierId);
+
+  if (dateFrom || dateTo) {
+    where.date = {};
+    if (dateFrom) where.date.gte = new Date(dateFrom);
+    if (dateTo) where.date.lte = new Date(dateTo);
+  }
+
+  if (categoryId && Number(categoryId) > 0) {
+    where.item = { ...where.item, categoryId: Number(categoryId) };
+  }
+  if (subcategoryId && Number(subcategoryId) > 0) {
+    where.item = { ...where.item, subcategoryId: Number(subcategoryId) };
+  }
+  if (assetType) {
+    where.item = { ...where.item, itemType: assetType };
+  }
+
+  return prisma.inventoryMaintenance.findMany({
+    where,
+    include: {
+      item: {
+        include: {
+          category: true,
+          subcategory: true,
+        },
+      },
+      supplier: true,
+    },
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+  });
+}
+
+async function createMaintenance({ itemId, supplierId, natureOfRepair, cost, date }) {
+  return prisma.inventoryMaintenance.create({
+    data: {
+      itemId: Number(itemId),
+      supplierId: Number(supplierId),
+      natureOfRepair: String(natureOfRepair).trim(),
+      cost: cost != null && cost !== '' ? Number(cost) : null,
+      date: new Date(date),
+    },
+    include: {
+      item: {
+        include: {
+          category: true,
+          subcategory: true,
+        },
+      },
+      supplier: true,
+    },
+  });
+}
+
+async function listExpiredItemsReport({ exactDate, itemId, categoryId, subcategoryId, assetType } = {}) {
+  const parsedItemId = parsePositiveNumber(itemId);
+  const parsedCategoryId = parsePositiveNumber(categoryId);
+  const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+
+  const dayStart = toStartOfDay(exactDate);
+  const dayEnd = toEndOfDay(exactDate);
+
+  const itemWhere = {
+    hasExpiry: true,
+    ...(parsedItemId ? { id: parsedItemId } : {}),
+    ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
+    ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
+    ...(assetType ? { itemType: assetType } : {}),
+  };
+
+  const movementWhere = {
+    movementType: 'IN',
+    item: itemWhere,
+    ...(dayStart && dayEnd
+      ? { expiryDate: { gte: dayStart, lte: dayEnd } }
+      : { expiryDate: { lte: new Date() } }),
+  };
+
+  const movements = await prisma.inventoryStockMovement.findMany({
+    where: movementWhere,
+    include: {
+      item: {
+        include: {
+          category: true,
+          subcategory: true,
+        },
+      },
+    },
+    orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }],
+  });
+
+  return movements.map((m) => ({
+    key: m.id,
+    expiryDate: m.expiryDate,
+    itemCode: m.item?.code || '-',
+    itemName: m.item?.name || '-',
+    category: m.item?.category?.name || '-',
+    subcategory: m.item?.subcategory?.name || '-',
+    quantity: Number(m.quantity || 0),
+    referenceId: m.referenceId || '-',
+  }));
+}
+
+async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType } = {}) {
+  const parsedCategoryId = parsePositiveNumber(categoryId);
+  const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const fromDate = toStartOfDay(dateFrom);
+  const toDate = toEndOfDay(dateTo);
+
+  const headers = await prisma.inventorySalesInvoiceHeader.findMany({
+    where: {
+      ...(fromDate || toDate
+        ? {
+            invoiceDate: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : {}),
+      ...(customerName
+        ? {
+            OR: [
+              { customerName: { contains: customerName, mode: 'insensitive' } },
+              { customerType: { equals: 'walking', mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      items: {
+        where: {
+          ...(parsedCategoryId ? { item: { categoryId: parsedCategoryId } } : {}),
+          ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
+          ...(assetType ? { item: { itemType: assetType } } : {}),
+        },
+        include: {
+          item: { include: { category: true, subcategory: true } },
+        },
+      },
+    },
+    orderBy: { invoiceDate: 'desc' },
+  });
+
+  let grandTotalQty = 0;
+  let grandTotalPurchase = 0;
+  let grandTotalRetail = 0;
+  let grandTotalProfit = 0;
+
+  const invoices = headers
+    .filter((h) => h.items.length > 0)
+    .map((h) => {
+      let invTotalQty = 0;
+      let invTotalPurchase = 0;
+      let invTotalRetail = 0;
+      let invTotalProfit = 0;
+
+      const lines = h.items.map((line) => {
+        const qty = Number(line.quantity || 0);
+        const purchasePrice = Number(line.purchasePrice || 0);
+        const retailPrice = Number(line.retailPrice || 0);
+        const profitPerUnit = retailPrice - purchasePrice;
+        const totalPurchase = purchasePrice * qty;
+        const totalRetail = retailPrice * qty;
+        const totalProfit = profitPerUnit * qty;
+
+        invTotalQty += qty;
+        invTotalPurchase += totalPurchase;
+        invTotalRetail += totalRetail;
+        invTotalProfit += totalProfit;
+
+        return {
+          lineCode: line.code,
+          itemId: line.itemId,
+          itemName: line.item?.name || '-',
+          itemCode: line.item?.code || '-',
+          category: line.item?.category?.name || '-',
+          subcategory: line.item?.subcategory?.name || '-',
+          qty,
+          purchasePrice,
+          retailPrice,
+          profitPerUnit,
+          totalPurchase,
+          totalRetail,
+          totalProfit,
+        };
+      });
+
+      grandTotalQty += invTotalQty;
+      grandTotalPurchase += invTotalPurchase;
+      grandTotalRetail += invTotalRetail;
+      grandTotalProfit += invTotalProfit;
+
+      return {
+        invoiceId: h.id,
+        invoiceCode: h.code,
+        invoiceDate: h.invoiceDate,
+        customerType: h.customerType,
+        customerName: h.customerType === 'customer' ? h.customerName : 'Walking Customer',
+        lines,
+        subtotalQty: invTotalQty,
+        subtotalPurchase: invTotalPurchase,
+        subtotalRetail: invTotalRetail,
+        subtotalProfit: invTotalProfit,
+      };
+    });
+
+  return {
+    invoices,
+    summary: {
+      invoiceCount: invoices.length,
+      grandTotalQty,
+      grandTotalPurchase,
+      grandTotalRetail,
+      grandTotalProfit,
+    },
+  };
+}
+
+async function listSupplierLedgerReport({ dateFrom, dateTo, supplierName, categoryId, subcategoryId, assetType } = {}) {
+  const parsedCategoryId = parsePositiveNumber(categoryId);
+  const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const fromDate = toStartOfDay(dateFrom);
+  const toDate = toEndOfDay(dateTo);
+
+  const where = {};
+
+  if (fromDate || toDate) {
+    where.receivedDate = {};
+    if (fromDate) where.receivedDate.gte = fromDate;
+    if (toDate) where.receivedDate.lte = toDate;
+  }
+
+  if (supplierName) {
+    where.supplier = { name: { contains: supplierName, mode: 'insensitive' } };
+  }
+
+  if (parsedCategoryId) where.categoryId = parsedCategoryId;
+  if (parsedSubcategoryId) where.subcategoryId = parsedSubcategoryId;
+
+  if (assetType && (assetType === 'fixed asset' || assetType === 'current asset')) {
+    where.item = { itemType: assetType };
+  }
+
+  const grns = await prisma.inventoryGRN.findMany({
+    where,
+    include: {
+      supplier: true,
+      item: { include: { category: true, subcategory: true } },
+      category: true,
+      subcategory: true,
+    },
+    orderBy: [{ receivedDate: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  let totalGrnValue = 0;
+
+  const rows = grns.map((grn) => {
+    const grnPrice = Number(grn.receivedRate || 0);
+    const qty = Number(grn.receivedQuantity || 0);
+    const total = Number(grn.totalAmount || 0);
+    totalGrnValue += total;
+
+    return {
+      grnId: grn.id,
+      grnCode: grn.code,
+      date: grn.receivedDate,
+      billDate: grn.billDate || null,
+      supplierName: grn.supplier?.name || '-',
+      itemName: grn.item?.name || '-',
+      itemCode: grn.item?.code || '-',
+      itemType: grn.item?.itemType || '-',
+      categoryName: grn.category?.name || grn.item?.category?.name || '-',
+      subcategoryName: grn.subcategory?.name || grn.item?.subcategory?.name || '-',
+      receivedQuantity: qty,
+      grnPrice,
+      totalAmount: total,
+    };
+  });
+
+  return {
+    rows,
+    summary: {
+      totalRecords: rows.length,
+      totalGrnValue,
+    },
+  };
+}

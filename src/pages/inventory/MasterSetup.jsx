@@ -659,6 +659,7 @@ export default function MasterSetup() {
                       placeholder="Purchase Price (optional - auto from last GRN if exists)"
                       type="number"
                       min="0"
+                      step="any"
                       value={formData.purchasePrice}
                       onChange={(e) => onFormChange('purchasePrice', e.target.value)}
                       className="px-3 py-2 border border-slate-300 rounded-md text-sm"
