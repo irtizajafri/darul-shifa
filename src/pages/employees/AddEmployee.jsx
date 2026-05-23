@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
+import useModalKeys from '../../hooks/useModalKeys';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -371,6 +372,11 @@ export default function AddEmployee({ edit }) {
       setSaving(false);
     }
   };
+
+  useModalKeys({
+    onCtrlS: () => handleSubmit(onSubmit)(),
+    onCtrlEnter: () => handleSubmit(onSubmit)(),
+  });
 
   const onPhotoPick = async (file) => {
     if (!file) return;

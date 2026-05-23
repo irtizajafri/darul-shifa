@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Download, FileText, Plus, Search, Trash2, X } from 'lucide-react';
+import useModalKeys from '../../hooks/useModalKeys';
+import { ChevronDown, ChevronUp, Download, Plus, Printer, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useInventoryStore } from '../../store/useInventoryStore';
-import { exportRowsToPdf } from '../../utils/exportInventoryReports';
+import { generateSalesInvoicePdf } from '../../utils/exportInventoryReports';
 
 function toDateInput(value) {
   const d = value ? new Date(value) : new Date();
@@ -77,12 +78,13 @@ function SearchableSelect({ options = [], value, onChange, placeholder = 'Search
 }
 
 function createEmptyLine() {
-  return { itemId: '', quantity: '', markupPercent: '' };
+  return { itemId: '', quantity: '' };
 }
 
 export default function SalesInvoice() {
   const [query, setQuery] = useState('');
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(true);
+  const [showInvoiceTable, setShowInvoiceTable] = useState(false);
 
   const [header, setHeader] = useState({
     invoiceDate: toDateInput(),
@@ -92,6 +94,7 @@ export default function SalesInvoice() {
 
   const [draftLine, setDraftLine] = useState(createEmptyLine());
   const [lines, setLines] = useState([]);
+  const [discountPercent, setDiscountPercent] = useState('');
 
   const [filters, setFilters] = useState({ customerType: '', dateFrom: '', dateTo: '' });
 
@@ -118,24 +121,22 @@ export default function SalesInvoice() {
 
   const getItemById = (id) => (items || []).find((i) => Number(i.id) === Number(id)) || null;
 
-  const getPricing = (itemId, qty, markup) => {
+  const getPricing = (itemId, qty) => {
     const item = getItemById(itemId);
     if (!item) return null;
-    const retailPrice = Number(item.lastGrnRate || item.purchasePrice || 0);
-    const saleRate = retailPrice * (1 + Number(markup || 0) / 100);
+    const saleRate = Number(item.lastGrnRate || item.purchasePrice || 0);
     const total = saleRate * Number(qty || 0);
-    return { retailPrice, saleRate, total };
+    return { saleRate, total };
   };
 
   const draftPricing = useMemo(
-    () => getPricing(draftLine.itemId, draftLine.quantity, draftLine.markupPercent),
+    () => getPricing(draftLine.itemId, draftLine.quantity),
     [draftLine, items]
   );
 
   const handleAddLine = () => {
     if (!draftLine.itemId) { toast.error('Please select an item'); return; }
     if (!draftLine.quantity || Number(draftLine.quantity) <= 0) { toast.error('Please enter a valid quantity'); return; }
-    if (draftLine.markupPercent === '' || Number(draftLine.markupPercent) < 0) { toast.error('Please enter markup %'); return; }
     const duplicate = lines.some((l) => String(l.itemId) === String(draftLine.itemId));
     if (duplicate) { toast.error('This item is already added'); return; }
     setLines((prev) => [...prev, { ...draftLine }]);
@@ -146,11 +147,14 @@ export default function SalesInvoice() {
 
   const grandTotal = useMemo(() =>
     lines.reduce((sum, l) => {
-      const p = getPricing(l.itemId, l.quantity, l.markupPercent);
+      const p = getPricing(l.itemId, l.quantity);
       return sum + (p ? p.total : 0);
     }, 0),
     [lines, items]
   );
+
+  const discountAmount = grandTotal * (Number(discountPercent || 0) / 100);
+  const finalTotal = grandTotal - discountAmount;
 
   const handleSave = async () => {
     if (lines.length === 0) { toast.error('Add at least one item'); return; }
@@ -164,10 +168,10 @@ export default function SalesInvoice() {
         invoiceDate: header.invoiceDate,
         customerType: header.customerType,
         customerName: header.customerType === 'customer' ? header.customerName : undefined,
+        discountPercent: Number(discountPercent || 0),
         items: lines.map((l) => ({
           itemId: Number(l.itemId),
           quantity: Number(l.quantity),
-          markupPercent: Number(l.markupPercent),
         })),
       };
 
@@ -179,6 +183,7 @@ export default function SalesInvoice() {
 
       setLines([]);
       setDraftLine(createEmptyLine());
+      setDiscountPercent('');
       setHeader({ invoiceDate: toDateInput(), customerType: 'walking', customerName: '' });
       setShowForm(false);
       toast.success('Sales invoice created');
@@ -188,28 +193,14 @@ export default function SalesInvoice() {
     }
   };
 
-  const printInvoice = (inv) => {
-    if (!inv) return;
-    const invoiceItems = inv.items || [];
-    const rows = invoiceItems.map((line) => ({
-      'Invoice No': inv.code,
-      Date: inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-',
-      Customer: inv.customerType === 'customer' ? inv.customerName : 'Walking Customer',
-      Item: line.item?.name || '-',
-      'Item Code': line.item?.code || '-',
-      Qty: line.quantity,
-      'Retail Price': Number(line.retailPrice || 0).toFixed(2),
-      'Markup %': Number(line.markupPercent || 0).toFixed(2),
-      'Sale Rate': Number(line.saleRate || 0).toFixed(2),
-      Total: Number(line.totalAmount || 0).toFixed(2),
-    }));
+  const printInvoice = (inv) => generateSalesInvoicePdf({ inv, mode: 'download' });
+  const handlePrint = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
 
-    exportRowsToPdf({
-      fileName: `sales-invoice-${inv.code}`,
-      title: `Fair Price Shop - Sales Invoice ${inv.code}`,
-      rows,
-    });
-  };
+  useModalKeys({
+    active: showForm,
+    onEsc: () => { setShowForm(false); setLines([]); setDraftLine(createEmptyLine()); setDiscountPercent(''); },
+    onCtrlS: handleSave,
+  });
 
   const applyFilters = async () => {
     try { await fetchSalesInvoiceHeaders(filters); }
@@ -285,7 +276,7 @@ export default function SalesInvoice() {
           {/* Draft line */}
           <div className="border border-dashed border-slate-300 rounded-md p-3 mb-3 bg-slate-50">
             <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Add Item</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 items-end">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 items-end">
               <div className="md:col-span-2">
                 <SearchableSelect
                   options={itemOptions}
@@ -303,22 +294,11 @@ export default function SalesInvoice() {
                 onChange={(e) => setDraftLine((p) => ({ ...p, quantity: e.target.value }))}
                 className="px-3 py-2 border border-slate-300 rounded-md text-sm"
               />
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                placeholder="Markup %"
-                value={draftLine.markupPercent}
-                onChange={(e) => setDraftLine((p) => ({ ...p, markupPercent: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-              />
             </div>
 
             {draftPricing && draftLine.itemId && (
-              <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-slate-600">
-                <span className="bg-white border border-slate-200 rounded px-2 py-1">Retail: {draftPricing.retailPrice.toFixed(2)}</span>
-                <span className="bg-white border border-slate-200 rounded px-2 py-1">Sale Rate: {draftPricing.saleRate.toFixed(2)}</span>
+              <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-600">
+                <span className="bg-white border border-slate-200 rounded px-2 py-1">Rate: {draftPricing.saleRate.toFixed(2)}</span>
                 <span className="bg-white border border-slate-200 rounded px-2 py-1">Total: {draftPricing.total.toFixed(2)}</span>
               </div>
             )}
@@ -340,23 +320,19 @@ export default function SalesInvoice() {
                   <tr>
                     <th className="px-3 py-2">Item</th>
                     <th className="px-3 py-2">Qty</th>
-                    <th className="px-3 py-2">Retail</th>
-                    <th className="px-3 py-2">Markup %</th>
-                    <th className="px-3 py-2">Sale Rate</th>
+                    <th className="px-3 py-2">Rate</th>
                     <th className="px-3 py-2">Total</th>
                     <th className="px-3 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {lines.map((l, idx) => {
-                    const p = getPricing(l.itemId, l.quantity, l.markupPercent);
+                    const p = getPricing(l.itemId, l.quantity);
                     const item = getItemById(l.itemId);
                     return (
                       <tr key={idx}>
                         <td className="px-3 py-2">{item ? `${item.name} (${item.code})` : '-'}</td>
                         <td className="px-3 py-2">{l.quantity}</td>
-                        <td className="px-3 py-2">{p ? p.retailPrice.toFixed(2) : '-'}</td>
-                        <td className="px-3 py-2">{l.markupPercent}%</td>
                         <td className="px-3 py-2">{p ? p.saleRate.toFixed(2) : '-'}</td>
                         <td className="px-3 py-2 font-medium">{p ? p.total.toFixed(2) : '-'}</td>
                         <td className="px-3 py-2">
@@ -367,13 +343,36 @@ export default function SalesInvoice() {
                       </tr>
                     );
                   })}
-                  <tr className="bg-slate-50 font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-right text-slate-600">Grand Total</td>
-                    <td className="px-3 py-2 text-slate-900">{grandTotal.toFixed(2)}</td>
+                  <tr className="bg-slate-50">
+                    <td colSpan={3} className="px-3 py-2 text-right text-slate-600 text-sm">Sub Total</td>
+                    <td className="px-3 py-2 text-slate-700">{grandTotal.toFixed(2)}</td>
                     <td />
                   </tr>
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Discount */}
+          {lines.length > 0 && (
+            <div className="flex items-center justify-between gap-4 mb-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+              <label className="text-sm font-medium text-slate-700">Discount %</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                placeholder="0"
+                value={discountPercent}
+                onChange={(e) => setDiscountPercent(e.target.value)}
+                className="px-3 py-1.5 border border-amber-300 rounded-md text-sm w-28 text-right focus:outline-none focus:border-amber-500"
+              />
+              <div className="flex flex-col items-end text-sm gap-0.5">
+                {Number(discountPercent) > 0 && (
+                  <span className="text-red-500">- {discountAmount.toFixed(2)}</span>
+                )}
+                <span className="font-bold text-slate-900 text-base">Final: {finalTotal.toFixed(2)}</span>
+              </div>
             </div>
           )}
 
@@ -388,13 +387,25 @@ export default function SalesInvoice() {
               type="button"
               label="Cancel"
               variant="secondary"
-              onClick={() => { setShowForm(false); setLines([]); setDraftLine(createEmptyLine()); }}
+              onClick={() => { setShowForm(false); setLines([]); setDraftLine(createEmptyLine()); setDiscountPercent(''); }}
             />
           </div>
         </Card>
       )}
 
       {/* List */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold text-slate-700">🧾 Sales Invoices</p>
+        <button
+          onClick={() => setShowInvoiceTable((prev) => !prev)}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+        >
+          {showInvoiceTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {showInvoiceTable ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      {showInvoiceTable && (
       <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
@@ -473,7 +484,10 @@ export default function SalesInvoice() {
                     </td>
                     <td className="px-6 py-4 font-semibold">{Number(inv.totalAmount || 0).toFixed(2)}</td>
                     <td className="px-6 py-4 text-right">
-                      <Button size="sm" variant="outline" icon={Download} label="PDF" onClick={() => printInvoice(inv)} />
+                      <div className="flex items-center justify-end gap-2">
+                        <Button size="sm" variant="outline" icon={Download} label="PDF" onClick={() => printInvoice(inv)} />
+                        <Button size="sm" variant="outline" icon={Printer} label="Print" onClick={() => handlePrint(inv)} />
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -482,6 +496,7 @@ export default function SalesInvoice() {
           </table>
         </div>
       </Card>
+      )}
     </div>
   );
 }

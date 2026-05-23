@@ -142,8 +142,8 @@ function normalizeExtendedFields(payload = {}) {
     socialSecurityContribution: normalizeNumber(payload.socialSecurityContribution, 0),
     healthCardContribution: normalizeNumber(payload.healthCardContribution, 0),
     otherBenefitContribution: normalizeNumber(payload.otherBenefitContribution, 0),
-    late: normalizeBoolean(payload.late, false),
-    short: normalizeBoolean(payload.short, false),
+    late: normalizeNumber(payload.late, 0),
+    short: normalizeNumber(payload.short, 0),
   };
 }
 
@@ -162,8 +162,8 @@ function mergeExtendedFields(base, extended = {}) {
     socialSecurityContribution: normalizeNumber(extended.socialSecurityContribution, 0),
     healthCardContribution: normalizeNumber(extended.healthCardContribution, 0),
     otherBenefitContribution: normalizeNumber(extended.otherBenefitContribution, 0),
-    late: Boolean(extended.late),
-    short: Boolean(extended.short),
+    late: normalizeNumber(extended.late, 0),
+    short: normalizeNumber(extended.short, 0),
   };
 }
 

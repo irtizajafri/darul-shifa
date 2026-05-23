@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Download, FileText, Plus, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
@@ -11,6 +11,8 @@ export default function GoodsIssue() {
   const [gdQuery, setGdQuery] = useState('');
   const [showGDForm, setShowGDForm] = useState(false);
   const [showGINForm, setShowGINForm] = useState(false);
+  const [showGDTable, setShowGDTable] = useState(false);
+  const [showGINTable, setShowGINTable] = useState(false);
   const [gdFilters, setGdFilters] = useState({
     status: '',
     departmentId: '',
@@ -281,14 +283,46 @@ export default function GoodsIssue() {
         </div>
       )}
 
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Goods Issuance Note (GIN)</h1>
-          <p className="text-slate-500 text-sm">Issue stock to hospital departments</p>
-        </div>
-        <div className="flex gap-2">
-          <Button label="New GD" icon={Plus} variant="secondary" onClick={() => setShowGDForm((s) => !s)} />
-          <Button label="Issue Goods (GIN)" icon={Plus} onClick={() => setShowGINForm((s) => !s)} />
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-900 mb-1">Goods Issuance Note (GIN)</h1>
+        <p className="text-slate-500 text-sm mb-5">Issue stock to hospital departments</p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button
+            onClick={() => { setShowGDForm((s) => !s); setShowGINForm(false); }}
+            className={`flex items-center gap-4 p-5 rounded-xl border-2 text-left transition-all ${
+              showGDForm
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <ClipboardList className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800 text-base">New GD</p>
+              <p className="text-slate-500 text-sm">Create Goods Demand request</p>
+            </div>
+            <Plus className="w-5 h-5 text-slate-400 ml-auto" />
+          </button>
+
+          <button
+            onClick={() => { setShowGINForm((s) => !s); setShowGDForm(false); }}
+            className={`flex items-center gap-4 p-5 rounded-xl border-2 text-left transition-all ${
+              showGINForm
+                ? 'border-green-500 bg-green-50'
+                : 'border-slate-200 bg-white hover:border-green-300 hover:bg-green-50'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+              <PackageCheck className="w-6 h-6 text-green-600" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800 text-base">Issue Goods (GIN)</p>
+              <p className="text-slate-500 text-sm">Issue stock to department</p>
+            </div>
+            <Plus className="w-5 h-5 text-slate-400 ml-auto" />
+          </button>
         </div>
       </div>
 
@@ -457,6 +491,18 @@ export default function GoodsIssue() {
         </Card>
       )}
 
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold text-slate-700">📋 GD Records</p>
+        <button
+          onClick={() => setShowGDTable((prev) => !prev)}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+        >
+          {showGDTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {showGDTable ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      {showGDTable && (
       <Card className="p-0 overflow-hidden mb-6">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
@@ -584,7 +630,20 @@ export default function GoodsIssue() {
           </table>
         </div>
       </Card>
+      )}
 
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold text-slate-700">📦 GIN Records</p>
+        <button
+          onClick={() => setShowGINTable((prev) => !prev)}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+        >
+          {showGINTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          {showGINTable ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      {showGINTable && (
       <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
@@ -713,6 +772,7 @@ export default function GoodsIssue() {
           </table>
         </div>
       </Card>
+      )}
     </div>
   );
 }

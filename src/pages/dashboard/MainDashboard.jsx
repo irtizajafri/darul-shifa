@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, CheckCircle, Building2, Zap, Stethoscope, Package, FlaskConical, Wallet } from 'lucide-react';
+import { Stethoscope, Package, FlaskConical, Wallet } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
 import PageLoader from '../../components/ui/PageLoader';
 import Card from '../../components/ui/Card';
@@ -8,9 +8,10 @@ import Badge from '../../components/ui/Badge';
 import Button from '../../components/ui/Button';
 import './MainDashboard.scss';
 
-const modules = [
+const ALL_MODULES = [
   {
     id: 'employee',
+    permModule: 'employee',          // key used in hasPermission()
     icon: Stethoscope,
     title: 'Employee Management',
     desc: 'Manage staff, attendance, payroll & HR operations',
@@ -18,16 +19,27 @@ const modules = [
     active: true,
     path: '/employee-module',
   },
-  { id: 'lab', icon: FlaskConical, title: 'Laboratories', desc: 'Lab tests, results & reporting', active: false },
-  { id: 'inventory', icon: Package, title: 'Inventory', desc: 'Stock, orders, suppliers & assets', active: true, path: '/inventory-module' },
-  { id: 'clinic', icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: false },
-  { id: 'accounts', icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: false },
+  { id: 'lab', permModule: null, icon: FlaskConical, title: 'Laboratories', desc: 'Lab tests, results & reporting', active: false },
+  {
+    id: 'inventory',
+    permModule: 'inventory',
+    icon: Package,
+    title: 'Inventory',
+    desc: 'Stock, orders, suppliers & assets',
+    active: true,
+    path: '/inventory-module',
+  },
+  { id: 'clinic', permModule: null, icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: false },
+  { id: 'accounts', permModule: null, icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: false },
 ];
 
 export default function MainDashboard() {
   const [loading, setLoading] = useState(true);
   const { clearModule, setModule } = useModuleStore();
   const navigate = useNavigate();
+
+  // All modules are always visible — permission check happens when opened
+  const modules = ALL_MODULES;
 
   useEffect(() => {
     clearModule();
@@ -66,7 +78,7 @@ export default function MainDashboard() {
               <Badge label="Coming Soon" variant="warning" className="module-badge" />
             )}
             <div className="module-icon">
-              <m.icon className="w-10 h-10" />
+              <m.icon className="w-5 h-5" />
             </div>
             <h3>{m.title}</h3>
             <p>{m.desc}</p>

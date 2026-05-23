@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import useModalKeys from '../../hooks/useModalKeys';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Plus, Search, Trash2 } from 'lucide-react';
@@ -10,6 +11,8 @@ import { printPODocument } from '../../utils/printPO';
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState({});
+  const inputRef = useRef(null);
   const containerRef = useRef(null);
 
   const selected = options.find((o) => String(getValue(o)) === String(value));
@@ -18,6 +21,21 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
     () => !search ? options : options.filter((o) => getLabel(o).toLowerCase().includes(search.toLowerCase())),
     [options, search, getLabel]
   );
+
+  const openDropdown = () => {
+    if (inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        zIndex: 9999,
+      });
+    }
+    setSearch('');
+    setOpen(true);
+  };
 
   useEffect(() => {
     const handler = (e) => {
@@ -33,16 +51,17 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       <input
+        ref={inputRef}
         type="text"
         value={open ? search : (selected ? getLabel(selected) : '')}
         onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
-        onFocus={() => { setSearch(''); setOpen(true); }}
+        onFocus={openDropdown}
         placeholder={placeholder}
         className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
         autoComplete="off"
       />
       {open && (
-        <div className="absolute z-50 w-full mt-1 bg-white border border-slate-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+        <div style={dropdownStyle} className="bg-white border border-slate-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-sm text-slate-400">No results</div>
           ) : (
@@ -126,16 +145,17 @@ export default function PurchaseOrder() {
     }
   }, [location.state]);
 
+  const [showOnlyReorder, setShowOnlyReorder] = useState(true);
+
   const supplierScopedItems = useMemo(() => {
-    const selectedSupplierId = Number(formData.supplierId);
-    if (!selectedSupplierId) return items || [];
-    // Check if item has supplier in its suppliers array
-    return (items || []).filter((item) => {
-      const itemSuppliers = Array.isArray(item.supplierId) ? item.supplierId : [];
-      // If item has no suppliers mapped, show all items; otherwise filter by selected supplier
-      return itemSuppliers.length === 0 || itemSuppliers.includes(selectedSupplierId);
-    });
-  }, [items, formData.supplierId]);
+    let result = items || [];
+    if (showOnlyReorder) {
+      result = result.filter(
+        (item) => Number(item.reorderLevel) > 0 && Number(item.currentStock) <= Number(item.reorderLevel)
+      );
+    }
+    return result;
+  }, [items, showOnlyReorder]);
 
   const handleCreatePO = async (e, shouldPrint = false) => {
     e.preventDefault();
@@ -188,6 +208,15 @@ export default function PurchaseOrder() {
       toast.error(err.message || 'Failed to create PO');
     }
   };
+
+  const fakeEvent = { preventDefault: () => {} };
+
+  useModalKeys({
+    active: showCreate,
+    onEsc: () => { setShowCreate(false); setDraftLine(createEmptyPoLine()); },
+    onCtrlS: () => handleCreatePO(fakeEvent, false),
+    onCtrlP: () => handleCreatePO(fakeEvent, true),
+  });
 
   const applyFilters = async () => {
     try {
@@ -281,16 +310,29 @@ export default function PurchaseOrder() {
 
             {/* Draft row: add a new item line */}
             <div className="border border-dashed border-slate-300 rounded-lg p-3 bg-slate-50">
-              <p className="text-xs font-medium text-slate-500 mb-2 uppercase tracking-wide">Add Item</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Add Item</p>
+                <button
+                  type="button"
+                  onClick={() => setShowOnlyReorder((v) => !v)}
+                  className={`text-xs px-2 py-1 rounded-full border font-medium transition-colors ${
+                    showOnlyReorder
+                      ? 'bg-amber-50 border-amber-300 text-amber-700'
+                      : 'bg-slate-100 border-slate-300 text-slate-500'
+                  }`}
+                >
+                  {showOnlyReorder ? `Reorder items only (${supplierScopedItems.length})` : 'Showing all items'}
+                </button>
+              </div>
               <div className="flex flex-wrap gap-2 items-end">
                 <SearchableSelect
                   options={supplierScopedItems}
                   value={draftLine.itemId}
                   onChange={(val) => updateDraftLine('itemId', val)}
-                  placeholder="Select Item"
-                  getLabel={(item) => `${item.name} (${item.code})`}
+                  placeholder={showOnlyReorder ? 'Search reorder items...' : 'Search all items...'}
+                  getLabel={(item) => `${item.name} (${item.code}) — Stock: ${item.currentStock} / Reorder: ${item.reorderLevel}`}
                   getValue={(item) => item.id}
-                  className="w-64"
+                  className="w-80"
                 />
                 <input
                   type="number"

@@ -9,24 +9,35 @@ router.get('/masters/options', controller.listItemAddOptions);
 
 router.get('/categories', controller.listCategories);
 router.post('/categories', controller.createCategory);
+router.patch('/categories/:id', controller.updateCategory);
+router.delete('/categories/:id', controller.deleteCategory);
 
 router.get('/subcategories', controller.listSubcategories);
 router.post('/subcategories', controller.createSubcategory);
+router.patch('/subcategories/:id', controller.updateSubcategory);
+router.delete('/subcategories/:id', controller.deleteSubcategory);
 
 router.get('/suppliers', controller.listSuppliers);
 router.post('/suppliers', controller.createSupplier);
+router.patch('/suppliers/:id', controller.updateSupplier);
+router.delete('/suppliers/:id', controller.deleteSupplier);
 
 router.get('/storages', controller.listStorages);
 router.post('/storages', controller.createStorage);
+router.patch('/storages/:id', controller.updateStorage);
+router.delete('/storages/:id', controller.deleteStorage);
 
 router.get('/departments', controller.listDepartments);
 router.post('/departments', controller.createDepartment);
+router.patch('/departments/:id', controller.updateDepartment);
+router.delete('/departments/:id', controller.deleteDepartment);
 
 router.get('/demand-category-types', controller.listDemandCategoryTypes);
 router.post('/demand-category-types', controller.createDemandCategoryType);
 
 router.get('/items', controller.listItems);
 router.post('/items', controller.createItem);
+router.put('/items/:id', controller.updateItem);
 router.patch('/items/:id/status', controller.updateItemStatus);
 router.delete('/items/:id', controller.deleteItem);
 router.post('/items/:id/stock-movements', controller.addStockMovement);
@@ -63,5 +74,9 @@ router.get('/reports/expired-items', controller.listExpiredItemsReport);
 
 router.get('/maintenance', controller.listMaintenances);
 router.post('/maintenance', controller.createMaintenance);
+router.patch('/maintenance/:id/receive', controller.receiveMaintenance);
+
+router.get('/asset-instances', controller.listAssetInstances);
+router.patch('/asset-instances/:id', controller.updateAssetInstance);
 
 module.exports = router;

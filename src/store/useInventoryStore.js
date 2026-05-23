@@ -97,6 +97,13 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  updateCategory: async (id, payload) => request(`/categories/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  deleteCategory: async (id) => request(`/categories/${id}`, { method: 'DELETE' }),
+
   fetchSubcategories: async ({ search = '', status = '', categoryId = '' } = {}) => {
     set({ loading: true, error: null });
     try {
@@ -118,6 +125,13 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  updateSubcategory: async (id, payload) => request(`/subcategories/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  deleteSubcategory: async (id) => request(`/subcategories/${id}`, { method: 'DELETE' }),
+
   fetchSuppliers: async ({ search = '', status = '' } = {}) => {
     set({ loading: true, error: null });
     try {
@@ -137,6 +151,13 @@ export const useInventoryStore = create((set) => ({
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+
+  updateSupplier: async (id, payload) => request(`/suppliers/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  deleteSupplier: async (id) => request(`/suppliers/${id}`, { method: 'DELETE' }),
 
   fetchStorages: async ({ search = '', status = '' } = {}) => {
     set({ loading: true, error: null });
@@ -158,6 +179,13 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  updateStorage: async (id, payload) => request(`/storages/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  deleteStorage: async (id) => request(`/storages/${id}`, { method: 'DELETE' }),
+
   fetchDepartments: async ({ search = '', status = '' } = {}) => {
     set({ loading: true, error: null });
     try {
@@ -177,6 +205,13 @@ export const useInventoryStore = create((set) => ({
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+
+  updateDepartment: async (id, payload) => request(`/departments/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  deleteDepartment: async (id) => request(`/departments/${id}`, { method: 'DELETE' }),
 
   fetchDemandCategoryTypes: async ({ search = '', status = '' } = {}) => {
     set({ loading: true, error: null });
@@ -217,6 +252,11 @@ export const useInventoryStore = create((set) => ({
 
   createItem: async (payload) => request('/items', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  updateItem: async (id, payload) => request(`/items/${id}`, {
+    method: 'PUT',
     body: JSON.stringify(payload),
   }),
 
@@ -445,6 +485,23 @@ export const useInventoryStore = create((set) => ({
 
   createMaintenanceRecord: async (payload) => request('/maintenance', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  receiveMaintenance: async (id, payload) => request(`/maintenance/${id}/receive`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchAssetInstances: async ({ itemId = '', condition = '' } = {}) => {
+    const qs = new URLSearchParams();
+    if (itemId) qs.set('itemId', String(itemId));
+    if (condition) qs.set('condition', condition);
+    return request(`/asset-instances?${qs.toString()}`);
+  },
+
+  updateAssetInstance: async (id, payload) => request(`/asset-instances/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   }),
 

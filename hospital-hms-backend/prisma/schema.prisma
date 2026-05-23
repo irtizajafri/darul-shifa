@@ -11,6 +11,19 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id          String    @id @default(uuid())
+  name        String
+  email       String    @unique
+  password    String
+  role        String
+  permissions Json      @default("{}")
+  isActive    Boolean   @default(true)
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model Department {
   id        Int        @id @default(autoincrement())
   name      String     @unique
@@ -244,6 +257,7 @@ model InventoryItem {
   reorderAlerts  InventoryReorderAlert[]
   purchaseOrders InventoryPurchaseOrder[]
   grns           InventoryGRN[]
+  assetInstances AssetInstance[]
   gds            InventoryGD[]
   gins           InventoryGIN[]
   ginItems       InventoryGINItem[]
@@ -375,6 +389,8 @@ model InventoryGRN {
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
+  assetInstances AssetInstance[]
+
   @@index([receivedDate])
   @@index([supplierId])
   @@index([categoryId, subcategoryId])
@@ -465,14 +481,17 @@ model InventoryGINItem {
 }
 
 model InventorySalesInvoiceHeader {
-  id           Int                      @id @default(autoincrement())
-  code         String                   @unique
-  invoiceDate  DateTime                 @default(now())
-  customerType String
-  customerName String?
-  totalAmount  Float                    @default(0)
-  createdAt    DateTime                 @default(now())
-  updatedAt    DateTime                 @updatedAt
+  id              Int                      @id @default(autoincrement())
+  code            String                   @unique
+  invoiceDate     DateTime                 @default(now())
+  customerType    String
+  customerName    String?
+  subTotal        Float                    @default(0)
+  discountPercent Float                    @default(0)
+  discountAmount  Float                    @default(0)
+  totalAmount     Float                    @default(0)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
 
   items        InventorySalesInvoice[]
 
@@ -493,7 +512,7 @@ model InventorySalesInvoice {
   quantity        Float
   purchasePrice   Float
   retailPrice     Float
-  markupPercent   Float
+  markupPercent   Float                          @default(0)
   saleRate        Float
   totalAmount     Float
   createdAt       DateTime                       @default(now())
@@ -506,33 +525,67 @@ model InventorySalesInvoice {
 }
 
 model InventoryGDN {
-  id              Int            @id @default(autoincrement())
-  code            String         @unique
+  id              Int                   @id @default(autoincrement())
+  code            String                @unique
   itemId          Int
-  item            InventoryItem  @relation(fields: [itemId], references: [id])
+  item            InventoryItem         @relation(fields: [itemId], references: [id])
   quantity        Float
   reason          String
-  discardedDate   DateTime       @default(now())
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  scrapValue      Float?
+  discardedDate   DateTime              @default(now())
+  maintenanceId   Int?
+  maintenance     InventoryMaintenance? @relation(fields: [maintenanceId], references: [id])
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   @@index([discardedDate])
   @@index([itemId])
+  @@index([maintenanceId])
 }
 
 model InventoryMaintenance {
   id             Int               @id @default(autoincrement())
+  moNumber       String?           @unique
   itemId         Int
   item           InventoryItem     @relation(fields: [itemId], references: [id])
   supplierId     Int
   supplier       InventorySupplier @relation(fields: [supplierId], references: [id])
   natureOfRepair String
   cost           Float?
+  actualCost     Float?
   date           DateTime
+  status         String            @default("in_repair")
+  receivedDate   DateTime?
+  checkedBy      String?
+  warrantyDays   Int?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+
+  assetInstances AssetInstance[]
+  gdns           InventoryGDN[]
 
   @@index([itemId])
   @@index([supplierId])
   @@index([date])
+  @@index([status])
+}
+
+model AssetInstance {
+  id            Int                   @id @default(autoincrement())
+  assetTag      String                @unique
+  itemId        Int
+  item          InventoryItem         @relation(fields: [itemId], references: [id])
+  grnId         Int?
+  grn           InventoryGRN?         @relation(fields: [grnId], references: [id])
+  maintenanceId Int?
+  maintenance   InventoryMaintenance? @relation(fields: [maintenanceId], references: [id])
+  condition     String                @default("working")
+  location      String?
+  serialNumber  String?
+  notes         String?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([itemId])
+  @@index([condition])
 }

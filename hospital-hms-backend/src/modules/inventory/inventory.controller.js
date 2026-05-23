@@ -291,6 +291,145 @@ async function createItem(req, res, next) {
   }
 }
 
+async function updateItem(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid item id');
+    const missing = missingFields(req.body || {}, ['name', 'categoryId', 'subcategoryId']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateItem(req.params.id, req.body || {});
+    return success(res, data, 'item updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('unique')) return fail(res, 409, 'Item name must be unique');
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function updateCategory(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const missing = missingFields(req.body || {}, ['name']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateCategory(req.params.id, req.body || {});
+    return success(res, data, 'category updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function deleteCategory(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const data = await service.deleteCategory(req.params.id);
+    return success(res, data, 'category deleted');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    if (String(err.message).toLowerCase().includes('cannot be deleted')) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
+async function updateSubcategory(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const missing = missingFields(req.body || {}, ['name', 'categoryId']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateSubcategory(req.params.id, req.body || {});
+    return success(res, data, 'subcategory updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function deleteSubcategory(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const data = await service.deleteSubcategory(req.params.id);
+    return success(res, data, 'subcategory deleted');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    if (String(err.message).toLowerCase().includes('cannot be deleted')) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
+async function updateSupplier(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const missing = missingFields(req.body || {}, ['name']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateSupplier(req.params.id, req.body || {});
+    return success(res, data, 'supplier updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function deleteSupplier(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const data = await service.deleteSupplier(req.params.id);
+    return success(res, data, 'supplier deleted');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    if (String(err.message).toLowerCase().includes('cannot be deleted')) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
+async function updateStorage(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const missing = missingFields(req.body || {}, ['name']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateStorage(req.params.id, req.body || {});
+    return success(res, data, 'storage updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function deleteStorage(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const data = await service.deleteStorage(req.params.id);
+    return success(res, data, 'storage deleted');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    if (String(err.message).toLowerCase().includes('cannot be deleted')) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
+async function updateDepartment(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const missing = missingFields(req.body || {}, ['name']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateDepartment(req.params.id, req.body || {});
+    return success(res, data, 'department updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function deleteDepartment(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const data = await service.deleteDepartment(req.params.id);
+    return success(res, data, 'department deleted');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    if (String(err.message).toLowerCase().includes('cannot be deleted')) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
 async function updateItemStatus(req, res, next) {
   try {
     if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid item id');
@@ -762,6 +901,20 @@ async function createMaintenance(req, res, next) {
   }
 }
 
+async function receiveMaintenance(req, res, next) {
+  try {
+    const id = req.params.id;
+    const { receivedDate, checkedBy, action, scrapValue, actualCost, warrantyDays } = req.body || {};
+    if (!action || !['complete', 'discard'].includes(action)) {
+      return fail(res, 400, 'action must be "complete" or "discard"');
+    }
+    const data = await service.receiveMaintenance({ id, receivedDate, checkedBy, action, scrapValue, actualCost, warrantyDays });
+    return success(res, data, action === 'complete' ? 'Marked as completed' : 'Marked as discarded, GDN created');
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   ping,
   listCategories,
@@ -778,8 +931,19 @@ module.exports = {
   createDemandCategoryType,
   listItems,
   createItem,
+  updateItem,
   updateItemStatus,
   deleteItem,
+  updateCategory,
+  deleteCategory,
+  updateSubcategory,
+  deleteSubcategory,
+  updateSupplier,
+  deleteSupplier,
+  updateStorage,
+  deleteStorage,
+  updateDepartment,
+  deleteDepartment,
   listPurchaseOrders,
   createPurchaseOrder,
   listGRNs,
@@ -807,4 +971,25 @@ module.exports = {
   listExpiredItemsReport,
   listMaintenances,
   createMaintenance,
+  receiveMaintenance,
+  listAssetInstances,
+  updateAssetInstance,
 };
+
+async function listAssetInstances(req, res, next) {
+  try {
+    const data = await service.listAssetInstances(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function updateAssetInstance(req, res, next) {
+  try {
+    const data = await service.updateAssetInstance(req.params.id, req.body);
+    return success(res, data, 'asset instance updated');
+  } catch (err) {
+    next(err);
+  }
+}

@@ -2,6 +2,22 @@ const service = require('./attendance.service');
 const { success, fail } = require('../../utils/response');
 const prisma = require('../../config/db');
 
+// ─── External API Mutex ───────────────────────────────────────────────────────
+// Intellitech API ek waqt sirf ek request handle kar sakti hai.
+// Yeh chain ensure karti hai ke requests ek ke baad ek jayen — koi logic change nahi.
+let _apiChain = Promise.resolve();
+function fetchExternalApi(body) {
+  const call = _apiChain.then(() =>
+    fetch('http://cloud.intellitech.com.pk:30565/API/Product/read.php?action=allempdaterange565', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json())
+  );
+  _apiChain = call.catch(() => {});
+  return call;
+}
+
 // ─── PKT Helper ───────────────────────────────────────────────────────────────
 // setHours() server ke local timezone pe depend karta hai.
 // Agar server UTC pe chal raha ho toh windows galat ban jaati hain.
@@ -248,13 +264,7 @@ async function create(req, res, next) {
 async function fetchExternal(req, res, next) {
   try {
     const { Dates, DatesTo } = req.body || {};
-    const url = 'http://cloud.intellitech.com.pk:30565/API/Product/read.php?action=allempdaterange565';
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ Dates, DatesTo })
-    });
-    const data = await response.json();
+    const data = await fetchExternalApi({ Dates, DatesTo });
     return res.json(data);
   } catch (err) {
     next(err);
@@ -268,8 +278,6 @@ async function testPairing(req, res, next) {
       return res.status(400).json({ message: "startDate and endDate are required" });
     }
 
-    const url = 'http://cloud.intellitech.com.pk:30565/API/Product/read.php?action=allempdaterange565';
-
     const fetchStart = new Date(startDate);
     fetchStart.setDate(fetchStart.getDate() - 1);
     const fetchEnd = new Date(endDate);
@@ -278,12 +286,7 @@ async function testPairing(req, res, next) {
     const fStartDate = fetchStart.toISOString().split('T')[0].replace(/-/g, '/');
     const fEndDate   = fetchEnd.toISOString().split('T')[0].replace(/-/g, '/');
 
-    const extRes  = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ Dates: fStartDate, DatesTo: fEndDate })
-    });
-    const extJson = await extRes.json();
+    const extJson = await fetchExternalApi({ Dates: fStartDate, DatesTo: fEndDate });
     let rawRecords = extJson?.data || [];
 
     if (employeeId) {
@@ -420,17 +423,10 @@ async function testRawPunches(req, res, next) {
       return res.status(400).json({ message: "startDate and endDate are required" });
     }
 
-    const url = 'http://cloud.intellitech.com.pk:30565/API/Product/read.php?action=allempdaterange565';
-    const extRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        Dates: startDate.replace(/-/g, '/'),
-        DatesTo: endDate.replace(/-/g, '/'),
-      })
+    const extJson = await fetchExternalApi({
+      Dates: startDate.replace(/-/g, '/'),
+      DatesTo: endDate.replace(/-/g, '/'),
     });
-
-    const extJson = await extRes.json();
     let rawRecords = Array.isArray(extJson?.data) ? extJson.data : [];
 
     if (employeeId) {
@@ -502,8 +498,6 @@ async function syncAttendance(req, res, next) {
       return res.status(400).json({ message: "startDate and endDate are required" });
     }
 
-    const url = 'http://cloud.intellitech.com.pk:30565/API/Product/read.php?action=allempdaterange565';
-
     const fetchStart = new Date(startDate);
     fetchStart.setDate(fetchStart.getDate() - 1);
     const fetchEnd = new Date(endDate);
@@ -512,12 +506,7 @@ async function syncAttendance(req, res, next) {
     const fStartDate = fetchStart.toISOString().split('T')[0].replace(/-/g, '/');
     const fEndDate   = fetchEnd.toISOString().split('T')[0].replace(/-/g, '/');
 
-    const extRes  = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ Dates: fStartDate, DatesTo: fEndDate })
-    });
-    const extJson = await extRes.json();
+    const extJson = await fetchExternalApi({ Dates: fStartDate, DatesTo: fEndDate });
     let rawRecords = extJson?.data || [];
 
     // Group logs by enrollid — PKT offset apply karo

@@ -78,6 +78,12 @@ export default function Reports() {
   const apiAttendanceReqRef = useRef(0);
   const rawPunchReqRef = useRef(0);
 
+  // ─── Salary Register Generate ─────────────────────────────────────────────
+  const [loadedForEmpCode, setLoadedForEmpCode] = useState(null);
+  const [registerRows, setRegisterRows]         = useState([]);
+  const [isGenerating, setIsGenerating]         = useState(false);
+  const [genQueue, setGenQueue]                 = useState([]);
+
   useEffect(() => {
     setModule("employee");
     Promise.all([fetchEmployees(), fetchAttendance(), fetchGatepasses(), fetchAdvanceLoans()]).then(() => setLoading(false));
@@ -234,6 +240,7 @@ export default function Reports() {
 
       // Avoid showing previous month rows while new month is loading
       setApiAttendance([]);
+      setLoadedForEmpCode(null);
 
       try {
         const res = await fetch('http://localhost:5001/api/attendance/test-pairing', {
@@ -441,15 +448,18 @@ export default function Reports() {
 
           if (!controller.signal.aborted && reqId === apiAttendanceReqRef.current) {
             setApiAttendance(mapped);
+            setLoadedForEmpCode(emp.empCode);
           }
         } else {
           if (!controller.signal.aborted && reqId === apiAttendanceReqRef.current) {
             setApiAttendance([]);
+            setLoadedForEmpCode(emp.empCode);
           }
         }
       } catch (e) {
         if (controller.signal.aborted) return;
         setApiAttendance([]);
+        setLoadedForEmpCode(emp.empCode);
       }
 
     };
@@ -472,6 +482,11 @@ export default function Reports() {
       if (!shouldFetchForRawTab && !shouldFetchForPayslip) return;
 
       setRawPunchRows([]);
+
+      // Payslip tab pe test-pairing bhi usi waqt fire hoti hai — dono ek saath
+      // external API pe jayen toh woh HTML return karta hai (concurrency issue).
+      // Fixed delay ki jagah: test-pairing complete hone ka wait karo (loadedForEmpCode).
+      if (shouldFetchForPayslip && loadedForEmpCode !== selectedEmpCode) return;
 
       try {
         const endDate = new Date(Number(year), Number(month), 0).getDate();
@@ -500,7 +515,14 @@ export default function Reports() {
     return () => {
       controller.abort();
     };
-  }, [activeReport, selectedEmpCode, month, year]);
+  }, [activeReport, selectedEmpCode, month, year, loadedForEmpCode]);
+
+  // ─── Salary Register: queue mein next employee set karo ──────────────────
+  useEffect(() => {
+    if (!isGenerating || genQueue.length === 0) return;
+    setEmpCode(String(genQueue[0].empCode));
+  }, [isGenerating, genQueue]);
+
 
   useEffect(() => {
     if (!month || !year) {
@@ -1410,6 +1432,28 @@ export default function Reports() {
     : 0;
   const totalSal = finalSal;
 
+  // ─── Salary Register: data ready hone pe capture karo ───────────────────
+  // (Yahan rakha hai taake totalDeductions, overtimeAddition, finalSal
+  //  sab define ho chukay hon — pehle TDZ crash tha)
+  useEffect(() => {
+    if (!isGenerating || !loadedForEmpCode) return;
+    if (genQueue.length === 0) { setIsGenerating(false); return; }
+    if (!emp || String(emp.empCode) !== String(genQueue[0]?.empCode)) return;
+    if (loadedForEmpCode !== String(emp.empCode)) return;
+
+    setRegisterRows(prev => {
+      if (prev.find(r => r.code === emp.empCode)) return prev;
+      return [...prev, {
+        code:        emp.empCode,
+        name:        `${emp.firstName} ${emp.lastName}`,
+        deduction:   totalDeductions,
+        otBonus:     overtimeAddition,
+        finalSalary: finalSal,
+      }];
+    });
+    setGenQueue(prev => prev.slice(1));
+  }, [isGenerating, loadedForEmpCode, emp, genQueue, totalDeductions, overtimeAddition, finalSal]);
+
   const missingSalaryRows = useMemo(() => {
     return employees.slice(0, 20).map((e, i) => ({
       code:    e.empCode,
@@ -1875,9 +1919,10 @@ export default function Reports() {
 
   const salaryRegisterRows = useMemo(() => {
     return employees.map((e) => ({
-      code:   e.empCode,
-      name:   `${e.firstName} ${e.lastName}`,
-      amount: `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
+      code:      e.empCode,
+      name:      `${e.firstName} ${e.lastName}`,
+      rawAmount: getTotalSalary(e.basicSalary, e.allowances || []),
+      amount:    `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
     }));
   }, [employees]);
 
@@ -2231,11 +2276,60 @@ export default function Reports() {
           {payrollTab === "register" && (
             <div className="table-wrap print-area">
               <h4 className="section-title">Salary Register</h4>
+              <div className="filters-row print-hidden" style={{ marginBottom: '12px' }}>
+                <Button
+                  label={isGenerating ? `Generating... (${registerRows.length}/${employees.length})` : "Generate"}
+                  variant="primary"
+                  disabled={isGenerating}
+                  onClick={() => {
+                    setRegisterRows([]);
+                    setGenQueue([...employees]);
+                    setIsGenerating(true);
+                  }}
+                />
+                {registerRows.length > 0 && !isGenerating && (
+                  <span style={{ marginLeft: '12px', color: '#666', fontSize: '13px' }}>
+                    ✓ {registerRows.length} employees loaded
+                  </span>
+                )}
+              </div>
               <table className="data-table">
-                <thead><tr><th>Emp Code</th><th>Name</th><th>Amount</th></tr></thead>
-                <tbody>{salaryRegisterRows.map((r) => (<tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.amount}</td></tr>))}</tbody>
+                <thead>
+                  <tr>
+                    <th>Emp Code</th>
+                    <th>Name</th>
+                    <th>Basic + Allowances</th>
+                    <th>Total Deduction</th>
+                    <th>Total OT Bonus</th>
+                    <th>Total Salary</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registerRows.length > 0
+                    ? registerRows.map((r) => (
+                        <tr key={r.code}>
+                          <td>{r.code}</td>
+                          <td>{r.name}</td>
+                          <td>PKR {(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}</td>
+                          <td>PKR {r.deduction.toLocaleString()}</td>
+                          <td>PKR {r.otBonus.toLocaleString()}</td>
+                          <td>PKR {r.finalSalary.toLocaleString()}</td>
+                        </tr>
+                      ))
+                    : salaryRegisterRows.map((r) => (
+                        <tr key={r.code}>
+                          <td>{r.code}</td>
+                          <td>{r.name}</td>
+                          <td>{r.amount}</td>
+                          <td>—</td>
+                          <td>—</td>
+                          <td>—</td>
+                        </tr>
+                      ))
+                  }
+                </tbody>
               </table>
-              <div className="sheet-footer muted">Total employees: {salaryRegisterRows.length}</div>
+              <div className="sheet-footer muted">Total employees: {registerRows.length > 0 ? registerRows.length : salaryRegisterRows.length}</div>
             </div>
           )}
         </Card>

@@ -119,6 +119,28 @@ async function generateTwoDigitMasterCode(modelKey, extraWhere = {}) {
   return padTwo(maxCode + 1);
 }
 
+async function generateSubcategoryCode(categoryId) {
+  const category = await prisma.inventoryCategory.findUnique({
+    where: { id: categoryId },
+    select: { code: true },
+  });
+  if (!category) throw new Error('Category not found');
+  const catCode = String(category.code || '');
+  const existing = await prisma.inventorySubcategory.findMany({
+    where: { categoryId },
+    select: { code: true },
+  });
+  let maxSeq = 0;
+  existing.forEach((row) => {
+    const code = String(row.code || '');
+    if (code.startsWith(catCode) && code.length === catCode.length + 2) {
+      const seq = Number(code.slice(catCode.length));
+      if (Number.isFinite(seq) && seq > 0) maxSeq = Math.max(maxSeq, seq);
+    }
+  });
+  return `${catCode}${padTwo(maxSeq + 1)}`;
+}
+
 async function ensureMasterCodeNormalization() {
   if (masterCodesNormalized) return;
 
@@ -134,7 +156,7 @@ async function ensureMasterCodeNormalization() {
     });
 
     const categoriesNeedNormalization = categories.some((row) => !parseTwoDigitCode(row.code));
-    const subcategoriesNeedNormalization = subcategories.some((row) => !parseTwoDigitCode(row.code));
+    const subcategoriesNeedNormalization = subcategories.some((row) => !/^\d{4}$/.test(String(row.code || '')));
 
     if (!categoriesNeedNormalization && !subcategoriesNeedNormalization) {
       return;
@@ -161,10 +183,20 @@ async function ensureMasterCodeNormalization() {
       })
     ));
 
-    await Promise.all(subcategories.map((row, index) =>
+    const categoryCodeMap = {};
+    categories.forEach((row, index) => {
+      categoryCodeMap[row.id] = padTwo(index + 1);
+    });
+    const subSeqByCat = {};
+    const subcategoryUpdates = subcategories.map((row) => {
+      const catCode = categoryCodeMap[row.categoryId] || '00';
+      subSeqByCat[row.categoryId] = (subSeqByCat[row.categoryId] || 0) + 1;
+      return { id: row.id, code: `${catCode}${padTwo(subSeqByCat[row.categoryId])}` };
+    });
+    await Promise.all(subcategoryUpdates.map((u) =>
       tx.inventorySubcategory.update({
-        where: { id: row.id },
-        data: { code: padTwo(index + 1) },
+        where: { id: u.id },
+        data: { code: u.code },
       })
     ));
   });
@@ -195,7 +227,8 @@ async function generateInventoryItemCode({ categoryId, subcategoryId }) {
   ]);
 
   const categoryPart = parseTwoDigitCode(categoryRow.code) || padTwo(categorySequence);
-  const subcategoryPart = parseTwoDigitCode(subcategoryRow.code) || padTwo(subcategorySequence);
+  const subCode = String(subcategoryRow.code || '');
+  const subcategoryPart = subCode.length === 4 ? subCode.slice(2) : (parseTwoDigitCode(subCode) || padTwo(subcategorySequence));
   const itemPrefix = `PD${categoryPart}${subcategoryPart}`;
 
   const latestInSubcategory = await prisma.inventoryItem.findFirst({
@@ -342,7 +375,8 @@ async function createSubcategory(payload) {
 
   const name = String(payload.name || '').trim();
   const status = normalizeStatus(payload.status);
-  const code = parseTwoDigitCode(payload.code) || await generateTwoDigitMasterCode('inventorySubcategory');
+  const catId = Number(payload.categoryId);
+  const code = payload.code ? String(payload.code).trim() : await generateSubcategoryCode(catId);
 
   return prisma.inventorySubcategory.create({
     data: {
@@ -822,7 +856,56 @@ async function createGRN(payload) {
 
     await syncReorderAlert(tx, updatedItem);
 
+    if (updatedItem.itemType === 'fixed asset') {
+      const count = Math.floor(receivedQuantity);
+      const existingMax = await tx.assetInstance.findFirst({
+        where: { itemId: po.itemId },
+        orderBy: { assetTag: 'desc' },
+        select: { assetTag: true },
+      });
+      let nextSeq = 1;
+      if (existingMax?.assetTag) {
+        const parts = String(existingMax.assetTag).split('-');
+        const tail = Number(parts[parts.length - 1]);
+        if (Number.isFinite(tail) && tail > 0) nextSeq = tail + 1;
+      }
+      const instanceData = [];
+      for (let i = 0; i < count; i++) {
+        instanceData.push({
+          assetTag: `${updatedItem.code}-${String(nextSeq + i).padStart(2, '0')}`,
+          itemId: po.itemId,
+          grnId: grn.id,
+          condition: 'working',
+        });
+      }
+      await tx.assetInstance.createMany({ data: instanceData });
+    }
+
     return grn;
+  });
+}
+
+async function listAssetInstances({ itemId, condition } = {}) {
+  const parsedItemId = parsePositiveNumber(itemId);
+  return prisma.assetInstance.findMany({
+    where: {
+      ...(parsedItemId ? { itemId: parsedItemId } : {}),
+      ...(condition ? { condition: String(condition) } : {}),
+    },
+    include: { item: { select: { name: true, code: true } } },
+    orderBy: { assetTag: 'asc' },
+  });
+}
+
+async function updateAssetInstance(id, { condition, location, serialNumber, notes }) {
+  return prisma.assetInstance.update({
+    where: { id: Number(id) },
+    data: {
+      ...(condition ? { condition: String(condition) } : {}),
+      ...(location !== undefined ? { location: location || null } : {}),
+      ...(serialNumber !== undefined ? { serialNumber: serialNumber || null } : {}),
+      ...(notes !== undefined ? { notes: notes || null } : {}),
+    },
   });
 }
 
@@ -1371,22 +1454,20 @@ async function createSalesInvoiceWithItems(payload) {
     throw new Error('customerName is required when customerType is customer');
   }
 
+  const discountPercent = Math.min(100, Math.max(0, Number(payload.discountPercent || 0)));
+
   return prisma.$transaction(async (tx) => {
     const headerCode = await generateDocCode('inventorySalesInvoiceHeader', 'sinv');
-    let grandTotal = 0;
+    let subTotal = 0;
     const createdLines = [];
 
     for (let i = 0; i < lineItems.length; i++) {
       const line = lineItems[i];
       const itemId = Number(line.itemId);
       const quantity = parsePositiveNumber(line.quantity);
-      const markupPercent = parsePositiveNumber(line.markupPercent);
 
       if (!Number.isFinite(quantity) || quantity <= 0) {
         throw new Error(`Item ${i + 1}: quantity must be a positive number`);
-      }
-      if (!Number.isFinite(markupPercent) || markupPercent < 0 || markupPercent > 100) {
-        throw new Error(`Item ${i + 1}: markupPercent must be between 0 and 100`);
       }
 
       const item = await tx.inventoryItem.findUnique({
@@ -1402,21 +1483,24 @@ async function createSalesInvoiceWithItems(payload) {
 
       const purchasePrice = Number(item.purchasePrice || 0);
       const retailPrice = Number(item.lastGrnRate || item.purchasePrice || 0);
-      const saleRate = retailPrice * (1 + (markupPercent / 100));
+      const saleRate = retailPrice;
       const totalAmount = saleRate * quantity;
-      grandTotal += totalAmount;
+      subTotal += totalAmount;
 
       createdLines.push({
         itemId,
         quantity,
         purchasePrice,
         retailPrice,
-        markupPercent,
+        markupPercent: 0,
         saleRate,
         totalAmount,
         item,
       });
     }
+
+    const discountAmount = subTotal * (discountPercent / 100);
+    const grandTotal = subTotal - discountAmount;
 
     const header = await tx.inventorySalesInvoiceHeader.create({
       data: {
@@ -1424,6 +1508,9 @@ async function createSalesInvoiceWithItems(payload) {
         invoiceDate,
         customerType,
         customerName: customerType === 'customer' ? customerName : 'Walking Customer',
+        subTotal,
+        discountPercent,
+        discountAmount,
         totalAmount: grandTotal,
       },
     });
@@ -1669,6 +1756,7 @@ async function createGDN(payload) {
         itemId,
         quantity,
         reason,
+        scrapValue: payload.scrapValue != null && payload.scrapValue !== '' ? Number(payload.scrapValue) : null,
         discardedDate: payload.discardedDate ? new Date(payload.discardedDate) : new Date(),
       },
       include: {
@@ -1818,7 +1906,198 @@ async function createItem(payload) {
     }
   }
 
+  await syncReorderAlert(prisma, created);
+
   return created;
+}
+
+async function updateItem(itemId, payload) {
+  const id = Number(itemId);
+  const existing = await prisma.inventoryItem.findUnique({ where: { id } });
+  if (!existing) throw new Error('Item not found');
+
+  const name = String(payload.name || '').trim();
+  const status = normalizeStatus(payload.status);
+  const itemType = String(payload.itemType || '').trim().toLowerCase();
+  const usefulLifeUnit = String(payload.usefulLifeUnit || 'years').trim().toLowerCase();
+  const assetConditionRaw = String(payload.assetCondition || '').trim().toLowerCase();
+  const assetCondition = assetConditionRaw || 'working';
+  const parsedSupplierId = parsePositiveNumber(payload.supplierId);
+  const reorderLevel = parsePositiveNumber(payload.reorderLevel, 0);
+  const hasExpiry = Boolean(payload.hasExpiry);
+  const usefulLifeYears = parsePositiveNumber(payload.usefulLifeYears);
+  const bookValue = parsePositiveNumber(payload.bookValue);
+
+  if (name !== existing.name) {
+    const duplicate = await prisma.inventoryItem.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' }, id: { not: id } },
+      select: { id: true },
+    });
+    if (duplicate) throw new Error('Item with this name already exists');
+  }
+
+  const purchasePrice = parsePositiveNumber(payload.purchasePrice) ?? existing.purchasePrice;
+
+  const updated = await prisma.inventoryItem.update({
+    where: { id },
+    data: {
+      name,
+      itemType,
+      unit: String(payload.unit || '').trim().toLowerCase(),
+      purchasePrice,
+      hasExpiry,
+      reorderLevel: reorderLevel || 0,
+      status,
+      brand: parseOptionalString(payload.brand),
+      model: parseOptionalString(payload.model),
+      serialNumber: parseOptionalString(payload.serialNumber),
+      assetLocation: parseOptionalString(payload.assetLocation),
+      purchaseDate: parseOptionalDate(payload.purchaseDate),
+      warrantyUntil: parseOptionalDate(payload.warrantyUntil),
+      usefulLifeYears: Number.isFinite(usefulLifeYears) && usefulLifeYears > 0 ? Math.round(usefulLifeYears) : null,
+      assetCondition,
+      bookValue: Number.isFinite(bookValue) ? bookValue : null,
+      categoryId: Number(payload.categoryId),
+      subcategoryId: Number(payload.subcategoryId),
+      supplierId: parsedSupplierId || null,
+      storageId: parsePositiveNumber(payload.storageId),
+      currentStock: Number.isFinite(Number(payload.currentStock)) ? Number(payload.currentStock) : existing.currentStock,
+    },
+    include: { category: true, subcategory: true, storage: true },
+  });
+
+  try {
+    await ensureUsefulLifeUnitColumn();
+    await prisma.$executeRaw`UPDATE "InventoryItem" SET "usefulLifeUnit" = ${usefulLifeUnit} WHERE "id" = ${updated.id}`;
+  } catch { /* non-blocking */ }
+
+  await syncReorderAlert(prisma, updated);
+
+  return updated;
+}
+
+async function updateCategory(id, payload) {
+  const existing = await prisma.inventoryCategory.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw new Error('Category not found');
+  return prisma.inventoryCategory.update({
+    where: { id: Number(id) },
+    data: {
+      name: String(payload.name || '').trim(),
+      status: normalizeStatus(payload.status),
+    },
+  });
+}
+
+async function deleteCategory(id) {
+  const numId = Number(id);
+  const existing = await prisma.inventoryCategory.findUnique({ where: { id: numId } });
+  if (!existing) throw new Error('Category not found');
+  const itemCount = await prisma.inventoryItem.count({ where: { categoryId: numId } });
+  if (itemCount > 0) throw new Error('Category has items and cannot be deleted. Set status to inactive instead.');
+  await prisma.inventorySubcategory.deleteMany({ where: { categoryId: numId } });
+  await prisma.inventoryCategory.delete({ where: { id: numId } });
+  return { id: numId, deleted: true };
+}
+
+async function updateSubcategory(id, payload) {
+  const existing = await prisma.inventorySubcategory.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw new Error('Subcategory not found');
+  return prisma.inventorySubcategory.update({
+    where: { id: Number(id) },
+    data: {
+      name: String(payload.name || '').trim(),
+      status: normalizeStatus(payload.status),
+      categoryId: Number(payload.categoryId),
+    },
+    include: { category: true },
+  });
+}
+
+async function deleteSubcategory(id) {
+  const numId = Number(id);
+  const existing = await prisma.inventorySubcategory.findUnique({ where: { id: numId } });
+  if (!existing) throw new Error('Subcategory not found');
+  const itemCount = await prisma.inventoryItem.count({ where: { subcategoryId: numId } });
+  if (itemCount > 0) throw new Error('Subcategory has items and cannot be deleted. Set status to inactive instead.');
+  await prisma.inventorySubcategory.delete({ where: { id: numId } });
+  return { id: numId, deleted: true };
+}
+
+async function updateSupplier(id, payload) {
+  const existing = await prisma.inventorySupplier.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw new Error('Supplier not found');
+  return prisma.inventorySupplier.update({
+    where: { id: Number(id) },
+    data: {
+      name: String(payload.name || '').trim(),
+      address: payload.address ? String(payload.address).trim() : null,
+      contactDetails: payload.contactDetails ? String(payload.contactDetails).trim() : null,
+      bankingDetails: payload.bankingDetails ? String(payload.bankingDetails).trim() : null,
+      status: normalizeStatus(payload.status),
+    },
+  });
+}
+
+async function deleteSupplier(id) {
+  const numId = Number(id);
+  const existing = await prisma.inventorySupplier.findUnique({ where: { id: numId } });
+  if (!existing) throw new Error('Supplier not found');
+  const [itemCount, poCount, grnCount] = await Promise.all([
+    prisma.inventoryItem.count({ where: { supplierId: numId } }),
+    prisma.inventoryPurchaseOrder.count({ where: { supplierId: numId } }),
+    prisma.inventoryGRN.count({ where: { supplierId: numId } }),
+  ]);
+  if (itemCount > 0 || poCount > 0 || grnCount > 0) throw new Error('Supplier has linked records and cannot be deleted. Set status to inactive instead.');
+  await prisma.inventorySupplier.delete({ where: { id: numId } });
+  return { id: numId, deleted: true };
+}
+
+async function updateStorage(id, payload) {
+  const existing = await prisma.inventoryStorage.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw new Error('Storage not found');
+  return prisma.inventoryStorage.update({
+    where: { id: Number(id) },
+    data: {
+      name: String(payload.name || '').trim(),
+      numberAllotment: payload.numberAllotment ? String(payload.numberAllotment).trim() : null,
+      status: normalizeStatus(payload.status),
+    },
+  });
+}
+
+async function deleteStorage(id) {
+  const numId = Number(id);
+  const existing = await prisma.inventoryStorage.findUnique({ where: { id: numId } });
+  if (!existing) throw new Error('Storage not found');
+  const itemCount = await prisma.inventoryItem.count({ where: { storageId: numId } });
+  if (itemCount > 0) throw new Error('Storage has items and cannot be deleted. Set status to inactive instead.');
+  await prisma.inventoryStorage.delete({ where: { id: numId } });
+  return { id: numId, deleted: true };
+}
+
+async function updateDepartment(id, payload) {
+  const existing = await prisma.inventoryDepartment.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw new Error('Department not found');
+  return prisma.inventoryDepartment.update({
+    where: { id: Number(id) },
+    data: {
+      name: String(payload.name || '').trim(),
+      status: normalizeStatus(payload.status),
+    },
+  });
+}
+
+async function deleteDepartment(id) {
+  const numId = Number(id);
+  const existing = await prisma.inventoryDepartment.findUnique({ where: { id: numId } });
+  if (!existing) throw new Error('Department not found');
+  const [gdCount, ginCount] = await Promise.all([
+    prisma.inventoryGD.count({ where: { departmentId: numId } }),
+    prisma.inventoryGIN.count({ where: { departmentId: numId } }),
+  ]);
+  if (gdCount > 0 || ginCount > 0) throw new Error('Department has linked records and cannot be deleted. Set status to inactive instead.');
+  await prisma.inventoryDepartment.delete({ where: { id: numId } });
+  return { id: numId, deleted: true };
 }
 
 async function updateItemStatus(itemId, payload) {
@@ -2925,8 +3204,19 @@ module.exports = {
   createDemandCategoryType,
   listItems,
   createItem,
+  updateItem,
   updateItemStatus,
   deleteItem,
+  updateCategory,
+  deleteCategory,
+  updateSubcategory,
+  deleteSubcategory,
+  updateSupplier,
+  deleteSupplier,
+  updateStorage,
+  deleteStorage,
+  updateDepartment,
+  deleteDepartment,
   listPurchaseOrders,
   createPurchaseOrder,
   listGRNs,
@@ -2954,6 +3244,9 @@ module.exports = {
   listExpiredItemsReport,
   listMaintenances,
   createMaintenance,
+  receiveMaintenance,
+  listAssetInstances,
+  updateAssetInstance,
 };
 
 async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {
@@ -2981,37 +3274,180 @@ async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId,
   return prisma.inventoryMaintenance.findMany({
     where,
     include: {
-      item: {
-        include: {
-          category: true,
-          subcategory: true,
-        },
-      },
+      item: { include: { category: true, subcategory: true } },
       supplier: true,
+      assetInstances: { select: { id: true, assetTag: true, condition: true } },
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   });
 }
 
-async function createMaintenance({ itemId, supplierId, natureOfRepair, cost, date }) {
-  return prisma.inventoryMaintenance.create({
+async function generateMoNumber(date) {
+  const d = date ? new Date(date) : new Date();
+  const dateStr =
+    d.getFullYear().toString() +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    String(d.getDate()).padStart(2, '0');
+
+  // Try plain date first, then append -02, -03 etc. if already taken
+  const existing = await prisma.inventoryMaintenance.findMany({
+    where: { moNumber: { startsWith: dateStr } },
+    select: { moNumber: true },
+  });
+
+  if (existing.length === 0) return dateStr;
+  return `${dateStr}-${String(existing.length + 1).padStart(2, '0')}`;
+}
+
+async function createMaintenance({ itemId, supplierId, natureOfRepair, cost, date, assetInstanceIds }) {
+  const instanceIds = Array.isArray(assetInstanceIds) ? assetInstanceIds.map(Number).filter(Boolean) : [];
+  const moNumber = await generateMoNumber(date);
+
+  const record = await prisma.inventoryMaintenance.create({
     data: {
+      moNumber,
       itemId: Number(itemId),
       supplierId: Number(supplierId),
       natureOfRepair: String(natureOfRepair).trim(),
       cost: cost != null && cost !== '' ? Number(cost) : null,
       date: new Date(date),
+      status: 'in_repair',
     },
     include: {
-      item: {
-        include: {
-          category: true,
-          subcategory: true,
-        },
-      },
+      item: { include: { category: true, subcategory: true } },
       supplier: true,
+      assetInstances: { select: { id: true, assetTag: true, condition: true } },
+      gdns: true,
     },
   });
+
+  if (instanceIds.length > 0) {
+    await prisma.assetInstance.updateMany({
+      where: { id: { in: instanceIds } },
+      data: { condition: 'under repair', maintenanceId: record.id },
+    });
+  }
+
+  return record;
+}
+
+async function receiveMaintenance({ id, receivedDate, checkedBy, action, scrapValue, actualCost, warrantyDays }) {
+  const maintenanceId = Number(id);
+  if (!maintenanceId) throw new Error('Invalid maintenance id');
+
+  const existing = await prisma.inventoryMaintenance.findUnique({
+    where: { id: maintenanceId },
+    include: {
+      item: true,
+      assetInstances: { select: { id: true, assetTag: true } },
+    },
+  });
+
+  if (!existing) throw new Error('Maintenance record not found');
+  if (existing.status !== 'in_repair') throw new Error('Record is not in repair status');
+
+  if (action === 'complete') {
+    // Mark as completed — asset instances go back to working
+    const updated = await prisma.inventoryMaintenance.update({
+      where: { id: maintenanceId },
+      data: {
+        status: 'completed',
+        receivedDate: receivedDate ? new Date(receivedDate) : new Date(),
+        checkedBy: checkedBy ? String(checkedBy).trim() : null,
+        actualCost: actualCost != null && actualCost !== '' ? Number(actualCost) : null,
+        warrantyDays: warrantyDays != null && warrantyDays !== '' ? Number(warrantyDays) : null,
+      },
+      include: {
+        item: { include: { category: true, subcategory: true } },
+        supplier: true,
+        assetInstances: { select: { id: true, assetTag: true, condition: true } },
+        gdns: true,
+      },
+    });
+
+    if (existing.assetInstances.length > 0) {
+      await prisma.assetInstance.updateMany({
+        where: { maintenanceId },
+        data: { condition: 'working' },
+      });
+    }
+
+    return updated;
+  }
+
+  if (action === 'discard') {
+    // Mark as discarded — create GDN with scrap value
+    const gdnCode = await generateDocCode('inventoryGDN', 'gdn');
+    const instanceTags = existing.assetInstances.map((a) => a.assetTag).join(', ');
+    const gdnReason = `Discarded after repair — MO: ${existing.moNumber || existing.id}${instanceTags ? ` | Assets: ${instanceTags}` : ''}`;
+
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.inventoryMaintenance.update({
+        where: { id: maintenanceId },
+        data: {
+          status: 'discarded',
+          receivedDate: receivedDate ? new Date(receivedDate) : new Date(),
+          checkedBy: checkedBy ? String(checkedBy).trim() : null,
+          actualCost: actualCost != null && actualCost !== '' ? Number(actualCost) : null,
+          warrantyDays: warrantyDays != null && warrantyDays !== '' ? Number(warrantyDays) : null,
+        },
+        include: {
+          item: { include: { category: true, subcategory: true } },
+          supplier: true,
+          assetInstances: { select: { id: true, assetTag: true, condition: true } },
+        },
+      });
+
+      // Update asset instances condition
+      if (existing.assetInstances.length > 0) {
+        await tx.assetInstance.updateMany({
+          where: { maintenanceId },
+          data: { condition: 'discarded' },
+        });
+      }
+
+      // Determine quantity to discard
+      const qty = existing.assetInstances.length > 0 ? existing.assetInstances.length : 1;
+      const item = existing.item;
+      const previousStock = Number(item.currentStock || 0);
+      const newStock = Math.max(0, previousStock - qty);
+
+      const gdn = await tx.inventoryGDN.create({
+        data: {
+          code: gdnCode,
+          itemId: existing.itemId,
+          quantity: qty,
+          reason: gdnReason,
+          scrapValue: scrapValue != null && scrapValue !== '' ? Number(scrapValue) : null,
+          discardedDate: receivedDate ? new Date(receivedDate) : new Date(),
+          maintenanceId,
+        },
+        include: { item: true },
+      });
+
+      await tx.inventoryStockMovement.create({
+        data: {
+          itemId: existing.itemId,
+          movementType: 'OUT',
+          quantity: qty,
+          previousStock,
+          newStock,
+          referenceType: 'GDN',
+          referenceId: gdn.code,
+          note: gdnReason,
+        },
+      });
+
+      await tx.inventoryItem.update({
+        where: { id: existing.itemId },
+        data: { currentStock: newStock },
+      });
+
+      return { ...updated, gdns: [gdn] };
+    });
+  }
+
+  throw new Error('action must be "complete" or "discard"');
 }
 
 async function listExpiredItemsReport({ exactDate, itemId, categoryId, subcategoryId, assetType } = {}) {

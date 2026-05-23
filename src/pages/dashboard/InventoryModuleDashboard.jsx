@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import useModalKeys from '../../hooks/useModalKeys';
+import hospitalLogo from '../../assets/download.png';
 import {
-  Package,
+  MasterSetupIllustration,
+  PurchaseOrderIllustration,
+  ReceivingGRNIllustration,
+  IssuanceGINIllustration,
+  SalesInvoiceIllustration,
+  DiscardGDNIllustration,
+  InventoryReportsIllustration,
+} from '../../assets/InventoryIllustrations';
+import {
   Settings,
   ShoppingCart,
   Truck,
@@ -9,7 +19,6 @@ import {
   ArrowDownRight,
   FileText,
   BarChart3,
-  AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -20,13 +29,13 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import './InventoryModuleDashboard.scss';
 
 const subModules = [
-  { title: 'Master Setup', icon: Settings, desc: 'Categories, Items, Vendors, Shelves', stat: 'Manage master data', path: '/inventory/master-setup' },
-  { title: 'Purchase Orders (PO)', icon: ShoppingCart, desc: 'Generate & manage supplier POs', stat: 'Create and track orders', path: '/inventory/po' },
-  { title: 'Receiving (GRN)', icon: Truck, desc: 'Goods Receiving Note & inward stock', stat: 'Receive stock entries', path: '/inventory/grn' },
-  { title: 'Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments', stat: 'Manage outward stock', path: '/inventory/gin' },
-  { title: 'Sales Invoice', icon: FileText, desc: 'Fair Price Shop customer billing', stat: 'Generate invoice & PDF', path: '/inventory/sales-invoice' },
-  { title: 'Discard/Return (GDN)', icon: ArrowDownRight, desc: 'Discard expired/damaged stock', stat: 'Track wastage and return', path: '/inventory/gdn' },
-  { title: 'Inventory Reports', icon: BarChart3, desc: 'Ledgers, stock positions, short expiry', stat: 'View stock reports', path: '/inventory/reports' },
+  { title: 'Master Setup', icon: Settings, desc: 'Categories, Items, Vendors, Shelves', stat: 'Manage master data', path: '/inventory/master-setup', Illustration: MasterSetupIllustration },
+  { title: 'Purchase Orders (PO)', icon: ShoppingCart, desc: 'Generate & manage supplier POs', stat: 'Create and track orders', path: '/inventory/po', state: { openCreate: true }, Illustration: PurchaseOrderIllustration },
+  { title: 'Receiving (GRN)', icon: Truck, desc: 'Goods Receiving Note & inward stock', stat: 'Receive stock entries', path: '/inventory/grn', state: { openCreate: true }, Illustration: ReceivingGRNIllustration },
+  { title: 'Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments', stat: 'Manage outward stock', path: '/inventory/gin', Illustration: IssuanceGINIllustration },
+  { title: 'Sales Invoice', icon: FileText, desc: 'Fair Price Shop customer billing', stat: 'Generate invoice & PDF', path: '/inventory/sales-invoice', Illustration: SalesInvoiceIllustration },
+  { title: 'Discard/Return (GDN)', icon: ArrowDownRight, desc: 'Discard expired/damaged stock', stat: 'Track wastage and return', path: '/inventory/gdn', Illustration: DiscardGDNIllustration },
+  { title: 'Inventory Reports', icon: BarChart3, desc: 'Ledgers, stock positions, short expiry', stat: 'View stock reports', path: '/inventory/reports', Illustration: InventoryReportsIllustration },
 ];
 
 export default function InventoryModuleDashboard() {
@@ -56,6 +65,11 @@ export default function InventoryModuleDashboard() {
     }
   }, [loading]);
 
+  useModalKeys({
+    active: showLowStockPopup,
+    onEsc: () => setShowLowStockPopup(false),
+  });
+
   if (loading) return <PageLoader />;
 
   const totalStock = (items || []).reduce((sum, item) => sum + (Number(item.currentStock) || 0), 0);
@@ -63,73 +77,35 @@ export default function InventoryModuleDashboard() {
 
   return (
     <div className="inventory-module-dashboard">
-      <div className="breadcrumb">
-        Main Dashboard <span className="sep">{'>'}</span> <span style={{ color: '#0F172A' }}>Inventory Dashboard</span>
-      </div>
-
       <div className="dashboard-header">
-        <h1>Inventory Management</h1>
-        <p>Manage hospital stock, purchasing, issuance, and assets</p>
-      </div>
-
-      <div className="stats-row">
-        <Card className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon blue">
-              <Package className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="stat-value">{totalStock}</div>
-              <div className="stat-label">Total Items in Stock</div>
-            </div>
-          </div>
-        </Card>
-        <Card className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon amber">
-              <Truck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="stat-value">{items.length}</div>
-              <div className="stat-label">Pending Deliveries (PO)</div>
-            </div>
-          </div>
-        </Card>
-        <Card className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon red">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="stat-value">{openAlerts.length}</div>
-              <div className="stat-label">Low Stock Alerts</div>
-            </div>
-          </div>
-        </Card>
+        <img src={hospitalLogo} alt="Darul Shifa Inventory" className="dashboard-header-logo" />
       </div>
 
       <div className="submodule-grid">
         {subModules.map((sm) => (
-          <Card
+          <div
             key={sm.title}
             className="submodule-card"
-            onClick={() => navigate(sm.path)}
+            onClick={() => navigate(sm.path, sm.state ? { state: sm.state } : {})}
           >
-            <div className="submodule-icon">
-              <sm.icon className="w-7 h-7" />
+            <div className="card-content">
+              <div className="submodule-icon">
+                <sm.icon className="w-5 h-5" />
+              </div>
+              <h3>{sm.title}</h3>
+              <p>{sm.desc}</p>
+              <p className="submodule-stat">{sm.stat}</p>
+              <button
+                className="submodule-btn"
+                onClick={(e) => { e.stopPropagation(); navigate(sm.path, sm.state ? { state: sm.state } : {}); }}
+              >
+                Open {sm.title.split(' ')[0]} →
+              </button>
             </div>
-            <h3>{sm.title}</h3>
-            <p>{sm.desc}</p>
-            <div className="submodule-stat text-slate-500 font-medium">
-              {sm.stat}
+            <div className="card-illustration">
+              <sm.Illustration />
             </div>
-            <Button
-              label={`Open ${sm.title.split(' ')[0]} →`}
-              variant="secondary"
-              onClick={() => navigate(sm.path)}
-              className="submodule-btn"
-            />
-          </Card>
+          </div>
         ))}
       </div>
 

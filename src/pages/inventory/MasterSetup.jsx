@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -62,11 +62,22 @@ export default function MasterSetup() {
     fetchItems,
     fetchMastersOptions,
     createCategory,
+    updateCategory,
+    deleteCategory,
     createSubcategory,
+    updateSubcategory,
+    deleteSubcategory,
     createSupplier,
+    updateSupplier,
+    deleteSupplier,
     createStorage,
+    updateStorage,
+    deleteStorage,
   createDepartment,
+    updateDepartment,
+    deleteDepartment,
     createItem,
+    updateItem,
     updateItemStatus,
     deleteItem,
   } = useInventoryStore();
@@ -74,7 +85,9 @@ export default function MasterSetup() {
   const [activeTab, setActiveTab] = useState('Items');
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showTable, setShowTable] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
+  const [editingRow, setEditingRow] = useState(null);
 
   const currentRows = useMemo(() => {
     if (activeTab === 'Items') return items;
@@ -118,12 +131,49 @@ export default function MasterSetup() {
   }, [activeTab, query]);
 
   const openAddModal = () => {
+    setEditingRow(null);
     setFormData(EMPTY_FORM);
+    setShowModal(true);
+  };
+
+  const openEditModal = (row) => {
+    setEditingRow(row);
+    setFormData({
+      ...EMPTY_FORM,
+      code: row.code || '',
+      name: row.name || '',
+      status: row.status || 'active',
+      categoryId: row.categoryId || row.category?.id || '',
+      subcategoryId: row.subcategoryId || row.subcategory?.id || '',
+      supplierId: row.supplierId || row.supplier?.id || '',
+      storageId: row.storageId || row.storage?.id || '',
+      itemType: row.itemType || 'current asset',
+      unit: row.unit || 'pieces',
+      reorderLevel: row.reorderLevel ?? '',
+      purchasePrice: row.purchasePrice ?? '',
+      currentStock: row.currentStock ?? 0,
+      hasExpiry: row.hasExpiry || false,
+      brand: row.brand || '',
+      model: row.model || '',
+      serialNumber: row.serialNumber || '',
+      assetLocation: row.assetLocation || '',
+      purchaseDate: row.purchaseDate ? row.purchaseDate.slice(0, 10) : '',
+      warrantyUntil: row.warrantyUntil ? row.warrantyUntil.slice(0, 10) : '',
+      usefulLifeYears: row.usefulLifeYears ?? '',
+      usefulLifeUnit: row.usefulLifeUnit || 'years',
+      assetCondition: row.assetCondition || 'working',
+      bookValue: row.bookValue ?? '',
+      address: row.address || '',
+      contactDetails: row.contactDetails || '',
+      bankingDetails: row.bankingDetails || '',
+      numberAllotment: row.numberAllotment || '',
+    });
     setShowModal(true);
   };
 
   const closeAddModal = () => {
     setShowModal(false);
+    setEditingRow(null);
   };
 
   const onFormChange = (key, value) => {
@@ -142,71 +192,53 @@ export default function MasterSetup() {
 
     try {
       if (activeTab === 'Categories') {
-        await saveAndRefresh(createCategory, {
-          code: formData.code || undefined,
-          name: formData.name,
-          status: formData.status,
-        }, 'Category created');
+        if (editingRow) {
+          await saveAndRefresh((p) => updateCategory(editingRow.id, p), { name: formData.name, status: formData.status }, 'Category updated');
+        } else {
+          await saveAndRefresh(createCategory, { code: formData.code || undefined, name: formData.name, status: formData.status }, 'Category created');
+        }
         return;
       }
 
       if (activeTab === 'Subcategories') {
-        await saveAndRefresh(createSubcategory, {
-          code: formData.code || undefined,
-          name: formData.name,
-          categoryId: Number(formData.categoryId),
-          status: formData.status,
-        }, 'Subcategory created');
+        if (editingRow) {
+          await saveAndRefresh((p) => updateSubcategory(editingRow.id, p), { name: formData.name, categoryId: Number(formData.categoryId), status: formData.status }, 'Subcategory updated');
+        } else {
+          await saveAndRefresh(createSubcategory, { code: formData.code || undefined, name: formData.name, categoryId: Number(formData.categoryId), status: formData.status }, 'Subcategory created');
+        }
         return;
       }
 
       if (activeTab === 'Suppliers') {
-        await saveAndRefresh(createSupplier, {
-          code: formData.code || undefined,
-          name: formData.name,
-          address: formData.address,
-          contactDetails: formData.contactDetails,
-          bankingDetails: formData.bankingDetails,
-          status: formData.status,
-        }, 'Supplier created');
+        const supplierPayload = { name: formData.name, address: formData.address, contactDetails: formData.contactDetails, bankingDetails: formData.bankingDetails, status: formData.status };
+        if (editingRow) {
+          await saveAndRefresh((p) => updateSupplier(editingRow.id, p), supplierPayload, 'Supplier updated');
+        } else {
+          await saveAndRefresh(createSupplier, { code: formData.code || undefined, ...supplierPayload }, 'Supplier created');
+        }
         return;
       }
 
       if (activeTab === 'Storages') {
-        await saveAndRefresh(createStorage, {
-          code: formData.code || undefined,
-          name: formData.name,
-          numberAllotment: formData.numberAllotment,
-          status: formData.status,
-        }, 'Storage created');
+        const storagePayload = { name: formData.name, numberAllotment: formData.numberAllotment, status: formData.status };
+        if (editingRow) {
+          await saveAndRefresh((p) => updateStorage(editingRow.id, p), storagePayload, 'Storage updated');
+        } else {
+          await saveAndRefresh(createStorage, { code: formData.code || undefined, ...storagePayload }, 'Storage created');
+        }
         return;
       }
 
       if (activeTab === 'Departments') {
-        await saveAndRefresh(createDepartment, {
-          code: formData.code || undefined,
-          name: formData.name,
-          status: formData.status,
-        }, 'Department created');
+        if (editingRow) {
+          await saveAndRefresh((p) => updateDepartment(editingRow.id, p), { name: formData.name, status: formData.status }, 'Department updated');
+        } else {
+          await saveAndRefresh(createDepartment, { code: formData.code || undefined, name: formData.name, status: formData.status }, 'Department created');
+        }
         return;
       }
 
-      const selectedSupplierId = Number(formData.supplierId);
-      const enteredItemName = String(formData.name || '').trim().toLowerCase();
-      
-      // Check for duplicate item name (supplier-agnostic now since supplierId is optional)
-      const duplicateItem = (items || []).some((item) => {
-        const nameMatch = String(item?.name || '').trim().toLowerCase() === enteredItemName;
-        return nameMatch;
-      });
-
-      if (duplicateItem) {
-        toast.error('Item with this name already exists');
-        return;
-      }
-
-      await saveAndRefresh(createItem, {
-        code: formData.code || undefined,
+      const itemPayload = {
         name: formData.name,
         categoryId: Number(formData.categoryId),
         subcategoryId: Number(formData.subcategoryId),
@@ -226,10 +258,24 @@ export default function MasterSetup() {
         purchaseDate: formData.purchaseDate || undefined,
         warrantyUntil: formData.warrantyUntil || undefined,
         usefulLifeYears: formData.usefulLifeYears === '' ? undefined : Number(formData.usefulLifeYears),
-  usefulLifeUnit: formData.usefulLifeUnit || 'years',
+        usefulLifeUnit: formData.usefulLifeUnit || 'years',
         assetCondition: formData.assetCondition || undefined,
         bookValue: formData.bookValue === '' ? undefined : Number(formData.bookValue),
-      }, 'Item created');
+      };
+
+      if (editingRow) {
+        await saveAndRefresh((p) => updateItem(editingRow.id, p), itemPayload, 'Item updated');
+        return;
+      }
+
+      const enteredItemName = String(formData.name || '').trim().toLowerCase();
+      const duplicateItem = (items || []).some((item) => String(item?.name || '').trim().toLowerCase() === enteredItemName);
+      if (duplicateItem) {
+        toast.error('Item with this name already exists');
+        return;
+      }
+
+      await saveAndRefresh(createItem, { code: formData.code || undefined, ...itemPayload }, 'Item created');
     } catch (err) {
       toast.error(err.message || 'Failed to save record');
     }
@@ -242,6 +288,47 @@ export default function MasterSetup() {
       toast.success(`Item marked ${status}`);
     } catch (err) {
       toast.error(err.message || `Failed to mark item ${status}`);
+    }
+  };
+
+  const handleSetStatus = async (row, status) => {
+    const tab = activeTab;
+    try {
+      if (tab === 'Items') {
+        await updateItemStatus(row.id, status);
+      } else if (tab === 'Categories') {
+        await updateCategory(row.id, { name: row.name, status });
+      } else if (tab === 'Subcategories') {
+        await updateSubcategory(row.id, { name: row.name, categoryId: row.categoryId || row.category?.id, status });
+      } else if (tab === 'Suppliers') {
+        await updateSupplier(row.id, { name: row.name, address: row.address, contactDetails: row.contactDetails, bankingDetails: row.bankingDetails, status });
+      } else if (tab === 'Storages') {
+        await updateStorage(row.id, { name: row.name, numberAllotment: row.numberAllotment, status });
+      } else if (tab === 'Departments') {
+        await updateDepartment(row.id, { name: row.name, status });
+      }
+      await loadByTab(tab, query);
+      toast.success(`Marked ${status}`);
+    } catch (err) {
+      toast.error(err.message || `Failed to mark ${status}`);
+    }
+  };
+
+  const handleDelete = async (row) => {
+    const label = activeTab.slice(0, -1);
+    const isConfirmed = window.confirm(`Are you sure you want to delete this ${label}? If it has linked records, deletion will be blocked.`);
+    if (!isConfirmed) return;
+    try {
+      if (activeTab === 'Items') await deleteItem(row.id);
+      else if (activeTab === 'Categories') await deleteCategory(row.id);
+      else if (activeTab === 'Subcategories') await deleteSubcategory(row.id);
+      else if (activeTab === 'Suppliers') await deleteSupplier(row.id);
+      else if (activeTab === 'Storages') await deleteStorage(row.id);
+      else if (activeTab === 'Departments') await deleteDepartment(row.id);
+      await loadByTab(activeTab, query);
+      toast.success(`${label} deleted`);
+    } catch (err) {
+      toast.error(err.message || `Failed to delete ${label}`);
     }
   };
 
@@ -259,7 +346,7 @@ export default function MasterSetup() {
   };
 
   const recordCount = Array.isArray(currentRows) ? currentRows.length : 0;
-  const tableColumnCount = activeTab === 'Items' ? 8 : 5;
+  const tableColumnCount = activeTab === 'Items' ? 8 : 6;
 
   return (
     <div className="p-6">
@@ -275,7 +362,7 @@ export default function MasterSetup() {
         {TABS.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => { setActiveTab(tab); openAddModal(); }}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
               activeTab === tab
                 ? 'bg-white text-blue-600 shadow-sm'
@@ -292,16 +379,25 @@ export default function MasterSetup() {
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input 
-                type="text" 
-                placeholder={`Search ${activeTab}...`} 
+              <input
+                type="text"
+                placeholder={`Search ${activeTab}...`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500 w-64"
               />
             </div>
           </div>
-          <p className="text-xs text-slate-500">{recordCount} record(s)</p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-slate-500">{recordCount} record(s)</p>
+            <button
+              onClick={() => setShowTable((prev) => !prev)}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+            >
+              {showTable ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {showTable ? 'Hide' : 'Show'}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -310,6 +406,7 @@ export default function MasterSetup() {
           </div>
         )}
 
+        {showTable && (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -333,6 +430,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Subcategories</th>
                     <th className="px-6 py-4 font-semibold">Items</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
                 {activeTab === 'Subcategories' && (
@@ -342,6 +440,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Category</th>
                     <th className="px-6 py-4 font-semibold">Items</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
                 {activeTab === 'Suppliers' && (
@@ -351,6 +450,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Contact</th>
                     <th className="px-6 py-4 font-semibold">Address</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
                 {activeTab === 'Storages' && (
@@ -360,6 +460,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Number Allotment</th>
                     <th className="px-6 py-4 font-semibold">Items</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
                 {activeTab === 'Departments' && (
@@ -369,6 +470,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">GD Requests</th>
                     <th className="px-6 py-4 font-semibold">GIN Issues</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
               </tr>
@@ -405,6 +507,12 @@ export default function MasterSetup() {
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
                           <div className="flex gap-2">
+                            <Button
+                              label="Edit"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditModal(row)}
+                            />
                             {row.status !== 'inactive' ? (
                               <Button
                                 label="Inactive"
@@ -420,7 +528,6 @@ export default function MasterSetup() {
                                 onClick={() => handleSetItemStatus(row.id, 'active')}
                               />
                             )}
-
                             <Button
                               label="Delete"
                               size="sm"
@@ -439,6 +546,17 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row._count?.subcategories || 0}</td>
                         <td className="px-6 py-4">{row._count?.items || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
+                            {row.status !== 'inactive' ? (
+                              <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
+                            ) : (
+                              <Button label="Activate" size="sm" variant="outline" onClick={() => handleSetStatus(row, 'active')} />
+                            )}
+                            <Button label="Delete" size="sm" variant="danger" onClick={() => handleDelete(row)} />
+                          </div>
+                        </td>
                       </>
                     )}
 
@@ -449,6 +567,17 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row.category?.name}</td>
                         <td className="px-6 py-4">{row._count?.items || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
+                            {row.status !== 'inactive' ? (
+                              <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
+                            ) : (
+                              <Button label="Activate" size="sm" variant="outline" onClick={() => handleSetStatus(row, 'active')} />
+                            )}
+                            <Button label="Delete" size="sm" variant="danger" onClick={() => handleDelete(row)} />
+                          </div>
+                        </td>
                       </>
                     )}
 
@@ -459,6 +588,17 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row.contactDetails || '-'}</td>
                         <td className="px-6 py-4">{row.address || '-'}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
+                            {row.status !== 'inactive' ? (
+                              <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
+                            ) : (
+                              <Button label="Activate" size="sm" variant="outline" onClick={() => handleSetStatus(row, 'active')} />
+                            )}
+                            <Button label="Delete" size="sm" variant="danger" onClick={() => handleDelete(row)} />
+                          </div>
+                        </td>
                       </>
                     )}
 
@@ -469,6 +609,17 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row.numberAllotment || '-'}</td>
                         <td className="px-6 py-4">{row._count?.items || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
+                            {row.status !== 'inactive' ? (
+                              <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
+                            ) : (
+                              <Button label="Activate" size="sm" variant="outline" onClick={() => handleSetStatus(row, 'active')} />
+                            )}
+                            <Button label="Delete" size="sm" variant="danger" onClick={() => handleDelete(row)} />
+                          </div>
+                        </td>
                       </>
                     )}
 
@@ -479,6 +630,17 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row._count?.gds || 0}</td>
                         <td className="px-6 py-4">{row._count?.gins || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex gap-2">
+                            <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
+                            {row.status !== 'inactive' ? (
+                              <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
+                            ) : (
+                              <Button label="Activate" size="sm" variant="outline" onClick={() => handleSetStatus(row, 'active')} />
+                            )}
+                            <Button label="Delete" size="sm" variant="danger" onClick={() => handleDelete(row)} />
+                          </div>
+                        </td>
                       </>
                     )}
 
@@ -488,13 +650,14 @@ export default function MasterSetup() {
             </tbody>
           </table>
         </div>
+        )}
       </Card>
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <Card className="w-full max-w-3xl p-0 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-900">Add {activeTab.slice(0, -1)}</h3>
+              <h3 className="text-lg font-semibold text-slate-900">{editingRow ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}</h3>
               <button onClick={closeAddModal} className="text-slate-500 hover:text-slate-800">
                 <X className="w-5 h-5" />
               </button>

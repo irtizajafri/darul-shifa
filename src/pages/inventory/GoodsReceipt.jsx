@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
+import useModalKeys from '../../hooks/useModalKeys';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Plus, Search } from 'lucide-react';
@@ -202,6 +203,22 @@ export default function GoodsReceipt() {
       toast.error(err.message || 'Failed to save GRN');
     }
   };
+
+  const handleCancelGRN = () => {
+    setSelectedPoCode('');
+    setDraftLines([]);
+    setHeaderBillDate('');
+    setPaymentType('cash');
+    setPaymentNote('');
+    setShowCreate(false);
+  };
+
+  useModalKeys({
+    active: showCreate,
+    onEsc: handleCancelGRN,
+    onCtrlS: () => handleSaveGRN(false),
+    onCtrlP: () => handleSaveGRN(true),
+  });
 
 
 

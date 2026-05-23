@@ -2,19 +2,12 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, Link } from 'react-router-dom';
 import { Building2 } from 'lucide-react';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, SUPER_ADMIN_USER } from '../../store/useAuthStore';
 import { useModuleStore } from '../../store/useModuleStore';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import toast from 'react-hot-toast';
 import './Login.scss';
-
-const dummyUser = {
-  name: 'Dr.Nadeem Abbas',
-  role: 'Administrator',
-  email: 'admin@hospital.com',
-  avatar: null,
-};
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -30,12 +23,55 @@ export default function Login() {
 
   const onSubmit = async (data) => {
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1500));
-    login({ ...dummyUser, email: data.email });
-    clearModule();
-    toast.success('Login successful!');
-    navigate('/dashboard');
-    setLoading(false);
+    try {
+      // ── Super Admin check (static, no API call) ──────────────────
+      if (
+        data.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL &&
+        data.password === SUPER_ADMIN_PASSWORD
+      ) {
+        login(SUPER_ADMIN_USER, null);
+        clearModule();
+        toast.success(`Welcome, ${SUPER_ADMIN_USER.name}!`);
+        navigate('/dashboard');
+        return;
+      }
+
+      // ── Sub-user login via backend API ───────────────────────────
+      let res, json;
+      try {
+        res = await fetch('http://localhost:5001/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.email.trim().toLowerCase(), password: data.password }),
+        });
+        // Read as text first — if server sends HTML (404/500) this gives a clear message
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          toast.error('Backend server is not responding correctly. Please make sure it is running.');
+          return;
+        }
+      } catch {
+        toast.error('Could not connect to server. Please check that the backend is running.');
+        return;
+      }
+
+      if (!json.ok) {
+        toast.error(json.message || 'Invalid email or password');
+        return;
+      }
+
+      const { user, token, permissions } = json.data;
+      login({ ...user, permissions }, token);
+      clearModule();
+      toast.success(`Welcome, ${user.name}!`);
+      navigate('/dashboard');
+    } catch {
+      toast.error('Could not connect to server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -80,9 +116,9 @@ export default function Login() {
               className="login-btn"
             />
           </form>
-          <div className="login-hint">
-            <p>Demo: admin@hospital.com / admin123</p>
-          </div>
+          {/* <div className="login-hint">
+            <p>Admin: admin@hospital.com / admin123</p>
+          </div> */}
         </div>
         <p className="login-signup">
           Don&apos;t have an account? <Link to="/signup">Sign up</Link>

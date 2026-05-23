@@ -149,7 +149,7 @@ export default function EmployeeModuleDashboard() {
 
   return (
     <div className="employee-module-dashboard">
-      <nav className="breadcrumb">
+      {/* <nav className="breadcrumb">
         <span>Dashboard</span>
         <span className="sep">›</span>
         <span>Employee Management</span>
@@ -168,24 +168,24 @@ export default function EmployeeModuleDashboard() {
             </div>
           </Card>
         ))}
-      </div>
+      </div> */}
       <div className="dashboard-header">
         <h1>Employee Management</h1>
         <p>HR Module — Phase 1</p>
       </div>
       <div className="submodule-grid">
         {subModules.map((sm) => (
-          <Card key={sm.title} className="submodule-card">
+          <Card key={sm.title} className="submodule-card" onClick={() => navigate(sm.path)}>
             <div className="submodule-icon">
-              <sm.icon className="w-10 h-10" />
+              <sm.icon className="w-5 h-5" />
             </div>
             <h3>{sm.title}</h3>
             <p>{sm.desc}</p>
             {sm.stat && <p className="submodule-stat">{sm.stat}</p>}
             <Button
               label="Open →"
-              variant="primary"
-              onClick={() => navigate(sm.path)}
+              variant="secondary"
+              onClick={(e) => { e.stopPropagation(); navigate(sm.path); }}
               className="submodule-btn"
             />
           </Card>
