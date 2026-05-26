@@ -3,6 +3,9 @@ import { ChevronDown, ChevronUp, Plus, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
+import NoTabAccess from '../../components/auth/NoTabAccess';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useInventoryStore } from '../../store/useInventoryStore';
 
@@ -82,12 +85,22 @@ export default function MasterSetup() {
     deleteItem,
   } = useInventoryStore();
 
+  const { user } = useAuthStore();
+
   const [activeTab, setActiveTab] = useState('Items');
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showTable, setShowTable] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [editingRow, setEditingRow] = useState(null);
+
+  // Tabs the current user is allowed to see
+  const visibleTabs = useMemo(
+    () => TABS.filter((tab) => hasPermission(user, 'inventory', 'master-setup', tab.toLowerCase())),
+    [user]
+  );
+  // Fallback if current activeTab is no longer accessible
+  const effectiveTab = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? activeTab);
 
   const currentRows = useMemo(() => {
     if (activeTab === 'Items') return items;
@@ -292,7 +305,7 @@ export default function MasterSetup() {
   };
 
   const handleSetStatus = async (row, status) => {
-    const tab = activeTab;
+    const tab = effectiveTab;
     try {
       if (tab === 'Items') {
         await updateItemStatus(row.id, status);
@@ -315,7 +328,7 @@ export default function MasterSetup() {
   };
 
   const handleDelete = async (row) => {
-    const label = activeTab.slice(0, -1);
+    const label = effectiveTab.slice(0, -1);
     const isConfirmed = window.confirm(`Are you sure you want to delete this ${label}? If it has linked records, deletion will be blocked.`);
     if (!isConfirmed) return;
     try {
@@ -348,6 +361,8 @@ export default function MasterSetup() {
   const recordCount = Array.isArray(currentRows) ? currentRows.length : 0;
   const tableColumnCount = activeTab === 'Items' ? 8 : 6;
 
+  if (visibleTabs.length === 0) return <NoTabAccess />;
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -355,16 +370,16 @@ export default function MasterSetup() {
           <h1 className="text-2xl font-bold text-slate-900">Master Setup</h1>
           <p className="text-slate-500 text-sm">Inventory masters & item registration (API integrated)</p>
         </div>
-        <Button label={`Add New ${activeTab.slice(0, -1)}`} icon={Plus} onClick={openAddModal} />
+        <Button label={`Add New ${effectiveTab.slice(0, -1)}`} icon={Plus} onClick={openAddModal} />
       </div>
 
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg mb-6 w-fit">
-        {TABS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
             onClick={() => { setActiveTab(tab); openAddModal(); }}
             className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-              activeTab === tab
+              effectiveTab === tab
                 ? 'bg-white text-blue-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
             }`}
@@ -381,7 +396,7 @@ export default function MasterSetup() {
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder={`Search ${activeTab}...`}
+                placeholder={`Search ${effectiveTab}...`}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500 w-64"
@@ -411,7 +426,7 @@ export default function MasterSetup() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                {activeTab === 'Items' && (
+                {effectiveTab === 'Items' && (
                   <>
                     <th className="px-6 py-4 font-semibold">Code</th>
                     <th className="px-6 py-4 font-semibold">Name</th>
@@ -423,7 +438,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
-                {activeTab === 'Categories' && (
+                {effectiveTab === 'Categories' && (
                   <>
                     <th className="px-6 py-4 font-semibold">Code</th>
                     <th className="px-6 py-4 font-semibold">Name</th>
@@ -433,7 +448,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
-                {activeTab === 'Subcategories' && (
+                {effectiveTab === 'Subcategories' && (
                   <>
                     <th className="px-6 py-4 font-semibold">Code</th>
                     <th className="px-6 py-4 font-semibold">Name</th>
@@ -443,7 +458,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
-                {activeTab === 'Suppliers' && (
+                {effectiveTab === 'Suppliers' && (
                   <>
                     <th className="px-6 py-4 font-semibold">Code</th>
                     <th className="px-6 py-4 font-semibold">Name</th>
@@ -453,7 +468,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
-                {activeTab === 'Storages' && (
+                {effectiveTab === 'Storages' && (
                   <>
                     <th className="px-6 py-4 font-semibold">Code</th>
                     <th className="px-6 py-4 font-semibold">Name</th>
@@ -463,7 +478,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
                 )}
-                {activeTab === 'Departments' && (
+                {effectiveTab === 'Departments' && (
                   <>
                     <th className="px-6 py-4 font-semibold">Code</th>
                     <th className="px-6 py-4 font-semibold">Name</th>
@@ -483,13 +498,13 @@ export default function MasterSetup() {
               ) : recordCount === 0 ? (
                 <tr>
                   <td colSpan={tableColumnCount} className="px-6 py-12 text-center text-slate-500">
-                    No {activeTab.toLowerCase()} found.
+                    No {effectiveTab.toLowerCase()} found.
                   </td>
                 </tr>
               ) : (
                 currentRows.map((row) => (
                   <tr key={row.id}>
-                    {activeTab === 'Items' && (
+                    {effectiveTab === 'Items' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
                         <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
@@ -539,7 +554,7 @@ export default function MasterSetup() {
                       </>
                     )}
 
-                    {activeTab === 'Categories' && (
+                    {effectiveTab === 'Categories' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
                         <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
@@ -560,7 +575,7 @@ export default function MasterSetup() {
                       </>
                     )}
 
-                    {activeTab === 'Subcategories' && (
+                    {effectiveTab === 'Subcategories' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
                         <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
@@ -581,7 +596,7 @@ export default function MasterSetup() {
                       </>
                     )}
 
-                    {activeTab === 'Suppliers' && (
+                    {effectiveTab === 'Suppliers' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
                         <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
@@ -602,7 +617,7 @@ export default function MasterSetup() {
                       </>
                     )}
 
-                    {activeTab === 'Storages' && (
+                    {effectiveTab === 'Storages' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
                         <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
@@ -623,7 +638,7 @@ export default function MasterSetup() {
                       </>
                     )}
 
-                    {activeTab === 'Departments' && (
+                    {effectiveTab === 'Departments' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
                         <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
@@ -684,7 +699,7 @@ export default function MasterSetup() {
 
                 {(activeTab === 'Categories' || activeTab === 'Subcategories' || activeTab === 'Suppliers' || activeTab === 'Storages' || activeTab === 'Departments' || activeTab === 'Items') && (
                   <input
-                    placeholder={activeTab === 'Items' ? 'Item Name' : 'Name'}
+                    placeholder={effectiveTab === 'Items' ? 'Item Name' : 'Name'}
                     value={formData.name}
                     onChange={(e) => onFormChange('name', e.target.value)}
                     className="px-3 py-2 border border-slate-300 rounded-md text-sm"
@@ -692,7 +707,7 @@ export default function MasterSetup() {
                   />
                 )}
 
-                {activeTab === 'Subcategories' && (
+                {effectiveTab === 'Subcategories' && (
                   <select
                     value={formData.categoryId}
                     onChange={(e) => onFormChange('categoryId', e.target.value)}
@@ -706,7 +721,7 @@ export default function MasterSetup() {
                   </select>
                 )}
 
-                {activeTab === 'Suppliers' && (
+                {effectiveTab === 'Suppliers' && (
                   <>
                     <input
                       placeholder="Contact Details"
@@ -729,7 +744,7 @@ export default function MasterSetup() {
                   </>
                 )}
 
-                {activeTab === 'Storages' && (
+                {effectiveTab === 'Storages' && (
                   <input
                     placeholder="Number Allotment"
                     value={formData.numberAllotment}
@@ -738,7 +753,7 @@ export default function MasterSetup() {
                   />
                 )}
 
-                {activeTab === 'Items' && (
+                {effectiveTab === 'Items' && (
                   <>
                     <SearchableSelect
                       options={masterOptions.categories || []}

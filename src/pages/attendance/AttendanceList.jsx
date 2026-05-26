@@ -3,6 +3,9 @@ import { useForm } from 'react-hook-form';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAttendanceStore } from '../../store/useAttendanceStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
+import NoTabAccess from '../../components/auth/NoTabAccess';
 import PageLoader from '../../components/ui/PageLoader';
 import PageHeader from '../../components/shared/PageHeader';
 import Card from '../../components/ui/Card';
@@ -151,6 +154,7 @@ export default function AttendanceList() {
   const { setModule } = useModuleStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { employees, fetchEmployees } = useEmployeeStore();
+  const { user } = useAuthStore();
 
   const [monthlyEmpCode, setMonthlyEmpCode] = useState('');
   const [monthlyEmpQuery, setMonthlyEmpQuery] = useState('');
@@ -975,7 +979,22 @@ export default function AttendanceList() {
     return result;
   }, [combinedRecords, selectedDate, searchName]);
 
+  // ── Tab-level permission filtering ────────────────────────────────────────
+  const ATTENDANCE_TABS = [
+    { index: 0, key: 'daily-view',       label: 'Daily View' },
+    { index: 1, key: 'all-records',      label: 'All Records' },
+    { index: 2, key: 'monthly-api-logs', label: 'Monthly API Logs' },
+  ];
+  const visibleTabs = ATTENDANCE_TABS.filter((t) =>
+    hasPermission(user, 'employee', 'attendance', t.key)
+  );
+  // If current activeTab is not visible, fall back to first visible tab
+  const effectiveTab = visibleTabs.find((t) => t.index === activeTab)
+    ? activeTab
+    : (visibleTabs[0]?.index ?? 0);
+
   if (loading) return <PageLoader />;
+  if (visibleTabs.length === 0) return <NoTabAccess />;
 
   return (
     <div className="attendance-page">
@@ -987,18 +1006,18 @@ export default function AttendanceList() {
         title="Attendance"
       />
       <div className="tabs">
-        <button className={activeTab === 0 ? 'active' : ''} onClick={() => setActiveTab(0)}>
-          Daily View
-        </button>
-        <button className={activeTab === 1 ? 'active' : ''} onClick={() => setActiveTab(1)}>
-          All Records
-        </button>
-        <button className={activeTab === 2 ? 'active' : ''} onClick={() => setActiveTab(2)}>
-          Monthly API Logs
-        </button>
+        {visibleTabs.map((t) => (
+          <button
+            key={t.key}
+            className={effectiveTab === t.index ? 'active' : ''}
+            onClick={() => setActiveTab(t.index)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {activeTab === 0 && (
+      {effectiveTab === 0 && (
         <Card>
           <div className="info-banner blue flex justify-between items-center" style={{ display: 'flex', justifyContent: 'space-between' }}>
             <p>Daily attendance records (live API)</p>
@@ -1104,7 +1123,7 @@ export default function AttendanceList() {
         </Card>
       )}
 
-      {activeTab === 1 && (
+      {effectiveTab === 1 && (
         <Card>
           <div className="info-banner amber">
             <p>Editable attendance and manual entries (salary will use edited rows)</p>
@@ -1225,7 +1244,7 @@ export default function AttendanceList() {
         </Card>
       )}
 
-      {activeTab === 2 && (
+      {effectiveTab === 2 && (
         <Card>
           <div className="info-banner blue flex justify-between items-center">
             <p>Monthly API Logs - Check all live punches directly from the machine</p>

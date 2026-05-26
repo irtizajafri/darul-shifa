@@ -108,3 +108,245 @@ export function printPODocument(result) {
   const win = window.open(url, '_blank');
   if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+
+export function printGINDocument(row) {
+  if (!row) return;
+
+  const ginCode   = row.code || '-';
+  const gdRef     = row.gdHeader?.code || row.gd?.code || '-';
+  const department = row.department?.name || row.gdHeader?.department?.name || '-';
+  const issueDate  = row.issueDate
+    ? new Date(row.issueDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '-';
+  const reqDateFallback = row.gdHeader?.requestDate
+    ? new Date(row.gdHeader.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+    : '-';
+
+  const ginItems = Array.isArray(row.ginItems) && row.ginItems.length > 0 ? row.ginItems : [];
+
+  const tableRows = ginItems.map((gi, idx) => {
+    const itemName   = gi.item?.name || '-';
+    const qtyDemand  = gi.gdItem?.quantityRequested ?? gi.quantityRequested ?? '-';
+    const qtyIssued  = gi.issuedQuantity ?? '-';
+    const status     = gi.gdItem?.status ?? gi.status ?? '-';
+    const reqDate    = gi.gdItem?.requestDate
+      ? new Date(gi.gdItem.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+      : reqDateFallback;
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td class="desc">${itemName}</td>
+      <td>${qtyDemand}</td>
+      <td>${qtyIssued}</td>
+      <td><span class="status-badge status-${String(status).toLowerCase()}">${status}</span></td>
+      <td>${reqDate}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Goods Issuance Note</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A5; margin: 12mm 10mm 10mm 10mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Poppins', sans-serif; font-size: 8.5pt; color: #111; background: #fff; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .title { font-size: 17pt; font-weight: 700; letter-spacing: 0.3px; }
+    .gin-meta { text-align: right; font-size: 8pt; line-height: 1.7; }
+    .divider { border: none; border-top: 2px solid #aaa; margin-bottom: 7px; }
+    .info-section { border: 1px solid #bbb; margin-bottom: 12px; }
+    .info-row { display: flex; border-bottom: 1px solid #e0e0e0; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { background: #e8e8e8; padding: 5px 10px; font-weight: 600; font-size: 8pt; white-space: nowrap; border-right: 1px solid #bbb; min-width: 90px; }
+    .info-value { padding: 5px 10px; font-size: 8pt; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    thead tr { background: #e8e8e8; }
+    th { padding: 5px 3px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 7.5pt; line-height: 1.4; }
+    tbody tr td { border: 1px solid #ddd; padding: 4px 3px; text-align: center; font-size: 7.5pt; }
+    tbody tr td.desc { text-align: left; padding-left: 5px; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    .status-badge { padding: 1px 6px; border-radius: 10px; font-size: 7pt; font-weight: 600; }
+    .status-open    { background: #dbeafe; color: #1d4ed8; }
+    .status-partial { background: #fef9c3; color: #854d0e; }
+    .status-closed  { background: #dcfce7; color: #166534; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 60px; padding-top: 4px; }
+    .sig { font-weight: 700; font-size: 9pt; }
+    .sig-line { border-top: 1px solid #555; width: 80px; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">GOODS ISSUANCE NOTE (GIN)</div>
+    <div class="gin-meta">
+      <div>GIN No: <strong>${ginCode}</strong></div>
+      <div>Issue Date: ${issueDate}</div>
+    </div>
+  </div>
+  <hr class="divider">
+  <div class="info-section">
+    <div class="info-row">
+      <div class="info-label">Department</div>
+      <div class="info-value">${department}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">GD Reference</div>
+      <div class="info-value">${gdRef}</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>S.No</th>
+        <th>Item Name</th>
+        <th>Qty<br>Demanded</th>
+        <th>Qty<br>Issued</th>
+        <th>Status</th>
+        <th>Request<br>Date</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows || '<tr><td colspan="6" style="text-align:center;padding:8px;">No items</td></tr>'}</tbody>
+  </table>
+  <div class="signatures">
+    <div class="sig"><div class="sig-line"></div>Store Keeper</div>
+    <div class="sig"><div class="sig-line"></div>Department Head</div>
+    <div class="sig"><div class="sig-line"></div>C.E.O.</div>
+  </div>
+  <script>document.fonts.ready.then(() => window.print());</script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank');
+  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+export function printAllGINs(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+
+  const printDate = new Date().toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  let sno = 0;
+  const tableRows = rows.map((row) => {
+    const ginCode    = row.code || '-';
+    const gdRef      = row.gdHeader?.code || row.gd?.code || '-';
+    const department = row.department?.name || row.gdHeader?.department?.name || '-';
+    const issueDate  = row.issueDate
+      ? new Date(row.issueDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+      : '-';
+    const reqDateFallback = row.gdHeader?.requestDate
+      ? new Date(row.gdHeader.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+      : '-';
+
+    const ginItems = Array.isArray(row.ginItems) && row.ginItems.length > 0 ? row.ginItems : [];
+
+    if (ginItems.length === 0) {
+      sno++;
+      return `<tr>
+        <td>${sno}</td>
+        <td>${ginCode}</td>
+        <td>${gdRef}</td>
+        <td>${department}</td>
+        <td class="desc">${row.item?.name || '-'}</td>
+        <td>-</td>
+        <td>${row.issuedQuantity ?? '-'}</td>
+        <td>-</td>
+        <td>${issueDate}</td>
+      </tr>`;
+    }
+
+    return ginItems.map((gi) => {
+      sno++;
+      const qtyDemand = gi.gdItem?.quantityRequested ?? gi.quantityRequested ?? '-';
+      const qtyIssued = gi.issuedQuantity ?? '-';
+      const status    = gi.gdItem?.status ?? gi.status ?? '-';
+      const reqDate   = gi.gdItem?.requestDate
+        ? new Date(gi.gdItem.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
+        : reqDateFallback;
+      return `<tr>
+        <td>${sno}</td>
+        <td>${ginCode}</td>
+        <td>${gdRef}</td>
+        <td>${department}</td>
+        <td class="desc">${gi.item?.name || '-'}</td>
+        <td>${qtyDemand}</td>
+        <td>${qtyIssued}</td>
+        <td><span class="status-badge status-${String(status).toLowerCase()}">${status}</span></td>
+        <td>${reqDate}</td>
+      </tr>`;
+    }).join('');
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>GIN Report</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A4 landscape; margin: 10mm 10mm 10mm 10mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Poppins', sans-serif; font-size: 8pt; color: #111; background: #fff; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .title { font-size: 15pt; font-weight: 700; letter-spacing: 0.3px; }
+    .meta { text-align: right; font-size: 7.5pt; line-height: 1.7; color: #555; }
+    .divider { border: none; border-top: 2px solid #aaa; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: #e8e8e8; }
+    th { padding: 5px 4px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 7.5pt; line-height: 1.4; }
+    tbody tr td { border: 1px solid #ddd; padding: 4px 3px; text-align: center; font-size: 7.5pt; }
+    tbody tr td.desc { text-align: left; padding-left: 5px; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    .status-badge { padding: 1px 6px; border-radius: 10px; font-size: 6.5pt; font-weight: 600; }
+    .status-open    { background: #dbeafe; color: #1d4ed8; }
+    .status-partial { background: #fef9c3; color: #854d0e; }
+    .status-closed  { background: #dcfce7; color: #166534; }
+    .footer { margin-top: 20px; display: flex; justify-content: space-between; }
+    .sig { font-weight: 700; font-size: 8.5pt; }
+    .sig-line { border-top: 1px solid #555; width: 80px; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">GOODS ISSUANCE NOTE — ALL RECORDS</div>
+      <div style="font-size:7.5pt;color:#555;margin-top:2px;">Total: ${rows.length} GIN(s)</div>
+    </div>
+    <div class="meta">
+      <div>Print Date: ${printDate}</div>
+    </div>
+  </div>
+  <hr class="divider">
+  <table>
+    <thead>
+      <tr>
+        <th>S.No</th>
+        <th>GIN No</th>
+        <th>GD Ref</th>
+        <th>Department</th>
+        <th>Item Name</th>
+        <th>Qty<br>Demanded</th>
+        <th>Qty<br>Issued</th>
+        <th>Status</th>
+        <th>Request<br>Date</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="footer">
+    <div class="sig"><div class="sig-line"></div>Store Keeper</div>
+    <div class="sig"><div class="sig-line"></div>Department Head</div>
+    <div class="sig"><div class="sig-line"></div>C.E.O.</div>
+  </div>
+  <script>document.fonts.ready.then(() => window.print());</script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank');
+  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+}

@@ -263,7 +263,7 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
   // ── HEADING ────────────────────────────────────────────────
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text('Maintenance / Repair Bill', pageWidth / 2, 48, { align: 'center' });
+  doc.text('Maintenance Note', pageWidth / 2, 48, { align: 'center' });
 
   // Blue divider
   doc.setLineWidth(1);

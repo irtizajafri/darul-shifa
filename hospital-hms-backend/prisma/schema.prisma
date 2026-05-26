@@ -94,6 +94,20 @@ model Employee {
   advanceLoans  AdvanceLoan[]
 }
 
+// ─── Raw Biometric Punch Logs ─────────────────────────────────────────────────
+// Cloud API se aye raw timestamps yahan store hote hain.
+// testPairing pehle yahan se padhta hai — cloud se nahi.
+model PunchLog {
+  id          Int      @id @default(autoincrement())
+  empCode     String
+  punchTime   DateTime // PKT mein store hoga (UTC+5 converted)
+  punchDate   String   // "YYYY-MM-DD" — fast filtering ke liye
+  createdAt   DateTime @default(now())
+
+  @@unique([empCode, punchTime]) // duplicate sync se bacho
+  @@index([empCode, punchDate])  // fast query
+}
+
 model Attendance {
   id               Int       @id @default(autoincrement())
   employeeId       Int

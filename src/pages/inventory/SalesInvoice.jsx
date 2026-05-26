@@ -156,7 +156,7 @@ export default function SalesInvoice() {
   const discountAmount = grandTotal * (Number(discountPercent || 0) / 100);
   const finalTotal = grandTotal - discountAmount;
 
-  const handleSave = async () => {
+  const handleSave = async (withPrint = false) => {
     if (lines.length === 0) { toast.error('Add at least one item'); return; }
     if (header.customerType === 'customer' && !header.customerName.trim()) {
       toast.error('Please enter patient name');
@@ -187,19 +187,19 @@ export default function SalesInvoice() {
       setHeader({ invoiceDate: toDateInput(), customerType: 'walking', customerName: '' });
       setShowForm(false);
       toast.success('Sales invoice created');
-      printInvoice(created);
+      if (withPrint) printInvoice(created);
     } catch (err) {
       toast.error(err.message || 'Failed to create sales invoice');
     }
   };
 
-  const printInvoice = (inv) => generateSalesInvoicePdf({ inv, mode: 'download' });
+  const printInvoice = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
   const handlePrint = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
 
   useModalKeys({
     active: showForm,
     onEsc: () => { setShowForm(false); setLines([]); setDraftLine(createEmptyLine()); setDiscountPercent(''); },
-    onCtrlS: handleSave,
+    onCtrlS: () => handleSave(true),
   });
 
   const applyFilters = async () => {
@@ -379,9 +379,17 @@ export default function SalesInvoice() {
           <div className="flex gap-2">
             <Button
               type="button"
-              label={loading ? 'Saving...' : `Save Invoice (${lines.length} item${lines.length !== 1 ? 's' : ''})`}
+              label={loading ? 'Saving...' : 'Save Invoice'}
               disabled={loading || lines.length === 0}
-              onClick={handleSave}
+              onClick={() => handleSave(false)}
+            />
+            <Button
+              type="button"
+              icon={Printer}
+              label={loading ? 'Saving...' : 'Save & Print'}
+              variant="outline"
+              disabled={loading || lines.length === 0}
+              onClick={() => handleSave(true)}
             />
             <Button
               type="button"

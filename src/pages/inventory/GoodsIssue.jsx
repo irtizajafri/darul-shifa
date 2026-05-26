@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
+import { printGINDocument, printAllGINs } from '../../utils/printPO';
 
 export default function GoodsIssue() {
   const [ginQuery, setGinQuery] = useState('');
@@ -724,6 +725,13 @@ export default function GoodsIssue() {
               variant="outline"
               onClick={() => exportRowsToPdf({ fileName: 'inventory-gin-report', title: 'GIN Report', rows: ginExportRows })}
             />
+            <Button
+              label="Print All"
+              icon={Printer}
+              size="sm"
+              variant="outline"
+              onClick={() => printAllGINs(filteredGINRows)}
+            />
           </div>
         </div>
 
@@ -736,12 +744,13 @@ export default function GoodsIssue() {
                 <th className="px-6 py-4 font-semibold">Department</th>
                 <th className="px-6 py-4 font-semibold">Items Issued</th>
                 <th className="px-6 py-4 font-semibold">Issue Date</th>
+                <th className="px-6 py-4 font-semibold text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredGINRows.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
                     No Issuance Note (GIN) records found.
                   </td>
                 </tr>
@@ -765,6 +774,16 @@ export default function GoodsIssue() {
                       )}
                     </td>
                     <td className="px-6 py-4">{row.issueDate ? new Date(row.issueDate).toLocaleDateString() : '-'}</td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        title="Print GIN"
+                        onClick={() => printGINDocument(row)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-md hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 transition-colors"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Print
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}

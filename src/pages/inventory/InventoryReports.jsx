@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import useModalKeys from '../../hooks/useModalKeys';
 import Card from '../../components/ui/Card';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
+import NoTabAccess from '../../components/auth/NoTabAccess';
 import Button from '../../components/ui/Button';
 import { Printer, Download, Filter, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -16,6 +19,7 @@ const REPORT_TYPES = [
 ];
 
 export default function InventoryReports() {
+  const { user } = useAuthStore();
   const [activeReport, setActiveReport] = useState('Stock Position');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [ledgerFilters, setLedgerFilters] = useState({
@@ -834,7 +838,7 @@ export default function InventoryReports() {
           name: row.name,
           category: row.category?.name || '-',
           subcategory: row.subcategory?.name || '-',
-          unit: row.baseUnit || '-',
+          unit: row.unit || '-',
           reorderLevel: row.reorderLevel || 0,
           status: row.status || 'active',
         }));
@@ -1403,6 +1407,19 @@ export default function InventoryReports() {
 
   useModalKeys({ onCtrlP: handlePrint });
 
+  // ── Report-type permission filtering ─────────────────────────────────────
+  // Permission key = report label lowercased with spaces → dashes
+  const toPermKey = (label) => label.toLowerCase().replace(/\s+/g, '-');
+  const visibleReportTypes = useMemo(
+    () => REPORT_TYPES.filter((r) => hasPermission(user, 'inventory', 'inventory-reports', toPermKey(r))),
+    [user]
+  );
+  const effectiveReport = visibleReportTypes.includes(activeReport)
+    ? activeReport
+    : (visibleReportTypes[0] ?? activeReport);
+
+  if (visibleReportTypes.length === 0) return <NoTabAccess />;
+
   return (
     <div className="p-6">
       <div className="flex justify-between items-center mb-6">
@@ -1432,7 +1449,7 @@ export default function InventoryReports() {
         }`}>
           <Card className="p-2 h-full md:h-auto rounded-none md:rounded-lg">
             <div className="space-y-1 pt-12 md:pt-0 max-h-screen md:max-h-none overflow-y-auto">
-              {REPORT_TYPES.map(report => (
+              {visibleReportTypes.map(report => (
                 <button
                   key={report}
                   onClick={() => {
@@ -1440,8 +1457,8 @@ export default function InventoryReports() {
                     setSidebarOpen(false);
                   }}
                   className={`w-full text-left px-4 py-2.5 rounded-md text-sm transition-colors ${
-                    activeReport === report 
-                    ? 'bg-blue-50 text-blue-700 font-medium' 
+                    effectiveReport === report
+                    ? 'bg-blue-50 text-blue-700 font-medium'
                     : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
@@ -1467,7 +1484,7 @@ export default function InventoryReports() {
               <h2 className="font-semibold text-slate-800">{activeReport}</h2>
               <Button variant="outline" size="sm" label="Filters" icon={Filter} />
             </div>
-            {activeReport === 'Stock Position' ? (
+            {effectiveReport === 'Stock Position' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
@@ -1574,7 +1591,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No stock found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Item Ledger' ? (
+            ) : effectiveReport === 'Item Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <div>
@@ -1735,7 +1752,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No item ledger entries found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Receiving Report' ? (
+            ) : effectiveReport === 'Receiving Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                   <div>
@@ -1890,7 +1907,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No receiving entries found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Issuance Report' ? (
+            ) : effectiveReport === 'Issuance Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                   <div>
@@ -2015,7 +2032,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No issuance entries found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Short Expiry' ? (
+            ) : effectiveReport === 'Short Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
@@ -2155,7 +2172,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No short-expiry entries found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Expiry' ? (
+            ) : effectiveReport === 'Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
@@ -2260,7 +2277,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No expired items found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Discard Report' ? (
+            ) : effectiveReport === 'Discard Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <div>
@@ -2372,7 +2389,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No discard entries found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Repairing Report' ? (
+            ) : effectiveReport === 'Repairing Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                   <div>
@@ -2521,7 +2538,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No repairing entries found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Daily Sales' ? (
+            ) : effectiveReport === 'Daily Sales' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 {/* Filters */}
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -2669,7 +2686,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No sales found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Supplier Ledger' ? (
+            ) : effectiveReport === 'Supplier Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 {/* Filters */}
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -2831,7 +2848,7 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No GRN records found for selected filters.</div>
                 )}
               </div>
-            ) : activeReport === 'Item List' ? (
+            ) : effectiveReport === 'Item List' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
                   <div>
@@ -2947,7 +2964,7 @@ export default function InventoryReports() {
                   </div>
                 )}
               </div>
-            ) : activeReport === 'Purchase Order Report' ? (
+            ) : effectiveReport === 'Purchase Order Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <div>

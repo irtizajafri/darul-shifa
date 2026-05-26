@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useModuleStore } from "../../store/useModuleStore";
+import { useAuthStore } from "../../store/useAuthStore";
+import { hasPermission } from "../../utils/permissions";
+import NoTabAccess from "../../components/auth/NoTabAccess";
 import { useEmployeeStore } from "../../store/useEmployeeStore";
 import { useAttendanceStore } from "../../store/useAttendanceStore";
 import { useGatePassStore } from "../../store/useGatePassStore";
@@ -70,6 +73,7 @@ export default function Reports() {
   const [payslipView, setPayslipView] = useState("concentrated");
   const [payrollTab, setPayrollTab] = useState("detailed");
   const { setModule } = useModuleStore();
+  const { user } = useAuthStore();
   const { employees, fetchEmployees } = useEmployeeStore();
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { gatepasses, fetchGatepasses } = useGatePassStore();
@@ -78,11 +82,45 @@ export default function Reports() {
   const apiAttendanceReqRef = useRef(0);
   const rawPunchReqRef = useRef(0);
 
+  // ─── Punch Sync State ─────────────────────────────────────────────────────
+  const [syncingPunches, setSyncingPunches] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
+
+  const handleSyncPunches = async () => {
+    if (!month || !year) return;
+    setSyncingPunches(true);
+    setSyncMsg(null);
+    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    try {
+      const res = await fetch('http://localhost:5001/api/attendance/sync-punches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: `${year}-${month}-01`,
+          endDate:   `${year}-${month}-${String(lastDay).padStart(2, '0')}`,
+        }),
+      });
+      const json = await res.json();
+      setSyncMsg(json.message || 'Sync complete');
+      // Report refresh karo
+      setApiAttendance([]);
+      setLoadedForEmpCode(null);
+    } catch (_) {
+      setSyncMsg('Sync fail — internet check karo');
+    } finally {
+      setSyncingPunches(false);
+    }
+  };
+
   // ─── Salary Register Generate ─────────────────────────────────────────────
   const [loadedForEmpCode, setLoadedForEmpCode] = useState(null);
   const [registerRows, setRegisterRows]         = useState([]);
   const [isGenerating, setIsGenerating]         = useState(false);
   const [genQueue, setGenQueue]                 = useState([]);
+
+  // ─── Register Date Range ──────────────────────────────────────────────────
+  const [registerStartDay, setRegisterStartDay] = useState(1);
+  const [registerEndDay,   setRegisterEndDay]   = useState(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
 
   useEffect(() => {
     setModule("employee");
@@ -468,7 +506,7 @@ export default function Reports() {
     return () => {
       controller.abort();
     };
-  }, [emp, month, year, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes]);
+  }, [emp?.empCode, month, year, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes]);
 
   useEffect(() => {
     if (!month || !year) return;
@@ -1427,6 +1465,23 @@ export default function Reports() {
     }, 0);
   }, [detailedAttendanceRows]);
 
+  // ─── Register Date Range: filter detailedAttendanceRows by startDay–endDay ─
+  const registerRangeRows = useMemo(() => {
+    return detailedAttendanceRows.filter(row => {
+      const day = parseInt(String(row.date || '').split('-')[2] || '0', 10);
+      return day >= registerStartDay && day <= registerEndDay;
+    });
+  }, [detailedAttendanceRows, registerStartDay, registerEndDay]);
+
+  const registerRangeSalaryData = useMemo(() => {
+    const toNum = (v) => Math.max(0, Math.round(Number(v) || 0));
+    const earnedSal  = registerRangeRows.reduce((sum, r) => sum + toNum(r.salary), 0);
+    const deductions = registerRangeRows.reduce((sum, r) => sum + toNum(r.ded),    0);
+    const otBonus    = registerRangeRows.reduce((sum, r) => sum + toNum(r.otAmt),  0);
+    const finalSal   = Math.max(0, earnedSal + otBonus - deductions);
+    return { earnedSal, deductions, otBonus, finalSal };
+  }, [registerRangeRows]);
+
   const finalSal = emp
     ? Math.max(0, Math.round(calculatedSalaryFromRows + overtimeAddition - totalDeductions))
     : 0;
@@ -1446,13 +1501,26 @@ export default function Reports() {
       return [...prev, {
         code:        emp.empCode,
         name:        `${emp.firstName} ${emp.lastName}`,
-        deduction:   totalDeductions,
-        otBonus:     overtimeAddition,
-        finalSalary: finalSal,
+        deduction:   registerRangeSalaryData.deductions,
+        otBonus:     registerRangeSalaryData.otBonus,
+        finalSalary: registerRangeSalaryData.finalSal,
       }];
     });
     setGenQueue(prev => prev.slice(1));
-  }, [isGenerating, loadedForEmpCode, emp, genQueue, totalDeductions, overtimeAddition, finalSal]);
+  }, [isGenerating, loadedForEmpCode, emp, genQueue, registerRangeSalaryData]);
+
+  // ─── Register reset: koi bhi filter change hone pe purana data clear ────────
+  useEffect(() => {
+    setRegisterRows([]);
+    setGenQueue([]);
+    setIsGenerating(false);
+  }, [month, year, registerStartDay, registerEndDay]);
+
+  // ─── Register end day clamp: month/year badalne pe last day se zyada na ho ──
+  useEffect(() => {
+    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    setRegisterEndDay(prev => (prev > lastDay ? lastDay : prev));
+  }, [month, year]);
 
   const missingSalaryRows = useMemo(() => {
     return employees.slice(0, 20).map((e, i) => ({
@@ -1493,12 +1561,51 @@ export default function Reports() {
   }, [detailedAttendanceRows, emp, perDayRate]);
 
   const payrollConsolidatedRows = useMemo(() => {
-    return employees.slice(0, 12).map((e) => ({
-      code:      e.empCode,
-      name:      `${e.firstName} ${e.lastName}`,
-      netSalary: `PKR ${(isSelectedMonthFuture ? 0 : getTotalSalary(e.basicSalary, e.allowances || [])).toLocaleString()}`,
-    }));
+    return employees.map((e) => {
+      const gross = isSelectedMonthFuture ? 0 : getTotalSalary(e.basicSalary, e.allowances || []);
+      return {
+        code:      e.empCode,
+        name:      `${e.firstName} ${e.lastName}`,
+        basic:     Number(e.basicSalary) || 0,
+        allowance: (e.allowances || []).reduce((s, a) => s + (Number(a.amount) || 0), 0),
+        gross,
+        netSalary: `PKR ${gross.toLocaleString()}`,
+      };
+    });
   }, [employees, isSelectedMonthFuture]);
+
+  // ─── Totals for PDF + UI ──────────────────────────────────────────────────
+  const payrollDetailedTotals = useMemo(() => {
+    const toNum = (v) => Math.max(0, Math.round(Number(v) || 0));
+    return {
+      dutyHrs: payrollDetailedRows.reduce((s, r) => s + parseFloat(r.dutyHrs || 0), 0).toFixed(2),
+      wrkHrs:  payrollDetailedRows.reduce((s, r) => s + parseFloat(r.wrkHrs  || 0), 0).toFixed(2),
+      ot:      payrollDetailedRows.reduce((s, r) => s + parseFloat(r.ot      || 0), 0).toFixed(2),
+      salary:  payrollDetailedRows.reduce((s, r) => s + toNum(r.salary), 0),
+      otAmt:   payrollDetailedRows.reduce((s, r) => s + toNum(r.otAmt),  0),
+      ded:     payrollDetailedRows.reduce((s, r) => s + toNum(r.ded),    0),
+      total:   payrollDetailedRows.reduce((s, r) => s + toNum(r.total),  0),
+    };
+  }, [payrollDetailedRows]);
+
+  const consolidatedTotals = useMemo(() => ({
+    basic:     payrollConsolidatedRows.reduce((s, r) => s + r.basic,     0),
+    allowance: payrollConsolidatedRows.reduce((s, r) => s + r.allowance, 0),
+    gross:     payrollConsolidatedRows.reduce((s, r) => s + r.gross,     0),
+  }), [payrollConsolidatedRows]);
+
+  const registerTotals = useMemo(() => {
+    if (!registerRows.length) return null;
+    return {
+      rawAmount:   registerRows.reduce((s, r) => {
+        const e = employees.find(emp => String(emp.empCode) === String(r.code));
+        return s + (e ? getTotalSalary(e.basicSalary, e.allowances || []) : 0);
+      }, 0),
+      deduction:   registerRows.reduce((s, r) => s + r.deduction,   0),
+      otBonus:     registerRows.reduce((s, r) => s + r.otBonus,     0),
+      finalSalary: registerRows.reduce((s, r) => s + r.finalSalary, 0),
+    };
+  }, [registerRows, employees]);
 
   const exportMeta = {
     address:   "C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210",phone:"021-34508390",whatsapp:  "+92 334 2225746",};
@@ -1833,29 +1940,117 @@ export default function Reports() {
     }
 
     if (scope === "payroll-detailed") {
+      const detBody = payrollDetailedRows.map((r) => [r.dutyDt, r.timeIn, r.timeOut, r.dutySts, r.late, r.dutyHrs, r.wrkHrs, r.ot, r.perDay, r.salary, r.otAmt, r.ded, r.total]);
+      const detTotalsRow = [
+        "TOTAL", "", "", "", "",
+        payrollDetailedTotals.dutyHrs,
+        payrollDetailedTotals.wrkHrs,
+        payrollDetailedTotals.ot,
+        "",
+        String(payrollDetailedTotals.salary.toLocaleString()),
+        String(payrollDetailedTotals.otAmt.toLocaleString()),
+        String(payrollDetailedTotals.ded.toLocaleString()),
+        String(payrollDetailedTotals.total.toLocaleString()),
+      ];
       autoTable(pdf, {
         startY,
-        head: [["Emp ID", "Duty Dt", "Time In", "Time Out", "Duty Sts", "Late", "Duty Hrs", "Wrk Days", "OT", "Per Day", "Salary", "OT Amt", "Ded", "Total"]],
-        body: payrollDetailedRows.map((r) => [r.empCode, r.dutyDt, r.timeIn, r.timeOut, r.dutySts, r.late, r.dutyHrs, r.wrkDays, r.ot, r.perDay, r.salary, r.otAmt, r.ded, r.total]),
-        styles: { fontSize: 7 }, headStyles: { fillColor: [37, 99, 235] },
+        head: [["Date", "Time In", "Time Out", "Status", "Late", "Duty Hrs", "Wrk Hrs", "OT Hrs", "Per Day", "Salary", "OT Amt", "Ded", "Total"]],
+        body: [...detBody, detTotalsRow],
+        styles: { fontSize: 7, halign: 'center' },
+        headStyles: { fillColor: [37, 99, 235] },
+        columnStyles: { 0: { halign: 'left' } },
+        didParseCell: (data) => {
+          if (data.row.index === detBody.length) {
+            data.cell.styles.fillColor = [30, 41, 59];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        },
       });
     }
 
     if (scope === "payroll-consolidated") {
+      const conBody = payrollConsolidatedRows.map((r, i) => [
+        String(i + 1), r.code, r.name,
+        `PKR ${r.basic.toLocaleString()}`,
+        `PKR ${r.allowance.toLocaleString()}`,
+        `PKR ${r.gross.toLocaleString()}`,
+      ]);
+      const conTotalsRow = [
+        "", `${payrollConsolidatedRows.length} Emps`, "GRAND TOTAL",
+        `PKR ${consolidatedTotals.basic.toLocaleString()}`,
+        `PKR ${consolidatedTotals.allowance.toLocaleString()}`,
+        `PKR ${consolidatedTotals.gross.toLocaleString()}`,
+      ];
       autoTable(pdf, {
         startY,
-        head: [["Code", "Name", "Net Salary"]],
-        body: payrollConsolidatedRows.map((r) => [r.code, r.name, r.netSalary]),
-        styles: { fontSize: 9 }, headStyles: { fillColor: [37, 99, 235] },
+        head: [["#", "Code", "Name", "Basic", "Allowances", "Gross Salary"]],
+        body: [...conBody, conTotalsRow],
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [37, 99, 235] },
+        columnStyles: { 0: { halign: 'center', cellWidth: 20 }, 5: { halign: 'right' } },
+        didParseCell: (data) => {
+          if (data.row.index === conBody.length) {
+            data.cell.styles.fillColor = [30, 41, 59];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        },
       });
     }
 
     if (scope === "salary-register") {
+      const rangeLabel = (registerStartDay === 1 && registerEndDay === daysInSelectedMonth)
+        ? `Full Month (${month}/${year})`
+        : `Day ${registerStartDay}–${registerEndDay} (${month}/${year})`;
+      pdf.setFontSize(9);
+      pdf.setTextColor(100);
+      pdf.text(`Period: ${rangeLabel}`, 40, startY - 10);
+      pdf.setTextColor(0);
+
+      const hasSalaryData = registerRows.length > 0;
+      const pdfHead = hasSalaryData
+        ? [["#", "Code", "Name", "Basic+Allow", "Deduction", "OT Bonus", "Net Salary"]]
+        : [["#", "Code", "Name", "Amount"]];
+
+      const pdfDataRows = hasSalaryData
+        ? registerRows.map((r, i) => [
+            String(i + 1),
+            r.code,
+            r.name,
+            `PKR ${(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}`,
+            `PKR ${r.deduction.toLocaleString()}`,
+            `PKR ${r.otBonus.toLocaleString()}`,
+            `PKR ${r.finalSalary.toLocaleString()}`,
+          ])
+        : salaryRegisterRows.map((r, i) => [String(i + 1), r.code, r.name, r.amount]);
+
+      const pdfTotalsRow = hasSalaryData && registerTotals
+        ? [
+            "", "", `TOTAL (${registerRows.length})`,
+            `PKR ${registerTotals.rawAmount.toLocaleString()}`,
+            `PKR ${registerTotals.deduction.toLocaleString()}`,
+            `PKR ${registerTotals.otBonus.toLocaleString()}`,
+            `PKR ${registerTotals.finalSalary.toLocaleString()}`,
+          ]
+        : null;
+
+      const pdfBody = pdfTotalsRow ? [...pdfDataRows, pdfTotalsRow] : pdfDataRows;
+
       autoTable(pdf, {
         startY,
-        head: [["Code", "Name", "Amount"]],
-        body: salaryRegisterRows.map((r) => [r.code, r.name, r.amount]),
-        styles: { fontSize: 9 }, headStyles: { fillColor: [37, 99, 235] },
+        head: pdfHead,
+        body: pdfBody,
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [37, 99, 235] },
+        columnStyles: { 0: { halign: 'center', cellWidth: 18 } },
+        didParseCell: (data) => {
+          if (pdfTotalsRow && data.row.index === pdfDataRows.length) {
+            data.cell.styles.fillColor = [30, 41, 59];
+            data.cell.styles.textColor = [255, 255, 255];
+            data.cell.styles.fontStyle = 'bold';
+          }
+        },
       });
     }
 
@@ -1967,7 +2162,45 @@ export default function Reports() {
     }
   };
 
+  // ── Report-type permission filtering ─────────────────────────────────────
+  const REPORT_PERM_KEYS = {
+    payslip:              'payslip',
+    'test-attendance-raw': 'test-attendance-raw',
+    missing:              'missing-salary',
+    cr:                   'employee-cr',
+  };
+  const visibleReportTypes = reportTypes.filter((r) => {
+    if (r.id === 'payroll') {
+      return (
+        hasPermission(user, 'employee', 'reports', 'payroll-detailed') ||
+        hasPermission(user, 'employee', 'reports', 'payroll-consolidated') ||
+        hasPermission(user, 'employee', 'reports', 'payroll-register')
+      );
+    }
+    return hasPermission(user, 'employee', 'reports', REPORT_PERM_KEYS[r.id] || r.id);
+  });
+
+  const PAYROLL_TABS = [
+    { id: 'detailed',     label: 'Detailed Payroll',    permKey: 'payroll-detailed' },
+    { id: 'consolidated', label: 'Consolidated Payroll', permKey: 'payroll-consolidated' },
+    { id: 'register',     label: 'Salary Register',      permKey: 'payroll-register' },
+  ];
+  const visiblePayrollTabs = PAYROLL_TABS.filter((t) =>
+    hasPermission(user, 'employee', 'reports', t.permKey)
+  );
+  const effectivePayrollTab = visiblePayrollTabs.find((t) => t.id === payrollTab)
+    ? payrollTab
+    : (visiblePayrollTabs[0]?.id ?? 'detailed');
+  const effectiveReport = visibleReportTypes.find((r) => r.id === activeReport)
+    ? activeReport
+    : (visibleReportTypes[0]?.id ?? '');
+
   if (loading) return <PageLoader />;
+  if (visibleReportTypes.length === 0) return <NoTabAccess />;
+
+  // ─── Table cell styles (reusable) ─────────────────────────────────────────
+  const thStyle = { padding: '7px 10px', textAlign: 'center', fontWeight: 600, fontSize: '11px', whiteSpace: 'nowrap', borderRight: '1px solid rgba(255,255,255,0.15)' };
+  const tdStyle = { padding: '6px 10px', textAlign: 'center', fontSize: '12px', borderBottom: '1px solid #f1f5f9', borderRight: '1px solid #f1f5f9', whiteSpace: 'nowrap' };
 
   return (
     <div className="reports-page">
@@ -1977,8 +2210,8 @@ export default function Reports() {
       />
 
       <div className="report-types print-hidden">
-        {reportTypes.map((r) => (
-          <Card key={r.id} className={`report-type-card ${activeReport === r.id ? "active" : ""}`}>
+        {visibleReportTypes.map((r) => (
+          <Card key={r.id} className={`report-type-card ${effectiveReport === r.id ? "active" : ""}`}>
             <button onClick={() => setActiveReport(r.id)} className="report-type-btn" type="button">
               <r.icon className="w-8 h-8" />
               <span>{r.label}</span>
@@ -1987,7 +2220,7 @@ export default function Reports() {
         ))}
       </div>
 
-      {activeReport === "payslip" && (
+      {effectiveReport === "payslip" && (
         <Card>
           <div className="report-head">
             <h3>Payslip Report</h3>
@@ -2074,6 +2307,23 @@ export default function Reports() {
               <button type="button" className={`pill ${payslipView === "concentrated" ? "active" : ""}`} onClick={() => setPayslipView("concentrated")}>Concentrated</button>
               <button type="button" className={`pill ${payslipView === "detailed" ? "active" : ""}`} onClick={() => setPayslipView("detailed")}>Detailed</button>
             </div>
+            <button
+              type="button"
+              onClick={handleSyncPunches}
+              disabled={syncingPunches}
+              title="Cloud se punches DB mein save karo — report fast load hogi"
+              style={{
+                padding: '6px 14px', borderRadius: '6px', fontSize: '13px', cursor: syncingPunches ? 'not-allowed' : 'pointer',
+                background: syncingPunches ? '#94a3b8' : '#2563eb', color: '#fff', border: 'none', fontWeight: 600,
+              }}
+            >
+              {syncingPunches ? '⏳ Syncing...' : '☁ Sync Punches'}
+            </button>
+            {syncMsg && (
+              <span style={{ fontSize: '12px', color: syncMsg.includes('fail') ? '#dc2626' : '#16a34a', fontWeight: 500 }}>
+                {syncMsg}
+              </span>
+            )}
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "payslip")} />
           </div>
 
@@ -2197,14 +2447,14 @@ export default function Reports() {
         </Card>
       )}
 
-      {activeReport === "payroll" && (
+      {effectiveReport === "payroll" && (
         <Card>
           <div className="report-head">
             <h3>Payroll Report</h3>
             <div className="export-actions print-hidden">
-              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", payrollTab === "detailed" ? "payroll-detailed" : payrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
-              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   payrollTab === "detailed" ? "payroll-detailed" : payrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
-              <Button label="Print" variant="outline" onClick={() => handleExport("print", payrollTab === "detailed" ? "payroll-detailed" : payrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
+              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
+              <Button label="Print" variant="outline" onClick={() => handleExport("print", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
             </div>
           </div>
           <div className="filters-row print-hidden">
@@ -2217,65 +2467,214 @@ export default function Reports() {
             <select className="filter-select"><option>All Departments</option></select>
           </div>
           <div className="subtabs print-hidden">
-            <button type="button" className={payrollTab === "detailed"     ? "active" : ""} onClick={() => setPayrollTab("detailed")}>Detailed Payroll</button>
-            <button type="button" className={payrollTab === "consolidated" ? "active" : ""} onClick={() => setPayrollTab("consolidated")}>Consolidated Payroll</button>
-            <button type="button" className={payrollTab === "register"     ? "active" : ""} onClick={() => setPayrollTab("register")}>Salary Register</button>
+            {visiblePayrollTabs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={effectivePayrollTab === t.id ? "active" : ""}
+                onClick={() => setPayrollTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
-          {payrollTab === "detailed" && (
+          {effectivePayrollTab === "detailed" && (
             <div className="print-area">
-              <div className="paper-sheet">
-                <div className="paper-top">
-                  <div className="paper-meta">
-                    <p className="muted">Date: {new Date().toISOString().slice(0, 10)}</p>
-                    <h4 className="paper-title">{emp?.firstName} {emp?.lastName} — <span className="muted">{emp?.empCode}</span></h4>
-                    <p className="muted">{emp?.designation || 'Employee'} • {emp?.department || 'Department'}</p>
-                    <p className="muted">Month: <strong>{month}/{year}</strong></p>
+              {/* ── Summary Cards ─────────────────────────────────────────── */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                {[
+                  { label: 'Employee',    value: emp ? `${emp.firstName} ${emp.lastName} (${emp.empCode})` : '—', color: '#1e293b' },
+                  { label: 'Period',      value: `${month} / ${year}`,                                             color: '#1e293b' },
+                  { label: 'Designation', value: emp?.designation || '—',                                          color: '#1e293b' },
+                  { label: 'Earned Salary', value: `PKR ${payrollDetailedTotals.salary.toLocaleString()}`,         color: '#16a34a' },
+                  { label: 'OT Bonus',    value: `PKR ${payrollDetailedTotals.otAmt.toLocaleString()}`,            color: '#2563eb' },
+                  { label: 'Deductions',  value: `PKR ${payrollDetailedTotals.ded.toLocaleString()}`,             color: '#dc2626' },
+                  { label: 'Net Total',   value: `PKR ${payrollDetailedTotals.total.toLocaleString()}`,            color: '#1d4ed8', bold: true },
+                ].map(c => (
+                  <div key={c.label} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 14px', minWidth: '130px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>{c.label}</div>
+                    <div style={{ fontSize: c.bold ? '14px' : '13px', fontWeight: c.bold ? 700 : 600, color: c.color }}>{c.value}</div>
                   </div>
-                </div>
-                <div className="table-responsive">
-                  <table className="rep-table small-print">
-                    <thead>
-                      <tr>
-                        <th>Emp Code</th><th>Duty Date</th><th>Time In</th><th>Time Out</th>
-                        <th>Duty Sts</th><th>Late</th><th>Duty Hrs</th><th>Wrk Hrs</th>
-                        <th>Wrk Days</th><th>O.T</th><th>Per Day</th><th>Salary</th>
-                        <th>O.T</th><th>Ded</th><th>Total</th>
+                ))}
+              </div>
+
+              {/* ── Table ────────────────────────────────────────────────── */}
+              <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                <table className="rep-table small-print" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ background: '#1e40af', color: '#fff' }}>
+                      <th style={thStyle}>Date</th><th style={thStyle}>Time In</th><th style={thStyle}>Time Out</th>
+                      <th style={thStyle}>Status</th><th style={thStyle}>Late</th><th style={thStyle}>Duty Hrs</th>
+                      <th style={thStyle}>Wrk Hrs</th><th style={thStyle}>O.T Hrs</th><th style={thStyle}>Per Day</th>
+                      <th style={thStyle}>Salary</th><th style={thStyle}>OT Amt</th><th style={thStyle}>Ded</th><th style={thStyle}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payrollDetailedRows.map((r, idx) => (
+                      <tr key={`${r.empCode}-${r.dutyDt}-${r.timeIn}-${r.timeOut}-${idx}`}
+                          style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                        <td style={tdStyle}>{r.dutyDt}</td><td style={tdStyle}>{r.timeIn}</td><td style={tdStyle}>{r.timeOut}</td>
+                        <td style={{ ...tdStyle, color: r.dutySts === 'leave' || r.dutySts === 'absent' ? '#dc2626' : r.dutySts === 'present' ? '#16a34a' : '#475569' }}>{r.dutySts}</td>
+                        <td style={{ ...tdStyle, color: r.late === 'Y' ? '#d97706' : '#475569' }}>{r.late}</td>
+                        <td style={tdStyle}>{r.dutyHrs}</td><td style={tdStyle}>{r.wrkHrs}</td><td style={tdStyle}>{r.ot}</td>
+                        <td style={tdStyle}>{r.perDay}</td><td style={tdStyle}>{r.salary}</td><td style={tdStyle}>{r.otAmt}</td>
+                        <td style={{ ...tdStyle, color: Number(r.ded) > 0 ? '#dc2626' : '#475569' }}>{r.ded}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>{r.total}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {payrollDetailedRows.map((r, idx) => (
-                        <tr key={`${r.empCode}-${r.dutyDt}-${r.timeIn}-${r.timeOut}-${idx}`}>
-                          <td>{r.empCode}</td><td>{r.dutyDt}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
-                          <td>{r.dutySts}</td><td>{r.late}</td><td>{r.dutyHrs}</td><td>{r.wrkHrs}</td>
-                          <td>{r.wrkDays}</td><td>{r.ot}</td><td>{r.perDay}</td><td>{r.salary}</td>
-                          <td>{r.otAmt}</td><td>{r.ded}</td><td>{r.total}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="paper-footer">
-                  <div className="sign-row">
-                    <div className="sign"><span>Accountant</span></div>
-                    <div className="sign"><span>Administrator</span></div>
-                    <div className="sign"><span>Employee</span></div>
-                  </div>
-                </div>
+                    ))}
+                    {/* ── Totals Row ──────────────────────────────────────── */}
+                    <tr style={{ background: '#1e293b', color: '#fff', fontWeight: 700 }}>
+                      <td style={{ ...tdStyle, color: '#fff' }} colSpan={5}>TOTAL</td>
+                      <td style={{ ...tdStyle, color: '#fff' }}>{payrollDetailedTotals.dutyHrs}</td>
+                      <td style={{ ...tdStyle, color: '#fff' }}>{payrollDetailedTotals.wrkHrs}</td>
+                      <td style={{ ...tdStyle, color: '#fff' }}>{payrollDetailedTotals.ot}</td>
+                      <td style={{ ...tdStyle, color: '#fff' }}>—</td>
+                      <td style={{ ...tdStyle, color: '#86efac' }}>{payrollDetailedTotals.salary.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, color: '#93c5fd' }}>{payrollDetailedTotals.otAmt.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, color: '#fca5a5' }}>{payrollDetailedTotals.ded.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, color: '#fde68a', fontSize: '13px' }}>{payrollDetailedTotals.total.toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── Signatures ───────────────────────────────────────────── */}
+              <div className="sign-row" style={{ marginTop: '24px' }}>
+                <div className="sign"><span>Accountant</span></div>
+                <div className="sign"><span>Administrator</span></div>
+                <div className="sign"><span>Employee</span></div>
               </div>
             </div>
           )}
-          {payrollTab === "consolidated" && (
-            <div className="table-wrap print-area">
-              <h4 className="section-title">Consolidated Payroll</h4>
-              <table className="data-table">
-                <thead><tr><th>Emp Code</th><th>Name</th><th>Net Salary</th></tr></thead>
-                <tbody>{payrollConsolidatedRows.map((r) => (<tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.netSalary}</td></tr>))}</tbody>
-              </table>
+          {effectivePayrollTab === "consolidated" && (
+            <div className="print-area">
+              {/* ── Summary Cards ─────────────────────────────────────────── */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                {[
+                  { label: 'Period',           value: `${month} / ${year}`,                                        color: '#1e293b' },
+                  { label: 'Total Employees',  value: payrollConsolidatedRows.length,                              color: '#1e293b' },
+                  { label: 'Total Basic',       value: `PKR ${consolidatedTotals.basic.toLocaleString()}`,         color: '#475569' },
+                  { label: 'Total Allowances',  value: `PKR ${consolidatedTotals.allowance.toLocaleString()}`,     color: '#475569' },
+                  { label: 'Grand Total Gross', value: `PKR ${consolidatedTotals.gross.toLocaleString()}`,         color: '#1d4ed8', bold: true },
+                ].map(c => (
+                  <div key={c.label} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 14px', minWidth: '140px' }}>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>{c.label}</div>
+                    <div style={{ fontSize: c.bold ? '14px' : '13px', fontWeight: c.bold ? 700 : 600, color: c.color }}>{String(c.value)}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* ── Note ─────────────────────────────────────────────────── */}
+              <p style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '10px' }}>
+                * Consolidated shows gross (Basic + Allowances). For net salary with deductions, use Salary Register → Generate.
+              </p>
+
+              {/* ── Table ────────────────────────────────────────────────── */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ background: '#1e40af', color: '#fff' }}>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>#</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Emp Code</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Name</th>
+                      <th style={thStyle}>Basic</th>
+                      <th style={thStyle}>Allowances</th>
+                      <th style={{ ...thStyle, color: '#fde68a' }}>Gross Salary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payrollConsolidatedRows.map((r, idx) => (
+                      <tr key={r.code} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                        <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
+                        <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{r.code}</td>
+                        <td style={{ ...tdStyle, textAlign: 'left' }}>{r.name}</td>
+                        <td style={tdStyle}>PKR {r.basic.toLocaleString()}</td>
+                        <td style={tdStyle}>PKR {r.allowance.toLocaleString()}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600, color: '#1d4ed8' }}>PKR {r.gross.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {/* ── Grand Total ─────────────────────────────────────── */}
+                    <tr style={{ background: '#1e293b', color: '#fff', fontWeight: 700 }}>
+                      <td style={{ ...tdStyle, color: '#fff' }} colSpan={3}>GRAND TOTAL ({payrollConsolidatedRows.length} employees)</td>
+                      <td style={{ ...tdStyle, color: '#86efac' }}>PKR {consolidatedTotals.basic.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, color: '#93c5fd' }}>PKR {consolidatedTotals.allowance.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, color: '#fde68a', fontSize: '14px' }}>PKR {consolidatedTotals.gross.toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
-          {payrollTab === "register" && (
+          {effectivePayrollTab === "register" && (
             <div className="table-wrap print-area">
               <h4 className="section-title">Salary Register</h4>
+
+              {/* ─── Date Range Filter ───────────────────────────────────── */}
+              <div className="print-hidden" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Date Range:</span>
+
+                <select
+                  value={registerStartDay}
+                  onChange={e => {
+                    const val = Number(e.target.value);
+                    setRegisterStartDay(val);
+                    if (registerEndDay < val) setRegisterEndDay(val);
+                  }}
+                  className="filter-select"
+                  style={{ width: 'auto' }}
+                >
+                  {Array.from({ length: daysInSelectedMonth }, (_, i) => i + 1).map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+
+                <span style={{ fontSize: '13px', color: '#64748b' }}>to</span>
+
+                <select
+                  value={registerEndDay}
+                  onChange={e => setRegisterEndDay(Number(e.target.value))}
+                  className="filter-select"
+                  style={{ width: 'auto' }}
+                >
+                  {Array.from({ length: daysInSelectedMonth }, (_, i) => i + 1)
+                    .filter(d => d >= registerStartDay)
+                    .map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                </select>
+
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                  ({registerEndDay - registerStartDay + 1} {registerEndDay - registerStartDay + 1 === 1 ? 'day' : 'days'})
+                </span>
+
+                {/* Quick Presets */}
+                {[
+                  { label: 'Full Month', s: 1,  e: daysInSelectedMonth },
+                  { label: 'Week 1',     s: 1,  e: 7 },
+                  { label: 'Week 2',     s: 8,  e: 15 },
+                  { label: 'Week 3',     s: 16, e: 23 },
+                  { label: 'Week 4',     s: 24, e: daysInSelectedMonth },
+                ].map(p => {
+                  const eDay = Math.min(p.e, daysInSelectedMonth);
+                  const isActive = registerStartDay === p.s && registerEndDay === eDay;
+                  return (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => { setRegisterStartDay(p.s); setRegisterEndDay(eDay); }}
+                      style={{
+                        padding: '3px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: 500,
+                        background: isActive ? '#2563eb' : '#e2e8f0',
+                        color: isActive ? '#fff' : '#475569',
+                        border: 'none', cursor: 'pointer',
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="filters-row print-hidden" style={{ marginBottom: '12px' }}>
                 <Button
                   label={isGenerating ? `Generating... (${registerRows.length}/${employees.length})` : "Generate"}
@@ -2290,52 +2689,101 @@ export default function Reports() {
                 {registerRows.length > 0 && !isGenerating && (
                   <span style={{ marginLeft: '12px', color: '#666', fontSize: '13px' }}>
                     ✓ {registerRows.length} employees loaded
+                    {(registerStartDay !== 1 || registerEndDay !== daysInSelectedMonth) && (
+                      <span style={{ marginLeft: '6px', color: '#2563eb' }}>
+                        (Day {registerStartDay}–{registerEndDay})
+                      </span>
+                    )}
                   </span>
                 )}
               </div>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Emp Code</th>
-                    <th>Name</th>
-                    <th>Basic + Allowances</th>
-                    <th>Total Deduction</th>
-                    <th>Total OT Bonus</th>
-                    <th>Total Salary</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {registerRows.length > 0
-                    ? registerRows.map((r) => (
-                        <tr key={r.code}>
-                          <td>{r.code}</td>
-                          <td>{r.name}</td>
-                          <td>PKR {(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}</td>
-                          <td>PKR {r.deduction.toLocaleString()}</td>
-                          <td>PKR {r.otBonus.toLocaleString()}</td>
-                          <td>PKR {r.finalSalary.toLocaleString()}</td>
-                        </tr>
-                      ))
-                    : salaryRegisterRows.map((r) => (
-                        <tr key={r.code}>
-                          <td>{r.code}</td>
-                          <td>{r.name}</td>
-                          <td>{r.amount}</td>
-                          <td>—</td>
-                          <td>—</td>
-                          <td>—</td>
-                        </tr>
-                      ))
-                  }
-                </tbody>
-              </table>
-              <div className="sheet-footer muted">Total employees: {registerRows.length > 0 ? registerRows.length : salaryRegisterRows.length}</div>
+              {/* ── Summary Cards (only after generate) ──────────────── */}
+              {registerTotals && (
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '14px' }}>
+                  {[
+                    { label: 'Total Employees',   value: registerRows.length,                                   color: '#1e293b' },
+                    { label: 'Total Gross',        value: `PKR ${registerTotals.rawAmount.toLocaleString()}`,   color: '#475569' },
+                    { label: 'Total Deductions',   value: `PKR ${registerTotals.deduction.toLocaleString()}`,   color: '#dc2626' },
+                    { label: 'Total OT Bonus',     value: `PKR ${registerTotals.otBonus.toLocaleString()}`,     color: '#2563eb' },
+                    { label: 'Total Net Payable',  value: `PKR ${registerTotals.finalSalary.toLocaleString()}`, color: '#16a34a', bold: true },
+                  ].map(c => (
+                    <div key={c.label} style={{ background: '#f0fdf4', border: `1px solid ${c.bold ? '#86efac' : '#e2e8f0'}`, borderRadius: '8px', padding: '8px 14px', minWidth: '140px' }}>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '2px' }}>{c.label}</div>
+                      <div style={{ fontSize: c.bold ? '14px' : '13px', fontWeight: c.bold ? 700 : 600, color: c.color }}>{String(c.value)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ── Table ────────────────────────────────────────────────── */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                  <thead>
+                    <tr style={{ background: '#1e40af', color: '#fff' }}>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>#</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Emp Code</th>
+                      <th style={{ ...thStyle, textAlign: 'left' }}>Name</th>
+                      <th style={thStyle}>Basic + Allowances</th>
+                      <th style={{ ...thStyle, color: '#fca5a5' }}>Deduction</th>
+                      <th style={{ ...thStyle, color: '#93c5fd' }}>OT Bonus</th>
+                      <th style={{ ...thStyle, color: '#fde68a' }}>Net Salary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {registerRows.length > 0
+                      ? registerRows.map((r, idx) => (
+                          <tr key={r.code} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                            <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{r.code}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left' }}>{r.name}</td>
+                            <td style={tdStyle}>PKR {(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}</td>
+                            <td style={{ ...tdStyle, color: r.deduction > 0 ? '#dc2626' : '#475569' }}>PKR {r.deduction.toLocaleString()}</td>
+                            <td style={{ ...tdStyle, color: r.otBonus > 0 ? '#2563eb' : '#475569' }}>PKR {r.otBonus.toLocaleString()}</td>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: '#16a34a' }}>PKR {r.finalSalary.toLocaleString()}</td>
+                          </tr>
+                        ))
+                      : salaryRegisterRows.map((r, idx) => (
+                          <tr key={r.code} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                            <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{r.code}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left' }}>{r.name}</td>
+                            <td style={tdStyle}>{r.amount}</td>
+                            <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
+                            <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
+                            <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
+                          </tr>
+                        ))
+                    }
+                    {/* ── Totals Row ──────────────────────────────────────── */}
+                    {registerTotals && (
+                      <tr style={{ background: '#1e293b', color: '#fff', fontWeight: 700 }}>
+                        <td style={{ ...tdStyle, color: '#fff' }} colSpan={3}>
+                          TOTAL — {registerRows.length} Employees
+                          {(registerStartDay !== 1 || registerEndDay !== daysInSelectedMonth) && (
+                            <span style={{ marginLeft: '8px', fontSize: '11px', color: '#94a3b8' }}>
+                              (Day {registerStartDay}–{registerEndDay})
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ ...tdStyle, color: '#e2e8f0' }}>PKR {registerTotals.rawAmount.toLocaleString()}</td>
+                        <td style={{ ...tdStyle, color: '#fca5a5' }}>PKR {registerTotals.deduction.toLocaleString()}</td>
+                        <td style={{ ...tdStyle, color: '#93c5fd' }}>PKR {registerTotals.otBonus.toLocaleString()}</td>
+                        <td style={{ ...tdStyle, color: '#fde68a', fontSize: '14px' }}>PKR {registerTotals.finalSalary.toLocaleString()}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="sheet-footer muted" style={{ marginTop: '8px' }}>
+                Total employees: {registerRows.length > 0 ? registerRows.length : salaryRegisterRows.length}
+                {isGenerating && <span style={{ marginLeft: '10px', color: '#2563eb' }}>⏳ Processing {registerRows.length}/{employees.length}...</span>}
+              </div>
             </div>
           )}
         </Card>
       )}
 
-      {activeReport === "test-attendance-raw" && (
+      {effectiveReport === "test-attendance-raw" && (
         <Card>
           <div className="report-head">
             <h3>Test Attendance Raw (Machine Punches)</h3>
@@ -2398,7 +2846,7 @@ export default function Reports() {
         </Card>
       )}
 
-      {activeReport === "missing" && (
+      {effectiveReport === "missing" && (
         <Card>
           <div className="report-head">
             <h3>Missing Salary Report</h3>
@@ -2429,7 +2877,7 @@ export default function Reports() {
         </Card>
       )}
 
-      {activeReport === "cr" && (
+      {effectiveReport === "cr" && (
         <Card>
           <div className="report-head">
             <h3>Employee CR Report</h3>

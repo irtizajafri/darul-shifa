@@ -127,7 +127,7 @@ function ReceiveModal({ record, onClose, onDone }) {
           </div>
 
           {/* Actual Cost + Warranty */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className={`grid gap-3 ${action === 'discard' ? 'grid-cols-1' : 'grid-cols-2'}`}>
             <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
               <label className="block text-xs font-medium text-blue-700 mb-1">
                 Actual Cost (PKR)
@@ -147,20 +147,22 @@ function ReceiveModal({ record, onClose, onDone }) {
                 className="w-full px-3 py-2 text-sm border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 bg-white"
               />
             </div>
-            <div className="p-3 bg-violet-50 border border-violet-200 rounded-md">
-              <label className="block text-xs font-medium text-violet-700 mb-1">
-                Warranty (Days)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                placeholder="e.g. 30"
-                value={warrantyDays}
-                onChange={(e) => setWarrantyDays(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-violet-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500/30 bg-white"
-              />
-            </div>
+            {action !== 'discard' && (
+              <div className="p-3 bg-violet-50 border border-violet-200 rounded-md">
+                <label className="block text-xs font-medium text-violet-700 mb-1">
+                  Warranty (Days)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="e.g. 30"
+                  value={warrantyDays}
+                  onChange={(e) => setWarrantyDays(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-violet-300 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500/30 bg-white"
+                />
+              </div>
+            )}
           </div>
 
           {/* Scrap Value (discard only) */}

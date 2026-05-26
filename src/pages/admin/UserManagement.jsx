@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, ToggleLeft, ToggleRight, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Edit2, Trash2, ToggleLeft, ToggleRight, ShieldCheck, AlertTriangle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUserManagementStore } from '../../store/useUserManagementStore';
-import { PERMISSIONS_MAP } from '../../utils/permissions';
+import { PERMISSIONS_MAP, normalizePermissions } from '../../utils/permissions';
 import PageHeader from '../../components/shared/PageHeader';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
-import Badge from '../../components/ui/Badge';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isExpired(expiresAt) {
@@ -22,32 +21,75 @@ function formatExpiry(expiresAt) {
 }
 
 // ─── Permission Checkbox Tree ─────────────────────────────────────────────────
+// permissions format: { employee: { gatepass: true, attendance: ['daily-view', ...] }, ... }
 function PermissionTree({ permissions, onChange }) {
   const moduleKeys = Object.keys(PERMISSIONS_MAP);
 
-  const handleModuleToggle = (moduleKey) => {
-    const current = permissions[moduleKey] || [];
-    const allSubs = PERMISSIONS_MAP[moduleKey].subModules.map((s) => s.key);
-    const isAllSelected = allSubs.every((k) => current.includes(k));
-    onChange({ ...permissions, [moduleKey]: isAllSelected ? [] : allSubs });
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  const isSubEnabled = (modKey, subKey) => {
+    const modPerms = permissions[modKey];
+    if (!modPerms || typeof modPerms !== 'object' || Array.isArray(modPerms)) return false;
+    return subKey in modPerms;
   };
 
-  const handleSubToggle = (moduleKey, subKey) => {
-    const current = permissions[moduleKey] || [];
-    const next = current.includes(subKey)
-      ? current.filter((k) => k !== subKey)
-      : [...current, subKey];
-    onChange({ ...permissions, [moduleKey]: next });
+  const isTabEnabled = (modKey, subKey, tabKey) => {
+    const modPerms = permissions[modKey];
+    if (!modPerms) return false;
+    const val = modPerms[subKey];
+    if (val === true) return true;
+    if (Array.isArray(val)) return val.includes(tabKey);
+    return false;
   };
 
+  const setModPerm = (modKey, newModPerms) =>
+    onChange({ ...permissions, [modKey]: newModPerms });
+
+  // ── Toggle handlers ───────────────────────────────────────────────────────
+  const toggleModule = (modKey) => {
+    const mod = PERMISSIONS_MAP[modKey];
+    const modPerms = permissions[modKey] || {};
+    const allOn = mod.subModules.every((s) => s.key in modPerms);
+    if (allOn) {
+      setModPerm(modKey, {});
+    } else {
+      const next = {};
+      for (const s of mod.subModules) {
+        next[s.key] = s.tabs ? s.tabs.map((t) => t.key) : true;
+      }
+      setModPerm(modKey, next);
+    }
+  };
+
+  const toggleSub = (modKey, subKey) => {
+    const subDef = PERMISSIONS_MAP[modKey].subModules.find((s) => s.key === subKey);
+    const modPerms = { ...(permissions[modKey] || {}) };
+    if (subKey in modPerms) {
+      delete modPerms[subKey];
+    } else {
+      modPerms[subKey] = subDef.tabs ? subDef.tabs.map((t) => t.key) : true;
+    }
+    setModPerm(modKey, modPerms);
+  };
+
+  const toggleTab = (modKey, subKey, tabKey) => {
+    const modPerms = { ...(permissions[modKey] || {}) };
+    const current = Array.isArray(modPerms[subKey]) ? [...modPerms[subKey]] : [];
+    modPerms[subKey] = current.includes(tabKey)
+      ? current.filter((t) => t !== tabKey)
+      : [...current, tabKey];
+    setModPerm(modKey, modPerms);
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4 mt-2">
       {moduleKeys.map((moduleKey) => {
         const mod = PERMISSIONS_MAP[moduleKey];
-        const selected = permissions[moduleKey] || [];
-        const allSubs = mod.subModules.map((s) => s.key);
-        const allChecked = allSubs.every((k) => selected.includes(k));
-        const someChecked = allSubs.some((k) => selected.includes(k));
+        const modPerms = permissions[moduleKey] || {};
+        const enabledCount = Object.keys(modPerms).length;
+        const totalSubs = mod.subModules.length;
+        const allChecked = enabledCount === totalSubs;
+        const someChecked = enabledCount > 0;
 
         return (
           <div key={moduleKey} className="border border-gray-200 rounded-lg overflow-hidden">
@@ -57,30 +99,58 @@ function PermissionTree({ permissions, onChange }) {
                 type="checkbox"
                 checked={allChecked}
                 ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
-                onChange={() => handleModuleToggle(moduleKey)}
+                onChange={() => toggleModule(moduleKey)}
                 className="w-4 h-4 accent-blue-600 cursor-pointer"
               />
               <span className="font-semibold text-gray-800 text-sm">{mod.label}</span>
               {someChecked && (
                 <span className="ml-auto text-xs text-blue-600 font-medium">
-                  {selected.length}/{allSubs.length} selected
+                  {enabledCount}/{totalSubs} selected
                 </span>
               )}
             </label>
 
             {/* Sub-modules */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 px-4 py-3">
-              {mod.subModules.map((sub) => (
-                <label key={sub.key} className="flex items-center gap-2 cursor-pointer py-1">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(sub.key)}
-                    onChange={() => handleSubToggle(moduleKey, sub.key)}
-                    className="w-4 h-4 accent-blue-600 cursor-pointer"
-                  />
-                  <span className="text-sm text-gray-700">{sub.label}</span>
-                </label>
-              ))}
+            <div className="px-4 py-3 space-y-1">
+              {mod.subModules.map((sub) => {
+                const subOn = isSubEnabled(moduleKey, sub.key);
+                return (
+                  <div key={sub.key}>
+                    {/* Sub-module row */}
+                    <label className="flex items-center gap-2 cursor-pointer py-1">
+                      <input
+                        type="checkbox"
+                        checked={subOn}
+                        onChange={() => toggleSub(moduleKey, sub.key)}
+                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                      />
+                      <span className="text-sm font-medium text-gray-700">{sub.label}</span>
+                      {sub.tabs && subOn && (
+                        <span className="ml-auto text-xs text-gray-400">
+                          {Array.isArray(modPerms[sub.key]) ? modPerms[sub.key].length : sub.tabs.length}/{sub.tabs.length} tabs
+                        </span>
+                      )}
+                    </label>
+
+                    {/* Tab checkboxes — only when sub-module has tabs AND is enabled */}
+                    {sub.tabs && subOn && (
+                      <div className="ml-6 grid grid-cols-2 gap-x-4 gap-y-0 pb-2 pt-0.5">
+                        {sub.tabs.map((tab) => (
+                          <label key={tab.key} className="flex items-center gap-2 cursor-pointer py-0.5">
+                            <input
+                              type="checkbox"
+                              checked={isTabEnabled(moduleKey, sub.key, tab.key)}
+                              onChange={() => toggleTab(moduleKey, sub.key, tab.key)}
+                              className="w-3.5 h-3.5 accent-blue-500 cursor-pointer"
+                            />
+                            <span className="text-xs text-gray-600">{tab.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -105,7 +175,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
     permissions: {},
   });
 
-  // Populate form when editing
+  // Populate form when editing — normalize old-format permissions to new format
   useEffect(() => {
     if (editUser) {
       setForm({
@@ -116,7 +186,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
         role: editUser.role || '',
         hasExpiry: !!editUser.expiresAt,
         expiresAt: editUser.expiresAt ? editUser.expiresAt.slice(0, 10) : '',
-        permissions: editUser.permissions || {},
+        permissions: normalizePermissions(editUser.permissions || {}),
       });
     } else {
       setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', hasExpiry: false, expiresAt: '', permissions: {} });
@@ -313,10 +383,15 @@ export default function UserManagement() {
     }
   };
 
-  // Count total permissions for display
+  // Count enabled sub-modules for display
   const countPermissions = (permissions) => {
     if (!permissions) return 0;
-    return Object.values(permissions).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    let count = 0;
+    for (const modPerms of Object.values(permissions)) {
+      if (Array.isArray(modPerms)) count += modPerms.length;         // legacy
+      else if (typeof modPerms === 'object') count += Object.keys(modPerms).length; // new
+    }
+    return count;
   };
 
   return (

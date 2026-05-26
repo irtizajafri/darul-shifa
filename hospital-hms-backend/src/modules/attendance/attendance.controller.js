@@ -18,6 +18,57 @@ function fetchExternalApi(body) {
   return call;
 }
 
+// ─── Cloud → DB Sync Helper ───────────────────────────────────────────────────
+// Cloud se raw punches lo aur PunchLog table mein upsert karo.
+// Duplicate safe hai: @@unique([empCode, punchTime]) pe skipDuplicates.
+async function syncPunchesToDB(fStartDate, fEndDate) {
+  const extJson = await fetchExternalApi({ Dates: fStartDate, DatesTo: fEndDate });
+  const rawRecords = Array.isArray(extJson?.data) ? extJson.data : [];
+
+  const toInsert = [];
+  rawRecords.forEach(r => {
+    if (!r.arrive_time) return;
+    const empCode = String(r.enrollid || r.enrollId || '');
+    if (!empCode) return;
+
+    // PKT mein convert karo (+05:00)
+    const punchTime = new Date(r.arrive_time.replace(' ', 'T') + '+05:00');
+    if (isNaN(punchTime.getTime())) return;
+
+    // punchDate = PKT mein date string (YYYY-MM-DD)
+    const pktDate = new Date(punchTime.getTime());
+    const punchDate = [
+      pktDate.getUTCFullYear(),
+      String(pktDate.getUTCMonth() + 1).padStart(2, '0'),
+      String(pktDate.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+
+    toInsert.push({ empCode, punchTime, punchDate });
+  });
+
+  if (toInsert.length === 0) return { synced: 0 };
+
+  const result = await prisma.punchLog.createMany({
+    data: toInsert,
+    skipDuplicates: true, // @@unique pe duplicate silently skip hoga
+  });
+
+  return { synced: result.count, total: toInsert.length };
+}
+
+// ─── DB se punches fetch karo (date range ke liye) ───────────────────────────
+async function getPunchesFromDB(fStartDate, fEndDate, empCode) {
+  const startDt = new Date(fStartDate.replace(/\//g, '-') + 'T00:00:00+05:00');
+  const endDt   = new Date(fEndDate.replace(/\//g, '-')   + 'T23:59:59+05:00');
+
+  const where = {
+    punchTime: { gte: startDt, lte: endDt },
+  };
+  if (empCode) where.empCode = String(empCode);
+
+  return prisma.punchLog.findMany({ where, orderBy: { punchTime: 'asc' } });
+}
+
 // ─── PKT Helper ───────────────────────────────────────────────────────────────
 // setHours() server ke local timezone pe depend karta hai.
 // Agar server UTC pe chal raha ho toh windows galat ban jaati hain.
@@ -261,11 +312,67 @@ async function create(req, res, next) {
   }
 }
 
+// ─── PunchLog → Cloud Format Converter ───────────────────────────────────────
+// Frontend purana cloud format expect karta hai: { enrollid, arrive_date, arrive_time }
+// PunchLog DB se parhke wahi format bana dete hain
+function punchLogToCloudFormat(dbRows) {
+  return dbRows.map(r => {
+    // punchTime UTC hai DB mein — PKT ke liye +5 hours
+    const pkt = new Date(new Date(r.punchTime).getTime() + 5 * 60 * 60 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateStr = `${pkt.getUTCFullYear()}/${pad(pkt.getUTCMonth() + 1)}/${pad(pkt.getUTCDate())}`;
+    const timeStr = `${pad(pkt.getUTCHours())}:${pad(pkt.getUTCMinutes())}:${pad(pkt.getUTCSeconds())}`;
+    return {
+      enrollid:    r.empCode,
+      enrollId:    r.empCode,
+      arrive_date: dateStr,
+      arrive_time: `${dateStr.replace(/\//g, '-')} ${timeStr}`,
+    };
+  });
+}
+
 async function fetchExternal(req, res, next) {
   try {
     const { Dates, DatesTo } = req.body || {};
-    const data = await fetchExternalApi({ Dates, DatesTo });
-    return res.json(data);
+    if (!Dates || !DatesTo) {
+      return res.status(400).json({ message: 'Dates and DatesTo required' });
+    }
+
+    // DB-first: PunchLog check karo
+    const dbRows = await getPunchesFromDB(Dates, DatesTo, null);
+
+    if (dbRows.length > 0) {
+      return res.json({ status: 200, data: punchLogToCloudFormat(dbRows) });
+    }
+
+    // DB khali — cloud fallback
+    try {
+      const data = await fetchExternalApi({ Dates, DatesTo });
+      // Background mein DB mein save karo
+      if (Array.isArray(data?.data) && data.data.length > 0) {
+        const toInsert = [];
+        data.data.forEach(r => {
+          if (!r.arrive_time) return;
+          const empCode = String(r.enrollid || r.enrollId || '');
+          if (!empCode) return;
+          const punchTime = new Date(r.arrive_time.replace(' ', 'T') + '+05:00');
+          if (isNaN(punchTime.getTime())) return;
+          const pkt = new Date(punchTime.getTime());
+          const punchDate = [
+            pkt.getUTCFullYear(),
+            String(pkt.getUTCMonth() + 1).padStart(2, '0'),
+            String(pkt.getUTCDate()).padStart(2, '0'),
+          ].join('-');
+          toInsert.push({ empCode, punchTime, punchDate });
+        });
+        if (toInsert.length > 0) {
+          prisma.punchLog.createMany({ data: toInsert, skipDuplicates: true }).catch(() => {});
+        }
+      }
+      return res.json(data);
+    } catch (_) {
+      return res.json({ status: 200, data: [] });
+    }
   } catch (err) {
     next(err);
   }
@@ -286,22 +393,50 @@ async function testPairing(req, res, next) {
     const fStartDate = fetchStart.toISOString().split('T')[0].replace(/-/g, '/');
     const fEndDate   = fetchEnd.toISOString().split('T')[0].replace(/-/g, '/');
 
-    const extJson = await fetchExternalApi({ Dates: fStartDate, DatesTo: fEndDate });
-    let rawRecords = extJson?.data || [];
+    // ─── DB-First: pehle local DB check karo ─────────────────────────────────
+    let dbPunches = await getPunchesFromDB(fStartDate, fEndDate, employeeId || null);
+    let source = 'db';
 
-    if (employeeId) {
-      rawRecords = rawRecords.filter(r => String(r.enrollid) === String(employeeId));
+    // Agar DB mein kuch nahi toh cloud se try karo (fallback)
+    if (dbPunches.length === 0) {
+      source = 'cloud';
+      try {
+        const extJson = await fetchExternalApi({ Dates: fStartDate, DatesTo: fEndDate });
+        let rawRecords = Array.isArray(extJson?.data) ? extJson.data : [];
+        if (employeeId) {
+          rawRecords = rawRecords.filter(r => String(r.enrollid) === String(employeeId));
+        }
+        // Cloud se jo mila usse bhi DB mein save karo (aage ke liye)
+        rawRecords.forEach(r => {
+          if (!r.arrive_time) return;
+          const empCode = String(r.enrollid || '');
+          if (!empCode) return;
+          const punchTime = new Date(r.arrive_time.replace(' ', 'T') + '+05:00');
+          if (isNaN(punchTime.getTime())) return;
+          const pktDate = new Date(punchTime.getTime());
+          const punchDate = [
+            pktDate.getUTCFullYear(),
+            String(pktDate.getUTCMonth() + 1).padStart(2, '0'),
+            String(pktDate.getUTCDate()).padStart(2, '0'),
+          ].join('-');
+          dbPunches.push({ empCode, punchTime, punchDate });
+        });
+        // Background mein save karo — response wait mat karo
+        if (dbPunches.length > 0) {
+          prisma.punchLog.createMany({ data: dbPunches, skipDuplicates: true }).catch(() => {});
+        }
+      } catch (_) {
+        // Cloud bhi fail (HTML/timeout) — DB bhi khali tha
+        // Empty parsedData return hogi — frontend ko pata chalega source=cloud_failed
+        source = 'cloud_failed';
+      }
     }
 
-    // Group logs by enrollid — PKT offset apply karo
+    // Group logs by empCode — same structure jaise pehle thi
     const logsByStaff = {};
-    rawRecords.forEach(r => {
-      if (!r.arrive_time) return;
-      if (!logsByStaff[r.enrollid]) logsByStaff[r.enrollid] = [];
-      const dateTime = new Date(r.arrive_time.replace(' ', 'T') + '+05:00');
-      if (!isNaN(dateTime.getTime())) {
-        logsByStaff[r.enrollid].push(dateTime);
-      }
+    dbPunches.forEach(r => {
+      if (!logsByStaff[r.empCode]) logsByStaff[r.empCode] = [];
+      logsByStaff[r.empCode].push(new Date(r.punchTime));
     });
 
     // DB se employees fetch karo
@@ -410,7 +545,7 @@ async function testPairing(req, res, next) {
       });
     });
 
-    return res.json({ data: parsedData });
+    return res.json({ data: parsedData, source });
   } catch (err) {
     next(err);
   }
@@ -423,10 +558,16 @@ async function testRawPunches(req, res, next) {
       return res.status(400).json({ message: "startDate and endDate are required" });
     }
 
-    const extJson = await fetchExternalApi({
-      Dates: startDate.replace(/-/g, '/'),
-      DatesTo: endDate.replace(/-/g, '/'),
-    });
+    // Cloud se lo — agar fail ho toh empty return karo (HTML/DOCTYPE error mat aane do)
+    let extJson;
+    try {
+      extJson = await fetchExternalApi({
+        Dates: startDate.replace(/-/g, '/'),
+        DatesTo: endDate.replace(/-/g, '/'),
+      });
+    } catch (_) {
+      return res.json({ data: [], error: 'cloud_unavailable' });
+    }
     let rawRecords = Array.isArray(extJson?.data) ? extJson.data : [];
 
     if (employeeId) {
@@ -600,6 +741,37 @@ async function syncAttendance(req, res, next) {
   }
 }
 
+// ─── Punch Sync Endpoint (Cloud → PunchLog DB) ───────────────────────────────
+// Frontend se manually trigger hoga — date range ke liye cloud se punches lo
+// aur PunchLog table mein save karo. Skip duplicates.
+async function syncPunches(req, res, next) {
+  try {
+    const { startDate, endDate } = req.body;
+    if (!startDate || !endDate) {
+      return res.status(400).json({ message: 'startDate and endDate required' });
+    }
+
+    const fetchStart = new Date(startDate);
+    fetchStart.setDate(fetchStart.getDate() - 1);
+    const fetchEnd = new Date(endDate);
+    fetchEnd.setDate(fetchEnd.getDate() + 1);
+
+    const fStartDate = fetchStart.toISOString().split('T')[0].replace(/-/g, '/');
+    const fEndDate   = fetchEnd.toISOString().split('T')[0].replace(/-/g, '/');
+
+    const { synced, total } = await syncPunchesToDB(fStartDate, fEndDate);
+
+    return res.json({
+      success: true,
+      message: `${synced} nayi punches save hui (${total} total cloud se aayi)`,
+      synced,
+      total,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   ping,
   list,
@@ -608,6 +780,7 @@ module.exports = {
   testPairing,
   testRawPunches,
   syncAttendance,
+  syncPunches,
   listOverrides,
   upsertOverride,
   bulkUpsertOverrides,
