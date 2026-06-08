@@ -1996,7 +1996,7 @@ async function updateItem(itemId, payload) {
       subcategoryId: Number(payload.subcategoryId),
       supplierId: parsedSupplierId || null,
       storageId: parsePositiveNumber(payload.storageId),
-      currentStock: Number.isFinite(Number(payload.currentStock)) ? Number(payload.currentStock) : existing.currentStock,
+      // currentStock is managed by GRN/GIN movements only — never updated on item edit
     },
     include: { category: true, subcategory: true, storage: true },
   });
@@ -2581,15 +2581,7 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
     })
     .filter((movement) => {
       if (!Number.isFinite(movement.delta) || movement.delta === 0) return false;
-
-      const movementType = String(movement.movementType || '').trim().toUpperCase();
-      const referenceType = String(movement.referenceType || '').trim().toUpperCase();
-
-      if (referenceType === 'GRN' || referenceType === 'GIN') return true;
-      if (movementType === 'ADJUSTMENT') return true;
-      if (referenceType.includes('RETURN') || referenceType.includes('REVERS')) return true;
-
-      return false;
+      return true;
     })
     .sort((a, b) => {
       const timeA = new Date(a.eventDate).getTime();
@@ -3126,16 +3118,7 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
     })
     .filter((movement) => {
       if (!Number.isFinite(movement.delta) || movement.delta === 0) return false;
-
-      const movementType = String(movement.movementType || '').trim().toUpperCase();
-      const referenceType = String(movement.referenceType || '').trim().toUpperCase();
-
-      if (referenceType === 'GRN' || referenceType === 'GIN') return true;
-      if (referenceType === 'OPENING' || movementType === 'OPENING') return true;
-      if (movementType === 'ADJUSTMENT') return true;
-      if (referenceType.includes('RETURN') || referenceType.includes('REVERS')) return true;
-
-      return false;
+      return true;
     })
     .sort((a, b) => {
       const timeA = new Date(a.eventDate).getTime();

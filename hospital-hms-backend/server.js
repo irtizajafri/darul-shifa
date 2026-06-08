@@ -3,32 +3,51 @@ const app = require('./src/app');
 const prisma = require('./src/config/db');
 
 async function backfillOpeningStockMovements() {
+  // First delete wrong backfill records that used currentStock directly
+  await prisma.inventoryStockMovement.deleteMany({
+    where: { movementType: 'OPENING', note: 'Opening stock backfill' },
+  });
+
   const items = await prisma.inventoryItem.findMany({
-    where: { currentStock: { gt: 0 } },
     select: { id: true, currentStock: true, purchasePrice: true },
   });
 
+  let count = 0;
   for (const item of items) {
-    const existing = await prisma.inventoryStockMovement.findFirst({
-      where: { itemId: item.id, movementType: 'OPENING' },
-      select: { id: true },
+    // Calculate net stock from existing movements (GRN - GIN)
+    const movements = await prisma.inventoryStockMovement.findMany({
+      where: { itemId: item.id },
+      select: { movementType: true, quantity: true, previousStock: true, newStock: true },
     });
-    if (existing) continue;
+
+    const netFromMovements = movements.reduce((sum, m) => {
+      const type = String(m.movementType || '').toUpperCase();
+      if (type === 'IN') return sum + Number(m.quantity || 0);
+      if (type === 'OUT') return sum - Number(m.quantity || 0);
+      if (type === 'ADJUSTMENT') return sum + (Number(m.newStock || 0) - Number(m.previousStock || 0));
+      return sum;
+    }, 0);
+
+    // True opening = currentStock - what movements already account for
+    const trueOpening = Number(item.currentStock || 0) - netFromMovements;
+
+    if (trueOpening <= 0) continue;
 
     await prisma.inventoryStockMovement.create({
       data: {
         itemId: item.id,
         movementType: 'OPENING',
         referenceType: 'OPENING',
-        quantity: item.currentStock,
+        quantity: trueOpening,
         unitRate: item.purchasePrice || 0,
         previousStock: 0,
-        newStock: item.currentStock,
+        newStock: trueOpening,
         note: 'Opening stock backfill',
       },
     });
+    count++;
   }
-  console.log(`✅ Opening stock backfill done for ${items.length} items`);
+  console.log(`✅ Opening stock backfill done for ${count} items`);
 }
 
 app.get('/', (req, res) => {
