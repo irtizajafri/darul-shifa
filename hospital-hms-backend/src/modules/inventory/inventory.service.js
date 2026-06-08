@@ -1926,6 +1926,23 @@ async function createItem(payload) {
 
   await syncReorderAlert(prisma, created);
 
+  const openingQty = parsePositiveNumber(payload.currentStock, 0) || 0;
+  if (openingQty > 0) {
+    const openingRate = Number(purchasePrice || 0);
+    await prisma.inventoryStockMovement.create({
+      data: {
+        itemId: created.id,
+        movementType: 'OPENING',
+        referenceType: 'OPENING',
+        quantity: openingQty,
+        unitRate: openingRate,
+        previousStock: 0,
+        newStock: openingQty,
+        note: 'Opening stock on item creation',
+      },
+    });
+  }
+
   return created;
 }
 
@@ -2350,6 +2367,7 @@ function resolveMovementDelta(movement) {
 
   if (type === 'IN') return qty;
   if (type === 'OUT') return -qty;
+  if (type === 'OPENING') return qty;
 
   if (type === 'ADJUSTMENT') {
     const previousStock = Number(movement?.previousStock || 0);
@@ -3113,6 +3131,7 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       const referenceType = String(movement.referenceType || '').trim().toUpperCase();
 
       if (referenceType === 'GRN' || referenceType === 'GIN') return true;
+      if (referenceType === 'OPENING' || movementType === 'OPENING') return true;
       if (movementType === 'ADJUSTMENT') return true;
       if (referenceType.includes('RETURN') || referenceType.includes('REVERS')) return true;
 
