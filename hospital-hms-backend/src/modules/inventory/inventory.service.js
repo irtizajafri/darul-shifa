@@ -2565,7 +2565,9 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
       const delta = resolveMovementDelta(movement);
 
       let eventDate = movement.createdAt;
-      if (referenceType === 'GRN' && referenceId && grnDateByCode.has(referenceId)) {
+      if (referenceType === 'OPENING' || movement.movementType?.toUpperCase() === 'OPENING') {
+        eventDate = new Date(0); // epoch — always process first
+      } else if (referenceType === 'GRN' && referenceId && grnDateByCode.has(referenceId)) {
         eventDate = grnDateByCode.get(referenceId) || movement.createdAt;
       } else if (referenceType === 'GIN' && referenceId && ginDateByCode.has(referenceId)) {
         eventDate = ginDateByCode.get(referenceId) || movement.createdAt;
@@ -3102,7 +3104,9 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       const delta = resolveMovementDelta(movement);
 
       let eventDate = movement.createdAt;
-      if (referenceType === 'GRN' && referenceId && grnDateByCode.has(referenceId)) {
+      if (referenceType === 'OPENING' || movement.movementType?.toUpperCase() === 'OPENING') {
+        eventDate = new Date(0); // epoch — always process first
+      } else if (referenceType === 'GRN' && referenceId && grnDateByCode.has(referenceId)) {
         eventDate = grnDateByCode.get(referenceId) || movement.createdAt;
       } else if (referenceType === 'GIN' && referenceId && ginDateByCode.has(referenceId)) {
         eventDate = ginDateByCode.get(referenceId) || movement.createdAt;
