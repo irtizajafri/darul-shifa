@@ -40,6 +40,13 @@ const toHoursFromRange = (timeIn, timeOut) => {
 };
 
 export default function AddEmployee({ edit }) {
+  const { id } = useParams();
+  const { setModule } = useModuleStore();
+  const navigate = useNavigate();
+  const { employees, getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
+    useEmployeeStore();
+  const existing = edit && id ? getEmployeeById(id) : null;
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
@@ -50,18 +57,14 @@ export default function AddEmployee({ edit }) {
   const [mastersLoading, setMastersLoading] = useState(false);
   const [newDepartmentHead, setNewDepartmentHead] = useState('');
   const [newDesignationHead, setNewDesignationHead] = useState('');
-  const { id } = useParams();
-  const { setModule } = useModuleStore();
-  const navigate = useNavigate();
+  const [dependents, setDependents] = useState(existing?.dependents || []);
+  const [depForm, setDepForm] = useState({ code: '', name: '', relation: '', dob: '', gender: 'male', status: 'active' });
+  const [editingDepIdx, setEditingDepIdx] = useState(null);
+  const [depSaving, setDepSaving] = useState(false);
   const fileInputRef = useRef(null);
   const signatureInputRef = useRef(null);
   const cnicFrontInputRef = useRef(null);
   const cnicBackInputRef = useRef(null);
-
-  const { employees, getEmployeeById, getNextEmpCode, addEmployee, updateEmployee } =
-    useEmployeeStore();
-
-  const existing = edit && id ? getEmployeeById(id) : null;
   const normalizeRoster = (rows = []) => {
     const byDay = Object.fromEntries((rows || []).map((r) => [r.day, r]));
     return DAYS.map((d, i) => {
@@ -611,6 +614,7 @@ export default function AddEmployee({ edit }) {
     { label: 'Company', icon: Building2 },
     { label: 'Duty Roster', icon: CalendarClock },
     { label: 'Other', icon: BadgeCheck },
+    { label: 'Dependents', icon: User },
   ];
 
   if (loading) return <PageLoader />;
@@ -810,6 +814,7 @@ export default function AddEmployee({ edit }) {
                 <label className="block text-sm font-medium mb-1">Reference 2</label>
                 <textarea {...register('reference2')} className="form-textarea" rows={2} />
               </div>
+              <Input label="Qualification" {...register('qualification')} placeholder="e.g. MBBS, MBA, Matric" />
             </div>
           </Card>
         )}
@@ -1335,6 +1340,128 @@ export default function AddEmployee({ edit }) {
             </div>
           </Card>
         )}
+        {activeTab === 4 && (
+          <Card title="Dependents" className="form-card">
+            <div className="dep-form-grid">
+              <div>
+                <label className="block text-sm font-medium mb-1">Code</label>
+                <input className="form-input" value={depForm.code} onChange={e => setDepForm(f => ({ ...f, code: e.target.value }))} placeholder="D001" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Name *</label>
+                <input className="form-input" value={depForm.name} onChange={e => setDepForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Relation</label>
+                <select className="form-select" value={depForm.relation} onChange={e => setDepForm(f => ({ ...f, relation: e.target.value }))}>
+                  <option value="">Select</option>
+                  <option value="Spouse">Spouse</option>
+                  <option value="Father">Father</option>
+                  <option value="Mother">Mother</option>
+                  <option value="Son">Son</option>
+                  <option value="Daughter">Daughter</option>
+                  <option value="Brother">Brother</option>
+                  <option value="Sister">Sister</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Date of Birth</label>
+                <input type="date" className="form-input" value={depForm.dob} onChange={e => setDepForm(f => ({ ...f, dob: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Gender</label>
+                <select className="form-select" value={depForm.gender} onChange={e => setDepForm(f => ({ ...f, gender: e.target.value }))}>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Status</label>
+                <select className="form-select" value={depForm.status} onChange={e => setDepForm(f => ({ ...f, status: e.target.value }))}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div className="dep-btn-row">
+                <Button
+                  type="button"
+                  size="sm"
+                  label={depSaving ? 'Saving…' : editingDepIdx !== null ? 'Update' : '+ Add'}
+                  disabled={depSaving || !depForm.name.trim()}
+                  onClick={async () => {
+                    if (!id) {
+                      if (editingDepIdx !== null) {
+                        setDependents(d => d.map((r, i) => i === editingDepIdx ? { ...depForm } : r));
+                      } else {
+                        setDependents(d => [...d, { ...depForm }]);
+                      }
+                      setDepForm({ code: '', name: '', relation: '', dob: '', gender: 'male', status: 'active' });
+                      setEditingDepIdx(null);
+                      return;
+                    }
+                    setDepSaving(true);
+                    try {
+                      const url = editingDepIdx !== null
+                        ? `${EMPLOYEE_META_API}/${id}/dependents/${dependents[editingDepIdx].id}`
+                        : `${EMPLOYEE_META_API}/${id}/dependents`;
+                      const method = editingDepIdx !== null ? 'PUT' : 'POST';
+                      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(depForm) });
+                      const data = await readApiData(res);
+                      if (editingDepIdx !== null) {
+                        setDependents(d => d.map((r, i) => i === editingDepIdx ? data : r));
+                      } else {
+                        setDependents(d => [...d, data]);
+                      }
+                      setDepForm({ code: '', name: '', relation: '', dob: '', gender: 'male', status: 'active' });
+                      setEditingDepIdx(null);
+                      toast.success(editingDepIdx !== null ? 'Updated' : 'Added');
+                    } catch (err) { toast.error(err.message || 'Failed'); }
+                    finally { setDepSaving(false); }
+                  }}
+                />
+                {editingDepIdx !== null && (
+                  <Button type="button" size="sm" variant="ghost" label="Cancel"
+                    onClick={() => { setDepForm({ code: '', name: '', relation: '', dob: '', gender: 'male', status: 'active' }); setEditingDepIdx(null); }} />
+                )}
+              </div>
+            </div>
+
+            {dependents.length > 0 && (
+              <table className="dep-table">
+                <thead>
+                  <tr><th>Code</th><th>Name</th><th>Relation</th><th>DOB</th><th>Gender</th><th>Status</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {dependents.map((d, i) => (
+                    <tr key={i}>
+                      <td>{d.code || '–'}</td>
+                      <td>{d.name}</td>
+                      <td>{d.relation || '–'}</td>
+                      <td>{d.dob ? String(d.dob).slice(0, 10) : '–'}</td>
+                      <td>{d.gender}</td>
+                      <td><span className={`dep-status dep-status--${d.status}`}>{d.status}</span></td>
+                      <td className="dep-actions">
+                        <button className="dep-edit-btn" onClick={() => { setDepForm({ code: d.code || '', name: d.name, relation: d.relation || '', dob: d.dob ? String(d.dob).slice(0, 10) : '', gender: d.gender, status: d.status }); setEditingDepIdx(i); }}>Edit</button>
+                        <button className="dep-del-btn" onClick={async () => {
+                          if (!window.confirm('Remove this dependent?')) return;
+                          if (d.id) {
+                            try {
+                              await fetch(`${EMPLOYEE_META_API}/${id}/dependents/${d.id}`, { method: 'DELETE' });
+                            } catch { toast.error('Failed to delete'); return; }
+                          }
+                          setDependents(prev => prev.filter((_, idx) => idx !== i));
+                          toast.success('Removed');
+                        }}>Remove</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {dependents.length === 0 && <p className="dep-empty">No dependents added yet.</p>}
+          </Card>
+        )}
         <div className="form-actions">
           <Button
             type="button"
@@ -1343,18 +1470,18 @@ export default function AddEmployee({ edit }) {
             disabled={activeTab === 0}
             onClick={() => setActiveTab((t) => Math.max(0, t - 1))}
           />
-          {activeTab < 3 ? (
+          {activeTab < 4 ? (
             <Button
               type="button"
               label="Next →"
               onClick={() => setActiveTab((t) => t + 1)}
             />
           ) : (
-            <Button 
-              type="button" 
-              label="💾 Save" 
-              loading={saving} 
-              onClick={handleSubmit(onSubmit)} 
+            <Button
+              type="button"
+              label="💾 Save"
+              loading={saving}
+              onClick={handleSubmit(onSubmit)}
             />
           )}
         </div>

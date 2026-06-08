@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAttendanceStore } from '../../store/useAttendanceStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 import NoTabAccess from '../../components/auth/NoTabAccess';
 import PageLoader from '../../components/ui/PageLoader';
@@ -155,6 +155,7 @@ export default function AttendanceList() {
   const { attendanceRecords, fetchAttendance } = useAttendanceStore();
   const { employees, fetchEmployees } = useEmployeeStore();
   const { user } = useAuthStore();
+  const isMaster = Boolean(user?.isSuperAdmin) || user?.email === SUPER_ADMIN_EMAIL;
 
   const [monthlyEmpCode, setMonthlyEmpCode] = useState('');
   const [monthlyEmpQuery, setMonthlyEmpQuery] = useState('');
@@ -339,52 +340,6 @@ export default function AttendanceList() {
     return normalize24HourTime(value);
   };
 
-  const getApiPunchPairsForDate = useCallback((empCode, dateValue) => {
-    const code = String(empCode || '').trim();
-    const dateKey = toDateOnly(dateValue);
-    if (!code || !dateKey) return [];
-
-    const punches = (apiRows || [])
-      .filter((row) => String(row.enrollid || row.enrollId || '').trim() === code)
-      .filter((row) => toDateOnly(row.arrive_date || row.date) === dateKey)
-      .map((row) => {
-        let timeVal = String(row.arrive_time || row.time_in || '').trim();
-        if (timeVal.includes(' ')) timeVal = timeVal.split(' ').pop();
-        const normalizedTime = normalize24HourTime(timeVal);
-        if (!normalizedTime) return null;
-        const dt = new Date(`${dateKey}T${normalizedTime}`);
-        return Number.isNaN(dt.getTime()) ? null : dt;
-      })
-      .filter(Boolean)
-      .sort((a, b) => a.getTime() - b.getTime());
-
-    if (!punches.length) return [];
-
-    // Deduplicate accidental machine double-taps within 2 minutes.
-    const deduped = [];
-    punches.forEach((p) => {
-      const last = deduped[deduped.length - 1];
-      if (!last || Math.abs(p.getTime() - last.getTime()) > (2 * 60 * 1000)) {
-        deduped.push(p);
-      }
-    });
-
-    const rows = [];
-    for (let i = 0; i < deduped.length; i += 2) {
-      const inPunch = deduped[i];
-      const outPunch = deduped[i + 1] || null;
-      const dateIn = format(inPunch, 'yyyy-MM-dd');
-      const timeIn = format(inPunch, 'HH:mm');
-      const timeOut = outPunch ? format(outPunch, 'HH:mm') : '';
-      const dateOut = outPunch
-        ? format(outPunch, 'yyyy-MM-dd')
-        : inferDateOut({ dateIn, dateOut: '', timeIn, timeOut });
-
-      rows.push({ dateIn, dateOut, timeIn, timeOut });
-    }
-
-    return rows;
-  }, [apiRows]);
 
   const addModalWaiveDeduction = watch('waiveDeduction');
 
@@ -439,43 +394,25 @@ export default function AttendanceList() {
         manualDeduction: override.manualDeduction || '',
         manualTotal: override.manualTotal || '',
         waiveDeduction: Boolean(override.waiveDeduction),
-        isManual: true, // All saved overrides can be edited/deleted
+        isLocked: Boolean(override.isLocked),
+        isManual: true,
       })));
     } else {
-      // No saved overrides: prefill from API punch pairs (same employee + same date).
-      const apiPairs = getApiPunchPairsForDate(modalEmpCode, modalDate);
-      if (apiPairs.length > 0) {
-        setEditRows(apiPairs.map((pair, idx) => ({
-          id: `api-${Date.now()}-${idx}-${Math.random()}`,
-          dateIn: pair.dateIn,
-          dateOut: pair.dateOut,
-          timeIn: toInputTimeValue(pair.timeIn),
-          timeOut: toInputTimeValue(pair.timeOut),
-          status: editModal.status || 'present',
-          manualWrkHrs: '',
-          manualOvertime: '',
-          manualDeduction: '',
-          manualTotal: '',
-          waiveDeduction: false,
-          isManual: true,
-        })));
-      } else {
-        // No API pairs found, initialize with original row from editModal
-        setEditRows([{
-          id: `initial-${Date.now()}`,
-          dateIn: editModal.dateIn || editModal.date || '',
-          dateOut: editModal.dateOut || editModal.date || '',
-          timeIn: toInputTimeValue(editModal.timeIn),
-          timeOut: toInputTimeValue(editModal.timeOut),
-          status: editModal.status || 'present',
-          manualWrkHrs: editModal.manualWrkHrs || '',
-          manualOvertime: editModal.manualOvertime || '',
-          manualDeduction: editModal.manualDeduction || '',
-          manualTotal: editModal.manualTotal || '',
-          waiveDeduction: Boolean(editModal.waiveDeduction),
-          isManual: false, // Original row
-        }]);
-      }
+      // No saved overrides: use the table row values directly (already processed correctly for all shift types)
+      setEditRows([{
+        id: `initial-${Date.now()}`,
+        dateIn: editModal.dateIn || editModal.date || '',
+        dateOut: editModal.dateOut || editModal.date || '',
+        timeIn: toInputTimeValue(editModal.timeIn),
+        timeOut: toInputTimeValue(editModal.timeOut),
+        status: editModal.status || 'present',
+        manualWrkHrs: editModal.manualWrkHrs || '',
+        manualOvertime: editModal.manualOvertime || '',
+        manualDeduction: editModal.manualDeduction || '',
+        manualTotal: editModal.manualTotal || '',
+        waiveDeduction: Boolean(editModal.waiveDeduction),
+        isManual: false,
+      }]);
     }
     
     reset({
@@ -491,7 +428,7 @@ export default function AttendanceList() {
       manualTotal: editModal.manualTotal || '',
       waiveDeduction: Boolean(editModal.waiveDeduction),
     });
-  }, [editModal, employees, reset, overrides, getApiPunchPairsForDate]);
+  }, [editModal, employees, reset, overrides]);
 
   const exportMeta = {
     address: 'C 1-4 Survery # 675 Jaffar e Tayyar Society Malir, Karachi, Pakistan, 75210',
@@ -747,6 +684,7 @@ export default function AttendanceList() {
           manualDeduction: row.waiveDeduction ? null : (row.manualDeduction ? parseFloat(row.manualDeduction) : null),
           manualTotal: row.manualTotal ? parseFloat(row.manualTotal) : null,
           waiveDeduction: Boolean(row.waiveDeduction),
+          isLocked: true,
         };
       })
       .filter(Boolean);
@@ -818,28 +756,41 @@ export default function AttendanceList() {
       map[enrollId].push(timeVal);
     });
     return Object.entries(map).reduce((acc, [empCode, times]) => {
-      const sorted = times.slice().sort();
-      acc[empCode] = {
-        timeIn: sorted[0] || '',
-        timeOut: sorted.length > 1 ? sorted[sorted.length - 1] : ''
-      };
+      acc[empCode] = { times: times.slice().sort() };
       return acc;
     }, {});
   }, [apiRows, selectedDate]);
 
-  const getApiTimes = (empCode) => {
-    const raw = apiTimesByEmp[empCode];
-    if (!raw) return { timeIn: '', timeOut: '', hasData: false };
+  const getShiftAwareTimes = (emp) => {
+    const raw = apiTimesByEmp[String(emp?.empCode || '').trim()];
+    if (!raw?.times?.length) return { timeIn: '', timeOut: '', hasData: false };
+
+    const times = raw.times;
+    const isNight = String(emp?.dutyType || '').toLowerCase() === 'night';
+
     const toDisplay = (value) => {
       if (!value || !selectedDate) return '';
       const dt = new Date(`${selectedDate}T${value}`);
       if (Number.isNaN(dt.getTime())) return value;
       return format(dt, 'HH:mm');
     };
+
+    let timeIn = '';
+    let timeOut = '';
+
+    if (isNight) {
+      // Night shift: evening punch (18:00+) = IN, morning punch (06:00–12:00) = OUT
+      timeIn  = times.find(t => { const h = parseInt(t, 10); return h >= 18 || h <= 3; }) || '';
+      timeOut = times.find(t => { const h = parseInt(t, 10); return h >= 6 && h <= 12; }) || '';
+    } else {
+      timeIn  = times[0] || '';
+      timeOut = times.length > 1 ? times[times.length - 1] : '';
+    }
+
     return {
-      timeIn: toDisplay(raw.timeIn),
-      timeOut: toDisplay(raw.timeOut),
-      hasData: Boolean(raw.timeIn || raw.timeOut)
+      timeIn:  toDisplay(timeIn),
+      timeOut: toDisplay(timeOut),
+      hasData: Boolean(timeIn || timeOut),
     };
   };
   const combinedRecords = (() => {
@@ -873,7 +824,7 @@ export default function AttendanceList() {
       const dateValue = selectedDateOnly || '';
       const key = `${empCode}-${dateValue}`;
       const record = attendanceByEmpDate[key];
-      const apiTimes = getApiTimes(emp.empCode);
+      const apiTimes = getShiftAwareTimes(emp);
       const empOverrides = overridesByEmp[empCode] || [];
 
       // If there are one or more saved overrides for selected date, show them all.
@@ -1337,9 +1288,14 @@ export default function AttendanceList() {
       <Modal isOpen={!!editModal} onClose={() => setEditModal(null)} title="Edit Attendance" size="lg">
         {editModal && (
           <form onSubmit={handleSubmit(onEditSave)}>
+            {editRows.some(r => r.isLocked) && !isMaster && (
+              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontWeight: 600, fontSize: 13 }}>
+                🔒 This record is locked. Only the master admin can edit it.
+              </div>
+            )}
             <div className="form-group">
               <label>Employee</label>
-              <select {...register('employee')} className="form-select">
+              <select {...register('employee')} className="form-select" disabled={editRows.some(r => r.isLocked) && !isMaster}>
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
                     {e.empCode} - {e.firstName} {e.lastName}
@@ -1350,6 +1306,7 @@ export default function AttendanceList() {
             
             {/* Multiple Rows for Split Shifts */}
             {editRows.map((row, index) => {
+              const rowLocked = row.isLocked && !isMaster;
               return (
               <div key={row.id} className="mb-4 p-4 border rounded bg-gray-50">
                 <div className="flex justify-between items-center mb-2">
@@ -1372,8 +1329,9 @@ export default function AttendanceList() {
                       type="date"
                       className="form-input"
                       value={row.dateIn}
+                      disabled={rowLocked}
                       onChange={(e) => {
-                        const updated = editRows.map((r, i) => 
+                        const updated = editRows.map((r, i) =>
                           i === index ? { ...r, dateIn: e.target.value } : r
                         );
                         setEditRows(updated);
@@ -1389,14 +1347,15 @@ export default function AttendanceList() {
                       maxLength={5}
                       className="form-input"
                       value={row.timeIn}
+                      disabled={rowLocked}
                       onChange={(e) => {
-                        const updated = editRows.map((r, i) => 
+                        const updated = editRows.map((r, i) =>
                           i === index ? { ...r, timeIn: e.target.value } : r
                         );
                         setEditRows(updated);
                       }}
                       onBlur={(e) => {
-                        const updated = editRows.map((r, i) => 
+                        const updated = editRows.map((r, i) =>
                           i === index ? { ...r, timeIn: normalize24HourTime(e.target.value) } : r
                         );
                         setEditRows(updated);
@@ -1411,8 +1370,9 @@ export default function AttendanceList() {
                       type="date"
                       className="form-input"
                       value={row.dateOut}
+                      disabled={rowLocked}
                       onChange={(e) => {
-                        const updated = editRows.map((r, i) => 
+                        const updated = editRows.map((r, i) =>
                           i === index ? { ...r, dateOut: e.target.value } : r
                         );
                         setEditRows(updated);
@@ -1428,14 +1388,15 @@ export default function AttendanceList() {
                       maxLength={5}
                       className="form-input"
                       value={row.timeOut}
+                      disabled={rowLocked}
                       onChange={(e) => {
-                        const updated = editRows.map((r, i) => 
+                        const updated = editRows.map((r, i) =>
                           i === index ? { ...r, timeOut: e.target.value } : r
                         );
                         setEditRows(updated);
                       }}
                       onBlur={(e) => {
-                        const updated = editRows.map((r, i) => 
+                        const updated = editRows.map((r, i) =>
                           i === index ? { ...r, timeOut: normalize24HourTime(e.target.value) } : r
                         );
                         setEditRows(updated);
@@ -1445,11 +1406,12 @@ export default function AttendanceList() {
                 </div>
                 <div className="form-group">
                   <label>Status</label>
-                  <select 
+                  <select
                     className="form-select"
                     value={row.status}
+                    disabled={rowLocked}
                     onChange={(e) => {
-                      const updated = editRows.map((r, i) => 
+                      const updated = editRows.map((r, i) =>
                         i === index ? { ...r, status: e.target.value } : r
                       );
                       setEditRows(updated);
@@ -1501,6 +1463,7 @@ export default function AttendanceList() {
                     <input
                       type="checkbox"
                       checked={Boolean(row.waiveDeduction)}
+                      disabled={rowLocked}
                       onChange={(e) => {
                         const checked = e.target.checked;
                         const updated = editRows.map((r, i) =>
@@ -1553,34 +1516,43 @@ export default function AttendanceList() {
               );
             })}
             
-            <div className="mb-4">
-              <Button
-                type="button"
-                label="+ Add New Row (Split Shift)"
-                variant="outline"
-                onClick={() => {
-                  const newRow = {
-                    id: `${Date.now()}-${Math.random()}`,
-                    dateIn: editRows[0]?.dateIn || '',
-                    dateOut: editRows[0]?.dateOut || '',
-                    timeIn: '',
-                    timeOut: '',
-                    status: 'present',
-                    manualWrkHrs: '',
-                    manualOvertime: '',
-                    manualDeduction: '',
-                    manualTotal: '',
-                    waiveDeduction: false,
-                    isManual: true,
-                  };
-                  setEditRows((prev) => [...prev.map((r) => ({ ...r })), newRow]);
-                }}
-              />
-            </div>
-            <div className="modal-actions">
-              <Button type="button" label="Cancel" variant="ghost" onClick={() => setEditModal(null)} />
-              <Button type="submit" label="Save " />
-            </div>
+            {(() => {
+              const isEditLocked = editRows.some(r => r.isLocked) && !isMaster;
+              return (
+                <>
+                  {!isEditLocked && (
+                    <div className="mb-4">
+                      <Button
+                        type="button"
+                        label="+ Add New Row (Split Shift)"
+                        variant="outline"
+                        onClick={() => {
+                          const newRow = {
+                            id: `${Date.now()}-${Math.random()}`,
+                            dateIn: editRows[0]?.dateIn || '',
+                            dateOut: editRows[0]?.dateOut || '',
+                            timeIn: '',
+                            timeOut: '',
+                            status: 'present',
+                            manualWrkHrs: '',
+                            manualOvertime: '',
+                            manualDeduction: '',
+                            manualTotal: '',
+                            waiveDeduction: false,
+                            isManual: true,
+                          };
+                          setEditRows((prev) => [...prev.map((r) => ({ ...r })), newRow]);
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="modal-actions">
+                    <Button type="button" label="Cancel" variant="ghost" onClick={() => setEditModal(null)} />
+                    {!isEditLocked && <Button type="submit" label="Save" />}
+                  </div>
+                </>
+              );
+            })()}
           </form>
         )}
       </Modal>

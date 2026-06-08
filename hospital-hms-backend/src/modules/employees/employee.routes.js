@@ -16,4 +16,9 @@ router.post('/', controller.create);
 router.put('/:id', controller.update);
 router.delete('/:id', controller.remove);
 
+router.get('/:id/dependents', controller.getDependents);
+router.post('/:id/dependents', controller.addDependent);
+router.put('/:id/dependents/:depId', controller.updateDependent);
+router.delete('/:id/dependents/:depId', controller.deleteDependent);
+
 module.exports = router;

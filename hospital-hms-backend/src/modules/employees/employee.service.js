@@ -294,13 +294,53 @@ async function list() {
 
 async function get(id) {
   const employee = await prisma.employee.findUnique({
-    where: { id: parseInt(id) }
+    where: { id: parseInt(id) },
+    include: { dependents: { orderBy: { id: 'asc' } } },
   });
 
   if (!employee) return null;
 
   const [extended] = await getExtendedFieldsByEmployeeIds([employee.id]);
   return mergeExtendedFields(employee, extended);
+}
+
+async function getDependents(employeeId) {
+  return prisma.employeeDependent.findMany({
+    where: { employeeId: toIntId(employeeId, 'employee id') },
+    orderBy: { id: 'asc' },
+  });
+}
+
+async function addDependent(employeeId, payload) {
+  return prisma.employeeDependent.create({
+    data: {
+      employeeId: toIntId(employeeId, 'employee id'),
+      code: normalizeString(payload.code) || '',
+      name: normalizeString(payload.name) || '',
+      relation: normalizeString(payload.relation) || '',
+      dob: payload.dob ? new Date(payload.dob) : null,
+      gender: normalizeString(payload.gender) || 'male',
+      status: normalizeString(payload.status) || 'active',
+    },
+  });
+}
+
+async function updateDependent(id, payload) {
+  return prisma.employeeDependent.update({
+    where: { id: toIntId(id, 'dependent id') },
+    data: {
+      code: normalizeString(payload.code) || '',
+      name: normalizeString(payload.name) || '',
+      relation: normalizeString(payload.relation) || '',
+      dob: payload.dob ? new Date(payload.dob) : null,
+      gender: normalizeString(payload.gender) || 'male',
+      status: normalizeString(payload.status) || 'active',
+    },
+  });
+}
+
+async function deleteDependent(id) {
+  return prisma.employeeDependent.delete({ where: { id: toIntId(id, 'dependent id') } });
 }
 
 async function create(payload) {
@@ -345,7 +385,8 @@ async function create(payload) {
     emergencyContact: normalizeString(payload.emergencyContact, { emptyToNull: true }),
     emergencyPhone: normalizeString(payload.emergencyPhone, { emptyToNull: true }),
     emergencyRelation: normalizeString(payload.emergencyRelation, { emptyToNull: true }),
-    notes: normalizeString(payload.notes, { emptyToNull: true })
+    notes: normalizeString(payload.notes, { emptyToNull: true }),
+    qualification: normalizeString(payload.qualification, { emptyToNull: true }),
   };
 
   if (employeeModelHasField('isNightShift')) {
@@ -408,6 +449,7 @@ async function update(id, payload) {
   setIfDefined(data, 'emergencyPhone', normalizeString(payload.emergencyPhone, { emptyToNull: true }));
   setIfDefined(data, 'emergencyRelation', normalizeString(payload.emergencyRelation, { emptyToNull: true }));
   setIfDefined(data, 'notes', normalizeString(payload.notes, { emptyToNull: true }));
+  setIfDefined(data, 'qualification', normalizeString(payload.qualification, { emptyToNull: true }));
 
   const updated = await updateEmployeeWithFallback(id, data);
   const extended = await upsertExtendedEmployeeFields(id, payload);
@@ -581,4 +623,8 @@ module.exports = {
   listDesignationHeadsByDepartment,
   createDesignationHead,
   removeDesignationHead,
+  getDependents,
+  addDependent,
+  updateDependent,
+  deleteDependent,
 };

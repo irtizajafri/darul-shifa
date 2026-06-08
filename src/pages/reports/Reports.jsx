@@ -117,6 +117,7 @@ export default function Reports() {
   const [registerRows, setRegisterRows]         = useState([]);
   const [isGenerating, setIsGenerating]         = useState(false);
   const [genQueue, setGenQueue]                 = useState([]);
+  const [registerView, setRegisterView]         = useState('full');
 
   // ─── Register Date Range ──────────────────────────────────────────────────
   const [registerStartDay, setRegisterStartDay] = useState(1);
@@ -1220,6 +1221,7 @@ export default function Reports() {
         scheduledByDate.set(dateKey, Math.max(prev, scheduled));
       });
 
+      const isFixed = String(emp?.workingDays || '').toLowerCase() === 'fixed';
       const dayStateMap = new Map();
 
       return sortedAttendance.flatMap((record) => {
@@ -1354,12 +1356,12 @@ export default function Reports() {
             : (rowDutyMinutes / 60).toFixed(2),
           wrkHrs:  wrkHrsDisplay,
           ot:      isFuture ? "0.00" : otHrs,
-          otAmt:   String(Math.max(0, otVal)),
-          late:    (isAvailOff || isWorkedExtra || effectiveOffDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
+          otAmt:   isFixed ? '0' : String(Math.max(0, otVal)),
+          late:    (isFixed || isAvailOff || isWorkedExtra || effectiveOffDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
           status:  displayStatus,
-          salary:  String(grossPerDay),
-          ded:     String(ded),
-          total:   String(Math.max(0, grossPerDay - ded + otVal)),
+          salary:  isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(grossPerDay),
+          ded:     isFixed ? '0' : String(ded),
+          total:   isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(Math.max(0, grossPerDay - ded + otVal)),
         };
 
         const useRawPunchBreakdown = !record?.fromOverride;
@@ -1412,12 +1414,12 @@ export default function Reports() {
             dutyHrs: shouldHideDutyHours ? '0.00' : (extraDutyMinutes / 60).toFixed(2),
             wrkHrs: workedHoursFromPair(extraIn, extraOut),
             ot: isFuture ? '0.00' : (extraOvertimeMinutes / 60).toFixed(2),
-            otAmt: String(extraOtVal),
+            otAmt: isFixed ? '0' : String(extraOtVal),
             late: 'N',
             status: displayStatus,
-            salary: String(extraTotal),
+            salary: isFixed ? '0' : String(extraTotal),
             ded: '0',
-            total: String(extraTotal),
+            total: isFixed ? '0' : String(extraTotal),
           });
         }
 
@@ -1455,7 +1457,7 @@ export default function Reports() {
       ded:     i % 5 === 0 ? Math.round(15 * fallbackPerMinute).toString() : "0",
       total:   i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
     }));
-  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled, normalizeWaiveDeductionFlag]);
+  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, emp?.workingDays, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled, normalizeWaiveDeductionFlag]);
 
   const calculatedSalaryFromRows = useMemo(() => {
     return detailedAttendanceRows.reduce((sum, row) => {
@@ -1498,16 +1500,30 @@ export default function Reports() {
 
     setRegisterRows(prev => {
       if (prev.find(r => r.code === emp.empCode)) return prev;
+      const isSingleDay = registerStartDay === registerEndDay;
+      const timestamps = isSingleDay
+        ? registerRangeRows
+            .filter(r => r.timeIn !== '--' || r.timeOut !== '--')
+            .map(r => `${r.timeIn} → ${r.timeOut}`)
+            .join(', ') || '--'
+        : null;
+      const timestampRows = registerRangeRows.map(r => ({
+        date:    r.date || '',
+        timeIn:  r.timeIn  !== '--' ? r.timeIn  : '',
+        timeOut: r.timeOut !== '--' ? r.timeOut : '',
+      }));
       return [...prev, {
-        code:        emp.empCode,
-        name:        `${emp.firstName} ${emp.lastName}`,
-        deduction:   registerRangeSalaryData.deductions,
-        otBonus:     registerRangeSalaryData.otBonus,
-        finalSalary: registerRangeSalaryData.finalSal,
+        code:          emp.empCode,
+        name:          `${emp.firstName} ${emp.lastName}`,
+        deduction:     registerRangeSalaryData.deductions,
+        otBonus:       registerRangeSalaryData.otBonus,
+        finalSalary:   registerRangeSalaryData.finalSal,
+        timestamps,
+        timestampRows,
       }];
     });
     setGenQueue(prev => prev.slice(1));
-  }, [isGenerating, loadedForEmpCode, emp, genQueue, registerRangeSalaryData]);
+  }, [isGenerating, loadedForEmpCode, emp, genQueue, registerRangeSalaryData, registerStartDay, registerEndDay, registerRangeRows]);
 
   // ─── Register reset: koi bhi filter change hone pe purana data clear ────────
   useEffect(() => {
@@ -1689,13 +1705,14 @@ export default function Reports() {
     let startY     = 140;
 
     const titleMap = {
-      payslip:               "Payslip Report",
-      "payslip-detailed":    "Detailed Payslip",
-      "payroll-detailed":    "Payroll Detailed",
-      "payroll-consolidated":"Payroll Consolidated",
-      "salary-register":     "Salary Register",
-      missing:               "Missing Salary",
-      cr:                    "Employee CR",
+      payslip:                        "Payslip Report",
+      "payslip-detailed":             "Detailed Payslip",
+      "payroll-detailed":             "Payroll Detailed",
+      "payroll-consolidated":         "Payroll Consolidated",
+      "salary-register":              "Salary Register",
+      "salary-register-timestamps":   "Attendance Timestamps",
+      missing:                        "Missing Salary",
+      cr:                             "Employee CR",
     };
 
     if (isConcentratedPayslip) {
@@ -1843,7 +1860,42 @@ export default function Reports() {
       pdf.text("ONLY FOR REPORTING", pageWidth / 2, headerTopY + 40, { align: "center" });
       pdf.setTextColor(0);
       pdf.setFontSize(9);
-      const summaryTopY = headerTopY + 58;
+
+      // Advance/Loan info below watermark
+      const activeAdvanceRecords = activeEmployeeLoans.filter((a) =>
+        String(a.type || '').toLowerCase() === 'advance' &&
+        (a.baseSchedule || a.schedule || []).some((s) => s.month === currentMonthKey)
+      );
+      const activeLoanRecords = activeEmployeeLoans.filter((a) =>
+        String(a.type || '').toLowerCase() === 'loan' &&
+        (a.schedule || []).some((s) => s.month === currentMonthKey)
+      );
+      const advLoanLines = [];
+      activeAdvanceRecords.forEach((adv) => {
+        const amt = Number(adv.amount || 0).toLocaleString();
+        const issueD = adv.issueDate ? String(adv.issueDate).split('-').reverse().join('-') : '-';
+        advLoanLines.push(`ADVANCE TAKEN: PKR ${amt}   |   Issue Date: ${issueD}`);
+      });
+      activeLoanRecords.forEach((loan) => {
+        const amt = Number(loan.amount || 0).toLocaleString();
+        const issueD = loan.issueDate ? String(loan.issueDate).split('-').reverse().join('-') : '-';
+        advLoanLines.push(`LOAN TAKEN: PKR ${amt}   |   Issue Date: ${issueD}`);
+      });
+      let advInfoExtraHeight = 0;
+      if (advLoanLines.length > 0) {
+        let advY = headerTopY + 52;
+        pdf.setFontSize(8);
+        pdf.setFont("helvetica", "bold");
+        advLoanLines.forEach((line) => {
+          pdf.text(line, pageWidth / 2, advY, { align: "center" });
+          advY += 11;
+        });
+        pdf.setFont("helvetica", "normal");
+        advInfoExtraHeight = advLoanLines.length * 11;
+      }
+      pdf.setFontSize(9);
+
+      const summaryTopY = headerTopY + 58 + advInfoExtraHeight;
       const rightColX = pageWidth - 205;
       pdf.text(`CURRENT MONTH SALARY`, 40, summaryTopY, { fontStyle: "bold" });
   pdf.text(`TOTAL : ${effectiveBaseTotalSal.toLocaleString()}`, 40, summaryTopY + 15);
@@ -2009,20 +2061,28 @@ export default function Reports() {
       pdf.setTextColor(0);
 
       const hasSalaryData = registerRows.length > 0;
+      const isSingleDayPdf = registerStartDay === registerEndDay;
+
       const pdfHead = hasSalaryData
-        ? [["#", "Code", "Name", "Basic+Allow", "Deduction", "OT Bonus", "Net Salary"]]
+        ? [isSingleDayPdf
+            ? ["#", "Code", "Name", "Basic+Allow", "Deduction", "OT Bonus", "Net Salary", "Timestamps"]
+            : ["#", "Code", "Name", "Basic+Allow", "Deduction", "OT Bonus", "Net Salary"]]
         : [["#", "Code", "Name", "Amount"]];
 
       const pdfDataRows = hasSalaryData
-        ? registerRows.map((r, i) => [
-            String(i + 1),
-            r.code,
-            r.name,
-            `PKR ${(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}`,
-            `PKR ${r.deduction.toLocaleString()}`,
-            `PKR ${r.otBonus.toLocaleString()}`,
-            `PKR ${r.finalSalary.toLocaleString()}`,
-          ])
+        ? registerRows.map((r, i) => {
+            const base = [
+              String(i + 1),
+              r.code,
+              r.name,
+              `PKR ${(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}`,
+              `PKR ${r.deduction.toLocaleString()}`,
+              `PKR ${r.otBonus.toLocaleString()}`,
+              `PKR ${r.finalSalary.toLocaleString()}`,
+            ];
+            if (isSingleDayPdf) base.push(r.timestamps || '--');
+            return base;
+          })
         : salaryRegisterRows.map((r, i) => [String(i + 1), r.code, r.name, r.amount]);
 
       const pdfTotalsRow = hasSalaryData && registerTotals
@@ -2032,6 +2092,7 @@ export default function Reports() {
             `PKR ${registerTotals.deduction.toLocaleString()}`,
             `PKR ${registerTotals.otBonus.toLocaleString()}`,
             `PKR ${registerTotals.finalSalary.toLocaleString()}`,
+            ...(isSingleDayPdf ? [""] : []),
           ]
         : null;
 
@@ -2049,6 +2110,52 @@ export default function Reports() {
             data.cell.styles.fillColor = [30, 41, 59];
             data.cell.styles.textColor = [255, 255, 255];
             data.cell.styles.fontStyle = 'bold';
+          }
+        },
+      });
+    }
+
+    if (scope === "salary-register-timestamps") {
+      const rangeLabel = (registerStartDay === 1 && registerEndDay === daysInSelectedMonth)
+        ? `Full Month (${month}/${year})`
+        : `Day ${registerStartDay}–${registerEndDay} (${month}/${year})`;
+      const printedOn  = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const pageWidth  = pdf.internal.pageSize.getWidth();
+      pdf.setFontSize(9);
+      pdf.setTextColor(100);
+      pdf.text(`Period: ${rangeLabel}`, 40, startY - 10);
+      pdf.text(`Printed: ${printedOn}`, pageWidth - 40, startY - 10, { align: 'right' });
+      pdf.setTextColor(0);
+
+      const tsAllRows = registerRows.flatMap(r =>
+        (r.timestampRows || []).map(ts => [r.name, ts.date, ts.timeIn || '--', ts.timeOut || '--', ''])
+      );
+
+      const pdfMargin   = 40;
+      const usableWidth = pdf.internal.pageSize.getWidth() - pdfMargin * 2;
+      autoTable(pdf, {
+        startY,
+        margin: { left: pdfMargin, right: pdfMargin },
+        tableWidth: usableWidth,
+        head: [['Employee Name', 'Date', 'Time IN', 'Time OUT', 'Sign']],
+        body: tsAllRows.length > 0 ? tsAllRows : [['No data', '', '', '', '']],
+        styles: { fontSize: 9, cellPadding: 5 },
+        headStyles: { fillColor: [15, 118, 110], fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: usableWidth * 0.35 },
+          1: { cellWidth: usableWidth * 0.14, halign: 'center' },
+          2: { cellWidth: usableWidth * 0.12, halign: 'center' },
+          3: { cellWidth: usableWidth * 0.12, halign: 'center' },
+          4: { cellWidth: usableWidth * 0.27, halign: 'center' },
+        },
+        alternateRowStyles: { fillColor: [240, 253, 250] },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.column.index === 4) {
+            const { x, y, width, height } = data.cell;
+            const pad = 4;
+            pdf.setDrawColor(100, 100, 100);
+            pdf.setLineWidth(0.5);
+            pdf.rect(x + pad, y + pad, width - pad * 2, height - pad * 2);
           }
         },
       });
@@ -2097,11 +2204,13 @@ export default function Reports() {
       });
     }
 
-    const keepOnFirstPage = scope === "payslip" || scope === "payslip-detailed";
-    addPdfSignatures(pdf, {
-      forceFirstPage: keepOnFirstPage,
-      fixedBaseY: keepOnFirstPage ? (pdf.internal.pageSize.getHeight() - 165) : null,
-    });
+    if (scope !== "salary-register" && scope !== "salary-register-timestamps") {
+      const keepOnFirstPage = scope === "payslip" || scope === "payslip-detailed";
+      addPdfSignatures(pdf, {
+        forceFirstPage: keepOnFirstPage,
+        fixedBaseY: keepOnFirstPage ? (pdf.internal.pageSize.getHeight() - 165) : null,
+      });
+    }
     addPdfFooter(pdf);
 
     if (autoPrint) {
@@ -2134,6 +2243,17 @@ export default function Reports() {
       if (scope === "payroll-detailed")     rows = payrollDetailedRows;
       if (scope === "payroll-consolidated") rows = payrollConsolidatedRows;
       if (scope === "salary-register")      rows = salaryRegisterRows;
+      if (scope === "salary-register-timestamps") {
+        rows = registerRows.flatMap(r =>
+          (r.timestampRows || []).map(ts => ({
+            'Employee Name': r.name,
+            'Date': ts.date,
+            'Time IN': ts.timeIn || '--',
+            'Time OUT': ts.timeOut || '--',
+            'Sign': '',
+          }))
+        );
+      }
       if (scope === "payslip") {
         rows = [
           { field: "Emp Code",    value: emp?.empCode },
@@ -2452,9 +2572,9 @@ export default function Reports() {
           <div className="report-head">
             <h3>Payroll Report</h3>
             <div className="export-actions print-hidden">
-              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
-              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
-              <Button label="Print" variant="outline" onClick={() => handleExport("print", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : "salary-register")} />
+              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? "salary-register-timestamps" : "salary-register")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? "salary-register-timestamps" : "salary-register")} />
+              <Button label="Print" variant="outline" onClick={() => handleExport("print", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? "salary-register-timestamps" : "salary-register")} />
             </div>
           </div>
           <div className="filters-row print-hidden">
@@ -2609,6 +2729,16 @@ export default function Reports() {
             <div className="table-wrap print-area">
               <h4 className="section-title">Salary Register</h4>
 
+              {/* ─── View Toggle ─────────────────────────────────────────── */}
+              <div className="print-hidden" style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                {[{ val: 'full', label: 'Full' }, { val: 'timestamps', label: 'Timestamps' }].map(opt => (
+                  <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', padding: '5px 14px', borderRadius: '6px', border: `1px solid ${registerView === opt.val ? '#2563eb' : '#e2e8f0'}`, background: registerView === opt.val ? '#eff6ff' : '#fff', fontSize: '13px', fontWeight: 500, color: registerView === opt.val ? '#1d4ed8' : '#475569' }}>
+                    <input type="radio" name="registerView" value={opt.val} checked={registerView === opt.val} onChange={() => setRegisterView(opt.val)} style={{ accentColor: '#2563eb' }} />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+
               {/* ─── Date Range Filter ───────────────────────────────────── */}
               <div className="print-hidden" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#475569' }}>Date Range:</span>
@@ -2716,6 +2846,46 @@ export default function Reports() {
               )}
 
               {/* ── Table ────────────────────────────────────────────────── */}
+              {registerView === 'timestamps' ? (
+                <div style={{ overflowX: 'auto' }}>
+                  {registerRows.length === 0 ? (
+                    <p style={{ color: '#94a3b8', fontSize: '13px', padding: '12px 0' }}>Generate karo pehle phir timestamps dikhenge.</p>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ background: '#0f766e', color: '#fff' }}>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>#</th>
+                          <th style={{ ...thStyle, textAlign: 'left' }}>Employee Name</th>
+                          <th style={thStyle}>Date</th>
+                          <th style={thStyle}>Time IN</th>
+                          <th style={thStyle}>Time OUT</th>
+                          <th style={{ ...thStyle, width: '100px' }}>Sign</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {registerRows.flatMap(r =>
+                          (r.timestampRows || []).map((ts, tsIdx) => ({
+                            key: `${r.code}-${ts.date}-${tsIdx}`,
+                            empName: r.name,
+                            date: ts.date,
+                            timeIn: ts.timeIn,
+                            timeOut: ts.timeOut,
+                          }))
+                        ).map((row, idx) => (
+                          <tr key={row.key} style={{ background: idx % 2 === 0 ? '#fff' : '#f0fdfa' }}>
+                            <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
+                            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>{row.empName}</td>
+                            <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{row.date}</td>
+                            <td style={{ ...tdStyle, color: row.timeIn ? '#0f766e' : '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>{row.timeIn || '--'}</td>
+                            <td style={{ ...tdStyle, color: row.timeOut ? '#0f766e' : '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>{row.timeOut || '--'}</td>
+                            <td style={{ ...tdStyle, borderBottom: '1px solid #99f6e4', minWidth: '90px' }}></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              ) : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
@@ -2727,6 +2897,9 @@ export default function Reports() {
                       <th style={{ ...thStyle, color: '#fca5a5' }}>Deduction</th>
                       <th style={{ ...thStyle, color: '#93c5fd' }}>OT Bonus</th>
                       <th style={{ ...thStyle, color: '#fde68a' }}>Net Salary</th>
+                      {registerStartDay === registerEndDay && (
+                        <th style={{ ...thStyle, color: '#a5f3fc' }}>Timestamps</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -2740,6 +2913,11 @@ export default function Reports() {
                             <td style={{ ...tdStyle, color: r.deduction > 0 ? '#dc2626' : '#475569' }}>PKR {r.deduction.toLocaleString()}</td>
                             <td style={{ ...tdStyle, color: r.otBonus > 0 ? '#2563eb' : '#475569' }}>PKR {r.otBonus.toLocaleString()}</td>
                             <td style={{ ...tdStyle, fontWeight: 700, color: '#16a34a' }}>PKR {r.finalSalary.toLocaleString()}</td>
+                            {registerStartDay === registerEndDay && (
+                              <td style={{ ...tdStyle, color: r.timestamps && r.timestamps !== '--' ? '#0891b2' : '#94a3b8', fontFamily: 'monospace', fontSize: '11px' }}>
+                                {r.timestamps || '--'}
+                              </td>
+                            )}
                           </tr>
                         ))
                       : salaryRegisterRows.map((r, idx) => (
@@ -2751,6 +2929,9 @@ export default function Reports() {
                             <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
                             <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
                             <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
+                            {registerStartDay === registerEndDay && (
+                              <td style={{ ...tdStyle, color: '#94a3b8' }}>—</td>
+                            )}
                           </tr>
                         ))
                     }
@@ -2769,11 +2950,15 @@ export default function Reports() {
                         <td style={{ ...tdStyle, color: '#fca5a5' }}>PKR {registerTotals.deduction.toLocaleString()}</td>
                         <td style={{ ...tdStyle, color: '#93c5fd' }}>PKR {registerTotals.otBonus.toLocaleString()}</td>
                         <td style={{ ...tdStyle, color: '#fde68a', fontSize: '14px' }}>PKR {registerTotals.finalSalary.toLocaleString()}</td>
+                        {registerStartDay === registerEndDay && (
+                          <td style={{ ...tdStyle, color: '#fff' }}>—</td>
+                        )}
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
+              )}
               <div className="sheet-footer muted" style={{ marginTop: '8px' }}>
                 Total employees: {registerRows.length > 0 ? registerRows.length : salaryRegisterRows.length}
                 {isGenerating && <span style={{ marginLeft: '10px', color: '#2563eb' }}>⏳ Processing {registerRows.length}/{employees.length}...</span>}

@@ -1,0 +1,248 @@
+@use '../../../styles/variables' as *;
+
+.bed-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  padding: 0.5rem 0;
+}
+
+.bed-section {
+  &__title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #334155;
+    margin-bottom: 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid #e2e8f0;
+  }
+
+  &__rate {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #16a34a;
+    background: #dcfce7;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+}
+
+.bed-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+
+  @media (max-width: 1024px) { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 768px)  { grid-template-columns: repeat(2, 1fr); }
+  @media (max-width: 480px)  { grid-template-columns: 1fr; }
+}
+
+.bed-card {
+  position: relative;
+  border-radius: 10px;
+  padding: 1rem 0.9rem 0.85rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 90px;
+  transition: transform 0.12s, box-shadow 0.12s;
+  border: 2px solid transparent;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  }
+
+  &--available {
+    background: #dcfce7;
+    border-color: #86efac;
+
+    &:hover { border-color: #4ade80; }
+  }
+
+  &--occupied {
+    background: #fee2e2;
+    border-color: #fca5a5;
+
+    &:hover { border-color: #f87171; }
+  }
+
+  &__actions {
+    position: absolute;
+    top: 0.45rem;
+    right: 0.45rem;
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  &:hover &__actions {
+    opacity: 1;
+  }
+
+  &__icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+
+    &.bed-card__edit {
+      background: rgba(37,99,235,0.12);
+      color: #2563eb;
+      &:hover { background: rgba(37,99,235,0.22); }
+    }
+
+    &.bed-card__delete {
+      background: rgba(225,29,72,0.12);
+      color: #e11d48;
+      &:hover { background: rgba(225,29,72,0.22); }
+    }
+  }
+
+  &__name {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #0f172a;
+    padding-right: 3rem;
+  }
+
+  &__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.2rem;
+  }
+
+  &__mr {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #7f1d1d;
+  }
+
+  &__consultant {
+    font-size: 0.7rem;
+    color: #991b1b;
+  }
+
+  &__patient {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #7f1d1d;
+  }
+
+  &__adm {
+    font-size: 0.68rem;
+    color: #991b1b;
+  }
+
+  &__status-label {
+    font-size: 0.72rem;
+    color: #166534;
+    font-weight: 500;
+    margin-top: auto;
+  }
+
+  &__rate {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #1e40af;
+    margin-top: auto;
+    padding-top: 0.3rem;
+    border-top: 1px solid rgba(0,0,0,0.08);
+  }
+}
+
+// ─── Bed Detail Modal ─────────────────────────────────────────────────────────
+
+.bed-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.bed-detail-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 380px;
+  max-width: 94vw;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+
+.bed-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+
+  &--green { background: #16a34a; }
+  &--red   { background: #dc2626; }
+}
+
+.bed-detail-close {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.8;
+  &:hover { opacity: 1; }
+}
+
+.bed-detail-body {
+  padding: 1rem 1.1rem 1.25rem;
+}
+
+.bed-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+
+  tr {
+    border-bottom: 1px solid #f1f5f9;
+    &:last-child { border-bottom: none; }
+  }
+
+  td {
+    padding: 0.5rem 0.25rem;
+    &:first-child {
+      color: #64748b;
+      width: 42%;
+      font-weight: 500;
+    }
+    &:last-child {
+      color: #0f172a;
+      font-weight: 600;
+    }
+  }
+}
+
+.bed-detail-free {
+  font-size: 0.85rem;
+  color: #16a34a;
+  text-align: center;
+  padding: 1rem 0;
+  font-weight: 500;
+}

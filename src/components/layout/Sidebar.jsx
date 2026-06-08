@@ -21,6 +21,7 @@ import {
   FileText,
   Wrench,
   ShieldCheck,
+  UserRound,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -31,7 +32,7 @@ const mainNavItems = [
   { path: '/employee-module', label: 'Employee Mgmt', icon: Users, module: 'employee', permModule: 'employee' },
   { path: '/coming-soon', label: 'Laboratories', icon: FlaskConical, module: 'lab' },
   { path: '/inventory-module', label: 'Inventory Mgmt', icon: Package, module: 'inventory', permModule: 'inventory' },
-  { path: '/coming-soon', label: 'Clinic', icon: Stethoscope, module: 'clinic' },
+  { path: '/clinic-module', label: 'Clinic', icon: Stethoscope, module: 'clinic', permModule: 'clinic' },
   { path: '/coming-soon', label: 'Accounts', icon: Wallet, module: 'accounts' },
 ];
 
@@ -47,6 +48,12 @@ const inventoryNavItems = [
   { path: '/inventory/gdn', label: 'Discard (GDN)', icon: ArrowDownRight, permKey: 'gdn' },
   { path: '/inventory/maintenance', label: 'Maintenance', icon: Wrench, permKey: 'maintenance' },
   { path: '/inventory/reports', label: 'Reports', icon: BarChart3, permKey: 'inventory-reports' },
+];
+
+const clinicNavItems = [
+  { path: '/dashboard', label: 'Main Dashboard', icon: ArrowLeft, clearModule: true },
+  { path: '/clinic-module', label: 'Clinic Dashboard', icon: LayoutDashboard },
+  { path: '/clinic/general-opd', label: 'General OPD', icon: UserRound, permKey: 'general-opd' },
 ];
 
 const employeeNavItems = [
@@ -73,6 +80,9 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     } else if (item.module === 'inventory') {
       setModule('inventory');
       navigate('/inventory-module');
+    } else if (item.module === 'clinic') {
+      setModule('clinic');
+      navigate('/clinic-module');
     } else if (item.module) {
       clearModule();
       navigate(item.path);
@@ -170,6 +180,40 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
               </NavLink>
             )
           )}
+        </nav>
+      </aside>
+    );
+  }
+
+  if (activeModule === 'clinic') {
+    return (
+      <aside className={sidebarClass}>
+        <div className="p-4 border-b border-[#E2E8F0]">
+          {!collapsed && (
+            <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">
+              Clinic Module
+            </p>
+          )}
+        </div>
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {clinicNavItems.map((item, i) => {
+            if (item.section) {
+              return !collapsed ? (
+                <div key={i} className="px-3 pt-3 pb-1">
+                  <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">{item.section}</p>
+                </div>
+              ) : <div key={i} className="border-t border-[#E2E8F0] my-1" />;
+            }
+            return item.clearModule ? (
+              <NavLink key={item.path + item.label} to={item.path} className={navItemClass} onClick={() => clearModule()}>
+                {linkContent(item)}
+              </NavLink>
+            ) : (
+              <NavLink key={item.path + item.label} to={item.path} className={navItemClass}>
+                {linkContent(item)}
+              </NavLink>
+            );
+          })}
         </nav>
       </aside>
     );

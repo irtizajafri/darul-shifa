@@ -79,6 +79,21 @@ export const PERMISSIONS_MAP = {
       },
     ],
   },
+  clinic: {
+    label: 'Clinic',
+    dashboardRoute: '/clinic-module',
+    subModules: [
+      { key: 'general-opd',      label: 'General OPD' },
+      { key: 'department',       label: 'Department' },
+      { key: 'sub-department',   label: 'Sub Department' },
+      { key: 'staff-category',   label: 'Staff Category' },
+      { key: 'doctors',          label: 'Doctors / Consultant' },
+      { key: 'room-category',    label: 'Room Category' },
+      { key: 'bed',              label: 'Bed' },
+      { key: 'bill-heads',       label: 'Bill Heads' },
+      { key: 'panel-companies',  label: 'Panel Companies' },
+    ],
+  },
 };
 
 /**

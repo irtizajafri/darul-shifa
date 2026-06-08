@@ -1,0 +1,323 @@
+@use '../../../styles/variables' as *;
+
+.bh-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #f8fafc;
+}
+
+.bh-loading {
+  padding: 3rem;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.bh-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+// ── Title bar ──────────────────────────────────────────────────────────────────
+.bh-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1e3a5f;
+  color: #fff;
+  padding: 0.55rem 1rem;
+  border-radius: 8px;
+}
+
+.bh-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.bh-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: none;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover { background: rgba(255,255,255,0.25); }
+}
+
+// ── Form card ─────────────────────────────────────────────────────────────────
+.bh-form-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.bh-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  &--checks {
+    align-items: center;
+    gap: 1.5rem;
+    padding: 0.25rem 0;
+  }
+}
+
+.bh-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+
+  &--sm  { width: 140px; }
+  &--md  { width: 240px; }
+  &--lg  { flex: 1; min-width: 200px; }
+  &--full { flex: 1; }
+}
+
+.bh-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.bh-req { color: #e11d48; }
+
+.bh-input {
+  padding: 0.42rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  outline: none;
+  transition: border-color 0.12s;
+  background: #fff;
+
+  &:focus { border-color: #2563eb; }
+
+  &--xs { width: 90px; }
+  &--readonly { background: #f1f5f9; color: #64748b; cursor: default; }
+  &--inline { width: 80px; padding: 0.25rem 0.4rem; font-size: 0.78rem; }
+}
+
+.bh-select {
+  padding: 0.42rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  outline: none;
+  background: #fff;
+  cursor: pointer;
+  width: 100%;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.bh-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: #334155;
+  cursor: pointer;
+
+  input[type="checkbox"] { cursor: pointer; width: 14px; height: 14px; }
+
+  &--orange { color: #ea580c; font-weight: 600; }
+  &--bar { font-size: 0.78rem; }
+}
+
+.bh-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+// ── Staff Categories ───────────────────────────────────────────────────────────
+.bh-staff-cats {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+
+  &__label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.6rem;
+  }
+
+  &__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+  }
+}
+
+// ── Ward Section ──────────────────────────────────────────────────────────────
+.bh-ward-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.bh-ward-title {
+  background: #f1f5f9;
+  padding: 0.5rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #334155;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.bh-ward-table-wrap {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.bh-ward-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+
+  thead {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    z-index: 1;
+
+    th {
+      padding: 0.5rem 0.7rem;
+      text-align: left;
+      font-weight: 700;
+      font-size: 0.72rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+  }
+
+  .bh-th-check { width: 36px; }
+}
+
+.bh-ward-row {
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid #f1f5f9;
+
+  td {
+    padding: 0.42rem 0.7rem;
+    color: #0f172a;
+  }
+
+  &:hover { background: #f8fafc; }
+
+  &--selected {
+    background: #eff6ff !important;
+    td { color: #1e40af; }
+  }
+}
+
+.bh-td-check { width: 36px; text-align: center; }
+.bh-td-code  { font-weight: 700; color: #475569 !important; }
+
+.bh-status-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+
+  &--active   { background: #dcfce7; color: #16a34a; }
+  &--inactive { background: #fee2e2; color: #dc2626; }
+}
+
+// ── Bottom editing bar ────────────────────────────────────────────────────────
+.bh-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.6rem 1rem;
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #475569;
+    white-space: nowrap;
+  }
+}
+
+.bh-confirm-btn {
+  margin-left: auto;
+  padding: 0.38rem 1.1rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover:not(:disabled) { background: #1d4ed8; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── Footer ────────────────────────────────────────────────────────────────────
+.bh-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.65rem 1.1rem;
+}
+
+.bh-save-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1.4rem;
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover:not(:disabled) { background: #15803d; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}

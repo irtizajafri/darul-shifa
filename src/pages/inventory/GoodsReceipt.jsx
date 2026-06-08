@@ -59,6 +59,7 @@ export default function GoodsReceipt() {
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [selectedPoCode, setSelectedPoCode] = useState('');
+  const [headerReceivedDate, setHeaderReceivedDate] = useState(new Date().toISOString().slice(0, 10));
   const [headerBillDate, setHeaderBillDate] = useState('');
   const [paymentType, setPaymentType] = useState('cash');
   const [paymentNote, setPaymentNote] = useState('');
@@ -165,6 +166,7 @@ export default function GoodsReceipt() {
           receivedQuantity: Number(line.receivedQuantity),
           receivedRate: Number(line.receivedRate),
           retailPrice: line.retailPrice ? Number(line.retailPrice) : undefined,
+          receivedDate: headerReceivedDate || undefined,
           billDate: headerBillDate || undefined,
           expiryDate: line.expiryDate || undefined,
           paymentType,
@@ -194,6 +196,7 @@ export default function GoodsReceipt() {
       await Promise.all([fetchGRNs(), fetchPurchaseOrders({ status: 'open' })]);
       setSelectedPoCode('');
       setDraftLines([]);
+      setHeaderReceivedDate(new Date().toISOString().slice(0, 10));
       setHeaderBillDate('');
       setPaymentType('cash');
       setPaymentNote('');
@@ -207,6 +210,7 @@ export default function GoodsReceipt() {
   const handleCancelGRN = () => {
     setSelectedPoCode('');
     setDraftLines([]);
+    setHeaderReceivedDate(new Date().toISOString().slice(0, 10));
     setHeaderBillDate('');
     setPaymentType('cash');
     setPaymentNote('');
@@ -247,6 +251,16 @@ export default function GoodsReceipt() {
                   getLabel={(po) => `${po.rootCode} (${po.supplier?.name || '-'})`}
                   getValue={(po) => po.rootCode}
                   className="min-w-[280px]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Received Date</label>
+                <input
+                  type="date"
+                  value={headerReceivedDate}
+                  onChange={(e) => setHeaderReceivedDate(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                  required
                 />
               </div>
               <div>
@@ -386,7 +400,7 @@ export default function GoodsReceipt() {
               <Button
                 variant="secondary"
                 label="Cancel"
-                onClick={() => { setShowCreate(false); setSelectedPoCode(''); setDraftLines([]); setHeaderBillDate(''); setPaymentType('cash'); setPaymentNote(''); }}
+                onClick={handleCancelGRN}
               />
             </div>
           </div>

@@ -8,6 +8,23 @@ import Signup from '../pages/auth/Signup';
 import MainDashboard from '../pages/dashboard/MainDashboard';
 import EmployeeModuleDashboard from '../pages/dashboard/EmployeeModuleDashboard';
 import InventoryModuleDashboard from '../pages/dashboard/InventoryModuleDashboard';
+import ClinicModuleDashboard from '../pages/dashboard/ClinicModuleDashboard';
+import GeneralOPD from '../pages/clinic/GeneralOPD';
+import Antenatal from '../pages/clinic/Antenatal';
+import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
+import ClinicSubDepartmentPage from '../pages/clinic/parameters/ClinicSubDepartmentPage';
+import ClinicStaffCategoryPage from '../pages/clinic/parameters/ClinicStaffCategoryPage';
+import ClinicDoctorPage from '../pages/clinic/parameters/ClinicDoctorPage';
+import ClinicSurgeryTypePage from '../pages/clinic/parameters/ClinicSurgeryTypePage';
+import Admission from '../pages/clinic/Admission';
+import ClinicRoomCategoryPage from '../pages/clinic/parameters/ClinicRoomCategoryPage';
+import ClinicBedPage from '../pages/clinic/parameters/ClinicBedPage';
+import ClinicBillHeadListPage from '../pages/clinic/parameters/ClinicBillHeadListPage';
+import ClinicBillHeadFormPage from '../pages/clinic/parameters/ClinicBillHeadFormPage';
+import ClinicPanelCompanyListPage from '../pages/clinic/panels/ClinicPanelCompanyListPage';
+import ClinicPanelCompanyFormPage from '../pages/clinic/panels/ClinicPanelCompanyFormPage';
+import ClinicPanelEmployeeListPage from '../pages/clinic/panels/ClinicPanelEmployeeListPage';
+import ClinicPanelEmployeeFormPage from '../pages/clinic/panels/ClinicPanelEmployeeFormPage';
 import EmployeeList from '../pages/employees/EmployeeList';
 import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
@@ -101,6 +118,41 @@ export default function AppRoutes() {
           <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
           <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
           <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
+
+          {/* Clinic module */}
+          <Route path="clinic-module" element={
+            <PermissionGuard module="clinic">
+              <ClinicModuleDashboard />
+            </PermissionGuard>
+          } />
+          <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
+          <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Consultant OPD" /></PermissionGuard>} />
+          <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Emergency & Chest Pain Clinic" /></PermissionGuard>} />
+          <Route path="clinic/dental" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Dental" layout="subdept" /></PermissionGuard>} />
+          <Route path="clinic/therapy" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Therapy" layout="subdept" /></PermissionGuard>} />
+          <Route path="clinic/laboratory" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Laboratory" layout="subdept" /></PermissionGuard>} />
+          <Route path="clinic/ultrasound" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Ultra Sound, Echo & Color Doppler" layout="subdept" /></PermissionGuard>} />
+          <Route path="clinic/radiology" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Radiology" layout="subdept" /></PermissionGuard>} />
+          <Route path="clinic/blood-bank" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Blood Bank" layout="subdept" /></PermissionGuard>} />
+          <Route path="clinic/miscellaneous" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Miscellaneous" /></PermissionGuard>} />
+          <Route path="clinic/antenatal" element={<PermissionGuard module="clinic" subModule="antenatal"><Antenatal /></PermissionGuard>} />
+          <Route path="clinic/admission" element={<PermissionGuard module="clinic" subModule="admission"><Admission /></PermissionGuard>} />
+          <Route path="clinic/parameters/department" element={<PermissionGuard module="clinic" subModule="department"><ClinicDepartmentPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/sub-department" element={<PermissionGuard module="clinic" subModule="sub-department"><ClinicSubDepartmentPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/staff-category" element={<PermissionGuard module="clinic" subModule="staff-category"><ClinicStaffCategoryPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/doctors" element={<PermissionGuard module="clinic" subModule="doctors"><ClinicDoctorPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/surgery-types" element={<PermissionGuard module="clinic" subModule="surgery-types"><ClinicSurgeryTypePage /></PermissionGuard>} />
+          <Route path="clinic/parameters/room-category" element={<PermissionGuard module="clinic" subModule="room-category"><ClinicRoomCategoryPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/bed" element={<PermissionGuard module="clinic" subModule="bed"><ClinicBedPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/bill-heads" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadListPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/bill-heads/new" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadFormPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/bill-heads/:id" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadFormPage /></PermissionGuard>} />
+          <Route path="clinic/panels/companies" element={<ClinicPanelCompanyListPage />} />
+          <Route path="clinic/panels/companies/new" element={<ClinicPanelCompanyFormPage />} />
+          <Route path="clinic/panels/companies/:id" element={<ClinicPanelCompanyFormPage />} />
+          <Route path="clinic/panels/employees" element={<ClinicPanelEmployeeListPage />} />
+          <Route path="clinic/panels/employees/new" element={<ClinicPanelEmployeeFormPage />} />
+          <Route path="clinic/panels/employees/:id" element={<ClinicPanelEmployeeFormPage />} />
 
           <Route path="coming-soon" element={<ComingSoon />} />
         </Route>

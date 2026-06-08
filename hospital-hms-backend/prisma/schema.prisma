@@ -84,14 +84,30 @@ model Employee {
   otherBenefitContribution  Float?       @default(0)
   late                      Float?       @default(0)
   short                     Float?       @default(0)
+  qualification             String?
 
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
-  
+
   attendances   Attendance[]
   gatepasses    Gatepass[]
   shortleaves   Shortleave[]
   advanceLoans  AdvanceLoan[]
+  dependents    EmployeeDependent[]
+}
+
+model EmployeeDependent {
+  id         Int      @id @default(autoincrement())
+  employeeId Int
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  code       String   @default("")
+  name       String   @default("")
+  relation   String   @default("")
+  dob        DateTime?
+  gender     String   @default("male")
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // ─── Raw Biometric Punch Logs ─────────────────────────────────────────────────
@@ -602,4 +618,420 @@ model AssetInstance {
 
   @@index([itemId])
   @@index([condition])
+}
+
+// ─── Clinic Module ────────────────────────────────────────────────────────────
+
+model ClinicDepartment {
+  id          Int                   @id @default(autoincrement())
+  code        String                @default("")
+  name        String                @unique
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  subDepartments ClinicSubDepartment[]
+  billHeads      ClinicBillHead[]
+}
+
+model ClinicSubDepartment {
+  id           Int                   @id @default(autoincrement())
+  code         String                @default("")
+  name         String
+  departmentId Int
+  department   ClinicDepartment      @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
+
+  doctorSubDepts  ClinicDoctorSubDept[]
+  opdVisitDoctors ClinicOpdVisitDoctor[]
+  panelRates      ClinicPanelSubDeptRate[]
+  empSubDeptRates ClinicPanelEmpSubDeptRate[]
+
+  @@unique([departmentId, name])
+  @@index([departmentId])
+}
+
+model ClinicSurgeryType {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @default("")
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClinicStaffCategory {
+  id        Int            @id @default(autoincrement())
+  name      String         @unique
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  doctors       ClinicDoctor[]
+  billHeadCats  ClinicBillHeadStaffCat[]
+}
+
+model ClinicDoctor {
+  id              Int                   @id @default(autoincrement())
+  code            String                @unique
+  name            String
+  speciality      String?
+  qualification   String?
+  staffCategoryId Int?
+  staffCategory   ClinicStaffCategory?  @relation(fields: [staffCategoryId], references: [id])
+  status          String                @default("active")
+  consultantDays  String[]
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  subDepts        ClinicDoctorSubDept[]
+  opdVisitDoctors ClinicOpdVisitDoctor[]
+}
+
+model ClinicDoctorSubDept {
+  id             Int                 @id @default(autoincrement())
+  doctorId       Int
+  doctor         ClinicDoctor        @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  subDeptId      Int
+  subDept        ClinicSubDepartment @relation(fields: [subDeptId], references: [id])
+  fromTime       String?
+  toTime         String?
+  normalCharges  Float               @default(0)
+  oddCharges     Float               @default(0)
+  paymentType    String              @default("amount")
+  normalFees     Float               @default(0)
+  oddFees        Float               @default(0)
+  onCall         Boolean             @default(false)
+  consultantDays String[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+}
+
+// ─── Clinic OPD ───────────────────────────────────────────────────────────────
+
+model ClinicOpdVisit {
+  id            Int                    @id @default(autoincrement())
+  serialNo      String                 @unique
+  mrNo          Int?
+  patientType   String                 @default("MAST")
+  patientName   String                 @default("")
+  admitPatient  Boolean                @default(false)
+  antenatal     Boolean                @default(false)
+  antenatalNo   String?
+  age           Int?
+  ageMonths     Int                    @default(0)
+  ageDays       Int                    @default(0)
+  gender        String                 @default("male")
+  phoneNo       String?
+  referredBy    String?
+  paymentType   String                 @default("cash")
+  visitType     String                 @default("opd")
+  onCall        Boolean                @default(false)
+  employeeId      Int?
+  employeeName    String?
+  totalAmount     Float                  @default(0)
+  discount        Float                  @default(0)
+  receive         Float                  @default(0)
+  refund          Float                  @default(0)
+  panelCompanyId  Int?
+  panelEmployeeId Int?
+  panelDependentId Int?
+  department      String                 @default("General OPD")
+  printCount      Int                    @default(0)
+  status          String                 @default("active")
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  doctors         ClinicOpdVisitDoctor[]
+}
+
+model ClinicOpdVisitDoctor {
+  id          Int                 @id @default(autoincrement())
+  visitId     Int
+  visit       ClinicOpdVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  doctorId    Int
+  doctor      ClinicDoctor        @relation(fields: [doctorId], references: [id])
+  subDeptId   Int
+  subDept     ClinicSubDepartment @relation(fields: [subDeptId], references: [id])
+  amount      Float               @default(0)
+  extAmount   Float               @default(0)
+  createdAt   DateTime            @default(now())
+}
+
+// ─── Clinic Room & Bed ────────────────────────────────────────────────────────
+
+model ClinicRoomCategory {
+  id        Int         @id @default(autoincrement())
+  code      String      @unique @default("")
+  name      String      @unique
+  rate      Float       @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  beds              ClinicBed[]
+  billHeadWards     ClinicBillHeadWard[]
+  panelEntitlements ClinicPanelRoomEntitlement[]
+  empRoomEntitlements ClinicPanelEmpRoomEntitlement[]
+}
+
+model ClinicBed {
+  id             Int                @id @default(autoincrement())
+  name           String
+  roomCategoryId Int
+  roomCategory   ClinicRoomCategory @relation(fields: [roomCategoryId], references: [id], onDelete: Cascade)
+  status         String             @default("available")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([roomCategoryId, name])
+  @@index([roomCategoryId])
+}
+
+// ─── Clinic Admission ─────────────────────────────────────────────────────────
+
+model ClinicAdmission {
+  id                 Int      @id @default(autoincrement())
+  admissionNo        String
+  mrNo               Int?
+  arrivedSlipNo      String?
+  patientTitle       String   @default("Mr")
+  patientCategory    String   @default("private")
+  patientName        String   @default("")
+  ageYears           Int      @default(0)
+  ageMonths          Int      @default(0)
+  ageDays            Int      @default(0)
+  gender             String   @default("male")
+  address            String?
+  phoneNo            String?
+  arrivedUnderRmo    String?
+  consultantId       Int?
+  referredBy         String?
+  authorityLetter    Boolean  @default(false)
+  responsibleParty   String?
+  previousAdmission  String?
+  advancePayment     Decimal? @db.Decimal(10, 2)
+  roomCategoryId     Int?
+  bedId              Int?
+  surgery            Boolean  @default(false)
+  surgeryTypeId      Int?
+  referralPatient    Boolean  @default(false)
+  referralNote       String?
+  antenatal          Boolean  @default(false)
+  antenatalNo        String?
+  status             String   @default("active")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// ─── Clinic Bill Head ─────────────────────────────────────────────────────────
+
+model ClinicBillHead {
+  id                    Int                      @id @default(autoincrement())
+  headCode              String                   @unique
+  accountReceivable     String?
+  description           String                   @default("")
+  type                  String                   @default("both")
+  refDepartmentId       Int?
+  refDepartment         ClinicDepartment?        @relation(fields: [refDepartmentId], references: [id])
+  staffCategoryRequired Boolean                  @default(false)
+  discountApply         Boolean                  @default(false)
+  discountSeq           Int                      @default(0)
+  status                String                   @default("active")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  wardRates          ClinicBillHeadWard[]
+  staffCategories    ClinicBillHeadStaffCat[]
+  panelRates         ClinicPanelAdmissionRate[]
+  empAdmissionRates  ClinicPanelEmpAdmissionRate[]
+}
+
+model ClinicBillHeadWard {
+  id             Int                @id @default(autoincrement())
+  billHeadId     Int
+  billHead       ClinicBillHead     @relation(fields: [billHeadId], references: [id], onDelete: Cascade)
+  roomCategoryId Int
+  roomCategory   ClinicRoomCategory @relation(fields: [roomCategoryId], references: [id])
+  enabled        Boolean            @default(true)
+  rate           Float              @default(0)
+  unit           String?
+  status         String             @default("active")
+  payContractor  Boolean            @default(false)
+  disSeq         Int                @default(0)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@unique([billHeadId, roomCategoryId])
+  @@index([billHeadId])
+}
+
+model ClinicBillHeadStaffCat {
+  id              Int                 @id @default(autoincrement())
+  billHeadId      Int
+  billHead        ClinicBillHead      @relation(fields: [billHeadId], references: [id], onDelete: Cascade)
+  staffCategoryId Int
+  staffCategory   ClinicStaffCategory @relation(fields: [staffCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([billHeadId, staffCategoryId])
+}
+
+// ─── Clinic Panel ─────────────────────────────────────────────────────────────
+
+model ClinicPanelCompany {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  billingTo String   @default("same")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subDeptRates     ClinicPanelSubDeptRate[]
+  admissionRates   ClinicPanelAdmissionRate[]
+  roomEntitlements ClinicPanelRoomEntitlement[]
+  employees        ClinicPanelEmployee[]        @relation("PanelCompanyEmployees")
+  billEmployees    ClinicPanelEmployee[]        @relation("BillCompanyEmployees")
+}
+
+model ClinicPanelSubDeptRate {
+  id             Int                 @id @default(autoincrement())
+  panelCompanyId Int
+  panelCompany   ClinicPanelCompany  @relation(fields: [panelCompanyId], references: [id], onDelete: Cascade)
+  subDeptId      Int
+  subDept        ClinicSubDepartment @relation(fields: [subDeptId], references: [id])
+  enabled        Boolean             @default(true)
+  rate           Float               @default(0)
+  status         String              @default("active")
+
+  @@unique([panelCompanyId, subDeptId])
+  @@index([panelCompanyId])
+}
+
+model ClinicPanelAdmissionRate {
+  id             Int                @id @default(autoincrement())
+  panelCompanyId Int
+  panelCompany   ClinicPanelCompany @relation(fields: [panelCompanyId], references: [id], onDelete: Cascade)
+  billHeadId     Int
+  billHead       ClinicBillHead     @relation(fields: [billHeadId], references: [id])
+  enabled        Boolean            @default(true)
+  rate           Float              @default(0)
+  status         String             @default("active")
+
+  @@unique([panelCompanyId, billHeadId])
+  @@index([panelCompanyId])
+}
+
+model ClinicPanelRoomEntitlement {
+  id             Int                @id @default(autoincrement())
+  panelCompanyId Int
+  panelCompany   ClinicPanelCompany @relation(fields: [panelCompanyId], references: [id], onDelete: Cascade)
+  roomCategoryId Int
+  roomCategory   ClinicRoomCategory @relation(fields: [roomCategoryId], references: [id])
+  enabled        Boolean            @default(true)
+
+  @@unique([panelCompanyId, roomCategoryId])
+  @@index([panelCompanyId])
+}
+
+// ─── Clinic Panel Employees ───────────────────────────────────────────────────
+
+model ClinicPanelEmployee {
+  id             Int                @id @default(autoincrement())
+  companyId      Int
+  company        ClinicPanelCompany @relation("PanelCompanyEmployees", fields: [companyId], references: [id], onDelete: Cascade)
+  empCode        String             @unique
+  title          String             @default("MR")
+  name           String
+  dob            DateTime?
+  compCardNo     String?
+  billCompanyId  Int?
+  billCompany    ClinicPanelCompany? @relation("BillCompanyEmployees", fields: [billCompanyId], references: [id])
+  gender         String             @default("male")
+  insuranceExpOn DateTime?
+  entitlement    String             @default("general")
+  status         String             @default("active")
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  dependents       ClinicPanelEmployeeDependent[]
+  subDeptRates     ClinicPanelEmpSubDeptRate[]
+  admissionRates   ClinicPanelEmpAdmissionRate[]
+  roomEntitlements ClinicPanelEmpRoomEntitlement[]
+}
+
+model ClinicPanelEmployeeDependent {
+  id         Int                 @id @default(autoincrement())
+  employeeId Int
+  employee   ClinicPanelEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  code       String
+  title      String              @default("MR")
+  name       String
+  relation   String
+  dob        DateTime?
+  gender     String              @default("male")
+  status     String              @default("active")
+
+  @@index([employeeId])
+}
+
+model ClinicPanelEmpSubDeptRate {
+  id         Int                 @id @default(autoincrement())
+  employeeId Int
+  employee   ClinicPanelEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  subDeptId  Int
+  subDept    ClinicSubDepartment @relation(fields: [subDeptId], references: [id])
+  enabled    Boolean             @default(true)
+  rate       Float               @default(0)
+  status     String              @default("active")
+
+  @@unique([employeeId, subDeptId])
+  @@index([employeeId])
+}
+
+model ClinicPanelEmpAdmissionRate {
+  id         Int                 @id @default(autoincrement())
+  employeeId Int
+  employee   ClinicPanelEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  billHeadId Int
+  billHead   ClinicBillHead      @relation(fields: [billHeadId], references: [id])
+  enabled    Boolean             @default(true)
+  rate       Float               @default(0)
+  status     String              @default("active")
+
+  @@unique([employeeId, billHeadId])
+  @@index([employeeId])
+}
+
+model ClinicPanelEmpRoomEntitlement {
+  id             Int                 @id @default(autoincrement())
+  employeeId     Int
+  employee       ClinicPanelEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  roomCategoryId Int
+  roomCategory   ClinicRoomCategory  @relation(fields: [roomCategoryId], references: [id])
+  enabled        Boolean             @default(true)
+
+  @@unique([employeeId, roomCategoryId])
+  @@index([employeeId])
+}
+
+model ClinicAntenatal {
+  id               Int       @id @default(autoincrement())
+  mrNo             String    @default("")
+  antenatalNo      String    @default("")
+  registrationDate DateTime  @db.Date @default(now())
+  paymentType      String    @default("private")
+  patientName      String    @default("")
+  age              Int?
+  husbandName      String?
+  phoneNo          String?
+  address          String?
+  lmpDate          DateTime? @db.Date
+  edd              DateTime? @db.Date
+  underTreatmentId Int?
+  para             Int?      @default(0)
+  gravidia         Int?      @default(0)
+  amount           Decimal?  @db.Decimal(10, 2)
+  employeeId       Int?
+  panelCompanyId   Int?
+  panelEmployeeId  Int?
+  panelDependentId Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }

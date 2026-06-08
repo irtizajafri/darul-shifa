@@ -102,6 +102,7 @@ export default function PurchaseOrder() {
   });
   const [formData, setFormData] = useState({
     supplierId: '',
+    poDate: new Date().toISOString().slice(0, 10),
     expectedDate: new Date().toISOString().slice(0, 10),
     items: [],
   });
@@ -185,6 +186,7 @@ export default function PurchaseOrder() {
 
       const result = await createPurchaseOrder({
         supplierId: Number(formData.supplierId),
+        poDate: new Date(formData.poDate).toISOString(),
         expectedDate: new Date(formData.expectedDate).toISOString(),
         items: validLines.map((line) => ({
           itemId: Number(line.itemId),
@@ -198,6 +200,7 @@ export default function PurchaseOrder() {
       await fetchPurchaseOrders(filters);
       setFormData({
         supplierId: '',
+        poDate: new Date().toISOString().slice(0, 10),
         expectedDate: new Date().toISOString().slice(0, 10),
         items: [],
       });
@@ -289,8 +292,8 @@ export default function PurchaseOrder() {
       {showCreate && (
         <Card className="mb-4">
           <form onSubmit={handleCreatePO} className="space-y-4">
-            {/* Header: Supplier + Expected Date */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Header: Supplier + PO Date + Expected Date */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <SearchableSelect
                 options={masterOptions.suppliers || []}
                 value={formData.supplierId}
@@ -299,13 +302,26 @@ export default function PurchaseOrder() {
                 getLabel={(s) => `${s.name} (${s.code})`}
                 getValue={(s) => s.id}
               />
-              <input
-                type="date"
-                value={formData.expectedDate}
-                onChange={(e) => setFormData((p) => ({ ...p, expectedDate: e.target.value }))}
-                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                required
-              />
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">PO Date</label>
+                <input
+                  type="date"
+                  value={formData.poDate}
+                  onChange={(e) => setFormData((p) => ({ ...p, poDate: e.target.value }))}
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm w-full"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Expected Delivery Date</label>
+                <input
+                  type="date"
+                  value={formData.expectedDate}
+                  onChange={(e) => setFormData((p) => ({ ...p, expectedDate: e.target.value }))}
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm w-full"
+                  required
+                />
+              </div>
             </div>
 
             {/* Draft row: add a new item line */}

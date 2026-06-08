@@ -143,6 +143,34 @@ async function removeDesignationHead(req, res, next) {
   }
 }
 
+async function getDependents(req, res, next) {
+  try {
+    const data = await service.getDependents(req.params.id);
+    return success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function addDependent(req, res, next) {
+  try {
+    const data = await service.addDependent(req.params.id, req.body);
+    return success(res, data, 'Dependent added');
+  } catch (err) { next(err); }
+}
+
+async function updateDependent(req, res, next) {
+  try {
+    const data = await service.updateDependent(req.params.depId, req.body);
+    return success(res, data, 'Dependent updated');
+  } catch (err) { next(err); }
+}
+
+async function deleteDependent(req, res, next) {
+  try {
+    await service.deleteDependent(req.params.depId);
+    return success(res, null, 'Dependent deleted');
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   ping,
   list,
@@ -156,4 +184,8 @@ module.exports = {
   listDesignationHeads,
   createDesignationHead,
   removeDesignationHead,
+  getDependents,
+  addDependent,
+  updateDependent,
+  deleteDependent,
 };

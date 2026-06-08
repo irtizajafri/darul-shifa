@@ -233,13 +233,14 @@ async function list() {
       baseSchedule: view.baseSchedule,
       recoveries: view.recoveries,
       schedule: view.schedule,
-      remarks: parsed.remarks || ''
+      remarks: parsed.remarks || '',
+      issueDate: parsed.issueDate || null,
     };
   });
 }
 
 async function create(payload) {
-  const { employeeId, amount, type = 'advance', reason, status = 'pending', schedule = [], recoveries = [], remarks } = payload;
+  const { employeeId, amount, type = 'advance', reason, status = 'pending', schedule = [], recoveries = [], remarks, issueDate } = payload;
   const normalizedType = String(type || 'advance').toLowerCase();
   const normalizedStatus = String(status || 'pending').toLowerCase();
   const parsedEmployeeId = parseInt(employeeId, 10);
@@ -264,8 +265,9 @@ async function create(payload) {
     recoveries: normalizedRecoveries,
     remarks,
     reason,
+    issueDate: issueDate || null,
   });
-  
+
   const created = await prisma.advanceLoan.create({
     data: {
       employeeId: parsedEmployeeId,
@@ -332,6 +334,9 @@ async function update(id, payload) {
   const nextReason = payload.reason !== undefined
     ? payload.reason
     : (existingReason.reason || '');
+  const nextIssueDate = payload.issueDate !== undefined
+    ? payload.issueDate
+    : (existingReason.issueDate || null);
 
   const baseSchedule = autoShiftSchedule(nextSchedule, nextAmount);
   const normalizedRecoveries = normalizeRecoveries(nextRecoveries);
@@ -341,7 +346,8 @@ async function update(id, payload) {
     schedule: baseSchedule,
     recoveries: normalizedRecoveries,
     remarks: nextRemarks,
-    reason: nextReason
+    reason: nextReason,
+    issueDate: nextIssueDate,
   });
 
   const updated = await prisma.advanceLoan.update({

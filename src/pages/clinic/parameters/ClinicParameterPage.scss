@@ -1,0 +1,170 @@
+@use '../../../styles/variables' as *;
+
+.clinic-parameter-page {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+
+  .cpp-body {
+    padding: 1.25rem;
+  }
+
+  .cpp-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .cpp-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+
+    .cpp-search-icon {
+      position: absolute;
+      left: 0.65rem;
+      width: 15px;
+      height: 15px;
+      color: #94a3b8;
+      pointer-events: none;
+    }
+
+    .cpp-search-input {
+      padding: 0.45rem 0.75rem 0.45rem 2.1rem;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      width: 240px;
+      outline: none;
+      transition: border-color 0.15s;
+
+      &:focus {
+        border-color: #2563eb;
+      }
+    }
+  }
+
+  .cpp-filter-select {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    outline: none;
+    color: #0f172a;
+    background: #fff;
+    cursor: pointer;
+
+    &:focus {
+      border-color: #2563eb;
+    }
+  }
+
+  .cpp-count {
+    font-size: 0.78rem;
+    color: #64748b;
+  }
+
+  .cpp-table-wrap {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .cpp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+
+    thead {
+      background: #f8fafc;
+
+      th {
+        padding: 0.6rem 0.9rem;
+        text-align: left;
+        font-weight: 600;
+        color: #475569;
+        border-bottom: 1px solid #e2e8f0;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+    }
+
+    tbody {
+      tr {
+        transition: background 0.1s;
+
+        &:not(:last-child) td {
+          border-bottom: 1px solid #f1f5f9;
+        }
+
+        &:hover {
+          background: #f8fafc;
+        }
+      }
+
+      td {
+        padding: 0.55rem 0.9rem;
+        color: #0f172a;
+      }
+    }
+
+    .cpp-num {
+      color: #94a3b8;
+      width: 40px;
+      font-size: 0.75rem;
+    }
+
+    .cpp-actions-col {
+      width: 80px;
+      text-align: right;
+    }
+
+    .cpp-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.4rem;
+    }
+  }
+
+  .cpp-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.12s;
+
+    &.cpp-edit {
+      background: #eff6ff;
+      color: #2563eb;
+      &:hover { background: #dbeafe; }
+    }
+
+    &.cpp-delete {
+      background: #fff1f2;
+      color: #e11d48;
+      &:hover { background: #ffe4e6; }
+    }
+  }
+
+  .cpp-empty {
+    padding: 2rem;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 640px) {
+    .cpp-search .cpp-search-input {
+      width: 180px;
+    }
+  }
+}

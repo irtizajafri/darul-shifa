@@ -75,6 +75,7 @@ function normalizeOverridePayload(payload = {}) {
     manualDeduction: normalizeNumberOrNull(payload.manualDeduction),
     manualTotal: normalizeNumberOrNull(payload.manualTotal),
     waiveDeduction: normalizeBoolean(payload.waiveDeduction, false),
+    isLocked: payload.isLocked === true || payload.is_locked === true,
   };
 }
 
@@ -95,6 +96,7 @@ function mapOverrideRow(row) {
     manualDeduction: row.manual_deduction ?? row.manualDeduction ?? null,
     manualTotal: row.manual_total ?? row.manualTotal ?? null,
     waiveDeduction: Boolean(row.waive_deduction ?? row.waiveDeduction),
+    isLocked: Boolean(row.is_locked ?? row.isLocked),
     createdAt: row.created_at || row.createdAt || null,
     updatedAt: row.updated_at || row.updatedAt || null,
   };
@@ -124,6 +126,7 @@ async function ensureAttendanceOverridesTable() {
 
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS idx_attendance_overrides_emp_date ON attendance_overrides(emp_code, date_in)');
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS idx_attendance_overrides_date_in ON attendance_overrides(date_in)');
+  await prisma.$executeRawUnsafe('ALTER TABLE attendance_overrides ADD COLUMN IF NOT EXISTS is_locked BOOLEAN NOT NULL DEFAULT FALSE');
 
   isAttendanceOverridesTableReady = true;
 }
@@ -164,7 +167,7 @@ async function upsertOverride(payload = {}) {
     INSERT INTO attendance_overrides (
       id, emp_code, date_in, date_out, time_in, time_out, status,
       manual_wrk_hrs, manual_overtime, manual_deduction, manual_total,
-      waive_deduction, created_at, updated_at
+      waive_deduction, is_locked, created_at, updated_at
     ) VALUES (
       ${id},
       ${normalized.empCode},
@@ -178,6 +181,7 @@ async function upsertOverride(payload = {}) {
       ${normalized.manualDeduction},
       ${normalized.manualTotal},
       ${normalized.waiveDeduction},
+      ${normalized.isLocked},
       NOW(),
       NOW()
     )
@@ -193,6 +197,7 @@ async function upsertOverride(payload = {}) {
       manual_deduction = EXCLUDED.manual_deduction,
       manual_total = EXCLUDED.manual_total,
       waive_deduction = EXCLUDED.waive_deduction,
+      is_locked = EXCLUDED.is_locked,
       updated_at = NOW()
   `;
 
@@ -266,7 +271,7 @@ async function replaceOverridesForDates(payload = {}) {
         INSERT INTO attendance_overrides (
           id, emp_code, date_in, date_out, time_in, time_out, status,
           manual_wrk_hrs, manual_overtime, manual_deduction, manual_total,
-          waive_deduction, created_at, updated_at
+          waive_deduction, is_locked, created_at, updated_at
         ) VALUES (
           ${row.id},
           ${row.empCode},
@@ -280,6 +285,7 @@ async function replaceOverridesForDates(payload = {}) {
           ${row.manualDeduction},
           ${row.manualTotal},
           ${row.waiveDeduction},
+          ${Boolean(row.isLocked)},
           NOW(),
           NOW()
         )

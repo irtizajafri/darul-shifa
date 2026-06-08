@@ -208,6 +208,11 @@ export default function MasterSetup() {
         if (editingRow) {
           await saveAndRefresh((p) => updateCategory(editingRow.id, p), { name: formData.name, status: formData.status }, 'Category updated');
         } else {
+          const enteredName = String(formData.name || '').trim().toLowerCase();
+          if ((categories || []).some((r) => String(r.name || '').trim().toLowerCase() === enteredName)) {
+            toast.error('Category with this name already exists');
+            return;
+          }
           await saveAndRefresh(createCategory, { code: formData.code || undefined, name: formData.name, status: formData.status }, 'Category created');
         }
         return;
@@ -217,6 +222,12 @@ export default function MasterSetup() {
         if (editingRow) {
           await saveAndRefresh((p) => updateSubcategory(editingRow.id, p), { name: formData.name, categoryId: Number(formData.categoryId), status: formData.status }, 'Subcategory updated');
         } else {
+          const enteredName = String(formData.name || '').trim().toLowerCase();
+          const selectedCatId = Number(formData.categoryId);
+          if ((subcategories || []).some((r) => String(r.name || '').trim().toLowerCase() === enteredName && Number(r.categoryId) === selectedCatId)) {
+            toast.error('Subcategory with this name already exists in the selected category');
+            return;
+          }
           await saveAndRefresh(createSubcategory, { code: formData.code || undefined, name: formData.name, categoryId: Number(formData.categoryId), status: formData.status }, 'Subcategory created');
         }
         return;
@@ -227,6 +238,11 @@ export default function MasterSetup() {
         if (editingRow) {
           await saveAndRefresh((p) => updateSupplier(editingRow.id, p), supplierPayload, 'Supplier updated');
         } else {
+          const enteredName = String(formData.name || '').trim().toLowerCase();
+          if ((suppliers || []).some((r) => String(r.name || '').trim().toLowerCase() === enteredName)) {
+            toast.error('Supplier with this name already exists');
+            return;
+          }
           await saveAndRefresh(createSupplier, { code: formData.code || undefined, ...supplierPayload }, 'Supplier created');
         }
         return;
@@ -237,6 +253,11 @@ export default function MasterSetup() {
         if (editingRow) {
           await saveAndRefresh((p) => updateStorage(editingRow.id, p), storagePayload, 'Storage updated');
         } else {
+          const enteredName = String(formData.name || '').trim().toLowerCase();
+          if ((storages || []).some((r) => String(r.name || '').trim().toLowerCase() === enteredName)) {
+            toast.error('Storage with this name already exists');
+            return;
+          }
           await saveAndRefresh(createStorage, { code: formData.code || undefined, ...storagePayload }, 'Storage created');
         }
         return;
@@ -246,6 +267,11 @@ export default function MasterSetup() {
         if (editingRow) {
           await saveAndRefresh((p) => updateDepartment(editingRow.id, p), { name: formData.name, status: formData.status }, 'Department updated');
         } else {
+          const enteredName = String(formData.name || '').trim().toLowerCase();
+          if ((departments || []).some((r) => String(r.name || '').trim().toLowerCase() === enteredName)) {
+            toast.error('Department with this name already exists');
+            return;
+          }
           await saveAndRefresh(createDepartment, { code: formData.code || undefined, name: formData.name, status: formData.status }, 'Department created');
         }
         return;
@@ -359,7 +385,7 @@ export default function MasterSetup() {
   };
 
   const recordCount = Array.isArray(currentRows) ? currentRows.length : 0;
-  const tableColumnCount = activeTab === 'Items' ? 8 : 6;
+  const tableColumnCount = activeTab === 'Items' ? 9 : 6;
 
   if (visibleTabs.length === 0) return <NoTabAccess />;
 
@@ -433,6 +459,7 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Category</th>
                     <th className="px-6 py-4 font-semibold">Type/Unit</th>
                     <th className="px-6 py-4 font-semibold">Price</th>
+                    <th className="px-6 py-4 font-semibold">Storage/Shelf</th>
                     <th className="px-6 py-4 font-semibold">Stock/Reorder</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
                     <th className="px-6 py-4 font-semibold">Actions</th>
@@ -518,6 +545,7 @@ export default function MasterSetup() {
                           )}
                         </td>
                         <td className="px-6 py-4">{row.purchasePrice}</td>
+                        <td className="px-6 py-4">{row.storage?.name || '-'}</td>
                         <td className="px-6 py-4">{row.currentStock} / {row.reorderLevel}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">

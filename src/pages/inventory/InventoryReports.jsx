@@ -5,7 +5,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 import NoTabAccess from '../../components/auth/NoTabAccess';
 import Button from '../../components/ui/Button';
-import { Printer, Download, Filter, BarChart3, Menu, X } from 'lucide-react';
+import { Printer, Download, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf } from '../../utils/exportInventoryReports';
@@ -839,6 +839,7 @@ export default function InventoryReports() {
           category: row.category?.name || '-',
           subcategory: row.subcategory?.name || '-',
           unit: row.unit || '-',
+          storage: row.storage?.name || '-',
           reorderLevel: row.reorderLevel || 0,
           status: row.status || 'active',
         }));
@@ -1089,6 +1090,7 @@ export default function InventoryReports() {
       item: row.item?.name || '-',
       requiredQuantity: Number(row.requiredQuantity || 0),
       orderedRate: row.orderedRate != null ? Number(row.orderedRate) : '-',
+      poDate: row.poDate,
       expectedDate: row.expectedDate,
       status: row.status,
     }));
@@ -1101,6 +1103,7 @@ export default function InventoryReports() {
       Item: row.item,
       'Required Qty': row.requiredQuantity,
       'Ordered Rate': row.orderedRate,
+      'PO Date': row.poDate ? new Date(row.poDate).toLocaleDateString() : '-',
       'Expected Date': row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-',
       Status: row.status,
     }));
@@ -1120,12 +1123,13 @@ export default function InventoryReports() {
   }, [stockPositionReport?.rows]);
 
   const itemListExportRows = useMemo(() => {
-    return (reportRows || []).filter(() => true).map((row) => ({
+    return (reportRows || []).map((row) => ({
       Code: row.code,
       Name: row.name,
       Category: row.category,
       Subcategory: row.subcategory,
       Unit: row.unit,
+      Storage: row.storage,
       'Reorder Level': row.reorderLevel,
       Status: row.status,
     }));
@@ -1480,9 +1484,8 @@ export default function InventoryReports() {
         {/* Report Content */}
         <div className="flex-1 w-full md:w-auto">
           <Card className="p-0 overflow-hidden h-full min-h-[500px] flex flex-col">
-            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-200 bg-slate-50">
               <h2 className="font-semibold text-slate-800">{activeReport}</h2>
-              <Button variant="outline" size="sm" label="Filters" icon={Filter} />
             </div>
             {effectiveReport === 'Stock Position' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2936,6 +2939,7 @@ export default function InventoryReports() {
                           <th className="px-4 py-3">Category</th>
                           <th className="px-4 py-3">Subcategory</th>
                           <th className="px-4 py-3">Unit</th>
+                          <th className="px-4 py-3">Storage/Shelf</th>
                           <th className="px-4 py-3">Reorder Level</th>
                           <th className="px-4 py-3">Status</th>
                         </tr>
@@ -2948,6 +2952,7 @@ export default function InventoryReports() {
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.subcategory}</td>
                             <td className="px-4 py-3">{row.unit}</td>
+                            <td className="px-4 py-3">{row.storage}</td>
                             <td className="px-4 py-3">{row.reorderLevel}</td>
                             <td className="px-4 py-3 capitalize">{row.status}</td>
                           </tr>
@@ -3051,6 +3056,7 @@ export default function InventoryReports() {
                           <th className="px-4 py-3">Item</th>
                           <th className="px-4 py-3">Req Qty</th>
                           <th className="px-4 py-3">Ordered Rate</th>
+                          <th className="px-4 py-3">PO Date</th>
                           <th className="px-4 py-3">Expected Date</th>
                           <th className="px-4 py-3">Status</th>
                           <th className="px-4 py-3">Action</th>
@@ -3066,6 +3072,7 @@ export default function InventoryReports() {
                               <td className="px-4 py-3">{row.item}</td>
                               <td className="px-4 py-3">{row.requiredQuantity}</td>
                               <td className="px-4 py-3">{row.orderedRate !== '-' ? Number(row.orderedRate).toLocaleString() : '-'}</td>
+                              <td className="px-4 py-3">{row.poDate ? new Date(row.poDate).toLocaleDateString() : '-'}</td>
                               <td className="px-4 py-3">{row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-'}</td>
                               <td className="px-4 py-3 capitalize">{row.status}</td>
                               <td className="px-4 py-3">

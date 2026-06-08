@@ -1,0 +1,342 @@
+.adm-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f1f5f9;
+  font-family: 'Inter', sans-serif;
+}
+
+.adm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px 32px;
+}
+
+.adm-header-bar {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.adm-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: 0.01em;
+}
+
+/* ── Form ── */
+.adm-form {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px 24px;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.adm-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+
+  &--category {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    grid-template-columns: unset;
+  }
+
+  &--flags {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    grid-template-columns: unset;
+  }
+}
+
+.adm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label:not(.adm-check-label):not(.adm-radio-btn):not(.adm-flag-btn) {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  input[type='text'],
+  input[type='number'],
+  select,
+  textarea {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    color: #1e293b;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.15s;
+    width: 100%;
+
+    &:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    &:disabled { background: #f8fafc; color: #94a3b8; }
+  }
+
+  textarea { resize: vertical; }
+
+  &--right-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  &--check-inline {
+    justify-content: center;
+    padding-top: 18px;
+  }
+
+  &--antenatal {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Lookup row ── */
+.adm-lookup-row {
+  display: flex;
+  gap: 4px;
+
+  input { flex: 1; }
+}
+
+.adm-lookup-btn {
+  padding: 6px 10px;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover { background: #2563eb; }
+}
+
+/* ── Name row ── */
+.adm-name-row {
+  display: flex;
+  gap: 6px;
+}
+
+.adm-title-select {
+  width: 80px !important;
+  flex-shrink: 0;
+}
+
+.adm-name-input { flex: 1; }
+
+/* ── Age row ── */
+.adm-age-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  input {
+    width: 56px !important;
+    text-align: center;
+  }
+
+  span {
+    font-size: 0.78rem;
+    color: #64748b;
+    font-weight: 500;
+  }
+}
+
+/* ── Category label ── */
+.adm-category-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ── Radio group ── */
+.adm-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adm-radio-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: #f8fafc;
+
+  input[type='radio'] { display: none; }
+
+  &--active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+
+  &:hover:not(.adm-radio-btn--active) { border-color: #94a3b8; }
+}
+
+/* ── Flag buttons (Surgery, Referral) ── */
+.adm-flag-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  background: #f8fafc;
+  transition: all 0.15s;
+  white-space: nowrap;
+
+  input[type='checkbox'] { accent-color: #3b82f6; }
+
+  &--active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
+  }
+}
+
+.adm-referral-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.adm-referral-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.adm-referral-input {
+  min-width: 200px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.85rem;
+  outline: none;
+
+  &:focus { border-color: #3b82f6; }
+}
+
+.adm-surgery-select {
+  min-width: 220px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  outline: none;
+
+  &:focus { border-color: #3b82f6; }
+}
+
+/* ── Checkbox label ── */
+.adm-check-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+
+  input[type='checkbox'] { accent-color: #3b82f6; width: 15px; height: 15px; }
+}
+
+.adm-antenatal-input {
+  width: 160px !important;
+}
+
+.adm-panel-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.adm-no-beds {
+  font-size: 0.75rem;
+  color: #ef4444;
+  margin-top: 2px;
+}
+
+/* ── Actions ── */
+.adm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 4px;
+}
+
+.adm-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 20px;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+
+  &--print {
+    background: #f1f5f9;
+    color: #475569;
+    border: 1.5px solid #cbd5e1;
+
+    &:hover { background: #e2e8f0; }
+  }
+
+  &--save {
+    background: #3b82f6;
+    color: #fff;
+
+    &:hover:not(:disabled) { background: #2563eb; }
+    &:disabled { opacity: 0.6; cursor: not-allowed; }
+  }
+}

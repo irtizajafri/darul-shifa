@@ -338,6 +338,9 @@ async function createCategory(payload) {
   await ensureMasterCodeNormalization();
 
   const name = String(payload.name || '').trim();
+  const duplicate = await prisma.inventoryCategory.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, select: { id: true } });
+  if (duplicate) throw new Error('Category with this name already exists');
+
   const status = normalizeStatus(payload.status);
   const code = parseTwoDigitCode(payload.code) || await generateTwoDigitMasterCode('inventoryCategory');
 
@@ -374,8 +377,11 @@ async function createSubcategory(payload) {
   await ensureMasterCodeNormalization();
 
   const name = String(payload.name || '').trim();
-  const status = normalizeStatus(payload.status);
   const catId = Number(payload.categoryId);
+  const duplicate = await prisma.inventorySubcategory.findFirst({ where: { name: { equals: name, mode: 'insensitive' }, categoryId: catId }, select: { id: true } });
+  if (duplicate) throw new Error('Subcategory with this name already exists in the selected category');
+
+  const status = normalizeStatus(payload.status);
   const code = payload.code ? String(payload.code).trim() : await generateSubcategoryCode(catId);
 
   return prisma.inventorySubcategory.create({
@@ -404,6 +410,10 @@ async function listSuppliers({ search, status }) {
 }
 
 async function createSupplier(payload) {
+  const name = String(payload.name || '').trim();
+  const duplicate = await prisma.inventorySupplier.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, select: { id: true } });
+  if (duplicate) throw new Error('Supplier with this name already exists');
+
   const status = normalizeStatus(payload.status);
   const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventorySupplier');
 
@@ -435,6 +445,10 @@ async function listStorages({ search, status }) {
 }
 
 async function createStorage(payload) {
+  const name = String(payload.name || '').trim();
+  const duplicate = await prisma.inventoryStorage.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, select: { id: true } });
+  if (duplicate) throw new Error('Storage with this name already exists');
+
   const status = normalizeStatus(payload.status);
   const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventoryStorage');
 
@@ -464,6 +478,10 @@ async function listDepartments({ search, status }) {
 }
 
 async function createDepartment(payload) {
+  const name = String(payload.name || '').trim();
+  const duplicate = await prisma.inventoryDepartment.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, select: { id: true } });
+  if (duplicate) throw new Error('Department with this name already exists');
+
   const status = normalizeStatus(payload.status);
   const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventoryDepartment');
 

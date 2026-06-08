@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search } from 'lucide-react';
@@ -30,12 +30,15 @@ export default function GoodsIssue() {
     dateTo: '',
   });
 
+  const gdItemSearchRef = useRef(null);
   const [gdDepartmentId, setGdDepartmentId] = useState('');
+  const [gdRequestDate, setGdRequestDate] = useState(new Date().toISOString().slice(0, 10));
   const [gdItemSearch, setGdItemSearch] = useState('');
   const [gdItemDropdownOpen, setGdItemDropdownOpen] = useState(false);
   const [gdSelectedItems, setGdSelectedItems] = useState([]);
 
   const [selectedGDHeaderId, setSelectedGDHeaderId] = useState('');
+  const [ginIssueDate, setGinIssueDate] = useState(new Date().toISOString().slice(0, 10));
   const [ginIssuedQtys, setGinIssuedQtys] = useState({});
   const [createdGDHeader, setCreatedGDHeader] = useState(null);
 
@@ -118,7 +121,8 @@ export default function GoodsIssue() {
     }
     setGdSelectedItems((prev) => [...prev, { itemId: item.id, itemName: item.name, itemCode: item.code, quantityRequested: '' }]);
     setGdItemSearch('');
-    setGdItemDropdownOpen(false);
+    setGdItemDropdownOpen(true);
+    setTimeout(() => gdItemSearchRef.current?.focus(), 0);
   };
 
   const removeGdItem = (itemId) => setGdSelectedItems((prev) => prev.filter((i) => i.itemId !== itemId));
@@ -135,10 +139,12 @@ export default function GoodsIssue() {
     try {
       const result = await createGDBatch({
         departmentId: Number(gdDepartmentId),
+        requestDate: new Date(gdRequestDate).toISOString(),
         items: gdSelectedItems.map((i) => ({ itemId: i.itemId, quantityRequested: Number(i.quantityRequested) })),
       });
       await Promise.all([fetchGDs(gdFilters), fetchGDHeaders()]);
       setGdDepartmentId('');
+      setGdRequestDate(new Date().toISOString().slice(0, 10));
       setGdSelectedItems([]);
       setGdItemSearch('');
       setShowGDForm(false);
@@ -161,9 +167,10 @@ export default function GoodsIssue() {
       issuedQuantity: Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested),
     }));
     try {
-      await createGIN({ gdHeaderId: Number(selectedGDHeaderId), items });
+      await createGIN({ gdHeaderId: Number(selectedGDHeaderId), items, issueDate: new Date(ginIssueDate).toISOString() });
       await Promise.all([fetchGINs(ginFilters), fetchGDHeaders(), fetchGDs(gdFilters), fetchItems()]);
       setSelectedGDHeaderId('');
+      setGinIssueDate(new Date().toISOString().slice(0, 10));
       setGinIssuedQtys({});
       setShowGINForm(false);
       toast.success('GIN created');
@@ -330,7 +337,7 @@ export default function GoodsIssue() {
       {showGDForm && (
         <Card className="mb-4" title="Create Goods Demand (GD)">
           <form onSubmit={handleCreateGD} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <select
                 value={gdDepartmentId}
                 onChange={(e) => setGdDepartmentId(e.target.value)}
@@ -342,11 +349,22 @@ export default function GoodsIssue() {
                   <option key={dep.id} value={dep.id}>{dep.name} ({dep.code})</option>
                 ))}
               </select>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Request Date</label>
+                <input
+                  type="date"
+                  value={gdRequestDate}
+                  onChange={(e) => setGdRequestDate(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm w-full"
+                  required
+                />
+              </div>
 
               <div className="relative">
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                   <input
+                    ref={gdItemSearchRef}
                     type="text"
                     placeholder="Search and add item..."
                     value={gdItemSearch}
@@ -429,19 +447,31 @@ export default function GoodsIssue() {
       {showGINForm && (
         <Card className="mb-4" title="Create Goods Issuance (GIN)">
           <form onSubmit={handleCreateGIN} className="space-y-4">
-            <select
-              value={selectedGDHeaderId}
-              onChange={(e) => { setSelectedGDHeaderId(e.target.value); setGinIssuedQtys({}); }}
-              className="px-3 py-2 border border-slate-300 rounded-md text-sm w-full md:w-1/2"
-              required
-            >
-              <option value="">Select GD (by header code)</option>
-              {(gdHeaders || []).filter((h) => h.status !== 'closed').map((h) => (
-                <option key={h.id} value={h.id}>
-                  {h.code} — {h.department?.name || '-'} [{h.status}] ({h.gdItems?.length || 0} items)
-                </option>
-              ))}
-            </select>
+            <div className="flex flex-wrap gap-3 items-end">
+              <select
+                value={selectedGDHeaderId}
+                onChange={(e) => { setSelectedGDHeaderId(e.target.value); setGinIssuedQtys({}); }}
+                className="px-3 py-2 border border-slate-300 rounded-md text-sm flex-1 min-w-[220px]"
+                required
+              >
+                <option value="">Select GD (by header code)</option>
+                {(gdHeaders || []).filter((h) => h.status !== 'closed').map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.code} — {h.department?.name || '-'} [{h.status}] ({h.gdItems?.length || 0} items)
+                  </option>
+                ))}
+              </select>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Issue Date</label>
+                <input
+                  type="date"
+                  value={ginIssueDate}
+                  onChange={(e) => setGinIssueDate(e.target.value)}
+                  className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                  required
+                />
+              </div>
+            </div>
 
             {selectedGDHeader && (
               <div className="border border-slate-200 rounded-md overflow-hidden">
