@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useModalKeys from '../../hooks/useModalKeys';
-import { ChevronDown, ChevronUp, Download, Plus, Printer, Search, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Download, Plus, Printer, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -98,6 +98,11 @@ export default function SalesInvoice() {
 
   const [filters, setFilters] = useState({ customerType: '', dateFrom: '', dateTo: '' });
 
+  const [admQuery, setAdmQuery] = useState('');
+  const [admGINs, setAdmGINs] = useState(null);
+  const [admLoading, setAdmLoading] = useState(false);
+  const [admRates, setAdmRates] = useState({});
+
   const {
     loading,
     items,
@@ -105,6 +110,7 @@ export default function SalesInvoice() {
     fetchItems,
     fetchSalesInvoiceHeaders,
     createSalesInvoiceWithItems,
+    fetchGINsByAdmission,
   } = useInventoryStore();
 
   useEffect(() => {
@@ -195,6 +201,113 @@ export default function SalesInvoice() {
 
   const printInvoice = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
   const handlePrint = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
+
+  const handleAdmSearch = async () => {
+    if (!admQuery.trim()) { toast.error('Enter admission number'); return; }
+    setAdmLoading(true);
+    try {
+      const data = await fetchGINsByAdmission(admQuery.trim());
+      const gins = Array.isArray(data) ? data : [];
+      setAdmGINs(gins);
+      if (gins.length === 0) { toast('No GINs found for this admission number'); return; }
+      // Initialize editable rates from item data
+      const rateMap = {};
+      for (const gin of gins) {
+        if (gin.ginItems && gin.ginItems.length > 0) {
+          gin.ginItems.forEach((gi) => {
+            const code = gi.item?.code;
+            if (code && !(code in rateMap)) rateMap[code] = Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0);
+          });
+        } else {
+          const code = gin.item?.code;
+          if (code && !(code in rateMap)) rateMap[code] = Number(gin.item?.lastGrnRate || gin.item?.purchasePrice || 0);
+        }
+      }
+      setAdmRates(rateMap);
+    } catch (err) {
+      toast.error(err.message || 'Failed to search');
+    } finally {
+      setAdmLoading(false);
+    }
+  };
+
+  // Aggregate same items across all GINs — one row per itemCode, qty summed
+  const admRows = useMemo(() => {
+    if (!admGINs) return [];
+    const map = {};
+    for (const gin of admGINs) {
+      const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
+      const entries = gin.ginItems && gin.ginItems.length > 0
+        ? gin.ginItems.map((gi) => ({ itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-', qty: Number(gi.issuedQuantity || 0), dept, defaultRate: Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0) }))
+        : [{ itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-', qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.item?.lastGrnRate || gin.item?.purchasePrice || 0) }];
+      for (const e of entries) {
+        if (map[e.itemCode]) {
+          map[e.itemCode].qty += e.qty;
+        } else {
+          map[e.itemCode] = { itemId: e.itemId, itemCode: e.itemCode, item: e.item, qty: e.qty, department: e.dept, defaultRate: e.defaultRate };
+        }
+      }
+    }
+    return Object.values(map);
+  }, [admGINs]);
+
+  const admGrandTotal = useMemo(() =>
+    admRows.reduce((s, r) => s + r.qty * Number(admRates[r.itemCode] ?? r.defaultRate), 0),
+    [admRows, admRates]
+  );
+
+  const buildAdmInvObject = (code = `ADM-${admQuery}`) => ({
+    code,
+    customerType: 'customer',
+    customerName: admQuery,
+    invoiceDate: new Date().toISOString(),
+    items: admRows.map((r) => {
+      const rate = Number(admRates[r.itemCode] ?? r.defaultRate);
+      return { item: { name: r.item }, saleRate: rate, quantity: r.qty, totalAmount: r.qty * rate };
+    }),
+    subTotal: admGrandTotal,
+    totalAmount: admGrandTotal,
+    discountPercent: 0,
+    discountAmount: 0,
+  });
+
+  const printAdmInvoice = () => {
+    if (admRows.length === 0) return;
+    generateSalesInvoicePdf({ inv: buildAdmInvObject(), mode: 'print' });
+  };
+
+  const [admSaving, setAdmSaving] = useState(false);
+
+  const saveAdmInvoice = async () => {
+    if (admRows.length === 0) { toast.error('No items to save'); return; }
+    const invalidItem = admRows.find((r) => !r.itemId);
+    if (invalidItem) { toast.error(`Item ID missing for: ${invalidItem.item}`); return; }
+    setAdmSaving(true);
+    try {
+      const payload = {
+        invoiceDate: new Date().toISOString(),
+        customerType: 'admission',
+        customerName: admQuery,
+        discountPercent: 0,
+        items: admRows.map((r) => ({
+          itemId: Number(r.itemId),
+          quantity: r.qty,
+          saleRate: Number(admRates[r.itemCode] ?? r.defaultRate),
+        })),
+      };
+      const created = await createSalesInvoiceWithItems(payload);
+      await fetchSalesInvoiceHeaders(filters);
+      toast.success('Admission invoice saved');
+      setAdmGINs(null);
+      setAdmQuery('');
+      setAdmRates({});
+      generateSalesInvoicePdf({ inv: created, mode: 'print' });
+    } catch (err) {
+      toast.error(err.message || 'Failed to save admission invoice');
+    } finally {
+      setAdmSaving(false);
+    }
+  };
 
   useModalKeys({
     active: showForm,
@@ -400,6 +513,87 @@ export default function SalesInvoice() {
           </div>
         </Card>
       )}
+
+      {/* Admission Number Search */}
+      <Card className="mb-4" title="Search by Admission Number">
+        <div className="flex gap-2 items-center mb-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Enter admission number..."
+              value={admQuery}
+              onChange={(e) => { setAdmQuery(e.target.value); setAdmGINs(null); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleAdmSearch()}
+              className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <Button label={admLoading ? 'Searching...' : 'Search'} disabled={admLoading} onClick={handleAdmSearch} />
+          {admGINs && admGINs.length > 0 && (
+            <>
+              <Button icon={Printer} label="Print" variant="outline" onClick={printAdmInvoice} />
+              <Button label={admSaving ? 'Saving...' : 'Save Invoice'} disabled={admSaving} onClick={saveAdmInvoice} />
+            </>
+          )}
+          {admGINs !== null && (
+            <button
+              onClick={() => { setAdmGINs(null); setAdmQuery(''); }}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {admGINs !== null && (
+          admRows.length === 0 ? (
+            <p className="text-sm text-slate-400 py-4 text-center">No records found for admission number <strong>{admQuery}</strong></p>
+          ) : (
+            <div className="border border-slate-200 rounded-md overflow-hidden">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th className="px-3 py-2">Item Code</th>
+                    <th className="px-3 py-2">Item</th>
+                    <th className="px-3 py-2">Department</th>
+                    <th className="px-3 py-2 text-right">Qty</th>
+                    <th className="px-3 py-2 text-right">Rate</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {admRows.map((r) => {
+                    const rate = Number(admRates[r.itemCode] ?? r.defaultRate);
+                    return (
+                      <tr key={r.itemCode}>
+                        <td className="px-3 py-2 text-slate-500">{r.itemCode}</td>
+                        <td className="px-3 py-2">{r.item}</td>
+                        <td className="px-3 py-2">{r.department}</td>
+                        <td className="px-3 py-2 text-right">{r.qty}</td>
+                        <td className="px-3 py-2 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={admRates[r.itemCode] ?? r.defaultRate}
+                            onChange={(e) => setAdmRates((prev) => ({ ...prev, [r.itemCode]: e.target.value }))}
+                            className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right focus:outline-none focus:border-blue-500"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium">{(r.qty * rate).toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="bg-slate-50 font-semibold">
+                    <td colSpan={5} className="px-3 py-2 text-right text-slate-700">Grand Total</td>
+                    <td className="px-3 py-2 text-right">{admGrandTotal.toFixed(2)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+      </Card>
 
       {/* List */}
       <div className="flex items-center justify-between mb-2">

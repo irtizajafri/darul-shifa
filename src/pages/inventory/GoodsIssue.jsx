@@ -6,8 +6,14 @@ import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
 import { printGINDocument, printAllGINs } from '../../utils/printPO';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 
 export default function GoodsIssue() {
+  const { user } = useAuthStore();
+  const canGD  = hasPermission(user, 'inventory', 'gd');
+  const canGIN = hasPermission(user, 'inventory', 'gin');
+
   const [ginQuery, setGinQuery] = useState('');
   const [gdQuery, setGdQuery] = useState('');
   const [showGDForm, setShowGDForm] = useState(false);
@@ -36,6 +42,10 @@ export default function GoodsIssue() {
   const [gdItemSearch, setGdItemSearch] = useState('');
   const [gdItemDropdownOpen, setGdItemDropdownOpen] = useState(false);
   const [gdSelectedItems, setGdSelectedItems] = useState([]);
+  const [gdAdmissionEnabled, setGdAdmissionEnabled] = useState(false);
+  const [gdAdmissionNumber, setGdAdmissionNumber] = useState('');
+  const [gdCommentEnabled, setGdCommentEnabled] = useState(false);
+  const [gdComment, setGdComment] = useState('');
 
   const [selectedGDHeaderId, setSelectedGDHeaderId] = useState('');
   const [ginIssueDate, setGinIssueDate] = useState(new Date().toISOString().slice(0, 10));
@@ -136,17 +146,24 @@ export default function GoodsIssue() {
     if (gdSelectedItems.length === 0) { toast.error('Please add at least one item'); return; }
     const badQty = gdSelectedItems.find((i) => !i.quantityRequested || Number(i.quantityRequested) <= 0);
     if (badQty) { toast.error(`Enter quantity for: ${badQty.itemName}`); return; }
+    if (gdAdmissionEnabled && !gdAdmissionNumber.trim()) { toast.error('Please enter admission number'); return; }
     try {
       const result = await createGDBatch({
         departmentId: Number(gdDepartmentId),
         requestDate: new Date(gdRequestDate).toISOString(),
         items: gdSelectedItems.map((i) => ({ itemId: i.itemId, quantityRequested: Number(i.quantityRequested) })),
+        admissionNumber: gdAdmissionEnabled ? gdAdmissionNumber.trim() : undefined,
+        comment: gdCommentEnabled ? gdComment.trim() : undefined,
       });
       await Promise.all([fetchGDs(gdFilters), fetchGDHeaders()]);
       setGdDepartmentId('');
       setGdRequestDate(new Date().toISOString().slice(0, 10));
       setGdSelectedItems([]);
       setGdItemSearch('');
+      setGdAdmissionEnabled(false);
+      setGdAdmissionNumber('');
+      setGdCommentEnabled(false);
+      setGdComment('');
       setShowGDForm(false);
       setCreatedGDHeader(result);
     } catch (err) {
@@ -159,7 +176,7 @@ export default function GoodsIssue() {
     [gdHeaders, selectedGDHeaderId]
   );
 
-  const handleCreateGIN = async (e) => {
+  const handleCreateGIN = async (e, andPrint = false) => {
     e.preventDefault();
     if (!selectedGDHeaderId) { toast.error('Please select a GD'); return; }
     const items = (selectedGDHeader?.gdItems || []).map((gdItem) => ({
@@ -167,13 +184,14 @@ export default function GoodsIssue() {
       issuedQuantity: Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested),
     }));
     try {
-      await createGIN({ gdHeaderId: Number(selectedGDHeaderId), items, issueDate: new Date(ginIssueDate).toISOString() });
+      const newGIN = await createGIN({ gdHeaderId: Number(selectedGDHeaderId), items, issueDate: new Date(ginIssueDate).toISOString() });
       await Promise.all([fetchGINs(ginFilters), fetchGDHeaders(), fetchGDs(gdFilters), fetchItems()]);
       setSelectedGDHeaderId('');
       setGinIssueDate(new Date().toISOString().slice(0, 10));
       setGinIssuedQtys({});
       setShowGINForm(false);
       toast.success('GIN created');
+      if (andPrint && newGIN) printGINDocument(newGIN);
     } catch (err) {
       toast.error(err.message || 'Failed to create GIN');
     }
@@ -296,6 +314,7 @@ export default function GoodsIssue() {
         <p className="text-slate-500 text-sm mb-5">Issue stock to hospital departments</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {canGD && (
           <button
             onClick={() => { setShowGDForm((s) => !s); setShowGINForm(false); }}
             className={`flex items-center gap-4 p-5 rounded-xl border-2 text-left transition-all ${
@@ -313,7 +332,9 @@ export default function GoodsIssue() {
             </div>
             <Plus className="w-5 h-5 text-slate-400 ml-auto" />
           </button>
+          )}
 
+          {canGIN && (
           <button
             onClick={() => { setShowGINForm((s) => !s); setShowGDForm(false); }}
             className={`flex items-center gap-4 p-5 rounded-xl border-2 text-left transition-all ${
@@ -331,10 +352,11 @@ export default function GoodsIssue() {
             </div>
             <Plus className="w-5 h-5 text-slate-400 ml-auto" />
           </button>
+          )}
         </div>
       </div>
 
-      {showGDForm && (
+      {canGD && showGDForm && (
         <Card className="mb-4" title="Create Goods Demand (GD)">
           <form onSubmit={handleCreateGD} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -436,15 +458,59 @@ export default function GoodsIssue() {
               </div>
             )}
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={gdAdmissionEnabled}
+                    onChange={(e) => { setGdAdmissionEnabled(e.target.checked); if (!e.target.checked) setGdAdmissionNumber(''); }}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  Admission Number
+                </label>
+                {gdAdmissionEnabled && (
+                  <input
+                    type="text"
+                    placeholder="Enter admission number"
+                    value={gdAdmissionNumber}
+                    onChange={(e) => setGdAdmissionNumber(e.target.value)}
+                    className="px-3 py-2 border border-blue-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+                  />
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={gdCommentEnabled}
+                    onChange={(e) => { setGdCommentEnabled(e.target.checked); if (!e.target.checked) setGdComment(''); }}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  Comment
+                </label>
+                {gdCommentEnabled && (
+                  <textarea
+                    placeholder="Enter comment..."
+                    value={gdComment}
+                    onChange={(e) => setGdComment(e.target.value)}
+                    rows={2}
+                    className="px-3 py-2 border border-blue-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500 resize-none"
+                  />
+                )}
+              </div>
+            </div>
+
             <div className="flex gap-2">
               <Button type="submit" label={loading ? 'Saving...' : `Save GD (${gdSelectedItems.length} item${gdSelectedItems.length !== 1 ? 's' : ''})`} disabled={loading || gdSelectedItems.length === 0} />
-              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); }} />
+              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdCommentEnabled(false); setGdComment(''); }} />
             </div>
           </form>
         </Card>
       )}
 
-      {showGINForm && (
+      {canGIN && showGINForm && (
         <Card className="mb-4" title="Create Goods Issuance (GIN)">
           <form onSubmit={handleCreateGIN} className="space-y-4">
             <div className="flex flex-wrap gap-3 items-end">
@@ -455,7 +521,7 @@ export default function GoodsIssue() {
                 required
               >
                 <option value="">Select GD (by header code)</option>
-                {(gdHeaders || []).filter((h) => h.status !== 'closed').map((h) => (
+                {(gdHeaders || []).filter((h) => h.status === 'open').map((h) => (
                   <option key={h.id} value={h.id}>
                     {h.code} — {h.department?.name || '-'} [{h.status}] ({h.gdItems?.length || 0} items)
                   </option>
@@ -494,7 +560,7 @@ export default function GoodsIssue() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
-                            min="1"
+                            min="0"
                             placeholder={gdItem.quantityRequested}
                             value={ginIssuedQtys[gdItem.id] ?? ''}
                             onChange={(e) => setGinIssuedQtys((prev) => ({ ...prev, [gdItem.id]: e.target.value }))}
@@ -516,12 +582,14 @@ export default function GoodsIssue() {
 
             <div className="flex gap-2">
               <Button type="submit" label={loading ? 'Saving...' : 'Save GIN'} disabled={loading || !selectedGDHeaderId} />
+              <Button type="button" label={loading ? 'Saving...' : 'Save & Print'} disabled={loading || !selectedGDHeaderId} onClick={(e) => handleCreateGIN(e, true)} />
               <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); }} />
             </div>
           </form>
         </Card>
       )}
 
+      {canGD && (
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-slate-700">📋 GD Records</p>
         <button
@@ -532,8 +600,9 @@ export default function GoodsIssue() {
           {showGDTable ? 'Hide' : 'Show'}
         </button>
       </div>
+      )}
 
-      {showGDTable && (
+      {canGD && showGDTable && (
       <Card className="p-0 overflow-hidden mb-6">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
@@ -663,6 +732,7 @@ export default function GoodsIssue() {
       </Card>
       )}
 
+      {canGIN && (
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-slate-700">📦 GIN Records</p>
         <button
@@ -673,8 +743,9 @@ export default function GoodsIssue() {
           {showGINTable ? 'Hide' : 'Show'}
         </button>
       </div>
+      )}
 
-      {showGINTable && (
+      {canGIN && showGINTable && (
       <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">

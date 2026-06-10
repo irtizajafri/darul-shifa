@@ -570,10 +570,10 @@ async function createGD(req, res, next) {
 
 async function createGDBatch(req, res, next) {
   try {
-    const { departmentId, items } = req.body || {};
+    const { departmentId, items, admissionNumber, comment } = req.body || {};
     if (!isNumericId(departmentId)) return fail(res, 400, 'Invalid departmentId');
     if (!Array.isArray(items) || items.length === 0) return fail(res, 400, 'items array is required');
-    const data = await service.createGDBatch({ departmentId, items });
+    const data = await service.createGDBatch({ departmentId, items, admissionNumber, comment });
     return success(res, data, 'gd batch created');
   } catch (err) {
     if (String(err.message).includes('inactive') || String(err.message).includes('not found') || String(err.message).includes('must') || String(err.message).includes('Invalid')) {
@@ -732,10 +732,10 @@ async function listItemAddOptions(req, res, next) {
 
 async function listDailySalesReport(req, res, next) {
   try {
-    const { dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType } = req.query || {};
+    const { dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType, admissionOnly } = req.query || {};
     if (categoryId !== undefined && categoryId !== '' && !isNumericId(categoryId)) return fail(res, 400, 'Invalid categoryId');
     if (subcategoryId !== undefined && subcategoryId !== '' && !isNumericId(subcategoryId)) return fail(res, 400, 'Invalid subcategoryId');
-    const data = await service.listDailySalesReport({ dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType });
+    const data = await service.listDailySalesReport({ dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType, admissionOnly: admissionOnly === 'true' });
     return success(res, data);
   } catch (err) {
     next(err);
@@ -974,6 +974,8 @@ module.exports = {
   receiveMaintenance,
   listAssetInstances,
   updateAssetInstance,
+  listUnreadGdNotifications,
+  markGdNotificationsRead,
 };
 
 async function listAssetInstances(req, res, next) {
@@ -989,6 +991,25 @@ async function updateAssetInstance(req, res, next) {
   try {
     const data = await service.updateAssetInstance(req.params.id, req.body);
     return success(res, data, 'asset instance updated');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listUnreadGdNotifications(req, res, next) {
+  try {
+    const data = await service.listUnreadGdNotifications();
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function markGdNotificationsRead(req, res, next) {
+  try {
+    const { ids } = req.body;
+    await service.markGdNotificationsRead(ids);
+    return success(res, null, 'Notifications marked as read');
   } catch (err) {
     next(err);
   }

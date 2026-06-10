@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Edit2, Trash2, ToggleLeft, ToggleRight, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Edit2, Trash2, ToggleLeft, ToggleRight, ShieldCheck, AlertTriangle, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useUserManagementStore } from '../../store/useUserManagementStore';
 import { PERMISSIONS_MAP, normalizePermissions } from '../../utils/permissions';
@@ -7,6 +7,8 @@ import PageHeader from '../../components/shared/PageHeader';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
+import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { useInventoryStore } from '../../store/useInventoryStore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function isExpired(expiresAt) {
@@ -164,12 +166,47 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
   const isEdit = !!editUser;
   const [saving, setSaving] = useState(false);
 
+  const { employees, fetchEmployees } = useEmployeeStore();
+  const { fetchDepartments, departments } = useInventoryStore();
+
+  const [nameSearch, setNameSearch] = useState('');
+  const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
+  const [deptSearch, setDeptSearch] = useState('');
+  const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
+  const nameRef = useRef(null);
+  const deptRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchEmployees();
+      fetchDepartments();
+    }
+  }, [isOpen, fetchEmployees, fetchDepartments]);
+
+  const filteredEmployees = useMemo(() => {
+    const q = nameSearch.trim().toLowerCase();
+    const list = employees || [];
+    if (!q) return list.slice(0, 10);
+    return list.filter((e) =>
+      `${e.firstName || ''} ${e.lastName || ''}`.toLowerCase().includes(q) ||
+      String(e.empCode || '').toLowerCase().includes(q)
+    ).slice(0, 10);
+  }, [employees, nameSearch]);
+
+  const filteredDepts = useMemo(() => {
+    const q = deptSearch.trim().toLowerCase();
+    const list = departments || [];
+    if (!q) return list.slice(0, 10);
+    return list.filter((d) => d.name.toLowerCase().includes(q)).slice(0, 10);
+  }, [departments, deptSearch]);
+
   const [form, setForm] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
     role: '',
+    department: '',
     hasExpiry: false,
     expiresAt: '',
     permissions: {},
@@ -184,12 +221,17 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
         password: '',
         confirmPassword: '',
         role: editUser.role || '',
+        department: editUser.department || '',
         hasExpiry: !!editUser.expiresAt,
         expiresAt: editUser.expiresAt ? editUser.expiresAt.slice(0, 10) : '',
         permissions: normalizePermissions(editUser.permissions || {}),
       });
+      setNameSearch(editUser.name || '');
+      setDeptSearch(editUser.department || '');
     } else {
-      setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', hasExpiry: false, expiresAt: '', permissions: {} });
+      setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', department: '', hasExpiry: false, expiresAt: '', permissions: {} });
+      setNameSearch('');
+      setDeptSearch('');
     }
   }, [editUser, isOpen]);
 
@@ -218,6 +260,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
       name: form.name.trim(),
       email: form.email.trim().toLowerCase(),
       role: form.role.trim(),
+      department: form.department.trim() || null,
       permissions: form.permissions,
       expiresAt: form.hasExpiry && form.expiresAt ? form.expiresAt : null,
     };
@@ -239,12 +282,45 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Basic info */}
         <div className="grid grid-cols-2 gap-4">
-          <Input
-            label="Full Name *"
-            placeholder="Ahmed Ali"
-            value={form.name}
-            onChange={(e) => set('name', e.target.value)}
-          />
+          {/* Name — searchable from Employee Database */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={nameRef}
+                type="text"
+                placeholder="Search employee..."
+                value={nameSearch}
+                onChange={(e) => { setNameSearch(e.target.value); set('name', e.target.value); setNameDropdownOpen(true); }}
+                onFocus={() => setNameDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setNameDropdownOpen(false), 150)}
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-md text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+              {nameDropdownOpen && filteredEmployees.length > 0 && (
+                <div className="absolute z-30 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredEmployees.map((emp) => (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onMouseDown={() => {
+                        const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
+                        set('name', fullName);
+                        setNameSearch(fullName);
+                        setNameDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                    >
+                      <span className="font-medium">{emp.firstName} {emp.lastName}</span>
+                      <span className="text-slate-400 ml-2 text-xs">({emp.empCode})</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <Input
             label="Role / Designation *"
             placeholder="Receptionist"
@@ -252,13 +328,52 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
             onChange={(e) => set('role', e.target.value)}
           />
         </div>
-        <Input
-          label="Email Address *"
-          type="email"
-          placeholder="ahmed@hospital.com"
-          value={form.email}
-          onChange={(e) => set('email', e.target.value)}
-        />
+
+        <div className="grid grid-cols-2 gap-4">
+          <Input
+            label="Email Address *"
+            type="email"
+            placeholder="ahmed@hospital.com"
+            value={form.email}
+            onChange={(e) => set('email', e.target.value)}
+          />
+
+          {/* Department — searchable from Inventory Departments */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={deptRef}
+                type="text"
+                placeholder="Search department..."
+                value={deptSearch}
+                onChange={(e) => { setDeptSearch(e.target.value); set('department', e.target.value); setDeptDropdownOpen(true); }}
+                onFocus={() => setDeptDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setDeptDropdownOpen(false), 150)}
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-md text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {deptDropdownOpen && filteredDepts.length > 0 && (
+                <div className="absolute z-30 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredDepts.map((dept) => (
+                    <button
+                      key={dept.id}
+                      type="button"
+                      onMouseDown={() => {
+                        set('department', dept.name);
+                        setDeptSearch(dept.name);
+                        setDeptDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                    >
+                      {dept.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Password */}
         <div className="border border-gray-200 rounded-lg p-4 space-y-3">
@@ -438,6 +553,7 @@ export default function UserManagement() {
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Name</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Email</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Role</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Department</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Permissions</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Expiry</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Status</th>
@@ -456,6 +572,7 @@ export default function UserManagement() {
                         {user.role}
                       </span>
                     </td>
+                    <td className="px-5 py-3.5 text-gray-500">{user.department || '-'}</td>
                     <td className="px-5 py-3.5 text-gray-500">
                       {countPermissions(user.permissions) > 0
                         ? `${countPermissions(user.permissions)} access${countPermissions(user.permissions) > 1 ? 'es' : ''}`

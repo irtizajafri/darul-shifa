@@ -79,4 +79,7 @@ router.patch('/maintenance/:id/receive', controller.receiveMaintenance);
 router.get('/asset-instances', controller.listAssetInstances);
 router.patch('/asset-instances/:id', controller.updateAssetInstance);
 
+router.get('/gd-notifications/unread', controller.listUnreadGdNotifications);
+router.patch('/gd-notifications/mark-read', controller.markGdNotificationsRead);
+
 module.exports = router;

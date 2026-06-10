@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 
-export default function PermissionGuard({ module, subModule, children }) {
+export default function PermissionGuard({ module, subModule, subModules, children }) {
   const { user } = useAuthStore();
   const navigate = useNavigate();
-  const allowed = hasPermission(user, module, subModule);
+  const allowed = subModules
+    ? subModules.some((sm) => hasPermission(user, module, sm))
+    : hasPermission(user, module, subModule);
 
   if (allowed) return children;
 

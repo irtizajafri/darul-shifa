@@ -2127,9 +2127,11 @@ export default function Reports() {
       pdf.text(`Printed: ${printedOn}`, pageWidth - 40, startY - 10, { align: 'right' });
       pdf.setTextColor(0);
 
-      const tsAllRows = registerRows.flatMap(r =>
-        (r.timestampRows || []).map(ts => [r.name, ts.date, ts.timeIn || '--', ts.timeOut || '--', ''])
-      );
+      const tsAllRows = registerRows.flatMap(r => {
+        const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+        if (!punched.length) return [];
+        return punched.map(ts => [r.name, ts.date, ts.timeIn || '--', ts.timeOut || '--', '']);
+      });
 
       const pdfMargin   = 40;
       const usableWidth = pdf.internal.pageSize.getWidth() - pdfMargin * 2;
@@ -2244,15 +2246,17 @@ export default function Reports() {
       if (scope === "payroll-consolidated") rows = payrollConsolidatedRows;
       if (scope === "salary-register")      rows = salaryRegisterRows;
       if (scope === "salary-register-timestamps") {
-        rows = registerRows.flatMap(r =>
-          (r.timestampRows || []).map(ts => ({
+        rows = registerRows.flatMap(r => {
+          const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+          if (!punched.length) return [];
+          return punched.map(ts => ({
             'Employee Name': r.name,
             'Date': ts.date,
             'Time IN': ts.timeIn || '--',
             'Time OUT': ts.timeOut || '--',
             'Sign': '',
-          }))
-        );
+          }));
+        });
       }
       if (scope === "payslip") {
         rows = [
@@ -2863,15 +2867,17 @@ export default function Reports() {
                         </tr>
                       </thead>
                       <tbody>
-                        {registerRows.flatMap(r =>
-                          (r.timestampRows || []).map((ts, tsIdx) => ({
+                        {registerRows.flatMap(r => {
+                          const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+                          if (!punched.length) return [];
+                          return punched.map((ts, tsIdx) => ({
                             key: `${r.code}-${ts.date}-${tsIdx}`,
                             empName: r.name,
                             date: ts.date,
                             timeIn: ts.timeIn,
                             timeOut: ts.timeOut,
-                          }))
-                        ).map((row, idx) => (
+                          }));
+                        }).map((row, idx) => (
                           <tr key={row.key} style={{ background: idx % 2 === 0 ? '#fff' : '#f0fdfa' }}>
                             <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
                             <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>{row.empName}</td>

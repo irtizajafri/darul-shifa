@@ -393,6 +393,12 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  fetchGINsByAdmission: async (admissionNumber) => {
+    const qs = new URLSearchParams();
+    qs.set('admissionNumber', String(admissionNumber).trim());
+    return request(`/gin?${qs.toString()}`);
+  },
+
   fetchSalesInvoices: async ({ search = '', itemId = '', customerType = '', dateFrom = '', dateTo = '' } = {}) => {
     set({ loading: true, error: null });
     try {
@@ -566,7 +572,7 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchDailySalesReport: async ({ dateFrom = '', dateTo = '', customerName = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
+  fetchDailySalesReport: async ({ dateFrom = '', dateTo = '', customerName = '', categoryId = '', subcategoryId = '', assetType = '', admissionOnly = false } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -576,6 +582,7 @@ export const useInventoryStore = create((set) => ({
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
       if (assetType) qs.set('assetType', String(assetType));
+      if (admissionOnly) qs.set('admissionOnly', 'true');
       const data = await request(`/reports/daily-sales?${qs.toString()}`);
       const safeData = {
         invoices: Array.isArray(data?.invoices) ? data.invoices : [],
@@ -707,6 +714,27 @@ export const useInventoryStore = create((set) => ({
     } catch (err) {
       set({ error: err.message, loading: false });
       throw err;
+    }
+  },
+
+  fetchUnreadGdNotifications: async () => {
+    try {
+      const data = await request('/gd-notifications/unread');
+      return Array.isArray(data) ? data : [];
+    } catch (err) {
+      return [];
+    }
+  },
+
+  markGdNotificationsRead: async (ids) => {
+    try {
+      await request('/gd-notifications/mark-read', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+    } catch (err) {
+      // silent
     }
   },
 

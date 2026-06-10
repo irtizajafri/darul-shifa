@@ -90,6 +90,7 @@ export default function AddEmployee({ edit }) {
     control,
     watch,
     setValue,
+    getValues,
     formState: { errors },
   } = useForm({
     defaultValues: existing
@@ -1139,34 +1140,76 @@ export default function AddEmployee({ edit }) {
                             />
                           </td>
                         </>
-                      ) : (
-                        <>
-                          <td>
-                            <input
-                              type="text"
-                              {...register(`dutyRoster.${i}.timeIn`)}
-                              className="form-input w-24"
-                              placeholder="08:00 or OFF"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              {...register(`dutyRoster.${i}.timeOut`)}
-                              className="form-input w-24"
-                              placeholder="16:00 or OFF"
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              {...register(`dutyRoster.${i}.hours`, { valueAsNumber: true })}
-                              className="form-input w-16"
-                              placeholder="8"
-                            />
-                          </td>
-                        </>
-                      )}
+                      ) : (() => {
+                          const { onChange: rhfTimeInChange, ...timeInReg } = register(`dutyRoster.${i}.timeIn`);
+                          const { onChange: rhfTimeOutChange, ...timeOutReg } = register(`dutyRoster.${i}.timeOut`);
+                          return (
+                            <>
+                              <td>
+                                <input
+                                  type="text"
+                                  {...timeInReg}
+                                  className="form-input w-24"
+                                  placeholder="08:00 or OFF"
+                                  onChange={(e) => {
+                                    rhfTimeInChange(e);
+                                    const val = e.target.value;
+                                    const tout = getValues(`dutyRoster.${i}.timeOut`);
+                                    if (val.toUpperCase() === 'OFF' && tout?.toUpperCase() === 'OFF') {
+                                      setValue(`dutyRoster.${i}.hours`, 0);
+                                    } else {
+                                      const hrs = toHoursFromRange(val, tout);
+                                      if (hrs > 0) setValue(`dutyRoster.${i}.hours`, hrs);
+                                    }
+                                    if (i === 0 && /^\d{2}:\d{2}$/.test(val)) {
+                                      for (let j = 1; j < rosterFields.length; j++) {
+                                        setValue(`dutyRoster.${j}.timeIn`, val);
+                                        const tout2 = getValues(`dutyRoster.${j}.timeOut`);
+                                        const hrs2 = toHoursFromRange(val, tout2);
+                                        if (hrs2 > 0) setValue(`dutyRoster.${j}.hours`, hrs2);
+                                      }
+                                    }
+                                  }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="text"
+                                  {...timeOutReg}
+                                  className="form-input w-24"
+                                  placeholder="16:00 or OFF"
+                                  onChange={(e) => {
+                                    rhfTimeOutChange(e);
+                                    const val = e.target.value;
+                                    const tin = getValues(`dutyRoster.${i}.timeIn`);
+                                    if (val.toUpperCase() === 'OFF' && tin?.toUpperCase() === 'OFF') {
+                                      setValue(`dutyRoster.${i}.hours`, 0);
+                                    } else {
+                                      const hrs = toHoursFromRange(tin, val);
+                                      if (hrs > 0) setValue(`dutyRoster.${i}.hours`, hrs);
+                                    }
+                                    if (i === 0 && /^\d{2}:\d{2}$/.test(val)) {
+                                      for (let j = 1; j < rosterFields.length; j++) {
+                                        setValue(`dutyRoster.${j}.timeOut`, val);
+                                        const tin2 = getValues(`dutyRoster.${j}.timeIn`);
+                                        const hrs2 = toHoursFromRange(tin2, val);
+                                        if (hrs2 > 0) setValue(`dutyRoster.${j}.hours`, hrs2);
+                                      }
+                                    }
+                                  }}
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  {...register(`dutyRoster.${i}.hours`, { valueAsNumber: true })}
+                                  className="form-input w-16"
+                                  placeholder="8"
+                                />
+                              </td>
+                            </>
+                          );
+                        })()}
                     </tr>
                   ))}
                 </tbody>

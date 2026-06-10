@@ -296,6 +296,7 @@ function parseOptionalString(value) {
 function normalizeCustomerType(value) {
   const v = String(value || 'walking').trim().toLowerCase();
   if (v === 'customer') return 'customer';
+  if (v === 'admission') return 'admission';
   return 'walking';
 }
 
@@ -876,16 +877,18 @@ async function createGRN(payload) {
 
     if (updatedItem.itemType === 'fixed asset') {
       const count = Math.floor(receivedQuantity);
-      const existingMax = await tx.assetInstance.findFirst({
+      const existingTags = await tx.assetInstance.findMany({
         where: { itemId: po.itemId },
-        orderBy: { assetTag: 'desc' },
         select: { assetTag: true },
       });
       let nextSeq = 1;
-      if (existingMax?.assetTag) {
-        const parts = String(existingMax.assetTag).split('-');
-        const tail = Number(parts[parts.length - 1]);
-        if (Number.isFinite(tail) && tail > 0) nextSeq = tail + 1;
+      if (existingTags.length > 0) {
+        const maxSeq = existingTags.reduce((max, inst) => {
+          const parts = String(inst.assetTag).split('-');
+          const tail = Number(parts[parts.length - 1]);
+          return Number.isFinite(tail) && tail > max ? tail : max;
+        }, 0);
+        if (maxSeq > 0) nextSeq = maxSeq + 1;
       }
       const instanceData = [];
       for (let i = 0; i < count; i++) {
@@ -1046,7 +1049,7 @@ async function createGD(payload) {
   });
 }
 
-async function createGDBatch({ departmentId, items = [] }) {
+async function createGDBatch({ departmentId, items = [], admissionNumber, comment }) {
   const deptId = Number(departmentId);
   if (!Number.isFinite(deptId) || deptId <= 0) throw new Error('Invalid departmentId');
   if (!Array.isArray(items) || items.length === 0) throw new Error('items array is required');
@@ -1084,6 +1087,8 @@ async function createGDBatch({ departmentId, items = [] }) {
       departmentId: deptId,
       status: 'open',
       requestDate: new Date(),
+      admissionNumber: admissionNumber ? String(admissionNumber).trim() : null,
+      comment: comment ? String(comment).trim() : null,
     },
   });
 
@@ -1106,6 +1111,8 @@ async function createGDBatch({ departmentId, items = [] }) {
     gdItems.push(gd);
   }
 
+  await prisma.gdNotification.create({ data: { gdHeaderId: header.id } });
+
   return {
     ...header,
     department,
@@ -1113,11 +1120,12 @@ async function createGDBatch({ departmentId, items = [] }) {
   };
 }
 
-async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType }) {
+async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber }) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const admNo = admissionNumber ? String(admissionNumber).trim() : null;
 
   return prisma.inventoryGIN.findMany({
     where: {
@@ -1127,6 +1135,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       ...(parsedCategoryId ? { item: { categoryId: parsedCategoryId } } : {}),
       ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
       ...(assetType ? { item: { itemType: assetType } } : {}),
+      ...(admNo ? { admissionNumber: admNo } : {}),
       ...(dateFrom || dateTo
         ? {
             issueDate: {
@@ -1251,6 +1260,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note }) 
         gdHeaderId: header.id,
         departmentId: header.departmentId,
         issueDate: issueDate ? new Date(issueDate) : new Date(),
+        admissionNumber: header.admissionNumber || null,
         status: 'issued',
       },
     });
@@ -1392,7 +1402,7 @@ async function createSalesInvoice(payload) {
         itemId,
         invoiceDate: payload.invoiceDate ? new Date(payload.invoiceDate) : new Date(),
         customerType,
-        customerName: customerType === 'customer' ? customerName : 'Walking Customer',
+        customerName: (customerType === 'customer' || customerType === 'admission') ? customerName : 'Walking Customer',
         quantity,
         purchasePrice,
         retailPrice,
@@ -1468,8 +1478,8 @@ async function createSalesInvoiceWithItems(payload) {
 
   if (lineItems.length === 0) throw new Error('At least one item is required');
 
-  if (customerType === 'customer' && !customerName) {
-    throw new Error('customerName is required when customerType is customer');
+  if ((customerType === 'customer' || customerType === 'admission') && !customerName) {
+    throw new Error('customerName is required when customerType is customer or admission');
   }
 
   const discountPercent = Math.min(100, Math.max(0, Number(payload.discountPercent || 0)));
@@ -1501,7 +1511,7 @@ async function createSalesInvoiceWithItems(payload) {
 
       const purchasePrice = Number(item.purchasePrice || 0);
       const retailPrice = Number(item.lastGrnRate || item.purchasePrice || 0);
-      const saleRate = retailPrice;
+      const saleRate = line.saleRate != null ? Number(line.saleRate) : retailPrice;
       const totalAmount = saleRate * quantity;
       subTotal += totalAmount;
 
@@ -1525,7 +1535,7 @@ async function createSalesInvoiceWithItems(payload) {
         code: headerCode,
         invoiceDate,
         customerType,
-        customerName: customerType === 'customer' ? customerName : 'Walking Customer',
+        customerName: (customerType === 'customer' || customerType === 'admission') ? customerName : 'Walking Customer',
         subTotal,
         discountPercent,
         discountAmount,
@@ -1545,7 +1555,7 @@ async function createSalesInvoiceWithItems(payload) {
           itemId: line.itemId,
           invoiceDate,
           customerType,
-          customerName: customerType === 'customer' ? customerName : 'Walking Customer',
+          customerName: (customerType === 'customer' || customerType === 'admission') ? customerName : 'Walking Customer',
           quantity: line.quantity,
           purchasePrice: line.purchasePrice,
           retailPrice: line.retailPrice,
@@ -3213,6 +3223,26 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
   };
 }
 
+async function listUnreadGdNotifications() {
+  return prisma.gdNotification.findMany({
+    where: { isRead: false },
+    include: {
+      gdHeader: {
+        include: { department: true, gdItems: { include: { item: true } } },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function markGdNotificationsRead(ids) {
+  if (Array.isArray(ids) && ids.length > 0) {
+    await prisma.gdNotification.updateMany({ where: { id: { in: ids } }, data: { isRead: true } });
+  } else {
+    await prisma.gdNotification.updateMany({ where: { isRead: false }, data: { isRead: true } });
+  }
+}
+
 module.exports = {
   listCategories,
   createCategory,
@@ -3271,6 +3301,8 @@ module.exports = {
   receiveMaintenance,
   listAssetInstances,
   updateAssetInstance,
+  listUnreadGdNotifications,
+  markGdNotificationsRead,
 };
 
 async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {
@@ -3523,7 +3555,7 @@ async function listExpiredItemsReport({ exactDate, itemId, categoryId, subcatego
   }));
 }
 
-async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType } = {}) {
+async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId, subcategoryId, assetType, admissionOnly } = {}) {
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
   const fromDate = toStartOfDay(dateFrom);
@@ -3547,6 +3579,7 @@ async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId
             ],
           }
         : {}),
+      ...(admissionOnly ? { customerType: { in: ['admission', 'customer'] } } : {}),
     },
     include: {
       items: {
@@ -3600,6 +3633,7 @@ async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId
           qty,
           purchasePrice,
           retailPrice,
+          saleRate: Number(line.saleRate || retailPrice),
           profitPerUnit,
           totalPurchase,
           totalRetail,
@@ -3617,7 +3651,7 @@ async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId
         invoiceCode: h.code,
         invoiceDate: h.invoiceDate,
         customerType: h.customerType,
-        customerName: h.customerType === 'customer' ? h.customerName : 'Walking Customer',
+        customerName: (h.customerType === 'customer' || h.customerType === 'admission') ? h.customerName : 'Walking Customer',
         lines,
         subtotalQty: invTotalQty,
         subtotalPurchase: invTotalPurchase,

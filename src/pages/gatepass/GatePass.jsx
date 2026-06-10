@@ -106,6 +106,16 @@ export default function GatePass() {
 
   const formatDate = (value) => (value ? String(value).slice(0, 10) : '-');
 
+  const parseGatepassReason = (g) => {
+    if (g.purpose) return { nature: g.nature || 'Personal', purpose: g.purpose, permissionBy: g.permissionBy || '' };
+    try {
+      const parsed = JSON.parse(g.reason || '{}');
+      return { nature: parsed.nature || 'Personal', purpose: parsed.purpose || '-', permissionBy: parsed.permissionBy || '' };
+    } catch {
+      return { nature: 'Personal', purpose: '-', permissionBy: '' };
+    }
+  };
+
   const buildGatepassPdf = async ({
     title,
     passNo,
@@ -291,15 +301,15 @@ export default function GatePass() {
       return;
     }
     try {
-      const issuedAt = new Date();
+      const issuedAt = new Date(`${data.date || defaultDate}T${data.timeOut || defaultTime}`);
       await createGatepass({
         employeeId: target.id,
         nature: data.nature,
-        reason: data.reason,
         purpose: data.purpose,
         permissionBy: data.permissionBy,
         issuedAt
       });
+      await fetchGatepasses();
       toast.success('Gate pass created');
       setModalOpen(false);
     } catch (err) {
@@ -426,9 +436,9 @@ export default function GatePass() {
                   <td className="col-out">{g.issuedAt ? new Date(g.issuedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
                   <td className="col-in">{g.validTill ? new Date(g.validTill).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</td>
                   <td>
-                    <Badge label={g.nature} variant={g.nature === 'Office' ? 'info' : 'default'} />
+                    <Badge label={parseGatepassReason(g).nature} variant={parseGatepassReason(g).nature === 'Office' ? 'info' : 'default'} />
                   </td>
-                  <td className="col-purpose">{g.purpose || g.reason || '-'}</td>
+                  <td className="col-purpose">{parseGatepassReason(g).purpose}</td>
                   <td className="col-status">
                     <Badge label={g.status} variant={g.status === 'active' ? 'success' : 'default'} />
                   </td>
@@ -517,7 +527,7 @@ export default function GatePass() {
           </div>
           <Input label="Permission By" {...register('permissionBy', { required: true })} />
           <div className="form-row">
-            <Input label="Date" type="date" {...register('date')} readOnly />
+            <Input label="Date" type="date" {...register('date')} />
             <Input label="Time Out" type="time" {...register('timeOut')} readOnly />
             <Input label="Time In" type="time" {...register('timeIn')} readOnly />
           </div>
@@ -564,8 +574,8 @@ export default function GatePass() {
             <p><strong>Date:</strong> {viewModal.issuedAt ? viewModal.issuedAt.slice(0, 10) : '-'}</p>
             <p><strong>Out:</strong> {viewModal.issuedAt ? new Date(viewModal.issuedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
             <p><strong>In:</strong> {viewModal.validTill ? new Date(viewModal.validTill).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}</p>
-            <p><strong>Nature:</strong> {viewModal.nature || '-'}</p>
-            <p><strong>Purpose:</strong> {viewModal.purpose || viewModal.reason || '-'}</p>
+            <p><strong>Nature:</strong> {parseGatepassReason(viewModal).nature}</p>
+            <p><strong>Purpose:</strong> {parseGatepassReason(viewModal).purpose}</p>
             <p><strong>Minutes Out:</strong> {getGatepassMinutes(viewModal)}</p>
             <p><strong>Per Minute:</strong> {getPerMinuteRate(viewModal.employee, viewModal.issuedAt).toFixed(2)}</p>
             <p><strong>Deduction:</strong> {Math.round(getGatepassMinutes(viewModal) * getPerMinuteRate(viewModal.employee, viewModal.issuedAt)).toLocaleString()}</p>

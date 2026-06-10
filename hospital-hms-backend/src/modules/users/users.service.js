@@ -9,6 +9,7 @@ async function list() {
       name: true,
       email: true,
       role: true,
+      department: true,
       permissions: true,
       isActive: true,
       expiresAt: true,
@@ -20,7 +21,7 @@ async function list() {
 }
 
 async function create(data) {
-  const { name, email, password, role, permissions, isActive, expiresAt } = data;
+  const { name, email, password, role, department, permissions, isActive, expiresAt } = data;
 
   if (!name || !email || !password || !role) {
     throw { status: 400, message: 'Name, email, password and role are required' };
@@ -39,6 +40,7 @@ async function create(data) {
       email,
       password: hashed,
       role,
+      department: department || null,
       permissions: permissions || {},
       isActive: isActive !== undefined ? isActive : true,
       expiresAt: expiresAt ? new Date(expiresAt) : null,
@@ -48,6 +50,7 @@ async function create(data) {
       name: true,
       email: true,
       role: true,
+      department: true,
       permissions: true,
       isActive: true,
       expiresAt: true,
@@ -59,7 +62,7 @@ async function create(data) {
 }
 
 async function update(id, data) {
-  const { name, email, role, permissions, isActive, expiresAt } = data;
+  const { name, email, role, department, permissions, isActive, expiresAt } = data;
 
   const existing = await prisma.user.findUnique({ where: { id } });
   if (!existing) {
@@ -78,6 +81,7 @@ async function update(id, data) {
       ...(name !== undefined && { name }),
       ...(email !== undefined && { email }),
       ...(role !== undefined && { role }),
+      ...(department !== undefined && { department: department || null }),
       ...(permissions !== undefined && { permissions }),
       ...(isActive !== undefined && { isActive }),
       expiresAt: expiresAt === null ? null : expiresAt ? new Date(expiresAt) : undefined,
@@ -87,6 +91,7 @@ async function update(id, data) {
       name: true,
       email: true,
       role: true,
+      department: true,
       permissions: true,
       isActive: true,
       expiresAt: true,

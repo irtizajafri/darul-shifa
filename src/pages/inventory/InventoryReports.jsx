@@ -11,6 +11,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf } from '../../utils/exportInventoryReports';
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 
 const REPORT_TYPES = [
   'Item List', 'Stock Position', 'Item Ledger', 'Reorder Report',
@@ -30,6 +31,9 @@ export default function InventoryReports() {
     subcategoryId: '',
     assetType: '',
   });
+  const [ledgerSummary, setLedgerSummary] = useState(false);
+  const [receivingSummary, setReceivingSummary] = useState(false);
+  const [issuanceSummary, setIssuanceSummary] = useState(false);
   const [receivingFilters, setReceivingFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -104,6 +108,7 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
     assetType: '',
+    admissionOnly: false,
   });
   const [itemListFilters, setItemListFilters] = useState({
     assetType: '',
@@ -764,7 +769,7 @@ export default function InventoryReports() {
   };
 
   const resetDailySalesFilters = () => {
-    const empty = { dateFrom: '', dateTo: '', customerName: '', categoryId: '', subcategoryId: '', assetType: '' };
+    const empty = { dateFrom: '', dateTo: '', customerName: '', categoryId: '', subcategoryId: '', assetType: '', admissionOnly: false };
     setDailySalesFilters(empty);
     fetchDailySalesReport(empty).catch((err) => {
       toast.error(err.message || 'Failed to load daily sales report');
@@ -906,6 +911,31 @@ export default function InventoryReports() {
     }));
   }, [itemLedgerReport?.rows]);
 
+  const ledgerSummaryExportRows = useMemo(() => {
+    return (itemLedgerReport?.groups || []).map((group) => {
+      const rows = group.rows || [];
+      const totalReceived = rows.reduce((s, r) => s + Number(r.receivedQuantity || 0), 0);
+      const totalReceivedAmt = rows.reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
+      const totalIssued = rows.reduce((s, r) => s + Number(r.issuanceQuantity || 0), 0);
+      const totalIssuedAmt = rows.reduce((s, r) => s + Number(r.issuanceAmount || 0), 0);
+      const lastRow = rows[rows.length - 1];
+      return {
+        'Item Code': group.itemCode,
+        'Item Name': group.itemName,
+        Category: group.category,
+        Subcategory: group.subcategory,
+        'Opening Qty': Number(group.openingBalance || 0).toFixed(2),
+        'Total Received': totalReceived.toFixed(2),
+        'Received Amount': totalReceivedAmt.toFixed(2),
+        'Total Issued': totalIssued.toFixed(2),
+        'Issued Amount': totalIssuedAmt.toFixed(2),
+        'Remaining Qty': lastRow ? Number(lastRow.remainingQuantity || 0).toFixed(2) : (Number(group.openingBalance || 0) + totalReceived - totalIssued).toFixed(2),
+        'Remaining Amount': lastRow ? Number(lastRow.remainingAmount || 0).toFixed(2) : '0.00',
+        'Remaining Breakdown': lastRow ? (lastRow.remainingBreakdown || '-') : '-',
+      };
+    });
+  }, [itemLedgerReport?.groups]);
+
   const receivingRows = useMemo(() => {
     return (grns || []).map((row) => ({
       key: row.id,
@@ -935,29 +965,86 @@ export default function InventoryReports() {
     }));
   }, [receivingRows]);
 
+  const receivingSummaryExportRows = useMemo(() => {
+    return Object.values(
+      receivingRows.reduce((acc, row) => {
+        const key = row.itemCode;
+        if (!acc[key]) acc[key] = { 'Item Code': row.itemCode, Item: row.item, Category: row.category, Subcategory: row.subcategory, 'Total Qty': 0, 'Total Amount': 0 };
+        acc[key]['Total Qty'] += Number(row.quantity || 0);
+        acc[key]['Total Amount'] += Number(row.amount || 0);
+        return acc;
+      }, {})
+    ).map((r) => ({ ...r, 'Total Qty': Number(r['Total Qty']).toFixed(2), 'Total Amount': Number(r['Total Amount']).toFixed(2) }));
+  }, [receivingRows]);
+
   const issuanceRows = useMemo(() => {
-    return (gins || []).map((row) => ({
-      key: row.id,
-      date: row.issueDate,
-      item: row.item?.name || '-',
-      itemCode: row.item?.code || '-',
-      category: row.item?.category?.name || '-',
-      subcategory: row.item?.subcategory?.name || '-',
-      department: row.department?.name || '-',
-      quantity: Number(row.issuedQuantity || 0),
-    }));
+    const rows = [];
+    for (const gin of (gins || [])) {
+      const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
+      if (gin.ginItems && gin.ginItems.length > 0) {
+        gin.ginItems.forEach((gi, idx) => {
+          const qty = Number(gi.issuedQuantity || 0);
+          const rate = Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0);
+          rows.push({
+            key: `${gin.id}-${idx}`,
+            ginCode: gin.code,
+            date: gin.issueDate,
+            item: gi.item?.name || '-',
+            itemCode: gi.item?.code || '-',
+            category: gi.item?.category?.name || '-',
+            subcategory: gi.item?.subcategory?.name || '-',
+            department: dept,
+            quantity: qty,
+            rate,
+            amount: qty * rate,
+          });
+        });
+      } else {
+        const qty = Number(gin.issuedQuantity || 0);
+        const rate = Number(gin.item?.lastGrnRate || gin.item?.purchasePrice || 0);
+        rows.push({
+          key: gin.id,
+          ginCode: gin.code,
+          date: gin.issueDate,
+          item: gin.item?.name || '-',
+          itemCode: gin.item?.code || '-',
+          category: gin.item?.category?.name || '-',
+          subcategory: gin.item?.subcategory?.name || '-',
+          department: dept,
+          quantity: qty,
+          rate,
+          amount: qty * rate,
+        });
+      }
+    }
+    return rows;
   }, [gins]);
 
   const issuanceExportRows = useMemo(() => {
     return issuanceRows.map((row) => ({
-      Date: row.date ? new Date(row.date).toLocaleString() : '-',
+      'GIN Code': row.ginCode || '-',
+      Date: row.date ? new Date(row.date).toLocaleDateString() : '-',
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
       Subcategory: row.subcategory,
       Department: row.department,
-      Quantity: row.quantity,
+      'Issued Qty': row.quantity,
+      Rate: Number(row.rate || 0).toFixed(2),
+      Amount: Number(row.amount || 0).toFixed(2),
     }));
+  }, [issuanceRows]);
+
+  const issuanceSummaryExportRows = useMemo(() => {
+    return Object.values(
+      issuanceRows.reduce((acc, row) => {
+        const key = row.itemCode;
+        if (!acc[key]) acc[key] = { 'Item Code': row.itemCode, Item: row.item, Category: row.category, Subcategory: row.subcategory, 'Total Issued Qty': 0, 'Total Amount': 0 };
+        acc[key]['Total Issued Qty'] += Number(row.quantity || 0);
+        acc[key]['Total Amount'] += Number(row.amount || 0);
+        return acc;
+      }, {})
+    ).map((r) => ({ ...r, 'Total Issued Qty': Number(r['Total Issued Qty']).toFixed(2), 'Total Amount': Number(r['Total Amount']).toFixed(2) }));
   }, [issuanceRows]);
 
   const discardRows = useMemo(() => {
@@ -1161,27 +1248,27 @@ export default function InventoryReports() {
     }
     if (activeReport === 'Item Ledger') {
       exportRowsToPdf({
-        fileName: 'inventory-item-ledger-report',
-        title: 'Inventory Item Ledger Report',
-        rows: ledgerExportRows,
+        fileName: ledgerSummary ? 'inventory-item-ledger-summary' : 'inventory-item-ledger-report',
+        title: ledgerSummary ? 'Inventory Item Ledger Summary' : 'Inventory Item Ledger Report',
+        rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows,
       });
       return;
     }
 
     if (activeReport === 'Receiving Report') {
       exportRowsToPdf({
-        fileName: 'inventory-receiving-report',
-        title: 'Inventory Receiving Report',
-        rows: receivingExportRows,
+        fileName: receivingSummary ? 'inventory-receiving-summary' : 'inventory-receiving-report',
+        title: receivingSummary ? 'Inventory Receiving Summary' : 'Inventory Receiving Report',
+        rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows,
       });
       return;
     }
 
     if (activeReport === 'Issuance Report') {
       exportRowsToPdf({
-        fileName: 'inventory-issuance-report',
-        title: 'Inventory Issuance Report',
-        rows: issuanceExportRows,
+        fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report',
+        title: issuanceSummary ? 'Inventory Issuance Summary' : 'Inventory Issuance Report',
+        rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows,
       });
       return;
     }
@@ -1270,15 +1357,15 @@ export default function InventoryReports() {
       return;
     }
     if (activeReport === 'Item Ledger') {
-      printRowsToPdf({ title: 'Item Ledger Report', rows: ledgerExportRows });
+      printRowsToPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows });
       return;
     }
     if (activeReport === 'Receiving Report') {
-      printRowsToPdf({ title: 'Receiving Report', rows: receivingExportRows });
+      printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows });
       return;
     }
     if (activeReport === 'Issuance Report') {
-      printRowsToPdf({ title: 'Issuance Report', rows: issuanceExportRows });
+      printRowsToPdf({ title: issuanceSummary ? 'Issuance Summary' : 'Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows });
       return;
     }
     if (activeReport === 'Discard Report') {
@@ -1314,27 +1401,27 @@ export default function InventoryReports() {
   const handleExportExcel = () => {
     if (activeReport === 'Item Ledger') {
       exportRowsToExcel({
-        fileName: 'inventory-item-ledger-report',
+        fileName: ledgerSummary ? 'inventory-item-ledger-summary' : 'inventory-item-ledger-report',
         sheetName: 'ItemLedger',
-        rows: ledgerExportRows,
+        rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows,
       });
       return;
     }
 
     if (activeReport === 'Receiving Report') {
       exportRowsToExcel({
-        fileName: 'inventory-receiving-report',
+        fileName: receivingSummary ? 'inventory-receiving-summary' : 'inventory-receiving-report',
         sheetName: 'ReceivingReport',
-        rows: receivingExportRows,
+        rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows,
       });
       return;
     }
 
     if (activeReport === 'Issuance Report') {
       exportRowsToExcel({
-        fileName: 'inventory-issuance-report',
+        fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report',
         sheetName: 'IssuanceReport',
-        rows: issuanceExportRows,
+        rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows,
       });
       return;
     }
@@ -1668,9 +1755,18 @@ export default function InventoryReports() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-4">
                   <Button size="sm" label="Apply" onClick={applyLedgerFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetLedgerFilters} />
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={ledgerSummary}
+                      onChange={(e) => setLedgerSummary(e.target.checked)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    Summary
+                  </label>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
@@ -1697,6 +1793,59 @@ export default function InventoryReports() {
                 </div>
 
                 {(itemLedgerReport?.groups || []).length > 0 ? (
+                  ledgerSummary ? (
+                    <Card className="p-0 overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                              <th className="px-4 py-3 min-w-[80px]">Item Code</th>
+                              <th className="px-4 py-3 min-w-[140px]">Item Name</th>
+                              <th className="px-4 py-3 min-w-[100px]">Category</th>
+                              <th className="px-4 py-3 min-w-[100px]">Subcategory</th>
+                              <th className="px-4 py-3 min-w-[100px]">Opening Qty</th>
+                              <th className="px-4 py-3 min-w-[110px]">Total Received</th>
+                              <th className="px-4 py-3 min-w-[120px]">Received Amount</th>
+                              <th className="px-4 py-3 min-w-[110px]">Total Issued</th>
+                              <th className="px-4 py-3 min-w-[120px]">Issued Amount</th>
+                              <th className="px-4 py-3 min-w-[110px] font-bold">Remaining Qty</th>
+                              <th className="px-4 py-3 min-w-[120px]">Remaining Amount</th>
+                              <th className="px-4 py-3 min-w-[160px]">Remaining Breakdown</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {(itemLedgerReport.groups).map((group) => {
+                              const rows = group.rows || [];
+                              const totalReceived = rows.reduce((s, r) => s + Number(r.receivedQuantity || 0), 0);
+                              const totalReceivedAmt = rows.reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
+                              const totalIssued = rows.reduce((s, r) => s + Number(r.issuanceQuantity || 0), 0);
+                              const totalIssuedAmt = rows.reduce((s, r) => s + Number(r.issuanceAmount || 0), 0);
+                              const lastRow = rows[rows.length - 1];
+                              const remainingQty = lastRow ? Number(lastRow.remainingQuantity || 0) : Number(group.openingBalance || 0) + totalReceived - totalIssued;
+                              const remainingAmt = lastRow ? Number(lastRow.remainingAmount || 0) : 0;
+                              const remainingBreakdown = lastRow ? (lastRow.remainingBreakdown || '-') : '-';
+                              return (
+                                <tr key={group.itemId} className="hover:bg-slate-50">
+                                  <td className="px-4 py-3 text-xs">{group.itemCode}</td>
+                                  <td className="px-4 py-3 font-medium text-slate-800 text-xs">{group.itemName}</td>
+                                  <td className="px-4 py-3 text-xs">{group.category}</td>
+                                  <td className="px-4 py-3 text-xs">{group.subcategory}</td>
+                                  <td className="px-4 py-3 text-xs">{Number(group.openingBalance || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-emerald-700 text-xs">{totalReceived.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-emerald-700 text-xs">{totalReceivedAmt.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-rose-700 font-semibold text-xs">{totalIssued.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-rose-700 text-xs">{totalIssuedAmt.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-blue-700 font-bold text-xs">{remainingQty.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-blue-700 font-semibold text-xs">{remainingAmt.toFixed(2)}</td>
+                                  <td className="px-4 py-3 text-blue-700 text-xs">{remainingBreakdown}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Card>
+                  ) : (
                   <div className="space-y-4">
                     {(itemLedgerReport?.groups || []).map((group) => (
                       <Card key={group.itemId} className="p-0 overflow-hidden">
@@ -1751,6 +1900,7 @@ export default function InventoryReports() {
                       </Card>
                     ))}
                   </div>
+                  )
                 ) : (
                   <div className="text-center text-slate-400 py-10">No item ledger entries found for selected filters.</div>
                 )}
@@ -1842,12 +1992,59 @@ export default function InventoryReports() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-4">
                   <Button size="sm" label="Apply" onClick={applyReceivingFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetReceivingFilters} />
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={receivingSummary}
+                      onChange={(e) => setReceivingSummary(e.target.checked)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    Summary
+                  </label>
                 </div>
 
                 {receivingRows.length > 0 ? (
+                  receivingSummary ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                            <th className="px-4 py-3">Item Code</th>
+                            <th className="px-4 py-3">Item</th>
+                            <th className="px-4 py-3">Category</th>
+                            <th className="px-4 py-3">Subcategory</th>
+                            <th className="px-4 py-3">Total Qty</th>
+                            <th className="px-4 py-3">Total Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {Object.values(
+                            receivingRows.reduce((acc, row) => {
+                              const key = row.itemCode;
+                              if (!acc[key]) {
+                                acc[key] = { itemCode: row.itemCode, item: row.item, category: row.category, subcategory: row.subcategory, totalQty: 0, totalAmount: 0 };
+                              }
+                              acc[key].totalQty += Number(row.quantity || 0);
+                              acc[key].totalAmount += Number(row.amount || 0);
+                              return acc;
+                            }, {})
+                          ).map((r) => (
+                            <tr key={r.itemCode} className="hover:bg-slate-50">
+                              <td className="px-4 py-3 text-xs">{r.itemCode}</td>
+                              <td className="px-4 py-3 font-medium text-slate-800">{r.item}</td>
+                              <td className="px-4 py-3">{r.category}</td>
+                              <td className="px-4 py-3">{r.subcategory}</td>
+                              <td className="px-4 py-3 text-emerald-700 font-semibold">{r.totalQty.toFixed(2)}</td>
+                              <td className="px-4 py-3 font-semibold text-slate-800">{r.totalAmount.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
                       <thead>
@@ -1906,6 +2103,7 @@ export default function InventoryReports() {
                       </tbody>
                     </table>
                   </div>
+                  )
                 ) : (
                   <div className="text-center text-slate-400 py-10">No receiving entries found for selected filters.</div>
                 )}
@@ -1933,55 +2131,47 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Department</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={masterOptions?.departments || []}
                       value={issuanceFilters.departmentId}
-                      onChange={(e) => updateIssuanceFilter('departmentId', e.target.value)}
-                    >
-                      <option value="">All Departments</option>
-                      {(masterOptions?.departments || []).map((dep) => (
-                        <option key={dep.id} value={dep.id}>{dep.name} ({dep.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateIssuanceFilter('departmentId', val)}
+                      placeholder="All Departments"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={issuanceFilters.categoryId}
-                      onChange={(e) => updateIssuanceFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateIssuanceFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={issuanceSubcategoryOptions}
                       value={issuanceFilters.subcategoryId}
-                      onChange={(e) => updateIssuanceFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {issuanceSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateIssuanceFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={issuanceItemOptions}
                       value={issuanceFilters.itemId}
-                      onChange={(e) => updateIssuanceFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Items</option>
-                      {issuanceItemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateIssuanceFilter('itemId', val)}
+                      placeholder="All Items"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -1997,28 +2187,79 @@ export default function InventoryReports() {
                   </div>
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex items-center gap-4">
                   <Button size="sm" label="Apply" onClick={applyIssuanceFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetIssuanceFilters} />
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={issuanceSummary}
+                      onChange={(e) => setIssuanceSummary(e.target.checked)}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    Summary
+                  </label>
                 </div>
 
                 {issuanceRows.length > 0 ? (
+                  issuanceSummary ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                            <th className="px-4 py-3">Item Code</th>
+                            <th className="px-4 py-3">Item</th>
+                            <th className="px-4 py-3">Category</th>
+                            <th className="px-4 py-3">Subcategory</th>
+                            <th className="px-4 py-3">Total Issued Qty</th>
+                            <th className="px-4 py-3">Total Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {Object.values(
+                            issuanceRows.reduce((acc, row) => {
+                              const key = row.itemCode;
+                              if (!acc[key]) {
+                                acc[key] = { itemCode: row.itemCode, item: row.item, category: row.category, subcategory: row.subcategory, totalQty: 0, totalAmount: 0 };
+                              }
+                              acc[key].totalQty += Number(row.quantity || 0);
+                              acc[key].totalAmount += Number(row.amount || 0);
+                              return acc;
+                            }, {})
+                          ).map((r) => (
+                            <tr key={r.itemCode} className="hover:bg-slate-50">
+                              <td className="px-4 py-3 text-xs">{r.itemCode}</td>
+                              <td className="px-4 py-3 font-medium text-slate-800">{r.item}</td>
+                              <td className="px-4 py-3">{r.category}</td>
+                              <td className="px-4 py-3">{r.subcategory}</td>
+                              <td className="px-4 py-3 text-rose-700 font-semibold">{r.totalQty.toFixed(2)}</td>
+                              <td className="px-4 py-3 font-semibold text-blue-700">{r.totalAmount.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
                       <thead>
                         <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                          <th className="px-4 py-3">GIN Code</th>
                           <th className="px-4 py-3">Date</th>
                           <th className="px-4 py-3">Item</th>
                           <th className="px-4 py-3">Item Code</th>
                           <th className="px-4 py-3">Category</th>
                           <th className="px-4 py-3">Subcategory</th>
                           <th className="px-4 py-3">Department</th>
-                          <th className="px-4 py-3">Quantity</th>
+                          <th className="px-4 py-3">Issued Qty</th>
+                          <th className="px-4 py-3">Rate</th>
+                          <th className="px-4 py-3">Amount</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {issuanceRows.map((row) => (
                           <tr key={row.key}>
+                            <td className="px-4 py-3 text-slate-500 text-xs">{row.ginCode || '-'}</td>
                             <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
                             <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
@@ -2026,11 +2267,14 @@ export default function InventoryReports() {
                             <td className="px-4 py-3">{row.subcategory}</td>
                             <td className="px-4 py-3">{row.department}</td>
                             <td className="px-4 py-3 font-semibold text-slate-800">{row.quantity}</td>
+                            <td className="px-4 py-3 text-slate-600">{Number(row.rate || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 font-semibold text-blue-700">{Number(row.amount || 0).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+                  )
                 ) : (
                   <div className="text-center text-slate-400 py-10">No issuance entries found for selected filters.</div>
                 )}
@@ -2596,9 +2840,22 @@ export default function InventoryReports() {
                     </select>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-4">
                   <Button size="sm" label="Apply" onClick={applyDailySalesFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetDailySalesFilters} />
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={dailySalesFilters.admissionOnly}
+                      onChange={(e) => {
+                        const newFilters = { ...dailySalesFilters, admissionOnly: e.target.checked };
+                        setDailySalesFilters(newFilters);
+                        fetchDailySalesReport(newFilters).catch((err) => toast.error(err.message || 'Failed to load'));
+                      }}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    Admission Only
+                  </label>
                 </div>
 
                 {/* Summary Cards */}
@@ -2643,44 +2900,76 @@ export default function InventoryReports() {
                           </div>
                         </div>
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-sm">
-                            <thead>
-                              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                                <th className="px-4 py-2">Item</th>
-                                <th className="px-4 py-2">Category</th>
-                                <th className="px-4 py-2">Subcategory</th>
-                                <th className="px-4 py-2">Qty</th>
-                                <th className="px-4 py-2">Purchase Price</th>
-                                <th className="px-4 py-2">Retail Price</th>
-                                <th className="px-4 py-2">Profit/Unit</th>
-                                <th className="px-4 py-2">Total Retail</th>
-                                <th className="px-4 py-2">Total Profit</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {(inv.lines || []).map((line, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50">
-                                  <td className="px-4 py-2 font-medium text-slate-800">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
-                                  <td className="px-4 py-2 text-xs">{line.category}</td>
-                                  <td className="px-4 py-2 text-xs">{line.subcategory}</td>
-                                  <td className="px-4 py-2">{line.qty}</td>
-                                  <td className="px-4 py-2 text-rose-700">{Number(line.purchasePrice).toFixed(2)}</td>
-                                  <td className="px-4 py-2 text-emerald-700">{Number(line.retailPrice).toFixed(2)}</td>
-                                  <td className="px-4 py-2 text-blue-700">{Number(line.profitPerUnit).toFixed(2)}</td>
-                                  <td className="px-4 py-2 font-semibold text-emerald-700">{Number(line.totalRetail).toFixed(2)}</td>
-                                  <td className="px-4 py-2 font-semibold text-blue-700">{Number(line.totalProfit).toFixed(2)}</td>
+                          {dailySalesFilters.admissionOnly ? (
+                            <table className="w-full text-left border-collapse text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                                  <th className="px-4 py-2">Item</th>
+                                  <th className="px-4 py-2">Category</th>
+                                  <th className="px-4 py-2">Subcategory</th>
+                                  <th className="px-4 py-2">Qty</th>
+                                  <th className="px-4 py-2 text-right">Rate</th>
+                                  <th className="px-4 py-2 text-right">Amount</th>
                                 </tr>
-                              ))}
-                              <tr className="bg-slate-50 text-xs font-semibold border-t border-slate-200">
-                                <td colSpan={3} className="px-4 py-2 text-right text-slate-500">Invoice Total</td>
-                                <td className="px-4 py-2">{Number(inv.subtotalQty || 0).toFixed(2)}</td>
-                                <td className="px-4 py-2 text-rose-700">{Number(inv.subtotalPurchase || 0).toFixed(2)}</td>
-                                <td colSpan={2} />
-                                <td className="px-4 py-2 text-emerald-700">{Number(inv.subtotalRetail || 0).toFixed(2)}</td>
-                                <td className="px-4 py-2 text-blue-700">{Number(inv.subtotalProfit || 0).toFixed(2)}</td>
-                              </tr>
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {(inv.lines || []).map((line, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-4 py-2 font-medium text-slate-800">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
+                                    <td className="px-4 py-2 text-xs">{line.category}</td>
+                                    <td className="px-4 py-2 text-xs">{line.subcategory}</td>
+                                    <td className="px-4 py-2">{line.qty}</td>
+                                    <td className="px-4 py-2 text-right">{Number(line.saleRate).toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-right font-semibold">{Number(line.totalRetail).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                                <tr className="bg-slate-50 text-xs font-semibold border-t border-slate-200">
+                                  <td colSpan={4} className="px-4 py-2 text-right text-slate-500">Total</td>
+                                  <td />
+                                  <td className="px-4 py-2 text-right">{Number(inv.subtotalRetail || 0).toFixed(2)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          ) : (
+                            <table className="w-full text-left border-collapse text-sm">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
+                                  <th className="px-4 py-2">Item</th>
+                                  <th className="px-4 py-2">Category</th>
+                                  <th className="px-4 py-2">Subcategory</th>
+                                  <th className="px-4 py-2">Qty</th>
+                                  <th className="px-4 py-2">Purchase Price</th>
+                                  <th className="px-4 py-2">Retail Price</th>
+                                  <th className="px-4 py-2">Profit/Unit</th>
+                                  <th className="px-4 py-2">Total Retail</th>
+                                  <th className="px-4 py-2">Total Profit</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {(inv.lines || []).map((line, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-50">
+                                    <td className="px-4 py-2 font-medium text-slate-800">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
+                                    <td className="px-4 py-2 text-xs">{line.category}</td>
+                                    <td className="px-4 py-2 text-xs">{line.subcategory}</td>
+                                    <td className="px-4 py-2">{line.qty}</td>
+                                    <td className="px-4 py-2 text-rose-700">{Number(line.purchasePrice).toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-emerald-700">{Number(line.retailPrice).toFixed(2)}</td>
+                                    <td className="px-4 py-2 text-blue-700">{Number(line.profitPerUnit).toFixed(2)}</td>
+                                    <td className="px-4 py-2 font-semibold text-emerald-700">{Number(line.totalRetail).toFixed(2)}</td>
+                                    <td className="px-4 py-2 font-semibold text-blue-700">{Number(line.totalProfit).toFixed(2)}</td>
+                                  </tr>
+                                ))}
+                                <tr className="bg-slate-50 text-xs font-semibold border-t border-slate-200">
+                                  <td colSpan={3} className="px-4 py-2 text-right text-slate-500">Invoice Total</td>
+                                  <td className="px-4 py-2">{Number(inv.subtotalQty || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-2 text-rose-700">{Number(inv.subtotalPurchase || 0).toFixed(2)}</td>
+                                  <td colSpan={2} />
+                                  <td className="px-4 py-2 text-emerald-700">{Number(inv.subtotalRetail || 0).toFixed(2)}</td>
+                                  <td className="px-4 py-2 text-blue-700">{Number(inv.subtotalProfit || 0).toFixed(2)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          )}
                         </div>
                       </Card>
                     ))}

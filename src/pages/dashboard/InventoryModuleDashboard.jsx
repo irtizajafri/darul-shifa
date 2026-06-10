@@ -26,30 +26,45 @@ import PageLoader from '../../components/ui/PageLoader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useInventoryStore } from '../../store/useInventoryStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import './InventoryModuleDashboard.scss';
 
 const subModules = [
   { title: 'Master Setup', icon: Settings, desc: 'Categories, Items, Vendors, Shelves', stat: 'Manage master data', path: '/inventory/master-setup', Illustration: MasterSetupIllustration },
   { title: 'Purchase Orders (PO)', icon: ShoppingCart, desc: 'Generate & manage supplier POs', stat: 'Create and track orders', path: '/inventory/po', state: { openCreate: true }, Illustration: PurchaseOrderIllustration },
   { title: 'Receiving (GRN)', icon: Truck, desc: 'Goods Receiving Note & inward stock', stat: 'Receive stock entries', path: '/inventory/grn', state: { openCreate: true }, Illustration: ReceivingGRNIllustration },
-  { title: 'Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments', stat: 'Manage outward stock', path: '/inventory/gin', Illustration: IssuanceGINIllustration },
+  { title: 'Good Demands & Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments', stat: 'Manage outward stock', path: '/inventory/gin', Illustration: IssuanceGINIllustration },
   { title: 'Sales Invoice', icon: FileText, desc: 'Fair Price Shop customer billing', stat: 'Generate invoice & PDF', path: '/inventory/sales-invoice', Illustration: SalesInvoiceIllustration },
   { title: 'Discard/Return (GDN)', icon: ArrowDownRight, desc: 'Discard expired/damaged stock', stat: 'Track wastage and return', path: '/inventory/gdn', Illustration: DiscardGDNIllustration },
   { title: 'Inventory Reports', icon: BarChart3, desc: 'Ledgers, stock positions, short expiry', stat: 'View stock reports', path: '/inventory/reports', Illustration: InventoryReportsIllustration },
 ];
 
 export default function InventoryModuleDashboard() {
+  const { user } = useAuthStore();
+  const canSeeInvAlerts = hasPermission(user, 'inventory', 'low-stock-alerts');
+  const canSeeFAAlerts  = hasPermission(user, 'inventory', 'fixed-asset-alerts');
+
   const [loading, setLoading] = useState(true);
   const [showLowStockPopup, setShowLowStockPopup] = useState(false);
+  const [showFixedAssetPopup, setShowFixedAssetPopup] = useState(false);
+  const [inventoryAlerts, setInventoryAlerts] = useState([]);
+  const [fixedAssetAlerts, setFixedAssetAlerts] = useState([]);
   const { setModule } = useModuleStore();
-  const { items, reorderAlerts, fetchItems, fetchReorderAlerts } = useInventoryStore();
+  const { items, fetchItems, fetchReorderAlerts } = useInventoryStore();
   const navigate = useNavigate();
 
   useEffect(() => {
     setModule('inventory');
     const init = setTimeout(async () => {
       try {
-        await Promise.all([fetchItems(), fetchReorderAlerts()]);
+        const [, invAlerts, faAlerts] = await Promise.all([
+          fetchItems(),
+          fetchReorderAlerts({ assetType: 'current asset' }),
+          fetchReorderAlerts({ assetType: 'fixed asset' }),
+        ]);
+        setInventoryAlerts(Array.isArray(invAlerts) ? invAlerts : []);
+        setFixedAssetAlerts(Array.isArray(faAlerts) ? faAlerts : []);
       } catch (err) {
         toast.error(err.message || 'Failed to load inventory dashboard data');
       } finally {
@@ -61,19 +76,30 @@ export default function InventoryModuleDashboard() {
 
   useEffect(() => {
     if (!loading) {
-      setShowLowStockPopup(true);
+      if (canSeeInvAlerts) setShowLowStockPopup(true);
+      else if (canSeeFAAlerts) setShowFixedAssetPopup(true);
     }
-  }, [loading]);
+  }, [loading, canSeeInvAlerts, canSeeFAAlerts]);
+
+  const handleCloseInventoryPopup = () => {
+    setShowLowStockPopup(false);
+    if (canSeeFAAlerts && fixedAssetAlerts.length > 0) setShowFixedAssetPopup(true);
+  };
 
   useModalKeys({
     active: showLowStockPopup,
-    onEsc: () => setShowLowStockPopup(false),
+    onEsc: handleCloseInventoryPopup,
+  });
+
+  useModalKeys({
+    active: showFixedAssetPopup,
+    onEsc: () => setShowFixedAssetPopup(false),
   });
 
   if (loading) return <PageLoader />;
 
   const totalStock = (items || []).reduce((sum, item) => sum + (Number(item.currentStock) || 0), 0);
-  const openAlerts = reorderAlerts || [];
+  const openAlerts = inventoryAlerts;
 
   return (
     <div className="inventory-module-dashboard">
@@ -109,7 +135,7 @@ export default function InventoryModuleDashboard() {
         ))}
       </div>
 
-      <Card className="recent-activity">
+      {canSeeInvAlerts && <Card className="recent-activity">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center">
           <h2 className="text-lg font-semibold m-0">Recent Low Stock Alerts</h2>
           <Button variant="outline" label="View All Stock" onClick={() => navigate('/inventory/reports')} />
@@ -148,14 +174,14 @@ export default function InventoryModuleDashboard() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card>}
 
       {showLowStockPopup && (
         <div className="low-stock-popup-overlay" role="dialog" aria-modal="true" aria-label="Recent Low Stocks">
           <div className="low-stock-popup-card">
             <div className="low-stock-popup-header">
               <div>
-                <h2>Recent Low Stocks</h2>
+                <h2>Recent Low Stocks — Inventory</h2>
                 <p>{openAlerts.length} item(s) currently below reorder level</p>
               </div>
               <div className="low-stock-popup-actions">
@@ -163,14 +189,14 @@ export default function InventoryModuleDashboard() {
                   variant="outline"
                   label="View All Stock"
                   onClick={() => {
-                    setShowLowStockPopup(false);
+                    handleCloseInventoryPopup();
                     navigate('/inventory/reports');
                   }}
                 />
                 <Button
                   variant="secondary"
                   label="Close"
-                  onClick={() => setShowLowStockPopup(false)}
+                  onClick={handleCloseInventoryPopup}
                 />
               </div>
             </div>
@@ -195,6 +221,67 @@ export default function InventoryModuleDashboard() {
                   ) : (
                     openAlerts.map((alert) => (
                       <tr key={`popup-alert-${alert.id}`}>
+                        <td>{alert.item?.code}</td>
+                        <td className="item-name">{alert.item?.name}</td>
+                        <td>{alert.item?.category?.name || '-'}</td>
+                        <td><span className="stock-danger">{alert.currentQty}</span></td>
+                        <td>{alert.thresholdQty}</td>
+                        <td><span className="status-badge pending">Reorder Required</span></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFixedAssetPopup && (
+        <div className="low-stock-popup-overlay" role="dialog" aria-modal="true" aria-label="Fixed Asset Low Stocks">
+          <div className="low-stock-popup-card">
+            <div className="low-stock-popup-header">
+              <div>
+                <h2>Recent Low Stocks — Fixed Assets</h2>
+                <p>{fixedAssetAlerts.length} asset(s) currently below reorder level</p>
+              </div>
+              <div className="low-stock-popup-actions">
+                <Button
+                  variant="outline"
+                  label="View All Stock"
+                  onClick={() => {
+                    setShowFixedAssetPopup(false);
+                    navigate('/inventory/reports');
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  label="Close"
+                  onClick={() => setShowFixedAssetPopup(false)}
+                />
+              </div>
+            </div>
+
+            <div className="low-stock-popup-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item Code</th>
+                    <th>Item Name</th>
+                    <th>Category</th>
+                    <th>Current Stock</th>
+                    <th>Reorder Level</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fixedAssetAlerts.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="empty-msg">No reorder alerts right now.</td>
+                    </tr>
+                  ) : (
+                    fixedAssetAlerts.map((alert) => (
+                      <tr key={`fa-alert-${alert.id}`}>
                         <td>{alert.item?.code}</td>
                         <td className="item-name">{alert.item?.name}</td>
                         <td>{alert.item?.category?.name || '-'}</td>
