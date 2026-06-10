@@ -117,7 +117,6 @@ export default function PurchaseOrder() {
     fetchMastersOptions,
     fetchPurchaseOrders,
     createPurchaseOrder,
-    getLastGRNRate,
   } = useInventoryStore();
 
   useEffect(() => {
@@ -242,15 +241,11 @@ export default function PurchaseOrder() {
   const updateDraftLine = (key, value) => {
     setDraftLine((prev) => ({ ...prev, [key]: value }));
     if (key === 'itemId' && value) {
-      getLastGRNRate(value, null).then((grnData) => {
-        if (grnData) {
-          setDraftLine((prev) => ({
-            ...prev,
-            orderedRate: grnData.rate,
-            lastGRNQuantity: grnData.quantity,
-          }));
-        }
-      }).catch((err) => console.error('Failed to fetch last GRN rate:', err));
+      const itemData = (items || []).find((i) => String(i.id) === String(value));
+      const rate = itemData?.lastGrnRate ?? itemData?.purchasePrice ?? null;
+      if (rate) {
+        setDraftLine((prev) => ({ ...prev, orderedRate: String(rate) }));
+      }
     }
   };
 
