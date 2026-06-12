@@ -22,6 +22,30 @@ function formatExpiry(expiresAt) {
   return d.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+function isOnline(lastActivity) {
+  if (!lastActivity) return false;
+  return Date.now() - new Date(lastActivity).getTime() < 30 * 60 * 1000;
+}
+
+function formatRelativeTime(dt) {
+  if (!dt) return 'Never';
+  const diffMs = Date.now() - new Date(dt).getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  return new Date(dt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' });
+}
+
+function formatDateTime(dt) {
+  if (!dt) return '—';
+  return new Date(dt).toLocaleString('en-PK', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
 // ─── Permission Checkbox Tree ─────────────────────────────────────────────────
 // permissions format: { employee: { gatepass: true, attendance: ['daily-view', ...] }, ... }
 function PermissionTree({ permissions, onChange }) {
@@ -546,7 +570,32 @@ export default function UserManagement() {
           <p className="text-sm mt-1">Click "Create User" to add your first staff account</p>
         </div>
       ) : (
-        <div className="mt-6 bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <>
+        {/* Online Users Summary */}
+        {users.length > 0 && (() => {
+          const onlineUsers = users.filter(u => isOnline(u.lastActivity));
+          return onlineUsers.length > 0 ? (
+            <div className="mt-6 bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex items-center gap-3 flex-wrap">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
+              <span className="text-sm font-semibold text-green-700">{onlineUsers.length} user{onlineUsers.length > 1 ? 's' : ''} online now:</span>
+              <div className="flex flex-wrap gap-2">
+                {onlineUsers.map(u => (
+                  <span key={u.id} className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-white border border-green-200 rounded-full text-xs font-medium text-green-700">
+                    {u.name}
+                    <span className="text-green-400">·</span>
+                    <span className="text-green-500">{formatRelativeTime(u.lastActivity)}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-6 bg-gray-50 border border-gray-200 rounded-xl px-5 py-3 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" />
+              <span className="text-sm text-gray-500">No users currently online</span>
+            </div>
+          );
+        })()}
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
@@ -556,6 +605,8 @@ export default function UserManagement() {
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Department</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Permissions</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Expiry</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Last Login</th>
+                <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Last Seen</th>
                 <th className="text-left px-5 py-3.5 font-semibold text-gray-600">Status</th>
                 <th className="text-right px-5 py-3.5 font-semibold text-gray-600">Actions</th>
               </tr>
@@ -588,6 +639,13 @@ export default function UserManagement() {
                       ) : (
                         <span className="text-gray-500 text-xs">{formatExpiry(user.expiresAt)}</span>
                       )}
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-500 text-xs">{formatDateTime(user.lastLogin)}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isOnline(user.lastActivity) ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        <span className="text-xs text-gray-500">{formatRelativeTime(user.lastActivity)}</span>
+                      </div>
                     </td>
                     <td className="px-5 py-3.5">
                       <button
@@ -633,6 +691,7 @@ export default function UserManagement() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <UserFormModal

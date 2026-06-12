@@ -685,6 +685,7 @@ export default function AttendanceList() {
           manualTotal: row.manualTotal ? parseFloat(row.manualTotal) : null,
           waiveDeduction: Boolean(row.waiveDeduction),
           isLocked: true,
+          isManuallyEdited: true,
         };
       })
       .filter(Boolean);
@@ -707,8 +708,22 @@ export default function AttendanceList() {
       }),
     });
 
+    // Sync leave_with_pay entries with leave encashment
+    const leaveWithPayDates = new Set(
+      normalizedRows.filter((r) => r.status === 'leave_with_pay').map((r) => toDateOnly(r.dateIn || r.date))
+    );
+    const syncRows = Array.from(datesToReplace).map((date) => ({
+      date,
+      hasLeaveWithPay: leaveWithPayDates.has(date),
+    }));
+    fetch('http://localhost:5001/api/leave-encashment/sync-attendance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empCode: emp.empCode, rows: syncRows }),
+    }).catch(() => {});
+
     await fetchOverridesFromDb();
-    
+
     toast.success(`${editRows.length} attendance row(s) updated`);
     setEditModal(null);
     setEditRows([]);

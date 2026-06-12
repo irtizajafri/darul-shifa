@@ -45,16 +45,55 @@ export function exportRowsToExcel({ fileName = 'report', sheetName = 'Report', r
   URL.revokeObjectURL(url);
 }
 
-export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = [] }) {
+function addPdfMeta(doc, title, filterSummary, printedBy, generatedAt) {
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const pageWidth  = doc.internal.pageSize.getWidth();
+
+  let y = 34;
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text(title, 40, y);
+
+  if (filterSummary && filterSummary.length > 0) {
+    y += 14;
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(70, 70, 70);
+    const line = filterSummary.join('   |   ');
+    doc.text(line, 40, y, { maxWidth: pageWidth - 80 });
+    doc.setTextColor(0, 0, 0);
+  }
+
+  const startY = y + 12;
+
+  const footerParts = [];
+  if (printedBy)   footerParts.push(`Printed by: ${printedBy}`);
+  if (generatedAt) footerParts.push(`Generated: ${generatedAt}`);
+  const footerText = footerParts.join('   |   ');
+
+  const drawFooter = () => {
+    if (!footerText) return;
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(130, 130, 130);
+    doc.text(footerText, 24, pageHeight - 10);
+    doc.setTextColor(0, 0, 0);
+  };
+
+  return { startY, drawFooter };
+}
+
+export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '' }) {
   const data = safeRows(rows);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
-  doc.setFontSize(14);
-  doc.text(title, 40, 34);
+  const { startY, drawFooter } = addPdfMeta(doc, title, filterSummary, printedBy, generatedAt);
 
   if (data.length === 0) {
     doc.setFontSize(11);
-    doc.text('No records found.', 40, 60);
+    doc.text('No records found.', 40, startY + 10);
+    drawFooter();
     doc.save(`${fileName}.pdf`);
     return;
   }
@@ -64,43 +103,47 @@ export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = 
   const footer = buildGrandTotalFooter(data);
 
   autoTable(doc, {
-    startY: 52,
+    startY,
     head: [headers],
     body,
     foot: footer ? [footer] : [],
     styles: { fontSize: 8, cellPadding: 4 },
     headStyles: { fillColor: [30, 64, 175] },
     footStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
+    showFoot: 'lastPage',
     margin: { left: 24, right: 24 },
+    didDrawPage: () => drawFooter(),
   });
 
   doc.save(`${fileName}.pdf`);
 }
 
-export function printRowsToPdf({ fileName = 'report', title = 'Report', rows = [] }) {
+export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '' }) {
   const data = safeRows(rows);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
-  doc.setFontSize(14);
-  doc.text(title, 40, 34);
+  const { startY, drawFooter } = addPdfMeta(doc, title, filterSummary, printedBy, generatedAt);
 
   if (data.length === 0) {
     doc.setFontSize(11);
-    doc.text('No records found.', 40, 60);
+    doc.text('No records found.', 40, startY + 10);
+    drawFooter();
   } else {
     const headers = Object.keys(data[0]);
     const body = data.map((row) => headers.map((key) => String(row[key] ?? '')));
     const footer = buildGrandTotalFooter(data);
 
     autoTable(doc, {
-      startY: 52,
+      startY,
       head: [headers],
       body,
       foot: footer ? [footer] : [],
       styles: { fontSize: 8, cellPadding: 4 },
       headStyles: { fillColor: [30, 64, 175] },
       footStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
+      showFoot: 'lastPage',
       margin: { left: 24, right: 24 },
+      didDrawPage: () => drawFooter(),
     });
   }
 

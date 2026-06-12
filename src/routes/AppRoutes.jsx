@@ -45,16 +45,14 @@ import SalesInvoice from '../pages/inventory/SalesInvoice';
 import InventoryReports from '../pages/inventory/InventoryReports';
 import Maintenance from '../pages/inventory/Maintenance';
 import UserManagement from '../pages/admin/UserManagement';
+import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuthStore();
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return children;
 }
 
-// Only super admin can access this route — others see it blurred
 function SuperAdminRoute({ children }) {
   const { user } = useAuthStore();
   if (user?.isSuperAdmin) return children;
@@ -79,17 +77,9 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<MainDashboard />} />
 
-          {/* Super Admin only */}
           <Route path="admin/users" element={<SuperAdminRoute><UserManagement /></SuperAdminRoute>} />
 
-          {/* Employee module — dashboard requires at least one employee sub-module */}
-          <Route path="employee-module" element={
-            <PermissionGuard module="employee">
-              <EmployeeModuleDashboard />
-            </PermissionGuard>
-          } />
-
-          {/* Employee sub-modules */}
+          <Route path="employee-module" element={<PermissionGuard module="employee"><EmployeeModuleDashboard /></PermissionGuard>} />
           <Route path="employees" element={<PermissionGuard module="employee" subModule="employee-database"><EmployeeList /></PermissionGuard>} />
           <Route path="employees/add" element={<PermissionGuard module="employee" subModule="employee-database"><AddEmployee /></PermissionGuard>} />
           <Route path="employees/:id" element={<PermissionGuard module="employee" subModule="employee-database"><EmployeeDetail /></PermissionGuard>} />
@@ -101,15 +91,9 @@ export default function AppRoutes() {
           <Route path="shortleave" element={<PermissionGuard module="employee" subModule="shortleave"><ShortLeave /></PermissionGuard>} />
           <Route path="advance" element={<PermissionGuard module="employee" subModule="advance"><AdvanceLoan /></PermissionGuard>} />
           <Route path="reports" element={<PermissionGuard module="employee" subModule="reports"><Reports /></PermissionGuard>} />
+          <Route path="leave-encashment" element={<PermissionGuard module="employee" subModule="leave-encashment"><LeaveEncashment /></PermissionGuard>} />
 
-          {/* Inventory module — dashboard requires at least one inventory sub-module */}
-          <Route path="inventory-module" element={
-            <PermissionGuard module="inventory">
-              <InventoryModuleDashboard />
-            </PermissionGuard>
-          } />
-
-          {/* Inventory sub-modules */}
+          <Route path="inventory-module" element={<PermissionGuard module="inventory"><InventoryModuleDashboard /></PermissionGuard>} />
           <Route path="inventory/master-setup" element={<PermissionGuard module="inventory" subModule="master-setup"><MasterSetup /></PermissionGuard>} />
           <Route path="inventory/po" element={<PermissionGuard module="inventory" subModule="po"><PurchaseOrder /></PermissionGuard>} />
           <Route path="inventory/grn" element={<PermissionGuard module="inventory" subModule="grn"><GoodsReceipt /></PermissionGuard>} />
@@ -119,12 +103,7 @@ export default function AppRoutes() {
           <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
           <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
 
-          {/* Clinic module */}
-          <Route path="clinic-module" element={
-            <PermissionGuard module="clinic">
-              <ClinicModuleDashboard />
-            </PermissionGuard>
-          } />
+          <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
           <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Consultant OPD" /></PermissionGuard>} />
           <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Emergency & Chest Pain Clinic" /></PermissionGuard>} />

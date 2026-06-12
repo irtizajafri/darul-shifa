@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -22,93 +22,97 @@ import {
   Wrench,
   ShieldCheck,
   UserRound,
+  Plus,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useTabStore } from '../../store/useTabStore';
 
-const mainNavItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/employee-module', label: 'Employee Mgmt', icon: Users, module: 'employee', permModule: 'employee' },
-  { path: '/coming-soon', label: 'Laboratories', icon: FlaskConical, module: 'lab' },
-  { path: '/inventory-module', label: 'Inventory Mgmt', icon: Package, module: 'inventory', permModule: 'inventory' },
-  { path: '/clinic-module', label: 'Clinic', icon: Stethoscope, module: 'clinic', permModule: 'clinic' },
-  { path: '/coming-soon', label: 'Accounts', icon: Wallet, module: 'accounts' },
-];
-
-// permKey matches the keys in PERMISSIONS_MAP subModules
 const inventoryNavItems = [
-  { path: '/dashboard', label: 'Main Dashboard', icon: ArrowLeft, clearModule: true },
-  { path: '/inventory-module', label: 'Inventory Dashboard', icon: LayoutDashboard },
-  { path: '/inventory/master-setup', label: 'Master Setup', icon: Settings, permKey: 'master-setup' },
-  { path: '/inventory/po', label: 'Purchase Orders', icon: ShoppingCart, state: { openCreate: true }, permKey: 'po' },
-  { path: '/inventory/grn', label: 'Receiving (GRN)', icon: Truck, state: { openCreate: true }, permKey: 'grn' },
-  { path: '/inventory/gin', label: 'Issuance (GIN)', icon: ArrowUpRight, permKey: 'gin' },
-  { path: '/inventory/sales-invoice', label: 'Sales Invoice', icon: FileText, permKey: 'sales-invoice' },
-  { path: '/inventory/gdn', label: 'Discard (GDN)', icon: ArrowDownRight, permKey: 'gdn' },
-  { path: '/inventory/maintenance', label: 'Maintenance', icon: Wrench, permKey: 'maintenance' },
-  { path: '/inventory/reports', label: 'Reports', icon: BarChart3, permKey: 'inventory-reports' },
+  { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
+  { path: '/inventory-module', label: 'Inventory Dashboard', Icon: LayoutDashboard },
+  { path: '/inventory/master-setup', label: 'Master Setup', Icon: Settings },
+  { path: '/inventory/po', label: 'Purchase Orders', Icon: ShoppingCart, state: { openCreate: true } },
+  { path: '/inventory/grn', label: 'Receiving (GRN)', Icon: Truck, state: { openCreate: true } },
+  { path: '/inventory/gin', label: 'Issuance (GIN)', Icon: ArrowUpRight },
+  { path: '/inventory/sales-invoice', label: 'Sales Invoice', Icon: FileText },
+  { path: '/inventory/gdn', label: 'Discard (GDN)', Icon: ArrowDownRight },
+  { path: '/inventory/maintenance', label: 'Maintenance', Icon: Wrench },
+  { path: '/inventory/reports', label: 'Reports', Icon: BarChart3 },
 ];
 
 const clinicNavItems = [
-  { path: '/dashboard', label: 'Main Dashboard', icon: ArrowLeft, clearModule: true },
-  { path: '/clinic-module', label: 'Clinic Dashboard', icon: LayoutDashboard },
-  { path: '/clinic/general-opd', label: 'General OPD', icon: UserRound, permKey: 'general-opd' },
+  { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
+  { path: '/clinic-module', label: 'Clinic Dashboard', Icon: LayoutDashboard },
+  { path: '/clinic/general-opd', label: 'General OPD', Icon: UserRound },
 ];
 
 const employeeNavItems = [
-  { path: '/dashboard', label: 'Main Dashboard', icon: ArrowLeft, clearModule: true },
-  { path: '/employee-module', label: 'HR Dashboard', icon: LayoutDashboard },
-  { path: '/employees', label: 'Employee Database', icon: Users, permKey: 'employee-database' },
-  { path: '/attendance', label: 'Attendance', icon: Clock, permKey: 'attendance' },
-  { path: '/test-attendance', label: 'Test Attendance', icon: Clock, permKey: 'attendance' },
-  { path: '/gatepass', label: 'Gate Pass', icon: DoorOpen, permKey: 'gatepass' },
-  { path: '/shortleave', label: 'Short Leave', icon: Timer, permKey: 'shortleave' },
-  { path: '/advance', label: 'Advance & Loan', icon: CreditCard, permKey: 'advance' },
-  { path: '/reports', label: 'Reports', icon: BarChart3, permKey: 'reports' },
+  { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
+  { path: '/employee-module', label: 'HR Dashboard', Icon: LayoutDashboard },
+  { path: '/employees', label: 'Employee Database', Icon: Users },
+  { path: '/attendance', label: 'Attendance', Icon: Clock },
+  { path: '/test-attendance', label: 'Test Attendance', Icon: Clock },
+  { path: '/gatepass', label: 'Gate Pass', Icon: DoorOpen },
+  { path: '/shortleave', label: 'Short Leave', Icon: Timer },
+  { path: '/advance', label: 'Advance & Loan', Icon: CreditCard },
+  { path: '/reports', label: 'Reports', Icon: BarChart3 },
 ];
+
+function NewTabButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      title="New Tab"
+      className="p-1.5 rounded-lg text-[#94A3B8] hover:text-[#2563EB] hover:bg-[#EFF6FF] transition-colors"
+    >
+      <Plus className="w-4 h-4" />
+    </button>
+  );
+}
 
 export default function Sidebar({ isOpen, onClose, collapsed }) {
   const { activeModule, setModule, clearModule } = useModuleStore();
   const { user } = useAuthStore();
+  const { activeTabId, createNewTab, updateTabModule } = useTabStore();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const handleMainNavClick = (item) => {
-    if (item.module === 'employee') {
-      setModule('employee');
-      navigate('/employee-module');
-    } else if (item.module === 'inventory') {
-      setModule('inventory');
-      navigate('/inventory-module');
-    } else if (item.module === 'clinic') {
-      setModule('clinic');
-      navigate('/clinic-module');
-    } else if (item.module) {
-      clearModule();
-      navigate(item.path);
-    } else {
-      clearModule();
-    }
-  };
+  const currentPath = location.pathname;
 
-  const handleEmployeeNavClick = (item) => {
-    if (item.clearModule) {
-      clearModule();
-    }
-  };
-
-  const navItemClass = ({ isActive }) =>
+  const navClass = (path) =>
     clsx(
-      'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
-      isActive ? 'bg-[#2563EB] text-white' : 'text-[#64748B] hover:bg-[#EFF6FF] hover:text-[#2563EB]'
+      'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors cursor-pointer',
+      currentPath === path || (path !== '/dashboard' && currentPath.startsWith(path + '/'))
+        ? 'bg-[#2563EB] text-white'
+        : 'text-[#64748B] hover:bg-[#EFF6FF] hover:text-[#2563EB]'
     );
 
-  const linkContent = (item) => (
+  const navItem = (item) => (
     <>
-      <item.icon className="w-5 h-5 shrink-0" />
+      <item.Icon className="w-5 h-5 shrink-0" />
       {!collapsed && <span>{item.label}</span>}
     </>
   );
+
+  const go = (path, module, state) => {
+    if (module !== undefined) {
+      if (module) setModule(module);
+      else clearModule();
+      updateTabModule(activeTabId, module);
+    }
+    if (state) navigate(path, { state });
+    else navigate(path);
+    onClose();
+  };
+
+  const handleNewTab = () => {
+    createNewTab();
+    clearModule();
+    navigate('/dashboard');
+    onClose();
+  };
 
   const sidebarClass = clsx(
     'fixed lg:sticky top-0 left-0 z-40 h-screen bg-white border-r border-[#E2E8F0] flex flex-col transition-all duration-300',
@@ -119,30 +123,20 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   if (activeModule === 'employee') {
     return (
       <aside className={sidebarClass}>
-        <div className="p-4 border-b border-[#E2E8F0]">
-          {!collapsed && (
-            <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">
-              HR Module
-            </p>
-          )}
+        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+          {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">HR Module</p>}
+          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {employeeNavItems.map((item) =>
-            item.clearModule ? (
-              <NavLink
-                key={item.path + item.label}
-                to={item.path}
-                className={navItemClass}
-                onClick={handleEmployeeNavClick}
-              >
-                {linkContent(item)}
-              </NavLink>
-            ) : (
-              <NavLink key={item.path + item.label} to={item.path} className={navItemClass}>
-                {linkContent(item)}
-              </NavLink>
-            )
-          )}
+          {employeeNavItems.map((item) => (
+            <div
+              key={item.path + item.label}
+              className={navClass(item.path)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
+            >
+              {navItem(item)}
+            </div>
+          ))}
         </nav>
       </aside>
     );
@@ -151,35 +145,20 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   if (activeModule === 'inventory') {
     return (
       <aside className={sidebarClass}>
-        <div className="p-4 border-b border-[#E2E8F0]">
-          {!collapsed && (
-            <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">
-              Inventory Module
-            </p>
-          )}
+        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+          {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Inventory Module</p>}
+          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {inventoryNavItems.map((item) =>
-            item.clearModule ? (
-              <NavLink
-                key={item.path + item.label}
-                to={item.path}
-                className={navItemClass}
-                onClick={handleEmployeeNavClick}
-              >
-                {linkContent(item)}
-              </NavLink>
-            ) : (
-              <NavLink
-                key={item.path + item.label}
-                to={item.state ? { pathname: item.path } : item.path}
-                state={item.state}
-                className={navItemClass}
-              >
-                {linkContent(item)}
-              </NavLink>
-            )
-          )}
+          {inventoryNavItems.map((item) => (
+            <div
+              key={item.path + item.label}
+              className={navClass(item.path)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path, undefined, item.state)}
+            >
+              {navItem(item)}
+            </div>
+          ))}
         </nav>
       </aside>
     );
@@ -188,12 +167,9 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   if (activeModule === 'clinic') {
     return (
       <aside className={sidebarClass}>
-        <div className="p-4 border-b border-[#E2E8F0]">
-          {!collapsed && (
-            <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">
-              Clinic Module
-            </p>
-          )}
+        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+          {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Clinic Module</p>}
+          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {clinicNavItems.map((item, i) => {
@@ -204,14 +180,14 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
                 </div>
               ) : <div key={i} className="border-t border-[#E2E8F0] my-1" />;
             }
-            return item.clearModule ? (
-              <NavLink key={item.path + item.label} to={item.path} className={navItemClass} onClick={() => clearModule()}>
-                {linkContent(item)}
-              </NavLink>
-            ) : (
-              <NavLink key={item.path + item.label} to={item.path} className={navItemClass}>
-                {linkContent(item)}
-              </NavLink>
+            return (
+              <div
+                key={item.path + item.label}
+                className={navClass(item.path)}
+                onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
+              >
+                {navItem(item)}
+              </div>
             );
           })}
         </nav>
@@ -219,13 +195,18 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     );
   }
 
-  if (activeModule && activeModule !== 'employee' && activeModule !== 'inventory') {
+  if (activeModule) {
     return (
       <aside className={sidebarClass}>
+        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+          {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Module</p>}
+          <NewTabButton onClick={handleNewTab} />
+        </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <NavLink to="/dashboard" onClick={clearModule} className={navItemClass}>
-            {linkContent({ label: 'Main Dashboard', icon: ArrowLeft })}
-          </NavLink>
+          <div className={navClass('/dashboard')} onClick={() => go('/dashboard', null)}>
+            <ArrowLeft className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>Main Dashboard</span>}
+          </div>
           <div className={clsx('px-3 py-2', collapsed && 'hidden')}>
             <p className="text-xs text-[#64748B] opacity-60">Module Coming Soon</p>
           </div>
@@ -238,32 +219,42 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     );
   }
 
+  // Main nav
+  const mainItems = [
+    { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, module: null },
+    { path: '/employee-module', label: 'Employee Mgmt', Icon: Users, module: 'employee' },
+    { path: '/coming-soon', label: 'Laboratories', Icon: FlaskConical, module: 'lab' },
+    { path: '/inventory-module', label: 'Inventory Mgmt', Icon: Package, module: 'inventory' },
+    { path: '/clinic-module', label: 'Clinic', Icon: Stethoscope, module: 'clinic' },
+    { path: '/coming-soon', label: 'Accounts', Icon: Wallet, module: 'accounts' },
+  ];
+
   return (
     <aside className={sidebarClass}>
+      <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+        {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Main Menu</p>}
+        <NewTabButton onClick={handleNewTab} />
+      </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {mainNavItems.map((item) =>
-          item.module ? (
-            <NavLink
-              key={item.path + item.label}
-              to={item.path}
-              className={navItemClass}
-              onClick={() => handleMainNavClick(item)}
-            >
-              {linkContent(item)}
-            </NavLink>
-          ) : (
-            <NavLink key={item.path + item.label} to={item.path} className={navItemClass}>
-              {linkContent(item)}
-            </NavLink>
-          )
-        )}
+        {mainItems.map((item) => (
+          <div
+            key={item.path + item.label}
+            className={navClass(item.path)}
+            onClick={() => go(item.path, item.module ?? null)}
+          >
+            <item.Icon className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>{item.label}</span>}
+          </div>
+        ))}
 
-        {/* User Management — only visible to super admin */}
         {user?.isSuperAdmin && (
-          <NavLink to="/admin/users" className={navItemClass}>
+          <div
+            className={navClass('/admin/users')}
+            onClick={() => go('/admin/users', null)}
+          >
             <ShieldCheck className="w-5 h-5 shrink-0" />
             {!collapsed && <span>User Management</span>}
-          </NavLink>
+          </div>
         )}
       </nav>
     </aside>

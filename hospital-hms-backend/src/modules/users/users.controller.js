@@ -65,4 +65,15 @@ async function changePassword(req, res, next) {
   }
 }
 
-module.exports = { list, create, update, remove, toggleActive, changePassword };
+async function pingActivity(req, res, next) {
+  try {
+    const { id } = req.params;
+    await service.pingActivity(id);
+    return success(res, null, 'Activity updated');
+  } catch (err) {
+    if (err?.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+module.exports = { list, create, update, remove, toggleActive, changePassword, pingActivity };

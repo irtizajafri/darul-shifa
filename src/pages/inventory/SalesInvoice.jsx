@@ -596,7 +596,7 @@ export default function SalesInvoice() {
       </Card>
 
       {/* List */}
-      <div className="flex items-center justify-between mb-2">
+      {/* <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-slate-700">🧾 Sales Invoices</p>
         <button
           onClick={() => setShowInvoiceTable((prev) => !prev)}
@@ -698,7 +698,7 @@ export default function SalesInvoice() {
           </table>
         </div>
       </Card>
-      )}
+      )} */}
     </div>
   );
 }

@@ -118,6 +118,7 @@ export default function Reports() {
   const [isGenerating, setIsGenerating]         = useState(false);
   const [genQueue, setGenQueue]                 = useState([]);
   const [registerView, setRegisterView]         = useState('full');
+  const [timestampFilter, setTimestampFilter]   = useState('punched');
 
   // ─── Register Date Range ──────────────────────────────────────────────────
   const [registerStartDay, setRegisterStartDay] = useState(1);
@@ -698,6 +699,7 @@ export default function Reports() {
             manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
             waiveDeduction: normalizeWaiveDeductionFlag(override.waiveDeduction),
             fromOverride: true,
+            isManuallyEdited: Boolean(override.isManuallyEdited),
           };
 
           // Night crossing check after override
@@ -776,6 +778,7 @@ export default function Reports() {
         manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
         waiveDeduction: normalizeWaiveDeductionFlag(override.waiveDeduction),
         fromOverride: true,
+        isManuallyEdited: Boolean(override.isManuallyEdited),
       };
 
       // Night crossing check for manual entries
@@ -1362,6 +1365,7 @@ export default function Reports() {
           salary:  isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(grossPerDay),
           ded:     isFixed ? '0' : String(ded),
           total:   isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(Math.max(0, grossPerDay - ded + otVal)),
+          isManuallyEdited: Boolean(record?.isManuallyEdited),
         };
 
         const useRawPunchBreakdown = !record?.fromOverride;
@@ -1988,6 +1992,14 @@ export default function Reports() {
         headStyles: { fillColor: [255, 255, 255], textColor: [0,0,0], fontStyle: "bold" },
         columnStyles: { 0: { halign: 'left' } },
         margin: isPayslipScope ? { left: 28, right: 28, bottom: 172 } : undefined,
+        didParseCell: (data) => {
+          if (data.section === 'body') {
+            const row = detailedAttendanceRows[data.row.index];
+            if (row?.isManuallyEdited) {
+              data.cell.styles.fontStyle = 'bold';
+            }
+          }
+        },
       });
     }
 
@@ -2163,6 +2175,43 @@ export default function Reports() {
       });
     }
 
+    if (scope === "salary-register-timestamps-not-punched") {
+      const rangeLabel = (registerStartDay === 1 && registerEndDay === daysInSelectedMonth)
+        ? `Full Month (${month}/${year})`
+        : `Day ${registerStartDay}–${registerEndDay} (${month}/${year})`;
+      const printedOn  = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const pageWidth  = pdf.internal.pageSize.getWidth();
+      pdf.setFontSize(9);
+      pdf.setTextColor(100);
+      pdf.text(`Period: ${rangeLabel}`, 40, startY - 10);
+      pdf.text(`Printed: ${printedOn}`, pageWidth - 40, startY - 10, { align: 'right' });
+      pdf.setTextColor(0);
+
+      const notPunchedRows = registerRows
+        .filter(r => {
+          const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+          return punched.length === 0;
+        })
+        .map(r => [r.code, r.name]);
+
+      const pdfMargin   = 40;
+      const usableWidth = pdf.internal.pageSize.getWidth() - pdfMargin * 2;
+      autoTable(pdf, {
+        startY,
+        margin: { left: pdfMargin, right: pdfMargin },
+        tableWidth: usableWidth,
+        head: [['Emp Code', 'Employee Name']],
+        body: notPunchedRows.length > 0 ? notPunchedRows : [['--', 'No data']],
+        styles: { fontSize: 9, cellPadding: 5 },
+        headStyles: { fillColor: [220, 38, 38], fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: usableWidth * 0.2 },
+          1: { cellWidth: usableWidth * 0.8 },
+        },
+        alternateRowStyles: { fillColor: [254, 242, 242] },
+      });
+    }
+
     if (scope === "missing") {
       autoTable(pdf, {
         startY,
@@ -2206,14 +2255,16 @@ export default function Reports() {
       });
     }
 
-    if (scope !== "salary-register" && scope !== "salary-register-timestamps") {
+    if (scope !== "salary-register" && scope !== "salary-register-timestamps" && scope !== "salary-register-timestamps-not-punched") {
       const keepOnFirstPage = scope === "payslip" || scope === "payslip-detailed";
       addPdfSignatures(pdf, {
         forceFirstPage: keepOnFirstPage,
         fixedBaseY: keepOnFirstPage ? (pdf.internal.pageSize.getHeight() - 165) : null,
       });
     }
-    addPdfFooter(pdf);
+    if (scope !== "salary-register-timestamps-not-punched") {
+      addPdfFooter(pdf);
+    }
 
     if (autoPrint) {
       pdf.autoPrint();
@@ -2257,6 +2308,14 @@ export default function Reports() {
             'Sign': '',
           }));
         });
+      }
+      if (scope === "salary-register-timestamps-not-punched") {
+        rows = registerRows
+          .filter(r => {
+            const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+            return punched.length === 0;
+          })
+          .map(r => ({ 'Emp Code': r.code, 'Employee Name': r.name }));
       }
       if (scope === "payslip") {
         rows = [
@@ -2533,7 +2592,7 @@ export default function Reports() {
                       </tr>
                     ) : (
                       detailedAttendanceRows.map((r, idx) => (
-                        <tr key={`${r.date}-${r.timeIn}-${r.timeOut}-${idx}`}>
+                        <tr key={`${r.date}-${r.timeIn}-${r.timeOut}-${idx}`} style={r.isManuallyEdited ? { fontWeight: 'bold' } : undefined}>
                           <td>{r.date}</td><td>{r.timeIn}</td><td>{r.timeOut}</td>
                           <td>{r.dutyHrs}</td><td>{r.wrkHrs}</td><td>{r.late}</td>
                           <td>{r.ot}</td><td>{r.status}</td><td>{Math.max(0, Math.round(Number(r.otAmt) || 0))}</td><td>{(() => {
@@ -2576,9 +2635,9 @@ export default function Reports() {
           <div className="report-head">
             <h3>Payroll Report</h3>
             <div className="export-actions print-hidden">
-              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? "salary-register-timestamps" : "salary-register")} />
-              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? "salary-register-timestamps" : "salary-register")} />
-              <Button label="Print" variant="outline" onClick={() => handleExport("print", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? "salary-register-timestamps" : "salary-register")} />
+              <Button label="Excel" variant="outline" onClick={() => handleExport("excel", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? (timestampFilter === 'not-punched' ? "salary-register-timestamps-not-punched" : "salary-register-timestamps") : "salary-register")} />
+              <Button label="PDF"   variant="outline" onClick={() => handleExport("pdf",   effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? (timestampFilter === 'not-punched' ? "salary-register-timestamps-not-punched" : "salary-register-timestamps") : "salary-register")} />
+              <Button label="Print" variant="outline" onClick={() => handleExport("print", effectivePayrollTab === "detailed" ? "payroll-detailed" : effectivePayrollTab === "consolidated" ? "payroll-consolidated" : (effectivePayrollTab === "register" && registerView === "timestamps") ? (timestampFilter === 'not-punched' ? "salary-register-timestamps-not-punched" : "salary-register-timestamps") : "salary-register")} />
             </div>
           </div>
           <div className="filters-row print-hidden">
@@ -2855,40 +2914,74 @@ export default function Reports() {
                   {registerRows.length === 0 ? (
                     <p style={{ color: '#94a3b8', fontSize: '13px', padding: '12px 0' }}>Generate karo pehle phir timestamps dikhenge.</p>
                   ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                      <thead>
-                        <tr style={{ background: '#0f766e', color: '#fff' }}>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>#</th>
-                          <th style={{ ...thStyle, textAlign: 'left' }}>Employee Name</th>
-                          <th style={thStyle}>Date</th>
-                          <th style={thStyle}>Time IN</th>
-                          <th style={thStyle}>Time OUT</th>
-                          <th style={{ ...thStyle, width: '100px' }}>Sign</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {registerRows.flatMap(r => {
-                          const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
-                          if (!punched.length) return [];
-                          return punched.map((ts, tsIdx) => ({
-                            key: `${r.code}-${ts.date}-${tsIdx}`,
-                            empName: r.name,
-                            date: ts.date,
-                            timeIn: ts.timeIn,
-                            timeOut: ts.timeOut,
-                          }));
-                        }).map((row, idx) => (
-                          <tr key={row.key} style={{ background: idx % 2 === 0 ? '#fff' : '#f0fdfa' }}>
-                            <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
-                            <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>{row.empName}</td>
-                            <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{row.date}</td>
-                            <td style={{ ...tdStyle, color: row.timeIn ? '#0f766e' : '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>{row.timeIn || '--'}</td>
-                            <td style={{ ...tdStyle, color: row.timeOut ? '#0f766e' : '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>{row.timeOut || '--'}</td>
-                            <td style={{ ...tdStyle, borderBottom: '1px solid #99f6e4', minWidth: '90px' }}></td>
-                          </tr>
+                    <>
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                        {[{ val: 'punched', label: 'Punched' }, { val: 'not-punched', label: 'Not Punched' }].map(opt => (
+                          <label key={opt.val} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', padding: '5px 14px', borderRadius: '6px', border: `1px solid ${timestampFilter === opt.val ? '#0f766e' : '#e2e8f0'}`, background: timestampFilter === opt.val ? '#f0fdfa' : '#fff', fontSize: '13px', fontWeight: 500, color: timestampFilter === opt.val ? '#0f766e' : '#475569' }}>
+                            <input type="radio" name="timestampFilter" value={opt.val} checked={timestampFilter === opt.val} onChange={() => setTimestampFilter(opt.val)} style={{ accentColor: '#0f766e' }} />
+                            {opt.label}
+                          </label>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                      {timestampFilter === 'punched' ? (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ background: '#0f766e', color: '#fff' }}>
+                              <th style={{ ...thStyle, textAlign: 'left' }}>#</th>
+                              <th style={{ ...thStyle, textAlign: 'left' }}>Employee Name</th>
+                              <th style={thStyle}>Date</th>
+                              <th style={thStyle}>Time IN</th>
+                              <th style={thStyle}>Time OUT</th>
+                              <th style={{ ...thStyle, width: '100px' }}>Sign</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {registerRows.flatMap(r => {
+                              const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+                              if (!punched.length) return [];
+                              return punched.map((ts, tsIdx) => ({
+                                key: `${r.code}-${ts.date}-${tsIdx}`,
+                                empName: r.name,
+                                date: ts.date,
+                                timeIn: ts.timeIn,
+                                timeOut: ts.timeOut,
+                              }));
+                            }).map((row, idx) => (
+                              <tr key={row.key} style={{ background: idx % 2 === 0 ? '#fff' : '#f0fdfa' }}>
+                                <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
+                                <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 500 }}>{row.empName}</td>
+                                <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{row.date}</td>
+                                <td style={{ ...tdStyle, color: row.timeIn ? '#0f766e' : '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>{row.timeIn || '--'}</td>
+                                <td style={{ ...tdStyle, color: row.timeOut ? '#0f766e' : '#94a3b8', fontFamily: 'monospace', fontWeight: 600 }}>{row.timeOut || '--'}</td>
+                                <td style={{ ...tdStyle, borderBottom: '1px solid #99f6e4', minWidth: '90px' }}></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                          <thead>
+                            <tr style={{ background: '#dc2626', color: '#fff' }}>
+                              <th style={{ ...thStyle, textAlign: 'left' }}>#</th>
+                              <th style={{ ...thStyle, textAlign: 'left' }}>Emp Code</th>
+                              <th style={{ ...thStyle, textAlign: 'left' }}>Employee Name</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {registerRows.filter(r => {
+                              const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);
+                              return punched.length === 0;
+                            }).map((r, idx) => (
+                              <tr key={r.code} style={{ background: idx % 2 === 0 ? '#fff' : '#fef2f2' }}>
+                                <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
+                                <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{r.code}</td>
+                                <td style={{ ...tdStyle, textAlign: 'left' }}>{r.name}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </>
                   )}
                 </div>
               ) : (

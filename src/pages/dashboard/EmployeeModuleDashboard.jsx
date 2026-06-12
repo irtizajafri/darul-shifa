@@ -10,6 +10,7 @@ import {
   Timer,
   CreditCard,
   BarChart3,
+  Banknote,
 } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
@@ -25,6 +26,7 @@ const subModules = [
   { title: 'Short Leave', icon: Timer, desc: 'Track short leaves & permissions', path: '/shortleave' },
   { title: 'Advance & Loan', icon: CreditCard, desc: 'Employee loans & advances with auto deduction', path: '/advance' },
   { title: 'Reports', icon: BarChart3, desc: 'Payslips, payroll, attendance & CR reports', path: '/reports' },
+  { title: 'Leave Encashment', icon: Banknote, desc: 'Monthly leave encashment records & payments', path: '/leave-encashment' },
 ];
 
 export default function EmployeeModuleDashboard() {

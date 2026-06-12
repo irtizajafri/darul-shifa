@@ -109,6 +109,107 @@ export function printPODocument(result) {
   if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+export function printGDDocument(row) {
+  if (!row) return;
+
+  const gdCode      = row.code || '-';
+  const department  = row.department?.name || '-';
+  const requestDate = row.requestDate
+    ? new Date(row.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
+    : '-';
+  const admissionNumber = row.admissionNumber || null;
+  const comment         = row.comment || null;
+
+  const tableRows = (row.gdItems || []).map((gi, idx) => {
+    const itemName = gi.item?.name || '-';
+    const qty      = gi.quantityRequested ?? '-';
+    const status   = gi.status ?? 'open';
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td class="desc">${itemName}</td>
+      <td>${qty}</td>
+      <td><span class="status-badge status-${String(status).toLowerCase()}">${status}</span></td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Goods Demand Note</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @page { size: A5; margin: 12mm 10mm 10mm 10mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Poppins', sans-serif; font-size: 8.5pt; color: #111; background: #fff; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .title { font-size: 17pt; font-weight: 700; letter-spacing: 0.3px; }
+    .gd-meta { text-align: right; font-size: 8pt; line-height: 1.7; }
+    .divider { border: none; border-top: 2px solid #aaa; margin-bottom: 7px; }
+    .info-section { border: 1px solid #bbb; margin-bottom: 12px; }
+    .info-row { display: flex; border-bottom: 1px solid #e0e0e0; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { background: #e8e8e8; padding: 5px 10px; font-weight: 600; font-size: 8pt; white-space: nowrap; border-right: 1px solid #bbb; min-width: 110px; }
+    .info-value { padding: 5px 10px; font-size: 8pt; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    thead tr { background: #e8e8e8; }
+    th { padding: 5px 3px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 7.5pt; line-height: 1.4; }
+    tbody tr td { border: 1px solid #ddd; padding: 4px 3px; text-align: center; font-size: 7.5pt; }
+    tbody tr td.desc { text-align: left; padding-left: 5px; }
+    tbody tr:nth-child(even) { background: #f9f9f9; }
+    .status-badge { padding: 1px 6px; border-radius: 10px; font-size: 7pt; font-weight: 600; }
+    .status-open    { background: #dbeafe; color: #1d4ed8; }
+    .status-partial { background: #fef9c3; color: #854d0e; }
+    .status-closed  { background: #dcfce7; color: #166534; }
+    .signatures { display: flex; justify-content: space-between; margin-top: 60px; padding-top: 4px; }
+    .sig { font-weight: 700; font-size: 9pt; }
+    .sig-line { border-top: 1px solid #555; width: 80px; margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="title">GOODS DEMAND NOTE (GD)</div>
+    <div class="gd-meta">
+      <div>GD No: <strong>${gdCode}</strong></div>
+      <div>Date: ${requestDate}</div>
+    </div>
+  </div>
+  <hr class="divider">
+  <div class="info-section">
+    <div class="info-row">
+      <div class="info-label">Department</div>
+      <div class="info-value">${department}</div>
+    </div>
+    ${admissionNumber ? `<div class="info-row"><div class="info-label">Admission No.</div><div class="info-value">${admissionNumber}</div></div>` : ''}
+    ${comment ? `<div class="info-row"><div class="info-label">Comment</div><div class="info-value">${comment}</div></div>` : ''}
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>S.No</th>
+        <th>Item Name</th>
+        <th>Qty<br>Requested</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows || '<tr><td colspan="4" style="text-align:center;padding:8px;">No items</td></tr>'}</tbody>
+  </table>
+  <div class="signatures">
+    <div class="sig"><div class="sig-line"></div>Requested By</div>
+    <div class="sig"><div class="sig-line"></div>Department Head</div>
+    <div class="sig"><div class="sig-line"></div>Store Keeper</div>
+  </div>
+  <script>document.fonts.ready.then(() => window.print());</script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
+  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 export function printGINDocument(row) {
   if (!row) return;
 

@@ -13,6 +13,8 @@ async function list() {
       permissions: true,
       isActive: true,
       expiresAt: true,
+      lastLogin: true,
+      lastActivity: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -135,4 +137,11 @@ async function changePassword(id, newPassword) {
   await prisma.user.update({ where: { id }, data: { password: hashed } });
 }
 
-module.exports = { list, create, update, remove, toggleActive, changePassword };
+async function pingActivity(id) {
+  await prisma.user.update({
+    where: { id },
+    data: { lastActivity: new Date() },
+  });
+}
+
+module.exports = { list, create, update, remove, toggleActive, changePassword, pingActivity };

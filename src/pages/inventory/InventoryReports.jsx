@@ -22,7 +22,7 @@ const REPORT_TYPES = [
 export default function InventoryReports() {
   const { user } = useAuthStore();
   const [activeReport, setActiveReport] = useState('Stock Position');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [ledgerFilters, setLedgerFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -34,6 +34,7 @@ export default function InventoryReports() {
   const [ledgerSummary, setLedgerSummary] = useState(false);
   const [receivingSummary, setReceivingSummary] = useState(false);
   const [issuanceSummary, setIssuanceSummary] = useState(false);
+  const [pendingPrint, setPendingPrint] = useState(false);
   const [receivingFilters, setReceivingFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -369,7 +370,7 @@ export default function InventoryReports() {
   };
 
   const applyExpiryFilters = () => {
-    fetchExpiryReport(expiryFilters).catch((err) => {
+    fetchExpiryReport(expiryFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load expiry report');
     });
   };
@@ -425,7 +426,7 @@ export default function InventoryReports() {
   };
 
   const applyRepairingFilters = () => {
-    fetchMaintenanceRecords(repairingFilters).catch((err) => {
+    fetchMaintenanceRecords(repairingFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load repairing report');
     });
   };
@@ -462,7 +463,7 @@ export default function InventoryReports() {
   };
 
   const applyReceivingFilters = () => {
-    fetchGRNs(receivingFilters).catch((err) => {
+    fetchGRNs(receivingFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load receiving report');
     });
   };
@@ -507,7 +508,7 @@ export default function InventoryReports() {
   };
 
   const applyIssuanceFilters = () => {
-    fetchGINs(issuanceFilters).catch((err) => {
+    fetchGINs(issuanceFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load issuance report');
     });
   };
@@ -552,7 +553,7 @@ export default function InventoryReports() {
   };
 
   const applyDiscardFilters = () => {
-    fetchGDNs(discardFilters).catch((err) => {
+    fetchGDNs(discardFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load discard report');
     });
   };
@@ -612,7 +613,7 @@ export default function InventoryReports() {
   };
 
   const applyShortExpiryFilters = () => {
-    fetchShortExpiryReport(shortExpiryFilters).catch((err) => {
+    fetchShortExpiryReport(shortExpiryFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load short expiry report');
     });
   };
@@ -650,7 +651,7 @@ export default function InventoryReports() {
   };
 
   const applyStockPositionFilters = () => {
-    fetchStockPositionReport(stockPositionFilters).catch((err) => {
+    fetchStockPositionReport(stockPositionFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load stock position report');
     });
   };
@@ -705,7 +706,7 @@ export default function InventoryReports() {
   };
 
   const applySupplierLedgerFilters = () => {
-    fetchSupplierLedgerReport(supplierLedgerFilters).catch((err) => {
+    fetchSupplierLedgerReport(supplierLedgerFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load supplier ledger report');
     });
   };
@@ -763,7 +764,7 @@ export default function InventoryReports() {
   };
 
   const applyDailySalesFilters = () => {
-    fetchDailySalesReport(dailySalesFilters).catch((err) => {
+    fetchDailySalesReport(dailySalesFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load daily sales report');
     });
   };
@@ -802,7 +803,7 @@ export default function InventoryReports() {
   }, [dailySalesReport]);
 
   const applyLedgerFilters = () => {
-    fetchItemLedgerReport(ledgerFilters).catch((err) => {
+    fetchItemLedgerReport(ledgerFilters).then(() => setPendingPrint(true)).catch((err) => {
       toast.error(err.message || 'Failed to load item ledger report');
     });
   };
@@ -1233,13 +1234,120 @@ export default function InventoryReports() {
     }));
   }, [reportRows]);
 
+  const getPrintedBy = () => user?.name || user?.username || user?.email || 'Unknown';
+  const getGeneratedAt = () => new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+
+  const buildFilterSummary = (report) => {
+    const parts = [];
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PK') : null;
+    const catName = (id) => (masterOptions?.categories || []).find((c) => String(c.id) === String(id))?.name;
+    const subName = (id) => (masterOptions?.subcategories || []).find((s) => String(s.id) === String(id))?.name;
+    const itemName = (id) => (items || []).find((i) => String(i.id) === String(id))?.name;
+    const deptName = (id) => (masterOptions?.departments || []).find((d) => String(d.id) === String(id))?.name;
+    const supName = (id) => (masterOptions?.suppliers || []).find((s) => String(s.id) === String(id))?.name;
+
+    const push = (label, val) => { if (val) parts.push(`${label}: ${val}`); };
+
+    if (report === 'Item Ledger') {
+      push('From', fmtDate(ledgerFilters.dateFrom));
+      push('To', fmtDate(ledgerFilters.dateTo));
+      push('Category', catName(ledgerFilters.categoryId));
+      push('Subcategory', subName(ledgerFilters.subcategoryId));
+      push('Item', itemName(ledgerFilters.itemId));
+      push('Type', ledgerFilters.assetType);
+      if (ledgerSummary) parts.push('View: Summary');
+    } else if (report === 'Receiving Report') {
+      push('From', fmtDate(receivingFilters.dateFrom));
+      push('To', fmtDate(receivingFilters.dateTo));
+      push('Supplier', supName(receivingFilters.supplierId));
+      push('Category', catName(receivingFilters.categoryId));
+      push('Subcategory', subName(receivingFilters.subcategoryId));
+      push('Item', itemName(receivingFilters.itemId));
+      push('Type', receivingFilters.assetType);
+      if (receivingSummary) parts.push('View: Summary');
+    } else if (report === 'Issuance Report') {
+      push('From', fmtDate(issuanceFilters.dateFrom));
+      push('To', fmtDate(issuanceFilters.dateTo));
+      push('Department', deptName(issuanceFilters.departmentId));
+      push('Category', catName(issuanceFilters.categoryId));
+      push('Subcategory', subName(issuanceFilters.subcategoryId));
+      push('Item', itemName(issuanceFilters.itemId));
+      push('Type', issuanceFilters.assetType);
+      if (issuanceSummary) parts.push('View: Summary');
+    } else if (report === 'Discard Report') {
+      push('From', fmtDate(discardFilters.dateFrom));
+      push('To', fmtDate(discardFilters.dateTo));
+      push('Item', itemName(discardFilters.itemId));
+    } else if (report === 'Stock Position') {
+      push('As Of', fmtDate(stockPositionFilters.asOfDate));
+      push('Category', catName(stockPositionFilters.categoryId));
+      push('Subcategory', subName(stockPositionFilters.subcategoryId));
+      push('Item', itemName(stockPositionFilters.itemId));
+      push('Type', stockPositionFilters.assetType);
+    } else if (report === 'Short Expiry') {
+      push('Expiry From', fmtDate(shortExpiryFilters.dateFrom));
+      push('Expiry To', fmtDate(shortExpiryFilters.dateTo));
+      push('Category', catName(shortExpiryFilters.categoryId));
+      push('Subcategory', subName(shortExpiryFilters.subcategoryId));
+      push('Item', itemName(shortExpiryFilters.itemId));
+    } else if (report === 'Expiry') {
+      push('Expiry From', fmtDate(expiryFilters.dateFrom));
+      push('Expiry To', fmtDate(expiryFilters.dateTo));
+      push('Category', catName(expiryFilters.categoryId));
+      push('Subcategory', subName(expiryFilters.subcategoryId));
+      push('Item', itemName(expiryFilters.itemId));
+    } else if (report === 'Daily Sales') {
+      push('From', fmtDate(dailySalesFilters.dateFrom));
+      push('To', fmtDate(dailySalesFilters.dateTo));
+      push('Customer', dailySalesFilters.customerName);
+      push('Category', catName(dailySalesFilters.categoryId));
+      push('Subcategory', subName(dailySalesFilters.subcategoryId));
+      push('Item', itemName(dailySalesFilters.itemId));
+      if (dailySalesFilters.admissionOnly) parts.push('View: Admission Only');
+    } else if (report === 'Supplier Ledger') {
+      push('From', fmtDate(supplierLedgerFilters.dateFrom));
+      push('To', fmtDate(supplierLedgerFilters.dateTo));
+      push('Supplier', supplierLedgerFilters.supplierName);
+      push('Category', catName(supplierLedgerFilters.categoryId));
+      push('Subcategory', subName(supplierLedgerFilters.subcategoryId));
+      push('Type', supplierLedgerFilters.assetType);
+    } else if (report === 'Purchase Order Report') {
+      push('From', fmtDate(poFilters.dateFrom));
+      push('To', fmtDate(poFilters.dateTo));
+      push('Supplier', supName(poFilters.supplierId));
+      push('Category', catName(poFilters.categoryId));
+      push('Subcategory', subName(poFilters.subcategoryId));
+      push('Type', poFilters.assetType);
+    } else if (report === 'Repairing Report') {
+      push('From', fmtDate(repairingFilters.dateFrom));
+      push('To', fmtDate(repairingFilters.dateTo));
+      push('Status', repairingFilters.status);
+      push('Item', itemName(repairingFilters.itemId));
+    } else if (report === 'Item List') {
+      push('Category', catName(itemListFilters.categoryId));
+      push('Subcategory', subName(itemListFilters.subcategoryId));
+      push('Type', itemListFilters.assetType);
+      push('Status', itemListFilters.status);
+    } else if (report === 'Reorder Report') {
+      push('Category', catName(reorderFilters.categoryId));
+      push('Subcategory', subName(reorderFilters.subcategoryId));
+      push('Type', reorderFilters.assetType);
+    }
+
+    return parts;
+  };
+
   const handleExportPdf = () => {
+    const filterSummary = buildFilterSummary(activeReport);
+    const printedBy = getPrintedBy();
+    const generatedAt = getGeneratedAt();
+    const meta = { filterSummary, printedBy, generatedAt };
     if (activeReport === 'Item List') {
-      exportRowsToPdf({ fileName: 'item-list', title: 'Item List', rows: itemListExportRows });
+      exportRowsToPdf({ fileName: 'item-list', title: 'Item List', rows: itemListExportRows, ...meta });
       return;
     }
     if (activeReport === 'Reorder Report') {
-      exportRowsToPdf({ fileName: 'reorder-report', title: 'Reorder Report', rows: reorderExportRows });
+      exportRowsToPdf({ fileName: 'reorder-report', title: 'Reorder Report', rows: reorderExportRows, ...meta });
       return;
     }
     if (activeReport === 'Stock Position') {
@@ -1247,155 +1355,67 @@ export default function InventoryReports() {
       return;
     }
     if (activeReport === 'Item Ledger') {
-      exportRowsToPdf({
-        fileName: ledgerSummary ? 'inventory-item-ledger-summary' : 'inventory-item-ledger-report',
-        title: ledgerSummary ? 'Inventory Item Ledger Summary' : 'Inventory Item Ledger Report',
-        rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows,
-      });
+      exportRowsToPdf({ fileName: ledgerSummary ? 'inventory-item-ledger-summary' : 'inventory-item-ledger-report', title: ledgerSummary ? 'Inventory Item Ledger Summary' : 'Inventory Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Receiving Report') {
-      exportRowsToPdf({
-        fileName: receivingSummary ? 'inventory-receiving-summary' : 'inventory-receiving-report',
-        title: receivingSummary ? 'Inventory Receiving Summary' : 'Inventory Receiving Report',
-        rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows,
-      });
+      exportRowsToPdf({ fileName: receivingSummary ? 'inventory-receiving-summary' : 'inventory-receiving-report', title: receivingSummary ? 'Inventory Receiving Summary' : 'Inventory Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Issuance Report') {
-      exportRowsToPdf({
-        fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report',
-        title: issuanceSummary ? 'Inventory Issuance Summary' : 'Inventory Issuance Report',
-        rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows,
-      });
+      exportRowsToPdf({ fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report', title: issuanceSummary ? 'Inventory Issuance Summary' : 'Inventory Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Discard Report') {
-      exportRowsToPdf({
-        fileName: 'inventory-discard-report',
-        title: 'Inventory Discard Report',
-        rows: discardExportRows,
-      });
+      exportRowsToPdf({ fileName: 'inventory-discard-report', title: 'Inventory Discard Report', rows: discardExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Short Expiry') {
-      exportRowsToPdf({
-        fileName: 'inventory-short-expiry-report',
-        title: 'Inventory Short Expiry Report',
-        rows: shortExpiryExportRows,
-      });
+      exportRowsToPdf({ fileName: 'inventory-short-expiry-report', title: 'Inventory Short Expiry Report', rows: shortExpiryExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Expiry') {
-      exportRowsToPdf({
-        fileName: 'inventory-expiry-report',
-        title: 'Inventory Expiry Report',
-        rows: expiryExportRows,
-      });
+      exportRowsToPdf({ fileName: 'inventory-expiry-report', title: 'Inventory Expiry Report', rows: expiryExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Repairing Report') {
-      exportRowsToPdf({
-        fileName: 'inventory-repairing-report',
-        title: 'Maintenance / Repairing Report',
-        rows: repairingExportRows,
-      });
+      exportRowsToPdf({ fileName: 'inventory-repairing-report', title: 'Maintenance / Repairing Report', rows: repairingExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Purchase Order Report') {
-      exportRowsToPdf({
-        fileName: 'inventory-po-report',
-        title: 'Purchase Order Report',
-        rows: poExportRows,
-      });
+      exportRowsToPdf({ fileName: 'inventory-po-report', title: 'Purchase Order Report', rows: poExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Daily Sales') {
-      exportRowsToPdf({
-        fileName: 'daily-sales-report',
-        title: 'Daily Sales Report',
-        rows: dailySalesExportRows,
-      });
+      exportRowsToPdf({ fileName: 'daily-sales-report', title: 'Daily Sales Report', rows: dailySalesExportRows, ...meta });
       return;
     }
-
     if (activeReport === 'Supplier Ledger') {
-      exportRowsToPdf({
-        fileName: 'supplier-ledger-report',
-        title: 'Supplier Ledger Report',
-        rows: supplierLedgerExportRows,
-      });
+      exportRowsToPdf({ fileName: 'supplier-ledger-report', title: 'Supplier Ledger Report', rows: supplierLedgerExportRows, ...meta });
       return;
     }
-
-    exportRowsToPdf({
-      fileName: `inventory-${activeReport.toLowerCase().replace(/\s+/g, '-')}`,
-      title: activeReport,
-      rows: reportRows,
-    });
+    exportRowsToPdf({ fileName: `inventory-${activeReport.toLowerCase().replace(/\s+/g, '-')}`, title: activeReport, rows: reportRows, ...meta });
   };
 
   const handlePrint = () => {
-    if (activeReport === 'Item List') {
-      printRowsToPdf({ title: 'Item List', rows: itemListExportRows });
-      return;
-    }
-    if (activeReport === 'Reorder Report') {
-      printRowsToPdf({ title: 'Reorder Report', rows: reorderExportRows });
-      return;
-    }
-    if (activeReport === 'Stock Position') {
-      printRowsToPdf({ title: 'Stock Position Report', rows: stockPositionExportRows });
-      return;
-    }
-    if (activeReport === 'Item Ledger') {
-      printRowsToPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows });
-      return;
-    }
-    if (activeReport === 'Receiving Report') {
-      printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows });
-      return;
-    }
-    if (activeReport === 'Issuance Report') {
-      printRowsToPdf({ title: issuanceSummary ? 'Issuance Summary' : 'Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows });
-      return;
-    }
-    if (activeReport === 'Discard Report') {
-      printRowsToPdf({ title: 'Discard Report', rows: discardExportRows });
-      return;
-    }
-    if (activeReport === 'Short Expiry') {
-      printRowsToPdf({ title: 'Short Expiry Report', rows: shortExpiryExportRows });
-      return;
-    }
-    if (activeReport === 'Expiry') {
-      printRowsToPdf({ title: 'Expiry Report', rows: expiryExportRows });
-      return;
-    }
-    if (activeReport === 'Repairing Report') {
-      printRowsToPdf({ title: 'Maintenance / Repairing Report', rows: repairingExportRows });
-      return;
-    }
-    if (activeReport === 'Purchase Order Report') {
-      printRowsToPdf({ title: 'Purchase Order Report', rows: poExportRows });
-      return;
-    }
-    if (activeReport === 'Daily Sales') {
-      printRowsToPdf({ title: 'Daily Sales Report', rows: dailySalesExportRows });
-      return;
-    }
-    if (activeReport === 'Supplier Ledger') {
-      printRowsToPdf({ title: 'Supplier Ledger Report', rows: supplierLedgerExportRows });
-      return;
-    }
+    const filterSummary = buildFilterSummary(activeReport);
+    const printedBy = getPrintedBy();
+    const generatedAt = getGeneratedAt();
+    const meta = { filterSummary, printedBy, generatedAt };
+
+    if (activeReport === 'Item List') { printRowsToPdf({ title: 'Item List', rows: itemListExportRows, ...meta }); return; }
+    if (activeReport === 'Reorder Report') { printRowsToPdf({ title: 'Reorder Report', rows: reorderExportRows, ...meta }); return; }
+    if (activeReport === 'Stock Position') { printRowsToPdf({ title: 'Stock Position Report', rows: stockPositionExportRows, ...meta }); return; }
+    if (activeReport === 'Item Ledger') { printRowsToPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, ...meta }); return; }
+    if (activeReport === 'Receiving Report') { printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows, ...meta }); return; }
+    if (activeReport === 'Issuance Report') { printRowsToPdf({ title: issuanceSummary ? 'Issuance Summary' : 'Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta }); return; }
+    if (activeReport === 'Discard Report') { printRowsToPdf({ title: 'Discard Report', rows: discardExportRows, ...meta }); return; }
+    if (activeReport === 'Short Expiry') { printRowsToPdf({ title: 'Short Expiry Report', rows: shortExpiryExportRows, ...meta }); return; }
+    if (activeReport === 'Expiry') { printRowsToPdf({ title: 'Expiry Report', rows: expiryExportRows, ...meta }); return; }
+    if (activeReport === 'Repairing Report') { printRowsToPdf({ title: 'Maintenance / Repairing Report', rows: repairingExportRows, ...meta }); return; }
+    if (activeReport === 'Purchase Order Report') { printRowsToPdf({ title: 'Purchase Order Report', rows: poExportRows, ...meta }); return; }
+    if (activeReport === 'Daily Sales') { printRowsToPdf({ title: 'Daily Sales Report', rows: dailySalesExportRows, ...meta }); return; }
+    if (activeReport === 'Supplier Ledger') { printRowsToPdf({ title: 'Supplier Ledger Report', rows: supplierLedgerExportRows, ...meta }); return; }
   };
 
   const handleExportExcel = () => {
@@ -1496,6 +1516,15 @@ export default function InventoryReports() {
     });
   };
 
+  useEffect(() => {
+    if (!pendingPrint) return;
+    const t = setTimeout(() => {
+      setPendingPrint(false);
+      handlePrint();
+    }, 80);
+    return () => clearTimeout(t);
+  }, [pendingPrint]);
+
   useModalKeys({ onCtrlP: handlePrint });
 
   // ── Report-type permission filtering ─────────────────────────────────────
@@ -1518,7 +1547,14 @@ export default function InventoryReports() {
           <h1 className="text-2xl font-bold text-slate-900">Inventory Reports</h1>
           <p className="text-slate-500 text-sm">View, print and export analytical stock reports</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50"
+            title={sidebarOpen ? 'Hide menu' : 'Show menu'}
+          >
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
           <Button variant="outline" label="Export CSV" icon={Download} onClick={handleExportExcel} />
           <Button variant="outline" label="Export PDF" icon={Download} onClick={handleExportPdf} />
           <Button variant="outline" label="Print" icon={Printer} onClick={handlePrint} />
@@ -1526,39 +1562,31 @@ export default function InventoryReports() {
       </div>
 
       <div className="flex gap-4 lg:gap-6 relative">
-        {/* Mobile Menu Button */}
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="md:hidden fixed top-24 left-4 z-40 p-2 bg-white rounded-lg border border-slate-200 hover:bg-slate-50"
-        >
-          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-
         {/* Sidebar menus for reports - Responsive */}
-        <div className={`fixed md:relative top-0 left-0 h-screen md:h-auto w-64 md:w-64 lg:flex-shrink-0 bg-white md:bg-transparent z-30 md:z-auto transition-all ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}>
-          <Card className="p-2 h-full md:h-auto rounded-none md:rounded-lg">
-            <div className="space-y-1 pt-12 md:pt-0 max-h-screen md:max-h-none overflow-y-auto">
-              {visibleReportTypes.map(report => (
-                <button
-                  key={report}
-                  onClick={() => {
-                    setActiveReport(report);
-                    setSidebarOpen(false);
-                  }}
-                  className={`w-full text-left px-4 py-2.5 rounded-md text-sm transition-colors ${
-                    effectiveReport === report
-                    ? 'bg-blue-50 text-blue-700 font-medium'
-                    : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {report}
-                </button>
-              ))}
-            </div>
-          </Card>
-        </div>
+        {sidebarOpen && (
+          <div className="fixed md:relative top-0 left-0 h-screen md:h-auto w-64 flex-shrink-0 bg-white md:bg-transparent z-30 md:z-auto">
+            <Card className="p-2 h-full md:h-auto rounded-none md:rounded-lg">
+              <div className="space-y-1 pt-12 md:pt-0 max-h-screen md:max-h-none overflow-y-auto">
+                {visibleReportTypes.map(report => (
+                  <button
+                    key={report}
+                    onClick={() => {
+                      setActiveReport(report);
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full text-left px-4 py-2.5 rounded-md text-sm transition-colors ${
+                      effectiveReport === report
+                      ? 'bg-blue-50 text-blue-700 font-medium'
+                      : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {report}
+                  </button>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* Overlay for mobile */}
         {sidebarOpen && (
@@ -1569,7 +1597,7 @@ export default function InventoryReports() {
         )}
 
         {/* Report Content */}
-        <div className="flex-1 w-full md:w-auto">
+        <div className="flex-1 min-w-0">
           <Card className="p-0 overflow-hidden h-full min-h-[500px] flex flex-col">
             <div className="p-4 border-b border-slate-200 bg-slate-50">
               <h2 className="font-semibold text-slate-800">{activeReport}</h2>
@@ -1630,6 +1658,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyStockPositionFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetStockPositionFilters} />
                 </div>
+                {false && (<>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <Card className="p-3">
@@ -1680,6 +1709,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No stock found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Item Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -1768,6 +1798,7 @@ export default function InventoryReports() {
                     Summary
                   </label>
                 </div>
+                {false && (<>
 
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <Card className="p-3">
@@ -1904,6 +1935,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No item ledger entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Receiving Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2005,6 +2037,7 @@ export default function InventoryReports() {
                     Summary
                   </label>
                 </div>
+                {false && (<>
 
                 {receivingRows.length > 0 ? (
                   receivingSummary ? (
@@ -2107,6 +2140,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No receiving entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Issuance Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2200,6 +2234,7 @@ export default function InventoryReports() {
                     Summary
                   </label>
                 </div>
+                {false && (<>
 
                 {issuanceRows.length > 0 ? (
                   issuanceSummary ? (
@@ -2278,6 +2313,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No issuance entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Short Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2387,6 +2423,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyShortExpiryFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetShortExpiryFilters} />
                 </div>
+                {false && (<>
 
                 {shortExpiryRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2418,6 +2455,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No short-expiry entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2488,6 +2526,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyExpiryFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetExpiryFilters} />
                 </div>
+                {false && (<>
 
                 {expiryRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2523,6 +2562,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No expired items found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Discard Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2602,6 +2642,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyDiscardFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetDiscardFilters} />
                 </div>
+                {false && (<>
 
                 {discardRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2635,6 +2676,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No discard entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Repairing Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2727,6 +2769,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyRepairingFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetRepairingFilters} />
                 </div>
+                {false && (<>
 
                 {repairingRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2784,6 +2827,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No repairing entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Daily Sales' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2857,6 +2901,7 @@ export default function InventoryReports() {
                     Admission Only
                   </label>
                 </div>
+                {false && (<>
 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -2977,6 +3022,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No sales found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Supplier Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3054,6 +3100,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applySupplierLedgerFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetSupplierLedgerFilters} />
                 </div>
+                {false && (<>
 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -3139,6 +3186,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No GRN records found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Item List' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3211,13 +3259,10 @@ export default function InventoryReports() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    label="Reset"
-                    onClick={() => setItemListFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })}
-                  />
+                  <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
+                  <Button size="sm" variant="outline" label="Reset" onClick={() => setItemListFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
                 </div>
+                {false && (<>
                 {reportRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -3257,6 +3302,7 @@ export default function InventoryReports() {
                     </div>
                   </div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Purchase Order Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3332,8 +3378,10 @@ export default function InventoryReports() {
                 </div>
 
                 <div className="flex gap-2">
+                  <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setPoFilters({ status: '', supplierId: '', itemId: '', dateFrom: '', dateTo: '', assetType: '' })} />
                 </div>
+                {false && (<>
 
                 {poRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -3383,6 +3431,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No purchase orders found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3455,13 +3504,10 @@ export default function InventoryReports() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    label="Reset"
-                    onClick={() => setReorderFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })}
-                  />
+                  <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
+                  <Button size="sm" variant="outline" label="Reset" onClick={() => setReorderFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
                 </div>
+                {false && (<>
                 {reportRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -3497,6 +3543,7 @@ export default function InventoryReports() {
                     </div>
                   </div>
                 )}
+                </>)}
               </div>
             )}
           </Card>

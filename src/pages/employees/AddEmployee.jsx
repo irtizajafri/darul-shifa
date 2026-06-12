@@ -635,6 +635,8 @@ export default function AddEmployee({ edit }) {
           <div
             key={t.label}
             className={`tab-step ${activeTab >= i ? 'active' : ''} ${activeTab === i ? 'current' : ''}`}
+            onClick={() => setActiveTab(i)}
+            style={{ cursor: 'pointer' }}
           >
             <span className="step-num">{i + 1}</span>
             <span className="step-label">

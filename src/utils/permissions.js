@@ -21,6 +21,7 @@ export const PERMISSIONS_MAP = {
       { key: 'gatepass',   label: 'Gate Pass' },
       { key: 'shortleave', label: 'Short Leave' },
       { key: 'advance',    label: 'Advance & Loan' },
+      { key: 'leave-encashment', label: 'Leave Encashment' },
       {
         key: 'reports',
         label: 'Reports',

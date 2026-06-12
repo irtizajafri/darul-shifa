@@ -534,7 +534,7 @@ export default function Maintenance() {
             </Card>
 
             {/* History toggle */}
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-slate-600">📋 Repair History (Completed / Discarded)</p>
               <button
                 onClick={() => setShowHistory(p => !p)}
@@ -557,7 +557,7 @@ export default function Maintenance() {
                   </table>
                 </div>
               </Card>
-            )}
+            )} */}
           </>
         );
       })()}

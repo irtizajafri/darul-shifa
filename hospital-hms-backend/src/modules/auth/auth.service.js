@@ -23,6 +23,12 @@ async function login(email, password) {
     throw { status: 401, message: 'Invalid email or password' };
   }
 
+  const now = new Date();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLogin: now, lastActivity: now },
+  });
+
   const token = jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET || 'hospital_hms_secret_key',

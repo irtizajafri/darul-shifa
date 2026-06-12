@@ -29,7 +29,7 @@ const ALL_MODULES = [
     active: true,
     path: '/inventory-module',
   },
-  { id: 'clinic', permModule: null, icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: false },
+  { id: 'clinic', permModule: 'clinic', icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: true, path: '/clinic-module' },
   { id: 'accounts', permModule: null, icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: false },
 ];
 
@@ -53,6 +53,8 @@ export default function MainDashboard() {
         setModule('employee');
       } else if (m.id === 'inventory') {
         setModule('inventory');
+      } else if (m.id === 'clinic') {
+        setModule('clinic');
       } else {
         clearModule();
       }

@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
-import { printGINDocument, printAllGINs } from '../../utils/printPO';
+import { printGINDocument, printAllGINs, printGDDocument } from '../../utils/printPO';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 
@@ -140,7 +140,7 @@ export default function GoodsIssue() {
   const updateGdItemQty = (itemId, qty) =>
     setGdSelectedItems((prev) => prev.map((i) => i.itemId === itemId ? { ...i, quantityRequested: qty } : i));
 
-  const handleCreateGD = async (e) => {
+  const handleCreateGD = async (e, andPrint = false) => {
     e.preventDefault();
     if (!gdDepartmentId) { toast.error('Please select a department'); return; }
     if (gdSelectedItems.length === 0) { toast.error('Please add at least one item'); return; }
@@ -166,6 +166,7 @@ export default function GoodsIssue() {
       setGdComment('');
       setShowGDForm(false);
       setCreatedGDHeader(result);
+      if (andPrint && result) printGDDocument(result);
     } catch (err) {
       toast.error(err.message || 'Failed to create GD');
     }
@@ -302,8 +303,9 @@ export default function GoodsIssue() {
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
-              <Button label="Close" onClick={() => setCreatedGDHeader(null)} />
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              <Button label="Print" icon={Printer} onClick={() => printGDDocument(createdGDHeader)} />
+              <Button variant="outline" label="Close" onClick={() => setCreatedGDHeader(null)} />
             </div>
           </div>
         </div>
@@ -504,6 +506,7 @@ export default function GoodsIssue() {
 
             <div className="flex gap-2">
               <Button type="submit" label={loading ? 'Saving...' : `Save GD (${gdSelectedItems.length} item${gdSelectedItems.length !== 1 ? 's' : ''})`} disabled={loading || gdSelectedItems.length === 0} />
+              <Button type="button" label={loading ? 'Saving...' : 'Save & Print'} disabled={loading || gdSelectedItems.length === 0} onClick={(e) => handleCreateGD(e, true)} />
               <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdCommentEnabled(false); setGdComment(''); }} />
             </div>
           </form>
@@ -589,7 +592,7 @@ export default function GoodsIssue() {
         </Card>
       )}
 
-      {canGD && (
+      {/* {canGD && (
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-slate-700">📋 GD Records</p>
         <button
@@ -600,9 +603,9 @@ export default function GoodsIssue() {
           {showGDTable ? 'Hide' : 'Show'}
         </button>
       </div>
-      )}
+      )} */}
 
-      {canGD && showGDTable && (
+      {/* {canGD && showGDTable && (
       <Card className="p-0 overflow-hidden mb-6">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
@@ -730,9 +733,9 @@ export default function GoodsIssue() {
           </table>
         </div>
       </Card>
-      )}
+      )} */}
 
-      {canGIN && (
+      {/* {canGIN && (
       <div className="flex items-center justify-between mb-2">
         <p className="text-sm font-semibold text-slate-700">📦 GIN Records</p>
         <button
@@ -892,7 +895,7 @@ export default function GoodsIssue() {
           </table>
         </div>
       </Card>
-      )}
+      )} */}
     </div>
   );
 }

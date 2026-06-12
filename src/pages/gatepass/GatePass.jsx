@@ -194,7 +194,8 @@ export default function GatePass() {
     pdf.text(exportMeta.address, margin, footerY, { maxWidth: pageWidth - margin * 2 });
     pdf.text(`Tel: ${exportMeta.phone} | WhatsApp: ${exportMeta.whatsapp}`, margin, footerY + 10);
 
-    pdf.save(`gatepass-${passNo || 'draft'}.pdf`);
+    pdf.autoPrint();
+    window.open(pdf.output('bloburl'), '_blank');
   };
 
   const handlePrintDraft = async (formData) => {

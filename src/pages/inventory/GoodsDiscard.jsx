@@ -219,7 +219,7 @@ const mkLine = () => ({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function GoodsDiscard() {
   const [query, setQuery] = useState('');
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(true);
   const [filters, setFilters] = useState({ itemId: '', dateFrom: '', dateTo: '' });
 
   const [form, setForm] = useState({
@@ -501,8 +501,8 @@ export default function GoodsDiscard() {
       )}
 
       {/* ── Records Table ─────────────────────────────────────────────────── */}
-      <Card className="p-0 overflow-hidden">
-        {/* Toolbar */}
+      {/* <Card className="p-0 overflow-hidden">
+       
         <div className="p-4 border-b border-slate-200 flex flex-wrap justify-between items-center gap-2 bg-slate-50">
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -557,7 +557,7 @@ export default function GoodsDiscard() {
           </div>
         </div>
 
-        {/* Table */}
+        
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -615,7 +615,7 @@ export default function GoodsDiscard() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card> */}
     </div>
   );
 }

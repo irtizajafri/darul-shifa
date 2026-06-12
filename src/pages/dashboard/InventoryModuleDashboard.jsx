@@ -135,7 +135,7 @@ export default function InventoryModuleDashboard() {
         ))}
       </div>
 
-      {canSeeInvAlerts && <Card className="recent-activity">
+      {/* {canSeeInvAlerts && <Card className="recent-activity">
         <div className="p-4 border-b border-slate-200 flex justify-between items-center">
           <h2 className="text-lg font-semibold m-0">Recent Low Stock Alerts</h2>
           <Button variant="outline" label="View All Stock" onClick={() => navigate('/inventory/reports')} />
@@ -174,7 +174,7 @@ export default function InventoryModuleDashboard() {
             </tbody>
           </table>
         </div>
-      </Card>}
+      </Card>} */}
 
       {showLowStockPopup && (
         <div className="low-stock-popup-overlay" role="dialog" aria-modal="true" aria-label="Recent Low Stocks">
