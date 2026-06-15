@@ -305,13 +305,14 @@ export default function AddEmployee({ edit }) {
   }, [selectedDepartmentRecord, designationRecordsByDepartmentId]);
 
   useEffect(() => {
+    if (mastersLoading) return;
     if (!selectedDepartment) return;
     if (!selectedDesignation) return;
     const allowed = designationOptionsForSelectedDepartment;
     if (!allowed.includes(selectedDesignation)) {
       setValue('designation', '');
     }
-  }, [selectedDepartment, selectedDesignation, designationOptionsForSelectedDepartment, setValue]);
+  }, [mastersLoading, selectedDepartment, selectedDesignation, designationOptionsForSelectedDepartment, setValue]);
 
   const onSubmit = async (data) => {
     setSaving(true);
@@ -825,6 +826,40 @@ export default function AddEmployee({ edit }) {
           <Card title="Company Information" className="form-card">
             <div className="form-grid">
               <div>
+                <label className="block text-sm font-medium mb-1">Department *</label>
+                <select {...register('department', { required: true })} className="form-select">
+                  <option value="">Select</option>
+                  {departmentOptions.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+                <div className="head-adder-row">
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Add new department"
+                    value={newDepartmentHead}
+                    onChange={(e) => setNewDepartmentHead(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    label="+ Add Department"
+                    size="sm"
+                    variant="outline"
+                    onClick={addDepartmentHead}
+                    disabled={mastersLoading}
+                  />
+                  <Button
+                    type="button"
+                    label="Delete"
+                    size="sm"
+                    variant="danger"
+                    onClick={deleteDepartmentHead}
+                    disabled={!selectedDepartment || mastersLoading}
+                  />
+                </div>
+              </div>
+              <div>
                 <label className="block text-sm font-medium mb-1">Designation *</label>
                 <select {...register('designation', { required: true })} className="form-select">
                   <option value="">Select</option>
@@ -856,40 +891,6 @@ export default function AddEmployee({ edit }) {
                     variant="danger"
                     onClick={deleteDesignationHead}
                     disabled={!selectedDepartment || !selectedDesignation || mastersLoading}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Department *</label>
-                <select {...register('department', { required: true })} className="form-select">
-                  <option value="">Select</option>
-                  {departmentOptions.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-                <div className="head-adder-row">
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Add new department"
-                    value={newDepartmentHead}
-                    onChange={(e) => setNewDepartmentHead(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    label="+ Add Department"
-                    size="sm"
-                    variant="outline"
-                    onClick={addDepartmentHead}
-                    disabled={mastersLoading}
-                  />
-                  <Button
-                    type="button"
-                    label="Delete"
-                    size="sm"
-                    variant="danger"
-                    onClick={deleteDepartmentHead}
-                    disabled={!selectedDepartment || mastersLoading}
                   />
                 </div>
               </div>
