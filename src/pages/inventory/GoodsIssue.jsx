@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
@@ -27,6 +27,9 @@ export default function GoodsIssue() {
 
   const [ginQuery, setGinQuery] = useState('');
   const [gdQuery, setGdQuery] = useState('');
+  const [showReprint, setShowReprint] = useState(false);
+  const [reprintTab, setReprintTab] = useState('GD');
+  const [reprintQuery, setReprintQuery] = useState('');
   const [showGDForm, setShowGDForm] = useState(false);
   const [showGINForm, setShowGINForm] = useState(false);
   const [showGDTable, setShowGDTable] = useState(false);
@@ -397,7 +400,133 @@ export default function GoodsIssue() {
           </button>
           )}
         </div>
+
+        <div className="mt-3">
+          <button
+            onClick={() => { setShowReprint((s) => !s); setShowGDForm(false); setShowGINForm(false); setReprintQuery(''); }}
+            className={`flex items-center gap-4 p-5 rounded-xl border-2 text-left transition-all w-full ${
+              showReprint
+                ? 'border-red-400 bg-red-50'
+                : 'border-slate-200 bg-white hover:border-red-300 hover:bg-red-50'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
+              <Printer className="w-6 h-6 text-red-500" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800 text-base">Reprint Document</p>
+              <p className="text-slate-500 text-sm">Reprint existing GD or GIN with DUPLICATE watermark</p>
+            </div>
+          </button>
+        </div>
       </div>
+
+      {showReprint && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex gap-2">
+              {['GD', 'GIN'].map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => { setReprintTab(tab); setReprintQuery(''); }}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md border transition-colors ${
+                    reprintTab === tab
+                      ? 'bg-red-600 text-white border-red-600'
+                      : 'bg-white text-slate-600 border-slate-300 hover:border-red-300'
+                  }`}
+                >
+                  Reprint {tab}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowReprint(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+          </div>
+
+          <div className="relative mb-3">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder={reprintTab === 'GD' ? 'Search by GD code or department...' : 'Search by GIN code or department...'}
+              value={reprintQuery}
+              onChange={(e) => setReprintQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          </div>
+
+          <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+            {reprintTab === 'GD' ? (
+              (gdHeaders || [])
+                .filter((r) => {
+                  const q = reprintQuery.trim().toLowerCase();
+                  if (!q) return true;
+                  return [r.code, r.department?.name].some((v) => String(v || '').toLowerCase().includes(q));
+                })
+                .slice(0, 15)
+                .map((gd) => (
+                  <div key={gd.id} className="flex items-center justify-between py-2.5 px-1">
+                    <div>
+                      <span className="font-medium text-sm text-slate-800">{gd.code}</span>
+                      <span className="text-slate-400 text-xs mx-2">|</span>
+                      <span className="text-xs text-slate-500">{gd.department?.name || '-'}</span>
+                      <span className="text-slate-400 text-xs mx-2">|</span>
+                      <span className="text-xs text-slate-500">{(gd.gdItems || []).length} item(s)</span>
+                      {gd.requestDate && <span className="text-slate-400 text-xs ml-2">({new Date(gd.requestDate).toLocaleDateString()})</span>}
+                    </div>
+                    <button
+                      onClick={() => printGDDocument(gd, {
+                        printedBy: user?.name || user?.email || '',
+                        generatedAt: gd.requestDate ? new Date(gd.requestDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
+                        isReprint: true,
+                        reprintedBy: user?.name || user?.email || '',
+                        reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                      })}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Reprint
+                    </button>
+                  </div>
+                ))
+            ) : (
+              (gins || [])
+                .filter((r) => {
+                  const q = reprintQuery.trim().toLowerCase();
+                  if (!q) return true;
+                  return [r.code, r.department?.name, r.gdHeader?.code].some((v) => String(v || '').toLowerCase().includes(q));
+                })
+                .slice(0, 15)
+                .map((gin) => (
+                  <div key={gin.id} className="flex items-center justify-between py-2.5 px-1">
+                    <div>
+                      <span className="font-medium text-sm text-slate-800">{gin.code}</span>
+                      <span className="text-slate-400 text-xs mx-2">|</span>
+                      <span className="text-xs text-slate-500">{gin.department?.name || gin.gdHeader?.department?.name || '-'}</span>
+                      {gin.gdHeader?.code && <><span className="text-slate-400 text-xs mx-2">|</span><span className="text-xs text-slate-400">GD: {gin.gdHeader.code}</span></>}
+                      {gin.issueDate && <span className="text-slate-400 text-xs ml-2">({new Date(gin.issueDate).toLocaleDateString()})</span>}
+                    </div>
+                    <button
+                      onClick={() => printGINDocument(gin, {
+                        printedBy: user?.name || user?.email || '',
+                        generatedAt: gin.issueDate ? new Date(gin.issueDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
+                        isReprint: true,
+                        reprintedBy: user?.name || user?.email || '',
+                        reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                      })}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      Reprint
+                    </button>
+                  </div>
+                ))
+            )}
+            {((reprintTab === 'GD' ? gdHeaders : gins) || []).length === 0 && (
+              <p className="text-center text-slate-400 text-sm py-6">No records found.</p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {canGD && showGDForm && (
         <Card className="mb-4" title="Create Goods Demand (GD)">
@@ -593,7 +722,7 @@ export default function GoodsIssue() {
                 />
               </div>
               <div className="relative min-w-[220px]">
-                <label className="block text-xs text-slate-500 mb-1">Issued By</label>
+                <label className="block text-xs text-slate-500 mb-1">Issued To</label>
                 <div className="relative">
                   <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input

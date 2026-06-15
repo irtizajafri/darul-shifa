@@ -9,7 +9,7 @@ import { Printer, Download, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
-import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf } from '../../utils/exportInventoryReports';
+import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf, exportItemLedgerPdf } from '../../utils/exportInventoryReports';
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
 import SearchableSelect from '../../components/ui/SearchableSelect';
@@ -1368,7 +1368,7 @@ export default function InventoryReports() {
       return;
     }
     if (activeReport === 'Item Ledger') {
-      exportRowsToPdf({ fileName: ledgerSummary ? 'inventory-item-ledger-summary' : 'inventory-item-ledger-report', title: ledgerSummary ? 'Inventory Item Ledger Summary' : 'Inventory Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, ...meta });
+      exportItemLedgerPdf({ fileName: ledgerSummary ? 'inventory-item-ledger-summary' : 'inventory-item-ledger-report', title: ledgerSummary ? 'Inventory Item Ledger Summary' : 'Inventory Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, isSummary: ledgerSummary, mode: 'download', ...meta });
       return;
     }
     if (activeReport === 'Receiving Report') {
@@ -1419,7 +1419,7 @@ export default function InventoryReports() {
     if (activeReport === 'Item List') { printRowsToPdf({ title: 'Item List', rows: itemListExportRows, ...meta }); return; }
     if (activeReport === 'Reorder Report') { printRowsToPdf({ title: 'Reorder Report', rows: reorderExportRows, ...meta }); return; }
     if (activeReport === 'Stock Position') { printRowsToPdf({ title: 'Stock Position Report', rows: stockPositionExportRows, ...meta }); return; }
-    if (activeReport === 'Item Ledger') { printRowsToPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, ...meta }); return; }
+    if (activeReport === 'Item Ledger') { exportItemLedgerPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, isSummary: ledgerSummary, mode: 'print', ...meta }); return; }
     if (activeReport === 'Receiving Report') { printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows, ...meta }); return; }
     if (activeReport === 'Issuance Report') { printRowsToPdf({ title: issuanceSummary ? 'Issuance Summary' : 'Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta }); return; }
     if (activeReport === 'Discard Report') { printRowsToPdf({ title: 'Discard Report', rows: discardExportRows, ...meta }); return; }
@@ -2235,7 +2235,7 @@ export default function InventoryReports() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 block mb-1">Issued By</label>
+                    <label className="text-xs text-slate-500 block mb-1">Issued To</label>
                     <SearchableSelect
                       options={employees || []}
                       value={issuanceFilters.issuedById}

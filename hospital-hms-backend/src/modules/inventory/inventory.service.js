@@ -1128,14 +1128,19 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
   const parsedIssuedById = parsePositiveNumber(issuedById);
   const admNo = admissionNumber ? String(admissionNumber).trim() : null;
 
+  // Each filter type uses OR to match either single-item GINs (gin.itemId/gin.item)
+  // or multi-item GINs from GD headers (items stored in ginItems, gin.itemId is null).
+  // Multiple active filters AND together so they all must match.
+  const itemConditions = [];
+  if (parsedItemId) itemConditions.push({ OR: [{ itemId: parsedItemId }, { ginItems: { some: { itemId: parsedItemId } } }] });
+  if (parsedCategoryId) itemConditions.push({ OR: [{ item: { categoryId: parsedCategoryId } }, { ginItems: { some: { item: { categoryId: parsedCategoryId } } } }] });
+  if (parsedSubcategoryId) itemConditions.push({ OR: [{ item: { subcategoryId: parsedSubcategoryId } }, { ginItems: { some: { item: { subcategoryId: parsedSubcategoryId } } } }] });
+  if (assetType) itemConditions.push({ OR: [{ item: { itemType: assetType } }, { ginItems: { some: { item: { itemType: assetType } } } }] });
+
   return prisma.inventoryGIN.findMany({
     where: {
       ...buildSearchFilter(search, ['code']),
       ...(parsedDepartmentId ? { departmentId: parsedDepartmentId } : {}),
-      ...(parsedItemId ? { itemId: parsedItemId } : {}),
-      ...(parsedCategoryId ? { item: { categoryId: parsedCategoryId } } : {}),
-      ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
-      ...(assetType ? { item: { itemType: assetType } } : {}),
       ...(admNo ? { admissionNumber: admNo } : {}),
       ...(parsedIssuedById ? { issuedById: parsedIssuedById } : {}),
       ...(dateFrom || dateTo
@@ -1146,6 +1151,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
             },
           }
         : {}),
+      ...(itemConditions.length > 0 ? { AND: itemConditions } : {}),
     },
     include: {
       gd: true,
@@ -2684,7 +2690,9 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
 
     rows.push({
       key: `${movement.id}`,
-      date: new Date(movement.eventDate).toISOString(),
+      date: (movement.referenceType === 'OPENING' || movement.movementType?.toUpperCase() === 'OPENING')
+        ? null
+        : new Date(movement.eventDate).toISOString(),
       itemId: item.id,
       itemCode: item.code,
       itemName: item.name,

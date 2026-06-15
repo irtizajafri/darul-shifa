@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { Plus, Printer, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -135,6 +135,8 @@ export default function PurchaseOrder() {
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showReprint, setShowReprint] = useState(false);
+  const [reprintQuery, setReprintQuery] = useState('');
   const [filters, setFilters] = useState({
     status: '',
     supplierId: '',
@@ -188,6 +190,23 @@ export default function PurchaseOrder() {
   }, [location.state]);
 
   const [showOnlyReorder, setShowOnlyReorder] = useState(true);
+
+  const getPORootCode = (code) => String(code || '').replace(/-\d{2}$/, '');
+
+  const groupedPOs = useMemo(() => {
+    const map = new Map();
+    for (const po of (purchaseOrders || [])) {
+      const root = getPORootCode(po.code);
+      if (!map.has(root)) map.set(root, []);
+      map.get(root).push(po);
+    }
+    return Array.from(map.entries()).map(([rootCode, records]) => ({
+      rootCode,
+      records,
+      supplierName: records[0]?.supplier?.name || '-',
+      poDate: records[0]?.poDate,
+    }));
+  }, [purchaseOrders]);
 
   const supplierScopedItems = useMemo(() => {
     let result = items || [];
@@ -323,8 +342,71 @@ export default function PurchaseOrder() {
           <h1 className="text-2xl font-bold text-slate-900">Purchase Orders (PO)</h1>
           <p className="text-slate-500 text-sm">Generate and track supplier orders</p>
         </div>
-        <Button label="Create New PO" icon={Plus} onClick={() => setShowCreate((s) => !s)} />
+        <div className="flex gap-2">
+          <Button label="Create New PO" icon={Plus} onClick={() => { setShowCreate((s) => !s); setShowReprint(false); }} />
+          <Button label="Reprint PO" icon={Printer} variant="outline" onClick={() => { setShowReprint((s) => !s); setShowCreate(false); setReprintQuery(''); }} />
+        </div>
       </div>
+
+      {showReprint && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-slate-700">Reprint PO (DUPLICATE)</h3>
+            <button onClick={() => setShowReprint(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="relative mb-3">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by PO code or supplier..."
+              value={reprintQuery}
+              onChange={(e) => setReprintQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          </div>
+          <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+            {groupedPOs
+              .filter((g) => {
+                const q = reprintQuery.trim().toLowerCase();
+                if (!q) return true;
+                return [g.rootCode, g.supplierName].some((v) => String(v || '').toLowerCase().includes(q));
+              })
+              .slice(0, 15)
+              .map((g) => (
+                <div key={g.rootCode} className="flex items-center justify-between py-2.5 px-1">
+                  <div>
+                    <span className="font-medium text-sm text-slate-800">{g.rootCode}</span>
+                    <span className="text-slate-400 text-xs mx-2">|</span>
+                    <span className="text-xs text-slate-500">{g.supplierName}</span>
+                    <span className="text-slate-400 text-xs mx-2">|</span>
+                    <span className="text-xs text-slate-500">{g.records.length} item(s)</span>
+                    {g.poDate && <span className="text-slate-400 text-xs ml-2">({new Date(g.poDate).toLocaleDateString()})</span>}
+                  </div>
+                  <button
+                    onClick={() => printPODocument(
+                      { batchCode: g.rootCode, records: g.records },
+                      {
+                        printedBy: user?.name || user?.email || '',
+                        generatedAt: g.poDate ? new Date(g.poDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
+                        isReprint: true,
+                        reprintedBy: user?.name || user?.email || '',
+                        reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                      }
+                    )}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Reprint
+                  </button>
+                </div>
+              ))}
+            {groupedPOs.length === 0 && (
+              <p className="text-center text-slate-400 text-sm py-6">No Purchase Orders found.</p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {showCreate && (
         <Card className="mb-4">

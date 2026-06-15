@@ -108,8 +108,8 @@ export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = 
     body,
     foot: footer ? [footer] : [],
     styles: { fontSize: 8, cellPadding: 4 },
-    headStyles: { fillColor: [30, 64, 175] },
-    footStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
+    headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255] },
+    footStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold' },
     showFoot: 'lastPage',
     margin: { left: 24, right: 24 },
     didDrawPage: () => drawFooter(),
@@ -139,8 +139,8 @@ export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = []
       body,
       foot: footer ? [footer] : [],
       styles: { fontSize: 8, cellPadding: 4 },
-      headStyles: { fillColor: [30, 64, 175] },
-      footStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
+      headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255] },
+      footStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold' },
       showFoot: 'lastPage',
       margin: { left: 24, right: 24 },
       didDrawPage: () => drawFooter(),
@@ -149,6 +149,131 @@ export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = []
 
   doc.autoPrint();
   window.open(doc.output('bloburl'), '_blank');
+}
+
+/**
+ * Dedicated PDF generator for Item Ledger (detail & summary views).
+ * The detail view has 17 columns — requires explicit widths, tight fonts, and
+ * shortened multi-line headers so everything fits in landscape A4.
+ * mode: 'download' | 'print'
+ */
+export function exportItemLedgerPdf({
+  title = 'Item Ledger Report',
+  rows = [],
+  isSummary = false,
+  filterSummary = [],
+  printedBy = '',
+  generatedAt = '',
+  mode = 'download',
+  fileName = 'item-ledger',
+}) {
+  const data = safeRows(rows);
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  const { startY, drawFooter } = addPdfMeta(doc, title, filterSummary, printedBy, generatedAt);
+
+  if (data.length === 0) {
+    doc.setFontSize(11);
+    doc.text('No records found.', 40, startY + 10);
+    drawFooter();
+    if (mode === 'print') { doc.autoPrint(); window.open(doc.output('bloburl'), '_blank'); }
+    else doc.save(`${fileName}.pdf`);
+    return;
+  }
+
+  if (isSummary) {
+    // 12 columns — more breathing room
+    const keys = [
+      'Item Code', 'Item Name', 'Category', 'Subcategory',
+      'Opening Qty', 'Total Received', 'Received Amount',
+      'Total Issued', 'Issued Amount',
+      'Remaining Qty', 'Remaining Amount', 'Remaining Breakdown',
+    ];
+    const displayHeaders = [
+      'Item Code', 'Item Name', 'Category', 'Subcategory',
+      'Opening\nQty', 'Total\nReceived', 'Received\nAmount',
+      'Total\nIssued', 'Issued\nAmount',
+      'Rem\nQty', 'Rem\nAmount', 'Rem Breakdown',
+    ];
+    const body = data.map((row) => keys.map((k) => String(row[k] ?? '')));
+
+    autoTable(doc, {
+      startY,
+      head: [displayHeaders],
+      body,
+      styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+      headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle' },
+      columnStyles: {
+        0: { cellWidth: 52 },
+        1: { cellWidth: 90 },
+        2: { cellWidth: 65 },
+        3: { cellWidth: 65 },
+        4: { cellWidth: 46, halign: 'right' },
+        5: { cellWidth: 52, halign: 'right' },
+        6: { cellWidth: 62, halign: 'right' },
+        7: { cellWidth: 50, halign: 'right' },
+        8: { cellWidth: 60, halign: 'right' },
+        9: { cellWidth: 54, halign: 'right' },
+        10: { cellWidth: 62, halign: 'right' },
+        11: { cellWidth: 'auto' },
+      },
+      margin: { left: 24, right: 24 },
+      didDrawPage: () => drawFooter(),
+    });
+
+  } else {
+    // 17 columns — use compressed font + shortened multi-line headers
+    const keys = [
+      'Date', 'Item Code', 'Item Name', 'Category', 'Subcategory',
+      'Received Qty', 'Received Rate', 'Received Amount',
+      'Issuance Qty', 'Issuance Amount', 'Issuance Breakdown',
+      'Remaining Qty', 'Remaining Amount', 'Remaining Breakdown',
+      'Unit', 'Source', 'Reference',
+    ];
+    const displayHeaders = [
+      'Date', 'Code', 'Item Name', 'Category', 'Subcategory',
+      'Rcvd\nQty', 'Rate', 'Rcvd\nAmt',
+      'Iss\nQty', 'Iss\nAmt', 'Iss\nBrkdwn',
+      'Rem\nQty', 'Rem\nAmt', 'Rem\nBrkdwn',
+      'Unit', 'Source', 'Ref No',
+    ];
+    const body = data.map((row) => keys.map((k) => String(row[k] ?? '')));
+
+    autoTable(doc, {
+      startY,
+      head: [displayHeaders],
+      body,
+      styles: { fontSize: 6.5, cellPadding: 2.5, overflow: 'linebreak' },
+      headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize: 6.5 },
+      columnStyles: {
+        0: { cellWidth: 58 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 78 },
+        3: { cellWidth: 54 },
+        4: { cellWidth: 54 },
+        5: { cellWidth: 32, halign: 'right' },
+        6: { cellWidth: 36, halign: 'right' },
+        7: { cellWidth: 44, halign: 'right' },
+        8: { cellWidth: 32, halign: 'right' },
+        9: { cellWidth: 44, halign: 'right' },
+        10: { cellWidth: 55 },
+        11: { cellWidth: 32, halign: 'right' },
+        12: { cellWidth: 44, halign: 'right' },
+        13: { cellWidth: 55 },
+        14: { cellWidth: 28 },
+        15: { cellWidth: 38 },
+        16: { cellWidth: 'auto' },
+      },
+      margin: { left: 24, right: 24 },
+      didDrawPage: () => drawFooter(),
+    });
+  }
+
+  if (mode === 'print') {
+    doc.autoPrint();
+    window.open(doc.output('bloburl'), '_blank');
+  } else {
+    doc.save(`${fileName}.pdf`);
+  }
 }
 
 /**
@@ -224,7 +349,7 @@ export function generateSalesInvoicePdf({ inv, mode = 'download' }) {
     head: [['S.No', 'Description', 'Rate', 'Qty', 'Amount']],
     body: tableBody,
     styles: { fontSize: 10, cellPadding: 6 },
-    headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: [152, 152, 152], textColor: 255, fontStyle: 'bold' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 40 },
       1: { halign: 'left' },
@@ -373,7 +498,7 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
     head: [['S.No', 'Nature of Repair', 'Cost']],
     body: tableBody,
     styles: { fontSize: 10, cellPadding: 6 },
-    headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: [152, 152, 152], textColor: 255, fontStyle: 'bold' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 40 },
       1: { halign: 'left' },

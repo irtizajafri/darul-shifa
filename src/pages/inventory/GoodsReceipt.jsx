@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Plus, Search } from 'lucide-react';
+import { Plus, Printer, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -103,6 +103,8 @@ export default function GoodsReceipt() {
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [showReprint, setShowReprint] = useState(false);
+  const [reprintQuery, setReprintQuery] = useState('');
   const [selectedPoCode, setSelectedPoCode] = useState('');
   const [headerReceivedDate, setHeaderReceivedDate] = useState(new Date().toISOString().slice(0, 10));
   const [headerBillDate, setHeaderBillDate] = useState('');
@@ -280,8 +282,80 @@ export default function GoodsReceipt() {
           <h1 className="text-2xl font-bold text-slate-900">Goods Receiving Note (GRN)</h1>
           <p className="text-slate-500 text-sm">Receive items and update inward stock</p>
         </div>
-        <Button label="New GRN" icon={Plus} onClick={() => setShowCreate((s) => !s)} />
+        <div className="flex gap-2">
+          <Button label="New GRN" icon={Plus} onClick={() => { setShowCreate((s) => !s); setShowReprint(false); }} />
+          <Button label="Reprint GRN" icon={Printer} variant="outline" onClick={() => { setShowReprint((s) => !s); setShowCreate(false); setReprintQuery(''); }} />
+        </div>
       </div>
+
+      {showReprint && (
+        <Card className="mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-slate-700">Reprint GRN (DUPLICATE)</h3>
+            <button onClick={() => setShowReprint(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="relative mb-3">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by GRN code, supplier or item..."
+              value={reprintQuery}
+              onChange={(e) => setReprintQuery(e.target.value)}
+              className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          </div>
+          <div className="divide-y divide-slate-100 max-h-72 overflow-y-auto">
+            {(grns || [])
+              .filter((r) => {
+                const q = reprintQuery.trim().toLowerCase();
+                if (!q) return true;
+                return [r.code, r.supplier?.name, r.item?.name, r.purchaseOrder?.code]
+                  .some((v) => String(v || '').toLowerCase().includes(q));
+              })
+              .slice(0, 15)
+              .map((grn) => (
+                <div key={grn.id} className="flex items-center justify-between py-2.5 px-1">
+                  <div>
+                    <span className="font-medium text-sm text-slate-800">{grn.code}</span>
+                    <span className="text-slate-400 text-xs mx-2">|</span>
+                    <span className="text-xs text-slate-500">{grn.supplier?.name || '-'}</span>
+                    <span className="text-slate-400 text-xs mx-2">|</span>
+                    <span className="text-xs text-slate-500">{grn.item?.name || '-'}</span>
+                    {grn.receivedDate && <span className="text-slate-400 text-xs ml-2">({new Date(grn.receivedDate).toLocaleDateString()})</span>}
+                  </div>
+                  <button
+                    onClick={() => printGRNDocument({
+                      grnCode: grn.code,
+                      date: grn.receivedDate,
+                      supplierName: grn.supplier?.name || '',
+                      items: [{
+                        itemName: grn.item?.name,
+                        orderedQty: grn.purchaseOrder?.requiredQuantity,
+                        receivedQty: grn.receivedQuantity,
+                        rateEst: grn.purchaseOrder?.orderedRate ?? grn.receivedRate,
+                        rateReceived: grn.receivedRate,
+                        amountReceived: grn.totalAmount,
+                      }],
+                      isReprint: true,
+                      reprintedBy: user?.name || user?.email || '',
+                      reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                      printedBy: user?.name || user?.email || '',
+                      generatedAt: grn.receivedDate ? new Date(grn.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
+                    })}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    Reprint
+                  </button>
+                </div>
+              ))}
+            {(grns || []).length === 0 && (
+              <p className="text-center text-slate-400 text-sm py-6">No GRN records found.</p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {showCreate && (
         <Card className="mb-4">
