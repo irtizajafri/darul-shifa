@@ -8,8 +8,9 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToPdf } from '../../utils/exportInventoryReports';
 
 // ── Portal dropdown list (escapes overflow-hidden containers) ─────────────────
-function DropdownPortal({ inputRef, open, children }) {
+function DropdownPortal({ inputRef, open, items, highlightedIndex, onSelect }) {
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const listRef = useRef(null);
 
   useEffect(() => {
     if (open && inputRef.current) {
@@ -18,20 +19,37 @@ function DropdownPortal({ inputRef, open, children }) {
     }
   }, [open, inputRef]);
 
+  useEffect(() => {
+    if (listRef.current && highlightedIndex >= 0) {
+      const el = listRef.current.children[highlightedIndex];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex]);
+
   if (!open) return null;
 
   return createPortal(
     <ul
-      style={{
-        position: 'fixed',
-        top: pos.top,
-        left: pos.left,
-        width: pos.width,
-        zIndex: 9999,
-      }}
-      className="bg-white border border-slate-200 rounded-md shadow-xl max-h-48 overflow-y-auto"
+      ref={listRef}
+      style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }}
+      className="bg-white border border-slate-200 rounded-md shadow-xl max-h-[520px] overflow-y-auto"
     >
-      {children}
+      {items.length === 0 ? (
+        <li className="px-3 py-2 text-xs text-slate-400 text-center">No items found</li>
+      ) : (
+        items.map((item, idx) => (
+          <li
+            key={item.id}
+            onMouseDown={() => onSelect(item)}
+            className={`px-3 py-2 text-sm cursor-pointer flex justify-between items-center gap-2 ${
+              idx === highlightedIndex ? 'bg-blue-100 text-blue-900' : 'hover:bg-blue-50'
+            }`}
+          >
+            <span className="font-medium text-slate-800 truncate">{item.name}</span>
+            <span className="text-slate-400 text-xs shrink-0">{item.code}</span>
+          </li>
+        ))
+      )}
     </ul>,
     document.body
   );
@@ -41,6 +59,7 @@ function DropdownPortal({ inputRef, open, children }) {
 function ItemSearchInput({ items, value, label, onChange }) {
   const [text, setText] = useState(label || '');
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -58,15 +77,49 @@ function ItemSearchInput({ items, value, label, onChange }) {
 
   useEffect(() => {
     const h = (e) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target)
-      )
+      if (containerRef.current && !containerRef.current.contains(e.target))
         setOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  const selectItem = (item) => {
+    const lbl = `${item.name} (${item.code})`;
+    setText(lbl);
+    onChange(item.id, lbl);
+    setOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setHighlightedIndex(0);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && filtered[highlightedIndex]) {
+        selectItem(filtered[highlightedIndex]);
+      }
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+      setHighlightedIndex(-1);
+    }
+  };
 
   return (
     <div ref={containerRef}>
@@ -80,9 +133,11 @@ function ItemSearchInput({ items, value, label, onChange }) {
           onChange={(e) => {
             setText(e.target.value);
             setOpen(true);
+            setHighlightedIndex(-1);
             onChange(null, '');
           }}
           onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
           className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
         />
         {value && (
@@ -93,29 +148,13 @@ function ItemSearchInput({ items, value, label, onChange }) {
         )}
       </div>
 
-      <DropdownPortal inputRef={inputRef} open={open}>
-        {filtered.length === 0 ? (
-          <li className="px-3 py-2 text-xs text-slate-400 text-center">
-            No items found
-          </li>
-        ) : (
-          filtered.map((item) => (
-            <li
-              key={item.id}
-              onMouseDown={() => {
-                const lbl = `${item.name} (${item.code})`;
-                setText(lbl);
-                onChange(item.id, lbl);
-                setOpen(false);
-              }}
-              className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer flex justify-between items-center gap-2"
-            >
-              <span className="font-medium text-slate-800 truncate">{item.name}</span>
-              <span className="text-slate-400 text-xs shrink-0">{item.code}</span>
-            </li>
-          ))
-        )}
-      </DropdownPortal>
+      <DropdownPortal
+        inputRef={inputRef}
+        open={open}
+        items={filtered}
+        highlightedIndex={highlightedIndex}
+        onSelect={selectItem}
+      />
     </div>
   );
 }
@@ -127,6 +166,7 @@ function FilterItemSearch({ items, value, onChange }) {
     selectedItem ? `${selectedItem.name} (${selectedItem.code})` : ''
   );
   const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -153,6 +193,40 @@ function FilterItemSearch({ items, value, onChange }) {
 
   const clear = () => { setText(''); onChange(''); };
 
+  const selectItem = (item) => {
+    const lbl = `${item.name} (${item.code})`;
+    setText(lbl);
+    onChange(String(item.id));
+    setOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setOpen(true);
+        setHighlightedIndex(0);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && filtered[highlightedIndex]) {
+        selectItem(filtered[highlightedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+      setHighlightedIndex(-1);
+    }
+  };
+
   return (
     <div className="relative w-52" ref={containerRef}>
       <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" />
@@ -164,9 +238,11 @@ function FilterItemSearch({ items, value, onChange }) {
         onChange={(e) => {
           setText(e.target.value);
           setOpen(true);
+          setHighlightedIndex(-1);
           if (!e.target.value) onChange('');
         }}
         onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
         className="w-full pl-8 pr-7 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
       />
       {value && (
@@ -180,29 +256,13 @@ function FilterItemSearch({ items, value, onChange }) {
         </button>
       )}
 
-      <DropdownPortal inputRef={inputRef} open={open}>
-        {filtered.length === 0 ? (
-          <li className="px-3 py-2 text-xs text-slate-400 text-center">
-            No items found
-          </li>
-        ) : (
-          filtered.map((item) => (
-            <li
-              key={item.id}
-              onMouseDown={() => {
-                const lbl = `${item.name} (${item.code})`;
-                setText(lbl);
-                onChange(String(item.id));
-                setOpen(false);
-              }}
-              className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer flex justify-between items-center gap-2"
-            >
-              <span className="font-medium text-slate-800 truncate">{item.name}</span>
-              <span className="text-slate-400 text-xs shrink-0">{item.code}</span>
-            </li>
-          ))
-        )}
-      </DropdownPortal>
+      <DropdownPortal
+        inputRef={inputRef}
+        open={open}
+        items={filtered}
+        highlightedIndex={highlightedIndex}
+        onSelect={selectItem}
+      />
     </div>
   );
 }

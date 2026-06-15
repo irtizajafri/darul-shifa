@@ -1120,11 +1120,12 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, commen
   };
 }
 
-async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber }) {
+async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber, issuedById }) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const parsedIssuedById = parsePositiveNumber(issuedById);
   const admNo = admissionNumber ? String(admissionNumber).trim() : null;
 
   return prisma.inventoryGIN.findMany({
@@ -1136,6 +1137,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
       ...(assetType ? { item: { itemType: assetType } } : {}),
       ...(admNo ? { admissionNumber: admNo } : {}),
+      ...(parsedIssuedById ? { issuedById: parsedIssuedById } : {}),
       ...(dateFrom || dateTo
         ? {
             issueDate: {
@@ -1150,6 +1152,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       gdHeader: { include: { department: true } },
       department: true,
       item: { include: { category: true, subcategory: true } },
+      issuedBy: { select: { id: true, firstName: true, lastName: true, empCode: true } },
       ginItems: { include: { item: { include: { category: true, subcategory: true } }, gdItem: true } },
     },
     orderBy: { createdAt: 'desc' },
@@ -1160,7 +1163,7 @@ async function createGIN(payload) {
   const gdHeaderId = parsePositiveNumber(payload.gdHeaderId);
 
   if (gdHeaderId) {
-    return createGINFromHeader({ gdHeaderId, items: payload.items, issueDate: payload.issueDate, note: payload.note });
+    return createGINFromHeader({ gdHeaderId, items: payload.items, issueDate: payload.issueDate, note: payload.note, issuedById: payload.issuedById });
   }
 
   const issuedQuantity = parsePositiveNumber(payload.issuedQuantity);
@@ -1232,7 +1235,7 @@ async function createGIN(payload) {
   });
 }
 
-async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note }) {
+async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, issuedById }) {
   const header = await prisma.inventoryGDHeader.findUnique({
     where: { id: gdHeaderId },
     include: {
@@ -1254,6 +1257,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note }) 
   const ginCode = await generateDocCode('inventoryGIN', 'gin');
 
   return prisma.$transaction(async (tx) => {
+    const parsedIssuedById = parsePositiveNumber(issuedById);
     const gin = await tx.inventoryGIN.create({
       data: {
         code: ginCode,
@@ -1262,6 +1266,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note }) 
         issueDate: issueDate ? new Date(issueDate) : new Date(),
         admissionNumber: header.admissionNumber || null,
         status: 'issued',
+        ...(parsedIssuedById ? { issuedById: parsedIssuedById } : {}),
       },
     });
 
@@ -1329,6 +1334,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note }) 
         gdHeader: { include: { department: true } },
         ginItems: { include: { item: true, gdItem: true } },
         department: true,
+        issuedBy: { select: { id: true, firstName: true, lastName: true, empCode: true } },
       },
     });
   });

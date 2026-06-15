@@ -71,7 +71,6 @@ async function ensureEmployeeMasterTables() {
 }
 
 async function ensureExtendedEmployeeColumns() {
-  if (isExtendedEmployeeColumnsReady) return;
 
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "cnicFrontDoc" TEXT');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "cnicBackDoc" TEXT');
@@ -91,7 +90,6 @@ async function ensureExtendedEmployeeColumns() {
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "short" BOOLEAN DEFAULT FALSE');
   await prisma.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_emp_code_unique ON "Employee" ("empCode") WHERE "empCode" IS NOT NULL');
 
-  isExtendedEmployeeColumnsReady = true;
 }
 
 async function assertEmpCodeUnique(empCode, { excludeEmployeeId } = {}) {
@@ -280,6 +278,7 @@ async function updateEmployeeWithFallback(id, data) {
 }
 
 async function list() {
+  await ensureExtendedEmployeeColumns();
   // Do not include attendances here: it forces a join on Attendance and breaks
   // employee listing whenever the Attendance table is behind Prisma schema (e.g. pending migrations).
   const rows = await prisma.employee.findMany({

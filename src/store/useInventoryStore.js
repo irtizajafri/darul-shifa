@@ -367,7 +367,7 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
+  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '', issuedById = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -379,6 +379,7 @@ export const useInventoryStore = create((set) => ({
   if (dateFrom) qs.set('dateFrom', String(dateFrom));
   if (dateTo) qs.set('dateTo', String(dateTo));
       if (assetType) qs.set('assetType', String(assetType));
+      if (issuedById) qs.set('issuedById', String(issuedById));
       const data = await request(`/gin?${qs.toString()}`);
       set({ gins: Array.isArray(data) ? data : [], loading: false });
       return data;

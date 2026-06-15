@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import GdNotificationPopup from '../components/inventory/GdNotificationPopup';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '../store/useAuthStore';
 import PermissionGuard from '../components/auth/PermissionGuard';
@@ -63,6 +64,7 @@ export default function AppRoutes() {
   return (
     <BrowserRouter>
       <Toaster position="top-right" />
+      <GdNotificationPopup />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />

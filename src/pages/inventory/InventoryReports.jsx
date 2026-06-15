@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import { Printer, Download, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
+import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf } from '../../utils/exportInventoryReports';
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
@@ -52,6 +53,7 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
     assetType: '',
+    issuedById: '',
   });
   const [discardFilters, setDiscardFilters] = useState({
     dateFrom: '',
@@ -167,11 +169,13 @@ export default function InventoryReports() {
     fetchPurchaseOrders,
   } = useInventoryStore();
 
+  const { employees, fetchEmployees } = useEmployeeStore();
+
   useEffect(() => {
-    Promise.all([fetchItems(), fetchReorderAlerts(), fetchMastersOptions()]).catch((err) => {
+    Promise.all([fetchItems(), fetchReorderAlerts(), fetchMastersOptions(), fetchEmployees()]).catch((err) => {
       toast.error(err.message || 'Failed to load inventory reports data');
     });
-  }, [fetchItems, fetchReorderAlerts, fetchMastersOptions]);
+  }, [fetchItems, fetchReorderAlerts, fetchMastersOptions, fetchEmployees]);
 
   useEffect(() => {
     if (activeReport !== 'Item Ledger') return;
@@ -522,6 +526,7 @@ export default function InventoryReports() {
       categoryId: '',
       subcategoryId: '',
       assetType: '',
+      issuedById: '',
     };
     setIssuanceFilters(emptyFilters);
     fetchGINs(emptyFilters).catch((err) => {
@@ -982,6 +987,7 @@ export default function InventoryReports() {
     const rows = [];
     for (const gin of (gins || [])) {
       const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
+      const issuedBy = gin.issuedBy ? `${gin.issuedBy.firstName} ${gin.issuedBy.lastName}` : '-';
       if (gin.ginItems && gin.ginItems.length > 0) {
         gin.ginItems.forEach((gi, idx) => {
           const qty = Number(gi.issuedQuantity || 0);
@@ -995,6 +1001,7 @@ export default function InventoryReports() {
             category: gi.item?.category?.name || '-',
             subcategory: gi.item?.subcategory?.name || '-',
             department: dept,
+            issuedBy,
             quantity: qty,
             rate,
             amount: qty * rate,
@@ -1012,6 +1019,7 @@ export default function InventoryReports() {
           category: gin.item?.category?.name || '-',
           subcategory: gin.item?.subcategory?.name || '-',
           department: dept,
+          issuedBy,
           quantity: qty,
           rate,
           amount: qty * rate,
@@ -1030,6 +1038,7 @@ export default function InventoryReports() {
       Category: row.category,
       Subcategory: row.subcategory,
       Department: row.department,
+      'Issued By': row.issuedBy,
       'Issued Qty': row.quantity,
       Rate: Number(row.rate || 0).toFixed(2),
       Amount: Number(row.amount || 0).toFixed(2),
@@ -1273,6 +1282,10 @@ export default function InventoryReports() {
       push('Subcategory', subName(issuanceFilters.subcategoryId));
       push('Item', itemName(issuanceFilters.itemId));
       push('Type', issuanceFilters.assetType);
+      if (issuanceFilters.issuedById) {
+        const emp = (employees || []).find((e) => String(e.id) === String(issuanceFilters.issuedById));
+        if (emp) push('Issued By', `${emp.firstName} ${emp.lastName}`);
+      }
       if (issuanceSummary) parts.push('View: Summary');
     } else if (report === 'Discard Report') {
       push('From', fmtDate(discardFilters.dateFrom));
@@ -1351,7 +1364,7 @@ export default function InventoryReports() {
       return;
     }
     if (activeReport === 'Stock Position') {
-      exportRowsToPdf({ fileName: 'stock-position-report', title: 'Stock Position Report', rows: stockPositionExportRows });
+      exportRowsToPdf({ fileName: 'stock-position-report', title: 'Stock Position Report', rows: stockPositionExportRows, ...meta });
       return;
     }
     if (activeReport === 'Item Ledger') {
@@ -2122,6 +2135,8 @@ export default function InventoryReports() {
                                       rateReceived: rawGRN.receivedRate,
                                       amountReceived: rawGRN.totalAmount,
                                     }],
+                                    printedBy: getPrintedBy(),
+                                    generatedAt: getGeneratedAt(),
                                   })}
                                   className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
                                   title="Print GRN"
@@ -2218,6 +2233,42 @@ export default function InventoryReports() {
                       <option value="current asset">Current Asset</option>
                       <option value="fixed asset">Fixed Asset</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Issued By</label>
+                    <SearchableSelect
+                      options={employees || []}
+                      value={issuanceFilters.issuedById}
+                      onChange={(val) => updateIssuanceFilter('issuedById', val)}
+                      placeholder="All Employees"
+                      getLabel={(emp) => `${emp.firstName} ${emp.lastName} ${emp.email || emp.empCode || ''}`}
+                      getKey={(emp) => emp.id}
+                      renderOption={(emp) => {
+                        const initials = `${(emp.firstName || '')[0] || ''}${(emp.lastName || '')[0] || ''}`.toUpperCase();
+                        const colors = ['bg-pink-200 text-pink-700', 'bg-blue-200 text-blue-700', 'bg-green-200 text-green-700', 'bg-amber-200 text-amber-700', 'bg-purple-200 text-purple-700', 'bg-teal-200 text-teal-700'];
+                        const color = colors[emp.id % colors.length];
+                        return (
+                          <div className="flex items-center gap-3 py-0.5">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${color}`}>{initials}</div>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 text-sm leading-tight">{emp.firstName} {emp.lastName}</p>
+                              <p className="text-xs text-slate-400 truncate">{emp.email || emp.empCode || ''}</p>
+                            </div>
+                          </div>
+                        );
+                      }}
+                      renderSelected={(emp) => {
+                        const initials = `${(emp.firstName || '')[0] || ''}${(emp.lastName || '')[0] || ''}`.toUpperCase();
+                        const colors = ['bg-pink-200 text-pink-700', 'bg-blue-200 text-blue-700', 'bg-green-200 text-green-700', 'bg-amber-200 text-amber-700', 'bg-purple-200 text-purple-700', 'bg-teal-200 text-teal-700'];
+                        const color = colors[emp.id % colors.length];
+                        return (
+                          <div className="flex items-center gap-2">
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${color}`}>{initials}</div>
+                            <span className="text-slate-900 text-sm">{emp.firstName} {emp.lastName}</span>
+                          </div>
+                        );
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -3414,7 +3465,7 @@ export default function InventoryReports() {
                               <td className="px-4 py-3 capitalize">{row.status}</td>
                               <td className="px-4 py-3">
                                 <button
-                                  onClick={() => rawPO && printPODocument(rawPO)}
+                                  onClick={() => rawPO && printPODocument(rawPO, { printedBy: getPrintedBy(), generatedAt: getGeneratedAt() })}
                                   className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
                                   title="Print PO"
                                 >

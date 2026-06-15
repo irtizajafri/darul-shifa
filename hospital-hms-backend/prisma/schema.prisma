@@ -97,6 +97,7 @@ model Employee {
   shortleaves   Shortleave[]
   advanceLoans  AdvanceLoan[]
   dependents    EmployeeDependent[]
+  issuedGINs    InventoryGIN[]
 }
 
 model EmployeeDependent {
@@ -467,6 +468,8 @@ model InventoryGIN {
   item            InventoryItem?       @relation(fields: [itemId], references: [id])
   departmentId    Int
   department      InventoryDepartment  @relation(fields: [departmentId], references: [id])
+  issuedById      Int?
+  issuedBy        Employee?            @relation(fields: [issuedById], references: [id])
   issuedQuantity  Float?
   issueDate       DateTime
   admissionNumber String?

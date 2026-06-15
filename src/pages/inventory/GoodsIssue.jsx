@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search } from 'lucide-react';
@@ -8,11 +9,21 @@ import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryR
 import { printGINDocument, printAllGINs, printGDDocument } from '../../utils/printPO';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
+import { useEmployeeStore } from '../../store/useEmployeeStore';
 
 export default function GoodsIssue() {
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const canGD  = hasPermission(user, 'inventory', 'gd');
   const canGIN = hasPermission(user, 'inventory', 'gin');
+
+  const { employees, fetchEmployees } = useEmployeeStore();
+  const [ginIssuedById, setGinIssuedById] = useState('');
+  const [ginIssuedBySearch, setGinIssuedBySearch] = useState('');
+  const [ginIssuedByOpen, setGinIssuedByOpen] = useState(false);
+  const [ginIssuedByHighlight, setGinIssuedByHighlight] = useState(-1);
+  const ginIssuedByRef = useRef(null);
+  const ginIssuedByListRef = useRef(null);
 
   const [ginQuery, setGinQuery] = useState('');
   const [gdQuery, setGdQuery] = useState('');
@@ -41,6 +52,7 @@ export default function GoodsIssue() {
   const [gdRequestDate, setGdRequestDate] = useState(new Date().toISOString().slice(0, 10));
   const [gdItemSearch, setGdItemSearch] = useState('');
   const [gdItemDropdownOpen, setGdItemDropdownOpen] = useState(false);
+  const [gdItemHighlightedIndex, setGdItemHighlightedIndex] = useState(-1);
   const [gdSelectedItems, setGdSelectedItems] = useState([]);
   const [gdAdmissionEnabled, setGdAdmissionEnabled] = useState(false);
   const [gdAdmissionNumber, setGdAdmissionNumber] = useState('');
@@ -75,8 +87,18 @@ export default function GoodsIssue() {
       fetchGDs(),
       fetchGDHeaders(),
       fetchGINs(),
+      fetchEmployees(),
     ]).catch((err) => toast.error(err.message || 'Failed to load issuance data'));
-  }, [fetchItems, fetchMastersOptions, fetchGDs, fetchGINs]);
+  }, [fetchItems, fetchMastersOptions, fetchGDs, fetchGINs, fetchEmployees]);
+
+  useEffect(() => {
+    const gdHeaderId = searchParams.get('gdHeaderId');
+    if (gdHeaderId && canGIN) {
+      setSelectedGDHeaderId(gdHeaderId);
+      setShowGINForm(true);
+      setShowGDForm(false);
+    }
+  }, [searchParams, canGIN]);
 
   const filteredGINRows = useMemo(() => {
     const q = ginQuery.trim().toLowerCase();
@@ -115,13 +137,30 @@ export default function GoodsIssue() {
     return (masterOptions.subcategories || []).filter((sub) => Number(sub.categoryId) === catId);
   }, [ginFilters.categoryId, masterOptions.subcategories]);
 
+  const filteredIssuedByEmployees = useMemo(() => {
+    const q = ginIssuedBySearch.trim().toLowerCase();
+    const list = employees || [];
+    if (!q) return list.slice(0, 20);
+    return list.filter((e) =>
+      `${e.firstName} ${e.lastName}`.toLowerCase().includes(q) ||
+      (e.empCode || '').toLowerCase().includes(q)
+    ).slice(0, 20);
+  }, [employees, ginIssuedBySearch]);
+
+  useEffect(() => {
+    if (ginIssuedByListRef.current && ginIssuedByHighlight >= 0) {
+      const el = ginIssuedByListRef.current.children[ginIssuedByHighlight];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [ginIssuedByHighlight]);
+
   const gdItemSearchResults = useMemo(() => {
     const q = gdItemSearch.trim().toLowerCase();
-    if (!q) return (items || []).slice(0, 10);
+    if (!q) return (items || []).slice(0, 20);
     return (items || []).filter((it) =>
       String(it.name || '').toLowerCase().includes(q) ||
       String(it.code || '').toLowerCase().includes(q)
-    ).slice(0, 10);
+    ).slice(0, 20);
   }, [items, gdItemSearch]);
 
   const addGdItem = (item) => {
@@ -166,7 +205,7 @@ export default function GoodsIssue() {
       setGdComment('');
       setShowGDForm(false);
       setCreatedGDHeader(result);
-      if (andPrint && result) printGDDocument(result);
+      if (andPrint && result) printGDDocument(result, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
     } catch (err) {
       toast.error(err.message || 'Failed to create GD');
     }
@@ -185,14 +224,16 @@ export default function GoodsIssue() {
       issuedQuantity: Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested),
     }));
     try {
-      const newGIN = await createGIN({ gdHeaderId: Number(selectedGDHeaderId), items, issueDate: new Date(ginIssueDate).toISOString() });
+      const newGIN = await createGIN({ gdHeaderId: Number(selectedGDHeaderId), items, issueDate: new Date(ginIssueDate).toISOString(), issuedById: ginIssuedById || undefined });
       await Promise.all([fetchGINs(ginFilters), fetchGDHeaders(), fetchGDs(gdFilters), fetchItems()]);
       setSelectedGDHeaderId('');
       setGinIssueDate(new Date().toISOString().slice(0, 10));
       setGinIssuedQtys({});
+      setGinIssuedById('');
+      setGinIssuedBySearch('');
       setShowGINForm(false);
       toast.success('GIN created');
-      if (andPrint && newGIN) printGINDocument(newGIN);
+      if (andPrint && newGIN) printGINDocument(newGIN, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
     } catch (err) {
       toast.error(err.message || 'Failed to create GIN');
     }
@@ -304,7 +345,7 @@ export default function GoodsIssue() {
               </table>
             </div>
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
-              <Button label="Print" icon={Printer} onClick={() => printGDDocument(createdGDHeader)} />
+              <Button label="Print" icon={Printer} onClick={() => printGDDocument(createdGDHeader, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) })} />
               <Button variant="outline" label="Close" onClick={() => setCreatedGDHeader(null)} />
             </div>
           </div>
@@ -392,20 +433,31 @@ export default function GoodsIssue() {
                     type="text"
                     placeholder="Search and add item..."
                     value={gdItemSearch}
-                    onChange={(e) => { setGdItemSearch(e.target.value); setGdItemDropdownOpen(true); }}
+                    onChange={(e) => { setGdItemSearch(e.target.value); setGdItemDropdownOpen(true); setGdItemHighlightedIndex(-1); }}
                     onFocus={() => setGdItemDropdownOpen(true)}
-                    onBlur={() => setTimeout(() => setGdItemDropdownOpen(false), 150)}
+                    onBlur={() => setTimeout(() => { setGdItemDropdownOpen(false); setGdItemHighlightedIndex(-1); }, 150)}
+                    onKeyDown={(e) => {
+                      if (!gdItemDropdownOpen) {
+                        if (e.key === 'ArrowDown') { e.preventDefault(); setGdItemDropdownOpen(true); setGdItemHighlightedIndex(0); }
+                        return;
+                      }
+                      if (e.key === 'ArrowDown') { e.preventDefault(); setGdItemHighlightedIndex((p) => Math.min(p + 1, gdItemSearchResults.length - 1)); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setGdItemHighlightedIndex((p) => Math.max(p - 1, 0)); }
+                      else if (e.key === 'Enter') { e.preventDefault(); if (gdItemHighlightedIndex >= 0 && gdItemSearchResults[gdItemHighlightedIndex]) { addGdItem(gdItemSearchResults[gdItemHighlightedIndex]); setGdItemHighlightedIndex(-1); } }
+                      else if (e.key === 'Tab') { e.preventDefault(); setGdItemHighlightedIndex((p) => Math.min(p + 1, gdItemSearchResults.length - 1)); }
+                      else if (e.key === 'Escape') { setGdItemDropdownOpen(false); setGdItemHighlightedIndex(-1); }
+                    }}
                     className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 {gdItemDropdownOpen && gdItemSearchResults.length > 0 && (
-                  <div className="absolute z-20 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-48 overflow-y-auto">
-                    {gdItemSearchResults.map((item) => (
+                  <div className="absolute z-20 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-[520px] overflow-y-auto">
+                    {gdItemSearchResults.map((item, idx) => (
                       <button
                         key={item.id}
                         type="button"
                         onClick={() => addGdItem(item)}
-                        className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                        className={`w-full text-left px-4 py-2 text-sm border-b border-slate-100 last:border-0 ${idx === gdItemHighlightedIndex ? 'bg-blue-100 text-blue-900' : 'hover:bg-slate-50'}`}
                       >
                         <span className="font-medium">{item.name}</span>
                         <span className="text-slate-400 ml-2 text-xs">({item.code})</span>
@@ -540,6 +592,48 @@ export default function GoodsIssue() {
                   required
                 />
               </div>
+              <div className="relative min-w-[220px]">
+                <label className="block text-xs text-slate-500 mb-1">Issued By</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <input
+                    ref={ginIssuedByRef}
+                    type="text"
+                    placeholder="Search employee..."
+                    value={ginIssuedBySearch}
+                    onChange={(e) => { setGinIssuedBySearch(e.target.value); setGinIssuedByOpen(true); setGinIssuedByHighlight(-1); if (!e.target.value) setGinIssuedById(''); }}
+                    onFocus={() => setGinIssuedByOpen(true)}
+                    onBlur={() => setTimeout(() => { setGinIssuedByOpen(false); setGinIssuedByHighlight(-1); }, 150)}
+                    onKeyDown={(e) => {
+                      if (!ginIssuedByOpen) { if (e.key === 'ArrowDown') { e.preventDefault(); setGinIssuedByOpen(true); setGinIssuedByHighlight(0); } return; }
+                      if (e.key === 'ArrowDown' || e.key === 'Tab') { e.preventDefault(); setGinIssuedByHighlight((p) => Math.min(p + 1, filteredIssuedByEmployees.length - 1)); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setGinIssuedByHighlight((p) => Math.max(p - 1, 0)); }
+                      else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const emp = filteredIssuedByEmployees[ginIssuedByHighlight];
+                        if (emp) { setGinIssuedById(String(emp.id)); setGinIssuedBySearch(`${emp.firstName} ${emp.lastName}`); setGinIssuedByOpen(false); setGinIssuedByHighlight(-1); }
+                      }
+                      else if (e.key === 'Escape') { setGinIssuedByOpen(false); setGinIssuedByHighlight(-1); }
+                    }}
+                    className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+                  />
+                  {ginIssuedById && <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-green-500" />}
+                </div>
+                {ginIssuedByOpen && filteredIssuedByEmployees.length > 0 && (
+                  <div ref={ginIssuedByListRef} className="absolute z-30 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-[300px] overflow-y-auto">
+                    {filteredIssuedByEmployees.map((emp, idx) => (
+                      <div
+                        key={emp.id}
+                        onMouseDown={() => { setGinIssuedById(String(emp.id)); setGinIssuedBySearch(`${emp.firstName} ${emp.lastName}`); setGinIssuedByOpen(false); setGinIssuedByHighlight(-1); }}
+                        className={`px-3 py-2 text-sm cursor-pointer flex justify-between items-center ${idx === ginIssuedByHighlight ? 'bg-blue-100 text-blue-900' : 'hover:bg-blue-50'}`}
+                      >
+                        <span className="font-medium">{emp.firstName} {emp.lastName}</span>
+                        <span className="text-slate-400 text-xs">{emp.empCode || ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {selectedGDHeader && (
@@ -549,16 +643,23 @@ export default function GoodsIssue() {
                     <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
                       <th className="px-4 py-2 text-left font-semibold">#</th>
                       <th className="px-4 py-2 text-left font-semibold">Item</th>
+                      <th className="px-4 py-2 text-left font-semibold">Stock</th>
                       <th className="px-4 py-2 text-left font-semibold">Demanded</th>
                       <th className="px-4 py-2 text-left font-semibold">Issue Qty</th>
                       <th className="px-4 py-2 text-left font-semibold">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(selectedGDHeader.gdItems || []).map((gdItem, idx) => (
+                    {(selectedGDHeader.gdItems || []).map((gdItem, idx) => {
+                      const stock = Number(gdItem.item?.currentStock || 0);
+                      const stockColor = stock <= 0 ? 'text-red-500 bg-red-50' : stock <= 10 ? 'text-orange-500 bg-orange-50' : 'text-green-600 bg-green-50';
+                      return (
                       <tr key={gdItem.id} className={gdItem.status === 'closed' ? 'opacity-40' : ''}>
                         <td className="px-4 py-2 text-slate-500">{idx + 1}</td>
                         <td className="px-4 py-2 font-medium">{gdItem.item?.name || '-'}</td>
+                        <td className="px-4 py-2">
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${stockColor}`}>{stock}</span>
+                        </td>
                         <td className="px-4 py-2 text-slate-600">{gdItem.quantityRequested}</td>
                         <td className="px-4 py-2">
                           <input
@@ -577,7 +678,8 @@ export default function GoodsIssue() {
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -586,7 +688,7 @@ export default function GoodsIssue() {
             <div className="flex gap-2">
               <Button type="submit" label={loading ? 'Saving...' : 'Save GIN'} disabled={loading || !selectedGDHeaderId} />
               <Button type="button" label={loading ? 'Saving...' : 'Save & Print'} disabled={loading || !selectedGDHeaderId} onClick={(e) => handleCreateGIN(e, true)} />
-              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); }} />
+              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); setGinIssuedById(''); setGinIssuedBySearch(''); }} />
             </div>
           </form>
         </Card>

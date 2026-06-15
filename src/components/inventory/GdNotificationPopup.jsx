@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, X } from 'lucide-react';
+import { Bell, PackageCheck, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
@@ -10,6 +11,7 @@ export default function GdNotificationPopup() {
   const { user } = useAuthStore();
   const canSee = hasPermission(user, 'inventory', 'gd-notifications');
 
+  const navigate = useNavigate();
   const { fetchUnreadGdNotifications, markGdNotificationsRead } = useInventoryStore();
   const [notifications, setNotifications] = useState([]);
   const [showPopup, setShowPopup] = useState(false);
@@ -36,6 +38,14 @@ export default function GdNotificationPopup() {
     await markGdNotificationsRead(ids);
     setShowPopup(false);
     setNotifications([]);
+  };
+
+  const handleIssueGIN = async (notif) => {
+    const ids = notifications.map((n) => n.id);
+    await markGdNotificationsRead(ids);
+    setShowPopup(false);
+    setNotifications([]);
+    navigate(`/inventory/gin?gdHeaderId=${notif.gdHeader?.id}`);
   };
 
   if (!showPopup || notifications.length === 0) return null;
@@ -72,6 +82,7 @@ export default function GdNotificationPopup() {
                 <th className="px-4 py-3 text-left font-semibold">Department</th>
                 <th className="px-4 py-3 text-left font-semibold">Items</th>
                 <th className="px-4 py-3 text-left font-semibold">Date</th>
+                <th className="px-4 py-3 text-left font-semibold">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -84,6 +95,15 @@ export default function GdNotificationPopup() {
                   </td>
                   <td className="px-4 py-3 text-slate-500 text-xs">
                     {notif.createdAt ? new Date(notif.createdAt).toLocaleString() : '-'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => handleIssueGIN(notif)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-colors"
+                    >
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      Issue GIN
+                    </button>
                   </td>
                 </tr>
               ))}

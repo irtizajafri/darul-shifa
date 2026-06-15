@@ -6,14 +6,17 @@ import Button from '../../components/ui/Button';
 import { Plus, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { printPODocument } from '../../utils/printPO';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
   const [dropdownStyle, setDropdownStyle] = useState({});
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const inputRef = useRef(null);
   const containerRef = useRef(null);
+  const listRef = useRef(null);
 
   const selected = options.find((o) => String(getValue(o)) === String(value));
 
@@ -34,6 +37,7 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
       });
     }
     setSearch('');
+    setHighlightedIndex(-1);
     setOpen(true);
   };
 
@@ -42,11 +46,47 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setOpen(false);
         setSearch('');
+        setHighlightedIndex(-1);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  useEffect(() => {
+    if (listRef.current && highlightedIndex >= 0) {
+      const el = listRef.current.children[highlightedIndex];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlightedIndex]);
+
+  const selectOption = (o) => {
+    onChange(String(getValue(o)));
+    setSearch('');
+    setOpen(false);
+    setHighlightedIndex(-1);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!open) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); openDropdown(); setHighlightedIndex(0); }
+      return;
+    }
+    if (e.key === 'ArrowDown' || e.key === 'Tab') {
+      e.preventDefault();
+      setHighlightedIndex((p) => Math.min(p + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((p) => Math.max(p - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && filtered[highlightedIndex]) selectOption(filtered[highlightedIndex]);
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+      setSearch('');
+      setHighlightedIndex(-1);
+    }
+  };
 
   return (
     <div ref={containerRef} className={`relative ${className}`}>
@@ -54,22 +94,23 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
         ref={inputRef}
         type="text"
         value={open ? search : (selected ? getLabel(selected) : '')}
-        onChange={(e) => { setSearch(e.target.value); setOpen(true); }}
+        onChange={(e) => { setSearch(e.target.value); setOpen(true); setHighlightedIndex(-1); }}
         onFocus={openDropdown}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
         className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
         autoComplete="off"
       />
       {open && (
-        <div style={dropdownStyle} className="bg-white border border-slate-200 rounded-md shadow-lg max-h-64 overflow-y-auto">
+        <div ref={listRef} style={dropdownStyle} className="bg-white border border-slate-200 rounded-md shadow-lg max-h-[520px] overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-sm text-slate-400">No results</div>
           ) : (
-            filtered.map((o) => (
+            filtered.map((o, idx) => (
               <div
                 key={getValue(o)}
-                onMouseDown={() => { onChange(String(getValue(o))); setSearch(''); setOpen(false); }}
-                className={`px-3 py-2 text-sm cursor-pointer hover:bg-blue-50 ${String(getValue(o)) === String(value) ? 'bg-blue-50 font-medium' : ''}`}
+                onMouseDown={() => selectOption(o)}
+                className={`px-3 py-2 text-sm cursor-pointer ${idx === highlightedIndex ? 'bg-blue-100 text-blue-900' : String(getValue(o)) === String(value) ? 'bg-blue-50 font-medium hover:bg-blue-50' : 'hover:bg-blue-50'}`}
               >
                 {getLabel(o)}
               </div>
@@ -90,6 +131,7 @@ const createEmptyPoLine = () => ({
 
 
 export default function PurchaseOrder() {
+  const { user } = useAuthStore();
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -194,7 +236,7 @@ export default function PurchaseOrder() {
         })),
       });
 
-      if (shouldPrint) printPODocument(result);
+      if (shouldPrint) printPODocument(result, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
 
       await fetchPurchaseOrders(filters);
       setFormData({
