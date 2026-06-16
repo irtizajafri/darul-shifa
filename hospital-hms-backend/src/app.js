@@ -11,6 +11,7 @@ const inventoryRoutes = require('./modules/inventory/inventory.routes');
 const usersRoutes = require('./modules/users/users.routes');
 const clinicRoutes = require('./modules/clinic/clinic.routes');
 const leaveEncashmentRoutes = require('./modules/leave-encashment/leave-encashment.routes');
+const accountsRoutes = require('./modules/accounts/accounts.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -33,6 +34,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/clinic', clinicRoutes);
 app.use('/api/leave-encashment', leaveEncashmentRoutes);
+app.use('/api/accounts', accountsRoutes);
 
 app.use(errorHandler);
 

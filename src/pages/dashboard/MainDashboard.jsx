@@ -30,7 +30,7 @@ const ALL_MODULES = [
     path: '/inventory-module',
   },
   { id: 'clinic', permModule: 'clinic', icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: true, path: '/clinic-module' },
-  { id: 'accounts', permModule: null, icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: false },
+  { id: 'accounts', permModule: 'accounts', icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: true, path: '/accounts-module' },
 ];
 
 export default function MainDashboard() {
@@ -55,6 +55,8 @@ export default function MainDashboard() {
         setModule('inventory');
       } else if (m.id === 'clinic') {
         setModule('clinic');
+      } else if (m.id === 'accounts') {
+        setModule('accounts');
       } else {
         clearModule();
       }

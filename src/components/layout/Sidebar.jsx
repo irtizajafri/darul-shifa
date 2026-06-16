@@ -42,6 +42,13 @@ const inventoryNavItems = [
   { path: '/inventory/reports', label: 'Reports', Icon: BarChart3 },
 ];
 
+const accountsNavItems = [
+  { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
+  { path: '/accounts-module', label: 'Accounts Dashboard', Icon: LayoutDashboard },
+  { path: '/accounts/corporate/parameters', label: 'Corporate — Parameters', Icon: Settings },
+  { path: '/accounts/non-corporate/parameters', label: 'Non-Corporate — Parameters', Icon: Settings },
+];
+
 const clinicNavItems = [
   { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
   { path: '/clinic-module', label: 'Clinic Dashboard', Icon: LayoutDashboard },
@@ -142,6 +149,28 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     );
   }
 
+  if (activeModule === 'accounts') {
+    return (
+      <aside className={sidebarClass}>
+        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+          {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Accounts Module</p>}
+          <NewTabButton onClick={handleNewTab} />
+        </div>
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {accountsNavItems.map((item) => (
+            <div
+              key={item.path + item.label}
+              className={navClass(item.path)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
+            >
+              {navItem(item)}
+            </div>
+          ))}
+        </nav>
+      </aside>
+    );
+  }
+
   if (activeModule === 'inventory') {
     return (
       <aside className={sidebarClass}>
@@ -226,7 +255,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     { path: '/coming-soon', label: 'Laboratories', Icon: FlaskConical, module: 'lab' },
     { path: '/inventory-module', label: 'Inventory Mgmt', Icon: Package, module: 'inventory' },
     { path: '/clinic-module', label: 'Clinic', Icon: Stethoscope, module: 'clinic' },
-    { path: '/coming-soon', label: 'Accounts', Icon: Wallet, module: 'accounts' },
+    { path: '/accounts-module', label: 'Accounts', Icon: Wallet, module: 'accounts' },
   ];
 
   return (

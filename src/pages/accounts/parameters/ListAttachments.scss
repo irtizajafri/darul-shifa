@@ -1,0 +1,136 @@
+@use '../../../styles/variables' as *;
+@use './accParam.scss';
+
+.list-attach {
+  padding: 1.5rem;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+
+    h2 { font-size: 1.15rem; font-weight: 700; color: $text-main; margin: 0; }
+    p  { font-size: 0.8rem; color: $text-muted; margin: 0; }
+  }
+
+  &__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  &__section-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: $text-muted;
+    margin-bottom: 0.75rem;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
+  }
+
+  &__head {
+    background: white;
+    border: 1px solid $border;
+    border-radius: 10px;
+    overflow: hidden;
+
+    &.system { border-left: 3px solid $primary; }
+    &.custom  { border-left: 3px solid $success; }
+  }
+
+  &__head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.8rem 1rem;
+    gap: 1rem;
+  }
+
+  &__head-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  &__head-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: $text-main;
+  }
+
+  &__head-hint {
+    font-size: 0.72rem;
+    color: $text-muted;
+  }
+
+  &__head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  &__expand-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px; height: 30px;
+    border-radius: 6px;
+    background: $background;
+    border: 1px solid $border;
+    cursor: pointer;
+    color: $text-muted;
+    transition: color 0.15s, background 0.15s;
+    &:hover { color: $primary; background: $primary-light; }
+  }
+
+  &__entries {
+    border-top: 1px solid $border;
+    padding: 0.6rem 1rem;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  &__entry-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: $text-main;
+    background: white;
+    border: 1px solid $border;
+  }
+
+  &__empty {
+    font-size: 0.82rem;
+    color: $text-muted;
+    padding: 0.4rem 0.25rem;
+    margin: 0;
+  }
+
+  .btn-icon {
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    background: $primary-light;
+    color: $primary;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    &:hover { opacity: 0.75; }
+    &.danger { background: rgba(239,68,68,0.1); color: $danger; }
+  }
+}

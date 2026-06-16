@@ -1056,3 +1056,88 @@ model ClinicAntenatal {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
+
+// ─── Accounts Module ──────────────────────────────────────────────────────────
+
+model AccMainGL {
+  id          Int        @id @default(autoincrement())
+  code        String     @unique
+  name        String
+  entityType  String     @default("non-corporate")
+  createdAt   DateTime   @default(now())
+  subGLs      AccSubGL[]
+}
+
+model AccSubGL {
+  id         Int              @id @default(autoincrement())
+  code       String           @unique
+  name       String
+  mainGlId   Int
+  entityType String           @default("non-corporate")
+  createdAt  DateTime         @default(now())
+  mainGL     AccMainGL        @relation(fields: [mainGlId], references: [id], onDelete: Cascade)
+  mainAccounts AccMainAccount[]
+}
+
+model AccMainAccount {
+  id         Int             @id @default(autoincrement())
+  code       String          @unique
+  name       String
+  subGlId    Int
+  entityType String          @default("non-corporate")
+  createdAt  DateTime        @default(now())
+  subGL      AccSubGL        @relation(fields: [subGlId], references: [id], onDelete: Cascade)
+  subAccounts AccSubAccount[]
+}
+
+model AccSubAccount {
+  id            Int            @id @default(autoincrement())
+  code          String         @unique
+  name          String
+  mainAccountId Int
+  entityType    String         @default("non-corporate")
+  createdAt     DateTime       @default(now())
+  mainAccount   AccMainAccount @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
+}
+
+model AccPayeeHead {
+  id         Int            @id @default(autoincrement())
+  name       String
+  sourceType String         @default("manual")
+  entityType String         @default("non-corporate")
+  createdAt  DateTime       @default(now())
+  entries    AccPayeeEntry[]
+}
+
+model AccPayeeEntry {
+  id          Int          @id @default(autoincrement())
+  payeeHeadId Int
+  name        String
+  createdAt   DateTime     @default(now())
+  payeeHead   AccPayeeHead @relation(fields: [payeeHeadId], references: [id], onDelete: Cascade)
+}
+
+model AccBankAccount {
+  id            Int               @id @default(autoincrement())
+  bankName      String
+  accountNumber String
+  entityType    String            @default("non-corporate")
+  createdAt     DateTime          @default(now())
+  chequeSerials AccChequeSerial[]
+}
+
+model AccChequeSerial {
+  id            Int            @id @default(autoincrement())
+  bankAccountId Int
+  fromSerial    String
+  toSerial      String
+  createdAt     DateTime       @default(now())
+  bankAccount   AccBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+}
+
+model AccIncomeCategory {
+  id         Int      @id @default(autoincrement())
+  name       String
+  entityType String   @default("non-corporate")
+  createdAt  DateTime @default(now())
+}

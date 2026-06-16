@@ -99,6 +99,40 @@ export const PERMISSIONS_MAP = {
       { key: 'panel-companies',  label: 'Panel Companies' },
     ],
   },
+  accounts: {
+    label: 'Accounts',
+    dashboardRoute: '/accounts-module',
+    subModules: [
+      {
+        key: 'parameters',
+        label: 'Parameters',
+        tabs: [
+          { key: 'main-gl',          label: 'Main GL' },
+          { key: 'sub-gl',           label: 'Sub GL' },
+          { key: 'main-account',     label: 'Main Account' },
+          { key: 'sub-account',      label: 'Sub Account' },
+          { key: 'list-attachments', label: 'List Attachments' },
+          { key: 'bank-accounts',    label: 'Bank Accounts' },
+          { key: 'cheque-serial',    label: 'Cheque Serial' },
+          { key: 'income-category',  label: 'Account Category for Income' },
+        ],
+      },
+      {
+        key: 'transactions',
+        label: 'Transactions',
+        tabs: [
+          { key: 'voucher-income',     label: 'Voucher Entry — Income' },
+          { key: 'voucher-expense',    label: 'Voucher Entry — Expense' },
+          { key: 'cheque-printing',    label: 'Cheque Printing' },
+          { key: 'bank-deposit',       label: 'Bank Deposit' },
+          { key: 'bank-statement',     label: 'Upload Bank Statement' },
+          { key: 'deposit-adjustment', label: 'Bank Deposit Adjustment' },
+        ],
+      },
+      { key: 'inquiry', label: 'Inquiry' },
+      { key: 'reports', label: 'Reports' },
+    ],
+  },
 };
 
 /**

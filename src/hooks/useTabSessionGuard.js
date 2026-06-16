@@ -4,6 +4,9 @@ import { useAuthStore } from '../store/useAuthStore';
 export const HMS_BROADCAST = 'hms-auth';
 const REFRESH_FLAG = '_hmsRefresh';
 
+// Module-level flag — survives React StrictMode double-invoke but resets on real page reload
+let _sessionChecked = false;
+
 // Call this right after a successful login to kick out other tabs/accounts
 export function broadcastLogin(userId) {
   if (typeof BroadcastChannel === 'undefined') return;
@@ -20,7 +23,11 @@ export function useTabSessionGuard() {
   // On first mount: if this is NOT a page refresh, clear any stale session.
   // sessionStorage is wiped when a tab/browser closes, so if the flag is gone
   // it means the previous session ended by closing — force logout.
+  // _sessionChecked prevents React StrictMode's double-invoke from running this twice.
   useEffect(() => {
+    if (_sessionChecked) return;
+    _sessionChecked = true;
+
     const wasRefresh = sessionStorage.getItem(REFRESH_FLAG);
     if (wasRefresh) {
       sessionStorage.removeItem(REFRESH_FLAG);

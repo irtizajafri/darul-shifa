@@ -10,6 +10,17 @@ import MainDashboard from '../pages/dashboard/MainDashboard';
 import EmployeeModuleDashboard from '../pages/dashboard/EmployeeModuleDashboard';
 import InventoryModuleDashboard from '../pages/dashboard/InventoryModuleDashboard';
 import ClinicModuleDashboard from '../pages/dashboard/ClinicModuleDashboard';
+import AccountsModuleDashboard from '../pages/dashboard/AccountsModuleDashboard';
+import AccountsParameters from '../pages/accounts/parameters/AccountsParameters';
+import MainGL from '../pages/accounts/parameters/MainGL';
+import SubGL from '../pages/accounts/parameters/SubGL';
+import MainAccount from '../pages/accounts/parameters/MainAccount';
+import SubAccount from '../pages/accounts/parameters/SubAccount';
+import ListAttachments from '../pages/accounts/parameters/ListAttachments';
+import BankAccounts from '../pages/accounts/parameters/BankAccounts';
+import ChequeSerial from '../pages/accounts/parameters/ChequeSerial';
+import IncomeCategory from '../pages/accounts/parameters/IncomeCategory';
+import AccountsTransactions from '../pages/accounts/transactions/AccountsTransactions';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
@@ -104,6 +115,19 @@ export default function AppRoutes() {
           <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
           <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
           <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
+
+          <Route path="accounts-module" element={<PermissionGuard module="accounts"><AccountsModuleDashboard /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/main-gl" element={<PermissionGuard module="accounts"><MainGL /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/sub-gl" element={<PermissionGuard module="accounts"><SubGL /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/main-account" element={<PermissionGuard module="accounts"><MainAccount /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/sub-account" element={<PermissionGuard module="accounts"><SubAccount /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/list-attachments" element={<PermissionGuard module="accounts"><ListAttachments /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/bank-accounts" element={<PermissionGuard module="accounts"><BankAccounts /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/cheque-serial" element={<PermissionGuard module="accounts"><ChequeSerial /></PermissionGuard>} />
+          <Route path="accounts/:entityType/parameters/income-category" element={<PermissionGuard module="accounts"><IncomeCategory /></PermissionGuard>} />
+
+          <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts"><AccountsTransactions /></PermissionGuard>} />
 
           <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
