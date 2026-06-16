@@ -48,4 +48,15 @@ async function login(email, password) {
   };
 }
 
-module.exports = { login };
+async function changePassword(userId, currentPassword, newPassword) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw { status: 404, message: 'User not found' };
+
+  const isMatch = await bcrypt.compare(currentPassword, user.password);
+  if (!isMatch) throw { status: 401, message: 'Current password is incorrect' };
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+  await prisma.user.update({ where: { id: userId }, data: { password: hashed } });
+}
+
+module.exports = { login, changePassword };

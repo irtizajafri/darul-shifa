@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useNavigate, Link } from 'react-router-dom';
 import { Building2 } from 'lucide-react';
 import { useAuthStore, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, SUPER_ADMIN_USER } from '../../store/useAuthStore';
+import { broadcastLogin } from '../../hooks/useTabSessionGuard';
 import { useModuleStore } from '../../store/useModuleStore';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
@@ -30,6 +31,7 @@ export default function Login() {
         data.password === SUPER_ADMIN_PASSWORD
       ) {
         login(SUPER_ADMIN_USER, null);
+        broadcastLogin(SUPER_ADMIN_USER.id);
         clearModule();
         toast.success(`Welcome, ${SUPER_ADMIN_USER.name}!`);
         navigate('/dashboard');
@@ -64,6 +66,7 @@ export default function Login() {
 
       const { user, token, permissions } = json.data;
       login({ ...user, permissions }, token);
+      broadcastLogin(user.id);
       clearModule();
       toast.success(`Welcome, ${user.name}!`);
       navigate('/dashboard');
