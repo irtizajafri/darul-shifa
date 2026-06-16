@@ -32,7 +32,11 @@ export function useTabSessionGuard() {
     if (wasRefresh) {
       sessionStorage.removeItem(REFRESH_FLAG);
     } else {
-      logoutRef.current();
+      // Super admin stays logged in across browser sessions
+      const currentUser = useAuthStore.getState().user;
+      if (!currentUser?.isSuperAdmin) {
+        logoutRef.current();
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
