@@ -1995,6 +1995,14 @@ async function updateItem(itemId, payload) {
 
   const purchasePrice = parsePositiveNumber(payload.purchasePrice) ?? existing.purchasePrice;
 
+  // Handle opening stock change: find existing OPENING movement, compute delta
+  const newOpeningQty = parsePositiveNumber(payload.currentStock, 0) || 0;
+  const existingOpeningMovement = await prisma.inventoryStockMovement.findFirst({
+    where: { itemId: id, referenceType: 'OPENING' },
+  });
+  const oldOpeningQty = existingOpeningMovement ? Number(existingOpeningMovement.quantity || 0) : 0;
+  const openingDelta = newOpeningQty - oldOpeningQty;
+
   const updated = await prisma.inventoryItem.update({
     where: { id },
     data: {
@@ -2018,10 +2026,31 @@ async function updateItem(itemId, payload) {
       subcategoryId: Number(payload.subcategoryId),
       supplierId: parsedSupplierId || null,
       storageId: parsePositiveNumber(payload.storageId),
-      // currentStock is managed by GRN/GIN movements only — never updated on item edit
+      ...(openingDelta !== 0 && { currentStock: Math.max(0, Number(existing.currentStock || 0) + openingDelta) }),
     },
     include: { category: true, subcategory: true, storage: true },
   });
+
+  // Sync OPENING stock movement if changed
+  if (openingDelta !== 0) {
+    if (existingOpeningMovement) {
+      await prisma.inventoryStockMovement.delete({ where: { id: existingOpeningMovement.id } });
+    }
+    if (newOpeningQty > 0) {
+      await prisma.inventoryStockMovement.create({
+        data: {
+          itemId: id,
+          movementType: 'OPENING',
+          referenceType: 'OPENING',
+          quantity: newOpeningQty,
+          unitRate: purchasePrice,
+          previousStock: 0,
+          newStock: newOpeningQty,
+          note: 'Opening stock updated via item edit',
+        },
+      });
+    }
+  }
 
   try {
     await ensureUsefulLifeUnitColumn();
@@ -2640,8 +2669,9 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
     const state = stateByItemId.get(item.id);
     if (!state) return;
 
-    const isBeforeRange = Boolean(fromDate) && new Date(movement.eventDate) < fromDate;
-    const isAfterRange = Boolean(toDate) && new Date(movement.eventDate) > toDate;
+    const isOpeningMovement = movement.referenceType === 'OPENING' || String(movement.movementType || '').toUpperCase() === 'OPENING';
+    const isBeforeRange = isOpeningMovement || (Boolean(fromDate) && new Date(movement.eventDate) < fromDate);
+    const isAfterRange = !isOpeningMovement && Boolean(toDate) && new Date(movement.eventDate) > toDate;
 
     const isInbound = movement.delta > 0;
     const movementAbsQty = Math.abs(movement.delta);
