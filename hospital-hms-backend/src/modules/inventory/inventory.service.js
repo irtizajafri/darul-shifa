@@ -1956,6 +1956,10 @@ async function createItem(payload) {
   const openingQty = parsePositiveNumber(payload.currentStock, 0) || 0;
   if (openingQty > 0) {
     const openingRate = Number(purchasePrice || 0);
+    // Guard against duplicate OPENING movements (race condition / double-submit)
+    await prisma.inventoryStockMovement.deleteMany({
+      where: { itemId: created.id, referenceType: 'OPENING' },
+    });
     await prisma.inventoryStockMovement.create({
       data: {
         itemId: created.id,
