@@ -86,6 +86,8 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
     assetType: '',
+    brand: '',
+    location: '',
   });
   const [repairingFilters, setRepairingFilters] = useState({
     dateFrom: '',
@@ -421,6 +423,20 @@ export default function InventoryReports() {
     return (masterOptions?.subcategories || []).filter((sub) => Number(sub.categoryId) === selectedCategoryId);
   }, [masterOptions?.subcategories, stockPositionFilters.categoryId]);
 
+  const fixedAssetBrandOptions = useMemo(() => {
+    const brands = (items || [])
+      .filter((i) => i.itemType === 'fixed asset' && i.brand)
+      .map((i) => i.brand);
+    return [...new Set(brands)].sort();
+  }, [items]);
+
+  const fixedAssetLocationOptions = useMemo(() => {
+    const locs = (items || [])
+      .filter((i) => i.itemType === 'fixed asset' && i.assetLocation)
+      .map((i) => i.assetLocation);
+    return [...new Set(locs)].sort();
+  }, [items]);
+
   const updateRepairingFilter = (key, value) => {
     setRepairingFilters((prev) => {
       if (key === 'categoryId') return { ...prev, categoryId: value, subcategoryId: '', itemId: '' };
@@ -667,6 +683,8 @@ export default function InventoryReports() {
       categoryId: '',
       subcategoryId: '',
       assetType: '',
+      brand: '',
+      location: '',
     };
     setStockPositionFilters(emptyFilters);
     fetchStockPositionReport(emptyFilters).catch((err) => {
@@ -896,26 +914,53 @@ export default function InventoryReports() {
   }, [activeReport, items, reorderAlerts, stockPositionReport, itemListFilters, reorderFilters]);
 
   const ledgerExportRows = useMemo(() => {
-    return (itemLedgerReport?.rows || []).map((row) => ({
-      Date: row.date ? new Date(row.date).toLocaleString() : '-',
-      'Item Code': row.itemCode,
-      'Item Name': row.itemName,
-      Category: row.category,
-      Subcategory: row.subcategory,
-      'Received Qty': row.receivedQuantity,
-      'Received Rate': row.receivedRate,
-      'Received Amount': row.receivedAmount,
-      'Issuance Qty': row.issuanceQuantity,
-      'Issuance Amount': row.issuanceAmount,
-      'Issuance Breakdown': row.issuanceBreakdown,
-      'Remaining Qty': row.remainingQuantity,
-      'Remaining Amount': row.remainingAmount,
-      'Remaining Breakdown': row.remainingBreakdown,
-      Unit: row.baseUnit,
-      Source: row.sourceType,
-      Reference: row.referenceNo,
-    }));
-  }, [itemLedgerReport?.rows]);
+    const result = [];
+    for (const group of (itemLedgerReport?.groups || [])) {
+      if (Number(group.openingBalance || 0) > 0 && (group.rows || []).length === 0) {
+        result.push({
+          Date: 'Opening',
+          'Item Code': group.itemCode,
+          'Item Name': group.itemName,
+          Category: group.category,
+          Subcategory: group.subcategory,
+          'Received Qty': Number(group.openingBalance || 0).toFixed(2),
+          'Received Rate': '-',
+          'Received Amount': Number(group.openingAmount || 0).toFixed(2),
+          'Issuance Qty': '0.00',
+          'Issuance Amount': '0.00',
+          'Issuance Breakdown': '-',
+          'Remaining Qty': Number(group.openingBalance || 0).toFixed(2),
+          'Remaining Amount': Number(group.openingAmount || 0).toFixed(2),
+          'Remaining Breakdown': '-',
+          Unit: group.baseUnit,
+          Source: 'OPENING',
+          Reference: '-',
+        });
+      }
+      for (const row of (group.rows || [])) {
+        result.push({
+          Date: row.date ? new Date(row.date).toLocaleDateString('en-PK') : 'Opening',
+          'Item Code': row.itemCode,
+          'Item Name': row.itemName,
+          Category: row.category,
+          Subcategory: row.subcategory,
+          'Received Qty': Number(row.receivedQuantity || 0).toFixed(2),
+          'Received Rate': Number(row.receivedRate || 0).toFixed(2),
+          'Received Amount': Number(row.receivedAmount || 0).toFixed(2),
+          'Issuance Qty': Number(row.issuanceQuantity || 0).toFixed(2),
+          'Issuance Amount': Number(row.issuanceAmount || 0).toFixed(2),
+          'Issuance Breakdown': row.issuanceBreakdown || '-',
+          'Remaining Qty': Number(row.remainingQuantity || 0).toFixed(2),
+          'Remaining Amount': Number(row.remainingAmount || 0).toFixed(2),
+          'Remaining Breakdown': row.remainingBreakdown || '-',
+          Unit: row.baseUnit,
+          Source: row.sourceType,
+          Reference: row.referenceNo,
+        });
+      }
+    }
+    return result;
+  }, [itemLedgerReport?.groups]);
 
   const ledgerSummaryExportRows = useMemo(() => {
     return (itemLedgerReport?.groups || []).map((group) => {
@@ -1211,10 +1256,12 @@ export default function InventoryReports() {
       Code: row.code,
       Name: row.name,
       Category: row.category,
-      Quantity: row.currentQuantity,
-      Amount: row.currentAmount,
-      Breakdown: row.breakdown,
+      Subcategory: row.subcategory || '-',
+      'Item Type': row.itemType || '-',
+      Quantity: Number(row.currentQuantity || 0).toFixed(2),
       Unit: row.unit,
+      'Amount (Rs.)': Number(row.currentAmount || 0).toFixed(2),
+      'FIFO Breakdown': row.breakdown || '-',
       Status: row.status,
     }));
   }, [stockPositionReport?.rows]);
@@ -1297,6 +1344,10 @@ export default function InventoryReports() {
       push('Subcategory', subName(stockPositionFilters.subcategoryId));
       push('Item', itemName(stockPositionFilters.itemId));
       push('Type', stockPositionFilters.assetType);
+      if (stockPositionFilters.assetType === 'fixed asset') {
+        push('Location', stockPositionFilters.location);
+        push('Brand', stockPositionFilters.brand);
+      }
     } else if (report === 'Short Expiry') {
       push('Expiry From', fmtDate(shortExpiryFilters.dateFrom));
       push('Expiry To', fmtDate(shortExpiryFilters.dateTo));
@@ -1667,12 +1718,42 @@ export default function InventoryReports() {
                   </div>
                 </div>
 
+                {stockPositionFilters.assetType === 'fixed asset' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Location</label>
+                      <select
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={stockPositionFilters.location}
+                        onChange={(e) => updateStockPositionFilter('location', e.target.value)}
+                      >
+                        <option value="">All Locations</option>
+                        {fixedAssetLocationOptions.map((loc) => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Brand</label>
+                      <select
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={stockPositionFilters.brand}
+                        onChange={(e) => updateStockPositionFilter('brand', e.target.value)}
+                      >
+                        <option value="">All Brands</option>
+                        {fixedAssetBrandOptions.map((b) => (
+                          <option key={b} value={b}>{b}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Button size="sm" label="Apply" onClick={applyStockPositionFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetStockPositionFilters} />
                 </div>
                 {false && (<>
-
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Items in Stock</p>
@@ -1811,8 +1892,8 @@ export default function InventoryReports() {
                     Summary
                   </label>
                 </div>
-                {false && (<>
 
+                {false && (<>
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Items</p>
@@ -2050,7 +2131,6 @@ export default function InventoryReports() {
                     Summary
                   </label>
                 </div>
-                {false && (<>
 
                 {receivingRows.length > 0 ? (
                   receivingSummary ? (
@@ -2155,7 +2235,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No receiving entries found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Issuance Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2285,7 +2364,6 @@ export default function InventoryReports() {
                     Summary
                   </label>
                 </div>
-                {false && (<>
 
                 {issuanceRows.length > 0 ? (
                   issuanceSummary ? (
@@ -2364,7 +2442,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No issuance entries found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Short Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2474,7 +2551,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyShortExpiryFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetShortExpiryFilters} />
                 </div>
-                {false && (<>
 
                 {shortExpiryRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2506,7 +2582,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No short-expiry entries found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2577,7 +2652,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyExpiryFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetExpiryFilters} />
                 </div>
-                {false && (<>
 
                 {expiryRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2613,7 +2687,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No expired items found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Discard Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2693,7 +2766,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyDiscardFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetDiscardFilters} />
                 </div>
-                {false && (<>
 
                 {discardRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2727,7 +2799,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No discard entries found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Repairing Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2820,7 +2891,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyRepairingFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetRepairingFilters} />
                 </div>
-                {false && (<>
 
                 {repairingRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -2878,7 +2948,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No repairing entries found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Daily Sales' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2952,7 +3021,6 @@ export default function InventoryReports() {
                     Admission Only
                   </label>
                 </div>
-                {false && (<>
 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -3073,7 +3141,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No sales found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Supplier Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3151,7 +3218,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applySupplierLedgerFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetSupplierLedgerFilters} />
                 </div>
-                {false && (<>
 
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -3237,7 +3303,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No GRN records found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Item List' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3313,7 +3378,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setItemListFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
                 </div>
-                {false && (<>
                 {reportRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -3353,7 +3417,6 @@ export default function InventoryReports() {
                     </div>
                   </div>
                 )}
-                </>)}
               </div>
             ) : effectiveReport === 'Purchase Order Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3432,7 +3495,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setPoFilters({ status: '', supplierId: '', itemId: '', dateFrom: '', dateTo: '', assetType: '' })} />
                 </div>
-                {false && (<>
 
                 {poRows.length > 0 ? (
                   <div className="overflow-x-auto">
@@ -3482,7 +3544,6 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No purchase orders found for selected filters.</div>
                 )}
-                </>)}
               </div>
             ) : (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3558,7 +3619,6 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setReorderFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
                 </div>
-                {false && (<>
                 {reportRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -3594,7 +3654,6 @@ export default function InventoryReports() {
                     </div>
                   </div>
                 )}
-                </>)}
               </div>
             )}
           </Card>

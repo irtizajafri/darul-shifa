@@ -690,7 +690,7 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
+  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '', assetType = '', brand = '', location = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -698,6 +698,8 @@ export const useInventoryStore = create((set) => ({
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
       if (assetType) qs.set('assetType', String(assetType));
+      if (brand) qs.set('brand', String(brand));
+      if (location) qs.set('location', String(location));
 
       const data = await request(`/reports/stock-position?${qs.toString()}`);
       const safeData = {

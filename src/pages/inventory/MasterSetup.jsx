@@ -308,9 +308,19 @@ export default function MasterSetup() {
       }
 
       const enteredItemName = String(formData.name || '').trim().toLowerCase();
-      const duplicateItem = (items || []).some((item) => String(item?.name || '').trim().toLowerCase() === enteredItemName);
+      const enteredModel = String(formData.model || '').trim().toLowerCase();
+      const duplicateItem = (items || []).some((item) => {
+        const sameName = String(item?.name || '').trim().toLowerCase() === enteredItemName;
+        if (!sameName) return false;
+        if (formData.itemType === 'fixed asset') {
+          return String(item?.model || '').trim().toLowerCase() === enteredModel;
+        }
+        return true;
+      });
       if (duplicateItem) {
-        toast.error('Item with this name already exists');
+        toast.error(formData.itemType === 'fixed asset'
+          ? 'A fixed asset with the same name and model already exists'
+          : 'Item with this name already exists');
         return;
       }
 
@@ -903,7 +913,8 @@ export default function MasterSetup() {
                         />
 
                         <input
-                          placeholder="Model"
+                          placeholder="Model *"
+                          required
                           value={formData.model}
                           onChange={(e) => onFormChange('model', e.target.value)}
                           className="px-3 py-2 border border-slate-300 rounded-md text-sm"

@@ -1845,19 +1845,24 @@ async function createItem(payload) {
 
   await validateActiveMasterRecords(payload);
 
-  // Check if item with same name already exists
-  const duplicateItem = await prisma.inventoryItem.findFirst({
-    where: {
-      name: {
-        equals: name,
-        mode: 'insensitive',
+  // Duplicate check: fixed asset → name + model must be unique; current asset → name alone
+  const model = parseOptionalString(payload.model);
+  if (itemType === 'fixed asset') {
+    if (!model) throw new Error('Model is required for fixed assets');
+    const duplicateItem = await prisma.inventoryItem.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        model: { equals: model, mode: 'insensitive' },
       },
-    },
-    select: { id: true, code: true, name: true },
-  });
-
-  if (duplicateItem) {
-    throw new Error('Item with this name already exists');
+      select: { id: true },
+    });
+    if (duplicateItem) throw new Error('A fixed asset with the same name and model already exists');
+  } else {
+    const duplicateItem = await prisma.inventoryItem.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (duplicateItem) throw new Error('Item with this name already exists');
   }
 
   let purchasePrice = parsePositiveNumber(payload.purchasePrice);
@@ -1963,6 +1968,21 @@ async function createItem(payload) {
         note: 'Opening stock on item creation',
       },
     });
+
+    if (created.itemType === 'fixed asset') {
+      const count = Math.floor(openingQty);
+      const instanceData = [];
+      for (let i = 0; i < count; i++) {
+        instanceData.push({
+          assetTag: `${created.code}-${String(i + 1).padStart(2, '0')}`,
+          itemId: created.id,
+          condition: 'working',
+        });
+      }
+      if (instanceData.length > 0) {
+        await prisma.assetInstance.createMany({ data: instanceData });
+      }
+    }
   }
 
   return created;
@@ -1985,7 +2005,19 @@ async function updateItem(itemId, payload) {
   const usefulLifeYears = parsePositiveNumber(payload.usefulLifeYears);
   const bookValue = parsePositiveNumber(payload.bookValue);
 
-  if (name !== existing.name) {
+  const model = parseOptionalString(payload.model);
+  if (itemType === 'fixed asset') {
+    if (!model) throw new Error('Model is required for fixed assets');
+    const duplicate = await prisma.inventoryItem.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        model: { equals: model, mode: 'insensitive' },
+        id: { not: id },
+      },
+      select: { id: true },
+    });
+    if (duplicate) throw new Error('A fixed asset with the same name and model already exists');
+  } else if (name !== existing.name) {
     const duplicate = await prisma.inventoryItem.findFirst({
       where: { name: { equals: name, mode: 'insensitive' }, id: { not: id } },
       select: { id: true },
@@ -2049,6 +2081,48 @@ async function updateItem(itemId, payload) {
           note: 'Opening stock updated via item edit',
         },
       });
+    }
+
+    // Sync AssetInstance records for fixed assets
+    if (updated.itemType === 'fixed asset') {
+      // Only touch instances that came from opening stock (no grnId)
+      const openingInstances = await prisma.assetInstance.findMany({
+        where: { itemId: id, grnId: null },
+        select: { id: true, assetTag: true },
+        orderBy: { id: 'asc' },
+      });
+
+      if (openingDelta > 0) {
+        // Add new instances
+        const allTags = await prisma.assetInstance.findMany({
+          where: { itemId: id },
+          select: { assetTag: true },
+        });
+        let nextSeq = 1;
+        if (allTags.length > 0) {
+          const maxSeq = allTags.reduce((max, inst) => {
+            const parts = String(inst.assetTag).split('-');
+            const tail = Number(parts[parts.length - 1]);
+            return Number.isFinite(tail) && tail > max ? tail : max;
+          }, 0);
+          if (maxSeq > 0) nextSeq = maxSeq + 1;
+        }
+        const newInstances = [];
+        for (let i = 0; i < openingDelta; i++) {
+          newInstances.push({
+            assetTag: `${updated.code}-${String(nextSeq + i).padStart(2, '0')}`,
+            itemId: id,
+            condition: 'working',
+          });
+        }
+        if (newInstances.length > 0) await prisma.assetInstance.createMany({ data: newInstances });
+      } else if (openingDelta < 0) {
+        // Remove excess opening instances (from the end)
+        const toRemove = openingInstances.slice(openingDelta); // last N
+        if (toRemove.length > 0) {
+          await prisma.assetInstance.deleteMany({ where: { id: { in: toRemove.map((i) => i.id) } } });
+        }
+      }
     }
   }
 
@@ -2763,6 +2837,26 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
     groupsMap.get(row.itemId).rows.push(row);
   });
 
+  // Items with only opening stock (no transactions in date range) — include them too
+  for (const [id, opening] of openingByItemId.entries()) {
+    if (groupsMap.has(id)) continue;
+    if (!opening.quantity || opening.quantity <= 0) continue;
+    const item = itemById.get(id);
+    if (!item) continue;
+    const { baseUnit } = getBaseUnitAndQuantity(item.unit, 1);
+    groupsMap.set(id, {
+      itemId: id,
+      itemCode: item.code,
+      itemName: item.name,
+      category: item.category?.name || '-',
+      subcategory: item.subcategory?.name || '-',
+      baseUnit,
+      openingBalance: opening.quantity,
+      openingAmount: opening.amount || 0,
+      rows: [],
+    });
+  }
+
   const groups = Array.from(groupsMap.values()).map((group) => {
     const totalReceived = group.rows.reduce((sum, row) => sum + (Number(row.receivedQuantity) || 0), 0);
     const totalIssued = group.rows.reduce((sum, row) => sum + (Number(row.issuanceQuantity) || 0), 0);
@@ -3063,9 +3157,11 @@ async function listItemAddOptions({ search }) {
   return { categories, subcategories, suppliers, storages, departments, demandCategoryTypes };
 }
 
-async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, assetType }) {
+async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, assetType, brand, location }) {
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const brandFilter = brand ? String(brand).trim() : null;
+  const locationFilter = location ? String(location).trim() : null;
 
   // Set asOfDate to end of day if provided, else use today
   const snapshotDate = asOfDate ? toEndOfDay(asOfDate) : toEndOfDay(new Date());
@@ -3076,6 +3172,8 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
       ...(assetType ? { itemType: assetType } : {}),
+      ...(brandFilter ? { brand: { equals: brandFilter, mode: 'insensitive' } } : {}),
+      ...(locationFilter ? { assetLocation: { equals: locationFilter, mode: 'insensitive' } } : {}),
     },
     include: {
       category: true,
@@ -3245,6 +3343,9 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       breakdown: remainingBreakdown,
       unit: baseUnit,
       status: item.status,
+      brand: item.brand || '-',
+      location: item.assetLocation || '-',
+      itemType: item.itemType || '-',
     };
   }).filter((row) => row.currentQuantity > 0); // Only show items with stock
 
