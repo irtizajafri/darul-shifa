@@ -43,6 +43,11 @@ async function getChequeSerials(req, res, next) { try { success(res, await svc.g
 async function createChequeSerial(req, res, next) { try { success(res, await svc.createChequeSerial(req.body), 'created'); } catch (e) { next(e); } }
 async function deleteChequeSerial(req, res, next) { try { await svc.deleteChequeSerial(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
+async function getAllPayeeEntries(req, res, next) { try { success(res, await svc.getAllPayeeEntries(et(req))); } catch (e) { next(e); } }
+async function getPayeeEntriesBySubAccount(req, res, next) { try { success(res, await svc.getPayeeEntriesBySubAccount(req.query.subAccountId, et(req))); } catch (e) { next(e); } }
+async function createVoucherExpense(req, res, next) { try { success(res, await svc.createVoucherExpense(req.body), 'created'); } catch (e) { next(e); } }
+async function getVoucherExpenses(req, res, next) { try { success(res, await svc.getVoucherExpenses(et(req))); } catch (e) { next(e); } }
+
 async function getIncomeCategories(req, res, next) { try { success(res, await svc.getIncomeCategories(et(req))); } catch (e) { next(e); } }
 async function createIncomeCategory(req, res, next) { try { success(res, await svc.createIncomeCategory(req.body), 'created'); } catch (e) { next(e); } }
 async function updateIncomeCategory(req, res, next) { try { success(res, await svc.updateIncomeCategory(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
@@ -58,4 +63,6 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
+  getPayeeEntriesBySubAccount,
 };

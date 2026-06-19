@@ -21,6 +21,8 @@ import BankAccounts from '../pages/accounts/parameters/BankAccounts';
 import ChequeSerial from '../pages/accounts/parameters/ChequeSerial';
 import IncomeCategory from '../pages/accounts/parameters/IncomeCategory';
 import AccountsTransactions from '../pages/accounts/transactions/AccountsTransactions';
+import VoucherExpense from '../pages/accounts/transactions/VoucherExpense';
+import VoucherExpenseForm from '../pages/accounts/transactions/VoucherExpenseForm';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
@@ -128,6 +130,8 @@ export default function AppRoutes() {
           <Route path="accounts/:entityType/parameters/income-category" element={<PermissionGuard module="accounts"><IncomeCategory /></PermissionGuard>} />
 
           <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts"><AccountsTransactions /></PermissionGuard>} />
+          <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts"><VoucherExpense /></PermissionGuard>} />
+          <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<PermissionGuard module="accounts"><VoucherExpenseForm /></PermissionGuard>} />
 
           <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />

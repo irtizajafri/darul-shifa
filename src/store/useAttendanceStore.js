@@ -1,8 +1,9 @@
-  import { create } from 'zustand';
+import { create } from 'zustand';
 
 export const useAttendanceStore = create((set) => ({
   attendanceRecords: [],
   loading: false,
+  apiAttendanceCache: {},
 
   fetchAttendance: async () => {
     set({ loading: true });
@@ -22,5 +23,17 @@ export const useAttendanceStore = create((set) => ({
     } finally {
       set({ loading: false });
     }
-  }
+  },
+
+  setApiAttendanceCache: (key, value) =>
+    set((state) => ({
+      apiAttendanceCache: { ...state.apiAttendanceCache, [key]: value },
+    })),
+
+  clearApiAttendanceCache: (key) =>
+    set((state) => {
+      const updated = { ...state.apiAttendanceCache };
+      delete updated[key];
+      return { apiAttendanceCache: updated };
+    }),
 }));

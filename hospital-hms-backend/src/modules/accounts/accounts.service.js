@@ -115,20 +115,101 @@ async function deleteSubAccount(id) {
 
 // ── Payee Heads ───────────────────────────────────────────────────────────────
 
+const SYSTEM_HEAD_DEFS = [
+  { sourceType: 'employee', name: 'Employees' },
+  { sourceType: 'vendor',   name: 'Vendors / Suppliers' },
+  { sourceType: 'doctor',   name: 'Doctors / Consultants' },
+];
+
+async function ensureSystemHeads(entityType) {
+  for (const def of SYSTEM_HEAD_DEFS) {
+    const exists = await prisma.accPayeeHead.findFirst({ where: { sourceType: def.sourceType, entityType } });
+    if (!exists) await prisma.accPayeeHead.create({ data: { name: def.name, sourceType: def.sourceType, entityType } });
+  }
+}
+
+const SUB_ACCOUNT_INCLUDE = {
+  subAccount: {
+    select: {
+      id: true, code: true, name: true,
+      mainAccount: {
+        select: {
+          id: true, code: true, name: true,
+          subGL: {
+            select: {
+              id: true, code: true, name: true,
+              mainGL: { select: { id: true, code: true, name: true } },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 async function getPayeeHeads(entityType) {
-  return prisma.accPayeeHead.findMany({ where: { entityType }, orderBy: { id: 'asc' } });
+  await ensureSystemHeads(entityType);
+  return prisma.accPayeeHead.findMany({
+    where: { entityType },
+    orderBy: { id: 'asc' },
+    include: SUB_ACCOUNT_INCLUDE,
+  });
 }
 
 async function createPayeeHead({ name, sourceType = 'manual', entityType }) {
-  return prisma.accPayeeHead.create({ data: { name: name.trim(), sourceType, entityType } });
+  return prisma.accPayeeHead.create({
+    data: { name: name.trim(), sourceType, entityType },
+    include: SUB_ACCOUNT_INCLUDE,
+  });
 }
 
-async function updatePayeeHead(id, { name }) {
-  return prisma.accPayeeHead.update({ where: { id: Number(id) }, data: { name: name.trim() } });
+async function updatePayeeHead(id, body) {
+  const data = {};
+  if (body.name !== undefined) data.name = body.name.trim();
+  if (body.subAccountId !== undefined) data.subAccountId = body.subAccountId ? Number(body.subAccountId) : null;
+  return prisma.accPayeeHead.update({
+    where: { id: Number(id) },
+    data,
+    include: SUB_ACCOUNT_INCLUDE,
+  });
 }
 
 async function deletePayeeHead(id) {
   return prisma.accPayeeHead.delete({ where: { id: Number(id) } });
+}
+
+async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
+  const head = await prisma.accPayeeHead.findFirst({ where: { subAccountId: Number(subAccountId), entityType } });
+  if (!head) return { type: null, headName: null, entries: [] };
+
+  if (head.sourceType === 'employee') {
+    const rows = await prisma.employee.findMany({
+      select: { id: true, firstName: true, lastName: true, empCode: true },
+      orderBy: { firstName: 'asc' },
+    });
+    return { type: 'employee', headName: head.name, entries: rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode })) };
+  }
+
+  if (head.sourceType === 'vendor') {
+    const rows = await prisma.inventorySupplier.findMany({
+      where: { status: 'active' },
+      select: { id: true, name: true, code: true },
+      orderBy: { name: 'asc' },
+    });
+    return { type: 'vendor', headName: head.name, entries: rows };
+  }
+
+  if (head.sourceType === 'doctor') {
+    const rows = await prisma.clinicDoctor.findMany({
+      where: { status: 'active' },
+      select: { id: true, name: true, code: true },
+      orderBy: { name: 'asc' },
+    });
+    return { type: 'doctor', headName: head.name, entries: rows };
+  }
+
+  const rows = await prisma.accPayeeEntry.findMany({ where: { payeeHeadId: head.id }, orderBy: { name: 'asc' } });
+  return { type: 'manual', headName: head.name, entries: rows.map((e) => ({ id: e.id, name: e.name, code: null })) };
 }
 
 // ── Payee Entries ─────────────────────────────────────────────────────────────
@@ -206,6 +287,64 @@ async function deleteChequeSerial(id) {
 
 // ── Income Categories ─────────────────────────────────────────────────────────
 
+// ── Voucher Expense ───────────────────────────────────────────────────────────
+
+async function getAllPayeeEntries(entityType) {
+  return prisma.accPayeeEntry.findMany({
+    where: { payeeHead: { entityType } },
+    include: { payeeHead: { select: { name: true } } },
+    orderBy: [{ payeeHead: { name: 'asc' } }, { name: 'asc' }],
+  });
+}
+
+async function generateVoucherNo(entityType, voucherDate) {
+  const d = new Date(voucherDate);
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const prefix = `VE-${dateStr}`;
+  const count = await prisma.accVoucherExpense.count({ where: { voucherNo: { startsWith: prefix }, entityType } });
+  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+}
+
+async function createVoucherExpense({ entityType, mode, bankId, voucherDate, entries }) {
+  const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
+  const voucherNo = await generateVoucherNo(entityType, voucherDate);
+  const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+  return prisma.accVoucherExpense.create({
+    data: {
+      voucherNo, voucherType,
+      voucherDate: new Date(voucherDate),
+      mode,
+      bankId: bankId ? Number(bankId) : null,
+      entityType, totalAmount,
+      entries: {
+        create: entries.map((e) => ({
+          mainGlId: Number(e.mainGlId),
+          subGlId: Number(e.subGlId),
+          mainAccountId: Number(e.mainAccountId),
+          subAccountId: e.subAccountId ? Number(e.subAccountId) : null,
+          accountCode: e.accountCode,
+          accountName: e.accountName,
+          payeeName: e.payeeName || null,
+          amount: Number(e.amount),
+          chequeNo: e.chequeNo || null,
+          chequeDate: e.chequeDate ? new Date(e.chequeDate) : null,
+          chequeType: e.chequeType || null,
+          particulars: e.particulars || null,
+        })),
+      },
+    },
+    include: { entries: true },
+  });
+}
+
+async function getVoucherExpenses(entityType) {
+  return prisma.accVoucherExpense.findMany({
+    where: { entityType },
+    include: { entries: true },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
 async function getIncomeCategories(entityType) {
   return prisma.accIncomeCategory.findMany({ where: { entityType }, orderBy: { id: 'asc' } });
 }
@@ -232,4 +371,6 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
+  getPayeeEntriesBySubAccount,
 };

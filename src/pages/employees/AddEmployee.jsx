@@ -3,7 +3,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useModuleStore } from '../../store/useModuleStore';
-import { departments, allowanceTypes } from '../../utils/dummyData';
+import { allowanceTypes } from '../../utils/dummyData';
 import { getTotalSalary } from '../../utils/helpers';
 import PageLoader from '../../components/ui/PageLoader';
 import PageHeader from '../../components/shared/PageHeader';
@@ -162,7 +162,6 @@ export default function AddEmployee({ edit }) {
     : [];
   const departmentOptions = Array.from(
     new Set([
-      ...(departments || []),
       ...departmentRecords.map((dept) => dept.name),
       ...(existing?.department ? [existing.department] : []),
     ].map((item) => normalizeText(item)).filter(Boolean))

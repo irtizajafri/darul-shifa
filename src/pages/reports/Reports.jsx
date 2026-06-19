@@ -66,16 +66,20 @@ export default function Reports() {
   const [rawPunchRows, setRawPunchRows] = useState([]);
   const [hrManualTimes, setHrManualTimes] = useState([]);
   const [overrides, setOverrides] = useState([]);
+  const [savedPayslipRows, setSavedPayslipRows] = useState(null);
+  const [payslipSavedAt, setPayslipSavedAt] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
   const now = new Date();
-  const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
-  const [year, setYear] = useState(String(now.getFullYear()));
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const [month, setMonth] = useState(String(prevMonth.getMonth() + 1).padStart(2, "0"));
+  const [year, setYear] = useState(String(prevMonth.getFullYear()));
   const [selectedShift, setSelectedShift] = useState("All");
   const [payslipView, setPayslipView] = useState("concentrated");
   const [payrollTab, setPayrollTab] = useState("detailed");
   const { setModule } = useModuleStore();
   const { user } = useAuthStore();
   const { employees, fetchEmployees } = useEmployeeStore();
-  const { attendanceRecords, fetchAttendance } = useAttendanceStore();
+  const { attendanceRecords, fetchAttendance, apiAttendanceCache, setApiAttendanceCache, clearApiAttendanceCache } = useAttendanceStore();
   const { gatepasses, fetchGatepasses } = useGatePassStore();
   const { records: advanceLoans, fetchAdvanceLoans } = useAdvanceLoanStore();
   const employeeSearchRef = useRef(null);
@@ -102,13 +106,49 @@ export default function Reports() {
       });
       const json = await res.json();
       setSyncMsg(json.message || 'Sync complete');
-      // Report refresh karo
+      // Cache clear karo taake fresh data load ho
+      if (emp?.empCode) clearApiAttendanceCache(`${emp.empCode}-${month}-${year}`);
       setApiAttendance([]);
       setLoadedForEmpCode(null);
     } catch (_) {
       setSyncMsg('Sync fail — internet check karo');
     } finally {
       setSyncingPunches(false);
+    }
+  };
+
+  const handleSavePayslip = async () => {
+    if (!emp?.empCode || !month || !year) return;
+    setIsSaving(true);
+    try {
+      const serialize = (row) => ({
+        ...row,
+        date:         row.date        instanceof Date ? row.date.toISOString()        : row.date,
+        actualIn:     row.actualIn    instanceof Date ? row.actualIn.toISOString()    : row.actualIn,
+        actualOut:    row.actualOut   instanceof Date ? row.actualOut.toISOString()   : row.actualOut,
+        scheduledIn:  row.scheduledIn instanceof Date ? row.scheduledIn.toISOString() : row.scheduledIn,
+        scheduledOut: row.scheduledOut instanceof Date ? row.scheduledOut.toISOString(): row.scheduledOut,
+      });
+      const res = await fetch('http://localhost:5001/api/payslip-snapshot/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          empCode: emp.empCode,
+          month,
+          year,
+          rows: effectiveAttendanceWithOverrides.map(serialize),
+          netSalary: finalSal,
+        }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      const now = new Date();
+      setSavedPayslipRows(effectiveAttendanceWithOverrides);
+      setPayslipSavedAt(now.toISOString());
+      toast.success('Payslip saved to DB');
+    } catch {
+      toast.error('Save failed');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -270,6 +310,15 @@ export default function Reports() {
 
   useEffect(() => {
     if (!emp || !month || !year) return;
+
+    const cacheKey = `${emp.empCode}-${month}-${year}`;
+    const cached = apiAttendanceCache[cacheKey];
+    if (cached) {
+      setApiAttendance(cached);
+      setLoadedForEmpCode(emp.empCode);
+      return;
+    }
+
     const reqId = ++apiAttendanceReqRef.current;
     const controller = new AbortController();
 
@@ -489,6 +538,7 @@ export default function Reports() {
           if (!controller.signal.aborted && reqId === apiAttendanceReqRef.current) {
             setApiAttendance(mapped);
             setLoadedForEmpCode(emp.empCode);
+            setApiAttendanceCache(`${emp.empCode}-${month}-${year}`, mapped);
           }
         } else {
           if (!controller.signal.aborted && reqId === apiAttendanceReqRef.current) {
@@ -508,7 +558,7 @@ export default function Reports() {
     return () => {
       controller.abort();
     };
-  }, [emp?.empCode, month, year, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes]);
+  }, [emp?.empCode, month, year, apiAttendanceCache, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes]);
 
   useEffect(() => {
     if (!month || !year) return;
@@ -590,6 +640,47 @@ export default function Reports() {
     return () => controller.abort();
   }, [month, year]);
 
+  useEffect(() => {
+    if (!emp?.empCode || !month || !year) {
+      setSavedPayslipRows(null);
+      setPayslipSavedAt(null);
+      return;
+    }
+    const controller = new AbortController();
+    const fetchSaved = async () => {
+      try {
+        const res = await fetch(
+          `http://localhost:5001/api/payslip-snapshot?empCode=${emp.empCode}&month=${month}&year=${year}`,
+          { signal: controller.signal }
+        );
+        const json = await res.json();
+        if (controller.signal.aborted) return;
+        if (json?.data) {
+          const deserialize = (row) => ({
+            ...row,
+            date:         row.date        ? new Date(row.date)        : null,
+            actualIn:     row.actualIn    ? new Date(row.actualIn)    : null,
+            actualOut:    row.actualOut   ? new Date(row.actualOut)   : null,
+            scheduledIn:  row.scheduledIn ? new Date(row.scheduledIn) : null,
+            scheduledOut: row.scheduledOut? new Date(row.scheduledOut): null,
+          });
+          setSavedPayslipRows(json.data.rows.map(deserialize));
+          setPayslipSavedAt(json.data.savedAt);
+        } else {
+          setSavedPayslipRows(null);
+          setPayslipSavedAt(null);
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setSavedPayslipRows(null);
+          setPayslipSavedAt(null);
+        }
+      }
+    };
+    fetchSaved();
+    return () => controller.abort();
+  }, [emp?.empCode, month, year]);
+
   const basic      = Number(emp?.basicSalary) || 0;
   const allowances = emp?.allowances || [];
   const totalAllow = allowances.reduce((s, a) => s + (Number(a.amount) || 0), 0);
@@ -615,6 +706,7 @@ export default function Reports() {
   }, [emp, gatepasses, month, year]);
 
   const effectiveAttendanceWithOverrides = useMemo(() => {
+    if (savedPayslipRows) return savedPayslipRows;
     if (!emp?.empCode) return effectiveAttendance;
     const targetCode = normalizeEmpCode(emp.empCode);
     const toDateKey = (value) => {
@@ -809,7 +901,7 @@ export default function Reports() {
       const dateB = new Date(b.date);
       return dateA - dateB;
     });
-  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
+  }, [savedPayslipRows, effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
 
   const minutesBetween = useCallback((start, end) => {
     if (!start || !end) return 0;
@@ -2505,6 +2597,25 @@ export default function Reports() {
             {syncMsg && (
               <span style={{ fontSize: '12px', color: syncMsg.includes('fail') ? '#dc2626' : '#16a34a', fontWeight: 500 }}>
                 {syncMsg}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSavePayslip}
+              disabled={isSaving || !emp}
+              title="Current attendance ko DB mein save karo — kal bhi yahi data load hoga"
+              style={{
+                padding: '6px 14px', borderRadius: '6px', fontSize: '13px',
+                cursor: (isSaving || !emp) ? 'not-allowed' : 'pointer',
+                background: savedPayslipRows ? '#16a34a' : '#7c3aed',
+                color: '#fff', border: 'none', fontWeight: 600,
+              }}
+            >
+              {isSaving ? '⏳ Saving...' : savedPayslipRows ? '✓ Saved (DB)' : '💾 Save Payslip'}
+            </button>
+            {payslipSavedAt && (
+              <span style={{ fontSize: '11px', color: '#6b7280' }}>
+                Saved: {new Date(payslipSavedAt).toLocaleString()}
               </span>
             )}
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "payslip")} />

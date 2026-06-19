@@ -1098,15 +1098,18 @@ model AccSubAccount {
   entityType    String         @default("non-corporate")
   createdAt     DateTime       @default(now())
   mainAccount   AccMainAccount @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
+  payeeHeads    AccPayeeHead[]
 }
 
 model AccPayeeHead {
-  id         Int            @id @default(autoincrement())
-  name       String
-  sourceType String         @default("manual")
-  entityType String         @default("non-corporate")
-  createdAt  DateTime       @default(now())
-  entries    AccPayeeEntry[]
+  id           Int            @id @default(autoincrement())
+  name         String
+  sourceType   String         @default("manual")
+  entityType   String         @default("non-corporate")
+  subAccountId Int?
+  subAccount   AccSubAccount? @relation(fields: [subAccountId], references: [id])
+  createdAt    DateTime       @default(now())
+  entries      AccPayeeEntry[]
 }
 
 model AccPayeeEntry {
@@ -1140,4 +1143,36 @@ model AccIncomeCategory {
   name       String
   entityType String   @default("non-corporate")
   createdAt  DateTime @default(now())
+}
+
+model AccVoucherExpense {
+  id          Int                      @id @default(autoincrement())
+  voucherNo   String                   @unique
+  voucherType String
+  voucherDate DateTime
+  mode        String
+  bankId      Int?
+  entityType  String
+  totalAmount Decimal                  @db.Decimal(12, 2) @default(0)
+  createdAt   DateTime                 @default(now())
+  entries     AccVoucherExpenseEntry[]
+}
+
+model AccVoucherExpenseEntry {
+  id            Int               @id @default(autoincrement())
+  voucherId     Int
+  voucher       AccVoucherExpense @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  mainGlId      Int
+  subGlId       Int
+  mainAccountId Int
+  subAccountId  Int?
+  accountCode   String
+  accountName   String
+  payeeName     String?
+  amount        Decimal           @db.Decimal(12, 2)
+  chequeNo      String?
+  chequeDate    DateTime?
+  chequeType    String?
+  particulars   String?
+  createdAt     DateTime          @default(now())
 }
