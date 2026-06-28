@@ -3,6 +3,7 @@ import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import TabBar from './TabBar';
 import TabsContainer from './TabsContainer';
+import CommandPalette from '../shared/CommandPalette';
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -26,6 +27,7 @@ export default function MainLayout() {
         <TabBar />
         <TabsContainer />
       </div>
+      <CommandPalette />
     </div>
   );
 }

@@ -603,7 +603,7 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchItemLedgerReport: async ({ dateFrom = '', dateTo = '', itemId = '', categoryId = '', subcategoryId = '', assetType = '' } = {}) => {
+  fetchItemLedgerReport: async ({ dateFrom = '', dateTo = '', itemId = '', categoryId = '', subcategoryId = '', assetType = '', departmentId = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -613,6 +613,7 @@ export const useInventoryStore = create((set) => ({
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
       if (assetType) qs.set('assetType', String(assetType));
+      if (departmentId) qs.set('departmentId', String(departmentId));
 
       const data = await request(`/reports/item-ledger?${qs.toString()}`);
       const safeData = {

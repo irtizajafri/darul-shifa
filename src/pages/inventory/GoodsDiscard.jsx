@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
+import useModalKeys from '../../hooks/useModalKeys';
+import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Download, FileText, Plus, Search, Trash2, X } from 'lucide-react';
@@ -278,9 +281,11 @@ const mkLine = () => ({
 
 // ─────────────────────────────────────────────────────────────────────────────
 export default function GoodsDiscard() {
+  const location = useLocation();
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(true);
   const [filters, setFilters] = useState({ itemId: '', dateFrom: '', dateTo: '' });
+  const formRef = useRef(null);
 
   const [form, setForm] = useState({
     lines: [mkLine()],
@@ -360,6 +365,25 @@ export default function GoodsDiscard() {
       discardedDate: new Date().toISOString().slice(0, 10),
     });
 
+  useEffect(() => {
+    if (location.state?.openForm) { resetForm(); setShowForm(true); }
+  }, [location.state]);
+
+  const fakeEvent = { preventDefault: () => {} };
+
+  useModalKeys({
+    active: showForm,
+    onEsc: () => { resetForm(); setShowForm(false); },
+    onCtrlS: () => handleCreateGdn(fakeEvent),
+  });
+
+  useModalKeys({
+    active: !showForm,
+    onCtrlN: () => { resetForm(); setShowForm(true); },
+  });
+
+  useFocusTrap(formRef, showForm);
+
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleCreateGdn = async (e) => {
     e.preventDefault();
@@ -433,7 +457,7 @@ export default function GoodsDiscard() {
       {/* ── Create Form ──────────────────────────────────────────────────── */}
       {showForm && (
         <Card className="mb-4" title="Create Goods Discard Note (GDN)">
-          <form onSubmit={handleCreateGdn} className="space-y-4">
+          <form ref={formRef} onSubmit={handleCreateGdn} className="space-y-4">
 
             {/* Common fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

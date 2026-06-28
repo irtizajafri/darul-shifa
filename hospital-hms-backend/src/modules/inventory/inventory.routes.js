@@ -82,4 +82,6 @@ router.patch('/asset-instances/:id', controller.updateAssetInstance);
 router.get('/gd-notifications/unread', controller.listUnreadGdNotifications);
 router.patch('/gd-notifications/mark-read', controller.markGdNotificationsRead);
 
+router.post('/admin/resync-stock', controller.resyncAllItemCurrentStock);
+
 module.exports = router;

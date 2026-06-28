@@ -31,6 +31,7 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
     assetType: '',
+    departmentId: '',
   });
   const [ledgerSummary, setLedgerSummary] = useState(false);
   const [receivingSummary, setReceivingSummary] = useState(false);
@@ -839,6 +840,7 @@ export default function InventoryReports() {
       categoryId: '',
       subcategoryId: '',
       assetType: '',
+      departmentId: '',
     };
     setLedgerFilters(emptyFilters);
     fetchItemLedgerReport(emptyFilters).catch((err) => {
@@ -950,6 +952,7 @@ export default function InventoryReports() {
           'Issuance Qty': Number(row.issuanceQuantity || 0).toFixed(2),
           'Issuance Amount': Number(row.issuanceAmount || 0).toFixed(2),
           'Issuance Breakdown': row.issuanceBreakdown || '-',
+          Department: row.departmentName || '-',
           'Remaining Qty': Number(row.remainingQuantity || 0).toFixed(2),
           'Remaining Amount': Number(row.remainingAmount || 0).toFixed(2),
           'Remaining Breakdown': row.remainingBreakdown || '-',
@@ -1307,6 +1310,7 @@ export default function InventoryReports() {
     if (report === 'Item Ledger') {
       push('From', fmtDate(ledgerFilters.dateFrom));
       push('To', fmtDate(ledgerFilters.dateTo));
+      push('Department', deptName(ledgerFilters.departmentId));
       push('Category', catName(ledgerFilters.categoryId));
       push('Subcategory', subName(ledgerFilters.subcategoryId));
       push('Item', itemName(ledgerFilters.itemId));
@@ -1807,227 +1811,263 @@ export default function InventoryReports() {
               </div>
             ) : effectiveReport === 'Item Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Date From</label>
-                    <input
-                      type="date"
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={ledgerFilters.dateFrom}
-                      onChange={(e) => updateLedgerFilter('dateFrom', e.target.value)}
-                    />
+                {/* Filters */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Date From</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        value={ledgerFilters.dateFrom}
+                        onChange={(e) => updateLedgerFilter('dateFrom', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Date To</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        value={ledgerFilters.dateTo}
+                        onChange={(e) => updateLedgerFilter('dateTo', e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Department (GIN)</label>
+                      <select
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        value={ledgerFilters.departmentId}
+                        onChange={(e) => updateLedgerFilter('departmentId', e.target.value)}
+                      >
+                        <option value="">All Departments</option>
+                        {(masterOptions?.departments || []).map((dep) => (
+                          <option key={dep.id} value={dep.id}>{dep.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Category</label>
+                      <select
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        value={ledgerFilters.categoryId}
+                        onChange={(e) => updateLedgerFilter('categoryId', e.target.value)}
+                      >
+                        <option value="">All Categories</option>
+                        {categoryOptions.map((cat) => (
+                          <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Subcategory</label>
+                      <select
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        value={ledgerFilters.subcategoryId}
+                        onChange={(e) => updateLedgerFilter('subcategoryId', e.target.value)}
+                      >
+                        <option value="">All Subcategories</option>
+                        {subcategoryOptions.map((sub) => (
+                          <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Item</label>
+                      <SearchableSelect
+                        options={itemOptions}
+                        value={ledgerFilters.itemId}
+                        onChange={(val) => updateLedgerFilter('itemId', val)}
+                        placeholder="All Items"
+                        getLabel={(item) => `${item.name} (${item.code})`}
+                        getKey={(item) => item.id}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 block mb-1">Asset Type</label>
+                      <select
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        value={ledgerFilters.assetType}
+                        onChange={(e) => updateLedgerFilter('assetType', e.target.value)}
+                      >
+                        <option value="">All Types</option>
+                        <option value="current asset">Current Asset</option>
+                        <option value="fixed asset">Fixed Asset</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Date To</label>
-                    <input
-                      type="date"
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={ledgerFilters.dateTo}
-                      onChange={(e) => updateLedgerFilter('dateTo', e.target.value)}
-                    />
+                  <div className="flex flex-wrap items-center gap-3 pt-1">
+                    <Button size="sm" label="Apply Filters" onClick={applyLedgerFilters} />
+                    <Button size="sm" variant="outline" label="Reset" onClick={resetLedgerFilters} />
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-600 ml-auto">
+                      <input
+                        type="checkbox"
+                        checked={ledgerSummary}
+                        onChange={(e) => setLedgerSummary(e.target.checked)}
+                        className="w-4 h-4 accent-blue-600 rounded"
+                      />
+                      <span className="font-medium">Summary View</span>
+                    </label>
                   </div>
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={ledgerFilters.categoryId}
-                      onChange={(e) => updateLedgerFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={ledgerFilters.subcategoryId}
-                      onChange={(e) => updateLedgerFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {subcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={ledgerFilters.itemId}
-                      onChange={(e) => updateLedgerFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Items</option>
-                      {itemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={ledgerFilters.assetType}
-                      onChange={(e) => updateLedgerFilter('assetType', e.target.value)}
-                    >
-                      <option value="">All Types</option>
-                      <option value="current asset">Current Asset</option>
-                      <option value="fixed asset">Fixed Asset</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <Button size="sm" label="Apply" onClick={applyLedgerFilters} />
-                  <Button size="sm" variant="outline" label="Reset" onClick={resetLedgerFilters} />
-                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={ledgerSummary}
-                      onChange={(e) => setLedgerSummary(e.target.checked)}
-                      className="w-4 h-4 accent-blue-600"
-                    />
-                    Summary
-                  </label>
                 </div>
 
                 {false && (<>
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                  <Card className="p-3">
-                    <p className="text-xs text-slate-500">Items</p>
-                    <p className="text-lg font-semibold text-slate-800">{itemLedgerReport?.summary?.itemCount || 0}</p>
-                  </Card>
-                  <Card className="p-3">
-                    <p className="text-xs text-slate-500">Opening</p>
-                    <p className="text-lg font-semibold text-slate-800">{Number(itemLedgerReport?.summary?.openingBalance || 0).toFixed(2)}</p>
-                  </Card>
-                  <Card className="p-3">
-                    <p className="text-xs text-slate-500">Received</p>
-                    <p className="text-lg font-semibold text-emerald-700">{Number(itemLedgerReport?.summary?.totalReceived || 0).toFixed(2)}</p>
-                  </Card>
-                  <Card className="p-3">
-                    <p className="text-xs text-slate-500">Issued</p>
-                    <p className="text-lg font-semibold text-rose-700">{Number(itemLedgerReport?.summary?.totalIssued || 0).toFixed(2)}</p>
-                  </Card>
-                  <Card className="p-3">
-                    <p className="text-xs text-slate-500">Closing</p>
-                    <p className="text-lg font-semibold text-blue-700">{Number(itemLedgerReport?.summary?.closingBalance || 0).toFixed(2)}</p>
-                  </Card>
-                </div>
+                {/* Summary stat cards */}
+                {(itemLedgerReport?.groups || []).length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-0.5">
+                      <p className="text-xs text-slate-500">Items</p>
+                      <p className="text-xl font-bold text-slate-800">{itemLedgerReport?.summary?.itemCount || 0}</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-0.5">
+                      <p className="text-xs text-slate-500">Total Received</p>
+                      <p className="text-xl font-bold text-emerald-600">{Number(itemLedgerReport?.summary?.totalReceived || 0).toFixed(2)}</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-0.5">
+                      <p className="text-xs text-slate-500">Total Issued</p>
+                      <p className="text-xl font-bold text-rose-500">{Number(itemLedgerReport?.summary?.totalIssued || 0).toFixed(2)}</p>
+                    </div>
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-0.5">
+                      <p className="text-xs text-slate-500">Closing Balance</p>
+                      <p className="text-xl font-bold text-blue-600">{Number(itemLedgerReport?.summary?.closingBalance || 0).toFixed(2)}</p>
+                    </div>
+                  </div>
+                )}
 
+                {/* Report Table */}
                 {(itemLedgerReport?.groups || []).length > 0 ? (
                   ledgerSummary ? (
-                    <Card className="p-0 overflow-hidden">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-sm">
-                          <thead>
-                            <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                              <th className="px-4 py-3 min-w-[80px]">Item Code</th>
-                              <th className="px-4 py-3 min-w-[140px]">Item Name</th>
-                              <th className="px-4 py-3 min-w-[100px]">Category</th>
-                              <th className="px-4 py-3 min-w-[100px]">Subcategory</th>
-                              <th className="px-4 py-3 min-w-[100px]">Opening Qty</th>
-                              <th className="px-4 py-3 min-w-[110px]">Total Received</th>
-                              <th className="px-4 py-3 min-w-[120px]">Received Amount</th>
-                              <th className="px-4 py-3 min-w-[110px]">Total Issued</th>
-                              <th className="px-4 py-3 min-w-[120px]">Issued Amount</th>
-                              <th className="px-4 py-3 min-w-[110px] font-bold">Remaining Qty</th>
-                              <th className="px-4 py-3 min-w-[120px]">Remaining Amount</th>
-                              <th className="px-4 py-3 min-w-[160px]">Remaining Breakdown</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {(itemLedgerReport.groups).map((group) => {
-                              const rows = group.rows || [];
-                              const totalReceived = rows.reduce((s, r) => s + Number(r.receivedQuantity || 0), 0);
-                              const totalReceivedAmt = rows.reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
-                              const totalIssued = rows.reduce((s, r) => s + Number(r.issuanceQuantity || 0), 0);
-                              const totalIssuedAmt = rows.reduce((s, r) => s + Number(r.issuanceAmount || 0), 0);
-                              const lastRow = rows[rows.length - 1];
-                              const remainingQty = lastRow ? Number(lastRow.remainingQuantity || 0) : Number(group.openingBalance || 0) + totalReceived - totalIssued;
-                              const remainingAmt = lastRow ? Number(lastRow.remainingAmount || 0) : 0;
-                              const remainingBreakdown = lastRow ? (lastRow.remainingBreakdown || '-') : '-';
-                              return (
-                                <tr key={group.itemId} className="hover:bg-slate-50">
-                                  <td className="px-4 py-3 text-xs">{group.itemCode}</td>
-                                  <td className="px-4 py-3 font-medium text-slate-800 text-xs">{group.itemName}</td>
-                                  <td className="px-4 py-3 text-xs">{group.category}</td>
-                                  <td className="px-4 py-3 text-xs">{group.subcategory}</td>
-                                  <td className="px-4 py-3 text-xs">{Number(group.openingBalance || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-emerald-700 text-xs">{totalReceived.toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-emerald-700 text-xs">{totalReceivedAmt.toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-rose-700 font-semibold text-xs">{totalIssued.toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-rose-700 text-xs">{totalIssuedAmt.toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-blue-700 font-bold text-xs">{remainingQty.toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-blue-700 font-semibold text-xs">{remainingAmt.toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-blue-700 text-xs">{remainingBreakdown}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </Card>
-                  ) : (
-                  <div className="space-y-4">
-                    {(itemLedgerReport?.groups || []).map((group) => (
-                      <Card key={group.itemId} className="p-0 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                          <p className="font-semibold text-slate-800">{group.itemName} ({group.itemCode})</p>
-                          <p className="text-xs text-slate-500">
-                            {group.category} / {group.subcategory} • Opening: {Number(group.openingBalance || 0).toFixed(2)} {group.baseUnit}
-                          </p>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse text-sm">
-                            <thead>
-                              <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                                <th className="px-4 py-3 min-w-[100px]">Date</th>
-                                <th className="px-4 py-3 min-w-[80px]">Item Code</th>
-                                <th className="px-4 py-3 min-w-[120px]">Item Name</th>
-                                <th className="px-4 py-3 min-w-[100px]">Category</th>
-                                <th className="px-4 py-3 min-w-[100px]">Subcategory</th>
-                                <th className="px-4 py-3 min-w-[110px]">Received Qty</th>
-                                <th className="px-4 py-3 min-w-[80px]">Rate</th>
-                                <th className="px-4 py-3 min-w-[120px]">Received Amount</th>
-                                <th className="px-4 py-3 min-w-[110px]">Issuance Qty</th>
-                                <th className="px-4 py-3 min-w-[120px]">Issuance Amount</th>
-                                <th className="px-4 py-3 min-w-[150px]">Issuance Breakdown</th>
-                                <th className="px-4 py-3 min-w-[110px] font-bold">Remaining Qty</th>
-                                <th className="px-4 py-3 min-w-[120px]">Remaining Amount</th>
-                                <th className="px-4 py-3 min-w-[150px]">Remaining Breakdown</th>
+                    /* ── Summary View ── */
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-slate-700 to-slate-600 text-white">
+                            <th className="px-3 py-3 min-w-[72px] font-semibold rounded-tl-xl">Code</th>
+                            <th className="px-3 py-3 min-w-[140px] font-semibold">Item Name</th>
+                            <th className="px-3 py-3 min-w-[90px] font-semibold">Category</th>
+                            <th className="px-3 py-3 min-w-[90px] font-semibold">Subcategory</th>
+                            <th className="px-3 py-3 min-w-[80px] font-semibold text-right">Opening</th>
+                            <th className="px-3 py-3 min-w-[80px] font-semibold text-right text-emerald-200">Received</th>
+                            <th className="px-3 py-3 min-w-[90px] font-semibold text-right text-emerald-200">Rcvd Amt</th>
+                            <th className="px-3 py-3 min-w-[80px] font-semibold text-right text-rose-200">Issued</th>
+                            <th className="px-3 py-3 min-w-[90px] font-semibold text-right text-rose-200">Iss Amt</th>
+                            <th className="px-3 py-3 min-w-[80px] font-semibold text-right text-blue-200">Remaining</th>
+                            <th className="px-3 py-3 min-w-[90px] font-semibold text-right text-blue-200 rounded-tr-xl">Rem Amt</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {(itemLedgerReport.groups).map((group, idx) => {
+                            const rows = group.rows || [];
+                            const totalReceived = rows.reduce((s, r) => s + Number(r.receivedQuantity || 0), 0);
+                            const totalReceivedAmt = rows.reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
+                            const totalIssued = rows.reduce((s, r) => s + Number(r.issuanceQuantity || 0), 0);
+                            const totalIssuedAmt = rows.reduce((s, r) => s + Number(r.issuanceAmount || 0), 0);
+                            const lastRow = rows[rows.length - 1];
+                            const remainingQty = lastRow ? Number(lastRow.remainingQuantity || 0) : Number(group.openingBalance || 0) + totalReceived - totalIssued;
+                            const remainingAmt = lastRow ? Number(lastRow.remainingAmount || 0) : 0;
+                            return (
+                              <tr key={group.itemId} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
+                                <td className="px-3 py-2.5 font-mono text-slate-500">{group.itemCode}</td>
+                                <td className="px-3 py-2.5 font-semibold text-slate-800">{group.itemName}</td>
+                                <td className="px-3 py-2.5 text-slate-600">{group.category}</td>
+                                <td className="px-3 py-2.5 text-slate-600">{group.subcategory}</td>
+                                <td className="px-3 py-2.5 text-right text-slate-700">{Number(group.openingBalance || 0).toFixed(2)}</td>
+                                <td className="px-3 py-2.5 text-right font-medium text-emerald-600">{totalReceived.toFixed(2)}</td>
+                                <td className="px-3 py-2.5 text-right text-emerald-600">{totalReceivedAmt.toFixed(2)}</td>
+                                <td className="px-3 py-2.5 text-right font-semibold text-rose-500">{totalIssued.toFixed(2)}</td>
+                                <td className="px-3 py-2.5 text-right text-rose-500">{totalIssuedAmt.toFixed(2)}</td>
+                                <td className="px-3 py-2.5 text-right font-bold text-blue-600">{remainingQty.toFixed(2)}</td>
+                                <td className="px-3 py-2.5 text-right font-semibold text-blue-600">{remainingAmt.toFixed(2)}</td>
                               </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {(group.rows || []).map((row) => (
-                                <tr key={row.key} className="hover:bg-slate-50">
-                                  <td className="px-4 py-3 text-xs">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                                  <td className="px-4 py-3 text-xs">{row.itemCode}</td>
-                                  <td className="px-4 py-3 font-medium text-slate-800 text-xs">{row.itemName}</td>
-                                  <td className="px-4 py-3 text-xs">{row.category}</td>
-                                  <td className="px-4 py-3 text-xs">{row.subcategory}</td>
-                                  <td className="px-4 py-3 text-emerald-700 text-xs">{Number(row.receivedQuantity || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-xs">{Number(row.receivedRate || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-emerald-700 text-xs">{Number(row.receivedAmount || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-rose-700 font-semibold text-xs">{Number(row.issuanceQuantity || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-rose-700 text-xs">{Number(row.issuanceAmount || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-xs text-rose-700">{row.issuanceBreakdown || '-'}</td>
-                                  <td className="px-4 py-3 text-blue-700 font-bold text-xs">{Number(row.remainingQuantity || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-blue-700 font-semibold text-xs">{Number(row.remainingAmount || 0).toFixed(2)}</td>
-                                  <td className="px-4 py-3 text-xs text-blue-700">{row.remainingBreakdown || '-'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    /* ── Detail View ── */
+                    <div className="space-y-4">
+                      {(itemLedgerReport?.groups || []).map((group) => {
+                        const rows = group.rows || [];
+                        const totalRcvd = rows.reduce((s, r) => s + Number(r.receivedQuantity || 0), 0);
+                        const totalIss = rows.reduce((s, r) => s + Number(r.issuanceQuantity || 0), 0);
+                        const lastRow = rows[rows.length - 1];
+                        const closingQty = lastRow ? Number(lastRow.remainingQuantity || 0) : Number(group.openingBalance || 0) + totalRcvd - totalIss;
+                        return (
+                          <div key={group.itemId} className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                            {/* Item header */}
+                            <div className="px-4 py-3 bg-gradient-to-r from-slate-700 to-slate-600 flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="font-semibold text-white text-sm">{group.itemName}</p>
+                                <p className="text-xs text-slate-300 mt-0.5">{group.itemCode} · {group.category} / {group.subcategory}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-3 text-xs">
+                                <span className="bg-white/10 text-white rounded-lg px-2.5 py-1">Opening: <strong>{Number(group.openingBalance || 0).toFixed(2)} {group.baseUnit}</strong></span>
+                                <span className="bg-emerald-500/20 text-emerald-200 rounded-lg px-2.5 py-1">Received: <strong>{totalRcvd.toFixed(2)}</strong></span>
+                                <span className="bg-rose-500/20 text-rose-200 rounded-lg px-2.5 py-1">Issued: <strong>{totalIss.toFixed(2)}</strong></span>
+                                <span className="bg-blue-500/20 text-blue-200 rounded-lg px-2.5 py-1">Closing: <strong>{closingQty.toFixed(2)}</strong></span>
+                              </div>
+                            </div>
+                            {rows.length === 0 ? (
+                              <div className="px-4 py-6 text-center text-sm text-slate-400 bg-white">No transactions in selected date range — opening stock only.</div>
+                            ) : (
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse text-xs">
+                                  <thead>
+                                    <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide">Date</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide">Source</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide">Ref No</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-slate-600">Department</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-emerald-600 min-w-[72px]">Rcvd Qty</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-emerald-600 min-w-[60px]">Rate</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-emerald-600 min-w-[80px]">Rcvd Amt</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-rose-500 min-w-[72px]">Iss Qty</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-rose-500 min-w-[80px]">Iss Amt</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-blue-600 min-w-[72px]">Rem Qty</th>
+                                      <th className="px-3 py-2 font-semibold uppercase tracking-wide text-right text-blue-600 min-w-[80px]">Rem Amt</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {rows.map((row, ridx) => {
+                                      const isReceipt = Number(row.receivedQuantity || 0) > 0;
+                                      const isIssue = Number(row.issuanceQuantity || 0) > 0;
+                                      return (
+                                        <tr key={row.key} className={`${ridx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'} hover:bg-blue-50/50 transition-colors`}>
+                                          <td className="px-3 py-2 text-slate-600">{row.date ? new Date(row.date).toLocaleDateString('en-PK') : '—'}</td>
+                                          <td className="px-3 py-2">
+                                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${isReceipt ? 'bg-emerald-50 text-emerald-700' : isIssue ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
+                                              {row.sourceType || '—'}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 font-mono text-slate-500">{row.referenceNo || '—'}</td>
+                                          <td className="px-3 py-2 text-slate-600">{row.departmentName || <span className="text-slate-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-right font-medium text-emerald-600">{isReceipt ? Number(row.receivedQuantity).toFixed(2) : <span className="text-slate-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-right text-slate-600">{isReceipt ? Number(row.receivedRate || 0).toFixed(2) : <span className="text-slate-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-right text-emerald-600">{isReceipt ? Number(row.receivedAmount || 0).toFixed(2) : <span className="text-slate-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-right font-semibold text-rose-500">{isIssue ? Number(row.issuanceQuantity).toFixed(2) : <span className="text-slate-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-right text-rose-500">{isIssue ? Number(row.issuanceAmount || 0).toFixed(2) : <span className="text-slate-300">—</span>}</td>
+                                          <td className="px-3 py-2 text-right font-bold text-blue-600">{Number(row.remainingQuantity || 0).toFixed(2)}</td>
+                                          <td className="px-3 py-2 text-right font-semibold text-blue-600">{Number(row.remainingAmount || 0).toFixed(2)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )
                 ) : (
-                  <div className="text-center text-slate-400 py-10">No item ledger entries found for selected filters.</div>
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+                      <BarChart3 size={22} className="text-slate-400" />
+                    </div>
+                    <p className="text-sm font-medium text-slate-500">No ledger entries found</p>
+                    <p className="text-xs mt-1">Adjust filters and click Apply Filters</p>
+                  </div>
                 )}
                 </>)}
               </div>
@@ -2132,6 +2172,7 @@ export default function InventoryReports() {
                   </label>
                 </div>
 
+                {false && (<>
                 {receivingRows.length > 0 ? (
                   receivingSummary ? (
                     <div className="overflow-x-auto">
@@ -2235,6 +2276,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No receiving entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Issuance Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2365,6 +2407,7 @@ export default function InventoryReports() {
                   </label>
                 </div>
 
+                {false && (<>
                 {issuanceRows.length > 0 ? (
                   issuanceSummary ? (
                     <div className="overflow-x-auto">
@@ -2442,6 +2485,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No issuance entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Short Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2552,6 +2596,7 @@ export default function InventoryReports() {
                   <Button size="sm" variant="outline" label="Reset" onClick={resetShortExpiryFilters} />
                 </div>
 
+                {false && (<>
                 {shortExpiryRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
@@ -2582,6 +2627,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No short-expiry entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Expiry' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2653,6 +2699,7 @@ export default function InventoryReports() {
                   <Button size="sm" variant="outline" label="Reset" onClick={resetExpiryFilters} />
                 </div>
 
+                {false && (<>
                 {expiryRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
@@ -2687,6 +2734,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No expired items found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Discard Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2767,6 +2815,7 @@ export default function InventoryReports() {
                   <Button size="sm" variant="outline" label="Reset" onClick={resetDiscardFilters} />
                 </div>
 
+                {false && (<>
                 {discardRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
@@ -2799,6 +2848,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No discard entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Repairing Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -2892,6 +2942,7 @@ export default function InventoryReports() {
                   <Button size="sm" variant="outline" label="Reset" onClick={resetRepairingFilters} />
                 </div>
 
+                {false && (<>
                 {repairingRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
@@ -2948,6 +2999,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No repairing entries found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Daily Sales' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3022,6 +3074,7 @@ export default function InventoryReports() {
                   </label>
                 </div>
 
+                {false && (<>
                 {/* Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <Card className="p-3">
@@ -3141,6 +3194,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No sales found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Supplier Ledger' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3219,6 +3273,7 @@ export default function InventoryReports() {
                   <Button size="sm" variant="outline" label="Reset" onClick={resetSupplierLedgerFilters} />
                 </div>
 
+                {false && (<>
                 {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Card className="p-3">
@@ -3303,6 +3358,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No GRN records found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Item List' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3378,6 +3434,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setItemListFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
                 </div>
+                {false && (<>
                 {reportRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -3417,6 +3474,7 @@ export default function InventoryReports() {
                     </div>
                   </div>
                 )}
+                </>)}
               </div>
             ) : effectiveReport === 'Purchase Order Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3496,6 +3554,7 @@ export default function InventoryReports() {
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setPoFilters({ status: '', supplierId: '', itemId: '', dateFrom: '', dateTo: '', assetType: '' })} />
                 </div>
 
+                {false && (<>
                 {poRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-sm">
@@ -3544,6 +3603,7 @@ export default function InventoryReports() {
                 ) : (
                   <div className="text-center text-slate-400 py-10">No purchase orders found for selected filters.</div>
                 )}
+                </>)}
               </div>
             ) : (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3619,6 +3679,7 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
                   <Button size="sm" variant="outline" label="Reset" onClick={() => setReorderFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
                 </div>
+                {false && (<>
                 {reportRows.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
@@ -3654,6 +3715,7 @@ export default function InventoryReports() {
                     </div>
                   </div>
                 )}
+                </>)}
               </div>
             )}
           </Card>

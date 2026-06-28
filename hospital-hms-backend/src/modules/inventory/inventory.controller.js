@@ -756,7 +756,7 @@ async function listSupplierLedgerReport(req, res, next) {
 
 async function listItemLedgerReport(req, res, next) {
   try {
-    const { itemId, categoryId, subcategoryId, dateFrom, dateTo } = req.query || {};
+    const { itemId, categoryId, subcategoryId, dateFrom, dateTo, departmentId } = req.query || {};
 
     if (itemId !== undefined && itemId !== '' && !isNumericId(itemId)) {
       return fail(res, 400, 'Invalid itemId');
@@ -976,7 +976,17 @@ module.exports = {
   updateAssetInstance,
   listUnreadGdNotifications,
   markGdNotificationsRead,
+  resyncAllItemCurrentStock,
 };
+
+async function resyncAllItemCurrentStock(req, res, next) {
+  try {
+    const result = await service.resyncAllItemCurrentStock();
+    return success(res, result, `Re-synced currentStock for ${result.synced} items`);
+  } catch (err) {
+    next(err);
+  }
+}
 
 async function listAssetInstances(req, res, next) {
   try {

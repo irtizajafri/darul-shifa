@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
+import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Plus, Printer, Search, Trash2, X } from 'lucide-react';
@@ -151,6 +152,7 @@ export default function PurchaseOrder() {
     items: [],
   });
   const [draftLine, setDraftLine] = useState(createEmptyPoLine());
+  const createFormRef = useRef(null);
 
   const {
     loading,
@@ -281,6 +283,18 @@ export default function PurchaseOrder() {
     onCtrlP: () => handleCreatePO(fakeEvent, true),
   });
 
+  useModalKeys({
+    active: showReprint,
+    onEsc: () => setShowReprint(false),
+  });
+
+  useModalKeys({
+    active: !showCreate && !showReprint,
+    onCtrlN: () => { setShowCreate(true); setShowReprint(false); },
+  });
+
+  useFocusTrap(createFormRef, showCreate);
+
   const applyFilters = async () => {
     try {
       await fetchPurchaseOrders(filters);
@@ -410,7 +424,7 @@ export default function PurchaseOrder() {
 
       {showCreate && (
         <Card className="mb-4">
-          <form onSubmit={handleCreatePO} className="space-y-4">
+          <form ref={createFormRef} onSubmit={handleCreatePO} className="space-y-4">
             {/* Header: Supplier + PO Date + Expected Date */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <SearchableSelect

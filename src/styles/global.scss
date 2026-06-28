@@ -35,3 +35,10 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* L1 — Keyboard focus ring: visible only when navigating with keyboard */
+:focus-visible {
+  outline: 2px solid $primary;
+  outline-offset: 2px;
+  border-radius: 3px;
+}

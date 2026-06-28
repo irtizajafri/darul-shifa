@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
+import useModalKeys from '../../hooks/useModalKeys';
+import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search, X } from 'lucide-react';
@@ -13,6 +15,7 @@ import { useEmployeeStore } from '../../store/useEmployeeStore';
 
 export default function GoodsIssue() {
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const { user } = useAuthStore();
   const canGD  = hasPermission(user, 'inventory', 'gd');
   const canGIN = hasPermission(user, 'inventory', 'gin');
@@ -51,6 +54,10 @@ export default function GoodsIssue() {
   });
 
   const gdItemSearchRef = useRef(null);
+  const gdQtyRefs = useRef({});
+  const gdFormRef = useRef(null);
+  const ginFormRef = useRef(null);
+  const successModalRef = useRef(null);
   const [gdDepartmentId, setGdDepartmentId] = useState('');
   const [gdRequestDate, setGdRequestDate] = useState(new Date().toISOString().slice(0, 10));
   const [gdItemSearch, setGdItemSearch] = useState('');
@@ -102,6 +109,49 @@ export default function GoodsIssue() {
       setShowGDForm(false);
     }
   }, [searchParams, canGIN]);
+
+  useEffect(() => {
+    if (location.state?.openGD && canGD) { setShowGDForm(true); setShowGINForm(false); setShowReprint(false); }
+    if (location.state?.openGIN && canGIN) { setShowGINForm(true); setShowGDForm(false); setShowReprint(false); }
+  }, [location.state, canGD, canGIN]);
+
+  const fakeEvent = { preventDefault: () => {} };
+
+  useModalKeys({
+    active: showGDForm,
+    onEsc: () => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdCommentEnabled(false); setGdComment(''); },
+    onCtrlS: () => handleCreateGD(fakeEvent, false),
+    onCtrlP: () => handleCreateGD(fakeEvent, true),
+  });
+
+  useModalKeys({
+    active: showGINForm,
+    onEsc: () => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); setGinIssuedById(''); setGinIssuedBySearch(''); },
+    onCtrlS: () => handleCreateGIN(fakeEvent, false),
+    onCtrlP: () => handleCreateGIN(fakeEvent, true),
+  });
+
+  useModalKeys({
+    active: showReprint,
+    onEsc: () => setShowReprint(false),
+  });
+
+  useModalKeys({
+    active: !!createdGDHeader,
+    onEsc: () => setCreatedGDHeader(null),
+  });
+
+  useModalKeys({
+    active: !showGDForm && !showGINForm && !showReprint && !createdGDHeader,
+    onCtrlN: () => {
+      if (canGD) { setShowGDForm(true); setShowGINForm(false); setShowReprint(false); }
+      else if (canGIN) { setShowGINForm(true); setShowGDForm(false); setShowReprint(false); }
+    },
+  });
+
+  useFocusTrap(gdFormRef, showGDForm);
+  useFocusTrap(ginFormRef, showGINForm);
+  useFocusTrap(successModalRef, !!createdGDHeader);
 
   const filteredGINRows = useMemo(() => {
     const q = ginQuery.trim().toLowerCase();
@@ -173,8 +223,8 @@ export default function GoodsIssue() {
     }
     setGdSelectedItems((prev) => [...prev, { itemId: item.id, itemName: item.name, itemCode: item.code, quantityRequested: '' }]);
     setGdItemSearch('');
-    setGdItemDropdownOpen(true);
-    setTimeout(() => gdItemSearchRef.current?.focus(), 0);
+    setGdItemDropdownOpen(false);
+    setTimeout(() => gdQtyRefs.current[item.id]?.focus(), 0);
   };
 
   const removeGdItem = (itemId) => setGdSelectedItems((prev) => prev.filter((i) => i.itemId !== itemId));
@@ -314,40 +364,50 @@ export default function GoodsIssue() {
     <div className="p-6">
 
       {createdGDHeader && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-            <div className="bg-green-50 border-b border-green-100 px-6 py-4 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+          <div ref={successModalRef} className="bg-white w-full sm:rounded-xl sm:max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90dvh]">
+
+            {/* Header */}
+            <div className="bg-green-50 border-b border-green-100 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shrink-0">
               <div>
-                <h2 className="text-lg font-bold text-green-800">GD Created Successfully</h2>
-                <p className="text-sm text-green-600 mt-0.5">Code: <span className="font-semibold">{createdGDHeader.code}</span></p>
+                <h2 className="text-base sm:text-lg font-bold text-green-800">GD Created Successfully</h2>
+                <p className="text-xs sm:text-sm text-green-600 mt-0.5">Code: <span className="font-semibold">{createdGDHeader.code}</span></p>
               </div>
-              <span className="text-2xl">✓</span>
+              <span className="text-xl sm:text-2xl">✓</span>
             </div>
-            <div className="px-6 py-4">
-              <div className="flex justify-between text-sm text-slate-500 mb-3">
-                <span>Department: <span className="font-medium text-slate-800">{createdGDHeader.department?.name || '-'}</span></span>
+
+            {/* Meta row */}
+            <div className="px-4 sm:px-6 pt-3 pb-2 shrink-0">
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs sm:text-sm text-slate-500">
+                <span>Dept: <span className="font-medium text-slate-800">{createdGDHeader.department?.name || '-'}</span></span>
                 <span>Date: <span className="font-medium text-slate-800">{new Date(createdGDHeader.requestDate).toLocaleDateString()}</span></span>
               </div>
-              <table className="w-full text-sm border border-slate-200 rounded-md overflow-hidden">
+            </div>
+
+            {/* Items table — scrollable on small screens */}
+            <div className="px-4 sm:px-6 pb-3 overflow-y-auto">
+              <table className="w-full text-xs sm:text-sm border border-slate-200 rounded-md overflow-hidden">
                 <thead>
                   <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
-                    <th className="px-4 py-2 text-left">#</th>
-                    <th className="px-4 py-2 text-left">Item</th>
-                    <th className="px-4 py-2 text-right">Qty</th>
+                    <th className="px-3 sm:px-4 py-2 text-left">#</th>
+                    <th className="px-3 sm:px-4 py-2 text-left">Item</th>
+                    <th className="px-3 sm:px-4 py-2 text-right">Qty</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {(createdGDHeader.gdItems || []).map((item, idx) => (
                     <tr key={item.id}>
-                      <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
-                      <td className="px-4 py-2 font-medium">{item.item?.name || '-'}</td>
-                      <td className="px-4 py-2 text-right">{item.quantityRequested}</td>
+                      <td className="px-3 sm:px-4 py-2 text-slate-400">{idx + 1}</td>
+                      <td className="px-3 sm:px-4 py-2 font-medium">{item.item?.name || '-'}</td>
+                      <td className="px-3 sm:px-4 py-2 text-right">{item.quantityRequested}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+
+            {/* Footer */}
+            <div className="px-4 sm:px-6 py-3 sm:py-4 bg-slate-50 border-t border-slate-100 flex gap-2 justify-end shrink-0">
               <Button label="Print" icon={Printer} onClick={() => printGDDocument(createdGDHeader, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) })} />
               <Button variant="outline" label="Close" onClick={() => setCreatedGDHeader(null)} />
             </div>
@@ -530,7 +590,7 @@ export default function GoodsIssue() {
 
       {canGD && showGDForm && (
         <Card className="mb-4" title="Create Goods Demand (GD)">
-          <form onSubmit={handleCreateGD} className="space-y-4">
+          <form ref={gdFormRef} onSubmit={handleCreateGD} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <select
                 value={gdDepartmentId}
@@ -622,6 +682,13 @@ export default function GoodsIssue() {
                             placeholder="Qty"
                             value={row.quantityRequested}
                             onChange={(e) => updateGdItemQty(row.itemId, e.target.value)}
+                            ref={(el) => { if (el) gdQtyRefs.current[row.itemId] = el; }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                gdItemSearchRef.current?.focus();
+                              }
+                            }}
                             className="px-2 py-1 border border-slate-300 rounded text-sm w-24 focus:outline-none focus:border-blue-500"
                           />
                         </td>
@@ -696,7 +763,7 @@ export default function GoodsIssue() {
 
       {canGIN && showGINForm && (
         <Card className="mb-4" title="Create Goods Issuance (GIN)">
-          <form onSubmit={handleCreateGIN} className="space-y-4">
+          <form ref={ginFormRef} onSubmit={handleCreateGIN} className="space-y-4">
             <div className="flex flex-wrap gap-3 items-end">
               <select
                 value={selectedGDHeaderId}

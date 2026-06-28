@@ -33,19 +33,21 @@ async function backfillOpeningStockMovements() {
 
     if (trueOpening <= 0) continue;
 
-    await prisma.inventoryStockMovement.create({
-      data: {
-        itemId: item.id,
-        movementType: 'OPENING',
-        referenceType: 'OPENING',
-        quantity: trueOpening,
-        unitRate: item.purchasePrice || 0,
-        previousStock: 0,
-        newStock: trueOpening,
-        note: 'Opening stock backfill',
-      },
-    });
-    count++;
+    try {
+      await prisma.inventoryStockMovement.create({
+        data: {
+          itemId: item.id,
+          movementType: 'OPENING',
+          referenceType: 'OPENING',
+          quantity: trueOpening,
+          unitRate: item.purchasePrice || 0,
+          previousStock: 0,
+          newStock: trueOpening,
+          note: 'Opening stock backfill',
+        },
+      });
+      count++;
+    } catch (_) { /* skip duplicate */ }
   }
   console.log(`✅ Opening stock backfill done for ${count} items`);
 }

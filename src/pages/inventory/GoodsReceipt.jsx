@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
+import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { Plus, Printer, Search, X } from 'lucide-react';
@@ -104,6 +105,7 @@ export default function GoodsReceipt() {
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [showReprint, setShowReprint] = useState(false);
+  const createFormRef = useRef(null);
   const [reprintQuery, setReprintQuery] = useState('');
   const [selectedPoCode, setSelectedPoCode] = useState('');
   const [headerReceivedDate, setHeaderReceivedDate] = useState(new Date().toISOString().slice(0, 10));
@@ -273,6 +275,18 @@ export default function GoodsReceipt() {
     onCtrlP: () => handleSaveGRN(true),
   });
 
+  useModalKeys({
+    active: showReprint,
+    onEsc: () => setShowReprint(false),
+  });
+
+  useModalKeys({
+    active: !showCreate && !showReprint,
+    onCtrlN: () => { setShowCreate(true); setShowReprint(false); },
+  });
+
+  useFocusTrap(createFormRef, showCreate);
+
 
 
   return (
@@ -359,7 +373,7 @@ export default function GoodsReceipt() {
 
       {showCreate && (
         <Card className="mb-4">
-          <div className="space-y-4">
+          <div ref={createFormRef} className="space-y-4">
             {/* Header: PO select + Bill Date + Payment Type */}
             <div className="flex flex-wrap gap-3 items-end">
               <div>

@@ -16,10 +16,12 @@ export default function SearchableSelect({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
   const inputRef = useRef(null);
+  const listRef = useRef(null);
 
   const filteredOptions = options.filter((opt) => {
     try {
@@ -33,10 +35,14 @@ export default function SearchableSelect({
   const selectedOption = options.find((opt) => String(getKey(opt)) === String(value));
   const selectedLabel = selectedOption ? getLabel(selectedOption) : '';
 
+  // Reset highlight when search changes
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [searchTerm]);
+
   useEffect(() => {
     if (!isOpen) return;
 
-    // Position dropdown below trigger
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
       setDropdownPos({
@@ -51,8 +57,7 @@ export default function SearchableSelect({
         triggerRef.current && !triggerRef.current.contains(e.target) &&
         dropdownRef.current && !dropdownRef.current.contains(e.target)
       ) {
-        setIsOpen(false);
-        setSearchTerm('');
+        closeDropdown();
       }
     };
 
@@ -61,16 +66,61 @@ export default function SearchableSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (!isOpen || !listRef.current) return;
+    const items = listRef.current.querySelectorAll('[data-option]');
+    items[highlightedIndex]?.scrollIntoView({ block: 'nearest' });
+  }, [highlightedIndex, isOpen]);
+
+  const closeDropdown = () => {
+    setIsOpen(false);
+    setSearchTerm('');
+    setHighlightedIndex(0);
+    triggerRef.current?.querySelector('[tabindex]')?.focus() ?? triggerRef.current?.focus();
+  };
+
   const handleSelectOption = (option) => {
     onChange(String(getKey(option)));
     setIsOpen(false);
     setSearchTerm('');
+    setHighlightedIndex(0);
+    // Return focus to trigger
+    setTimeout(() => triggerRef.current?.querySelector('[role="combobox"]')?.focus(), 0);
   };
 
   const handleClear = (e) => {
     e.stopPropagation();
     onChange('');
     setSearchTerm('');
+  };
+
+  // Trigger: Enter / Space / Arrow Down opens dropdown
+  const handleTriggerKeyDown = (e) => {
+    if (disabled) return;
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      setIsOpen(true);
+    }
+  };
+
+  // Search input: arrows navigate list, Enter selects, ESC closes
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeDropdown();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((i) => Math.min(i + 1, filteredOptions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (filteredOptions[highlightedIndex]) {
+        handleSelectOption(filteredOptions[highlightedIndex]);
+      }
+    }
   };
 
   const dropdown = isOpen && !disabled && createPortal(
@@ -88,24 +138,33 @@ export default function SearchableSelect({
             placeholder="Search..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             className="w-full text-sm focus:outline-none bg-transparent"
           />
         </div>
       </div>
 
-      <div className="max-h-72 overflow-y-auto">
+      <div ref={listRef} className="max-h-72 overflow-y-auto">
         {filteredOptions.length > 0 ? (
-          filteredOptions.map((option) => {
+          filteredOptions.map((option, idx) => {
             const optionKey = getKey(option);
             const isSelected = String(optionKey) === String(value);
+            const isHighlighted = idx === highlightedIndex;
             return (
               <button
                 key={optionKey}
-                onMouseDown={(e) => { e.preventDefault(); handleSelectOption(option); }}
-                className={`w-full text-left px-3 py-2 text-sm transition ${
-                  isSelected ? 'bg-blue-50 text-blue-700 font-medium' : 'hover:bg-slate-50 text-slate-900'
-                }`}
+                data-option
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleSelectOption(option)}
+                onMouseEnter={() => setHighlightedIndex(idx)}
+                className={`w-full text-left px-3 py-2 text-sm transition ${
+                  isSelected
+                    ? 'bg-blue-50 text-blue-700 font-medium'
+                    : isHighlighted
+                    ? 'bg-slate-100 text-slate-900'
+                    : 'text-slate-900'
+                }`}
               >
                 {renderOption ? renderOption(option, isSelected) : getLabel(option)}
               </button>
@@ -139,8 +198,13 @@ export default function SearchableSelect({
   return (
     <div ref={triggerRef} className="relative w-full">
       <div
-        onClick={() => !disabled && setIsOpen(!isOpen)}
-        className={`flex items-center justify-between px-3 py-2 border border-slate-300 rounded-md text-sm cursor-pointer transition ${
+        role="combobox"
+        tabIndex={disabled ? -1 : 0}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        onClick={() => !disabled && setIsOpen((o) => !o)}
+        onKeyDown={handleTriggerKeyDown}
+        className={`flex items-center justify-between px-3 py-2 border border-slate-300 rounded-md text-sm cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500 ${
           disabled ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'bg-white hover:border-slate-400'
         } ${isOpen ? 'border-blue-500 ring-2 ring-blue-200' : ''}`}
       >
@@ -153,7 +217,12 @@ export default function SearchableSelect({
         )}
         <div className="flex items-center gap-1">
           {value && (
-            <button onClick={handleClear} className="p-0.5 hover:bg-slate-200 rounded" type="button">
+            <button
+              onClick={handleClear}
+              className="p-0.5 hover:bg-slate-200 rounded"
+              type="button"
+              tabIndex={-1}
+            >
               <X size={16} className="text-slate-500" />
             </button>
           )}

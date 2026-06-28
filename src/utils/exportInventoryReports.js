@@ -221,11 +221,12 @@ export function exportItemLedgerPdf({
     });
 
   } else {
-    // 17 columns — use compressed font + shortened multi-line headers
+    // 18 columns (added Department) — use compressed font + shortened multi-line headers
     const keys = [
       'Date', 'Item Code', 'Item Name', 'Category', 'Subcategory',
       'Received Qty', 'Received Rate', 'Received Amount',
       'Issuance Qty', 'Issuance Amount', 'Issuance Breakdown',
+      'Department',
       'Remaining Qty', 'Remaining Amount', 'Remaining Breakdown',
       'Unit', 'Source', 'Reference',
     ];
@@ -233,6 +234,7 @@ export function exportItemLedgerPdf({
       'Date', 'Code', 'Item Name', 'Category', 'Subcategory',
       'Rcvd\nQty', 'Rate', 'Rcvd\nAmt',
       'Iss\nQty', 'Iss\nAmt', 'Iss\nBrkdwn',
+      'Dept',
       'Rem\nQty', 'Rem\nAmt', 'Rem\nBrkdwn',
       'Unit', 'Source', 'Ref No',
     ];
@@ -242,28 +244,29 @@ export function exportItemLedgerPdf({
       startY,
       head: [displayHeaders],
       body,
-      styles: { fontSize: 6.5, cellPadding: 2.5, overflow: 'linebreak' },
-      headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize: 6.5 },
+      styles: { fontSize: 6, cellPadding: 2, overflow: 'linebreak' },
+      headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize: 6 },
       columnStyles: {
-        0: { cellWidth: 58 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 78 },
-        3: { cellWidth: 54 },
-        4: { cellWidth: 54 },
-        5: { cellWidth: 32, halign: 'right' },
-        6: { cellWidth: 36, halign: 'right' },
-        7: { cellWidth: 44, halign: 'right' },
-        8: { cellWidth: 32, halign: 'right' },
-        9: { cellWidth: 44, halign: 'right' },
-        10: { cellWidth: 55 },
-        11: { cellWidth: 32, halign: 'right' },
-        12: { cellWidth: 44, halign: 'right' },
-        13: { cellWidth: 55 },
-        14: { cellWidth: 28 },
-        15: { cellWidth: 38 },
-        16: { cellWidth: 'auto' },
+        0: { cellWidth: 52 },
+        1: { cellWidth: 36 },
+        2: { cellWidth: 70 },
+        3: { cellWidth: 48 },
+        4: { cellWidth: 48 },
+        5: { cellWidth: 28, halign: 'right' },
+        6: { cellWidth: 30, halign: 'right' },
+        7: { cellWidth: 38, halign: 'right' },
+        8: { cellWidth: 28, halign: 'right' },
+        9: { cellWidth: 38, halign: 'right' },
+        10: { cellWidth: 44 },
+        11: { cellWidth: 44 },
+        12: { cellWidth: 28, halign: 'right' },
+        13: { cellWidth: 38, halign: 'right' },
+        14: { cellWidth: 44 },
+        15: { cellWidth: 24 },
+        16: { cellWidth: 32 },
+        17: { cellWidth: 'auto' },
       },
-      margin: { left: 24, right: 24 },
+      margin: { left: 20, right: 20 },
       didDrawPage: () => drawFooter(),
     });
   }

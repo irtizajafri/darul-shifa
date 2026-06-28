@@ -2039,6 +2039,10 @@ async function updateItem(itemId, payload) {
   const oldOpeningQty = existingOpeningMovement ? Number(existingOpeningMovement.quantity || 0) : 0;
   const openingDelta = newOpeningQty - oldOpeningQty;
 
+  if (openingDelta !== 0 && existingOpeningMovement) {
+    throw new Error('Opening stock cannot be changed once it has already been set');
+  }
+
   const updated = await prisma.inventoryItem.update({
     where: { id },
     data: {
@@ -2072,7 +2076,7 @@ async function updateItem(itemId, payload) {
     if (existingOpeningMovement) {
       await prisma.inventoryStockMovement.delete({ where: { id: existingOpeningMovement.id } });
     }
-    if (newOpeningQty > 0) {
+    if (newOpeningQty !== null && newOpeningQty > 0) {
       await prisma.inventoryStockMovement.create({
         data: {
           itemId: id,
@@ -2599,10 +2603,11 @@ function formatRemainingBreakdown(lots) {
     .join(' + ');
 }
 
-async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subcategoryId, assetType }) {
+async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subcategoryId, assetType, departmentId }) {
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const parsedDepartmentId = parsePositiveNumber(departmentId);
 
   const fromDate = toStartOfDay(dateFrom);
   const toDate = toEndOfDay(dateTo);
@@ -2679,13 +2684,14 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
     ginRefs.length
       ? prisma.inventoryGIN.findMany({
           where: { code: { in: ginRefs } },
-          select: { code: true, issueDate: true },
+          select: { code: true, issueDate: true, departmentId: true, department: { select: { name: true } } },
         })
       : Promise.resolve([]),
   ]);
 
   const grnDateByCode = new Map(grns.map((row) => [row.code, row.receivedDate]));
   const ginDateByCode = new Map(gins.map((row) => [row.code, row.issueDate]));
+  const ginDeptByCode = new Map(gins.map((row) => [row.code, { id: row.departmentId, name: row.department?.name || null }]));
 
   const normalizedMovements = stockMovements
     .map((movement) => {
@@ -2819,6 +2825,12 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
       sourceType: movement.referenceType || movement.movementType,
       referenceNo: movement.referenceId || '-',
       note: movement.note || null,
+      departmentName: (!isInbound && movement.referenceType === 'GIN' && movement.referenceId)
+        ? (ginDeptByCode.get(movement.referenceId)?.name || null)
+        : null,
+      departmentId: (!isInbound && movement.referenceType === 'GIN' && movement.referenceId)
+        ? (ginDeptByCode.get(movement.referenceId)?.id || null)
+        : null,
     });
   });
 
@@ -2884,7 +2896,19 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
     };
   });
 
-  const summary = groups.reduce((acc, group) => {
+  const filteredGroups = parsedDepartmentId
+    ? groups
+        .map((group) => {
+          const deptRows = group.rows.filter((row) => row.departmentId === parsedDepartmentId);
+          if (deptRows.length === 0) return null;
+          const totalIssued = deptRows.reduce((sum, r) => sum + (Number(r.issuanceQuantity) || 0), 0);
+          const totalIssuedAmount = deptRows.reduce((sum, r) => sum + (Number(r.issuanceAmount) || 0), 0);
+          return { ...group, rows: deptRows, totalReceived: 0, totalReceivedAmount: 0, totalIssued, totalIssuedAmount };
+        })
+        .filter(Boolean)
+    : groups;
+
+  const summary = filteredGroups.reduce((acc, group) => {
     acc.itemCount += 1;
     acc.openingBalance += Number(group.openingBalance || 0);
     acc.totalReceived += Number(group.totalReceived || 0);
@@ -2909,7 +2933,7 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
 
   return {
     rows,
-    groups,
+    groups: filteredGroups,
     summary,
   };
 }
@@ -3392,6 +3416,29 @@ async function markGdNotificationsRead(ids) {
   }
 }
 
+async function resyncAllItemCurrentStock() {
+  const items = await prisma.inventoryItem.findMany({ select: { id: true } });
+
+  for (const item of items) {
+    const movements = await prisma.inventoryStockMovement.findMany({
+      where: { itemId: item.id },
+      select: { movementType: true, quantity: true, previousStock: true, newStock: true },
+    });
+
+    let stock = 0;
+    for (const m of movements) {
+      stock += resolveMovementDelta(m);
+    }
+
+    await prisma.inventoryItem.update({
+      where: { id: item.id },
+      data: { currentStock: Math.max(0, stock) },
+    });
+  }
+
+  return { synced: items.length };
+}
+
 module.exports = {
   listCategories,
   createCategory,
@@ -3452,6 +3499,7 @@ module.exports = {
   updateAssetInstance,
   listUnreadGdNotifications,
   markGdNotificationsRead,
+  resyncAllItemCurrentStock,
 };
 
 async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {
