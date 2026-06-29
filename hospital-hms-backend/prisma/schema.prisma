@@ -272,6 +272,7 @@ model InventoryItem {
   purchaseDate   DateTime?
   warrantyUntil  DateTime?
   usefulLifeYears Int?
+  usefulLifeUnit  String?
   assetCondition String?               @default("working")
   bookValue      Float?
 
@@ -1175,4 +1176,62 @@ model AccVoucherExpenseEntry {
   chequeType    String?
   particulars   String?
   createdAt     DateTime          @default(now())
+}
+
+model AccVoucherIncome {
+  id          Int                     @id @default(autoincrement())
+  voucherNo   String                  @unique
+  voucherType String
+  voucherDate DateTime
+  mode        String
+  bankId      Int?
+  entityType  String
+  totalAmount Decimal                 @db.Decimal(12, 2) @default(0)
+  createdAt   DateTime                @default(now())
+  entries     AccVoucherIncomeEntry[]
+}
+
+model AccVoucherIncomeEntry {
+  id                  Int              @id @default(autoincrement())
+  voucherId           Int
+  voucher             AccVoucherIncome @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  incomeCategoryId    Int?
+  incomeCategoryName  String?
+  amount              Decimal          @db.Decimal(12, 2)
+  particulars         String?
+  createdAt           DateTime         @default(now())
+}
+
+model PayslipSnapshot {
+  id        Int      @id @default(autoincrement())
+  empCode   String   @map("emp_code") @db.VarChar(50)
+  month     String   @db.VarChar(2)
+  year      String   @db.VarChar(4)
+  rowsJson  String   @map("rows_json")
+  savedAt   DateTime @default(now()) @map("saved_at")
+  netSalary Decimal? @default(0) @map("net_salary") @db.Decimal(12, 2)
+
+  @@unique([empCode, month, year])
+  @@map("payslip_snapshots")
+}
+
+model AttendanceOverride {
+  id               String   @id
+  empCode          String   @map("emp_code")
+  dateIn           DateTime @map("date_in") @db.Date
+  dateOut          DateTime? @map("date_out") @db.Date
+  timeIn           String?  @map("time_in")
+  timeOut          String?  @map("time_out")
+  status           String   @default("present")
+  manualWrkHrs     Float?   @map("manual_wrk_hrs")
+  manualOvertime   Float?   @map("manual_overtime")
+  manualDeduction  Float?   @map("manual_deduction")
+  manualTotal      Float?   @map("manual_total")
+  waiveDeduction   Boolean  @default(false) @map("waive_deduction")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  isLocked         Boolean  @default(false) @map("is_locked")
+  isManuallyEdited Boolean  @default(false) @map("is_manually_edited")
+
+  @@map("attendance_overrides")
 }

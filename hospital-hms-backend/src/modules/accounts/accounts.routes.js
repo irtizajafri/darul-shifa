@@ -43,6 +43,7 @@ router.post('/cheque-serials', ctrl.createChequeSerial);
 router.delete('/cheque-serials/:id', ctrl.deleteChequeSerial);
 
 router.get('/payee-entries/all', ctrl.getAllPayeeEntries);
+router.get('/supplier-grns', ctrl.getSupplierGRNs);
 router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);
 router.post('/voucher-expense', ctrl.createVoucherExpense);
@@ -51,5 +52,11 @@ router.get('/income-categories', ctrl.getIncomeCategories);
 router.post('/income-categories', ctrl.createIncomeCategory);
 router.put('/income-categories/:id', ctrl.updateIncomeCategory);
 router.delete('/income-categories/:id', ctrl.deleteIncomeCategory);
+
+router.get('/next-voucher-no', ctrl.getNextVoucherNo);
+router.get('/voucher-reprint', ctrl.getVouchersForReprint);
+
+router.get('/voucher-income', ctrl.getVoucherIncomes);
+router.post('/voucher-income', ctrl.createVoucherIncome);
 
 module.exports = router;

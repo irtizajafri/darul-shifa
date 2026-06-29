@@ -1,167 +1,239 @@
 @use '../../../styles/variables' as *;
 
-.voucher-expense {
-  padding: 1.5rem;
+.vex {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: $background;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  position: relative;
 
-  &__header {
+  &__wrap {
     display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 2rem;
+    width: 100%;
+    max-width: 1020px;
+    min-height: 520px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+  }
 
-    h2 { font-size: 1.25rem; font-weight: 700; color: $text-main; margin: 0; }
-    p  { font-size: 0.82rem; color: $text-muted; margin: 0; }
+  // ── Left dark panel ────────────────────────────────────────────────────────
+  &__left {
+    width: 300px;
+    min-width: 300px;
+    background: $dark-blue;
+    display: flex;
+    flex-direction: column;
+    padding: 2rem 1.75rem;
   }
 
   &__back {
-    display: flex;
+    position: absolute;
+    top: 1.5rem;
+    left: 1.5rem;
+    display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.4rem 0.9rem;
     font-size: 0.82rem;
     font-weight: 600;
     color: $text-muted;
-    background: $primary-light;
+    background: #fff;
     border: 1px solid $border;
     border-radius: 8px;
     cursor: pointer;
-    white-space: nowrap;
+    padding: 0.4rem 0.9rem;
     transition: color 0.15s;
     &:hover { color: $primary; }
   }
 
-  &__card {
-    background: #fff;
-    border: 1px solid $border;
-    border-radius: 16px;
-    padding: 2.5rem 2rem;
-    max-width: 520px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+  &__brand {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    align-items: flex-start;
+    gap: 0.4rem;
+    flex: 1;
   }
 
-  &__title {
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: $text-muted;
-    text-transform: uppercase;
-    margin-bottom: 0.25rem;
-  }
-
-  &__row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
-  &__mode-btn {
+  &__brand-icon {
+    width: 52px;
+    height: 52px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 1rem 1.25rem;
-    font-size: 0.82rem;
+    color: #fff;
+    margin-bottom: 0.75rem;
+  }
+
+  &__brand-name {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: 0.01em;
+  }
+
+  &__brand-sub {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.5);
+    font-weight: 500;
+  }
+
+  &__left-footer {
+    border-top: 1px solid rgba(255,255,255,0.1);
+    padding-top: 1.25rem;
+  }
+
+  &__left-label {
+    font-size: 0.68rem;
     font-weight: 700;
-    letter-spacing: 0.04em;
-    border-radius: 10px;
-    border: 2px solid #cbd5e1;
-    background: #f8fafc;
-    color: #334155;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+    margin-bottom: 0.3rem;
+  }
+
+  &__left-type {
+    font-size: 1rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.9);
+  }
+
+  // ── Right white panel ──────────────────────────────────────────────────────
+  &__right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3.5rem 3.5rem;
+    background: #fff;
+  }
+
+  &__title {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: $text-main;
+    margin-bottom: 0.35rem;
+  }
+
+  &__sub {
+    font-size: 0.84rem;
+    color: $text-muted;
+    margin: 0 0 2rem;
+  }
+
+  // ── Method buttons ─────────────────────────────────────────────────────────
+  &__methods {
+    display: flex;
+    gap: 0.85rem;
+    margin-bottom: 1.75rem;
+  }
+
+  &__method {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1.25rem 0.75rem;
+    border: 2px solid $border;
+    border-radius: 14px;
+    background: #fff;
+    color: $text-muted;
+    font-size: 0.75rem;
+    font-weight: 600;
     cursor: pointer;
     transition: all 0.15s;
+    text-align: center;
 
     &:hover {
       border-color: $primary;
-      background: $primary-light;
       color: $primary;
+      background: $primary-light;
     }
 
     &.active {
       border-color: $primary;
       background: $primary;
       color: #fff;
+
+      .vex__method-icon { background: rgba(255,255,255,0.18); color: #fff; }
     }
   }
 
-  &__bank-row {
+  &__method-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: $primary-light;
+    color: $primary;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  // ── Bank select ────────────────────────────────────────────────────────────
+  &__bank {
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
+    margin-bottom: 1.75rem;
+  }
+
+  &__bank-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: $text-muted;
   }
 
   &__bank-select {
     width: 100%;
     padding: 0.75rem 1rem;
-    border: 2px solid #cbd5e1;
+    border: 2px solid $border;
     border-radius: 10px;
     font-size: 0.85rem;
-    font-weight: 600;
-    color: #334155;
-    background: #f8fafc;
-    cursor: pointer;
+    font-weight: 500;
+    color: $text-main;
+    background: #fff;
     outline: none;
+    cursor: pointer;
     transition: border-color 0.15s;
-
     &:focus { border-color: $primary; }
   }
 
-  &__cash-row {
+  // ── Proceed button ─────────────────────────────────────────────────────────
+  &__proceed {
     display: flex;
-    justify-content: center;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.9rem 1rem 0.9rem 1.5rem;
+    background: $primary;
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+
+    &:hover:not(:disabled) { background: #1d4ed8; }
+    &:disabled { opacity: 0.35; cursor: not-allowed; }
   }
 
-  &__cash-btn {
+  &__proceed-arrow {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    padding: 1rem 2.5rem;
-    font-size: 0.82rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    border-radius: 10px;
-    border: 2px solid #cbd5e1;
-    background: #f8fafc;
-    color: #334155;
-    cursor: pointer;
-    transition: all 0.15s;
-    min-width: 220px;
-
-    &:hover {
-      border-color: $primary;
-      background: $primary-light;
-      color: $primary;
-    }
-
-    &.active {
-      border-color: $primary;
-      background: $primary;
-      color: #fff;
-    }
-  }
-
-  &__proceed-row {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 0.5rem;
-    border-top: 1px solid $border;
-  }
-
-  &__proceed-btn {
-    padding: 0.6rem 1.75rem;
-    font-size: 0.85rem;
-    font-weight: 700;
-    background: #22c55e;
-    color: #14532d;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
-
-    &:hover:not(:disabled) { background: #16a34a; color: #fff; }
-    &:disabled { opacity: 0.45; cursor: not-allowed; }
   }
 }

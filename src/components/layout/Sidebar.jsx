@@ -47,6 +47,8 @@ const accountsNavItems = [
   { path: '/accounts-module', label: 'Accounts Dashboard', Icon: LayoutDashboard },
   { path: '/accounts/corporate/parameters', label: 'Corporate — Parameters', Icon: Settings },
   { path: '/accounts/non-corporate/parameters', label: 'Non-Corporate — Parameters', Icon: Settings },
+  { path: '/accounts/corporate/reports', label: 'Corporate — Reports', Icon: BarChart3 },
+  { path: '/accounts/non-corporate/reports', label: 'Non-Corporate — Reports', Icon: BarChart3 },
 ];
 
 const clinicNavItems = [

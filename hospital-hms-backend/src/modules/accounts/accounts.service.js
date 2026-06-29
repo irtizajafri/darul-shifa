@@ -361,6 +361,80 @@ async function deleteIncomeCategory(id) {
   return prisma.accIncomeCategory.delete({ where: { id: Number(id) } });
 }
 
+async function getSupplierGRNs(supplierId) {
+  return prisma.inventoryGRN.findMany({
+    where: { supplierId: Number(supplierId) },
+    include: { item: { select: { name: true } } },
+    orderBy: { receivedDate: 'desc' },
+  });
+}
+
+// ── Voucher Income ────────────────────────────────────────────────────────────
+
+async function generateIncomeVoucherNo(entityType, voucherDate) {
+  const d = new Date(voucherDate);
+  const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  const prefix = `VI-${dateStr}`;
+  const count = await prisma.accVoucherIncome.count({ where: { voucherNo: { startsWith: prefix }, entityType } });
+  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+}
+
+async function createVoucherIncome({ entityType, mode, bankId, voucherDate, entries }) {
+  const voucherType = mode === 'cash' ? 'CASH' : mode === 'card' ? 'CARD' : 'BANK';
+  const voucherNo = await generateIncomeVoucherNo(entityType, voucherDate);
+  const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+  return prisma.accVoucherIncome.create({
+    data: {
+      voucherNo, voucherType,
+      voucherDate: new Date(voucherDate),
+      mode,
+      bankId: bankId ? Number(bankId) : null,
+      entityType, totalAmount,
+      entries: {
+        create: entries.map((e) => ({
+          incomeCategoryId:   e.incomeCategoryId ? Number(e.incomeCategoryId) : null,
+          incomeCategoryName: e.incomeCategoryName || null,
+          amount:             Number(e.amount),
+          particulars:        e.particulars || null,
+        })),
+      },
+    },
+    include: { entries: true },
+  });
+}
+
+async function getVoucherIncomes(entityType) {
+  return prisma.accVoucherIncome.findMany({
+    where: { entityType },
+    include: { entries: true },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function getVouchersForReprint({ type, entityType, voucherFrom, voucherTo, dateFrom, dateTo }) {
+  const where = { entityType };
+  if (voucherFrom || voucherTo) {
+    where.voucherNo = {};
+    if (voucherFrom) where.voucherNo.gte = voucherFrom;
+    if (voucherTo)   where.voucherNo.lte = voucherTo;
+  }
+  if (dateFrom || dateTo) {
+    where.voucherDate = {};
+    if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
+    if (dateTo)   where.voucherDate.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+  }
+  if (type === 'expense') {
+    return prisma.accVoucherExpense.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'asc' } });
+  }
+  return prisma.accVoucherIncome.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'asc' } });
+}
+
+async function getNextVoucherNo(type, entityType, voucherDate) {
+  if (type === 'expense') return generateVoucherNo(entityType, voucherDate);
+  if (type === 'income')  return generateIncomeVoucherNo(entityType, voucherDate);
+  throw new Error('Invalid type');
+}
+
 module.exports = {
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
@@ -372,5 +446,8 @@ module.exports = {
   getChequeSerials, createChequeSerial, deleteChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
-  getPayeeEntriesBySubAccount,
+  getPayeeEntriesBySubAccount, getSupplierGRNs,
+  createVoucherIncome, getVoucherIncomes,
+  getNextVoucherNo,
+  getVouchersForReprint,
 };

@@ -1,20 +1,24 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, FileText, Wifi, Banknote, ArrowRight, Building2 } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import './VoucherExpense.scss';
+
+const METHODS = [
+  { key: 'cheque', label: 'By Cheque',       Icon: FileText  },
+  { key: 'online', label: 'Online Transfer',  Icon: Wifi      },
+  { key: 'cash',   label: 'By Cash',          Icon: Banknote  },
+];
 
 export default function VoucherExpense() {
   const { entityType } = useParams();
   const navigate = useNavigate();
   const { bankAccounts, fetchBankAccounts } = useAccountsStore();
 
-  const [mode, setMode] = useState(null); // 'cheque' | 'online' | 'cash'
+  const [mode, setMode]     = useState(null);
   const [bankId, setBankId] = useState('');
 
-  useEffect(() => {
-    fetchBankAccounts(entityType);
-  }, [entityType]);
+  useEffect(() => { fetchBankAccounts(entityType); }, [entityType]);
 
   const needsBank = mode === 'cheque' || mode === 'online';
 
@@ -27,47 +31,51 @@ export default function VoucherExpense() {
   };
 
   return (
-    <div className="voucher-expense">
-      <div className="voucher-expense__header">
-        <button className="voucher-expense__back" onClick={() => navigate(`/accounts/${entityType}/transactions`)}>
-          <ArrowLeft className="w-4 h-4" /> Back
-        </button>
-        <div>
-          <h2>Voucher Entry — Expense</h2>
-          <p>Select payment method to proceed</p>
+    <div className="vex">
+      <button className="vex__back" onClick={() => navigate(`/accounts/${entityType}/transactions`)}>
+        <ArrowLeft size={15} /> Back
+      </button>
+      <div className="vex__wrap">
+      {/* ── Left panel ── */}
+      <div className="vex__left">
+        <div className="vex__brand">
+          <div className="vex__brand-icon"><Building2 size={28} /></div>
+          <div className="vex__brand-name">Darul Shifa</div>
+          <div className="vex__brand-sub">Accounts Module</div>
+        </div>
+        <div className="vex__left-footer">
+          <div className="vex__left-label">Transaction Type</div>
+          <div className="vex__left-type">Expense Voucher</div>
         </div>
       </div>
 
-      <div className="voucher-expense__card">
-        <div className="voucher-expense__title">SELECT PAYMENT METHOD</div>
+      {/* ── Right panel ── */}
+      <div className="vex__right">
+        <div className="vex__title">Select Payment Method</div>
+        <p className="vex__sub">Choose how this expense will be paid</p>
 
-        {/* Top 2 buttons */}
-        <div className="voucher-expense__row">
-          <button
-            className={`voucher-expense__mode-btn ${mode === 'cheque' ? 'active' : ''}`}
-            onClick={() => { setMode('cheque'); setBankId(''); }}
-          >
-            {mode === 'cheque' && <CheckCircle2 className="w-4 h-4" />}
-            EXPENSE BY CHEQUE
-          </button>
-          <button
-            className={`voucher-expense__mode-btn ${mode === 'online' ? 'active' : ''}`}
-            onClick={() => { setMode('online'); setBankId(''); }}
-          >
-            {mode === 'online' && <CheckCircle2 className="w-4 h-4" />}
-            EXPENSE ONLINE
-          </button>
+        <div className="vex__methods">
+          {METHODS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              className={`vex__method ${mode === key ? 'active' : ''}`}
+              onClick={() => { setMode(key); setBankId(''); }}
+            >
+              <div className="vex__method-icon"><Icon size={22} /></div>
+              <span>{label}</span>
+            </button>
+          ))}
         </div>
 
-        {/* Bank dropdown — shown for cheque / online */}
         {needsBank && (
-          <div className="voucher-expense__bank-row">
+          <div className="vex__bank">
+            <label className="vex__bank-label">Select Bank Account</label>
             <select
               value={bankId}
               onChange={(e) => setBankId(e.target.value)}
-              className="voucher-expense__bank-select"
+              className="vex__bank-select"
             >
-              <option value="">SELECT BANK</option>
+              <option value="">— Choose bank —</option>
               {bankAccounts.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.bankName} — {b.accountNumber}
@@ -77,29 +85,15 @@ export default function VoucherExpense() {
           </div>
         )}
 
-        {/* Cash button */}
-        <div className="voucher-expense__cash-row">
-          <button
-            className={`voucher-expense__cash-btn ${mode === 'cash' ? 'active' : ''}`}
-            onClick={() => { setMode('cash'); setBankId(''); }}
-          >
-            {mode === 'cash' && <CheckCircle2 className="w-4 h-4" />}
-            EXPENSE BY CASH
-          </button>
-        </div>
-
-        {/* Proceed */}
-        {mode && (
-          <div className="voucher-expense__proceed-row">
-            <button
-              className="voucher-expense__proceed-btn"
-              onClick={handleProceed}
-              disabled={needsBank && !bankId}
-            >
-              Proceed →
-            </button>
-          </div>
-        )}
+        <button
+          className="vex__proceed"
+          onClick={handleProceed}
+          disabled={!mode || (needsBank && !bankId)}
+        >
+          <span>Proceed</span>
+          <div className="vex__proceed-arrow"><ArrowRight size={18} /></div>
+        </button>
+      </div>
       </div>
     </div>
   );

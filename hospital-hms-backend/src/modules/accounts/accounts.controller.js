@@ -53,6 +53,26 @@ async function createIncomeCategory(req, res, next) { try { success(res, await s
 async function updateIncomeCategory(req, res, next) { try { success(res, await svc.updateIncomeCategory(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
 async function deleteIncomeCategory(req, res, next) { try { await svc.deleteIncomeCategory(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
+async function getSupplierGRNs(req, res, next) { try { success(res, await svc.getSupplierGRNs(req.query.supplierId)); } catch (e) { next(e); } }
+
+async function createVoucherIncome(req, res, next) { try { success(res, await svc.createVoucherIncome(req.body), 'Voucher saved'); } catch (e) { next(e); } }
+async function getVoucherIncomes(req, res, next) { try { success(res, await svc.getVoucherIncomes(et(req))); } catch (e) { next(e); } }
+
+async function getVouchersForReprint(req, res, next) {
+  try {
+    const { type, entityType, voucherFrom, voucherTo, dateFrom, dateTo } = req.query;
+    success(res, await svc.getVouchersForReprint({ type, entityType, voucherFrom, voucherTo, dateFrom, dateTo }));
+  } catch (e) { next(e); }
+}
+
+async function getNextVoucherNo(req, res, next) {
+  try {
+    const { type, entityType, date } = req.query;
+    const voucherNo = await svc.getNextVoucherNo(type, entityType, date || new Date().toISOString());
+    success(res, { voucherNo });
+  } catch (e) { next(e); }
+}
+
 module.exports = {
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
@@ -64,5 +84,8 @@ module.exports = {
   getChequeSerials, createChequeSerial, deleteChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
-  getPayeeEntriesBySubAccount,
+  getPayeeEntriesBySubAccount, getSupplierGRNs,
+  createVoucherIncome, getVoucherIncomes,
+  getNextVoucherNo,
+  getVouchersForReprint,
 };

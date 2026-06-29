@@ -23,6 +23,10 @@ import IncomeCategory from '../pages/accounts/parameters/IncomeCategory';
 import AccountsTransactions from '../pages/accounts/transactions/AccountsTransactions';
 import VoucherExpense from '../pages/accounts/transactions/VoucherExpense';
 import VoucherExpenseForm from '../pages/accounts/transactions/VoucherExpenseForm';
+import VoucherIncome from '../pages/accounts/transactions/VoucherIncome';
+import VoucherIncomeForm from '../pages/accounts/transactions/VoucherIncomeForm';
+import AccountsReports from '../pages/accounts/reports/AccountsReports';
+import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
@@ -132,6 +136,10 @@ export default function AppRoutes() {
           <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts"><AccountsTransactions /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts"><VoucherExpense /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<PermissionGuard module="accounts"><VoucherExpenseForm /></PermissionGuard>} />
+          <Route path="accounts/:entityType/transactions/voucher-income" element={<PermissionGuard module="accounts"><VoucherIncome /></PermissionGuard>} />
+          <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts"><VoucherIncomeForm /></PermissionGuard>} />
+          <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
+          <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
 
           <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />

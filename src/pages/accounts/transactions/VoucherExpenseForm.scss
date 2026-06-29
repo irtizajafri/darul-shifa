@@ -1,130 +1,212 @@
 @use '../../../styles/variables' as *;
 
 .ve-form {
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  background: #f0f4f8;
+  min-height: 100%;
 
-  &__header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 2rem;
-
-    h2 { font-size: 1.25rem; font-weight: 700; color: $text-main; margin: 0; }
-    p  { font-size: 0.82rem; color: $text-muted; margin: 0; }
-  }
-
-  &__back {
+  // ── Breadcrumb ──────────────────────────────────────────────────────────────
+  &__breadcrumb {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.4rem 0.9rem;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
+    color: #64748b;
+    margin-bottom: 1.1rem;
+  }
+
+  &__bc-sep { color: #cbd5e1; flex-shrink: 0; }
+
+  &__bc-active {
+    font-weight: 700;
+    color: $dark-blue;
+  }
+
+  &__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.79rem;
     font-weight: 600;
-    color: $text-muted;
+    color: $primary;
     background: $primary-light;
-    border: 1px solid $border;
-    border-radius: 8px;
+    border: 1px solid #bfdbfe;
+    border-radius: 7px;
     cursor: pointer;
     white-space: nowrap;
-    transition: color 0.15s;
-    &:hover { color: $primary; }
+    transition: background 0.15s, color 0.15s;
+    &:hover { background: #dbeafe; color: #1d4ed8; }
   }
 
-  &__card {
+  // ── Section card ────────────────────────────────────────────────────────────
+  &__section {
     background: #fff;
-    border: 1px solid $border;
-    border-radius: 16px;
-    padding: 2rem;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    overflow: visible;
+    box-shadow: 0 1px 4px rgba(30, 58, 95, 0.06);
+
+    &--grow { flex: 0 0 52%; margin-bottom: 0; }
+    &--particulars { flex: 1; margin-bottom: 0; }
+  }
+
+  &__section-head {
     display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  &__meta-row {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-end;
-  }
-
-  &__meta-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    min-width: 180px;
-
-    label { font-size: 0.75rem; font-weight: 600; color: $text-muted; text-transform: uppercase; letter-spacing: 0.05em; }
-
-    input, select {
-      padding: 0.6rem 0.9rem;
-      border: 2px solid #cbd5e1;
-      border-radius: 8px;
-      font-size: 0.85rem;
-      color: #334155;
-      background: #f8fafc;
-      outline: none;
-      transition: border-color 0.15s;
-      &:focus { border-color: $primary; }
-    }
-  }
-
-  &__readonly {
-    background: #f1f5f9 !important;
-    color: #64748b !important;
-    cursor: default;
-  }
-
-  &__section-title {
-    font-size: 0.72rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 1.25rem 0.65rem 1rem;
+    font-size: 0.84rem;
     font-weight: 700;
-    letter-spacing: 0.1em;
-    color: $text-muted;
-    text-transform: uppercase;
-    border-bottom: 1px solid $border;
-    padding-bottom: 0.5rem;
+    color: $dark-blue;
+    border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
+    border-radius: 12px 12px 0 0;
+    border-left: 3px solid $primary;
   }
 
-  &__grid-4 {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+  &__section-body {
+    padding: 1.1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
     gap: 1rem;
   }
 
-  &__grid-3 {
+  // ── Horizontal grids ────────────────────────────────────────────────────────
+  &__row-3 {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1.1rem;
   }
 
+  &__row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.1rem;
+  }
+
+  // ── Account allocation (label : select) ─────────────────────────────────────
+  &__alloc-list {
+    padding: 0.25rem 0;
+  }
+
+  &__alloc-row {
+    display: flex;
+    align-items: center;
+    padding: 0.6rem 1.25rem;
+    border-bottom: 1px solid #f1f5f9;
+    gap: 0;
+    transition: background 0.1s;
+    &:last-child { border-bottom: none; }
+    &:hover { background: #fafbff; }
+  }
+
+  &__alloc-label {
+    width: 130px;
+    min-width: 130px;
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: $dark-blue;
+  }
+
+  &__alloc-sep {
+    width: 22px;
+    text-align: center;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: $primary;
+  }
+
+  &__alloc-input {
+    flex: 1;
+    padding: 0.47rem 0.8rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 7px;
+    font-size: 0.83rem;
+    color: #1e293b;
+    background: #f8fafc;
+    outline: none;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+
+    &:focus {
+      border-color: $primary;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    &:disabled { opacity: 0.45; cursor: not-allowed; background: #f1f5f9; }
+  }
+
+  // ── Generic field (label + input/select) ────────────────────────────────────
   &__field {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
 
     label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: $text-muted;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #475569;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
     }
 
     input, select {
-      padding: 0.65rem 0.9rem;
-      border: 2px solid #cbd5e1;
-      border-radius: 8px;
-      font-size: 0.85rem;
-      color: #334155;
+      padding: 0.55rem 0.85rem;
+      border: 1.5px solid #e2e8f0;
+      border-radius: 7px;
+      font-size: 0.83rem;
+      color: #1e293b;
       background: #f8fafc;
       outline: none;
-      transition: border-color 0.15s;
-      &:focus { border-color: $primary; }
-      &:disabled { opacity: 0.5; cursor: not-allowed; }
+      transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+
+      &:focus {
+        border-color: $primary;
+        background: #fff;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+      }
+      &:disabled { opacity: 0.45; cursor: not-allowed; background: #f1f5f9; }
     }
   }
 
+  &__readonly {
+    background: #f1f5f9 !important;
+    color: #64748b !important;
+    cursor: default !important;
+    border-color: #e2e8f0 !important;
+    box-shadow: none !important;
+
+    &--saved {
+      background: #ecfdf5 !important;
+      color: #065f46 !important;
+      border-color: #6ee7b7 !important;
+      font-weight: 700 !important;
+      letter-spacing: 0.03em !important;
+    }
+  }
+
+  &__saved-strip {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    background: #ecfdf5;
+    border: 1px solid #6ee7b7;
+    border-radius: 10px;
+    padding: 0.55rem 1.1rem;
+    width: 100%;
+  }
+
+  &__saved-no {
+    flex: 1;
+    font-size: 0.88rem;
+    color: #065f46;
+    strong { font-size: 0.92rem; letter-spacing: 0.04em; }
+  }
+
   &__head-tag {
-    font-size: 0.68rem;
+    font-size: 0.67rem;
     font-weight: 700;
     background: $primary;
     color: #fff;
@@ -136,22 +218,34 @@
     vertical-align: middle;
   }
 
-  &__payee-picker {
-    position: relative;
+  &__optional {
+    font-weight: 400;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    text-transform: none;
+    letter-spacing: 0;
   }
+
+  // ── Payee picker ────────────────────────────────────────────────────────────
+  &__payee-picker { position: relative; }
 
   &__payee-search {
     width: 100%;
-    padding: 0.65rem 0.9rem;
-    border: 2px solid #cbd5e1;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    color: #334155;
+    padding: 0.55rem 0.85rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 7px;
+    font-size: 0.83rem;
+    color: #1e293b;
     background: #f8fafc;
     outline: none;
-    transition: border-color 0.15s;
     box-sizing: border-box;
-    &:focus { border-color: $primary; }
+    transition: border-color 0.15s, box-shadow 0.15s;
+
+    &:focus {
+      border-color: $primary;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
   }
 
   &__payee-list {
@@ -161,8 +255,8 @@
     background: #fff;
     border: 2px solid $primary;
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-    z-index: 100;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.15);
+    z-index: 200;
     max-height: 200px;
     overflow-y: auto;
   }
@@ -171,19 +265,19 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.55rem 0.9rem;
+    padding: 0.5rem 0.9rem;
     cursor: pointer;
-    font-size: 0.84rem;
+    font-size: 0.83rem;
     color: #334155;
     transition: background 0.1s;
     &:hover { background: $primary-light; }
     &.active { background: $primary; color: #fff; }
-    &:not(:last-child) { border-bottom: 1px solid $border; }
+    &:not(:last-child) { border-bottom: 1px solid #f1f5f9; }
   }
 
   &__payee-code {
     font-family: monospace;
-    font-size: 0.75rem;
+    font-size: 0.74rem;
     color: $primary;
     background: $primary-light;
     padding: 0.1rem 0.35rem;
@@ -191,39 +285,87 @@
     .active & { background: rgba(255,255,255,0.2); color: #fff; }
   }
 
-  &__optional {
-    font-weight: 400;
-    font-size: 0.7rem;
-    color: #94a3b8;
-    text-transform: none;
-    letter-spacing: 0;
+  // ── Dual panels ──────────────────────────────────────────────────────────────
+  &__dual-panels {
+    display: flex;
+    align-items: stretch;
+    gap: 1rem;
+    margin-bottom: 1rem;
   }
 
-  &__add-row {
+  &__section--particulars {
+    flex: 1;
+    margin-bottom: 0;
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+  }
+
+  &__particulars-area {
+    flex: 1;
+    display: block;
+    width: 100%;
+    padding: 1rem 1.1rem;
+    border: none;
+    outline: none;
+    resize: none;
+    min-height: 80px;
+    font-size: 0.83rem;
+    color: #334155;
+    background: #fff;
+    font-family: inherit;
+    line-height: 1.55;
+    box-sizing: border-box;
+    border-radius: 0 0 12px 12px;
+    &::placeholder { color: #b0bfd0; }
+  }
+
+  // ── Action row ──────────────────────────────────────────────────────────────
+  &__action-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.85rem;
   }
 
   &__add-btn {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.6rem 1.4rem;
-    font-size: 0.82rem;
+    padding: 0.55rem 1.35rem;
+    font-size: 0.83rem;
     font-weight: 700;
     background: $primary;
     color: #fff;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    transition: background 0.15s;
-    &:hover { background: darken($primary, 8%); }
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+    transition: background 0.15s, box-shadow 0.15s;
+    &:hover { background: #1d4ed8; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); }
   }
 
+  &__submit-btn {
+    padding: 0.55rem 1.8rem;
+    font-size: 0.83rem;
+    font-weight: 700;
+    background: $success;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+    transition: background 0.15s, box-shadow 0.15s;
+    &:hover:not(:disabled) { background: #059669; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35); }
+    &:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+  }
+
+  // ── Entries table ────────────────────────────────────────────────────────────
   &__table-wrap {
-    overflow-x: auto;
-    border: 1px solid $border;
-    border-radius: 10px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(30, 58, 95, 0.06);
   }
 
   &__table {
@@ -232,30 +374,43 @@
     font-size: 0.82rem;
 
     th {
-      background: #f1f5f9;
-      color: $text-muted;
-      font-size: 0.72rem;
+      background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
+      color: $dark-blue;
+      font-size: 0.71rem;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 0.65rem 0.9rem;
+      padding: 0.7rem 0.9rem;
       text-align: left;
       white-space: nowrap;
+      border-bottom: 2px solid #dbeafe;
     }
 
     td {
       padding: 0.6rem 0.9rem;
-      border-top: 1px solid $border;
+      border-top: 1px solid #f1f5f9;
       color: #334155;
       vertical-align: middle;
     }
 
-    tbody tr:hover { background: #f8fafc; }
+    tbody tr:hover { background: #f8fbff; }
   }
 
-  &__td-code { font-family: monospace; font-size: 0.8rem; color: $primary; }
-  &__td-amount { font-weight: 700; text-align: right; }
-  &__td-cap { text-transform: capitalize; }
+  &__td-code   { font-family: monospace; font-size: 0.8rem; color: $primary; font-weight: 600; }
+  &__td-amount { font-weight: 700; text-align: right; color: $dark-blue; }
+  &__td-cap    { text-transform: capitalize; }
+
+  &__status-badge {
+    display: inline-block;
+    padding: 0.22rem 0.7rem;
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
 
   &__del-btn {
     display: flex;
@@ -272,55 +427,117 @@
   }
 
   &__total-label {
-    font-size: 0.72rem;
+    font-size: 0.71rem;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: $text-muted;
+    color: $dark-blue;
     text-align: right;
-    background: #f8fafc;
+    background: $primary-light;
   }
 
   &__total-amount {
     font-weight: 800;
     font-size: 0.95rem;
-    color: #334155;
-    background: #f8fafc;
+    color: $dark-blue;
+    background: $primary-light;
     text-align: right;
-    border-top: 2px solid $border;
-  }
-
-  &__confirm-row {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 0.5rem;
-    border-top: 1px solid $border;
-  }
-
-  &__confirm-btn {
-    padding: 0.65rem 2rem;
-    font-size: 0.88rem;
-    font-weight: 700;
-    background: #22c55e;
-    color: #14532d;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
-    &:hover:not(:disabled) { background: #16a34a; color: #fff; }
-    &:disabled { opacity: 0.45; cursor: not-allowed; }
+    border-top: 2px solid #bfdbfe;
   }
 }
 
+// ── GRN Modal ─────────────────────────────────────────────────────────────────
+.ve-grn-modal {
+  background: #fff;
+  border-radius: 16px;
+  width: 640px;
+  max-width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+  overflow: hidden;
+
+  &__table-wrap {
+    overflow-y: auto;
+    flex: 1;
+    border-top: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+
+    th {
+      background: $primary-light;
+      color: $dark-blue;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.6rem 0.9rem;
+      text-align: left;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+      border-bottom: 2px solid #bfdbfe;
+    }
+
+    td {
+      padding: 0.55rem 0.9rem;
+      border-top: 1px solid #f1f5f9;
+      color: #334155;
+      vertical-align: middle;
+      cursor: pointer;
+    }
+
+    tbody tr:hover { background: #f8fbff; }
+  }
+
+  &__row--checked td { background: #eff6ff !important; }
+  &__code   { font-family: monospace; font-size: 0.8rem; color: $primary; font-weight: 600; }
+  &__amount { font-weight: 700; text-align: right; color: $dark-blue; }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.25rem;
+    gap: 1rem;
+    background: #fafafa;
+  }
+
+  &__total {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  &__total-val {
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: $success;
+  }
+
+  &__actions { display: flex; gap: 0.6rem; }
+}
+
+// ── Salary Modal ──────────────────────────────────────────────────────────────
 .ve-sal-modal {
   &__backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.45);
+    background: rgba(15, 23, 42, 0.5);
     z-index: 1000;
     display: flex;
     align-items: center;
     justify-content: center;
+    backdrop-filter: blur(2px);
   }
 
   background: #fff;
@@ -336,19 +553,12 @@
     justify-content: space-between;
     padding: 1.25rem 1.5rem 0.75rem;
     border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(90deg, $primary-light 0%, #fff 100%);
+    border-top: 3px solid $primary;
   }
 
-  &__title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: #1e293b;
-  }
-
-  &__sub {
-    font-size: 0.78rem;
-    color: #64748b;
-    margin-top: 0.15rem;
-  }
+  &__title { font-size: 1rem; font-weight: 700; color: $dark-blue; }
+  &__sub   { font-size: 0.78rem; color: #64748b; margin-top: 0.15rem; }
 
   &__close {
     background: none;
@@ -364,12 +574,13 @@
     display: inline-block;
     margin: 1rem 1.5rem 0;
     padding: 0.25rem 0.9rem;
-    background: #eff6ff;
-    color: #2563eb;
+    background: $primary-light;
+    color: $primary;
     font-size: 0.78rem;
     font-weight: 700;
     border-radius: 20px;
     letter-spacing: 0.04em;
+    border: 1px solid #bfdbfe;
   }
 
   &__loading {
@@ -379,11 +590,7 @@
     color: #64748b;
   }
 
-  &__saved-at {
-    padding: 0.6rem 1.5rem 0;
-    font-size: 0.73rem;
-    color: #94a3b8;
-  }
+  &__saved-at { padding: 0.6rem 1.5rem 0; font-size: 0.73rem; color: #94a3b8; }
 
   &__rows {
     padding: 1rem 1.5rem;
@@ -402,17 +609,12 @@
     background: #f8fafc;
     border-radius: 8px;
 
-    &--ded {
-      color: #dc2626;
-      background: #fff5f5;
-    }
-
     &--net {
       font-weight: 800;
       font-size: 0.95rem;
-      color: #16a34a;
-      background: #f0fdf4;
-      border: 2px solid #bbf7d0;
+      color: #065f46;
+      background: #d1fae5;
+      border: 2px solid #6ee7b7;
     }
   }
 
@@ -440,19 +642,21 @@
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     cursor: pointer;
-    &:hover { color: #334155; }
+    &:hover { color: #334155; background: #e2e8f0; }
   }
 
   &__verify {
     padding: 0.5rem 1.4rem;
     font-size: 0.83rem;
     font-weight: 700;
-    color: #14532d;
-    background: #22c55e;
+    color: #fff;
+    background: $success;
     border: none;
     border-radius: 8px;
     cursor: pointer;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
     transition: background 0.15s;
-    &:hover { background: #16a34a; color: #fff; }
+    &:hover { background: #059669; }
+    &:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
   }
 }
