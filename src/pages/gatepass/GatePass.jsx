@@ -60,16 +60,17 @@ export default function GatePass() {
       return code.includes(q) || fullName.includes(q);
     });
   }, [employees, employeeQuery]);
-  const getRosterHours = (employee, issuedAt) => {
-    if (!employee?.dutyRoster || !issuedAt) return 8;
-    const dayIndex = new Date(issuedAt).getDay();
-    const map = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const dayKey = map[dayIndex];
-    const roster = employee.dutyRoster.find((d) => d.day === dayKey);
-    if (roster?.hours) return Number(roster.hours) || 8;
-    if (roster?.timeIn && roster?.timeOut && roster.timeIn !== 'OFF' && roster.timeOut !== 'OFF') {
-      const diff = (new Date(`1970-01-01T${roster.timeOut}`) - new Date(`1970-01-01T${roster.timeIn}`)) / 3600000;
-      return diff > 0 ? diff : 8;
+  const getRosterHours = (employee) => {
+    const rosterDays = employee?.dutyRoster || [];
+    for (const r of rosterDays) {
+      if (r?.hours !== undefined && Number(r.hours) > 0) return Number(r.hours);
+    }
+    for (const r of rosterDays) {
+      if (r?.timeIn && r?.timeOut && r.timeIn !== 'OFF' && r.timeOut !== 'OFF') {
+        const diff = (new Date(`1970-01-01T${r.timeOut}`) - new Date(`1970-01-01T${r.timeIn}`)) / 3600000;
+        const hours = diff > 0 ? diff : diff + 24;
+        if (hours > 0) return hours;
+      }
     }
     return 8;
   };
@@ -79,8 +80,10 @@ export default function GatePass() {
     const allowances = employee.allowances || [];
     const totalAllow = allowances.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
     const monthlyTotal = basicSalary + totalAllow;
-    const perDay = monthlyTotal / 30;
-    const rosterHours = getRosterHours(employee, issuedAt);
+    const date = issuedAt ? new Date(issuedAt) : new Date();
+    const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    const perDay = monthlyTotal / daysInMonth;
+    const rosterHours = getRosterHours(employee);
     return perDay / (rosterHours * 60);
   };
   const getGatepassMinutes = (pass) => {
@@ -529,8 +532,8 @@ export default function GatePass() {
           <Input label="Permission By" {...register('permissionBy', { required: true })} />
           <div className="form-row">
             <Input label="Date" type="date" {...register('date')} />
-            <Input label="Time Out" type="time" {...register('timeOut')} readOnly />
-            <Input label="Time In" type="time" {...register('timeIn')} readOnly />
+            <Input label="Time Out" type="time" {...register('timeOut')} />
+            <Input label="Time In" type="time" {...register('timeIn')} />
           </div>
           <div className="form-group">
             <label>Purpose *</label>

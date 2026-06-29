@@ -1998,9 +1998,10 @@ export default function Reports() {
       pdf.text(`CURRUENT SALARY : ${totalSal.toLocaleString()}`, 40, summaryTopY + 30);
       pdf.text(`CURRUENT OVER TIME : ${overtimeAddition.toLocaleString()}`, 40, summaryTopY + 45);
       pdf.text(`DAILY DED : ${totalDeductions.toLocaleString()}`, 40, summaryTopY + 60);
-      pdf.text(`ADVANCE DED (MONTH) : ${advanceDeduction.toLocaleString()}`, 40, summaryTopY + 75);
-      pdf.text(`LOAN DED (MONTH) : ${loanDeduction.toLocaleString()}`, 40, summaryTopY + 90);
-      pdf.text(`LOAN REMAINING : ${loanRemainingBalance.toLocaleString()}`, 40, summaryTopY + 105);
+      pdf.text(`GATE PASS DED (${gatepassMinutes} mins) : ${gatepassDeduction.toLocaleString()}`, 40, summaryTopY + 75);
+      pdf.text(`ADVANCE DED (MONTH) : ${advanceDeduction.toLocaleString()}`, 40, summaryTopY + 90);
+      pdf.text(`LOAN DED (MONTH) : ${loanDeduction.toLocaleString()}`, 40, summaryTopY + 105);
+      pdf.text(`LOAN REMAINING : ${loanRemainingBalance.toLocaleString()}`, 40, summaryTopY + 120);
       pdf.text(`CURR. MONTH DEDUCTION`, rightColX, summaryTopY, { fontStyle: "bold" });
       pdf.text(`TOTAL : ${totalDeductions.toLocaleString()}`, rightColX, summaryTopY + 15);
       pdf.text(`ADV+LOAN : ${(advanceDeduction + loanDeduction).toLocaleString()}`, rightColX, summaryTopY + 30);
@@ -2024,7 +2025,7 @@ export default function Reports() {
         .join("   |   ");
       const allowanceLine = allowanceLineRaw.length > 130 ? `${allowanceLineRaw.slice(0, 127)}...` : allowanceLineRaw;
 
-  const allowanceLineY = summaryTopY + 118;
+  const allowanceLineY = summaryTopY + 133;
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "bold");
       pdf.text(allowanceLine, 40, allowanceLineY);
@@ -2724,6 +2725,7 @@ export default function Reports() {
                 <div className="totals-grid">
                   <div className="totals-item"><span className="muted">Total Salary</span><strong>PKR {Math.round(calculatedSalaryFromRows).toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Total Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
+                  <div className="totals-item"><span className="muted">Gate Pass Deduction ({gatepassMinutes} mins)</span><strong>PKR {gatepassDeduction.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Advance Deduction (This Month)</span><strong>PKR {advanceDeduction.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Loan Deduction (This Month)</span><strong>PKR {loanDeduction.toLocaleString()}</strong></div>
                   <div className="totals-item"><span className="muted">Loan Remaining</span><strong>PKR {loanRemainingBalance.toLocaleString()}</strong></div>

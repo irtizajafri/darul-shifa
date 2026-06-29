@@ -549,7 +549,7 @@ export default function AdvanceLoan() {
                   <td>{a.employee?.empCode || '-'}</td>
                   <td>{a.employee?.firstName} {a.employee?.lastName}</td>
                   <td>{Number(a.amount).toLocaleString()}</td>
-                  <td>{formatDate(a.createdAt)}</td>
+                  <td>{formatDate(a.issueDate || a.createdAt)}</td>
                   <td>{a.schedule?.length || a.baseSchedule?.length || 0}</td>
                   <td>{getMonthlyDed(a).toLocaleString()}</td>
                   <td>{getPaidTotal(a).toLocaleString()}</td>

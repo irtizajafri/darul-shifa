@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams, useLocation } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
 import useFocusTrap from '../../hooks/useFocusTrap';
@@ -54,6 +55,7 @@ export default function GoodsIssue() {
   });
 
   const gdItemSearchRef = useRef(null);
+  const gdDropdownListRef = useRef(null);
   const gdQtyRefs = useRef({});
   const gdFormRef = useRef(null);
   const ginFormRef = useRef(null);
@@ -63,6 +65,7 @@ export default function GoodsIssue() {
   const [gdItemSearch, setGdItemSearch] = useState('');
   const [gdItemDropdownOpen, setGdItemDropdownOpen] = useState(false);
   const [gdItemHighlightedIndex, setGdItemHighlightedIndex] = useState(-1);
+  const [gdDropdownRect, setGdDropdownRect] = useState(null);
   const [gdSelectedItems, setGdSelectedItems] = useState([]);
   const [gdAdmissionEnabled, setGdAdmissionEnabled] = useState(false);
   const [gdAdmissionNumber, setGdAdmissionNumber] = useState('');
@@ -206,6 +209,13 @@ export default function GoodsIssue() {
       if (el) el.scrollIntoView({ block: 'nearest' });
     }
   }, [ginIssuedByHighlight]);
+
+  useEffect(() => {
+    if (gdDropdownListRef.current && gdItemHighlightedIndex >= 0) {
+      const el = gdDropdownListRef.current.children[gdItemHighlightedIndex];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [gdItemHighlightedIndex]);
 
   const gdItemSearchResults = useMemo(() => {
     const q = gdItemSearch.trim().toLowerCase();
@@ -616,14 +626,14 @@ export default function GoodsIssue() {
 
               <div className="relative">
                 <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     ref={gdItemSearchRef}
                     type="text"
                     placeholder="Search and add item..."
                     value={gdItemSearch}
-                    onChange={(e) => { setGdItemSearch(e.target.value); setGdItemDropdownOpen(true); setGdItemHighlightedIndex(-1); }}
-                    onFocus={() => setGdItemDropdownOpen(true)}
+                    onChange={(e) => { setGdItemSearch(e.target.value); setGdItemDropdownOpen(true); setGdItemHighlightedIndex(-1); if (gdItemSearchRef.current) setGdDropdownRect(gdItemSearchRef.current.getBoundingClientRect()); }}
+                    onFocus={() => { setGdItemDropdownOpen(true); if (gdItemSearchRef.current) setGdDropdownRect(gdItemSearchRef.current.getBoundingClientRect()); }}
                     onBlur={() => setTimeout(() => { setGdItemDropdownOpen(false); setGdItemHighlightedIndex(-1); }, 150)}
                     onKeyDown={(e) => {
                       if (!gdItemDropdownOpen) {
@@ -639,8 +649,20 @@ export default function GoodsIssue() {
                     className="pl-9 pr-4 py-2 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
                   />
                 </div>
-                {gdItemDropdownOpen && gdItemSearchResults.length > 0 && (
-                  <div className="absolute z-20 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-[520px] overflow-y-auto">
+                {gdItemDropdownOpen && gdItemSearchResults.length > 0 && gdDropdownRect && createPortal(
+                  <div
+                    style={{
+                      position: 'fixed',
+                      left: gdDropdownRect.left,
+                      width: gdDropdownRect.width,
+                      zIndex: 9999,
+                      ...(window.innerHeight - gdDropdownRect.bottom < 244
+                        ? { bottom: window.innerHeight - gdDropdownRect.top + 4 }
+                        : { top: gdDropdownRect.bottom + 4 }),
+                    }}
+                    className="bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto"
+                    ref={gdDropdownListRef}
+                  >
                     {gdItemSearchResults.map((item, idx) => (
                       <button
                         key={item.id}
@@ -652,7 +674,8 @@ export default function GoodsIssue() {
                         <span className="text-slate-400 ml-2 text-xs">({item.code})</span>
                       </button>
                     ))}
-                  </div>
+                  </div>,
+                  document.body
                 )}
               </div>
             </div>
@@ -678,7 +701,8 @@ export default function GoodsIssue() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
-                            min="1"
+                            min="0.01"
+                            step="0.01"
                             placeholder="Qty"
                             value={row.quantityRequested}
                             onChange={(e) => updateGdItemQty(row.itemId, e.target.value)}

@@ -1037,7 +1037,10 @@ export default function InventoryReports() {
       const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
       const issuedBy = gin.issuedBy ? `${gin.issuedBy.firstName} ${gin.issuedBy.lastName}` : '-';
       if (gin.ginItems && gin.ginItems.length > 0) {
-        gin.ginItems.forEach((gi, idx) => {
+        const filteredGinItems = issuanceFilters.itemId
+          ? gin.ginItems.filter((gi) => String(gi.itemId) === String(issuanceFilters.itemId))
+          : gin.ginItems;
+        filteredGinItems.forEach((gi, idx) => {
           const qty = Number(gi.issuedQuantity || 0);
           const rate = Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0);
           rows.push({
@@ -1075,7 +1078,7 @@ export default function InventoryReports() {
       }
     }
     return rows;
-  }, [gins]);
+  }, [gins, issuanceFilters.itemId]);
 
   const issuanceExportRows = useMemo(() => {
     return issuanceRows.map((row) => ({
