@@ -200,6 +200,67 @@
   font-size: 0.88rem;
 }
 
+// ── Voucher Card Header ───────────────────────────────────────────────────────
+.vr-vc-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 2px solid $dark-blue;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.vr-vc-title-area { flex: 1; }
+
+.vr-vc-title {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: $dark-blue;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vr-vc-meta-area {
+  text-align: right;
+  font-size: 0.72rem;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.vr-vc-printby { font-weight: 700; color: $dark-blue; }
+.vr-vc-vdate   { color: #475569; }
+.vr-vc-page    { color: #64748b; }
+
+.vr-vc-divider {
+  border-top: 1px solid #e2e8f0;
+  margin: 0.4rem 0 0.7rem;
+}
+
+.vr-vc-info {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.vr-vc-info-item { display: flex; align-items: center; gap: 0.35rem; }
+.vr-vc-info-label { font-weight: 700; color: $dark-blue; }
+.vr-vc-info-val   { color: #334155; }
+
+// ── Two-line cells ────────────────────────────────────────────────────────────
+.vr-cell-top { font-size: 0.8rem; color: $dark-blue; font-weight: 600; }
+.vr-cell-sub { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+
+// ── Amount in words ───────────────────────────────────────────────────────────
+.vr-words {
+  font-size: 0.78rem;
+  font-style: italic;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 0.4rem;
+  margin-bottom: 1.2rem;
+  color: #334155;
+}
+
 // ── Voucher Print Card ────────────────────────────────────────────────────────
 .vr-print-page {
   background: #fff;

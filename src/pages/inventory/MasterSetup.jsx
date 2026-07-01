@@ -287,7 +287,7 @@ export default function MasterSetup() {
         unit: formData.unit,
         reorderLevel: Number(formData.reorderLevel || 0),
         purchasePrice: formData.purchasePrice === '' ? undefined : Number(formData.purchasePrice),
-        currentStock: Number(formData.currentStock || 0),
+        ...(!editingRow && { currentStock: Number(formData.currentStock || 0) }),
         hasExpiry: Boolean(formData.hasExpiry),
         status: formData.status,
         brand: formData.brand || undefined,
@@ -881,14 +881,16 @@ export default function MasterSetup() {
                       className="px-3 py-2 border border-slate-300 rounded-md text-sm"
                     />
 
-                    <input
-                      placeholder="Opening Stock"
-                      type="number"
-                      min="0"
-                      value={formData.currentStock}
-                      onChange={(e) => onFormChange('currentStock', e.target.value)}
-                      className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                    />
+                    {!editingRow && (
+                      <input
+                        placeholder="Opening Stock"
+                        type="number"
+                        min="0"
+                        value={formData.currentStock}
+                        onChange={(e) => onFormChange('currentStock', e.target.value)}
+                        className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                      />
+                    )}
 
                     <label className="flex items-center gap-2 text-sm text-slate-700">
                       <input

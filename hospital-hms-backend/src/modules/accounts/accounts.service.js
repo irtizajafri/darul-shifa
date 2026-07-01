@@ -285,6 +285,35 @@ async function deleteChequeSerial(id) {
   return prisma.accChequeSerial.delete({ where: { id: Number(id) } });
 }
 
+async function getNextChequeSerial(bankAccountId) {
+  const ranges = await prisma.accChequeSerial.findMany({
+    where: { bankAccountId: Number(bankAccountId) },
+    orderBy: { id: 'asc' },
+  });
+  if (ranges.length === 0) return null;
+
+  const lastEntry = await prisma.accVoucherExpenseEntry.findFirst({
+    where: { voucher: { bankId: Number(bankAccountId) }, chequeNo: { not: null } },
+    orderBy: { id: 'desc' },
+    select: { chequeNo: true },
+  });
+
+  if (!lastEntry?.chequeNo) return ranges[0].fromSerial;
+
+  const lastNum = parseInt(lastEntry.chequeNo, 10);
+  if (isNaN(lastNum)) return ranges[0].fromSerial;
+
+  const next = lastNum + 1;
+  for (const range of ranges) {
+    const from = parseInt(range.fromSerial, 10);
+    const to   = parseInt(range.toSerial,   10);
+    if (!isNaN(from) && !isNaN(to) && next >= from && next <= to) {
+      return String(next);
+    }
+  }
+  return String(next);
+}
+
 // ── Income Categories ─────────────────────────────────────────────────────────
 
 // ── Voucher Expense ───────────────────────────────────────────────────────────
@@ -423,9 +452,42 @@ async function getVouchersForReprint({ type, entityType, voucherFrom, voucherTo,
     if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
     if (dateTo)   where.voucherDate.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
   }
+
   if (type === 'expense') {
-    return prisma.accVoucherExpense.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'asc' } });
+    const vouchers = await prisma.accVoucherExpense.findMany({
+      where, include: { entries: true }, orderBy: { voucherNo: 'asc' },
+    });
+
+    const allEntries = vouchers.flatMap((v) => v.entries);
+    const mainGlIds  = [...new Set(allEntries.map((e) => e.mainGlId).filter(Boolean))];
+    const subGlIds   = [...new Set(allEntries.map((e) => e.subGlId).filter(Boolean))];
+    const mainAccIds = [...new Set(allEntries.map((e) => e.mainAccountId).filter(Boolean))];
+    const subAccIds  = [...new Set(allEntries.map((e) => e.subAccountId).filter(Boolean))];
+
+    const [mainGLs, subGLs, mainAccs, subAccs] = await Promise.all([
+      mainGlIds.length  ? prisma.accMainGL.findMany({ where: { id: { in: mainGlIds } } })        : [],
+      subGlIds.length   ? prisma.accSubGL.findMany({ where: { id: { in: subGlIds } } })          : [],
+      mainAccIds.length ? prisma.accMainAccount.findMany({ where: { id: { in: mainAccIds } } })  : [],
+      subAccIds.length  ? prisma.accSubAccount.findMany({ where: { id: { in: subAccIds } } })    : [],
+    ]);
+
+    const mgMap = Object.fromEntries(mainGLs.map((x) => [x.id, x.name]));
+    const sgMap = Object.fromEntries(subGLs.map((x) => [x.id, x.name]));
+    const maMap = Object.fromEntries(mainAccs.map((x) => [x.id, x.name]));
+    const saMap = Object.fromEntries(subAccs.map((x) => [x.id, x.name]));
+
+    return vouchers.map((v) => ({
+      ...v,
+      entries: v.entries.map((e) => ({
+        ...e,
+        mainGlName:      mgMap[e.mainGlId]      || '',
+        subGlName:       sgMap[e.subGlId]       || '',
+        mainAccountName: maMap[e.mainAccountId] || '',
+        subAccountName:  saMap[e.subAccountId]  || '',
+      })),
+    }));
   }
+
   return prisma.accVoucherIncome.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'asc' } });
 }
 
@@ -443,7 +505,7 @@ module.exports = {
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, getEmployeeList, getSupplierList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
-  getChequeSerials, createChequeSerial, deleteChequeSerial,
+  getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
   getPayeeEntriesBySubAccount, getSupplierGRNs,

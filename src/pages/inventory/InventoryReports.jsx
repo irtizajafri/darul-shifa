@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import useModalKeys from '../../hooks/useModalKeys';
 import Card from '../../components/ui/Card';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -140,6 +141,9 @@ export default function InventoryReports() {
     subcategoryId: '',
     assetType: '',
   });
+  const [supplierDropdownOpen, setSupplierDropdownOpen] = useState(false);
+  const [supplierDropdownRect, setSupplierDropdownRect] = useState(null);
+  const supplierSearchRef = useRef(null);
 
   const {
     items,
@@ -3221,15 +3225,49 @@ export default function InventoryReports() {
                       onChange={(e) => updateSupplierLedgerFilter('dateTo', e.target.value)}
                     />
                   </div>
-                  <div>
+                  <div className="relative">
                     <label className="text-xs text-slate-500 block mb-1">Supplier Name</label>
                     <input
+                      ref={supplierSearchRef}
                       type="text"
                       placeholder="Search supplier..."
                       className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
                       value={supplierLedgerFilters.supplierName}
-                      onChange={(e) => updateSupplierLedgerFilter('supplierName', e.target.value)}
+                      onChange={(e) => { updateSupplierLedgerFilter('supplierName', e.target.value); setSupplierDropdownOpen(true); if (supplierSearchRef.current) setSupplierDropdownRect(supplierSearchRef.current.getBoundingClientRect()); }}
+                      onFocus={() => { setSupplierDropdownOpen(true); if (supplierSearchRef.current) setSupplierDropdownRect(supplierSearchRef.current.getBoundingClientRect()); }}
+                      onBlur={() => setTimeout(() => setSupplierDropdownOpen(false), 150)}
                     />
+                    {supplierDropdownOpen && supplierDropdownRect && (() => {
+                      const q = supplierLedgerFilters.supplierName.trim().toLowerCase();
+                      const filtered = (masterOptions?.suppliers || []).filter((s) => !q || s.name.toLowerCase().includes(q)).slice(0, 30);
+                      if (!filtered.length) return null;
+                      return createPortal(
+                        <div
+                          style={{
+                            position: 'fixed',
+                            left: supplierDropdownRect.left,
+                            width: supplierDropdownRect.width,
+                            zIndex: 9999,
+                            ...(window.innerHeight - supplierDropdownRect.bottom < 244
+                              ? { bottom: window.innerHeight - supplierDropdownRect.top + 4 }
+                              : { top: supplierDropdownRect.bottom + 4 }),
+                          }}
+                          className="bg-white border border-slate-200 rounded-md shadow-lg max-h-60 overflow-y-auto"
+                        >
+                          {filtered.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onMouseDown={() => { updateSupplierLedgerFilter('supplierName', s.name); setSupplierDropdownOpen(false); }}
+                              className="w-full text-left px-4 py-2 text-sm border-b border-slate-100 last:border-0 hover:bg-slate-50"
+                            >
+                              {s.name}
+                            </button>
+                          ))}
+                        </div>,
+                        document.body
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>

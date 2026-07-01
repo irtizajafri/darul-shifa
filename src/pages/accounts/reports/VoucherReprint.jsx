@@ -1,31 +1,216 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Printer, Search } from 'lucide-react';
-import hospitalLogo from '../../../assets/download.png';
+import { useAuthStore } from '../../../store/useAuthStore';
 import './VoucherReprint.scss';
 
 const API = 'http://localhost:5001/api/accounts';
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr    = () => new Date().toISOString().slice(0, 10);
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
 
+const fmtDateLong = (d) => {
+  const dt   = new Date(d);
+  const day  = String(dt.getDate()).padStart(2, '0');
+  const mon  = dt.toLocaleString('en-US', { month: 'short' });
+  const year = dt.getFullYear();
+  const wday = dt.toLocaleString('en-US', { weekday: 'long' });
+  const time = dt.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return `${day}-${mon}-${year} ${wday} ${time}`;
+};
+
+const modeLabel = (m) =>
+  m === 'cheque' ? 'Cheque' : m === 'online' ? 'Online Transfer' : 'Cash';
+
+function amountInWords(amount) {
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
+    'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen',
+    'Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+
+  function chunk(n) {
+    if (n === 0) return '';
+    if (n < 20) return ones[n] + ' ';
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '') + ' ';
+    return ones[Math.floor(n / 100)] + ' Hundred ' + chunk(n % 100);
+  }
+
+  const n = Math.round(Number(amount));
+  if (n === 0) return 'Rupees Zero Only';
+  const millions  = Math.floor(n / 1000000);
+  const thousands = Math.floor((n % 1000000) / 1000);
+  const remainder = n % 1000;
+  let r = '';
+  if (millions)  r += chunk(millions).trim()  + ' Million ';
+  if (thousands) r += chunk(thousands).trim() + ' Thousand ';
+  if (remainder) r += chunk(remainder).trim();
+  return 'Rupees ' + r.trim() + ' Only';
+}
+
+const fmt2 = (n) =>
+  Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ── Single voucher card ───────────────────────────────────────────────────────
+function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy }) {
+  const total = Number(v.totalAmount);
+  const title = isExpense ? 'EXPENSE VOUCHER' : 'INCOME VOUCHER';
+
+  return (
+    <div className="vr-print-page">
+
+      {/* ── Header ── */}
+      <div className="vr-vc-header">
+        <div className="vr-vc-title-area">
+          <div className="vr-vc-title">{title}</div>
+        </div>
+        <div className="vr-vc-meta-area">
+          <div className="vr-vc-printby">PRINT BY: {printBy}</div>
+          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.voucherDate)}</div>
+          <div className="vr-vc-page">Page: {pageNum} of {totalPages}</div>
+        </div>
+      </div>
+
+      <div className="vr-vc-divider" />
+
+      {/* ── Voucher info row ── */}
+      <div className="vr-vc-info">
+        <div className="vr-vc-info-item">
+          <span className="vr-vc-info-label">VOUCHER #:</span>
+          <span className="vr-vc-info-val">{v.voucherNo}</span>
+        </div>
+        <div className="vr-vc-info-item">
+          <span className="vr-vc-info-label">METHOD:</span>
+          <span className="vr-vc-info-val">{modeLabel(v.mode)}</span>
+        </div>
+      </div>
+
+      {/* ── Entries table ── */}
+      {isExpense ? (
+        <table className="vr-table">
+          <thead>
+            <tr>
+              <th>GL</th>
+              <th>ACCOUNT</th>
+              <th>PARTICULARS</th>
+              <th>CHQ DT</th>
+              <th>CHQ #</th>
+              <th className="vr-td-r">AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(v.entries || []).map((e) => (
+              <tr key={e.id}>
+                <td>
+                  <div className="vr-cell-top">{e.mainGlName || '—'}</div>
+                  <div className="vr-cell-sub">{e.subGlName  || '—'}</div>
+                </td>
+                <td>
+                  <div className="vr-cell-top">{e.mainAccountName || e.accountName || '—'}</div>
+                  <div className="vr-cell-sub">{e.subAccountName  || e.payeeName   || '—'}</div>
+                </td>
+                <td>{e.particulars || '—'}</td>
+                <td>{e.chequeDate ? fmtDate(e.chequeDate) : '—'}</td>
+                <td>{e.chequeNo   || '—'}</td>
+                <td className="vr-td-r">{fmt2(e.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={5} className="vr-tfoot-label">TOTAL</td>
+              <td className="vr-td-r vr-tfoot-amt">{fmt2(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      ) : (
+        <table className="vr-table">
+          <thead>
+            <tr>
+              <th>INCOME CATEGORY</th>
+              <th>PARTICULARS</th>
+              <th className="vr-td-r">AMOUNT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(v.entries || []).map((e) => (
+              <tr key={e.id}>
+                <td>{e.incomeCategoryName || '—'}</td>
+                <td>{e.particulars        || '—'}</td>
+                <td className="vr-td-r">{fmt2(e.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={2} className="vr-tfoot-label">TOTAL</td>
+              <td className="vr-td-r vr-tfoot-amt">{fmt2(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      )}
+
+      {/* ── Amount in words ── */}
+      <div className="vr-words">{amountInWords(total)}</div>
+
+      {/* ── Signatures ── */}
+      <div className="vr-sigs">
+        <div className="vr-sig">Accountant</div>
+        <div className="vr-sig">Administrator</div>
+        <div className="vr-sig">Receiver's Signature</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Print styles (injected into print window) ─────────────────────────────────
+const PRINT_CSS = `
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:Arial,sans-serif; font-size:11px; color:#000; background:#fff; }
+  .vr-print-page { page-break-after:always; padding:16px 20px; border:1px solid #000; margin:6px; }
+  .vr-print-page:last-child { page-break-after:avoid; }
+  .vr-vc-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:8px; }
+  .vr-vc-title-area { flex:1; }
+  .vr-vc-title { font-size:15px; font-weight:900; letter-spacing:0.05em; text-transform:uppercase; }
+  .vr-vc-meta-area { text-align:right; font-size:9px; line-height:1.7; }
+  .vr-vc-printby { font-weight:700; }
+  .vr-vc-divider { border-top:1px solid #bbb; margin:4px 0 7px; }
+  .vr-vc-info { display:flex; gap:20px; margin-bottom:8px; font-size:10px; }
+  .vr-vc-info-label { font-weight:700; margin-right:4px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:8px; }
+  th,td { border:1px solid #000; padding:4px 6px; font-size:10px; text-align:left; }
+  th { background:#f0f0f0; font-weight:700; text-transform:uppercase; }
+  .vr-td-r { text-align:right !important; }
+  .vr-cell-top { font-size:10px; }
+  .vr-cell-sub { font-size:9px; color:#555; margin-top:1px; }
+  tfoot td { background:#f5f5f5; font-weight:700; }
+  .vr-tfoot-label { text-align:right; font-size:9px; text-transform:uppercase; color:#555; padding-right:8px !important; }
+  .vr-tfoot-amt { font-size:11px; font-weight:800; }
+  .vr-words { font-size:9.5px; font-style:italic; border-top:1px solid #ccc; padding-top:4px; margin-bottom:14px; }
+  .vr-sigs { display:flex; justify-content:space-between; margin-top:22px; padding-top:6px; }
+  .vr-sig { text-align:center; font-size:9px; border-top:1.5px solid #000; padding-top:4px; width:120px; font-weight:600; }
+`;
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function VoucherReprint() {
   const { entityType } = useParams();
   const navigate = useNavigate();
   const printRef = useRef();
+  const { user } = useAuthStore();
+  const printBy  = user?.name || 'System';
 
   const [voucherType, setVoucherType] = useState('expense');
   const [voucherFrom, setVoucherFrom] = useState('');
-  const [voucherTo, setVoucherTo]     = useState('');
-  const [dateFrom, setDateFrom]       = useState(firstOfYear());
-  const [dateTo, setDateTo]           = useState(todayStr());
+  const [voucherTo,   setVoucherTo]   = useState('');
+  const [dateFrom,    setDateFrom]    = useState(firstOfYear());
+  const [dateTo,      setDateTo]      = useState(todayStr());
+  const [vouchers,    setVouchers]    = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [searched,    setSearched]    = useState(false);
 
-  const [vouchers, setVouchers]   = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [searched, setSearched]   = useState(false);
+  const isExpense = voucherType === 'expense';
 
   const handleSearch = async () => {
     setLoading(true);
@@ -51,44 +236,15 @@ export default function VoucherReprint() {
   };
 
   const handlePrint = () => {
-    const printContent = printRef.current?.innerHTML;
+    const content = printRef.current?.innerHTML;
     const win = window.open('', '_blank');
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Voucher Reprint</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; font-size: 12px; color: #000; }
-          .vr-print-page { page-break-after: always; padding: 18px 24px; border: 1px solid #000; margin-bottom: 8px; }
-          .vr-print-page:last-child { page-break-after: avoid; }
-          .vr-ph { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 10px; }
-          .vr-ph img { height: 52px; }
-          .vr-ph-info h1 { font-size: 16px; font-weight: 700; }
-          .vr-ph-info p { font-size: 10px; color: #555; }
-          .vr-meta { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 11px; }
-          .vr-meta-block { display: flex; flex-direction: column; gap: 3px; }
-          .vr-meta-label { font-weight: 700; }
-          .vr-badge { display: inline-block; padding: 2px 8px; border: 1px solid #000; border-radius: 3px; font-size: 10px; font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-          th, td { border: 1px solid #000; padding: 5px 7px; font-size: 11px; text-align: left; }
-          th { background: #f0f0f0; font-weight: 700; }
-          .td-r { text-align: right; }
-          .tfoot-row td { font-weight: 700; background: #f5f5f5; }
-          .vr-sigs { display: flex; justify-content: space-between; margin-top: 18px; border-top: 1px solid #ccc; padding-top: 12px; }
-          .vr-sig { text-align: center; font-size: 10px; border-top: 1px solid #000; padding-top: 4px; width: 130px; }
-        </style>
-      </head>
-      <body>${printContent}</body>
-      </html>
-    `);
+    win.document.write(
+      `<!DOCTYPE html><html><head><title>Voucher Reprint</title><style>${PRINT_CSS}</style></head><body>${content}</body></html>`
+    );
     win.document.close();
     win.focus();
     setTimeout(() => { win.print(); win.close(); }, 400);
   };
-
-  const isExpense = voucherType === 'expense';
 
   return (
     <div className="vr-page">
@@ -104,65 +260,57 @@ export default function VoucherReprint() {
         <span className="vr-bc-active">Voucher Reprint</span>
       </div>
 
-      {/* Filter Card */}
+      {/* Filter card */}
       <div className="vr-filter-card">
         <div className="vr-filter-title">Select Voucher Reprint</div>
 
-        {/* Voucher # row */}
         <div className="vr-filter-row">
           <div className="vr-filter-label">Voucher #</div>
           <div className="vr-filter-fields">
             <div className="vr-range-group">
               <span className="vr-range-tag">From</span>
-              <input
-                className="vr-input"
-                placeholder="e.g. VE-20260629-001"
-                value={voucherFrom}
-                onChange={(e) => setVoucherFrom(e.target.value)}
-              />
+              <input className="vr-input" placeholder="e.g. VE-20260629-001"
+                value={voucherFrom} onChange={(e) => setVoucherFrom(e.target.value)} />
               <Search size={14} className="vr-input-icon" />
             </div>
             <div className="vr-range-group">
               <span className="vr-range-tag">To</span>
-              <input
-                className="vr-input"
-                placeholder="e.g. VE-20260629-999"
-                value={voucherTo}
-                onChange={(e) => setVoucherTo(e.target.value)}
-              />
+              <input className="vr-input" placeholder="e.g. VE-20260629-999"
+                value={voucherTo} onChange={(e) => setVoucherTo(e.target.value)} />
               <Search size={14} className="vr-input-icon" />
             </div>
           </div>
         </div>
 
-        {/* Voucher Date row */}
         <div className="vr-filter-row">
           <div className="vr-filter-label">Voucher Date</div>
           <div className="vr-filter-fields">
             <div className="vr-range-group">
               <span className="vr-range-tag">From</span>
-              <input type="date" className="vr-input" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <input type="date" className="vr-input" value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)} />
             </div>
             <div className="vr-range-group">
               <span className="vr-range-tag">To</span>
-              <input type="date" className="vr-input" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <input type="date" className="vr-input" value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)} />
             </div>
           </div>
         </div>
 
-        {/* Radio row */}
         <div className="vr-radio-row">
           <label className="vr-radio-label">
-            <input type="radio" value="expense" checked={voucherType === 'expense'} onChange={() => setVoucherType('expense')} />
+            <input type="radio" value="expense"
+              checked={voucherType === 'expense'} onChange={() => setVoucherType('expense')} />
             Expense Voucher
           </label>
           <label className="vr-radio-label">
-            <input type="radio" value="income" checked={voucherType === 'income'} onChange={() => setVoucherType('income')} />
+            <input type="radio" value="income"
+              checked={voucherType === 'income'} onChange={() => setVoucherType('income')} />
             Income Voucher
           </label>
         </div>
 
-        {/* Actions */}
         <div className="vr-filter-actions">
           <button className="vr-btn-search" onClick={handleSearch} disabled={loading}>
             {loading ? 'Searching…' : 'Voucher Reprint'}
@@ -182,105 +330,20 @@ export default function VoucherReprint() {
             <div className="vr-no-data">No vouchers found for the selected filters.</div>
           ) : (
             <>
-              <div className="vr-results-count">{vouchers.length} voucher{vouchers.length > 1 ? 's' : ''} found</div>
-
-              {/* Printable area */}
+              <div className="vr-results-count">
+                {vouchers.length} voucher{vouchers.length > 1 ? 's' : ''} found
+              </div>
               <div ref={printRef}>
-                {vouchers.map((v) => (
-                  <div key={v.id} className="vr-print-page">
-                    {/* Header */}
-                    <div className="vr-ph">
-                      <img src={hospitalLogo} alt="logo" className="vr-ph-img" />
-                      <div className="vr-ph-info">
-                        <div className="vr-ph-name">Darul Shifa Hospital</div>
-                        <div className="vr-ph-sub">{entityType === 'corporate' ? 'Corporate Accounts' : 'Non-Corporate Accounts'}</div>
-                      </div>
-                      <div className="vr-ph-type">
-                        <span className="vr-type-badge">
-                          {isExpense ? 'PAYMENT VOUCHER' : 'RECEIPT VOUCHER'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Meta */}
-                    <div className="vr-meta">
-                      <div className="vr-meta-block">
-                        <span className="vr-meta-label">Voucher No</span>
-                        <span className="vr-meta-val">{v.voucherNo}</span>
-                      </div>
-                      <div className="vr-meta-block">
-                        <span className="vr-meta-label">Date</span>
-                        <span className="vr-meta-val">{fmtDate(v.voucherDate)}</span>
-                      </div>
-                      <div className="vr-meta-block">
-                        <span className="vr-meta-label">Mode</span>
-                        <span className="vr-meta-val">{v.mode?.toUpperCase()}</span>
-                      </div>
-                      <div className="vr-meta-block">
-                        <span className="vr-meta-label">Total Amount</span>
-                        <span className="vr-meta-val vr-meta-total">PKR {Number(v.totalAmount).toLocaleString()}</span>
-                      </div>
-                    </div>
-
-                    {/* Entries table */}
-                    <table className="vr-table">
-                      <thead>
-                        <tr>
-                          <th>#</th>
-                          {isExpense ? (
-                            <>
-                              <th>Account Code</th>
-                              <th>Account Name</th>
-                              <th>Payee</th>
-                              {v.entries?.some((e) => e.chequeNo) && <th>Cheque #</th>}
-                            </>
-                          ) : (
-                            <>
-                              <th>Income Account</th>
-                            </>
-                          )}
-                          <th>Particulars</th>
-                          <th className="vr-td-r">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(v.entries || []).map((e, i) => (
-                          <tr key={e.id}>
-                            <td>{i + 1}</td>
-                            {isExpense ? (
-                              <>
-                                <td>{e.accountCode || '—'}</td>
-                                <td>{e.accountName || '—'}</td>
-                                <td>{e.payeeName || '—'}</td>
-                                {v.entries?.some((x) => x.chequeNo) && <td>{e.chequeNo || '—'}</td>}
-                              </>
-                            ) : (
-                              <>
-                                <td>{e.incomeCategoryName || '—'}</td>
-                              </>
-                            )}
-                            <td>{e.particulars || '—'}</td>
-                            <td className="vr-td-r">{Number(e.amount).toLocaleString()}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan={isExpense ? (v.entries?.some((e) => e.chequeNo) ? 5 : 4) : 2} className="vr-tfoot-label">
-                            TOTAL
-                          </td>
-                          <td className="vr-td-r vr-tfoot-amt">PKR {Number(v.totalAmount).toLocaleString()}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-
-                    {/* Signatures */}
-                    <div className="vr-sigs">
-                      <div className="vr-sig">Prepared By</div>
-                      <div className="vr-sig">Verified By</div>
-                      <div className="vr-sig">Approved By</div>
-                    </div>
-                  </div>
+                {vouchers.map((v, idx) => (
+                  <VoucherCard
+                    key={v.id}
+                    v={v}
+                    isExpense={isExpense}
+                    entityType={entityType}
+                    pageNum={idx + 1}
+                    totalPages={vouchers.length}
+                    printBy={printBy}
+                  />
                 ))}
               </div>
             </>

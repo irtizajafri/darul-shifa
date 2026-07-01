@@ -39,6 +39,7 @@ router.put('/bank-accounts/:id', ctrl.updateBankAccount);
 router.delete('/bank-accounts/:id', ctrl.deleteBankAccount);
 
 router.get('/cheque-serials', ctrl.getChequeSerials);
+router.get('/cheque-serials/next', ctrl.getNextChequeSerial);
 router.post('/cheque-serials', ctrl.createChequeSerial);
 router.delete('/cheque-serials/:id', ctrl.deleteChequeSerial);
 

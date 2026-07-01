@@ -1277,10 +1277,18 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
     });
 
     for (const gdItem of header.gdItems) {
-      const qty = itemsMap[gdItem.id] ?? parsePositiveNumber(
-        gdItem.quantityRequested - (gdItem.gins || []).reduce((s, g) => s + (Number(g.issuedQuantity) || 0), 0)
-      );
-      if (!qty || qty <= 0) continue;
+      const userSubmitted = Object.prototype.hasOwnProperty.call(itemsMap, gdItem.id);
+      const qty = userSubmitted
+        ? itemsMap[gdItem.id]
+        : parsePositiveNumber(gdItem.quantityRequested - (gdItem.gins || []).reduce((s, g) => s + (Number(g.issuedQuantity) || 0), 0));
+
+      if (qty === 0 && userSubmitted) {
+        await tx.inventoryGINItem.create({
+          data: { ginId: gin.id, gdItemId: gdItem.id, itemId: gdItem.itemId, issuedQuantity: 0 },
+        });
+        continue;
+      }
+      if (!qty || qty < 0) continue;
 
       const currentItem = await tx.inventoryItem.findUnique({ where: { id: gdItem.itemId } });
       const stock = Number(currentItem?.currentStock || 0);
@@ -2031,13 +2039,14 @@ async function updateItem(itemId, payload) {
 
   const purchasePrice = parsePositiveNumber(payload.purchasePrice) ?? existing.purchasePrice;
 
-  // Handle opening stock change: find existing OPENING movement, compute delta
-  const newOpeningQty = parsePositiveNumber(payload.currentStock, 0) || 0;
-  const existingOpeningMovement = await prisma.inventoryStockMovement.findFirst({
-    where: { itemId: id, referenceType: 'OPENING' },
-  });
+  // Handle opening stock change: skip if currentStock not provided in payload
+  const openingStockProvided = payload.currentStock !== undefined && payload.currentStock !== null;
+  const newOpeningQty = openingStockProvided ? (parsePositiveNumber(payload.currentStock) || 0) : null;
+  const existingOpeningMovement = openingStockProvided
+    ? await prisma.inventoryStockMovement.findFirst({ where: { itemId: id, referenceType: 'OPENING' } })
+    : null;
   const oldOpeningQty = existingOpeningMovement ? Number(existingOpeningMovement.quantity || 0) : 0;
-  const openingDelta = newOpeningQty - oldOpeningQty;
+  const openingDelta = openingStockProvided ? (newOpeningQty - oldOpeningQty) : 0;
 
   if (openingDelta !== 0 && existingOpeningMovement) {
     throw new Error('Opening stock cannot be changed once it has already been set');

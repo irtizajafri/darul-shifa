@@ -42,6 +42,7 @@ async function deleteBankAccount(req, res, next) { try { await svc.deleteBankAcc
 async function getChequeSerials(req, res, next) { try { success(res, await svc.getChequeSerials(et(req), req.query.bankAccountId)); } catch (e) { next(e); } }
 async function createChequeSerial(req, res, next) { try { success(res, await svc.createChequeSerial(req.body), 'created'); } catch (e) { next(e); } }
 async function deleteChequeSerial(req, res, next) { try { await svc.deleteChequeSerial(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+async function getNextChequeSerial(req, res, next) { try { success(res, { nextSerial: await svc.getNextChequeSerial(req.query.bankAccountId) }); } catch (e) { next(e); } }
 
 async function getAllPayeeEntries(req, res, next) { try { success(res, await svc.getAllPayeeEntries(et(req))); } catch (e) { next(e); } }
 async function getPayeeEntriesBySubAccount(req, res, next) { try { success(res, await svc.getPayeeEntriesBySubAccount(req.query.subAccountId, et(req))); } catch (e) { next(e); } }
@@ -81,7 +82,7 @@ module.exports = {
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, getEmployeeList, getSupplierList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
-  getChequeSerials, createChequeSerial, deleteChequeSerial,
+  getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
   getPayeeEntriesBySubAccount, getSupplierGRNs,

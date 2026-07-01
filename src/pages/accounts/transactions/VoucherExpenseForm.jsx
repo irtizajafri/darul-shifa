@@ -48,7 +48,18 @@ export default function VoucherExpenseForm() {
   const [grnLoading, setGrnLoading]     = useState(false);
   const [checkedGrns, setCheckedGrns]   = useState({});
 
+  const [bankAccounts, setBankAccounts]   = useState([]);
+  const [selectedBankId, setSelectedBankId] = useState(bankId ? String(bankId) : '');
+  const [cashSerial, setCashSerial]       = useState(1);
+
   useEffect(() => { fetchMainGLs(entityType); }, [entityType]);
+
+  useEffect(() => {
+    if (!isBank) return;
+    fetch(`${API}/bank-accounts?entityType=${entityType}`)
+      .then((r) => r.json())
+      .then((j) => setBankAccounts(Array.isArray(j?.data) ? j.data : []));
+  }, [entityType, isBank]);
 
   const fetchNextVoucherNo = async (d) => {
     try {
@@ -59,6 +70,18 @@ export default function VoucherExpenseForm() {
   };
 
   useEffect(() => { fetchNextVoucherNo(date); }, [date, entityType]);
+
+  const handleBankSelect = (id) => {
+    setSelectedBankId(id);
+    setEntry((e) => ({ ...e, chequeNo: '' }));
+  };
+
+  useEffect(() => {
+    if (!selectedBankId || !isBank) return;
+    fetch(`${API}/cheque-serials/next?bankAccountId=${selectedBankId}`)
+      .then((r) => r.json())
+      .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
+  }, [selectedBankId]);
 
   const handleMainGlChange = async (v) => {
     setEntry((e) => ({ ...e, mainGlId: v, subGlId: '', mainAccountId: '', subAccountId: '', accountCode: '', accountName: '' }));
@@ -164,13 +187,25 @@ export default function VoucherExpenseForm() {
   const upd = (field) => (ev) => setEntry((e) => ({ ...e, [field]: ev.target.value }));
 
   const handleAddEntry = () => {
-    if (!entry.mainGlId)   { toast.error('Select Main GL'); return; }
-    if (!entry.subGlId)    { toast.error('Select Sub GL'); return; }
+    if (!entry.mainGlId)      { toast.error('Select Main GL'); return; }
+    if (!entry.subGlId)       { toast.error('Select Sub GL'); return; }
     if (!entry.mainAccountId) { toast.error('Select Main Account'); return; }
     if (!entry.amount || Number(entry.amount) <= 0) { toast.error('Enter a valid amount'); return; }
     if (isCheque && !entry.chequeNo.trim()) { toast.error('Enter cheque number'); return; }
-    setEntries((es) => [...es, { ...entry }]);
+
+    const serial = mode === 'cash'
+      ? String(cashSerial).padStart(2, '0')
+      : entry.chequeNo;
+
+    setEntries((es) => [...es, { ...entry, chequeNo: serial }]);
+    if (mode === 'cash') setCashSerial((s) => s + 1);
+
     setEntry(emptyEntry());
+    if (isBank && selectedBankId) {
+      fetch(`${API}/cheque-serials/next?bankAccountId=${selectedBankId}`)
+        .then((r) => r.json())
+        .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
+    }
     setSubGLs([]); setMainAccs([]); setSubAccs([]);
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
   };
@@ -184,7 +219,7 @@ export default function VoucherExpenseForm() {
       const res = await fetch(`${API}/voucher-expense`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entityType, mode, bankId, voucherDate: date, entries }),
+        body: JSON.stringify({ entityType, mode, bankId: selectedBankId ? Number(selectedBankId) : null, voucherDate: date, entries }),
       });
       const json = await res.json();
       if (!res.ok || json?.ok === false) throw new Error(json?.message || 'Failed to save');
@@ -305,6 +340,27 @@ export default function VoucherExpenseForm() {
           <div className="ve-form__section-head">{detailTitle}</div>
           <div className="ve-form__section-body">
 
+            {/* Bank selection (online / cheque) */}
+            {isBank && (
+              <div className="ve-form__field" style={{ marginBottom: '0.85rem' }}>
+                <label>Bank Account</label>
+                <select value={selectedBankId} onChange={(e) => handleBankSelect(e.target.value)}>
+                  <option value="">— Select Bank —</option>
+                  {bankAccounts.map((b) => (
+                    <option key={b.id} value={b.id}>{b.bankName} — {b.accountNumber}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Cash serial display */}
+            {!isBank && (
+              <div className="ve-form__field" style={{ marginBottom: '0.85rem' }}>
+                <label>Cash Serial #</label>
+                <input value={String(cashSerial).padStart(2, '0')} readOnly className="ve-form__readonly" />
+              </div>
+            )}
+
             {/* Payee + Amount */}
             <div className="ve-form__row-2">
               <div className="ve-form__field">
@@ -369,24 +425,26 @@ export default function VoucherExpenseForm() {
               </div>
             </div>
 
-            {/* Cheque fields */}
-            {isCheque && (
+            {/* Cheque / Transfer fields */}
+            {isBank && (
               <div className="ve-form__row-3">
                 <div className="ve-form__field">
-                  <label>Cheque #</label>
-                  <input value={entry.chequeNo} onChange={upd('chequeNo')} placeholder="e.g. 26848" />
+                  <label>{isCheque ? 'Cheque #' : 'Reference #'}</label>
+                  <input value={entry.chequeNo} onChange={upd('chequeNo')} placeholder={isCheque ? 'e.g. 26848' : 'Transfer ref'} />
                 </div>
                 <div className="ve-form__field">
-                  <label>Cheque Date</label>
+                  <label>{isCheque ? 'Cheque Date' : 'Transfer Date'}</label>
                   <input type="date" value={entry.chequeDate} onChange={upd('chequeDate')} />
                 </div>
-                <div className="ve-form__field">
-                  <label>Cheque Type</label>
-                  <select value={entry.chequeType} onChange={upd('chequeType')}>
-                    <option value="bearer">Bearer</option>
-                    <option value="order">Order</option>
-                  </select>
-                </div>
+                {isCheque && (
+                  <div className="ve-form__field">
+                    <label>Cheque Type</label>
+                    <select value={entry.chequeType} onChange={upd('chequeType')}>
+                      <option value="bearer">Bearer</option>
+                      <option value="order">Order</option>
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
@@ -444,7 +502,8 @@ export default function VoucherExpenseForm() {
                 <th>Account</th>
                 <th>Amount</th>
                 <th>Particulars</th>
-                {isCheque && <><th>Cheque #</th><th>Cheque Type</th></>}
+                <th>{mode === 'cash' ? 'Cash Serial' : isCheque ? 'Cheque #' : 'Ref #'}</th>
+                {isCheque && <th>Cheque Type</th>}
                 <th>Status</th>
                 <th></th>
               </tr>
@@ -456,12 +515,8 @@ export default function VoucherExpenseForm() {
                   <td>{e.accountName}</td>
                   <td className="ve-form__td-amount">{Number(e.amount).toLocaleString()}</td>
                   <td>{e.particulars || '—'}</td>
-                  {isCheque && (
-                    <>
-                      <td>{e.chequeNo}</td>
-                      <td className="ve-form__td-cap">{e.chequeType}</td>
-                    </>
-                  )}
+                  <td>{e.chequeNo || '—'}</td>
+                  {isCheque && <td className="ve-form__td-cap">{e.chequeType}</td>}
                   <td><span className="ve-form__status-badge">Confirm</span></td>
                   <td>
                     <button
@@ -478,7 +533,7 @@ export default function VoucherExpenseForm() {
               <tr>
                 <td colSpan={2} className="ve-form__total-label">TOTAL</td>
                 <td className="ve-form__total-amount">{total.toLocaleString()}</td>
-                <td colSpan={isCheque ? 5 : 3}></td>
+                <td colSpan={isCheque ? 5 : 4}></td>
               </tr>
             </tfoot>
           </table>
