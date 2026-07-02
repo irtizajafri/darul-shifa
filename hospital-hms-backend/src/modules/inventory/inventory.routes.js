@@ -47,6 +47,7 @@ router.post('/po', controller.createPurchaseOrder);
 
 router.get('/grn', controller.listGRNs);
 router.post('/grn', controller.createGRN);
+router.patch('/grn/:id', controller.updateGRN);
 
 router.get('/gd', controller.listGDs);
 router.get('/gd/headers', controller.listGDHeaders);
@@ -55,6 +56,7 @@ router.post('/gd/batch', controller.createGDBatch);
 
 router.get('/gin', controller.listGINs);
 router.post('/gin', controller.createGIN);
+router.patch('/gin/:id', controller.updateGIN);
 
 router.get('/sales-invoices', controller.listSalesInvoices);
 router.post('/sales-invoices', controller.createSalesInvoice);

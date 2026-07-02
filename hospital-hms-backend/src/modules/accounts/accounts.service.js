@@ -128,17 +128,22 @@ async function ensureSystemHeads(entityType) {
   }
 }
 
-const SUB_ACCOUNT_INCLUDE = {
-  subAccount: {
-    select: {
-      id: true, code: true, name: true,
-      mainAccount: {
+const LINKED_ACCOUNTS_INCLUDE = {
+  linkedAccounts: {
+    orderBy: { id: 'asc' },
+    include: {
+      subAccount: {
         select: {
           id: true, code: true, name: true,
-          subGL: {
+          mainAccount: {
             select: {
               id: true, code: true, name: true,
-              mainGL: { select: { id: true, code: true, name: true } },
+              subGL: {
+                select: {
+                  id: true, code: true, name: true,
+                  mainGL: { select: { id: true, code: true, name: true } },
+                },
+              },
             },
           },
         },
@@ -152,25 +157,24 @@ async function getPayeeHeads(entityType) {
   return prisma.accPayeeHead.findMany({
     where: { entityType },
     orderBy: { id: 'asc' },
-    include: SUB_ACCOUNT_INCLUDE,
+    include: LINKED_ACCOUNTS_INCLUDE,
   });
 }
 
 async function createPayeeHead({ name, sourceType = 'manual', entityType }) {
   return prisma.accPayeeHead.create({
     data: { name: name.trim(), sourceType, entityType },
-    include: SUB_ACCOUNT_INCLUDE,
+    include: LINKED_ACCOUNTS_INCLUDE,
   });
 }
 
 async function updatePayeeHead(id, body) {
   const data = {};
   if (body.name !== undefined) data.name = body.name.trim();
-  if (body.subAccountId !== undefined) data.subAccountId = body.subAccountId ? Number(body.subAccountId) : null;
   return prisma.accPayeeHead.update({
     where: { id: Number(id) },
     data,
-    include: SUB_ACCOUNT_INCLUDE,
+    include: LINKED_ACCOUNTS_INCLUDE,
   });
 }
 
@@ -178,8 +182,27 @@ async function deletePayeeHead(id) {
   return prisma.accPayeeHead.delete({ where: { id: Number(id) } });
 }
 
+async function addHeadAccount(headId, subAccountId) {
+  return prisma.accPayeeHeadAccount.create({
+    data: { payeeHeadId: Number(headId), subAccountId: Number(subAccountId) },
+    include: {
+      subAccount: { select: { id: true, code: true, name: true } },
+    },
+  });
+}
+
+async function removeHeadAccount(headId, subAccountId) {
+  return prisma.accPayeeHeadAccount.deleteMany({
+    where: { payeeHeadId: Number(headId), subAccountId: Number(subAccountId) },
+  });
+}
+
 async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
-  const head = await prisma.accPayeeHead.findFirst({ where: { subAccountId: Number(subAccountId), entityType } });
+  const link = await prisma.accPayeeHeadAccount.findFirst({
+    where: { subAccountId: Number(subAccountId), payeeHead: { entityType } },
+    include: { payeeHead: true },
+  });
+  const head = link?.payeeHead;
   if (!head) return { type: null, headName: null, entries: [] };
 
   if (head.sourceType === 'employee') {
@@ -497,12 +520,63 @@ async function getNextVoucherNo(type, entityType, voucherDate) {
   throw new Error('Invalid type');
 }
 
+async function createBankDeposit({ bankAccountId, depositOf, depositDate, depositSlipNo, depositedBy, amount, entityType }) {
+  return prisma.accBankDeposit.create({
+    data: {
+      bankAccountId: Number(bankAccountId),
+      depositOf:     new Date(depositOf),
+      depositDate:   new Date(depositDate),
+      depositSlipNo: depositSlipNo?.trim() || null,
+      depositedBy:   depositedBy?.trim()   || null,
+      amount:        Number(amount),
+      entityType,
+    },
+    include: { bankAccount: { select: { bankName: true, accountNumber: true } } },
+  });
+}
+
+async function createBankDepositAdj({ bankAccountId, postedDepositOf, postedDepositDate, postedDepositSlipNo, postedDepositedBy, postedAmount, adjDepositDate, adjDepositSlipNo, adjDepositedBy, adjAmount, adjustedBy, entityType }) {
+  return prisma.accBankDepositAdj.create({
+    data: {
+      bankAccountId:      Number(bankAccountId),
+      postedDepositOf:    new Date(postedDepositOf),
+      postedDepositDate:  new Date(postedDepositDate),
+      postedDepositSlipNo: postedDepositSlipNo?.trim() || null,
+      postedDepositedBy:  postedDepositedBy?.trim()   || null,
+      postedAmount:       Number(postedAmount),
+      adjDepositDate:     new Date(adjDepositDate),
+      adjDepositSlipNo:   adjDepositSlipNo?.trim()    || null,
+      adjDepositedBy:     adjDepositedBy?.trim()      || null,
+      adjAmount:          Number(adjAmount),
+      adjustedBy:         adjustedBy?.trim()          || null,
+      entityType,
+    },
+    include: { bankAccount: { select: { bankName: true, accountNumber: true } } },
+  });
+}
+
+async function getBankDepositAdjs(entityType) {
+  return prisma.accBankDepositAdj.findMany({
+    where: { entityType },
+    orderBy: { createdAt: 'desc' },
+    include: { bankAccount: { select: { bankName: true, accountNumber: true } } },
+  });
+}
+
+async function getBankDeposits(entityType) {
+  return prisma.accBankDeposit.findMany({
+    where: { entityType },
+    orderBy: { createdAt: 'desc' },
+    include: { bankAccount: { select: { bankName: true, accountNumber: true } } },
+  });
+}
+
 module.exports = {
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
-  getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
+  getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, getEmployeeList, getSupplierList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
@@ -512,4 +586,6 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
   getVouchersForReprint,
+  createBankDeposit, getBankDeposits,
+  createBankDepositAdj, getBankDepositAdjs,
 };

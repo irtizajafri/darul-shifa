@@ -56,6 +56,34 @@ async function deleteIncomeCategory(req, res, next) { try { await svc.deleteInco
 
 async function getSupplierGRNs(req, res, next) { try { success(res, await svc.getSupplierGRNs(req.query.supplierId)); } catch (e) { next(e); } }
 
+async function createBankDeposit(req, res, next) {
+  try { success(res, await svc.createBankDeposit({ ...req.body, entityType: et(req) }), 'saved'); } catch (e) { next(e); }
+}
+async function getBankDeposits(req, res, next) {
+  try { success(res, await svc.getBankDeposits(et(req))); } catch (e) { next(e); }
+}
+async function createBankDepositAdj(req, res, next) {
+  try { success(res, await svc.createBankDepositAdj({ ...req.body, entityType: et(req) }), 'saved'); } catch (e) { next(e); }
+}
+async function getBankDepositAdjs(req, res, next) {
+  try { success(res, await svc.getBankDepositAdjs(et(req))); } catch (e) { next(e); }
+}
+
+async function addHeadAccount(req, res, next) {
+  try {
+    const { headId, subAccountId } = req.body;
+    success(res, await svc.addHeadAccount(headId, subAccountId), 'linked');
+  } catch (e) { next(e); }
+}
+
+async function removeHeadAccount(req, res, next) {
+  try {
+    const { headId, subAccountId } = req.params;
+    await svc.removeHeadAccount(headId, subAccountId);
+    success(res, null, 'unlinked');
+  } catch (e) { next(e); }
+}
+
 async function createVoucherIncome(req, res, next) { try { success(res, await svc.createVoucherIncome(req.body), 'Voucher saved'); } catch (e) { next(e); } }
 async function getVoucherIncomes(req, res, next) { try { success(res, await svc.getVoucherIncomes(et(req))); } catch (e) { next(e); } }
 
@@ -89,4 +117,7 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
   getVouchersForReprint,
+  addHeadAccount, removeHeadAccount,
+  createBankDeposit, getBankDeposits,
+  createBankDepositAdj, getBankDepositAdjs,
 };

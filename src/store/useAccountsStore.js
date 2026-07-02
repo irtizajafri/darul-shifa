@@ -120,6 +120,12 @@ export const useAccountsStore = create((set) => ({
     await req(`/payee-heads/${id}`, { method: 'DELETE' });
     set((s) => ({ payeeHeads: s.payeeHeads.filter((r) => r.id !== id) }));
   },
+  addHeadAccount: async (headId, subAccountId) => {
+    return req('/payee-head-accounts', { method: 'POST', body: JSON.stringify({ headId, subAccountId }) });
+  },
+  removeHeadAccount: async (headId, subAccountId) => {
+    return req(`/payee-head-accounts/${headId}/${subAccountId}`, { method: 'DELETE' });
+  },
 
   // Payee Entries
   payeeEntries: [],

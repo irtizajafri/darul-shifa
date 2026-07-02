@@ -906,6 +906,142 @@ async function createGRN(payload) {
   });
 }
 
+async function updateGRN(id, payload) {
+  const grn = await prisma.inventoryGRN.findUnique({ where: { id: Number(id) } });
+  if (!grn) throw new Error('GRN not found');
+
+  return prisma.$transaction(async (tx) => {
+    const data = {};
+    if (payload.receivedDate !== undefined) data.receivedDate = payload.receivedDate ? new Date(payload.receivedDate) : grn.receivedDate;
+    if (payload.billDate !== undefined) data.billDate = payload.billDate ? new Date(payload.billDate) : null;
+    if (payload.paymentType !== undefined) data.paymentType = payload.paymentType === 'installment' ? 'installment' : 'cash';
+    if (payload.paymentNote !== undefined) data.paymentNote = payload.paymentNote ? String(payload.paymentNote).trim() : null;
+    if (payload.supplierId !== undefined && payload.supplierId) data.supplierId = Number(payload.supplierId);
+
+    const newQty = payload.receivedQuantity !== undefined ? Number(payload.receivedQuantity) : null;
+    const newRate = payload.receivedRate !== undefined ? Number(payload.receivedRate) : null;
+
+    if (newQty !== null && Number.isFinite(newQty) && newQty > 0) {
+      const delta = newQty - Number(grn.receivedQuantity);
+      if (delta !== 0) {
+        if (delta < 0) {
+          const item = await tx.inventoryItem.findUnique({ where: { id: grn.itemId } });
+          if (Number(item?.currentStock || 0) + delta < 0) {
+            throw new Error(`Cannot reduce quantity — stock would go negative`);
+          }
+        }
+        await tx.inventoryItem.update({
+          where: { id: grn.itemId },
+          data: { currentStock: { increment: delta } },
+        });
+        await tx.inventoryStockMovement.updateMany({
+          where: { referenceType: 'GRN', referenceId: grn.code },
+          data: { quantity: newQty },
+        });
+        data.receivedQuantity = newQty;
+      }
+    }
+
+    if (newRate !== null && Number.isFinite(newRate) && newRate >= 0) {
+      data.receivedRate = newRate;
+    }
+
+    const finalQty = data.receivedQuantity ?? Number(grn.receivedQuantity);
+    const finalRate = data.receivedRate ?? Number(grn.receivedRate);
+    if (data.receivedQuantity !== undefined || data.receivedRate !== undefined) {
+      data.totalAmount = finalQty * finalRate;
+    }
+
+    return tx.inventoryGRN.update({
+      where: { id: Number(id) },
+      data,
+      include: {
+        purchaseOrder: { include: { supplier: true } },
+        supplier: true,
+        item: true,
+      },
+    });
+  });
+}
+
+async function updateGIN(id, payload) {
+  const gin = await prisma.inventoryGIN.findUnique({
+    where: { id: Number(id) },
+    include: { ginItems: true },
+  });
+  if (!gin) throw new Error('GIN not found');
+
+  return prisma.$transaction(async (tx) => {
+    const data = {};
+    if (payload.issueDate !== undefined) data.issueDate = payload.issueDate ? new Date(payload.issueDate) : gin.issueDate;
+    if (payload.issuedById !== undefined) data.issuedById = payload.issuedById ? Number(payload.issuedById) : null;
+    if (payload.departmentId !== undefined && payload.departmentId) data.departmentId = Number(payload.departmentId);
+
+    if (Array.isArray(payload.ginItems) && payload.ginItems.length > 0) {
+      for (const { id: ginItemId, issuedQuantity } of payload.ginItems) {
+        const newQty = Number(issuedQuantity);
+        if (!Number.isFinite(newQty) || newQty < 0) continue;
+
+        const ginItem = gin.ginItems.find((gi) => gi.id === Number(ginItemId));
+        if (!ginItem) continue;
+
+        const delta = newQty - Number(ginItem.issuedQuantity);
+        if (delta === 0) continue;
+
+        if (delta > 0) {
+          const item = await tx.inventoryItem.findUnique({ where: { id: ginItem.itemId } });
+          if (Number(item?.currentStock || 0) < delta) {
+            throw new Error(`Insufficient stock for item (need ${delta} more but only ${item?.currentStock || 0} available)`);
+          }
+        }
+
+        await tx.inventoryGINItem.update({
+          where: { id: Number(ginItemId) },
+          data: { issuedQuantity: newQty },
+        });
+
+        await tx.inventoryItem.update({
+          where: { id: ginItem.itemId },
+          data: { currentStock: { decrement: delta } },
+        });
+
+        const existingMovement = await tx.inventoryStockMovement.findFirst({
+          where: { referenceType: 'GIN', referenceId: gin.code, itemId: ginItem.itemId },
+        });
+        if (existingMovement) {
+          await tx.inventoryStockMovement.update({
+            where: { id: existingMovement.id },
+            data: { quantity: newQty },
+          });
+        } else if (newQty > 0) {
+          await tx.inventoryStockMovement.create({
+            data: {
+              itemId: ginItem.itemId,
+              movementType: 'OUT',
+              quantity: newQty,
+              previousStock: 0,
+              newStock: 0,
+              referenceType: 'GIN',
+              referenceId: gin.code,
+            },
+          });
+        }
+      }
+    }
+
+    return tx.inventoryGIN.update({
+      where: { id: Number(id) },
+      data,
+      include: {
+        gdHeader: { include: { department: true } },
+        department: true,
+        ginItems: { include: { item: true } },
+        issuedBy: { select: { id: true, firstName: true, lastName: true, empCode: true } },
+      },
+    });
+  });
+}
+
 async function listAssetInstances({ itemId, condition } = {}) {
   const parsedItemId = parsePositiveNumber(itemId);
   return prisma.assetInstance.findMany({
@@ -3480,12 +3616,14 @@ module.exports = {
   createPurchaseOrder,
   listGRNs,
   createGRN,
+  updateGRN,
   listGDs,
   createGD,
   createGDBatch,
   listGDHeaders,
   listGINs,
   createGIN,
+  updateGIN,
   listSalesInvoices,
   createSalesInvoice,
   listSalesInvoiceHeaders,

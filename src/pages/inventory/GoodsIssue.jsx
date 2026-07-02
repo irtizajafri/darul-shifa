@@ -5,7 +5,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Plus, Printer, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Pencil, Plus, Printer, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
@@ -18,8 +18,9 @@ export default function GoodsIssue() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const { user } = useAuthStore();
-  const canGD  = hasPermission(user, 'inventory', 'gd');
-  const canGIN = hasPermission(user, 'inventory', 'gin');
+  const canGD     = hasPermission(user, 'inventory', 'gd');
+  const canGIN    = hasPermission(user, 'inventory', 'gin');
+  const canEditGIN = hasPermission(user, 'inventory', 'gin', 'edit');
 
   const { employees, fetchEmployees } = useEmployeeStore();
   const [ginIssuedById, setGinIssuedById] = useState('');
@@ -77,6 +78,13 @@ export default function GoodsIssue() {
   const [ginIssuedQtys, setGinIssuedQtys] = useState({});
   const [createdGDHeader, setCreatedGDHeader] = useState(null);
 
+  const [editingGIN, setEditingGIN] = useState(null);
+  const [editGINForm, setEditGINForm] = useState({});
+  const [editGINQtys, setEditGINQtys] = useState({});
+  const [editGINSaving, setEditGINSaving] = useState(false);
+  const [editGINIssuedBySearch, setEditGINIssuedBySearch] = useState('');
+  const [editGINIssuedByOpen, setEditGINIssuedByOpen] = useState(false);
+
   const {
     loading,
     gds,
@@ -91,6 +99,7 @@ export default function GoodsIssue() {
     fetchGINs,
     createGDBatch,
     createGIN,
+    updateGIN,
   } = useInventoryStore();
 
   useEffect(() => {
@@ -340,6 +349,58 @@ export default function GoodsIssue() {
     }
   };
 
+  const openEditGIN = (gin) => {
+    setEditingGIN(gin);
+    const empId = gin.issuedById || gin.issuedBy?.id || '';
+    const empName = gin.issuedBy ? `${gin.issuedBy.firstName} ${gin.issuedBy.lastName}` : '';
+    setEditGINForm({
+      departmentId: gin.departmentId ? String(gin.departmentId) : '',
+      issueDate: gin.issueDate ? new Date(gin.issueDate).toISOString().slice(0, 10) : '',
+      issuedById: empId ? String(empId) : '',
+    });
+    const qtys = {};
+    for (const gi of (gin.ginItems || [])) {
+      qtys[gi.id] = String(gi.issuedQuantity ?? '');
+    }
+    setEditGINQtys(qtys);
+    setEditGINIssuedBySearch(empName);
+    setEditGINIssuedByOpen(false);
+  };
+
+  const handleSaveEditGIN = async () => {
+    if (!editingGIN) return;
+    setEditGINSaving(true);
+    try {
+      const ginItemsPayload = Object.entries(editGINQtys)
+        .map(([id, qty]) => ({ id: Number(id), issuedQuantity: Number(qty) }))
+        .filter((x) => Number.isFinite(x.issuedQuantity) && x.issuedQuantity >= 0);
+
+      await updateGIN(editingGIN.id, {
+        departmentId: editGINForm.departmentId ? Number(editGINForm.departmentId) : undefined,
+        issueDate: editGINForm.issueDate || undefined,
+        issuedById: editGINForm.issuedById ? Number(editGINForm.issuedById) : null,
+        ginItems: ginItemsPayload,
+      });
+      await fetchGINs();
+      setEditingGIN(null);
+      toast.success('GIN updated');
+    } catch (err) {
+      toast.error(err.message || 'Failed to update GIN');
+    } finally {
+      setEditGINSaving(false);
+    }
+  };
+
+  const editGINFilteredEmployees = useMemo(() => {
+    const q = editGINIssuedBySearch.trim().toLowerCase();
+    const list = employees || [];
+    if (!q) return list.slice(0, 20);
+    return list.filter((e) =>
+      `${e.firstName} ${e.lastName}`.toLowerCase().includes(q) ||
+      (e.empCode || '').toLowerCase().includes(q)
+    ).slice(0, 20);
+  }, [employees, editGINIssuedBySearch]);
+
   const gdExportRows = useMemo(() => filteredGDRows.map((row) => ({
     gdCode: row.code,
     item: row.item?.name || '-',
@@ -567,27 +628,133 @@ export default function GoodsIssue() {
                 })
                 .slice(0, 15)
                 .map((gin) => (
-                  <div key={gin.id} className="flex items-center justify-between py-2.5 px-1">
-                    <div>
-                      <span className="font-medium text-sm text-slate-800">{gin.code}</span>
-                      <span className="text-slate-400 text-xs mx-2">|</span>
-                      <span className="text-xs text-slate-500">{gin.department?.name || gin.gdHeader?.department?.name || '-'}</span>
-                      {gin.gdHeader?.code && <><span className="text-slate-400 text-xs mx-2">|</span><span className="text-xs text-slate-400">GD: {gin.gdHeader.code}</span></>}
-                      {gin.issueDate && <span className="text-slate-400 text-xs ml-2">({new Date(gin.issueDate).toLocaleDateString()})</span>}
+                  <div key={gin.id} className="py-2.5 px-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-medium text-sm text-slate-800">{gin.code}</span>
+                        <span className="text-slate-400 text-xs mx-2">|</span>
+                        <span className="text-xs text-slate-500">{gin.department?.name || gin.gdHeader?.department?.name || '-'}</span>
+                        {gin.gdHeader?.code && <><span className="text-slate-400 text-xs mx-2">|</span><span className="text-xs text-slate-400">GD: {gin.gdHeader.code}</span></>}
+                        {gin.issueDate && <span className="text-slate-400 text-xs ml-2">({new Date(gin.issueDate).toLocaleDateString()})</span>}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {canEditGIN && (
+                          <button
+                            onClick={() => openEditGIN(gin)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors whitespace-nowrap"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => printGINDocument(gin, {
+                            printedBy: user?.name || user?.email || '',
+                            generatedAt: gin.issueDate ? new Date(gin.issueDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
+                            isReprint: true,
+                            reprintedBy: user?.name || user?.email || '',
+                            reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                          })}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          Reprint
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => printGINDocument(gin, {
-                        printedBy: user?.name || user?.email || '',
-                        generatedAt: gin.issueDate ? new Date(gin.issueDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
-                        isReprint: true,
-                        reprintedBy: user?.name || user?.email || '',
-                        reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-                      })}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      Reprint
-                    </button>
+                    {editingGIN?.id === gin.id && (
+                      <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Department</label>
+                          <select
+                            value={editGINForm.departmentId}
+                            onChange={(e) => setEditGINForm((f) => ({ ...f, departmentId: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-white"
+                          >
+                            <option value="">— Select Department —</option>
+                            {(masterOptions.departments || []).map((d) => (
+                              <option key={d.id} value={String(d.id)}>{d.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Issue Date</label>
+                          <input type="date" value={editGINForm.issueDate}
+                            onChange={(e) => setEditGINForm((f) => ({ ...f, issueDate: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div className="relative">
+                          <label className="block text-xs text-slate-500 mb-1">Issued To</label>
+                          <div className="relative">
+                            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            <input
+                              type="text"
+                              placeholder="Search employee..."
+                              value={editGINIssuedBySearch}
+                              onChange={(e) => { setEditGINIssuedBySearch(e.target.value); setEditGINIssuedByOpen(true); if (!e.target.value) setEditGINForm((f) => ({ ...f, issuedById: '' })); }}
+                              onFocus={() => setEditGINIssuedByOpen(true)}
+                              onBlur={() => setTimeout(() => setEditGINIssuedByOpen(false), 150)}
+                              className="pl-9 pr-4 py-1.5 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+                            />
+                            {editGINForm.issuedById && <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-green-500" />}
+                          </div>
+                          {editGINIssuedByOpen && editGINFilteredEmployees.length > 0 && (
+                            <div className="absolute z-30 top-full left-0 right-0 bg-white border border-slate-200 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                              {editGINFilteredEmployees.map((emp) => (
+                                <div key={emp.id}
+                                  onMouseDown={() => { setEditGINForm((f) => ({ ...f, issuedById: String(emp.id) })); setEditGINIssuedBySearch(`${emp.firstName} ${emp.lastName}`); setEditGINIssuedByOpen(false); }}
+                                  className="px-3 py-2 text-sm cursor-pointer flex justify-between items-center hover:bg-blue-50">
+                                  <span className="font-medium">{emp.firstName} {emp.lastName}</span>
+                                  <span className="text-slate-400 text-xs">{emp.empCode || ''}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {(editingGIN?.ginItems || []).length > 0 && (
+                          <div>
+                            <label className="block text-xs text-slate-500 mb-1">Issued Quantities</label>
+                            <div className="border border-slate-200 rounded-md overflow-hidden bg-white">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="bg-slate-50 text-slate-500 uppercase border-b border-slate-200">
+                                    <th className="px-3 py-1.5 text-left font-semibold">Item</th>
+                                    <th className="px-3 py-1.5 text-center font-semibold w-28">Issued Qty</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {(editingGIN.ginItems || []).map((gi) => (
+                                    <tr key={gi.id}>
+                                      <td className="px-3 py-1.5 font-medium text-slate-800">{gi.item?.name || '-'}</td>
+                                      <td className="px-3 py-1.5 text-center">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="1"
+                                          value={editGINQtys[gi.id] ?? ''}
+                                          onChange={(e) => setEditGINQtys((prev) => ({ ...prev, [gi.id]: e.target.value }))}
+                                          className="w-20 px-2 py-1 border border-slate-300 rounded text-xs text-center focus:outline-none focus:border-blue-500"
+                                        />
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                        <div className="flex gap-2 justify-end">
+                          <button onClick={() => setEditingGIN(null)}
+                            className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
+                            Cancel
+                          </button>
+                          <button onClick={handleSaveEditGIN} disabled={editGINSaving}
+                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
+                            {editGINSaving ? 'Saving...' : 'Save Changes'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))
             )}

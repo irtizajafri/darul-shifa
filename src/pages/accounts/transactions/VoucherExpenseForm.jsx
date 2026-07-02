@@ -2,12 +2,172 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ChevronRight } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { useAuthStore } from '../../../store/useAuthStore';
 import toast from 'react-hot-toast';
 import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+// ── Print helpers ─────────────────────────────────────────────────────────────
+const fmtDate = (d) =>
+  new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const fmtDateLong = (d) => {
+  const dt  = new Date(d);
+  const tz  = { timeZone: 'Asia/Karachi' };
+  const day  = dt.toLocaleString('en-US', { ...tz, day:     '2-digit' });
+  const mon  = dt.toLocaleString('en-US', { ...tz, month:   'short'   });
+  const year = dt.toLocaleString('en-US', { ...tz, year:    'numeric' });
+  const wday = dt.toLocaleString('en-US', { ...tz, weekday: 'long'    });
+  const time = dt.toLocaleString('en-US', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  return `${day}-${mon}-${year} ${wday} ${time}`;
+};
+
+const fmt2 = (n) =>
+  Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function amountInWords(amount) {
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
+    'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen',
+    'Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function chunk(n) {
+    if (n === 0) return '';
+    if (n < 20) return ones[n] + ' ';
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '') + ' ';
+    return ones[Math.floor(n / 100)] + ' Hundred ' + chunk(n % 100);
+  }
+  const n = Math.round(Number(amount));
+  if (n === 0) return 'Rupees Zero Only';
+  const millions  = Math.floor(n / 1000000);
+  const thousands = Math.floor((n % 1000000) / 1000);
+  const remainder = n % 1000;
+  let r = '';
+  if (millions)  r += chunk(millions).trim()  + ' Million ';
+  if (thousands) r += chunk(thousands).trim() + ' Thousand ';
+  if (remainder) r += chunk(remainder).trim();
+  return 'Rupees ' + r.trim() + ' Only';
+}
+
+const VOUCHER_PRINT_CSS = `
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:Arial,sans-serif; font-size:11px; color:#000; background:#fff; }
+  .vr-print-page { page-break-after:always; padding:16px 20px; margin:6px; }
+  .vr-print-page:last-child { page-break-after:avoid; }
+  .vr-vc-header { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:8px; margin-bottom:8px; }
+  .vr-vc-title-area { flex:1; }
+  .vr-vc-title { font-size:15px; font-weight:900; letter-spacing:0.05em; text-transform:uppercase; }
+  .vr-vc-meta-area { text-align:right; font-size:9px; line-height:1.7; }
+  .vr-vc-printby { font-weight:700; }
+  .vr-vc-divider { border-top:1px solid #bbb; margin:4px 0 7px; }
+  .vr-vc-info { display:flex; gap:20px; margin-bottom:8px; font-size:10px; }
+  .vr-vc-info-label { font-weight:700; margin-right:4px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:4px; }
+  th { padding:5px 6px; font-size:10px; text-align:left; font-weight:700; text-transform:uppercase; }
+  td { padding:4px 6px; font-size:10px; text-align:left; }
+  tfoot td { background:#f9f9f9; font-weight:700; }
+  .vr-td-r { text-align:right !important; }
+  .vr-cell-top { font-size:10px; }
+  .vr-cell-sub { font-size:9px; color:#555; margin-top:1px; }
+  .vr-tfoot-words { font-size:9px; font-style:italic; color:#555; font-weight:400; vertical-align:middle; }
+  .vr-tfoot-label { text-align:right; font-size:9px; text-transform:uppercase; color:#555; padding-right:8px !important; }
+  .vr-tfoot-amt { font-size:11px; font-weight:800; }
+  .vr-words { font-size:9.5px; font-style:italic; border-top:1px solid #ccc; padding-top:4px; margin-bottom:14px; }
+  .vr-sigs { display:flex; justify-content:space-between; margin-top:22px; padding-top:6px; }
+  .vr-sig { text-align:center; font-size:9px; border-top:1.5px solid #000; padding-top:4px; width:120px; font-weight:600; }
+`;
+
+function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy }) {
+  const total   = entries.reduce((s, e) => s + Number(e.amount), 0);
+  const modeStr = mode === 'cheque' ? 'Cheque' : mode === 'online' ? 'Online Transfer' : 'Cash';
+
+  const rowsHTML = entries.map((e) => `
+    <tr>
+      <td>
+        <div class="vr-cell-top">${e.mainGlName || '—'}</div>
+        <div class="vr-cell-sub">${e.subGlName  || '—'}</div>
+      </td>
+      <td>
+        <div class="vr-cell-top">${e.mainAccountName || e.accountName || '—'}</div>
+        <div class="vr-cell-sub">${e.subAccountName  || e.payeeName   || '—'}</div>
+      </td>
+      <td>${e.particulars || '—'}</td>
+      <td>${e.chequeDate ? fmtDate(e.chequeDate) : '—'}</td>
+      <td>${e.chequeNo || '—'}</td>
+      <td class="vr-td-r">${fmt2(e.amount)}</td>
+    </tr>
+  `).join('');
+
+  const html = `
+    <div class="vr-print-page">
+      <div class="vr-vc-header">
+        <div class="vr-vc-title-area"><div class="vr-vc-title">EXPENSE VOUCHER</div></div>
+        <div class="vr-vc-meta-area">
+          <div class="vr-vc-printby">PRINT BY: ${printBy}</div>
+          <div class="vr-vc-vdate">VOUCHER DATE: ${fmtDateLong(voucherDate)}</div>
+          <div class="vr-vc-page">Page: 1 of 1</div>
+        </div>
+      </div>
+      <div class="vr-vc-divider"></div>
+      <div class="vr-vc-info">
+        <div class="vr-vc-info-item">
+          <span class="vr-vc-info-label">VOUCHER #:</span>
+          <span class="vr-vc-info-val">${voucherNo}</span>
+        </div>
+        <div class="vr-vc-info-item">
+          <span class="vr-vc-info-label">METHOD:</span>
+          <span class="vr-vc-info-val">${modeStr}</span>
+        </div>
+      </div>
+      <table>
+        <colgroup>
+          <col style="width:13%" />
+          <col style="width:16%" />
+          <col style="width:35%" />
+          <col style="width:10%" />
+          <col style="width:9%"  />
+          <col style="width:17%" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>GL</th>
+            <th>ACCOUNT</th>
+            <th>PARTICULARS</th>
+            <th>CHQ DT</th>
+            <th>CHQ #</th>
+            <th class="vr-td-r">AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHTML}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" class="vr-tfoot-words">${amountInWords(total)}</td>
+            <td class="vr-tfoot-label">TOTAL</td>
+            <td class="vr-td-r vr-tfoot-amt">${fmt2(total)}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="vr-sigs">
+        <div class="vr-sig">Accountant</div>
+        <div class="vr-sig">Administrator</div>
+        <div class="vr-sig">Receiver's Signature</div>
+      </div>
+    </div>
+  `;
+
+  const win = window.open('', '_blank');
+  win.document.write(
+    `<!DOCTYPE html><html><head><title>Expense Voucher</title><style>${VOUCHER_PRINT_CSS}</style></head><body>${html}</body></html>`
+  );
+  win.document.close();
+  win.focus();
+  setTimeout(() => {
+    win.print();
+    win.onafterprint = () => win.close();
+  }, 400);
+}
 
 const emptyEntry = () => ({
   mainGlId: '', subGlId: '', mainAccountId: '', subAccountId: '',
@@ -22,6 +182,7 @@ export default function VoucherExpenseForm() {
   const { state } = useLocation();
   const navigate = useNavigate();
   const { mainGLs, fetchMainGLs } = useAccountsStore();
+  const { user } = useAuthStore();
 
   const mode   = state?.mode   || 'cash';
   const bankId = state?.bankId || null;
@@ -197,7 +358,19 @@ export default function VoucherExpenseForm() {
       ? String(cashSerial).padStart(2, '0')
       : entry.chequeNo;
 
-    setEntries((es) => [...es, { ...entry, chequeNo: serial }]);
+    const mainGl  = mainGLs.find((g) => String(g.id) === String(entry.mainGlId));
+    const subGl   = subGLs.find((g)  => String(g.id) === String(entry.subGlId));
+    const mainAcc = mainAccs.find((a) => String(a.id) === String(entry.mainAccountId));
+    const subAcc  = subAccs.find((a)  => String(a.id) === String(entry.subAccountId));
+
+    setEntries((es) => [...es, {
+      ...entry,
+      chequeNo: serial,
+      mainGlName:      mainGl?.name  || '',
+      subGlName:       subGl?.name   || '',
+      mainAccountName: mainAcc?.name || entry.accountName || '',
+      subAccountName:  subAcc?.name  || entry.payeeName   || '',
+    }]);
     if (mode === 'cash') setCashSerial((s) => s + 1);
 
     setEntry(emptyEntry());
@@ -225,6 +398,13 @@ export default function VoucherExpenseForm() {
       if (!res.ok || json?.ok === false) throw new Error(json?.message || 'Failed to save');
       setSavedVoucherNo(json.data.voucherNo);
       toast.success(`Voucher ${json.data.voucherNo} saved`);
+      printExpenseVoucher({
+        voucherNo:   json.data.voucherNo,
+        voucherDate: new Date().toISOString(),
+        mode,
+        entries,
+        printBy: user?.name || 'System',
+      });
     } catch (err) {
       toast.error(err.message);
     } finally {

@@ -60,4 +60,13 @@ router.get('/voucher-reprint', ctrl.getVouchersForReprint);
 router.get('/voucher-income', ctrl.getVoucherIncomes);
 router.post('/voucher-income', ctrl.createVoucherIncome);
 
+router.post('/payee-head-accounts', ctrl.addHeadAccount);
+router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccount);
+
+router.get('/bank-deposits', ctrl.getBankDeposits);
+router.post('/bank-deposits', ctrl.createBankDeposit);
+
+router.get('/bank-deposit-adjs', ctrl.getBankDepositAdjs);
+router.post('/bank-deposit-adjs', ctrl.createBankDepositAdj);
+
 module.exports = router;

@@ -205,7 +205,6 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  border-bottom: 2px solid $dark-blue;
   padding-bottom: 0.75rem;
   margin-bottom: 0.75rem;
 }
@@ -264,7 +263,6 @@
 // ── Voucher Print Card ────────────────────────────────────────────────────────
 .vr-print-page {
   background: #fff;
-  border: 1px solid #d1d5db;
   border-radius: 14px;
   padding: 1.4rem 1.6rem;
   margin-bottom: 1.1rem;
@@ -349,21 +347,18 @@
 .vr-table {
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 1.1rem;
+  margin-bottom: 0.5rem;
   font-size: 0.82rem;
 
   th {
-    background: #f1f5f9;
     color: $dark-blue;
     font-weight: 700;
     padding: 0.5rem 0.75rem;
     text-align: left;
-    border: 1px solid #e2e8f0;
   }
 
   td {
     padding: 0.45rem 0.75rem;
-    border: 1px solid #e2e8f0;
     color: #334155;
   }
 
@@ -372,6 +367,14 @@
     background: #f8fafc;
     color: $dark-blue;
   }
+}
+
+.vr-tfoot-words {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #64748b;
+  font-weight: 400 !important;
+  vertical-align: middle;
 }
 
 .vr-td-r { text-align: right !important; }

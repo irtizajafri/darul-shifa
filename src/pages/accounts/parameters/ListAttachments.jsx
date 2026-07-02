@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2, Link2, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2, Link2, CheckCircle2, X } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import './ListAttachments.scss';
 
@@ -24,12 +24,13 @@ export default function ListAttachments() {
     fetchPayeeHeads, fetchPayeeEntries, fetchLinkedEmployees, fetchLinkedSuppliers, fetchMainGLs,
     createPayeeHead, updatePayeeHead, deletePayeeHead,
     createPayeeEntry, deletePayeeEntry,
+    addHeadAccount, removeHeadAccount,
   } = useAccountsStore();
 
   const [loading, setLoading] = useState(true);
   const [expandedHead, setExpandedHead] = useState(null);
-  const [expandedLink, setExpandedLink] = useState(null); // headId whose link section is open
-  const [linkState, setLinkState] = useState({}); // { [headId]: { mainGlId, subGlId, mainAccountId, subAccountId, subGLs, mainAccs, subAccs, saving } }
+  const [expandedLink, setExpandedLink] = useState(null);
+  const [linkState, setLinkState] = useState({});
 
   const [headModal, setHeadModal] = useState(null);
   const [headName, setHeadName] = useState('');
@@ -55,19 +56,8 @@ export default function ListAttachments() {
 
   // ── Link account cascade ──────────────────────────────────────────────────
   const openLink = (head) => {
-    const s = head.subAccount;
-    const initial = {
-      mainGlId:      s?.mainAccount?.subGL?.mainGL?.id  ? String(s.mainAccount.subGL.mainGL.id)  : '',
-      subGlId:       s?.mainAccount?.subGL?.id           ? String(s.mainAccount.subGL.id)          : '',
-      mainAccountId: s?.mainAccount?.id                  ? String(s.mainAccount.id)                : '',
-      subAccountId:  s?.id                               ? String(s.id)                            : '',
-      subGLs: [], mainAccs: [], subAccs: [], saving: false,
-    };
-    setLinkState((prev) => ({ ...prev, [head.id]: initial }));
+    setLinkState((prev) => ({ ...prev, [head.id]: emptyLink() }));
     setExpandedLink(head.id);
-
-    // Pre-load cascades if already linked
-    if (initial.mainGlId) loadSubGLs(head.id, initial.mainGlId, initial.subGlId, initial.mainAccountId);
   };
 
   const closeLink = (headId) => {
@@ -78,26 +68,20 @@ export default function ListAttachments() {
   const updLink = (headId, patch) =>
     setLinkState((prev) => ({ ...prev, [headId]: { ...prev[headId], ...patch } }));
 
-  const loadSubGLs = async (headId, mainGlId, preSubGlId = '', preMainAccId = '') => {
+  const loadSubGLs = async (headId, mainGlId) => {
     updLink(headId, { mainGlId, subGlId: '', mainAccountId: '', subAccountId: '', subGLs: [], mainAccs: [], subAccs: [] });
     if (!mainGlId) return;
     const r = await fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${mainGlId}`);
     const j = await r.json();
-    const subGLs = Array.isArray(j?.data) ? j.data : [];
-    updLink(headId, { subGLs });
-    if (preSubGlId) loadMainAccs(headId, preSubGlId, preMainAccId);
-    else updLink(headId, { subGlId: '' });
+    updLink(headId, { subGLs: Array.isArray(j?.data) ? j.data : [] });
   };
 
-  const loadMainAccs = async (headId, subGlId, preMainAccId = '') => {
+  const loadMainAccs = async (headId, subGlId) => {
     updLink(headId, { subGlId, mainAccountId: '', subAccountId: '', mainAccs: [], subAccs: [] });
     if (!subGlId) return;
     const r = await fetch(`${API}/main-account?entityType=${entityType}&subGlId=${subGlId}`);
     const j = await r.json();
-    const mainAccs = Array.isArray(j?.data) ? j.data : [];
-    updLink(headId, { mainAccs });
-    if (preMainAccId) loadSubAccs(headId, preMainAccId);
-    else updLink(headId, { mainAccountId: '' });
+    updLink(headId, { mainAccs: Array.isArray(j?.data) ? j.data : [] });
   };
 
   const loadSubAccs = async (headId, mainAccountId) => {
@@ -111,19 +95,28 @@ export default function ListAttachments() {
   const saveLink = async (headId) => {
     const ls = linkState[headId];
     if (!ls?.subAccountId) { toast.error('Select a Sub Account to link'); return; }
+
+    // Check if already linked
+    const head = payeeHeads.find((h) => h.id === headId);
+    const alreadyLinked = (head?.linkedAccounts || []).some(
+      (la) => String(la.subAccountId) === String(ls.subAccountId)
+    );
+    if (alreadyLinked) { toast.error('This account is already linked'); return; }
+
     updLink(headId, { saving: true });
     try {
-      await updatePayeeHead(headId, { subAccountId: Number(ls.subAccountId) });
+      await addHeadAccount(headId, Number(ls.subAccountId));
       await fetchPayeeHeads(entityType);
       toast.success('Account linked');
-      closeLink(headId);
+      // Reset form but keep open for adding more
+      setLinkState((prev) => ({ ...prev, [headId]: emptyLink() }));
     } catch (err) { toast.error(err.message); }
     finally { updLink(headId, { saving: false }); }
   };
 
-  const removeLink = async (headId) => {
+  const handleRemoveLink = async (headId, subAccountId) => {
     try {
-      await updatePayeeHead(headId, { subAccountId: null });
+      await removeHeadAccount(headId, subAccountId);
       await fetchPayeeHeads(entityType);
       toast.success('Link removed');
     } catch (err) { toast.error(err.message); }
@@ -211,10 +204,33 @@ export default function ListAttachments() {
     ));
   };
 
+  const renderLinkedAccounts = (head) => {
+    const links = head.linkedAccounts || [];
+    if (links.length === 0) return <span className="list-attach__no-link">No account linked</span>;
+    return (
+      <div className="list-attach__linked-list">
+        {links.map((la) => (
+          <div key={la.id} className="list-attach__linked-tag">
+            <CheckCircle2 size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
+            <span>{la.subAccount.code} — {la.subAccount.name}</span>
+            <button
+              className="list-attach__tag-remove"
+              title="Remove link"
+              onClick={() => handleRemoveLink(head.id, la.subAccountId)}
+            >
+              <X size={10} />
+            </button>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const renderLinkSection = (head) => {
     const ls = linkState[head.id] || emptyLink();
     return (
       <div className="list-attach__link-form">
+        <div className="list-attach__link-title">Add Account Link</div>
         <div className="list-attach__link-grid">
           <div className="list-attach__link-field">
             <label>Main GL</label>
@@ -246,9 +262,9 @@ export default function ListAttachments() {
           </div>
         </div>
         <div className="list-attach__link-actions">
-          <button className="list-attach__link-cancel" onClick={() => closeLink(head.id)}>Cancel</button>
+          <button className="list-attach__link-cancel" onClick={() => closeLink(head.id)}>Close</button>
           <button className="list-attach__link-save" onClick={() => saveLink(head.id)} disabled={ls.saving || !ls.subAccountId}>
-            {ls.saving ? 'Saving…' : 'Save Link'}
+            {ls.saving ? 'Saving…' : '+ Add Link'}
           </button>
         </div>
       </div>
@@ -258,7 +274,6 @@ export default function ListAttachments() {
   const renderHead = (head) => {
     const badge = SOURCE_BADGE[head.sourceType] || SOURCE_BADGE.manual;
     const isManual = head.sourceType === 'manual';
-    const linked = head.subAccount;
     const isLinkOpen = expandedLink === head.id;
     const isExpanded = expandedHead === head.id || (head.sourceType !== 'manual' && expandedHead === `sys-${head.sourceType}`);
 
@@ -270,15 +285,7 @@ export default function ListAttachments() {
               <span className="list-attach__head-name">{head.name}</span>
               <span className="list-attach__badge" style={{ background: badge.color }}>{badge.label}</span>
             </div>
-            {linked ? (
-              <div className="list-attach__linked-acc">
-                <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#22c55e' }} />
-                <span>{linked.code} — {linked.name}</span>
-                <button className="list-attach__unlink-btn" onClick={() => removeLink(head.id)}>✕ Unlink</button>
-              </div>
-            ) : (
-              <span className="list-attach__no-link">No account linked</span>
-            )}
+            {renderLinkedAccounts(head)}
           </div>
           <div className="list-attach__head-actions">
             <button
@@ -324,7 +331,7 @@ export default function ListAttachments() {
           </button>
           <div>
             <h2>List Attachments</h2>
-            <p>Payee heads — link each head to a Sub Account in your GL hierarchy</p>
+            <p>Payee heads — link each head to one or more Sub Accounts in your GL hierarchy</p>
           </div>
         </div>
         <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={openAddHead}>

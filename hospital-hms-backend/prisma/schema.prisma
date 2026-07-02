@@ -1092,25 +1092,35 @@ model AccMainAccount {
 }
 
 model AccSubAccount {
-  id            Int            @id @default(autoincrement())
-  code          String         @unique
+  id            Int                    @id @default(autoincrement())
+  code          String                 @unique
   name          String
   mainAccountId Int
-  entityType    String         @default("non-corporate")
-  createdAt     DateTime       @default(now())
-  mainAccount   AccMainAccount @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
-  payeeHeads    AccPayeeHead[]
+  entityType    String                 @default("non-corporate")
+  createdAt     DateTime               @default(now())
+  mainAccount   AccMainAccount         @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
+  payeeHeadLinks AccPayeeHeadAccount[]
 }
 
 model AccPayeeHead {
-  id           Int            @id @default(autoincrement())
-  name         String
-  sourceType   String         @default("manual")
-  entityType   String         @default("non-corporate")
-  subAccountId Int?
-  subAccount   AccSubAccount? @relation(fields: [subAccountId], references: [id])
-  createdAt    DateTime       @default(now())
-  entries      AccPayeeEntry[]
+  id             Int                    @id @default(autoincrement())
+  name           String
+  sourceType     String                 @default("manual")
+  entityType     String                 @default("non-corporate")
+  createdAt      DateTime               @default(now())
+  entries        AccPayeeEntry[]
+  linkedAccounts AccPayeeHeadAccount[]
+}
+
+model AccPayeeHeadAccount {
+  id           Int           @id @default(autoincrement())
+  payeeHeadId  Int
+  subAccountId Int
+  createdAt    DateTime      @default(now())
+  payeeHead    AccPayeeHead  @relation(fields: [payeeHeadId], references: [id], onDelete: Cascade)
+  subAccount   AccSubAccount @relation(fields: [subAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([payeeHeadId, subAccountId])
 }
 
 model AccPayeeEntry {
@@ -1128,6 +1138,39 @@ model AccBankAccount {
   entityType    String            @default("non-corporate")
   createdAt     DateTime          @default(now())
   chequeSerials AccChequeSerial[]
+  deposits      AccBankDeposit[]
+  depositAdjs   AccBankDepositAdj[]
+}
+
+model AccBankDeposit {
+  id              Int            @id @default(autoincrement())
+  bankAccountId   Int
+  depositOf       DateTime
+  depositDate     DateTime
+  depositSlipNo   String?
+  depositedBy     String?
+  amount          Decimal        @db.Decimal(15, 2)
+  entityType      String         @default("non-corporate")
+  createdAt       DateTime       @default(now())
+  bankAccount     AccBankAccount @relation(fields: [bankAccountId], references: [id])
+}
+
+model AccBankDepositAdj {
+  id                    Int            @id @default(autoincrement())
+  bankAccountId         Int
+  postedDepositOf       DateTime
+  postedDepositDate     DateTime
+  postedDepositSlipNo   String?
+  postedDepositedBy     String?
+  postedAmount          Decimal        @db.Decimal(15, 2)
+  adjDepositDate        DateTime
+  adjDepositSlipNo      String?
+  adjDepositedBy        String?
+  adjAmount             Decimal        @db.Decimal(15, 2)
+  adjustedBy            String?
+  entityType            String         @default("non-corporate")
+  createdAt             DateTime       @default(now())
+  bankAccount           AccBankAccount @relation(fields: [bankAccountId], references: [id])
 }
 
 model AccChequeSerial {

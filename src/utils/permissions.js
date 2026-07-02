@@ -54,9 +54,23 @@ export const PERMISSIONS_MAP = {
         ],
       },
       { key: 'po',            label: 'Purchase Orders' },
-      { key: 'grn',           label: 'Goods Receipt (GRN)' },
+      {
+        key: 'grn',
+        label: 'Goods Receipt (GRN)',
+        tabs: [
+          { key: 'view', label: 'View' },
+          { key: 'edit', label: 'Edit GRN' },
+        ],
+      },
       { key: 'gd',            label: 'Goods Demand (GD)' },
-      { key: 'gin',           label: 'Goods Issuance (GIN)' },
+      {
+        key: 'gin',
+        label: 'Goods Issuance (GIN)',
+        tabs: [
+          { key: 'view', label: 'View' },
+          { key: 'edit', label: 'Edit GIN' },
+        ],
+      },
       { key: 'sales-invoice', label: 'Sales Invoice' },
       { key: 'gdn',           label: 'Goods Discard (GDN)' },
       { key: 'maintenance',   label: 'Maintenance' },

@@ -24,6 +24,7 @@ async function backfillOpeningStockMovements() {
       const type = String(m.movementType || '').toUpperCase();
       if (type === 'IN') return sum + Number(m.quantity || 0);
       if (type === 'OUT') return sum - Number(m.quantity || 0);
+      if (type === 'OPENING') return sum + Number(m.quantity || 0);
       if (type === 'ADJUSTMENT') return sum + (Number(m.newStock || 0) - Number(m.previousStock || 0));
       return sum;
     }, 0);

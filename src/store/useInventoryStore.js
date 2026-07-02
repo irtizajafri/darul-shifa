@@ -319,6 +319,11 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  updateGRN: async (id, payload) => request(`/grn/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
   fetchGDs: async ({ search = '', status = '', departmentId = '', demandCategoryTypeId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '' } = {}) => {
     set({ loading: true, error: null });
     try {
@@ -391,6 +396,11 @@ export const useInventoryStore = create((set) => ({
 
   createGIN: async (payload) => request('/gin', {
     method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  updateGIN: async (id, payload) => request(`/gin/${id}`, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   }),
 

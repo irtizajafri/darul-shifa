@@ -4,10 +4,11 @@ import useModalKeys from '../../hooks/useModalKeys';
 import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import { Plus, Printer, Search, X } from 'lucide-react';
+import { Plus, Printer, Search, X, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import { printGRNDocument } from '../../utils/printGRN';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
@@ -101,6 +102,7 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
 
 export default function GoodsReceipt() {
   const { user } = useAuthStore();
+  const canEditGRN = hasPermission(user, 'inventory', 'grn', 'edit');
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -113,21 +115,29 @@ export default function GoodsReceipt() {
   const [paymentType, setPaymentType] = useState('cash');
   const [paymentNote, setPaymentNote] = useState('');
   const [draftLines, setDraftLines] = useState([]);
+  const [editingGRN, setEditingGRN] = useState(null);
+  const [editGRNForm, setEditGRNForm] = useState({});
+  const [editGRNSaving, setEditGRNSaving] = useState(false);
+
   const {
     loading,
     grns,
     purchaseOrders,
+    masterOptions,
     fetchGRNs,
     fetchPurchaseOrders,
+    fetchMastersOptions,
     createGRN,
+    updateGRN,
   } = useInventoryStore();
 
   useEffect(() => {
     Promise.all([
       fetchGRNs(),
       fetchPurchaseOrders({ status: 'open' }),
+      fetchMastersOptions(),
     ]).catch((err) => toast.error(err.message || 'Failed to load GRN data'));
-  }, [fetchGRNs, fetchPurchaseOrders]);
+  }, [fetchGRNs, fetchPurchaseOrders, fetchMastersOptions]);
 
   useEffect(() => {
     if (location.state?.openCreate) {
@@ -287,6 +297,34 @@ export default function GoodsReceipt() {
 
   useFocusTrap(createFormRef, showCreate);
 
+  const openEditGRN = (grn) => {
+    setEditingGRN(grn);
+    setEditGRNForm({
+      supplierId: grn.supplierId ? String(grn.supplierId) : '',
+      receivedDate: grn.receivedDate ? new Date(grn.receivedDate).toISOString().slice(0, 10) : '',
+      billDate: grn.billDate ? new Date(grn.billDate).toISOString().slice(0, 10) : '',
+      receivedQuantity: grn.receivedQuantity != null ? String(grn.receivedQuantity) : '',
+      receivedRate: grn.receivedRate != null ? String(grn.receivedRate) : '',
+      paymentType: grn.paymentType || 'cash',
+      paymentNote: grn.paymentNote || '',
+    });
+  };
+
+  const handleSaveEditGRN = async () => {
+    if (!editingGRN) return;
+    setEditGRNSaving(true);
+    try {
+      await updateGRN(editingGRN.id, editGRNForm);
+      await fetchGRNs();
+      setEditingGRN(null);
+      toast.success('GRN updated');
+    } catch (err) {
+      toast.error(err.message || 'Failed to update GRN');
+    } finally {
+      setEditGRNSaving(false);
+    }
+  };
+
 
 
   return (
@@ -329,39 +367,128 @@ export default function GoodsReceipt() {
               })
               .slice(0, 15)
               .map((grn) => (
-                <div key={grn.id} className="flex items-center justify-between py-2.5 px-1">
-                  <div>
-                    <span className="font-medium text-sm text-slate-800">{grn.code}</span>
-                    <span className="text-slate-400 text-xs mx-2">|</span>
-                    <span className="text-xs text-slate-500">{grn.supplier?.name || '-'}</span>
-                    <span className="text-slate-400 text-xs mx-2">|</span>
-                    <span className="text-xs text-slate-500">{grn.item?.name || '-'}</span>
-                    {grn.receivedDate && <span className="text-slate-400 text-xs ml-2">({new Date(grn.receivedDate).toLocaleDateString()})</span>}
+                <div key={grn.id} className="py-2.5 px-1">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-medium text-sm text-slate-800">{grn.code}</span>
+                      <span className="text-slate-400 text-xs mx-2">|</span>
+                      <span className="text-xs text-slate-500">{grn.supplier?.name || '-'}</span>
+                      <span className="text-slate-400 text-xs mx-2">|</span>
+                      <span className="text-xs text-slate-500">{grn.item?.name || '-'}</span>
+                      {grn.receivedDate && <span className="text-slate-400 text-xs ml-2">({new Date(grn.receivedDate).toLocaleDateString()})</span>}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {canEditGRN && (
+                        <button
+                          onClick={() => openEditGRN(grn)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 rounded-md hover:bg-blue-50 transition-colors whitespace-nowrap"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                      )}
+                      <button
+                        onClick={() => printGRNDocument({
+                          grnCode: grn.code,
+                          date: grn.receivedDate,
+                          supplierName: grn.supplier?.name || '',
+                          items: [{
+                            itemName: grn.item?.name,
+                            orderedQty: grn.purchaseOrder?.requiredQuantity,
+                            receivedQty: grn.receivedQuantity,
+                            rateEst: grn.purchaseOrder?.orderedRate ?? grn.receivedRate,
+                            rateReceived: grn.receivedRate,
+                            amountReceived: grn.totalAmount,
+                          }],
+                          isReprint: true,
+                          reprintedBy: user?.name || user?.email || '',
+                          reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+                          printedBy: user?.name || user?.email || '',
+                          generatedAt: grn.receivedDate ? new Date(grn.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
+                        })}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Reprint
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => printGRNDocument({
-                      grnCode: grn.code,
-                      date: grn.receivedDate,
-                      supplierName: grn.supplier?.name || '',
-                      items: [{
-                        itemName: grn.item?.name,
-                        orderedQty: grn.purchaseOrder?.requiredQuantity,
-                        receivedQty: grn.receivedQuantity,
-                        rateEst: grn.purchaseOrder?.orderedRate ?? grn.receivedRate,
-                        rateReceived: grn.receivedRate,
-                        amountReceived: grn.totalAmount,
-                      }],
-                      isReprint: true,
-                      reprintedBy: user?.name || user?.email || '',
-                      reprintedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-                      printedBy: user?.name || user?.email || '',
-                      generatedAt: grn.receivedDate ? new Date(grn.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'long', year: 'numeric' }) : '',
-                    })}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-md hover:bg-red-50 transition-colors whitespace-nowrap"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    Reprint
-                  </button>
+                  {editingGRN?.id === grn.id && (
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Supplier</label>
+                        <select
+                          value={editGRNForm.supplierId}
+                          onChange={(e) => setEditGRNForm((f) => ({ ...f, supplierId: e.target.value }))}
+                          className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-white"
+                        >
+                          <option value="">— Select Supplier —</option>
+                          {(masterOptions.suppliers || []).map((s) => (
+                            <option key={s.id} value={String(s.id)}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Received Date</label>
+                          <input type="date" value={editGRNForm.receivedDate}
+                            onChange={(e) => setEditGRNForm((f) => ({ ...f, receivedDate: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Bill Date</label>
+                          <input type="date" value={editGRNForm.billDate}
+                            onChange={(e) => setEditGRNForm((f) => ({ ...f, billDate: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Received Qty</label>
+                          <input type="number" min="0.01" step="0.01" value={editGRNForm.receivedQuantity}
+                            onChange={(e) => setEditGRNForm((f) => ({ ...f, receivedQuantity: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Rate</label>
+                          <input type="number" min="0" step="0.01" value={editGRNForm.receivedRate}
+                            onChange={(e) => setEditGRNForm((f) => ({ ...f, receivedRate: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Payment Type</label>
+                        <div className="flex gap-4 px-3 py-2 border border-slate-300 rounded-md bg-white">
+                          {['cash', 'installment'].map((pt) => (
+                            <label key={pt} className="flex items-center gap-1.5 text-sm cursor-pointer capitalize">
+                              <input type="radio" name="editPaymentType" value={pt}
+                                checked={editGRNForm.paymentType === pt}
+                                onChange={() => setEditGRNForm((f) => ({ ...f, paymentType: pt, paymentNote: pt === 'cash' ? '' : f.paymentNote }))} />
+                              {pt}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      {editGRNForm.paymentType === 'installment' && (
+                        <div>
+                          <label className="block text-xs text-slate-500 mb-1">Installment Note</label>
+                          <textarea rows={2} value={editGRNForm.paymentNote}
+                            onChange={(e) => setEditGRNForm((f) => ({ ...f, paymentNote: e.target.value }))}
+                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm resize-none focus:outline-none focus:border-blue-500" />
+                        </div>
+                      )}
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => setEditingGRN(null)}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-md hover:bg-slate-50">
+                          Cancel
+                        </button>
+                        <button onClick={handleSaveEditGRN} disabled={editGRNSaving}
+                          className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50">
+                          {editGRNSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             {(grns || []).length === 0 && (

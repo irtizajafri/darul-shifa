@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { Menu, LogOut, User, KeyRound, X, Eye, EyeOff } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo } from 'react';
+import { Menu, LogOut, User, KeyRound, X, Eye, EyeOff, Phone, MapPin, GraduationCap, Clock, BadgeCheck, Building2 } from 'lucide-react';
 import ceoPhoto from '../../assets/ceo.JPG';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -81,8 +82,22 @@ function ChangePasswordModal({ user, onClose }) {
   );
 }
 
+function DetailRow({ icon: Icon, label, value }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start gap-2.5 py-1.5">
+      <Icon className="w-3.5 h-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide leading-none mb-0.5">{label}</p>
+        <p className="text-xs text-slate-700 font-medium leading-snug break-words">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuthStore();
+  const { employees, fetchEmployees } = useEmployeeStore();
   const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
@@ -94,6 +109,12 @@ export default function Navbar({ onMenuClick }) {
   };
 
   useEffect(() => {
+    if (dropdownOpen && !user?.isSuperAdmin) {
+      fetchEmployees();
+    }
+  }, [dropdownOpen]);
+
+  useEffect(() => {
     const handler = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setDropdownOpen(false);
@@ -102,6 +123,33 @@ export default function Navbar({ onMenuClick }) {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  const matchedEmployee = useMemo(() => {
+    if (!user?.name || !employees?.length) return null;
+    const userName = user.name.trim().toLowerCase();
+    return employees.find((e) => {
+      const empName = `${e.firstName || ''} ${e.lastName || ''}`.trim().toLowerCase();
+      return empName === userName;
+    }) || null;
+  }, [user?.name, employees]);
+
+  const weeklyHours = useMemo(() => {
+    if (!matchedEmployee?.dutyRoster?.length) return null;
+    const total = matchedEmployee.dutyRoster.reduce((sum, r) => sum + (Number(r.hours) || 0), 0);
+    return total > 0 ? `${total} hrs / week` : null;
+  }, [matchedEmployee]);
+
+  const avatarPhoto = useMemo(() => {
+    if (user?.name?.toLowerCase() === 'dr.nadeem abbasi') return ceoPhoto;
+    return matchedEmployee?.photo || null;
+  }, [user?.name, matchedEmployee]);
+
+  const formatDate = (dob) => {
+    if (!dob) return null;
+    try {
+      return new Date(dob).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch { return null; }
+  };
 
   return (
     <>
@@ -112,15 +160,15 @@ export default function Navbar({ onMenuClick }) {
         <div className="flex-1" />
         <div className="flex items-center gap-4">
 
-          {/* User avatar — clickable for sub-users */}
+          {/* User avatar */}
           <div className="relative hidden sm:block" ref={dropdownRef}>
             <button
               onClick={() => !user?.isSuperAdmin && setDropdownOpen((s) => !s)}
               className={`flex items-center gap-2 text-sm rounded-lg px-2 py-1 transition-colors ${!user?.isSuperAdmin ? 'hover:bg-slate-100 cursor-pointer' : 'cursor-default'}`}
             >
               <div className="w-8 h-8 rounded-full bg-[#2563EB]/15 flex items-center justify-center overflow-hidden">
-                {user?.name?.toLowerCase() === 'dr.nadeem abbasi' ? (
-                  <img src={ceoPhoto} alt="Dr Nadeem Abbasi" className="w-full h-full object-cover" />
+                {avatarPhoto ? (
+                  <img src={avatarPhoto} alt={user?.name} className="w-full h-full object-cover" />
                 ) : (
                   <User className="w-4 h-4 text-[#2563EB]" />
                 )}
@@ -132,14 +180,53 @@ export default function Navbar({ onMenuClick }) {
             </button>
 
             {dropdownOpen && !user?.isSuperAdmin && (
-              <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-50">
-                <button
-                  onClick={() => { setDropdownOpen(false); setShowChangePwd(true); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  <KeyRound className="w-4 h-4 text-slate-400" />
-                  Change Password
-                </button>
+              <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden">
+
+                {/* Profile header */}
+                <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-5 pt-5 pb-4 flex flex-col items-center text-center">
+                  <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center overflow-hidden ring-2 ring-white/40 mb-2.5">
+                    {avatarPhoto ? (
+                      <img src={avatarPhoto} alt={user?.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-8 h-8 text-white" />
+                    )}
+                  </div>
+                  <p className="text-sm font-bold text-white leading-tight">{user?.name}</p>
+                  <p className="text-xs text-blue-200 mt-0.5">{user?.role}</p>
+                  {matchedEmployee?.empCode && (
+                    <span className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-white/15 rounded-full text-[10px] text-white font-medium">
+                      <BadgeCheck className="w-3 h-3" /> {matchedEmployee.empCode}
+                    </span>
+                  )}
+                </div>
+
+                {/* Details */}
+                {matchedEmployee ? (
+                  <div className="px-4 py-3 space-y-0 divide-y divide-slate-50">
+                    <DetailRow icon={Building2}     label="Department"   value={matchedEmployee.department} />
+                    <DetailRow icon={BadgeCheck}    label="Designation"  value={matchedEmployee.designation} />
+                    <DetailRow icon={Phone}         label="Phone"        value={matchedEmployee.phone} />
+                    <DetailRow icon={MapPin}        label="Date of Birth" value={formatDate(matchedEmployee.dob)} />
+                    <DetailRow icon={GraduationCap} label="Qualification" value={matchedEmployee.qualification} />
+                    <DetailRow icon={Clock}         label="Roster Hours"  value={weeklyHours} />
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 text-center text-xs text-slate-400">
+                    No employee record linked
+                  </div>
+                )}
+
+                {/* Change Password */}
+                <div className="border-t border-slate-100 p-2">
+                  <button
+                    onClick={() => { setDropdownOpen(false); setShowChangePwd(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 rounded-xl transition-colors"
+                  >
+                    <KeyRound className="w-4 h-4 text-slate-400" />
+                    Change Password
+                  </button>
+                </div>
+
               </div>
             )}
           </div>

@@ -13,12 +13,13 @@ const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
 
 const fmtDateLong = (d) => {
-  const dt   = new Date(d);
-  const day  = String(dt.getDate()).padStart(2, '0');
-  const mon  = dt.toLocaleString('en-US', { month: 'short' });
-  const year = dt.getFullYear();
-  const wday = dt.toLocaleString('en-US', { weekday: 'long' });
-  const time = dt.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const dt  = new Date(d);
+  const tz  = { timeZone: 'Asia/Karachi' };
+  const day  = dt.toLocaleString('en-US', { ...tz, day:     '2-digit' });
+  const mon  = dt.toLocaleString('en-US', { ...tz, month:   'short'   });
+  const year = dt.toLocaleString('en-US', { ...tz, year:    'numeric' });
+  const wday = dt.toLocaleString('en-US', { ...tz, weekday: 'long'    });
+  const time = dt.toLocaleString('en-US', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   return `${day}-${mon}-${year} ${wday} ${time}`;
 };
 
@@ -68,7 +69,7 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
         </div>
         <div className="vr-vc-meta-area">
           <div className="vr-vc-printby">PRINT BY: {printBy}</div>
-          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.voucherDate)}</div>
+          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.createdAt || v.voucherDate)}</div>
           <div className="vr-vc-page">Page: {pageNum} of {totalPages}</div>
         </div>
       </div>
@@ -90,6 +91,14 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
       {/* ── Entries table ── */}
       {isExpense ? (
         <table className="vr-table">
+          <colgroup>
+            <col style={{ width: '13%' }} />
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '35%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '9%'  }} />
+            <col style={{ width: '17%' }} />
+          </colgroup>
           <thead>
             <tr>
               <th>GL</th>
@@ -120,7 +129,8 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={5} className="vr-tfoot-label">TOTAL</td>
+              <td colSpan={4} className="vr-tfoot-words">{amountInWords(total)}</td>
+              <td className="vr-tfoot-label">TOTAL</td>
               <td className="vr-td-r vr-tfoot-amt">{fmt2(total)}</td>
             </tr>
           </tfoot>
@@ -145,15 +155,13 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={2} className="vr-tfoot-label">TOTAL</td>
+              <td className="vr-tfoot-words">{amountInWords(total)}</td>
+              <td className="vr-tfoot-label">TOTAL</td>
               <td className="vr-td-r vr-tfoot-amt">{fmt2(total)}</td>
             </tr>
           </tfoot>
         </table>
       )}
-
-      {/* ── Amount in words ── */}
-      <div className="vr-words">{amountInWords(total)}</div>
 
       {/* ── Signatures ── */}
       <div className="vr-sigs">
@@ -169,9 +177,9 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
 const PRINT_CSS = `
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#000; background:#fff; }
-  .vr-print-page { page-break-after:always; padding:16px 20px; border:1px solid #000; margin:6px; }
+  .vr-print-page { page-break-after:always; padding:16px 20px; margin:6px; }
   .vr-print-page:last-child { page-break-after:avoid; }
-  .vr-vc-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:8px; }
+  .vr-vc-header { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:8px; margin-bottom:8px; }
   .vr-vc-title-area { flex:1; }
   .vr-vc-title { font-size:15px; font-weight:900; letter-spacing:0.05em; text-transform:uppercase; }
   .vr-vc-meta-area { text-align:right; font-size:9px; line-height:1.7; }
@@ -179,16 +187,16 @@ const PRINT_CSS = `
   .vr-vc-divider { border-top:1px solid #bbb; margin:4px 0 7px; }
   .vr-vc-info { display:flex; gap:20px; margin-bottom:8px; font-size:10px; }
   .vr-vc-info-label { font-weight:700; margin-right:4px; }
-  table { width:100%; border-collapse:collapse; margin-bottom:8px; }
-  th,td { border:1px solid #000; padding:4px 6px; font-size:10px; text-align:left; }
-  th { background:#f0f0f0; font-weight:700; text-transform:uppercase; }
+  table { width:100%; border-collapse:collapse; margin-bottom:4px; }
+  th { padding:5px 6px; font-size:10px; text-align:left; font-weight:700; text-transform:uppercase; }
+  td { padding:4px 6px; font-size:10px; text-align:left; }
+  tfoot td { background:#f9f9f9; font-weight:700; }
   .vr-td-r { text-align:right !important; }
   .vr-cell-top { font-size:10px; }
   .vr-cell-sub { font-size:9px; color:#555; margin-top:1px; }
-  tfoot td { background:#f5f5f5; font-weight:700; }
+  .vr-tfoot-words { font-size:9px; font-style:italic; color:#555; font-weight:400; vertical-align:middle; }
   .vr-tfoot-label { text-align:right; font-size:9px; text-transform:uppercase; color:#555; padding-right:8px !important; }
   .vr-tfoot-amt { font-size:11px; font-weight:800; }
-  .vr-words { font-size:9.5px; font-style:italic; border-top:1px solid #ccc; padding-top:4px; margin-bottom:14px; }
   .vr-sigs { display:flex; justify-content:space-between; margin-top:22px; padding-top:6px; }
   .vr-sig { text-align:center; font-size:9px; border-top:1.5px solid #000; padding-top:4px; width:120px; font-weight:600; }
 `;
@@ -243,7 +251,10 @@ export default function VoucherReprint() {
     );
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 400);
+    setTimeout(() => {
+      win.print();
+      win.onafterprint = () => win.close();
+    }, 400);
   };
 
   return (

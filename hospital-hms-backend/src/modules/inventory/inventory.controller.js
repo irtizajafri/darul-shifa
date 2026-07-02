@@ -529,6 +529,30 @@ async function createGRN(req, res, next) {
   }
 }
 
+async function updateGRN(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return fail(res, 400, 'Invalid GRN id');
+    const data = await service.updateGRN(id, req.body || {});
+    return success(res, data, 'grn updated');
+  } catch (err) {
+    if (String(err.message).includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function updateGIN(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return fail(res, 400, 'Invalid GIN id');
+    const data = await service.updateGIN(id, req.body || {});
+    return success(res, data, 'gin updated');
+  } catch (err) {
+    if (String(err.message).includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
 async function listGDs(req, res, next) {
   try {
     const data = await service.listGDs(req.query || {});
@@ -948,12 +972,14 @@ module.exports = {
   createPurchaseOrder,
   listGRNs,
   createGRN,
+  updateGRN,
   listGDs,
   listGDHeaders,
   createGD,
   createGDBatch,
   listGINs,
   createGIN,
+  updateGIN,
   listSalesInvoices,
   createSalesInvoice,
   listSalesInvoiceHeaders,

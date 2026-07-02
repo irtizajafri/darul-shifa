@@ -1,0 +1,219 @@
+@use '../../../styles/variables' as *;
+
+.bda-page {
+  padding: 1.25rem 1.5rem;
+  background: #f0f4f8;
+  min-height: 100%;
+}
+
+// ── Breadcrumb ────────────────────────────────────────────────────────────────
+.bda-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-bottom: 1.1rem;
+}
+.bda-bc-sep    { color: #cbd5e1; flex-shrink: 0; }
+.bda-bc-active { font-weight: 700; color: $dark-blue; }
+.bda-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.79rem;
+  font-weight: 600;
+  color: $primary;
+  background: $primary-light;
+  border: 1px solid #bfdbfe;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s;
+  &:hover { background: #dbeafe; }
+}
+
+// ── Card ──────────────────────────────────────────────────────────────────────
+.bda-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(30, 58, 95, 0.07);
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.bda-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 1.2rem 1.6rem;
+  border-bottom: 2px solid $primary;
+}
+.bda-card-icon  { color: $primary; flex-shrink: 0; }
+.bda-card-title { font-size: 1rem; font-weight: 800; color: $dark-blue; text-transform: uppercase; letter-spacing: 0.04em; }
+.bda-card-sub   { font-size: 0.75rem; color: #64748b; margin-top: 0.1rem; }
+
+// ── Form ──────────────────────────────────────────────────────────────────────
+.bda-form {
+  padding: 1.4rem 1.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.bda-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  &--full { width: 100%; }
+}
+
+.bda-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bda-select {
+  padding: 0.6rem 0.85rem;
+  font-size: 0.88rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+  &:focus { border-color: $primary; }
+  &--full { width: 100%; }
+}
+
+// ── Two-column grid ───────────────────────────────────────────────────────────
+.bda-grid {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr;
+  gap: 0.65rem 1rem;
+  align-items: center;
+}
+
+.bda-col-header {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: $dark-blue;
+  text-align: center;
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid $primary;
+}
+
+.bda-col-label { /* spacer */ }
+
+.bda-row-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: $dark-blue;
+  padding-right: 0.5rem;
+  white-space: nowrap;
+}
+
+.bda-cell {
+  &--empty { /* intentionally blank */ }
+}
+
+.bda-input {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.85rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+  &:focus { border-color: $primary; }
+
+  &--amt {
+    font-weight: 700;
+    color: $dark-blue;
+  }
+
+  &--search { padding-left: 2rem !important; }
+}
+
+// ── Employee search ───────────────────────────────────────────────────────────
+.bda-search-wrap {
+  position: relative;
+}
+.bda-search-icon {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #94a3b8;
+  pointer-events: none;
+}
+.bda-emp-drop {
+  position: absolute;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(30, 58, 95, 0.12);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 60;
+}
+.bda-emp-item {
+  padding: 0.45rem 0.8rem;
+  font-size: 0.83rem;
+  color: #1e293b;
+  cursor: pointer;
+  &:hover { background: #eff6ff; color: $primary; }
+}
+.bda-emp-empty {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+.bda-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #f1f5f9;
+}
+.bda-btn-cancel {
+  padding: 0.55rem 1.4rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  &:hover { background: #f1f5f9; }
+}
+.bda-btn-save {
+  padding: 0.55rem 2rem;
+  font-size: 0.83rem;
+  font-weight: 700;
+  color: #fff;
+  background: $primary;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+  transition: background 0.15s;
+  &:hover:not(:disabled) { background: #1d4ed8; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
