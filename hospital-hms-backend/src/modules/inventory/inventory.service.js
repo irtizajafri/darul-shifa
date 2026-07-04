@@ -921,7 +921,7 @@ async function updateGRN(id, payload) {
     const newQty = payload.receivedQuantity !== undefined ? Number(payload.receivedQuantity) : null;
     const newRate = payload.receivedRate !== undefined ? Number(payload.receivedRate) : null;
 
-    if (newQty !== null && Number.isFinite(newQty) && newQty > 0) {
+    if (newQty !== null && Number.isFinite(newQty) && newQty >= 0) {
       const delta = newQty - Number(grn.receivedQuantity);
       if (delta !== 0) {
         if (delta < 0) {

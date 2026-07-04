@@ -445,7 +445,7 @@ export default function GoodsReceipt() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs text-slate-500 mb-1">Received Qty</label>
-                          <input type="number" min="0.01" step="0.01" value={editGRNForm.receivedQuantity}
+                          <input type="number" min="0" step="0.01" value={editGRNForm.receivedQuantity}
                             onChange={(e) => setEditGRNForm((f) => ({ ...f, receivedQuantity: e.target.value }))}
                             className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
                         </div>
