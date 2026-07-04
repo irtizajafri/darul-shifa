@@ -92,17 +92,19 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
       {isExpense ? (
         <table className="vr-table">
           <colgroup>
+            <col style={{ width: '12%' }} />
             <col style={{ width: '13%' }} />
-            <col style={{ width: '16%' }} />
-            <col style={{ width: '35%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '9%'  }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '32%' }} />
+            <col style={{ width: '7%'  }} />
+            <col style={{ width: '5%'  }} />
             <col style={{ width: '17%' }} />
           </colgroup>
           <thead>
             <tr>
               <th>GL</th>
               <th>ACCOUNT</th>
+              <th>PAYEE</th>
               <th>PARTICULARS</th>
               <th>CHQ DT</th>
               <th>CHQ #</th>
@@ -118,8 +120,9 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
                 </td>
                 <td>
                   <div className="vr-cell-top">{e.mainAccountName || e.accountName || '—'}</div>
-                  <div className="vr-cell-sub">{e.subAccountName  || e.payeeName   || '—'}</div>
+                  <div className="vr-cell-sub">{e.subAccountName  || '—'}</div>
                 </td>
+                <td>{e.payeeName || '—'}</td>
                 <td>{e.particulars || '—'}</td>
                 <td>{e.chequeDate ? fmtDate(e.chequeDate) : '—'}</td>
                 <td>{e.chequeNo   || '—'}</td>
@@ -129,7 +132,7 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
           </tbody>
           <tfoot>
             <tr>
-              <td colSpan={4} className="vr-tfoot-words">{amountInWords(total)}</td>
+              <td colSpan={5} className="vr-tfoot-words">{amountInWords(total)}</td>
               <td className="vr-tfoot-label">TOTAL</td>
               <td className="vr-td-r vr-tfoot-amt">{fmt2(total)}</td>
             </tr>

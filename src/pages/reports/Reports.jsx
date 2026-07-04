@@ -145,7 +145,8 @@ export default function Reports() {
       setSavedPayslipRows(effectiveAttendanceWithOverrides);
       setPayslipSavedAt(now.toISOString());
       toast.success('Payslip saved to DB');
-    } catch {
+    } catch (err) {
+      console.error('Payslip save error:', err);
       toast.error('Save failed');
     } finally {
       setIsSaving(false);

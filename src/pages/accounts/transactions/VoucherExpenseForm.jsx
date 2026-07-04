@@ -54,29 +54,26 @@ function amountInWords(amount) {
 const VOUCHER_PRINT_CSS = `
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#000; background:#fff; }
-  .vr-print-page { page-break-after:always; padding:16px 20px; margin:6px; }
+  .vr-print-page { page-break-after:always; padding:24px 28px; }
   .vr-print-page:last-child { page-break-after:avoid; }
-  .vr-vc-header { display:flex; align-items:flex-start; justify-content:space-between; padding-bottom:8px; margin-bottom:8px; }
-  .vr-vc-title-area { flex:1; }
-  .vr-vc-title { font-size:15px; font-weight:900; letter-spacing:0.05em; text-transform:uppercase; }
-  .vr-vc-meta-area { text-align:right; font-size:9px; line-height:1.7; }
-  .vr-vc-printby { font-weight:700; }
-  .vr-vc-divider { border-top:1px solid #bbb; margin:4px 0 7px; }
-  .vr-vc-info { display:flex; gap:20px; margin-bottom:8px; font-size:10px; }
-  .vr-vc-info-label { font-weight:700; margin-right:4px; }
-  table { width:100%; border-collapse:collapse; margin-bottom:4px; }
-  th { padding:5px 6px; font-size:10px; text-align:left; font-weight:700; text-transform:uppercase; }
-  td { padding:4px 6px; font-size:10px; text-align:left; }
-  tfoot td { background:#f9f9f9; font-weight:700; }
+  .vr-title-box { text-align:center; border:2px solid #000; padding:9px 10px; margin-bottom:10px; }
+  .vr-title { font-size:17px; font-weight:900; letter-spacing:0.1em; text-transform:uppercase; }
+  .vr-meta { display:grid; grid-template-columns:1fr 1fr; font-size:10.5px; border-bottom:2px solid #000; padding-bottom:6px; margin-bottom:0; }
+  .vr-meta-row { display:flex; align-items:baseline; margin-bottom:2px; }
+  .vr-meta-label { font-weight:700; white-space:nowrap; min-width:90px; }
+  .vr-meta-val { margin-left:4px; }
+  table { width:100%; border-collapse:collapse; margin-bottom:0; }
+  th { padding:5px 7px; font-size:10.5px; text-align:left; font-weight:700; text-transform:uppercase; border-top:2.5px solid #000; border-bottom:2.5px solid #000; }
+  td { padding:7px 7px; font-size:10.5px; text-align:left; }
   .vr-td-r { text-align:right !important; }
-  .vr-cell-top { font-size:10px; }
-  .vr-cell-sub { font-size:9px; color:#555; margin-top:1px; }
-  .vr-tfoot-words { font-size:9px; font-style:italic; color:#555; font-weight:400; vertical-align:middle; }
-  .vr-tfoot-label { text-align:right; font-size:9px; text-transform:uppercase; color:#555; padding-right:8px !important; }
-  .vr-tfoot-amt { font-size:11px; font-weight:800; }
-  .vr-words { font-size:9.5px; font-style:italic; border-top:1px solid #ccc; padding-top:4px; margin-bottom:14px; }
-  .vr-sigs { display:flex; justify-content:space-between; margin-top:22px; padding-top:6px; }
-  .vr-sig { text-align:center; font-size:9px; border-top:1.5px solid #000; padding-top:4px; width:120px; font-weight:600; }
+  .vr-cell-top { font-size:10.5px; font-weight:700; }
+  .vr-cell-sub { font-size:10px; margin-top:2px; }
+  tfoot td { border-top:2.5px solid #000; border-bottom:2.5px solid #000; font-weight:700; padding:5px 7px; }
+  .vr-tfoot-words { font-size:10px; font-weight:700; text-transform:uppercase; vertical-align:middle; }
+  .vr-tfoot-label { text-align:right; font-size:10.5px; font-weight:700; text-transform:uppercase; padding-right:6px !important; }
+  .vr-tfoot-amt { font-size:11px; font-weight:900; }
+  .vr-sigs { display:flex; justify-content:space-between; margin-top:50px; }
+  .vr-sig { text-align:center; font-size:10px; border-top:1.5px solid #000; padding-top:5px; width:140px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
 `;
 
 function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy }) {
@@ -91,7 +88,7 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
       </td>
       <td>
         <div class="vr-cell-top">${e.mainAccountName || e.accountName || '—'}</div>
-        <div class="vr-cell-sub">${e.subAccountName  || e.payeeName   || '—'}</div>
+        <div class="vr-cell-sub">${e.subAccountName  || '—'}</div>
       </td>
       <td>${e.particulars || '—'}</td>
       <td>${e.chequeDate ? fmtDate(e.chequeDate) : '—'}</td>
@@ -102,40 +99,46 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
 
   const html = `
     <div class="vr-print-page">
-      <div class="vr-vc-header">
-        <div class="vr-vc-title-area"><div class="vr-vc-title">EXPENSE VOUCHER</div></div>
-        <div class="vr-vc-meta-area">
-          <div class="vr-vc-printby">PRINT BY: ${printBy}</div>
-          <div class="vr-vc-vdate">VOUCHER DATE: ${fmtDateLong(voucherDate)}</div>
-          <div class="vr-vc-page">Page: 1 of 1</div>
-        </div>
+      <div class="vr-title-box">
+        <div class="vr-title">EXPENSE VOUCHER</div>
       </div>
-      <div class="vr-vc-divider"></div>
-      <div class="vr-vc-info">
-        <div class="vr-vc-info-item">
-          <span class="vr-vc-info-label">VOUCHER #:</span>
-          <span class="vr-vc-info-val">${voucherNo}</span>
+      <div class="vr-meta">
+        <div>
+          <div class="vr-meta-row">
+            <span class="vr-meta-label">VOUCHER#</span>
+            <span class="vr-meta-val">${voucherNo}</span>
+          </div>
+          <div class="vr-meta-row">
+            <span class="vr-meta-label">METHOD</span>
+            <span class="vr-meta-val">${modeStr}</span>
+          </div>
         </div>
-        <div class="vr-vc-info-item">
-          <span class="vr-vc-info-label">METHOD:</span>
-          <span class="vr-vc-info-val">${modeStr}</span>
+        <div>
+          <div class="vr-meta-row">
+            <span class="vr-meta-label">DATE &amp; TIME:</span>
+            <span class="vr-meta-val">${fmtDateLong(voucherDate)}</span>
+          </div>
+          <div class="vr-meta-row">
+            <span class="vr-meta-label">GENERATED BY:</span>
+            <span class="vr-meta-val">${printBy}</span>
+          </div>
         </div>
       </div>
       <table>
         <colgroup>
           <col style="width:13%" />
           <col style="width:16%" />
-          <col style="width:35%" />
-          <col style="width:10%" />
-          <col style="width:9%"  />
-          <col style="width:17%" />
+          <col style="width:48%" />
+          <col style="width:6%"  />
+          <col style="width:4%"  />
+          <col style="width:13%" />
         </colgroup>
         <thead>
           <tr>
             <th>GL</th>
             <th>ACCOUNT</th>
-            <th>PARTICULARS</th>
-            <th>CHQ DT</th>
+            <th>PARTICULAR</th>
+            <th>CHEQ DT</th>
             <th>CHQ #</th>
             <th class="vr-td-r">AMOUNT</th>
           </tr>
@@ -150,9 +153,9 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
         </tfoot>
       </table>
       <div class="vr-sigs">
-        <div class="vr-sig">Accountant</div>
-        <div class="vr-sig">Administrator</div>
-        <div class="vr-sig">Receiver's Signature</div>
+        <div class="vr-sig">ACCOUNTANT</div>
+        <div class="vr-sig">C.E.O.</div>
+        <div class="vr-sig">RECIVER'S SIG</div>
       </div>
     </div>
   `;

@@ -797,8 +797,8 @@ async function createGRN(payload) {
   const receivedQuantity = parsePositiveNumber(payload.receivedQuantity);
   const receivedRate = parsePositiveNumber(payload.receivedRate);
 
-  if (!Number.isFinite(receivedQuantity) || receivedQuantity <= 0) {
-    throw new Error('receivedQuantity must be a positive number');
+  if (!Number.isFinite(receivedQuantity) || receivedQuantity < 0) {
+    throw new Error('receivedQuantity must be a non-negative number');
   }
   if (!Number.isFinite(receivedRate) || receivedRate <= 0) {
     throw new Error('receivedRate must be a positive number');

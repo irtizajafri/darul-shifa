@@ -204,8 +204,8 @@ export default function GoodsReceipt() {
       return;
     }
     for (const line of draftLines) {
-      if (!line.receivedQuantity || Number(line.receivedQuantity) < 1) {
-        toast.error(`Enter valid quantity for ${line.itemName}`);
+      if (line.receivedQuantity === '' || line.receivedQuantity === null || line.receivedQuantity === undefined || !Number.isFinite(Number(line.receivedQuantity))) {
+        toast.error(`Enter quantity for ${line.itemName}`);
         return;
       }
       if (!line.receivedRate || Number(line.receivedRate) < 0) {
@@ -601,7 +601,7 @@ export default function GoodsReceipt() {
                         <td className="px-4 py-2">
                           <input
                             type="number"
-                            min="1"
+                            min="0"
                             value={line.receivedQuantity}
                             onChange={(e) => updateDraftLine(idx, 'receivedQuantity', e.target.value)}
                             className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
