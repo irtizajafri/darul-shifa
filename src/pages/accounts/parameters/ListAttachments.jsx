@@ -47,11 +47,44 @@ export default function ListAttachments() {
     ]).finally(() => setLoading(false));
   }, [entityType]);
 
+  const [supplierModal, setSupplierModal] = useState(null);
+  const [savingSuppliers, setSavingSuppliers] = useState(false);
+
   // ── Entries expand ────────────────────────────────────────────────────────
-  const toggleHead = async (headId) => {
-    if (expandedHead === headId) { setExpandedHead(null); return; }
-    setExpandedHead(headId);
-    if (typeof headId === 'number') await fetchPayeeEntries(headId);
+  const toggleHead = async (head) => {
+    if (expandedHead === head.id) { setExpandedHead(null); return; }
+    setExpandedHead(head.id);
+    if (head.sourceType === 'manual') {
+      await fetchPayeeEntries(head.id);
+    }
+    if (head.sourceType === 'vendor') {
+      const r = await fetch(`${API}/payee-entries?headId=${head.id}`);
+      const j = await r.json();
+      const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((e) => e.name));
+      setSupplierModal({
+        headId: head.id,
+        headName: head.name,
+        allSuppliers: linkedSuppliers,
+        checked: checkedNames,
+      });
+    }
+  };
+
+  const saveSupplierSelection = async () => {
+    if (!supplierModal) return;
+    setSavingSuppliers(true);
+    try {
+      const r = await fetch(`${API}/payee-entries/bulk-save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payeeHeadId: supplierModal.headId, subAccountId: supplierModal.subAccountId, names: [...supplierModal.checked] }),
+      });
+      const j = await r.json();
+      if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
+      setSupplierModal(null);
+      toast.success('Suppliers saved');
+    } catch (err) { toast.error(err.message); }
+    finally { setSavingSuppliers(false); }
   };
 
   // ── Link account cascade ──────────────────────────────────────────────────
@@ -185,10 +218,7 @@ export default function ListAttachments() {
       ));
     }
     if (head.sourceType === 'vendor') {
-      if (linkedSuppliers.length === 0) return <p className="list-attach__empty">No suppliers found in Inventory module</p>;
-      return linkedSuppliers.map((s) => (
-        <div key={s.id} className="list-attach__entry-row"><span>{s.name}</span></div>
-      ));
+      return null;
     }
     if (head.sourceType === 'doctor') {
       return <p className="list-attach__empty">Connected when Clinic — Doctors data is available</p>;
@@ -255,7 +285,19 @@ export default function ListAttachments() {
           </div>
           <div className="list-attach__link-field">
             <label>Sub Account</label>
-            <select value={ls.subAccountId} onChange={(e) => updLink(head.id, { subAccountId: e.target.value })} disabled={!ls.mainAccountId || ls.subAccs.length === 0}>
+            <select
+              value={ls.subAccountId}
+              disabled={!ls.mainAccountId || ls.subAccs.length === 0}
+              onChange={async (e) => {
+                updLink(head.id, { subAccountId: e.target.value });
+                if (head.sourceType === 'vendor' && e.target.value) {
+                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
+                  const j = await r.json();
+                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
+                  setSupplierModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allSuppliers: linkedSuppliers, checked: checkedNames });
+                }
+              }}
+            >
               <option value="">Select Sub Account</option>
               {ls.subAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
             </select>
@@ -275,7 +317,7 @@ export default function ListAttachments() {
     const badge = SOURCE_BADGE[head.sourceType] || SOURCE_BADGE.manual;
     const isManual = head.sourceType === 'manual';
     const isLinkOpen = expandedLink === head.id;
-    const isExpanded = expandedHead === head.id || (head.sourceType !== 'manual' && expandedHead === `sys-${head.sourceType}`);
+    const isExpanded = expandedHead === head.id;
 
     return (
       <div key={head.id} className={`list-attach__head ${isManual ? 'custom' : 'system'}`}>
@@ -304,7 +346,7 @@ export default function ListAttachments() {
             )}
             <button
               className="list-attach__expand-btn"
-              onClick={() => isManual ? toggleHead(head.id) : toggleHead(`sys-${head.sourceType}`)}
+              onClick={() => toggleHead(head)}
             >
               {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
@@ -369,6 +411,67 @@ export default function ListAttachments() {
             <div className="acc-param-page__modal-actions">
               <button className="acc-param-page__btn-cancel" onClick={closeHeadModal}>Cancel</button>
               <button className="acc-param-page__btn-save" onClick={saveHead} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supplier Modal */}
+      {supplierModal && (
+        <div className="acc-param-page__overlay" onClick={() => setSupplierModal(null)}>
+          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="list-attach__supplier-modal__header">
+              <div>
+                <div className="list-attach__supplier-modal__title">Select Suppliers</div>
+                <div className="list-attach__supplier-modal__sub">{supplierModal.headName}</div>
+              </div>
+              <button className="list-attach__supplier-modal__close" onClick={() => setSupplierModal(null)}>✕</button>
+            </div>
+
+            <div className="list-attach__supplier-modal__select-all">
+              <label className="list-attach__check-label">
+                <input
+                  type="checkbox"
+                  checked={supplierModal.allSuppliers.length > 0 && supplierModal.checked.size === supplierModal.allSuppliers.length}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? new Set(supplierModal.allSuppliers.map((s) => s.name))
+                      : new Set();
+                    setSupplierModal((m) => ({ ...m, checked: next }));
+                  }}
+                />
+                <span>Select All</span>
+              </label>
+              <span className="list-attach__supplier-modal__count">
+                {supplierModal.checked.size} / {supplierModal.allSuppliers.length} selected
+              </span>
+            </div>
+
+            <div className="list-attach__supplier-modal__list">
+              {supplierModal.allSuppliers.map((s) => (
+                <label
+                  key={s.id}
+                  className={`list-attach__supplier-modal__item ${supplierModal.checked.has(s.name) ? 'checked' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={supplierModal.checked.has(s.name)}
+                    onChange={() => {
+                      const next = new Set(supplierModal.checked);
+                      next.has(s.name) ? next.delete(s.name) : next.add(s.name);
+                      setSupplierModal((m) => ({ ...m, checked: next }));
+                    }}
+                  />
+                  <span className="list-attach__supplier-modal__name">{s.name}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="list-attach__supplier-modal__footer">
+              <button className="list-attach__link-cancel" onClick={() => setSupplierModal(null)}>Cancel</button>
+              <button className="list-attach__link-save" onClick={saveSupplierSelection} disabled={savingSuppliers}>
+                {savingSuppliers ? 'Saving…' : 'Save & Apply'}
+              </button>
             </div>
           </div>
         </div>

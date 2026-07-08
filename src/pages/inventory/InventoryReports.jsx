@@ -17,7 +17,7 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 
 const REPORT_TYPES = [
   'Item List', 'Stock Position', 'Item Ledger', 'Reorder Report',
-  'Receiving Report', 'Issuance Report', 'Discard Report', 'Repairing Report',
+  'Receiving Report', 'Issuance Report', 'GD Report', 'Discard Report', 'Repairing Report',
   'Short Expiry', 'Expiry', 'Daily Sales', 'Supplier Ledger', 'Purchase Order Report'
 ];
 
@@ -57,6 +57,15 @@ export default function InventoryReports() {
     assetType: '',
     issuedById: '',
   });
+  const [gdFilters, setGdFilters] = useState({
+    dateFrom: '',
+    dateTo: '',
+    departmentId: '',
+    categoryId: '',
+    subcategoryId: '',
+    itemId: '',
+    status: '',
+  });
   const [discardFilters, setDiscardFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -87,6 +96,7 @@ export default function InventoryReports() {
     asOfDate: '',
     categoryId: '',
     subcategoryId: '',
+    itemId: '',
     assetType: '',
     brand: '',
     location: '',
@@ -149,6 +159,7 @@ export default function InventoryReports() {
     items,
     grns,
     gins,
+    gds,
     gdns,
     maintenanceRecords,
     reorderAlerts,
@@ -162,6 +173,7 @@ export default function InventoryReports() {
     fetchItems,
     fetchGRNs,
     fetchGINs,
+    fetchGDs,
     fetchGDNs,
     fetchMaintenanceRecords,
     fetchReorderAlerts,
@@ -207,6 +219,13 @@ export default function InventoryReports() {
       toast.error(err.message || 'Failed to load issuance report');
     });
   }, [activeReport, fetchGINs]);
+
+  useEffect(() => {
+    if (activeReport !== 'GD Report') return;
+    fetchGDs({}).catch((err) => {
+      toast.error(err.message || 'Failed to load GD report');
+    });
+  }, [activeReport, fetchGDs]);
 
   useEffect(() => {
     if (activeReport !== 'Discard Report') return;
@@ -321,6 +340,22 @@ export default function InventoryReports() {
       return true;
     });
   }, [items, issuanceFilters.categoryId, issuanceFilters.subcategoryId]);
+
+  const gdSubcategoryOptions = useMemo(() => {
+    const selectedCategoryId = Number(gdFilters.categoryId || 0);
+    if (!selectedCategoryId) return masterOptions?.subcategories || [];
+    return (masterOptions?.subcategories || []).filter((sub) => Number(sub.categoryId) === selectedCategoryId);
+  }, [masterOptions?.subcategories, gdFilters.categoryId]);
+
+  const gdItemOptions = useMemo(() => {
+    const selectedCategoryId = Number(gdFilters.categoryId || 0);
+    const selectedSubcategoryId = Number(gdFilters.subcategoryId || 0);
+    return (items || []).filter((item) => {
+      if (selectedCategoryId && Number(item.categoryId) !== selectedCategoryId) return false;
+      if (selectedSubcategoryId && Number(item.subcategoryId) !== selectedSubcategoryId) return false;
+      return true;
+    });
+  }, [items, gdFilters.categoryId, gdFilters.subcategoryId]);
 
   const discardSubcategoryOptions = useMemo(() => {
     const selectedCategoryId = Number(discardFilters.categoryId || 0);
@@ -555,6 +590,49 @@ export default function InventoryReports() {
     });
   };
 
+  const updateGdFilter = (key, value) => {
+    setGdFilters((prev) => {
+      if (key === 'categoryId') return { ...prev, categoryId: value, subcategoryId: '', itemId: '' };
+      if (key === 'subcategoryId') return { ...prev, subcategoryId: value, itemId: '' };
+      return { ...prev, [key]: value };
+    });
+  };
+
+  const applyGdFilters = () => {
+    const filterSummary = buildFilterSummary('GD Report');
+    const printedBy = getPrintedBy();
+    const generatedAt = getGeneratedAt();
+    const meta = { filterSummary, printedBy, generatedAt };
+    fetchGDs(gdFilters).then((rawData) => {
+      const rows = (Array.isArray(rawData) ? rawData : [])
+        .filter((gd) => !gdFilters.itemId || String(gd.itemId) === String(gdFilters.itemId))
+        .filter((gd) => !gdFilters.status || gd.status === gdFilters.status)
+        .map((gd) => ({
+          'GD Code': gd.code,
+          Date: gd.requestDate ? new Date(gd.requestDate).toLocaleDateString('en-PK') : '-',
+          Item: gd.item?.name || '-',
+          'Item Code': gd.item?.code || '-',
+          Category: gd.item?.category?.name || '-',
+          Subcategory: gd.item?.subcategory?.name || '-',
+          Department: gd.department?.name || '-',
+          'Demand Type': gd.demandCategoryType?.name || '-',
+          'Qty Requested': Number(gd.quantityRequested || 0),
+          Status: gd.status || '-',
+        }));
+      printRowsToPdf({ title: 'Goods Demand Report', rows, ...meta });
+    }).catch((err) => {
+      toast.error(err.message || 'Failed to load GD report');
+    });
+  };
+
+  const resetGdFilters = () => {
+    const emptyFilters = { dateFrom: '', dateTo: '', departmentId: '', categoryId: '', subcategoryId: '', itemId: '', status: '' };
+    setGdFilters(emptyFilters);
+    fetchGDs(emptyFilters).catch((err) => {
+      toast.error(err.message || 'Failed to load GD report');
+    });
+  };
+
   const updateDiscardFilter = (key, value) => {
     setDiscardFilters((prev) => {
       if (key === 'categoryId') {
@@ -687,6 +765,7 @@ export default function InventoryReports() {
       asOfDate: '',
       categoryId: '',
       subcategoryId: '',
+      itemId: '',
       assetType: '',
       brand: '',
       location: '',
@@ -1112,6 +1191,39 @@ export default function InventoryReports() {
     ).map((r) => ({ ...r, 'Total Issued Qty': Number(r['Total Issued Qty']).toFixed(2), 'Total Amount': Number(r['Total Amount']).toFixed(2) }));
   }, [issuanceRows]);
 
+  const gdRows = useMemo(() => {
+    return (gds || [])
+      .filter((gd) => !gdFilters.itemId || String(gd.itemId) === String(gdFilters.itemId))
+      .map((gd) => ({
+        key: gd.id,
+        gdCode: gd.code,
+        date: gd.requestDate,
+        item: gd.item?.name || '-',
+        itemCode: gd.item?.code || '-',
+        category: gd.item?.category?.name || '-',
+        subcategory: gd.item?.subcategory?.name || '-',
+        department: gd.department?.name || '-',
+        demandType: gd.demandCategoryType?.name || '-',
+        quantityRequested: Number(gd.quantityRequested || 0),
+        status: gd.status || '-',
+      }));
+  }, [gds, gdFilters.itemId]);
+
+  const gdExportRows = useMemo(() => {
+    return gdRows.map((row) => ({
+      'GD Code': row.gdCode,
+      Date: row.date ? new Date(row.date).toLocaleDateString('en-PK') : '-',
+      Item: row.item,
+      'Item Code': row.itemCode,
+      Category: row.category,
+      Subcategory: row.subcategory,
+      Department: row.department,
+      'Demand Type': row.demandType,
+      'Qty Requested': row.quantityRequested,
+      Status: row.status,
+    }));
+  }, [gdRows]);
+
   const discardRows = useMemo(() => {
     return (gdns || []).map((row) => ({
       key: row.id,
@@ -1268,6 +1380,7 @@ export default function InventoryReports() {
       Category: row.category,
       Subcategory: row.subcategory || '-',
       'Item Type': row.itemType || '-',
+      Location: row.itemType === 'fixed asset' ? (row.location || '-') : '-',
       Quantity: Number(row.currentQuantity || 0).toFixed(2),
       Unit: row.unit,
       'Amount (Rs.)': Number(row.currentAmount || 0).toFixed(2),
@@ -1345,6 +1458,14 @@ export default function InventoryReports() {
         if (emp) push('Issued By', `${emp.firstName} ${emp.lastName}`);
       }
       if (issuanceSummary) parts.push('View: Summary');
+    } else if (report === 'GD Report') {
+      push('From', fmtDate(gdFilters.dateFrom));
+      push('To', fmtDate(gdFilters.dateTo));
+      push('Department', deptName(gdFilters.departmentId));
+      push('Category', catName(gdFilters.categoryId));
+      push('Subcategory', subName(gdFilters.subcategoryId));
+      push('Item', itemName(gdFilters.itemId));
+      push('Status', gdFilters.status);
     } else if (report === 'Discard Report') {
       push('From', fmtDate(discardFilters.dateFrom));
       push('To', fmtDate(discardFilters.dateTo));
@@ -1441,6 +1562,27 @@ export default function InventoryReports() {
       exportRowsToPdf({ fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report', title: issuanceSummary ? 'Inventory Issuance Summary' : 'Inventory Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta });
       return;
     }
+    if (activeReport === 'GD Report') {
+      fetchGDs(gdFilters).then((rawData) => {
+        const rows = (Array.isArray(rawData) ? rawData : [])
+          .filter((gd) => !gdFilters.itemId || String(gd.itemId) === String(gdFilters.itemId))
+          .filter((gd) => !gdFilters.status || gd.status === gdFilters.status)
+          .map((gd) => ({
+            'GD Code': gd.code,
+            Date: gd.requestDate ? new Date(gd.requestDate).toLocaleDateString('en-PK') : '-',
+            Item: gd.item?.name || '-',
+            'Item Code': gd.item?.code || '-',
+            Category: gd.item?.category?.name || '-',
+            Subcategory: gd.item?.subcategory?.name || '-',
+            Department: gd.department?.name || '-',
+            'Demand Type': gd.demandCategoryType?.name || '-',
+            'Qty Requested': Number(gd.quantityRequested || 0),
+            Status: gd.status || '-',
+          }));
+        exportRowsToPdf({ fileName: 'gd-report', title: 'Goods Demand Report', rows, ...meta });
+      }).catch((err) => toast.error(err.message || 'Failed to export GD report'));
+      return;
+    }
     if (activeReport === 'Discard Report') {
       exportRowsToPdf({ fileName: 'inventory-discard-report', title: 'Inventory Discard Report', rows: discardExportRows, ...meta });
       return;
@@ -1484,6 +1626,27 @@ export default function InventoryReports() {
     if (activeReport === 'Item Ledger') { exportItemLedgerPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, isSummary: ledgerSummary, mode: 'print', ...meta }); return; }
     if (activeReport === 'Receiving Report') { printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows, ...meta }); return; }
     if (activeReport === 'Issuance Report') { printRowsToPdf({ title: issuanceSummary ? 'Issuance Summary' : 'Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta }); return; }
+    if (activeReport === 'GD Report') {
+      fetchGDs(gdFilters).then((rawData) => {
+        const rows = (Array.isArray(rawData) ? rawData : [])
+          .filter((gd) => !gdFilters.itemId || String(gd.itemId) === String(gdFilters.itemId))
+          .filter((gd) => !gdFilters.status || gd.status === gdFilters.status)
+          .map((gd) => ({
+            'GD Code': gd.code,
+            Date: gd.requestDate ? new Date(gd.requestDate).toLocaleDateString('en-PK') : '-',
+            Item: gd.item?.name || '-',
+            'Item Code': gd.item?.code || '-',
+            Category: gd.item?.category?.name || '-',
+            Subcategory: gd.item?.subcategory?.name || '-',
+            Department: gd.department?.name || '-',
+            'Demand Type': gd.demandCategoryType?.name || '-',
+            'Qty Requested': Number(gd.quantityRequested || 0),
+            Status: gd.status || '-',
+          }));
+        printRowsToPdf({ title: 'Goods Demand Report', rows, ...meta });
+      }).catch((err) => toast.error(err.message || 'Failed to print GD report'));
+      return;
+    }
     if (activeReport === 'Discard Report') { printRowsToPdf({ title: 'Discard Report', rows: discardExportRows, ...meta }); return; }
     if (activeReport === 'Short Expiry') { printRowsToPdf({ title: 'Short Expiry Report', rows: shortExpiryExportRows, ...meta }); return; }
     if (activeReport === 'Expiry') { printRowsToPdf({ title: 'Expiry Report', rows: expiryExportRows, ...meta }); return; }
@@ -1716,6 +1879,19 @@ export default function InventoryReports() {
                     </select>
                   </div>
                   <div>
+                    <label className="text-xs text-slate-500 block mb-1">Item</label>
+                    <SearchableSelect
+                      options={(items || []).filter((it) =>
+                        !stockPositionFilters.categoryId || String(it.categoryId) === String(stockPositionFilters.categoryId)
+                      ).filter((it) =>
+                        !stockPositionFilters.subcategoryId || String(it.subcategoryId) === String(stockPositionFilters.subcategoryId)
+                      )}
+                      value={stockPositionFilters.itemId}
+                      onChange={(val) => updateStockPositionFilter('itemId', val)}
+                      placeholder="All Items"
+                    />
+                  </div>
+                  <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
                     <select
                       className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
@@ -1788,6 +1964,7 @@ export default function InventoryReports() {
                           <th className="px-4 py-3">Code</th>
                           <th className="px-4 py-3">Name</th>
                           <th className="px-4 py-3">Category</th>
+                          <th className="px-4 py-3">Location</th>
                           <th className="px-4 py-3">Quantity</th>
                           <th className="px-4 py-3">Unit</th>
                           <th className="px-4 py-3">Amount (Rs.)</th>
@@ -1801,6 +1978,7 @@ export default function InventoryReports() {
                             <td className="px-4 py-3">{row.code}</td>
                             <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
                             <td className="px-4 py-3">{row.category}</td>
+                            <td className="px-4 py-3 text-slate-500">{row.itemType === 'fixed asset' ? (row.location || '-') : '-'}</td>
                             <td className="px-4 py-3 text-blue-700">{Number(row.currentQuantity || 0).toFixed(2)}</td>
                             <td className="px-4 py-3">{row.unit}</td>
                             <td className="px-4 py-3 text-emerald-700 font-semibold">{Number(row.currentAmount || 0).toFixed(2)}</td>
@@ -2742,6 +2920,68 @@ export default function InventoryReports() {
                   <div className="text-center text-slate-400 py-10">No expired items found for selected filters.</div>
                 )}
                 </>)}
+              </div>
+            ) : effectiveReport === 'GD Report' ? (
+              <div className="p-4 space-y-4 overflow-y-auto">
+                {/* Filters */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Date From</label>
+                    <input type="date" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.dateFrom} onChange={(e) => updateGdFilter('dateFrom', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Date To</label>
+                    <input type="date" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.dateTo} onChange={(e) => updateGdFilter('dateTo', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Department</label>
+                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.departmentId} onChange={(e) => updateGdFilter('departmentId', e.target.value)}>
+                      <option value="">All Departments</option>
+                      {(masterOptions?.departments || []).map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Category</label>
+                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.categoryId} onChange={(e) => updateGdFilter('categoryId', e.target.value)}>
+                      <option value="">All Categories</option>
+                      {categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
+                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.subcategoryId} onChange={(e) => updateGdFilter('subcategoryId', e.target.value)}>
+                      <option value="">All Subcategories</option>
+                      {gdSubcategoryOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Item</label>
+                    <SearchableSelect options={gdItemOptions} value={gdFilters.itemId}
+                      onChange={(val) => updateGdFilter('itemId', val)} placeholder="All Items" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Status</label>
+                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.status} onChange={(e) => updateGdFilter('status', e.target.value)}>
+                      <option value="">All Statuses</option>
+                      <option value="open">Open</option>
+                      <option value="partial">Partial</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" label="Apply" onClick={applyGdFilters} />
+                  <Button size="sm" variant="outline" label="Reset" onClick={resetGdFilters} />
+                </div>
+
               </div>
             ) : effectiveReport === 'Discard Report' ? (
               <div className="p-4 space-y-4 overflow-y-auto">

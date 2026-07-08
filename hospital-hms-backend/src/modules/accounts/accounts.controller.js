@@ -28,9 +28,10 @@ async function createPayeeHead(req, res, next) { try { success(res, await svc.cr
 async function updatePayeeHead(req, res, next) { try { success(res, await svc.updatePayeeHead(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
 async function deletePayeeHead(req, res, next) { try { await svc.deletePayeeHead(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
-async function getPayeeEntries(req, res, next) { try { success(res, await svc.getPayeeEntries(req.query.headId)); } catch (e) { next(e); } }
+async function getPayeeEntries(req, res, next) { try { success(res, await svc.getPayeeEntries(req.query.headId, req.query.subAccountId)); } catch (e) { next(e); } }
 async function createPayeeEntry(req, res, next) { try { success(res, await svc.createPayeeEntry(req.body), 'created'); } catch (e) { next(e); } }
 async function deletePayeeEntry(req, res, next) { try { await svc.deletePayeeEntry(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+async function bulkSavePayeeEntries(req, res, next) { try { success(res, await svc.bulkSavePayeeEntries(req.body), 'saved'); } catch (e) { next(e); } }
 async function getEmployeeList(req, res, next) { try { success(res, await svc.getEmployeeList()); } catch (e) { next(e); } }
 async function getSupplierList(req, res, next) { try { success(res, await svc.getSupplierList()); } catch (e) { next(e); } }
 
@@ -94,6 +95,20 @@ async function getVouchersForReprint(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function getVoucherSummaryMatrix(req, res, next) {
+  try {
+    const { entityType, dateFrom, dateTo } = req.query;
+    success(res, await svc.getVoucherSummaryMatrix({ entityType, dateFrom, dateTo }));
+  } catch (e) { next(e); }
+}
+
+async function getVoucherSummary(req, res, next) {
+  try {
+    const { entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo } = req.query;
+    success(res, await svc.getVoucherSummary({ entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo }));
+  } catch (e) { next(e); }
+}
+
 async function getNextVoucherNo(req, res, next) {
   try {
     const { type, entityType, date } = req.query;
@@ -108,7 +123,7 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, getEmployeeList, getSupplierList,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
@@ -116,7 +131,7 @@ module.exports = {
   getPayeeEntriesBySubAccount, getSupplierGRNs,
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
-  getVouchersForReprint,
+  getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix,
   addHeadAccount, removeHeadAccount,
   createBankDeposit, getBankDeposits,
   createBankDepositAdj, getBankDepositAdjs,

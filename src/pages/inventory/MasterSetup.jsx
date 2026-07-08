@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, Plus, Printer, Search, X } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -40,6 +42,7 @@ const EMPTY_FORM = {
   usefulLifeUnit: 'years',
   assetCondition: 'working',
   bookValue: '',
+  comment: '',
   address: '',
   contactDetails: '',
   bankingDetails: '',
@@ -93,6 +96,96 @@ export default function MasterSetup() {
   const [showTable, setShowTable] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [editingRow, setEditingRow] = useState(null);
+  const [viewingItem, setViewingItem] = useState(null);
+
+  const generateFixedAssetPDF = (item, shouldPrint = false) => {
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+
+    // Header
+    doc.setFillColor(30, 64, 175);
+    doc.rect(0, 0, pageW, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Fixed Asset Details', 14, 12);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Code: ${item.code}`, 14, 20);
+    doc.text(`Generated: ${new Date().toLocaleDateString('en-PK')}`, pageW - 14, 20, { align: 'right' });
+
+    doc.setTextColor(0, 0, 0);
+
+    // Item Name
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text(item.name, 14, 38);
+
+    let y = 46;
+
+    const section = (title, rows) => {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text(title.toUpperCase(), 14, y);
+      y += 4;
+      doc.setTextColor(0, 0, 0);
+      autoTable(doc, {
+        startY: y,
+        head: [],
+        body: rows,
+        theme: 'grid',
+        styles: { fontSize: 9, cellPadding: 3 },
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, fillColor: [248, 250, 252] }, 1: { cellWidth: 'auto' } },
+        margin: { left: 14, right: 14 },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    };
+
+    section('Basic Info', [
+      ['Category', item.category?.name || '-'],
+      ['Subcategory', item.subcategory?.name || '-'],
+      ['Unit', item.unit || '-'],
+      ['Purchase Price', String(item.purchasePrice ?? '-')],
+      ['Current Stock', String(item.currentStock ?? '-')],
+      ['Supplier', item.supplier?.name || '-'],
+    ]);
+
+    section('Asset Details', [
+      ['Brand', item.brand || '-'],
+      ['Model', item.model || '-'],
+      ['Serial No.', item.serialNumber || '-'],
+      ['Location', item.assetLocation || '-'],
+      ['Condition', item.assetCondition || '-'],
+      ['Status', item.bookValue || '-'],
+    ]);
+
+    section('Dates & Lifecycle', [
+      ['Purchase Date', item.purchaseDate ? item.purchaseDate.slice(0, 10) : '-'],
+      ['Warranty Until', item.warrantyUntil ? item.warrantyUntil.slice(0, 10) : '-'],
+      ['Useful Life', item.usefulLifeYears ? `${item.usefulLifeYears} ${item.usefulLifeUnit || 'years'}` : '-'],
+    ]);
+
+    if (item.comment) {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 116, 139);
+      doc.text('COMMENT', 14, y);
+      y += 5;
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      const lines = doc.splitTextToSize(item.comment, pageW - 28);
+      doc.text(lines, 14, y);
+    }
+
+    if (shouldPrint) {
+      doc.autoPrint();
+      window.open(doc.output('bloburl'), '_blank');
+    } else {
+      doc.save(`Fixed-Asset-${item.code}.pdf`);
+    }
+  };
 
   // Tabs the current user is allowed to see
   const visibleTabs = useMemo(
@@ -176,6 +269,7 @@ export default function MasterSetup() {
       usefulLifeUnit: row.usefulLifeUnit || 'years',
       assetCondition: row.assetCondition || 'working',
       bookValue: row.bookValue ?? '',
+      comment: row.comment || '',
       address: row.address || '',
       contactDetails: row.contactDetails || '',
       bankingDetails: row.bankingDetails || '',
@@ -300,6 +394,7 @@ export default function MasterSetup() {
         usefulLifeUnit: formData.usefulLifeUnit || 'years',
         assetCondition: formData.assetCondition || undefined,
         bookValue: formData.bookValue === '' ? undefined : Number(formData.bookValue),
+        comment: formData.comment || undefined,
       };
 
       if (editingRow) {
@@ -559,7 +654,16 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row.currentStock} / {row.reorderLevel}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            {row.itemType === 'fixed asset' && (
+                              <button
+                                onClick={() => setViewingItem(row)}
+                                className="p-1.5 rounded-md border border-slate-300 hover:bg-slate-50 text-slate-600"
+                                title="View Details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             <Button
                               label="Edit"
                               size="sm"
@@ -600,7 +704,7 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row._count?.items || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
                             {row.status !== 'inactive' ? (
                               <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
@@ -621,7 +725,7 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row._count?.items || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
                             {row.status !== 'inactive' ? (
                               <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
@@ -642,7 +746,7 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row.address || '-'}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
                             {row.status !== 'inactive' ? (
                               <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
@@ -663,7 +767,7 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row._count?.items || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
                             {row.status !== 'inactive' ? (
                               <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
@@ -684,7 +788,7 @@ export default function MasterSetup() {
                         <td className="px-6 py-4">{row._count?.gins || 0}</td>
                         <td className="px-6 py-4 capitalize">{row.status}</td>
                         <td className="px-6 py-4">
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
                             {row.status !== 'inactive' ? (
                               <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
@@ -707,16 +811,16 @@ export default function MasterSetup() {
       </Card>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <Card className="w-full max-w-3xl p-0 overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-              <h3 className="text-lg font-semibold text-slate-900">{editingRow ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}</h3>
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-2 sm:p-4">
+          <div className="w-full max-w-3xl bg-white rounded-xl border border-slate-200 shadow-xl flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-200 shrink-0">
+              <h3 className="text-base sm:text-lg font-semibold text-slate-900">{editingRow ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}</h3>
               <button onClick={closeAddModal} className="text-slate-500 hover:text-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={addRow} className="p-5 space-y-4">
+            <form onSubmit={addRow} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input
                   placeholder="Code (optional - auto generated if empty)"
@@ -1000,13 +1104,129 @@ export default function MasterSetup() {
                   </>
                 )}
               </div>
+              {formData.itemType === 'fixed asset' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Comment</label>
+                  <textarea
+                    rows={3}
+                    value={formData.comment}
+                    onChange={(e) => onFormChange('comment', e.target.value)}
+                    placeholder="Add any notes or remarks about this fixed asset..."
+                    className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm resize-none focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 pb-1">
                 <Button label="Cancel" variant="secondary" onClick={closeAddModal} />
                 <Button label="Save" type="submit" />
               </div>
             </form>
-          </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Fixed Asset View Modal */}
+      {viewingItem && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-2 sm:p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200 sticky top-0 bg-white z-10">
+              <div>
+                <h3 className="text-base sm:text-lg font-semibold text-slate-900">{viewingItem.name}</h3>
+                <p className="text-xs text-slate-400">{viewingItem.code}</p>
+              </div>
+              <button onClick={() => setViewingItem(null)} className="p-1.5 rounded hover:bg-slate-100">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="px-4 sm:px-6 py-4 space-y-4">
+
+              {/* Basic Info */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Basic Info</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {[
+                    ['Category', viewingItem.category?.name],
+                    ['Subcategory', viewingItem.subcategory?.name],
+                    ['Unit', viewingItem.unit],
+                    ['Purchase Price', viewingItem.purchasePrice],
+                    ['Current Stock', viewingItem.currentStock],
+                    ['Storage', viewingItem.storage?.name || '-'],
+                    ['Supplier', viewingItem.supplier?.name || '-'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-slate-50 rounded-lg px-3 py-2">
+                      <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+                      <p className="text-sm font-medium text-slate-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Asset Details */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Asset Details</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {[
+                    ['Brand', viewingItem.brand || '-'],
+                    ['Model', viewingItem.model || '-'],
+                    ['Serial No.', viewingItem.serialNumber || '-'],
+                    ['Location', viewingItem.assetLocation || '-'],
+                    ['Condition', viewingItem.assetCondition || '-'],
+                    ['Status', viewingItem.bookValue || '-'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-slate-50 rounded-lg px-3 py-2">
+                      <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+                      <p className="text-sm font-medium text-slate-800 capitalize">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Dates & Lifecycle */}
+              <div>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Dates & Lifecycle</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {[
+                    ['Purchase Date', viewingItem.purchaseDate ? viewingItem.purchaseDate.slice(0, 10) : '-'],
+                    ['Warranty Until', viewingItem.warrantyUntil ? viewingItem.warrantyUntil.slice(0, 10) : '-'],
+                    ['Useful Life', viewingItem.usefulLifeYears ? `${viewingItem.usefulLifeYears} ${viewingItem.usefulLifeUnit || 'years'}` : '-'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-slate-50 rounded-lg px-3 py-2">
+                      <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+                      <p className="text-sm font-medium text-slate-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Comment */}
+              {viewingItem.comment && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Comment</p>
+                  <p className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2 whitespace-pre-wrap">{viewingItem.comment}</p>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 px-4 sm:px-6 py-3 sm:py-4 border-t border-slate-200">
+              <button
+                onClick={() => generateFixedAssetPDF(viewingItem, true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                Print
+              </button>
+              <button
+                onClick={() => generateFixedAssetPDF(viewingItem, false)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download PDF
+              </button>
+              <Button label="Close" variant="secondary" onClick={() => setViewingItem(null)} />
+            </div>
+          </div>
         </div>
       )}
     </div>

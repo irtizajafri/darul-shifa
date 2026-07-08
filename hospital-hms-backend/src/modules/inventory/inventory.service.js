@@ -2053,6 +2053,7 @@ async function createItem(payload) {
           usefulLifeYears: Number.isFinite(usefulLifeYears) && usefulLifeYears > 0 ? Math.round(usefulLifeYears) : null,
           assetCondition,
           bookValue: Number.isFinite(bookValue) ? bookValue : (itemType === 'fixed asset' ? purchasePrice : null),
+          comment: parseOptionalString(payload.comment),
           categoryId,
           subcategoryId,
           supplierId: parsedSupplierId || null,
@@ -2207,6 +2208,7 @@ async function updateItem(itemId, payload) {
       usefulLifeYears: Number.isFinite(usefulLifeYears) && usefulLifeYears > 0 ? Math.round(usefulLifeYears) : null,
       assetCondition,
       bookValue: Number.isFinite(bookValue) ? bookValue : null,
+      comment: parseOptionalString(payload.comment),
       categoryId: Number(payload.categoryId),
       subcategoryId: Number(payload.subcategoryId),
       supplierId: parsedSupplierId || null,
@@ -3330,9 +3332,10 @@ async function listItemAddOptions({ search }) {
   return { categories, subcategories, suppliers, storages, departments, demandCategoryTypes };
 }
 
-async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, assetType, brand, location }) {
+async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, assetType, brand, location, itemId }) {
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const parsedItemId = parsePositiveNumber(itemId);
   const brandFilter = brand ? String(brand).trim() : null;
   const locationFilter = location ? String(location).trim() : null;
 
@@ -3342,6 +3345,7 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
   // Fetch all items matching filters
   const items = await prisma.inventoryItem.findMany({
     where: {
+      ...(parsedItemId ? { id: parsedItemId } : {}),
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
       ...(assetType ? { itemType: assetType } : {}),

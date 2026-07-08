@@ -121,13 +121,17 @@ export default function Reports() {
     if (!emp?.empCode || !month || !year) return;
     setIsSaving(true);
     try {
+      const safeIso = (v) => {
+        if (!(v instanceof Date)) return v;
+        return isNaN(v.getTime()) ? null : v.toISOString();
+      };
       const serialize = (row) => ({
         ...row,
-        date:         row.date        instanceof Date ? row.date.toISOString()        : row.date,
-        actualIn:     row.actualIn    instanceof Date ? row.actualIn.toISOString()    : row.actualIn,
-        actualOut:    row.actualOut   instanceof Date ? row.actualOut.toISOString()   : row.actualOut,
-        scheduledIn:  row.scheduledIn instanceof Date ? row.scheduledIn.toISOString() : row.scheduledIn,
-        scheduledOut: row.scheduledOut instanceof Date ? row.scheduledOut.toISOString(): row.scheduledOut,
+        date:         safeIso(row.date),
+        actualIn:     safeIso(row.actualIn),
+        actualOut:    safeIso(row.actualOut),
+        scheduledIn:  safeIso(row.scheduledIn),
+        scheduledOut: safeIso(row.scheduledOut),
       });
       const res = await fetch('http://localhost:5001/api/payslip-snapshot/save', {
         method: 'POST',
@@ -136,7 +140,7 @@ export default function Reports() {
           empCode: emp.empCode,
           month,
           year,
-          rows: effectiveAttendanceWithOverrides.map(serialize),
+          rows: liveAttendanceWithOverrides.map(serialize),
           netSalary: finalSal,
         }),
       });
@@ -638,8 +642,35 @@ export default function Reports() {
     };
 
     fetchOverrides();
-    return () => controller.abort();
+
+    const handleFocus = async () => {
+      if (!month || !year) return;
+      try {
+        const res = await fetch(`${ATTENDANCE_API_URL}/overrides?month=${month}&year=${year}`);
+        const json = await res.json();
+        const fresh = Array.isArray(json?.data) ? json.data : [];
+        setOverrides(prev =>
+          JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh
+        );
+      } catch {}
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      controller.abort();
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [month, year]);
+
+  const isFirstOverridesLoadRef = useRef(true);
+  useEffect(() => {
+    if (isFirstOverridesLoadRef.current) {
+      isFirstOverridesLoadRef.current = false;
+      return;
+    }
+    setSavedPayslipRows(null);
+    setPayslipSavedAt(null);
+  }, [overrides]);
 
   useEffect(() => {
     if (!emp?.empCode || !month || !year) {
@@ -706,8 +737,7 @@ export default function Reports() {
       }, 0);
   }, [emp, gatepasses, month, year]);
 
-  const effectiveAttendanceWithOverrides = useMemo(() => {
-    if (savedPayslipRows) return savedPayslipRows;
+  const liveAttendanceWithOverrides = useMemo(() => {
     if (!emp?.empCode) return effectiveAttendance;
     const targetCode = normalizeEmpCode(emp.empCode);
     const toDateKey = (value) => {
@@ -902,7 +932,9 @@ export default function Reports() {
       const dateB = new Date(b.date);
       return dateA - dateB;
     });
-  }, [savedPayslipRows, effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
+  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
+
+  const effectiveAttendanceWithOverrides = liveAttendanceWithOverrides;
 
   const minutesBetween = useCallback((start, end) => {
     if (!start || !end) return 0;
@@ -1612,15 +1644,15 @@ export default function Reports() {
       return [...prev, {
         code:          emp.empCode,
         name:          `${emp.firstName} ${emp.lastName}`,
-        deduction:     registerRangeSalaryData.deductions,
-        otBonus:       registerRangeSalaryData.otBonus,
-        finalSalary:   registerRangeSalaryData.finalSal,
+        deduction:     totalDeductions,
+        otBonus:       overtimeAddition,
+        finalSalary:   finalSal,
         timestamps,
         timestampRows,
       }];
     });
     setGenQueue(prev => prev.slice(1));
-  }, [isGenerating, loadedForEmpCode, emp, genQueue, registerRangeSalaryData, registerStartDay, registerEndDay, registerRangeRows]);
+  }, [isGenerating, loadedForEmpCode, emp, genQueue, totalDeductions, overtimeAddition, finalSal, registerStartDay, registerEndDay, registerRangeRows]);
 
   // ─── Register reset: koi bhi filter change hone pe purana data clear ────────
   useEffect(() => {
@@ -1628,6 +1660,20 @@ export default function Reports() {
     setGenQueue([]);
     setIsGenerating(false);
   }, [month, year, registerStartDay, registerEndDay]);
+
+  // ─── Auto-generate when register tab opens or month/year/employees change ──
+  const isGeneratingRef = useRef(false);
+  useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
+  useEffect(() => {
+    if (payrollTab !== 'register') return;
+    if (employees.length === 0) return;
+    if (isGeneratingRef.current) return;
+    const activeEmployees = employees.filter(e => e.status === 'Active');
+    if (activeEmployees.length === 0) return;
+    setRegisterRows([]);
+    setGenQueue([...activeEmployees]);
+    setIsGenerating(true);
+  }, [payrollTab, employees, month, year]);
 
   // ─── Register end day clamp: month/year badalne pe last day se zyada na ho ──
   useEffect(() => {
@@ -1761,7 +1807,7 @@ export default function Reports() {
   };
 
   const addPdfSignatures = (pdf, options = {}) => {
-    const { forceFirstPage = false, fixedBaseY = null } = options;
+    const { forceFirstPage = false, fixedBaseY = null, detailedLayout = false } = options;
     const margin     = 40;
     const pageWidth  = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
@@ -1769,31 +1815,58 @@ export default function Reports() {
 
     if (forceFirstPage) {
       pdf.setPage(1);
-      baseY = fixedBaseY ?? (pageHeight - 165);
+      if (!detailedLayout) baseY = fixedBaseY ?? (pageHeight - 165);
     } else if (baseY + 120 > pageHeight - 50) {
       pdf.addPage();
       baseY = 60;
     }
 
+    const declarationText = "I confirm that the salary generated is correct and I have no objections. Please pay my salary.";
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(forceFirstPage ? 9 : 10);
-    pdf.text("I confirm that the salary generated is correct and I have no objections. Please pay my salary.", margin, baseY);
+    pdf.text(declarationText, margin, baseY);
 
-    const declaration = "میں تصدیق کرتا / کرتی ہوں کہ بنائی گئی تنخواہ درست ہے اور مجھے اس پر کوئی اعتراض نہیں ہے۔ برائے مہربانی میری اوپر بنائی گئی تنخواہ ادا کر دی جائے۔";
-    const urduImage   = createUrduTextImage(declaration);
-    pdf.addImage(urduImage, "PNG", margin - 20, baseY + 9, pageWidth - margin * 2, 25);
+    if (detailedLayout) {
+      // Inline signature line right after the text
+      const textW = pdf.getTextWidth(declarationText);
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.5);
+      pdf.line(margin + textW + 4, baseY + 5, pageWidth - margin, baseY + 5);
 
-    const y        = baseY + (forceFirstPage ? 72 : 80);
-    const colWidth = (pageWidth - margin * 2) / 3;
-  const employeeSignatureLabel = `${emp?.firstName || ''} ${emp?.lastName || ''}`.trim() || "Employee";
-  const labels   = ["Prepared By", "Administrator", employeeSignatureLabel];
-    pdf.setLineWidth(0.5);
-    labels.forEach((label, index) => {
-      const x = margin + index * colWidth;
-      pdf.line(x, y, x + colWidth - 12, y);
-      pdf.setFontSize(forceFirstPage ? 9 : 10);
-      pdf.text(label, x + 4, y + 15);
-    });
+      // Urdu text below
+      const declaration = "میں تصدیق کرتا / کرتی ہوں کہ بنائی گئی تنخواہ درست ہے اور مجھے اس پر کوئی اعتراض نہیں ہے۔ برائے مہربانی میری اوپر بنائی گئی تنخواہ ادا کر دی جائے۔";
+      const urduImage = createUrduTextImage(declaration);
+      pdf.addImage(urduImage, "PNG", margin - 20, baseY + 8, pageWidth - margin * 2, 25);
+
+      // Signature boxes pinned to page bottom
+      const boxY     = pageHeight - 50;
+      const colWidth = (pageWidth - margin * 2) / 3;
+      const employeeSignatureLabel = `${emp?.firstName || ''} ${emp?.lastName || ''}`.trim() || "Employee";
+      const labels = ["Prepared By", "Administrator", employeeSignatureLabel];
+      pdf.setLineWidth(0.5);
+      labels.forEach((label, index) => {
+        const x = margin + index * colWidth;
+        pdf.line(x, boxY, x + colWidth - 12, boxY);
+        pdf.setFontSize(9);
+        pdf.text(label, x + 4, boxY + 14);
+      });
+    } else {
+      const declaration = "میں تصدیق کرتا / کرتی ہوں کہ بنائی گئی تنخواہ درست ہے اور مجھے اس پر کوئی اعتراض نہیں ہے۔ برائے مہربانی میری اوپر بنائی گئی تنخواہ ادا کر دی جائے۔";
+      const urduImage = createUrduTextImage(declaration);
+      pdf.addImage(urduImage, "PNG", margin - 20, baseY + 9, pageWidth - margin * 2, 25);
+
+      const y        = baseY + (forceFirstPage ? 72 : 80);
+      const colWidth = (pageWidth - margin * 2) / 3;
+      const employeeSignatureLabel = `${emp?.firstName || ''} ${emp?.lastName || ''}`.trim() || "Employee";
+      const labels   = ["Prepared By", "Administrator", employeeSignatureLabel];
+      pdf.setLineWidth(0.5);
+      labels.forEach((label, index) => {
+        const x = margin + index * colWidth;
+        pdf.line(x, y, x + colWidth - 12, y);
+        pdf.setFontSize(forceFirstPage ? 9 : 10);
+        pdf.text(label, x + 4, y + 15);
+      });
+    }
   };
 
   const exportReportPdf = async (scope, { autoPrint = false } = {}) => {
@@ -1929,11 +2002,13 @@ export default function Reports() {
       return;
     }
 
-    startY = addPdfHeader(pdf, titleMap[scope] || "Report");
+    if (scope !== "payslip-detailed") {
+      startY = addPdfHeader(pdf, titleMap[scope] || "Report");
+    }
 
     if (scope === "payslip" || scope === "payslip-detailed") {
       const pageWidth = pdf.internal.pageSize.getWidth();
-      const headerTopY = 78;
+      const headerTopY = scope === "payslip-detailed" ? 20 : 78;
       const standardDutyMinutes = Math.max(1, Math.round(getStandardDutyMinutes() || (8 * 60)));
       const standardDutyHours = Number((standardDutyMinutes / 60).toFixed(2));
       pdf.setFontSize(8);
@@ -2040,30 +2115,27 @@ export default function Reports() {
 
       const wrdDays = new Date(year, month, 0).getDate();
       const perDayAmount = Math.round(effectiveBaseTotalSal / wrdDays).toString();
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const tableRows = detailedAttendanceRows.map((r) => {
         const otAmnt = String(Math.max(0, Math.round(Number(r.otAmt) || 0)));
-        return [r.date, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, wrdDays, r.wrkHrs, r.ot, perDayAmount, r.salary, otAmnt, r.ded, r.total];
+        const dayName = r.date ? dayNames[new Date(r.date).getDay()] : '';
+        const dayNum = r.date ? r.date.split('-')[2] : r.date;
+        const dateWithDay = r.date ? `${dayNum} ${dayName}` : r.date;
+        return [dateWithDay, r.timeIn, r.timeOut, r.status, r.late, r.wrkHrs, r.ot, perDayAmount, r.salary, otAmnt, r.ded, r.total];
       });
 
       const totals = tableRows.reduce((acc, row) => {
-        acc.dutyHrs += toNumber(row[5]);
-        acc.wrkHrs += toNumber(row[7]);
-        acc.otHrs += toNumber(row[8]);
-        acc.salary += toNumber(row[10]);
-        acc.otAmt += toNumber(row[11]);
-        acc.ded += toNumber(row[12]);
-        acc.total += toNumber(row[13]);
+        acc.wrkHrs += toNumber(row[5]);
+        acc.otHrs += toNumber(row[6]);
+        acc.salary += toNumber(row[8]);
+        acc.otAmt += toNumber(row[9]);
+        acc.ded += toNumber(row[10]);
+        acc.total += toNumber(row[11]);
         return acc;
-      }, { dutyHrs: 0, wrkHrs: 0, otHrs: 0, salary: 0, otAmt: 0, ded: 0, total: 0 });
+      }, { wrkHrs: 0, otHrs: 0, salary: 0, otAmt: 0, ded: 0, total: 0 });
 
       const totalsRow = [
-        "TOTAL",
-        "",
-        "",
-        "",
-        "",
-        totals.dutyHrs.toFixed(2),
-        "",
+        "TOTAL", "", "", "", "",
         totals.wrkHrs.toFixed(2),
         totals.otHrs.toFixed(2),
         "",
@@ -2073,13 +2145,21 @@ export default function Reports() {
         Math.round(totals.total).toString(),
       ];
 
+      const tableStartY = allowanceLineY + 16;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const bottomReserved = 172;
+      const availableHeight = pageHeight - tableStartY - bottomReserved;
+      const totalTableRows = tableRows.length + 2; // header + totals
+      const autoCellPadding = 1;
+      const autoFontSize = Math.min(10, Math.max(5, Math.floor((availableHeight / totalTableRows - autoCellPadding * 2 - 0.2) / 1.15)));
+
       autoTable(pdf, {
-        startY: allowanceLineY + 16,
-        head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "Dty Hrs", "Wrk Days", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
+        startY: tableStartY,
+        head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
         body: [...tableRows, totalsRow],
         styles: {
-          fontSize: isPayslipScope ? 6 : 7,
-          cellPadding: isPayslipScope ? 1 : 2,
+          fontSize: isPayslipScope ? autoFontSize : 9,
+          cellPadding: isPayslipScope ? autoCellPadding : 2,
           halign: 'center',
           lineWidth: 0.1,
         },
@@ -2350,13 +2430,21 @@ export default function Reports() {
     }
 
     if (scope !== "salary-register" && scope !== "salary-register-timestamps" && scope !== "salary-register-timestamps-not-punched") {
-      const keepOnFirstPage = scope === "payslip" || scope === "payslip-detailed";
-      addPdfSignatures(pdf, {
-        forceFirstPage: keepOnFirstPage,
-        fixedBaseY: keepOnFirstPage ? (pdf.internal.pageSize.getHeight() - 165) : null,
-      });
+      if (scope === "payslip-detailed") {
+        addPdfSignatures(pdf, {
+          forceFirstPage: true,
+          fixedBaseY: pdf.internal.pageSize.getHeight() - 100,
+          detailedLayout: true,
+        });
+      } else {
+        const keepOnFirstPage = scope === "payslip";
+        addPdfSignatures(pdf, {
+          forceFirstPage: keepOnFirstPage,
+          fixedBaseY: keepOnFirstPage ? (pdf.internal.pageSize.getHeight() - 165) : null,
+        });
+      }
     }
-    if (scope !== "salary-register-timestamps-not-punched") {
+    if (scope !== "salary-register-timestamps-not-punched" && scope !== "payslip-detailed") {
       addPdfFooter(pdf);
     }
 
@@ -2609,15 +2697,15 @@ export default function Reports() {
               style={{
                 padding: '6px 14px', borderRadius: '6px', fontSize: '13px',
                 cursor: (isSaving || !emp) ? 'not-allowed' : 'pointer',
-                background: savedPayslipRows ? '#16a34a' : '#7c3aed',
+                background: '#7c3aed',
                 color: '#fff', border: 'none', fontWeight: 600,
               }}
             >
-              {isSaving ? '⏳ Saving...' : savedPayslipRows ? '✓ Saved (DB)' : '💾 Save Payslip'}
+              {isSaving ? '⏳ Saving...' : '💾 Save Payslip'}
             </button>
             {payslipSavedAt && (
-              <span style={{ fontSize: '11px', color: '#6b7280' }}>
-                Saved: {new Date(payslipSavedAt).toLocaleString()}
+              <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 500 }}>
+                ✓ Last saved: {new Date(payslipSavedAt).toLocaleString()}
               </span>
             )}
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "payslip")} />
@@ -2989,7 +3077,7 @@ export default function Reports() {
                   disabled={isGenerating}
                   onClick={() => {
                     setRegisterRows([]);
-                    setGenQueue([...employees]);
+                    setGenQueue(employees.filter(e => e.status === 'Active'));
                     setIsGenerating(true);
                   }}
                 />

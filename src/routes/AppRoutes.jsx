@@ -29,6 +29,8 @@ import BankDeposit from '../pages/accounts/transactions/BankDeposit';
 import BankDepositAdj from '../pages/accounts/transactions/BankDepositAdj';
 import AccountsReports from '../pages/accounts/reports/AccountsReports';
 import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
+import VoucherSummary from '../pages/accounts/reports/VoucherSummary';
+import VoucherSummaryMatrix from '../pages/accounts/reports/VoucherSummaryMatrix';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
@@ -144,6 +146,8 @@ export default function AppRoutes() {
           <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts"><BankDepositAdj /></PermissionGuard>} />
           <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
           <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
+          <Route path="accounts/:entityType/reports/voucher-summary" element={<PermissionGuard module="accounts"><VoucherSummary /></PermissionGuard>} />
+          <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<PermissionGuard module="accounts"><VoucherSummaryMatrix /></PermissionGuard>} />
           <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts"><ComingSoon /></PermissionGuard>} />
 
           <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />

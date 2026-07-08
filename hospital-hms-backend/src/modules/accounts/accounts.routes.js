@@ -29,6 +29,7 @@ router.delete('/payee-heads/:id', ctrl.deletePayeeHead);
 
 router.get('/payee-entries', ctrl.getPayeeEntries);
 router.post('/payee-entries', ctrl.createPayeeEntry);
+router.post('/payee-entries/bulk-save', ctrl.bulkSavePayeeEntries);
 router.delete('/payee-entries/:id', ctrl.deletePayeeEntry);
 router.get('/linked/employees', ctrl.getEmployeeList);
 router.get('/linked/suppliers', ctrl.getSupplierList);
@@ -56,6 +57,8 @@ router.delete('/income-categories/:id', ctrl.deleteIncomeCategory);
 
 router.get('/next-voucher-no', ctrl.getNextVoucherNo);
 router.get('/voucher-reprint', ctrl.getVouchersForReprint);
+router.get('/voucher-summary', ctrl.getVoucherSummary);
+router.get('/voucher-summary-matrix', ctrl.getVoucherSummaryMatrix);
 
 router.get('/voucher-income', ctrl.getVoucherIncomes);
 router.post('/voucher-income', ctrl.createVoucherIncome);

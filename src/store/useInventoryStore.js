@@ -701,13 +701,14 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
-  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '', assetType = '', brand = '', location = '' } = {}) => {
+  fetchStockPositionReport: async ({ asOfDate = '', categoryId = '', subcategoryId = '', itemId = '', assetType = '', brand = '', location = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
       if (asOfDate) qs.set('asOfDate', String(asOfDate));
       if (categoryId) qs.set('categoryId', String(categoryId));
       if (subcategoryId) qs.set('subcategoryId', String(subcategoryId));
+      if (itemId) qs.set('itemId', String(itemId));
       if (assetType) qs.set('assetType', String(assetType));
       if (brand) qs.set('brand', String(brand));
       if (location) qs.set('location', String(location));

@@ -203,23 +203,31 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
     include: { payeeHead: true },
   });
   const head = link?.payeeHead;
-  if (!head) return { type: null, headName: null, entries: [] };
+  if (!head) return { type: null, headName: null, headId: null, entries: [], checkedNames: [] };
 
   if (head.sourceType === 'employee') {
     const rows = await prisma.employee.findMany({
       select: { id: true, firstName: true, lastName: true, empCode: true },
       orderBy: { firstName: 'asc' },
     });
-    return { type: 'employee', headName: head.name, entries: rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode })) };
+    return { type: 'employee', headName: head.name, headId: head.id, entries: rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode })), checkedNames: [] };
   }
 
   if (head.sourceType === 'vendor') {
-    const rows = await prisma.inventorySupplier.findMany({
+    const checkedEntries = await prisma.accPayeeEntry.findMany({
+      where: { payeeHeadId: head.id, subAccountId: Number(subAccountId) },
+      select: { name: true },
+    });
+    const checkedNames = checkedEntries.map((e) => e.name);
+    const allSuppliers = await prisma.inventorySupplier.findMany({
       where: { status: 'active' },
       select: { id: true, name: true, code: true },
       orderBy: { name: 'asc' },
     });
-    return { type: 'vendor', headName: head.name, entries: rows };
+    const filteredEntries = checkedNames.length > 0
+      ? allSuppliers.filter((s) => checkedNames.includes(s.name))
+      : allSuppliers;
+    return { type: 'vendor', headName: head.name, headId: head.id, entries: filteredEntries, allSuppliers, checkedNames };
   }
 
   if (head.sourceType === 'doctor') {
@@ -237,8 +245,10 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
 
 // ── Payee Entries ─────────────────────────────────────────────────────────────
 
-async function getPayeeEntries(headId) {
-  return prisma.accPayeeEntry.findMany({ where: { payeeHeadId: Number(headId) }, orderBy: { id: 'asc' } });
+async function getPayeeEntries(headId, subAccountId) {
+  const where = { payeeHeadId: Number(headId) };
+  if (subAccountId) where.subAccountId = Number(subAccountId);
+  return prisma.accPayeeEntry.findMany({ where, orderBy: { id: 'asc' } });
 }
 
 async function createPayeeEntry({ payeeHeadId, name }) {
@@ -247,6 +257,22 @@ async function createPayeeEntry({ payeeHeadId, name }) {
 
 async function deletePayeeEntry(id) {
   return prisma.accPayeeEntry.delete({ where: { id: Number(id) } });
+}
+
+async function bulkSavePayeeEntries({ payeeHeadId, subAccountId, names }) {
+  const where = { payeeHeadId: Number(payeeHeadId) };
+  if (subAccountId) where.subAccountId = Number(subAccountId);
+  await prisma.accPayeeEntry.deleteMany({ where });
+  if (names && names.length > 0) {
+    await prisma.accPayeeEntry.createMany({
+      data: names.map((name) => ({
+        payeeHeadId: Number(payeeHeadId),
+        subAccountId: subAccountId ? Number(subAccountId) : null,
+        name: name.trim(),
+      })),
+    });
+  }
+  return { saved: names?.length || 0 };
 }
 
 async function getEmployeeList() {
@@ -563,6 +589,43 @@ async function getBankDepositAdjs(entityType) {
   });
 }
 
+async function getVoucherSummaryMatrix({ entityType, dateFrom, dateTo }) {
+  const where = { entityType };
+  if (dateFrom) where.voucherDate = { ...(where.voucherDate || {}), gte: new Date(dateFrom) };
+  if (dateTo)   where.voucherDate = { ...(where.voucherDate || {}), lte: new Date(dateTo + 'T23:59:59') };
+
+  const vouchers = await prisma.accVoucherExpense.findMany({
+    where,
+    include: { entries: true },
+    orderBy: { voucherDate: 'asc' },
+  });
+
+  const glMap = {};
+  const glNames = {};
+  for (const v of vouchers) {
+    const day = v.voucherDate.toISOString().slice(0, 10);
+    if (!glMap[day]) glMap[day] = {};
+    for (const e of v.entries) {
+      const glId = e.mainGlId;
+      if (!glId) continue;
+      if (!glMap[day][glId]) glMap[day][glId] = 0;
+      glMap[day][glId] += Number(e.amount);
+      if (!glNames[glId]) {
+        const gl = await prisma.accMainGL.findUnique({ where: { id: glId }, select: { name: true, code: true } });
+        glNames[glId] = gl ? `${gl.code} — ${gl.name}` : String(glId);
+      }
+    }
+  }
+
+  const rows = Object.entries(glMap).map(([date, heads]) => ({
+    date,
+    heads: Object.entries(heads).map(([glId, amount]) => ({ glId: Number(glId), glName: glNames[glId], amount })),
+    total: Object.values(heads).reduce((s, a) => s + a, 0),
+  }));
+
+  return { rows, glNames };
+}
+
 async function getBankDeposits(entityType) {
   return prisma.accBankDeposit.findMany({
     where: { entityType },
@@ -577,7 +640,7 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, getEmployeeList, getSupplierList,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
@@ -585,7 +648,70 @@ module.exports = {
   getPayeeEntriesBySubAccount, getSupplierGRNs,
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
-  getVouchersForReprint,
+  getVouchersForReprint, getVoucherSummaryMatrix,
   createBankDeposit, getBankDeposits,
   createBankDepositAdj, getBankDepositAdjs,
+  getVoucherSummary,
 };
+
+async function getVoucherSummary({ entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo }) {
+  const where = { entityType };
+  if (voucherFrom || voucherTo) {
+    where.voucherNo = {};
+    if (voucherFrom) where.voucherNo.gte = voucherFrom;
+    if (voucherTo)   where.voucherNo.lte = voucherTo;
+  }
+  if (dateFrom || dateTo) {
+    where.voucherDate = {};
+    if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
+    if (dateTo)   where.voucherDate.lte = new Date(new Date(dateTo).setHours(23, 59, 59, 999));
+  }
+
+  let vouchers = await prisma.accVoucherExpense.findMany({
+    where,
+    include: { entries: true },
+    orderBy: [{ voucherDate: 'asc' }, { voucherNo: 'asc' }],
+  });
+
+  if (supplierId) {
+    const supplier = await prisma.inventorySupplier.findUnique({ where: { id: Number(supplierId) }, select: { name: true } });
+    if (supplier) {
+      vouchers = vouchers.filter((v) => v.entries.some((e) => e.payeeName === supplier.name));
+    }
+  }
+
+  if (mainAccountId) {
+    vouchers = vouchers.filter((v) => v.entries.some((e) => e.mainAccountId === Number(mainAccountId)));
+  }
+
+  if (!vouchers.length) return [];
+
+  const allEntries = vouchers.flatMap((v) => v.entries);
+  const mainGlIds  = [...new Set(allEntries.map((e) => e.mainGlId).filter(Boolean))];
+  const subGlIds   = [...new Set(allEntries.map((e) => e.subGlId).filter(Boolean))];
+  const mainAccIds = [...new Set(allEntries.map((e) => e.mainAccountId).filter(Boolean))];
+  const subAccIds  = [...new Set(allEntries.map((e) => e.subAccountId).filter(Boolean))];
+
+  const [mainGLs, subGLs, mainAccs, subAccs] = await Promise.all([
+    mainGlIds.length  ? prisma.accMainGL.findMany({ where: { id: { in: mainGlIds } } })       : [],
+    subGlIds.length   ? prisma.accSubGL.findMany({ where: { id: { in: subGlIds } } })         : [],
+    mainAccIds.length ? prisma.accMainAccount.findMany({ where: { id: { in: mainAccIds } } }) : [],
+    subAccIds.length  ? prisma.accSubAccount.findMany({ where: { id: { in: subAccIds } } })   : [],
+  ]);
+
+  const mgMap = Object.fromEntries(mainGLs.map((x) => [x.id, x.name]));
+  const sgMap = Object.fromEntries(subGLs.map((x) => [x.id, x.name]));
+  const maMap = Object.fromEntries(mainAccs.map((x) => [x.id, x.name]));
+  const saMap = Object.fromEntries(subAccs.map((x) => [x.id, x.name]));
+
+  return vouchers.map((v) => ({
+    ...v,
+    entries: v.entries.map((e) => ({
+      ...e,
+      mainGlName:      mgMap[e.mainGlId]      || '',
+      subGlName:       sgMap[e.subGlId]       || '',
+      mainAccountName: maMap[e.mainAccountId] || '',
+      subAccountName:  saMap[e.subAccountId]  || '',
+    })),
+  }));
+}

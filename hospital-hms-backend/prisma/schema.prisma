@@ -275,6 +275,7 @@ model InventoryItem {
   usefulLifeUnit  String?
   assetCondition String?               @default("working")
   bookValue      Float?
+  comment        String?
 
   categoryId     Int
   category       InventoryCategory     @relation(fields: [categoryId], references: [id])
@@ -1098,8 +1099,9 @@ model AccSubAccount {
   mainAccountId Int
   entityType    String                 @default("non-corporate")
   createdAt     DateTime               @default(now())
-  mainAccount   AccMainAccount         @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
+  mainAccount    AccMainAccount         @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
   payeeHeadLinks AccPayeeHeadAccount[]
+  payeeEntries   AccPayeeEntry[]
 }
 
 model AccPayeeHead {
@@ -1124,11 +1126,13 @@ model AccPayeeHeadAccount {
 }
 
 model AccPayeeEntry {
-  id          Int          @id @default(autoincrement())
-  payeeHeadId Int
-  name        String
-  createdAt   DateTime     @default(now())
-  payeeHead   AccPayeeHead @relation(fields: [payeeHeadId], references: [id], onDelete: Cascade)
+  id           Int            @id @default(autoincrement())
+  payeeHeadId  Int
+  subAccountId Int?
+  name         String
+  createdAt    DateTime       @default(now())
+  payeeHead    AccPayeeHead   @relation(fields: [payeeHeadId], references: [id], onDelete: Cascade)
+  subAccount   AccSubAccount? @relation(fields: [subAccountId], references: [id], onDelete: Cascade)
 }
 
 model AccBankAccount {
