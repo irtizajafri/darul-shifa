@@ -940,16 +940,41 @@ function normNameSvc(s) {
   return (s || '').toLowerCase().replace(/[-._]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-async function importDoctorSubDeptRates(doctorId, rows) {
+async function importDoctorSubDeptRates(doctorId, rows, deptTitle) {
   const dId = Number(doctorId);
-  const allSubDepts = await prisma.clinicSubDepartment.findMany({ select: { id: true, name: true } });
 
-  let matched = 0, created = 0, updated = 0;
+  // Load all sub-depts and departments once
+  const allSubDepts = await prisma.clinicSubDepartment.findMany({ select: { id: true, name: true, departmentId: true } });
+  const allDepts    = await prisma.clinicDepartment.findMany({ select: { id: true, name: true, code: true } });
+
+  // Find department by title from Excel (e.g. "X-RAY", "ULTRA SOUND")
+  let dept = null;
+  if (deptTitle) {
+    dept = allDepts.find((d) => normNameSvc(d.name) === normNameSvc(deptTitle));
+  }
+
+  let matched = 0, created = 0, updated = 0, autoCreatedSubDepts = 0;
   const notFound = [];
 
   for (const row of rows) {
     const normTest = normNameSvc(row.testName);
-    const subDept = allSubDepts.find((sd) => normNameSvc(sd.name) === normTest);
+
+    // Try to find existing sub-dept
+    let subDept = allSubDepts.find((sd) => normNameSvc(sd.name) === normTest);
+
+    // If not found and we have a department → auto-create sub-dept
+    if (!subDept && dept) {
+      const count = await prisma.clinicSubDepartment.count({ where: { departmentId: dept.id } });
+      const code  = dept.code + String(count + 1).padStart(2, '0');
+      const newSd = await prisma.clinicSubDepartment.create({
+        data: { code, name: row.testName.trim(), departmentId: dept.id },
+        select: { id: true, name: true, departmentId: true },
+      });
+      allSubDepts.push(newSd); // update local cache
+      subDept = newSd;
+      autoCreatedSubDepts++;
+    }
+
     if (!subDept) { notFound.push(row.testName); continue; }
 
     const existing = await prisma.clinicDoctorSubDept.findFirst({
@@ -981,7 +1006,7 @@ async function importDoctorSubDeptRates(doctorId, rows) {
     matched++;
   }
 
-  return { matched, created, updated, notFound };
+  return { matched, created, updated, autoCreatedSubDepts, notFound };
 }
 
 module.exports = {

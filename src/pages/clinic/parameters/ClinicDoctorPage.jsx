@@ -93,6 +93,7 @@ export default function ClinicDoctorPage() {
   const [uploadDoctorId, setUploadDoctorId] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadRows, setUploadRows] = useState([]);
+  const [uploadDeptTitle, setUploadDeptTitle] = useState('');
   const [uploadParsing, setUploadParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const uploadFileRef = useRef(null);
@@ -265,6 +266,7 @@ export default function ClinicDoctorPage() {
     try {
       const { deptTitle, rows } = await parseRatesExcel(file);
       setUploadRows(rows);
+      setUploadDeptTitle(deptTitle);
       if (deptTitle) toast(`Department: ${deptTitle} — ${rows.length} tests found`);
       else toast.success(`${rows.length} rows parsed`);
     } catch {
@@ -283,7 +285,7 @@ export default function ClinicDoctorPage() {
       const res = await fetch(`${API}/doctors/${uploadDoctorId}/import-rates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: uploadRows }),
+        body: JSON.stringify({ rows: uploadRows, deptTitle: uploadDeptTitle }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Upload failed');
@@ -294,6 +296,7 @@ export default function ClinicDoctorPage() {
       setUploadDoctorId('');
       setUploadFile(null);
       setUploadRows([]);
+      setUploadDeptTitle('');
       if (uploadFileRef.current) uploadFileRef.current.value = '';
       fetchDoctors();
     } catch (err) {
@@ -308,6 +311,7 @@ export default function ClinicDoctorPage() {
     setUploadDoctorId('');
     setUploadFile(null);
     setUploadRows([]);
+    setUploadDeptTitle('');
     if (uploadFileRef.current) uploadFileRef.current.value = '';
   }
 
