@@ -1262,6 +1262,32 @@ model PayslipSnapshot {
   @@map("payslip_snapshots")
 }
 
+model PatientVisit {
+  id             Int      @id @default(autoincrement())
+  serialNo       Int?
+  admitNo        Int?
+  visitDate      DateTime @db.Date
+  visitTime      String?
+  patientName    String
+  department     String?
+  subDepartment  String?
+  doctor         String?
+  paymentType    String?
+  received       Decimal  @default(0) @db.Decimal(10, 2)
+  balance        Decimal  @default(0) @db.Decimal(10, 2)
+  discount       Decimal  @default(0) @db.Decimal(10, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ConsultantRate {
+  id             Int      @id @default(autoincrement())
+  consultantName String   @unique
+  rate           Decimal  @default(0) @db.Decimal(5, 2)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
 model AttendanceOverride {
   id               String   @id
   empCode          String   @map("emp_code")

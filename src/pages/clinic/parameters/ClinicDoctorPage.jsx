@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Search, PlusCircle, X } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Plus, Pencil, Trash2, Search, PlusCircle, X, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import PageHeader from '../../../components/shared/PageHeader';
@@ -9,6 +10,50 @@ import Input from '../../../components/ui/Input';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
 import './ClinicDoctorPage.scss';
+
+const API = 'http://localhost:5001/api/clinic';
+
+// Parse Excel in "Sr# | Test Name | Rate (Rs.)" format
+// Row 0 may be a department title (e.g. "ULTRA SOUND") or directly headers
+function parseRatesExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (raw.length < 2) return resolve({ deptTitle: '', rows: [] });
+
+        // Detect if row 0 is a title or headers
+        // Headers contain "Sr" or "Test" or "Rate"
+        const row0Str = raw[0].map((c) => String(c).toLowerCase()).join(' ');
+        const isHeader0 = row0Str.includes('sr') || row0Str.includes('test') || row0Str.includes('rate');
+        const headerRowIdx = isHeader0 ? 0 : 1;
+        const deptTitle = !isHeader0 ? String(raw[0][0] || '').trim() : '';
+        const dataStart = headerRowIdx + 1;
+
+        // Find columns: Sr#, Test Name, Rate (Rs.)
+        const headers = raw[headerRowIdx].map((h) => String(h).toLowerCase().replace(/[\s()#.]/g, ''));
+        const srIdx   = headers.findIndex((h) => h.startsWith('sr') || h === 'no');
+        const nameIdx = headers.findIndex((h) => h.includes('test') || h.includes('name'));
+        const rateIdx = headers.findIndex((h) => h.includes('rate') || h.includes('rs') || h.includes('fee'));
+
+        const rows = [];
+        for (let i = dataStart; i < raw.length; i++) {
+          const r = raw[i];
+          const testName = String(nameIdx >= 0 ? r[nameIdx] : r[1] || '').trim();
+          if (!testName) continue;
+          const normalFees = rateIdx >= 0 ? Number(r[rateIdx]) || 0 : 0;
+          rows.push({ testName, normalFees });
+        }
+        resolve({ deptTitle, rows });
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -40,6 +85,17 @@ export default function ClinicDoctorPage() {
   const [subDeptForm, setSubDeptForm] = useState(EMPTY_SUBDEPT);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [bulkRate, setBulkRate] = useState('');
+  const [selectedRows, setSelectedRows] = useState([]);
+
+  // Upload Excel states
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadDoctorId, setUploadDoctorId] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadRows, setUploadRows] = useState([]);
+  const [uploadParsing, setUploadParsing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const uploadFileRef = useRef(null);
 
   useEffect(() => {
     fetchDoctors();
@@ -138,6 +194,30 @@ export default function ClinicDoctorPage() {
 
   function removeSubDeptRow(idx) {
     setSubDeptRows((rows) => rows.filter((_, i) => i !== idx));
+    setSelectedRows((s) => s.filter((i) => i !== idx).map((i) => (i > idx ? i - 1 : i)));
+  }
+
+  const allSelected = subDeptRows.length > 0 && selectedRows.length === subDeptRows.length;
+
+  function toggleSelectAll() {
+    setSelectedRows(allSelected ? [] : subDeptRows.map((_, i) => i));
+  }
+
+  function toggleSelectRow(idx) {
+    setSelectedRows((s) => s.includes(idx) ? s.filter((i) => i !== idx) : [...s, idx]);
+  }
+
+  function applyBulkRate() {
+    if (!bulkRate && bulkRate !== 0) return toast.error('Rate daalo pehle');
+    if (!selectedRows.length) return toast.error('Pehle sub-departments select karo');
+    setSubDeptRows((rows) =>
+      rows.map((r, i) =>
+        selectedRows.includes(i)
+          ? { ...r, paymentType: 'percent', normalFees: String(bulkRate), oddFees: String(bulkRate) }
+          : r
+      )
+    );
+    toast.success(`${selectedRows.length} sub-dept(s) pe ${bulkRate}% apply ho gaya`);
   }
 
   async function handleSave() {
@@ -175,6 +255,63 @@ export default function ClinicDoctorPage() {
       setSaving(false);
     }
   }
+
+  // Upload Excel handlers
+  async function handleFileChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadFile(file);
+    setUploadParsing(true);
+    try {
+      const { deptTitle, rows } = await parseRatesExcel(file);
+      setUploadRows(rows);
+      if (deptTitle) toast(`Department: ${deptTitle} — ${rows.length} tests found`);
+      else toast.success(`${rows.length} rows parsed`);
+    } catch {
+      toast.error('Excel parse failed');
+      setUploadRows([]);
+    } finally {
+      setUploadParsing(false);
+    }
+  }
+
+  async function handleUploadSubmit() {
+    if (!uploadDoctorId) return toast.error('Doctor select karo pehle');
+    if (uploadRows.length === 0) return toast.error('Koi rows nahi mili Excel mein');
+    setUploading(true);
+    try {
+      const res = await fetch(`${API}/doctors/${uploadDoctorId}/import-rates`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: uploadRows }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Upload failed');
+      const r = data.data;
+      toast.success(`${r.matched} import hue (${r.created} naye, ${r.updated} update)`);
+      if (r.notFound?.length) toast(`${r.notFound.length} test names match nahi hue`, { icon: '⚠' });
+      setShowUploadModal(false);
+      setUploadDoctorId('');
+      setUploadFile(null);
+      setUploadRows([]);
+      if (uploadFileRef.current) uploadFileRef.current.value = '';
+      fetchDoctors();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function closeUploadModal() {
+    setShowUploadModal(false);
+    setUploadDoctorId('');
+    setUploadFile(null);
+    setUploadRows([]);
+    if (uploadFileRef.current) uploadFileRef.current.value = '';
+  }
+
+  const uploadDoctor = doctors.find((d) => String(d.id) === uploadDoctorId); // eslint-disable-line no-unused-vars
 
   async function handleDelete(doc) {
     try {
@@ -215,7 +352,12 @@ export default function ClinicDoctorPage() {
               className="cpp-search-input"
             />
           </div>
-          <span className="cpp-count">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
+          <div className="cpp-toolbar-right">
+            <span className="cpp-count">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
+            <button className="cdp-upload-btn" onClick={() => setShowUploadModal(true)}>
+              <Upload className="w-3.5 h-3.5" /> Upload Patient Visits Excel
+            </button>
+          </div>
         </div>
 
         <div className="cpp-table-wrap">
@@ -493,9 +635,34 @@ export default function ClinicDoctorPage() {
             {/* Sub dept rows table */}
             {subDeptRows.length > 0 && (
               <div className="cdp-subdept-table-wrap mt-4">
+
+                {/* Bulk Rate Bar */}
+                <div className="cdp-bulk-bar">
+                  <label className="cdp-bulk-chk-label">
+                    <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+                    Select All ({subDeptRows.length})
+                  </label>
+                  <div className="cdp-bulk-rate-group">
+                    <span className="cdp-bulk-lbl">Rate %</span>
+                    <input
+                      type="number" min="0" max="100" step="0.5"
+                      className="cdp-bulk-input"
+                      placeholder="e.g. 35"
+                      value={bulkRate}
+                      onChange={e => setBulkRate(e.target.value)}
+                    />
+                    <span className="cdp-bulk-pct">%</span>
+                    <button type="button" className="cdp-bulk-apply-btn" onClick={applyBulkRate}
+                      disabled={!selectedRows.length || bulkRate === ''}>
+                      Apply to Selected ({selectedRows.length})
+                    </button>
+                  </div>
+                </div>
+
                 <table className="cdp-subdept-table">
                   <thead>
                     <tr>
+                      <th style={{width:'32px'}}></th>
                       <th>Sub Dep.</th>
                       <th>Days</th>
                       <th>From</th>
@@ -511,7 +678,12 @@ export default function ClinicDoctorPage() {
                   </thead>
                   <tbody>
                     {subDeptRows.map((row, idx) => (
-                      <tr key={idx}>
+                      <tr key={idx} className={selectedRows.includes(idx) ? 'cdp-row-selected' : ''}>
+                        <td style={{textAlign:'center'}}>
+                          <input type="checkbox"
+                            checked={selectedRows.includes(idx)}
+                            onChange={() => toggleSelectRow(idx)} />
+                        </td>
                         <td>
                           <div className="text-xs font-medium">{row.subDeptName}</div>
                           <div className="text-xs text-slate-400">{row.deptName}</div>
@@ -554,6 +726,100 @@ export default function ClinicDoctorPage() {
         <div className="flex justify-end gap-2 mt-4 border-t pt-4">
           <Button label="Cancel" variant="secondary" onClick={closeModal} />
           <Button label={editing ? 'Update' : 'Save'} onClick={handleSave} loading={saving} />
+        </div>
+      </Modal>
+
+      {/* Upload Excel Modal */}
+      <Modal isOpen={showUploadModal} onClose={closeUploadModal} title="Import Sub-Dept Rates from Excel" size="lg">
+        <div className="cdp-upload-modal">
+
+          {/* Doctor selector */}
+          <div className="cdp-field">
+            <label className="cdp-label">Doctor / Consultant select karo *</label>
+            <select
+              className="cdp-select"
+              value={uploadDoctorId}
+              onChange={(e) => setUploadDoctorId(e.target.value)}
+            >
+              <option value="">— Doctor select karo —</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* File picker */}
+          <div className="cdp-field mt-3">
+            <label className="cdp-label">Excel File (.xlsx / .xls)</label>
+            <input
+              ref={uploadFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="cdp-upload-file-input"
+              onChange={handleFileChange}
+            />
+          </div>
+
+          {/* Parsing indicator */}
+          {uploadParsing && <p className="cdp-upload-info">Parsing…</p>}
+
+          {/* Parsed preview table */}
+          {!uploadParsing && uploadRows.length > 0 && (
+            <div className="cdp-upload-rates mt-3">
+              <p className="cdp-upload-rates-title">
+                Preview — {uploadRows.length} test{uploadRows.length !== 1 ? 's' : ''} found
+              </p>
+              <div className="cdp-upload-rates-table-wrap">
+                <table className="cdp-upload-rates-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Test Name</th>
+                      <th>Rate (Rs.)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {uploadRows.slice(0, 50).map((r, i) => (
+                      <tr key={i}>
+                        <td>{i + 1}</td>
+                        <td>{r.testName}</td>
+                        <td className="cdp-upload-fees">{r.normalFees}</td>
+                      </tr>
+                    ))}
+                    {uploadRows.length > 50 && (
+                      <tr><td colSpan={3} style={{textAlign:'center', color:'#888', fontStyle:'italic'}}>
+                        …aur {uploadRows.length - 50} rows
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!uploadParsing && uploadFile && uploadRows.length === 0 && (
+            <div className="cdp-upload-preview cdp-upload-preview--warn">
+              ⚠ Koi valid rows nahi mili — column headers check karo (Sr# | Test Name | Rate (Rs.))
+            </div>
+          )}
+
+          {/* Format hint */}
+          <div className="cdp-upload-hint">
+            <strong>Expected format (ULTRA SOUND.xlsx jesa):</strong><br />
+            Row 1: Department naam (e.g. ULTRA SOUND)<br />
+            Row 2: Sr# &nbsp;|&nbsp; Test Name &nbsp;|&nbsp; Rate (Rs.)<br />
+            Row 3+: 1 &nbsp;|&nbsp; BREAST BOTH &nbsp;|&nbsp; 1600
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4 border-t pt-4">
+          <Button label="Cancel" variant="secondary" onClick={closeUploadModal} />
+          <Button
+            label={uploading ? 'Uploading…' : `Import ${uploadRows.length > 0 ? uploadRows.length + ' tests' : ''}`}
+            onClick={handleUploadSubmit}
+            loading={uploading}
+            disabled={!uploadDoctorId || uploadRows.length === 0 || uploading}
+          />
         </div>
       </Modal>
 

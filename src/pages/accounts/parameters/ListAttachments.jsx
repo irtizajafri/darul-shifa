@@ -20,8 +20,8 @@ export default function ListAttachments() {
   const { entityType } = useParams();
   const navigate = useNavigate();
   const {
-    payeeHeads, payeeEntries, linkedEmployees, linkedSuppliers, mainGLs,
-    fetchPayeeHeads, fetchPayeeEntries, fetchLinkedEmployees, fetchLinkedSuppliers, fetchMainGLs,
+    payeeHeads, payeeEntries, linkedEmployees, linkedSuppliers, linkedDoctors, mainGLs,
+    fetchPayeeHeads, fetchPayeeEntries, fetchLinkedEmployees, fetchLinkedSuppliers, fetchLinkedDoctors, fetchMainGLs,
     createPayeeHead, updatePayeeHead, deletePayeeHead,
     createPayeeEntry, deletePayeeEntry,
     addHeadAccount, removeHeadAccount,
@@ -44,6 +44,7 @@ export default function ListAttachments() {
       fetchMainGLs(entityType),
       fetchLinkedEmployees(),
       fetchLinkedSuppliers(),
+      fetchLinkedDoctors(),
     ]).finally(() => setLoading(false));
   }, [entityType]);
 
@@ -221,7 +222,10 @@ export default function ListAttachments() {
       return null;
     }
     if (head.sourceType === 'doctor') {
-      return <p className="list-attach__empty">Connected when Clinic — Doctors data is available</p>;
+      if (linkedDoctors.length === 0) return <p className="list-attach__empty">No doctors found in Clinic module</p>;
+      return linkedDoctors.map((d) => (
+        <div key={d.id} className="list-attach__entry-row"><span>{d.code} — {d.name}</span></div>
+      ));
     }
     // manual
     if (expandedHead !== head.id) return null;

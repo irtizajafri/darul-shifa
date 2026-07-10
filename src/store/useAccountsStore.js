@@ -154,6 +154,11 @@ export const useAccountsStore = create((set) => ({
     const data = await req('/linked/suppliers');
     set({ linkedSuppliers: Array.isArray(data) ? data : [] });
   },
+  linkedDoctors: [],
+  fetchLinkedDoctors: async () => {
+    const data = await req('/linked/doctors');
+    set({ linkedDoctors: Array.isArray(data) ? data : [] });
+  },
 
   // Bank Accounts
   bankAccounts: [],

@@ -26,3 +26,8 @@ dist-ssr
 .env
 hospital-hms-backend/.env
 hospital-hms-backend/node_modules
+
+# Data files (imported into DB, not needed in repo)
+*.xlsx
+*.xls
+*.sql

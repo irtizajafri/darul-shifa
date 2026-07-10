@@ -180,6 +180,9 @@ export function exportItemLedgerPdf({
     return;
   }
 
+  const fmt = (n) => Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sumCol = (rows, key) => rows.reduce((s, r) => s + (parseFloat(r[key]) || 0), 0);
+
   if (isSummary) {
     // 12 columns — more breathing room
     const keys = [
@@ -195,13 +198,27 @@ export function exportItemLedgerPdf({
       'Rem\nQty', 'Rem\nAmount', 'Rem Breakdown',
     ];
     const body = data.map((row) => keys.map((k) => String(row[k] ?? '')));
+    const grandTotal = [
+      'Grand Total', '', '', '',
+      fmt(sumCol(data, 'Opening Qty')),
+      fmt(sumCol(data, 'Total Received')),
+      fmt(sumCol(data, 'Received Amount')),
+      fmt(sumCol(data, 'Total Issued')),
+      fmt(sumCol(data, 'Issued Amount')),
+      fmt(sumCol(data, 'Remaining Qty')),
+      fmt(sumCol(data, 'Remaining Amount')),
+      '',
+    ];
 
     autoTable(doc, {
       startY,
       head: [displayHeaders],
       body,
+      foot: [grandTotal],
+      showFoot: 'lastPage',
       styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
       headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle' },
+      footStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold' },
       columnStyles: {
         0: { cellWidth: 52 },
         1: { cellWidth: 90 },
@@ -239,13 +256,29 @@ export function exportItemLedgerPdf({
       'Unit', 'Source', 'Ref No',
     ];
     const body = data.map((row) => keys.map((k) => String(row[k] ?? '')));
+    const nonOpeningRows = data.filter((r) => r['Source'] !== 'OPENING');
+    const grandTotal = [
+      'Grand Total', '', '', '', '',
+      fmt(sumCol(nonOpeningRows, 'Received Qty')),
+      '',
+      fmt(sumCol(nonOpeningRows, 'Received Amount')),
+      fmt(sumCol(data, 'Issuance Qty')),
+      fmt(sumCol(data, 'Issuance Amount')),
+      '', '',
+      '-',
+      '-',
+      '', '', '', '',
+    ];
 
     autoTable(doc, {
       startY,
       head: [displayHeaders],
       body,
+      foot: [grandTotal],
+      showFoot: 'lastPage',
       styles: { fontSize: 6, cellPadding: 2, overflow: 'linebreak' },
       headStyles: { fillColor: [152, 152, 152], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'center', valign: 'middle', fontSize: 6 },
+      footStyles: { fillColor: [30, 64, 175], textColor: [255, 255, 255], fontStyle: 'bold', halign: 'right', fontSize: 6 },
       columnStyles: {
         0: { cellWidth: 52 },
         1: { cellWidth: 36 },

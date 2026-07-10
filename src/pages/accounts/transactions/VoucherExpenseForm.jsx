@@ -211,6 +211,11 @@ export default function VoucherExpenseForm() {
   const [grnModal, setGrnModal]         = useState(null);
   const [grnLoading, setGrnLoading]     = useState(false);
   const [checkedGrns, setCheckedGrns]   = useState({});
+  const [consultantModal, setConsultantModal]   = useState(null);
+  const [consultantLoading, setConsultantLoading] = useState(false);
+  const [checkedVisits, setCheckedVisits]       = useState({});
+  const [cvDateFrom, setCvDateFrom]             = useState('');
+  const [cvDateTo, setCvDateTo]                 = useState('');
 
   const [bankAccounts, setBankAccounts]   = useState([]);
   const [selectedBankId, setSelectedBankId] = useState(bankId ? String(bankId) : '');
@@ -346,6 +351,48 @@ export default function VoucherExpenseForm() {
 
   const grnCheckedTotal = grnModal?.grns
     ? grnModal.grns.filter((g) => checkedGrns[g.id]).reduce((s, g) => s + Number(g.totalAmount), 0)
+    : 0;
+
+  const openConsultantModal = async (payee) => {
+    setEntry((f) => ({ ...f, payeeName: payee.name }));
+    setPayeeSearch(payee.name);
+    setCheckedVisits({});
+    setConsultantModal({ doctorName: payee.name, visits: null });
+    setConsultantLoading(true);
+    try {
+      const q = new URLSearchParams({ doctorName: payee.name });
+      if (cvDateFrom) q.set('dateFrom', cvDateFrom);
+      if (cvDateTo)   q.set('dateTo',   cvDateTo);
+      const r = await fetch(`${API}/consultant-visits?${q}`);
+      const j = await r.json();
+      setConsultantModal((prev) => ({ ...prev, visits: j?.data || [] }));
+    } catch {
+      setConsultantModal((prev) => ({ ...prev, visits: [] }));
+    } finally {
+      setConsultantLoading(false);
+    }
+  };
+
+  const fetchConsultantVisits = async () => {
+    if (!consultantModal) return;
+    setConsultantLoading(true);
+    try {
+      const q = new URLSearchParams({ doctorName: consultantModal.doctorName });
+      if (cvDateFrom) q.set('dateFrom', cvDateFrom);
+      if (cvDateTo)   q.set('dateTo',   cvDateTo);
+      const r = await fetch(`${API}/consultant-visits?${q}`);
+      const j = await r.json();
+      setConsultantModal((prev) => ({ ...prev, visits: j?.data || [] }));
+      setCheckedVisits({});
+    } catch {
+      setConsultantModal((prev) => ({ ...prev, visits: [] }));
+    } finally {
+      setConsultantLoading(false);
+    }
+  };
+
+  const cvCheckedTotal = consultantModal?.visits
+    ? consultantModal.visits.filter((v) => checkedVisits[v.id]).reduce((s, v) => s + Number(v.received || 0), 0)
     : 0;
 
   const upd = (field) => (ev) => setEntry((e) => ({ ...e, [field]: ev.target.value }));
@@ -577,6 +624,7 @@ export default function VoucherExpenseForm() {
                               onClick={() => {
                                 if (linkedHeadType === 'employee') openSalaryModal(p);
                                 else if (linkedHeadType === 'vendor') openGrnModal(p);
+                                else if (linkedHeadType === 'doctor') openConsultantModal(p);
                                 else { setEntry((f) => ({ ...f, payeeName: p.name })); setPayeeSearch(p.name); }
                               }}
                             >
@@ -790,6 +838,100 @@ export default function VoucherExpenseForm() {
                       className="ve-sal-modal__verify"
                       disabled={grnCheckedTotal === 0}
                       onClick={() => { setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)) })); setGrnModal(null); }}
+                    >
+                      Fill Amount
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Consultant Visits Modal ── */}
+      {consultantModal && (
+        <div className="ve-sal-modal__backdrop" onClick={() => setConsultantModal(null)}>
+          <div className="ve-grn-modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+            <div className="ve-sal-modal__header">
+              <div>
+                <div className="ve-sal-modal__title">Patient Visits</div>
+                <div className="ve-sal-modal__sub">{consultantModal.doctorName}</div>
+              </div>
+              <button className="ve-sal-modal__close" onClick={() => setConsultantModal(null)}>✕</button>
+            </div>
+
+            {/* Date filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1rem', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Date</span>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>From</span>
+              <input type="date" value={cvDateFrom} onChange={(e) => setCvDateFrom(e.target.value)}
+                style={{ padding: '0.28rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem' }} />
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>To</span>
+              <input type="date" value={cvDateTo} onChange={(e) => setCvDateTo(e.target.value)}
+                style={{ padding: '0.28rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem' }} />
+              <button onClick={fetchConsultantVisits} disabled={consultantLoading}
+                style={{ padding: '0.28rem 0.75rem', background: '#334155', color: '#fff', border: 'none', borderRadius: 4, fontSize: '0.75rem', cursor: 'pointer' }}>
+                {consultantLoading ? 'Loading…' : 'Search'}
+              </button>
+            </div>
+
+            {consultantLoading ? (
+              <div className="ve-sal-modal__loading">Loading visits…</div>
+            ) : !consultantModal.visits?.length ? (
+              <div className="ve-sal-modal__no-data">No patient visits found.</div>
+            ) : (
+              <>
+                <div className="ve-grn-modal__table-wrap">
+                  <table className="ve-grn-modal__table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <input type="checkbox"
+                            onChange={(e) => {
+                              const all = {};
+                              if (e.target.checked) consultantModal.visits.forEach((v) => { all[v.id] = true; });
+                              setCheckedVisits(all);
+                            }}
+                            checked={consultantModal.visits.length > 0 && consultantModal.visits.every((v) => checkedVisits[v.id])}
+                          />
+                        </th>
+                        <th>S.No</th>
+                        <th>Date</th>
+                        <th>Patient Name</th>
+                        <th>Sub Dept</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {consultantModal.visits.map((v) => (
+                        <tr key={v.id}
+                          className={checkedVisits[v.id] ? 've-grn-modal__row--checked' : ''}
+                          onClick={() => setCheckedVisits((prev) => ({ ...prev, [v.id]: !prev[v.id] }))}
+                        >
+                          <td><input type="checkbox" checked={!!checkedVisits[v.id]} onChange={() => {}} /></td>
+                          <td className="ve-grn-modal__code">{v.serialNo || '—'}</td>
+                          <td>{v.visitDate ? new Date(v.visitDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                          <td>{v.patientName}</td>
+                          <td>{v.subDepartment || '—'}</td>
+                          <td>{v.paymentType || '—'}</td>
+                          <td className="ve-grn-modal__amount">PKR {Number(v.received || 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="ve-grn-modal__footer">
+                  <div className="ve-grn-modal__total">
+                    <span>Selected Total</span>
+                    <span className="ve-grn-modal__total-val">PKR {cvCheckedTotal.toLocaleString()}</span>
+                  </div>
+                  <div className="ve-grn-modal__actions">
+                    <button className="ve-sal-modal__cancel" onClick={() => setConsultantModal(null)}>Cancel</button>
+                    <button className="ve-sal-modal__verify"
+                      disabled={cvCheckedTotal === 0}
+                      onClick={() => { setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)) })); setConsultantModal(null); }}
                     >
                       Fill Amount
                     </button>

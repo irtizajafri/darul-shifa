@@ -31,6 +31,7 @@ router.get('/doctors', controller.getDoctors);
 router.post('/doctors', controller.createDoctor);
 router.put('/doctors/:id', controller.updateDoctor);
 router.delete('/doctors/:id', controller.deleteDoctor);
+router.post('/doctors/:id/import-rates', controller.importDoctorSubDeptRates);
 
 // OPD
 router.get('/opd/available-doctors', controller.getAvailableDoctors);
@@ -87,5 +88,17 @@ router.get('/admission/available-beds', controller.getAvailableBeds);
 router.get('/admission', controller.getAdmissions);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
+
+// Consultant Rates
+router.get('/doctor-subdept-rates', controller.getDoctorSubDeptRates);
+router.get('/consultant-rates', controller.getConsultantRates);
+router.post('/consultant-rates', controller.upsertConsultantRate);
+router.delete('/consultant-rates/:id', controller.deleteConsultantRate);
+
+// Patient Visits
+router.post('/patient-visits/bulk', controller.bulkCreatePatientVisits);
+router.get('/patient-visits/consultants', controller.getConsultantNames);
+router.get('/patient-visits/by-admit/:admitNo', controller.getPatientVisitByAdmitNo);
+router.get('/patient-visits', controller.getPatientVisits);
 
 module.exports = router;

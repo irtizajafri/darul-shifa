@@ -608,6 +608,76 @@ async function printOpdVisit(req, res, next) {
   }
 }
 
+// ─── Patient Visits ───────────────────────────────────────────────────────────
+
+async function getConsultantRates(req, res, next) {
+  try { success(res, await service.getAllConsultantRates()); } catch (err) { next(err); }
+}
+
+async function upsertConsultantRate(req, res, next) {
+  try {
+    const { consultantName, rate } = req.body;
+    if (!consultantName?.trim()) return fail(res, 400, 'Consultant name required');
+    if (rate === undefined || rate === '') return fail(res, 400, 'Rate required');
+    const data = await service.upsertConsultantRate(consultantName.trim(), rate);
+    success(res, data, 'Rate saved');
+  } catch (err) { next(err); }
+}
+
+async function deleteConsultantRate(req, res, next) {
+  try {
+    await service.deleteConsultantRate(req.params.id);
+    success(res, null, 'Rate deleted');
+  } catch (err) { next(err); }
+}
+
+async function getConsultantNames(req, res, next) {
+  try {
+    success(res, await service.getConsultantNames());
+  } catch (err) { next(err); }
+}
+
+async function getPatientVisitByAdmitNo(req, res, next) {
+  try {
+    const record = await service.getPatientVisitByAdmitNo(req.params.admitNo);
+    if (!record) return fail(res, 404, 'No patient visit found with this admission number');
+    success(res, record);
+  } catch (err) { next(err); }
+}
+
+async function getDoctorSubDeptRates(req, res, next) {
+  try { success(res, await service.getDoctorSubDeptRates()); } catch (err) { next(err); }
+}
+
+async function importDoctorSubDeptRates(req, res, next) {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0)
+      return fail(res, 400, 'rows array required');
+    const result = await service.importDoctorSubDeptRates(req.params.id, rows);
+    success(res, result, `${result.matched} sub-depts imported (${result.created} new, ${result.updated} updated)`);
+  } catch (err) { next(err); }
+}
+
+async function bulkCreatePatientVisits(req, res, next) {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0)
+      return fail(res, 400, 'rows array required');
+    const result = await service.bulkCreatePatientVisits(rows);
+    success(res, { inserted: result.count }, `${result.count} records imported`);
+  } catch (err) { next(err); }
+}
+
+async function getPatientVisits(req, res, next) {
+  try {
+    const { fromDate, toDate, fromTime, toTime, paymentTypes, fromConsultant, toConsultant } = req.query;
+    const types = paymentTypes ? paymentTypes.split(',').filter(Boolean) : [];
+    const data = await service.getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTypes: types, fromConsultant, toConsultant });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   getDepartments,
   createDepartment,
@@ -667,4 +737,13 @@ module.exports = {
   getAdmissions,
   createAdmission,
   getAvailableBeds,
+  bulkCreatePatientVisits,
+  getConsultantRates,
+  upsertConsultantRate,
+  deleteConsultantRate,
+  getConsultantNames,
+  getPatientVisitByAdmitNo,
+  getPatientVisits,
+  getDoctorSubDeptRates,
+  importDoctorSubDeptRates,
 };

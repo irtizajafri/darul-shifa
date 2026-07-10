@@ -47,6 +47,11 @@ import ClinicPanelCompanyListPage from '../pages/clinic/panels/ClinicPanelCompan
 import ClinicPanelCompanyFormPage from '../pages/clinic/panels/ClinicPanelCompanyFormPage';
 import ClinicPanelEmployeeListPage from '../pages/clinic/panels/ClinicPanelEmployeeListPage';
 import ClinicPanelEmployeeFormPage from '../pages/clinic/panels/ClinicPanelEmployeeFormPage';
+import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
+import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
+import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
+import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
+import ConsultantRates from '../pages/clinic/reports/ConsultantRates';
 import EmployeeList from '../pages/employees/EmployeeList';
 import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
@@ -179,6 +184,11 @@ export default function AppRoutes() {
           <Route path="clinic/panels/employees" element={<ClinicPanelEmployeeListPage />} />
           <Route path="clinic/panels/employees/new" element={<ClinicPanelEmployeeFormPage />} />
           <Route path="clinic/panels/employees/:id" element={<ClinicPanelEmployeeFormPage />} />
+          <Route path="clinic/reports/patients-list"      element={<PermissionGuard module="clinic"><PatientsListFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/patients-list/view" element={<PermissionGuard module="clinic"><PatientsListReport /></PermissionGuard>} />
+          <Route path="clinic/reports/consultant-wise"      element={<PermissionGuard module="clinic"><ConsultantWiseFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/consultant-wise/view" element={<PermissionGuard module="clinic"><ConsultantWiseReport /></PermissionGuard>} />
+          <Route path="clinic/reports/consultant-rates"     element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
 
           <Route path="coming-soon" element={<ComingSoon />} />
         </Route>

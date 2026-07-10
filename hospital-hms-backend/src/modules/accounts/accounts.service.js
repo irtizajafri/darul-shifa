@@ -290,6 +290,14 @@ async function getSupplierList() {
   });
 }
 
+async function getDoctorList() {
+  return prisma.clinicDoctor.findMany({
+    where: { status: 'active' },
+    select: { id: true, name: true, code: true },
+    orderBy: { name: 'asc' },
+  });
+}
+
 // ── Bank Accounts ─────────────────────────────────────────────────────────────
 
 async function getBankAccounts(entityType) {
@@ -437,6 +445,17 @@ async function updateIncomeCategory(id, { name }) {
 
 async function deleteIncomeCategory(id) {
   return prisma.accIncomeCategory.delete({ where: { id: Number(id) } });
+}
+
+async function getConsultantVisits(doctorName, dateFrom, dateTo) {
+  const where = { doctor: doctorName };
+  if (dateFrom) where.visitDate = { ...(where.visitDate || {}), gte: new Date(dateFrom) };
+  if (dateTo)   where.visitDate = { ...(where.visitDate || {}), lte: new Date(dateTo) };
+  return prisma.patientVisit.findMany({
+    where,
+    orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
+    select: { id: true, serialNo: true, visitDate: true, visitTime: true, patientName: true, subDepartment: true, paymentType: true, received: true },
+  });
 }
 
 async function getSupplierGRNs(supplierId) {
@@ -640,12 +659,12 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
-  getPayeeEntriesBySubAccount, getSupplierGRNs,
+  getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummaryMatrix,

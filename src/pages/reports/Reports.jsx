@@ -1641,18 +1641,24 @@ export default function Reports() {
         timeIn:  r.timeIn  !== '--' ? r.timeIn  : '',
         timeOut: r.timeOut !== '--' ? r.timeOut : '',
       }));
+      const isFullMonth = registerStartDay === 1 && registerEndDay === daysInSelectedMonth;
+      const extraDed = isFullMonth
+        ? (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0) + (manualDeductionTotal || 0)
+        : 0;
+      const rangeDeduction  = registerRangeSalaryData.deductions + extraDed;
+      const rangeFinalSal   = Math.max(0, registerRangeSalaryData.earnedSal + registerRangeSalaryData.otBonus - rangeDeduction);
       return [...prev, {
         code:          emp.empCode,
         name:          `${emp.firstName} ${emp.lastName}`,
-        deduction:     totalDeductions,
-        otBonus:       overtimeAddition,
-        finalSalary:   finalSal,
+        deduction:     rangeDeduction,
+        otBonus:       registerRangeSalaryData.otBonus,
+        finalSalary:   rangeFinalSal,
         timestamps,
         timestampRows,
       }];
     });
     setGenQueue(prev => prev.slice(1));
-  }, [isGenerating, loadedForEmpCode, emp, genQueue, totalDeductions, overtimeAddition, finalSal, registerStartDay, registerEndDay, registerRangeRows]);
+  }, [isGenerating, loadedForEmpCode, emp, genQueue, registerRangeSalaryData, daysInSelectedMonth, gatepassDeduction, advanceDeduction, loanDeduction, shortLeaveDeduction, manualDeductionTotal, registerStartDay, registerEndDay, registerRangeRows]);
 
   // ─── Register reset: koi bhi filter change hone pe purana data clear ────────
   useEffect(() => {
@@ -2477,7 +2483,21 @@ export default function Reports() {
   if (scope === "test-attendance-raw")  rows = rawPunchRows;
       if (scope === "payroll-detailed")     rows = payrollDetailedRows;
       if (scope === "payroll-consolidated") rows = payrollConsolidatedRows;
-      if (scope === "salary-register")      rows = salaryRegisterRows;
+      if (scope === "salary-register") {
+        if (registerRows.length > 0) {
+          rows = registerRows.map((r, i) => ({
+            '#':                String(i + 1),
+            'Emp Code':         r.code,
+            'Name':             r.name,
+            'Basic+Allowances': `PKR ${(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}`,
+            'Deduction':        `PKR ${r.deduction.toLocaleString()}`,
+            'OT Bonus':         `PKR ${r.otBonus.toLocaleString()}`,
+            'Net Salary':       `PKR ${r.finalSalary.toLocaleString()}`,
+          }));
+        } else {
+          rows = salaryRegisterRows;
+        }
+      }
       if (scope === "salary-register-timestamps") {
         rows = registerRows.flatMap(r => {
           const punched = (r.timestampRows || []).filter(ts => ts.timeIn || ts.timeOut);

@@ -835,6 +835,155 @@ async function getAvailableBeds(roomCategoryId) {
   });
 }
 
+// ─── Patient Visits ───────────────────────────────────────────────────────────
+
+async function bulkCreatePatientVisits(rows) {
+  const data = rows.map((r) => ({
+    serialNo:       r.serialNo       ? Number(r.serialNo)           : null,
+    admitNo:        r.admitNo        ? Number(r.admitNo)            : null,
+    visitDate:      new Date(r.visitDate),
+    visitTime:      r.visitTime      || null,
+    patientName:    String(r.patientName).trim(),
+    department:     r.department     ? String(r.department).trim()     : null,
+    subDepartment:  r.subDepartment  ? String(r.subDepartment).trim()  : null,
+    doctor:         r.doctor         ? String(r.doctor).trim()         : null,
+    paymentType:    r.paymentType    ? String(r.paymentType).trim()    : null,
+    received:       Number(r.received)  || 0,
+    balance:        Number(r.balance)   || 0,
+    discount:       Number(r.discount)  || 0,
+  }));
+
+  const result = await prisma.patientVisit.createMany({ data });
+  return result;
+}
+
+async function getAllConsultantRates() {
+  return prisma.consultantRate.findMany({ orderBy: { consultantName: 'asc' } });
+}
+
+async function upsertConsultantRate(consultantName, rate) {
+  return prisma.consultantRate.upsert({
+    where:  { consultantName },
+    update: { rate: Number(rate) },
+    create: { consultantName, rate: Number(rate) },
+  });
+}
+
+async function deleteConsultantRate(id) {
+  return prisma.consultantRate.delete({ where: { id: Number(id) } });
+}
+
+async function getConsultantNames() {
+  const rows = await prisma.patientVisit.findMany({
+    where: { doctor: { not: null } },
+    select: { doctor: true },
+    distinct: ['doctor'],
+    orderBy: { doctor: 'asc' },
+  });
+  return rows.map(r => r.doctor).filter(Boolean);
+}
+
+async function getPatientVisitByAdmitNo(admitNo) {
+  const num = parseInt(admitNo, 10);
+  if (isNaN(num)) return null;
+  return prisma.patientVisit.findFirst({
+    where: { admitNo: num },
+    orderBy: { id: 'desc' },
+  });
+}
+
+async function getDoctorSubDeptRates() {
+  const rows = await prisma.clinicDoctorSubDept.findMany({
+    include: {
+      doctor:  { select: { name: true } },
+      subDept: { select: { name: true } },
+    },
+  });
+  return rows.map(r => ({
+    doctorName:  r.doctor.name,
+    subDeptName: r.subDept.name,
+    paymentType: r.paymentType,
+    normalFees:  Number(r.normalFees),
+    oddFees:     Number(r.oddFees),
+  }));
+}
+
+async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTypes, fromConsultant, toConsultant }) {
+  const where = {};
+
+  if (fromDate && toDate) {
+    where.visitDate = {
+      gte: new Date(fromDate),
+      lte: new Date(toDate),
+    };
+  }
+
+  if (paymentTypes && paymentTypes.length > 0) {
+    where.paymentType = { in: paymentTypes };
+  }
+
+  if (fromConsultant && toConsultant) {
+    where.doctor = { gte: fromConsultant, lte: toConsultant };
+  } else if (fromConsultant) {
+    where.doctor = { gte: fromConsultant };
+  } else if (toConsultant) {
+    where.doctor = { lte: toConsultant };
+  }
+
+  return prisma.patientVisit.findMany({
+    where,
+    orderBy: [{ doctor: 'asc' }, { visitDate: 'asc' }, { visitTime: 'asc' }],
+  });
+}
+
+function normNameSvc(s) {
+  return (s || '').toLowerCase().replace(/[-._]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function importDoctorSubDeptRates(doctorId, rows) {
+  const dId = Number(doctorId);
+  const allSubDepts = await prisma.clinicSubDepartment.findMany({ select: { id: true, name: true } });
+
+  let matched = 0, created = 0, updated = 0;
+  const notFound = [];
+
+  for (const row of rows) {
+    const normTest = normNameSvc(row.testName);
+    const subDept = allSubDepts.find((sd) => normNameSvc(sd.name) === normTest);
+    if (!subDept) { notFound.push(row.testName); continue; }
+
+    const existing = await prisma.clinicDoctorSubDept.findFirst({
+      where: { doctorId: dId, subDeptId: subDept.id },
+    });
+
+    if (existing) {
+      await prisma.clinicDoctorSubDept.update({
+        where: { id: existing.id },
+        data: { normalFees: Number(row.normalFees) || 0, oddFees: Number(row.normalFees) || 0, paymentType: 'amount' },
+      });
+      updated++;
+    } else {
+      await prisma.clinicDoctorSubDept.create({
+        data: {
+          doctorId: dId,
+          subDeptId: subDept.id,
+          paymentType: 'amount',
+          normalFees: Number(row.normalFees) || 0,
+          oddFees:    Number(row.normalFees) || 0,
+          normalCharges: 0,
+          oddCharges:    0,
+          onCall:        false,
+          consultantDays: [],
+        },
+      });
+      created++;
+    }
+    matched++;
+  }
+
+  return { matched, created, updated, notFound };
+}
+
 module.exports = {
   getAllDepartments,
   createDepartment,
@@ -895,4 +1044,13 @@ module.exports = {
   getAdmissions,
   createAdmission,
   getAvailableBeds,
+  bulkCreatePatientVisits,
+  getAllConsultantRates,
+  upsertConsultantRate,
+  deleteConsultantRate,
+  getConsultantNames,
+  getPatientVisitByAdmitNo,
+  getPatientVisits,
+  getDoctorSubDeptRates,
+  importDoctorSubDeptRates,
 };

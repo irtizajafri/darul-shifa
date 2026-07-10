@@ -34,6 +34,7 @@ async function deletePayeeEntry(req, res, next) { try { await svc.deletePayeeEnt
 async function bulkSavePayeeEntries(req, res, next) { try { success(res, await svc.bulkSavePayeeEntries(req.body), 'saved'); } catch (e) { next(e); } }
 async function getEmployeeList(req, res, next) { try { success(res, await svc.getEmployeeList()); } catch (e) { next(e); } }
 async function getSupplierList(req, res, next) { try { success(res, await svc.getSupplierList()); } catch (e) { next(e); } }
+async function getDoctorList(req, res, next) { try { success(res, await svc.getDoctorList()); } catch (e) { next(e); } }
 
 async function getBankAccounts(req, res, next) { try { success(res, await svc.getBankAccounts(et(req))); } catch (e) { next(e); } }
 async function createBankAccount(req, res, next) { try { success(res, await svc.createBankAccount(req.body), 'created'); } catch (e) { next(e); } }
@@ -56,6 +57,7 @@ async function updateIncomeCategory(req, res, next) { try { success(res, await s
 async function deleteIncomeCategory(req, res, next) { try { await svc.deleteIncomeCategory(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
 async function getSupplierGRNs(req, res, next) { try { success(res, await svc.getSupplierGRNs(req.query.supplierId)); } catch (e) { next(e); } }
+async function getConsultantVisits(req, res, next) { try { const { doctorName, dateFrom, dateTo } = req.query; success(res, await svc.getConsultantVisits(doctorName, dateFrom, dateTo)); } catch (e) { next(e); } }
 
 async function createBankDeposit(req, res, next) {
   try { success(res, await svc.createBankDeposit({ ...req.body, entityType: et(req) }), 'saved'); } catch (e) { next(e); }
@@ -123,12 +125,12 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
-  getPayeeEntriesBySubAccount, getSupplierGRNs,
+  getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix,

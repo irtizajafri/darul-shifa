@@ -38,7 +38,13 @@ const menuItems = [
     ],
   },
   { label: 'Inquiries', items: [] },
-  { label: 'Report',    items: [] },
+  {
+    label: 'Report',
+    items: [
+      { label: 'Patients List',            path: '/clinic/reports/patients-list' },
+      { label: 'Consultant Wise Patients', path: '/clinic/reports/consultant-wise' },
+    ],
+  },
   { label: 'Window',    items: [] },
 ];
 

@@ -62,6 +62,12 @@
     }
   }
 
+  .cpp-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .cpp-count {
     font-size: 0.78rem;
     color: #64748b;

@@ -536,10 +536,13 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   }
 
   async function handlePrint() {
+    const vid = lastVisitIdRef.current ?? lastVisitId ?? (Number(sessionStorage.getItem('lastOpdVisitId')) || null);
+    if (!vid) { toast.error('Save the visit before printing'); return; }
+    // Open window synchronously (before any await) so browser doesn't block it
+    const w = window.open('', '_blank', 'width=420,height=680');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
     setPrinting(true);
     try {
-      const vid = lastVisitIdRef.current ?? lastVisitId ?? (Number(sessionStorage.getItem('lastOpdVisitId')) || null);
-      if (!vid) { toast.error('Save the visit before printing'); setPrinting(false); return; }
       const { visit, tokenNo, isDuplicate } = await printOpdVisit(vid);
       const canvas = document.createElement('canvas');
       JsBarcode(canvas, visit.serialNo, {
@@ -549,10 +552,10 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
       const barcodeDataUrl = canvas.toDataURL('image/png');
       const printedBy = user?.name || user?.username || user?.email || '';
       const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
-      const w = window.open('', '_blank', 'width=420,height=680');
       w.document.write(html);
       w.document.close();
     } catch (err) {
+      w.close();
       toast.error(err.message || 'Failed to print');
     } finally {
       setPrinting(false);

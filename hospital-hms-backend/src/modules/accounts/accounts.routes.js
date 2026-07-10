@@ -33,6 +33,7 @@ router.post('/payee-entries/bulk-save', ctrl.bulkSavePayeeEntries);
 router.delete('/payee-entries/:id', ctrl.deletePayeeEntry);
 router.get('/linked/employees', ctrl.getEmployeeList);
 router.get('/linked/suppliers', ctrl.getSupplierList);
+router.get('/linked/doctors', ctrl.getDoctorList);
 
 router.get('/bank-accounts', ctrl.getBankAccounts);
 router.post('/bank-accounts', ctrl.createBankAccount);
@@ -46,6 +47,7 @@ router.delete('/cheque-serials/:id', ctrl.deleteChequeSerial);
 
 router.get('/payee-entries/all', ctrl.getAllPayeeEntries);
 router.get('/supplier-grns', ctrl.getSupplierGRNs);
+router.get('/consultant-visits', ctrl.getConsultantVisits);
 router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);
 router.post('/voucher-expense', ctrl.createVoucherExpense);

@@ -195,6 +195,23 @@ function PanelModal({ onSelect, onClose }) {
   );
 }
 
+const API = 'http://localhost:5001/api/clinic';
+
+const PAYMENT_TYPE_MAP = {
+  'cash':    'private',
+  'Cash':    'private',
+  'staff':   'staff',
+  'Staff':   'staff',
+  'panel':   'panel',
+  'Panel':   'panel',
+  'cc':      'cc',
+  'CC':      'cc',
+  'Complem.':'complementary',
+  'complem.':'complementary',
+  'jazzcash':'private',
+  'JazzCash':'private',
+};
+
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TITLES = ['Mr', 'Ms', 'Mrs', 'Master', 'Baby'];
 const CATEGORIES = [
@@ -292,6 +309,30 @@ export default function Admission() {
   function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }) {
     setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }));
     setShowPanelModal(false);
+  }
+
+  async function handleAdmissionLookup() {
+    const admitNo = form.admissionNo?.trim();
+    if (!admitNo) return;
+    try {
+      const res = await fetch(`${API}/patient-visits/by-admit/${admitNo}`);
+      if (!res.ok) { toast.error('No patient found with this Admission #'); return; }
+      const json = await res.json();
+      const rec = json.data;
+      const category = PAYMENT_TYPE_MAP[rec.paymentType] || 'private';
+      const matchedDoctor = doctors.find(
+        d => d.name?.toLowerCase() === rec.doctor?.toLowerCase()
+      );
+      setForm(f => ({
+        ...f,
+        patientName:     rec.patientName     || f.patientName,
+        patientCategory: category,
+        consultantId:    matchedDoctor ? String(matchedDoctor.id) : f.consultantId,
+      }));
+      toast.success('Patient data loaded from visit record');
+    } catch {
+      toast.error('Lookup failed');
+    }
   }
 
   async function handleMrLookup() {
@@ -397,12 +438,16 @@ export default function Admission() {
             <div className="adm-row">
               <div className="adm-field">
                 <label>Admission #</label>
-                <input
-                  type="text"
-                  value={form.admissionNo}
-                  onChange={e => set('admissionNo', e.target.value)}
-                  placeholder="e.g. 173380"
-                />
+                <div className="adm-lookup-row">
+                  <input
+                    type="text"
+                    value={form.admissionNo}
+                    onChange={e => set('admissionNo', e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAdmissionLookup()}
+                    placeholder="e.g. 173380"
+                  />
+                  <button className="adm-lookup-btn" onClick={handleAdmissionLookup} title="Lookup">↵</button>
+                </div>
               </div>
               <div className="adm-field">
                 <label>MR #</label>
