@@ -315,7 +315,14 @@ export default function ClinicDoctorPage() {
     if (uploadFileRef.current) uploadFileRef.current.value = '';
   }
 
-  const uploadDoctor = doctors.find((d) => String(d.id) === uploadDoctorId); // eslint-disable-line no-unused-vars
+  function openUploadForDoctor(doc) {
+    setUploadDoctorId(String(doc.id));
+    setUploadFile(null);
+    setUploadRows([]);
+    setUploadDeptTitle('');
+    if (uploadFileRef.current) uploadFileRef.current.value = '';
+    setShowUploadModal(true);
+  }
 
   async function handleDelete(doc) {
     try {
@@ -358,9 +365,6 @@ export default function ClinicDoctorPage() {
           </div>
           <div className="cpp-toolbar-right">
             <span className="cpp-count">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
-            <button className="cdp-upload-btn" onClick={() => setShowUploadModal(true)}>
-              <Upload className="w-3.5 h-3.5" /> Upload Patient Visits Excel
-            </button>
           </div>
         </div>
 
@@ -400,6 +404,9 @@ export default function ClinicDoctorPage() {
                     <td className="cpp-actions">
                       <button className="cpp-btn-icon cpp-edit" onClick={() => openEdit(doc)} title="Edit">
                         <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button className="cpp-btn-icon cdp-upload-row-btn" onClick={() => openUploadForDoctor(doc)} title="Upload Excel">
+                        <Upload className="w-3.5 h-3.5" />
                       </button>
                       <button className="cpp-btn-icon cpp-delete" onClick={() => setConfirmDelete(doc)} title="Delete">
                         <Trash2 className="w-3.5 h-3.5" />
@@ -734,27 +741,17 @@ export default function ClinicDoctorPage() {
       </Modal>
 
       {/* Upload Excel Modal */}
-      <Modal isOpen={showUploadModal} onClose={closeUploadModal} title="Import Sub-Dept Rates from Excel" size="lg">
+      <Modal
+        isOpen={showUploadModal}
+        onClose={closeUploadModal}
+        title={`Import Rates — ${doctors.find((d) => String(d.id) === uploadDoctorId)?.name || ''}`}
+        size="lg"
+      >
         <div className="cdp-upload-modal">
 
-          {/* Doctor selector */}
-          <div className="cdp-field">
-            <label className="cdp-label">Doctor / Consultant select karo *</label>
-            <select
-              className="cdp-select"
-              value={uploadDoctorId}
-              onChange={(e) => setUploadDoctorId(e.target.value)}
-            >
-              <option value="">— Doctor select karo —</option>
-              {doctors.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
-          </div>
-
           {/* File picker */}
-          <div className="cdp-field mt-3">
-            <label className="cdp-label">Excel File (.xlsx / .xls)</label>
+          <div className="cdp-field">
+            <label className="cdp-label">Excel File (.xlsx / .xls) select karo</label>
             <input
               ref={uploadFileRef}
               type="file"

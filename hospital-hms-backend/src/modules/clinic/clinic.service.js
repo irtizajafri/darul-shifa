@@ -943,6 +943,9 @@ function normNameSvc(s) {
 async function importDoctorSubDeptRates(doctorId, rows, deptTitle) {
   const dId = Number(doctorId);
 
+  const doctorExists = await prisma.clinicDoctor.findUnique({ where: { id: dId }, select: { id: true } });
+  if (!doctorExists) throw new Error(`Doctor ID ${dId} not found in database`);
+
   // Load all sub-depts and departments once
   const allSubDepts = await prisma.clinicSubDepartment.findMany({ select: { id: true, name: true, departmentId: true } });
   const allDepts    = await prisma.clinicDepartment.findMany({ select: { id: true, name: true, code: true } });

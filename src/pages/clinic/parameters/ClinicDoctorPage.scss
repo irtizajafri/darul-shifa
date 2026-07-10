@@ -353,6 +353,12 @@
   &:active { background: #0f2442; }
 }
 
+.cdp-upload-row-btn {
+  background: #f0fdf4;
+  color: #16a34a;
+  &:hover { background: #dcfce7; }
+}
+
 // ── Upload Modal ──────────────────────────────────────────────────────────────
 .cdp-upload-modal {
   display: flex;
