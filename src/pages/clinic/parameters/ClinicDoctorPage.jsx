@@ -282,10 +282,11 @@ export default function ClinicDoctorPage() {
     if (uploadRows.length === 0) return toast.error('Koi rows nahi mili Excel mein');
     setUploading(true);
     try {
+      const uploadDoctor = doctors.find((d) => String(d.id) === uploadDoctorId);
       const res = await fetch(`${API}/doctors/${uploadDoctorId}/import-rates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: uploadRows, deptTitle: uploadDeptTitle }),
+        body: JSON.stringify({ rows: uploadRows, deptTitle: uploadDeptTitle, doctorName: uploadDoctor?.name || '' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Upload failed');

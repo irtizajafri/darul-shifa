@@ -940,11 +940,21 @@ function normNameSvc(s) {
   return (s || '').toLowerCase().replace(/[-._]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-async function importDoctorSubDeptRates(doctorId, rows, deptTitle) {
-  const dId = Number(doctorId);
+async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
+  let dId = Number(doctorId);
 
-  const doctorExists = await prisma.clinicDoctor.findUnique({ where: { id: dId }, select: { id: true } });
-  if (!doctorExists) throw new Error(`Doctor ID ${dId} not found in database`);
+  let doctorExists = await prisma.clinicDoctor.findUnique({ where: { id: dId }, select: { id: true } });
+
+  // Fallback: find by name if ID doesn't match (handles server/dev DB id mismatch)
+  if (!doctorExists && doctorName) {
+    const byName = await prisma.clinicDoctor.findFirst({
+      where: { name: { equals: doctorName, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (byName) { dId = byName.id; doctorExists = byName; }
+  }
+
+  if (!doctorExists) throw new Error(`Doctor "${doctorName || doctorId}" not found in database`);
 
   // Load all sub-depts and departments once
   const allSubDepts = await prisma.clinicSubDepartment.findMany({ select: { id: true, name: true, departmentId: true } });

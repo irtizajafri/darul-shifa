@@ -651,10 +651,10 @@ async function getDoctorSubDeptRates(req, res, next) {
 
 async function importDoctorSubDeptRates(req, res, next) {
   try {
-    const { rows, deptTitle } = req.body;
+    const { rows, deptTitle, doctorName } = req.body;
     if (!Array.isArray(rows) || rows.length === 0)
       return fail(res, 400, 'rows array required');
-    const result = await service.importDoctorSubDeptRates(req.params.id, rows, deptTitle || '');
+    const result = await service.importDoctorSubDeptRates(req.params.id, rows, deptTitle || '', doctorName || '');
     success(res, result, `${result.matched} sub-depts imported (${result.created} new, ${result.updated} updated, ${result.autoCreatedSubDepts} sub-depts auto-created)`);
   } catch (err) { next(err); }
 }
