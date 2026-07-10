@@ -293,13 +293,19 @@ export default function ClinicDoctorPage() {
       const r = data.data;
       toast.success(`${r.matched} import hue (${r.created} naye, ${r.updated} update)`);
       if (r.notFound?.length) toast(`${r.notFound.length} test names match nahi hue`, { icon: '⚠' });
+      const savedId = uploadDoctorId;
+      const savedName = uploadDoctor?.name || '';
       setShowUploadModal(false);
       setUploadDoctorId('');
       setUploadFile(null);
       setUploadRows([]);
       setUploadDeptTitle('');
       if (uploadFileRef.current) uploadFileRef.current.value = '';
-      fetchDoctors();
+      await fetchDoctors();
+      const { doctors: freshDoctors } = useClinicStore.getState();
+      const freshDoc = freshDoctors.find((d) => String(d.id) === savedId)
+                    || freshDoctors.find((d) => d.name === savedName);
+      if (freshDoc) { openEdit(freshDoc); setActiveTab('subdept'); }
     } catch (err) {
       toast.error(err.message);
     } finally {
