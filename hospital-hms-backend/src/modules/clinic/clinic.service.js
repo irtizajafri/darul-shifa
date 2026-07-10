@@ -943,18 +943,25 @@ function normNameSvc(s) {
 async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
   let dId = Number(doctorId);
 
-  let doctorExists = await prisma.clinicDoctor.findUnique({ where: { id: dId }, select: { id: true } });
+  // Try by ID first
+  let doctor = await prisma.clinicDoctor.findUnique({ where: { id: dId }, select: { id: true, name: true } });
 
-  // Fallback: find by name if ID doesn't match (handles server/dev DB id mismatch)
-  if (!doctorExists && doctorName) {
-    const byName = await prisma.clinicDoctor.findFirst({
-      where: { name: { equals: doctorName, mode: 'insensitive' } },
-      select: { id: true },
-    });
-    if (byName) { dId = byName.id; doctorExists = byName; }
+  // Fallback: partial/fuzzy name match
+  if (!doctor) {
+    const allDoctors = await prisma.clinicDoctor.findMany({ select: { id: true, name: true } });
+    if (doctorName) {
+      const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const sentName = norm(doctorName);
+      doctor = allDoctors.find((d) => norm(d.name) === sentName)
+            || allDoctors.find((d) => norm(d.name).includes(sentName) || sentName.includes(norm(d.name)));
+    }
+    if (!doctor) {
+      const allDoctors2 = await prisma.clinicDoctor.findMany({ select: { id: true, name: true } });
+      throw new Error(`Doctor not found. DB mein yeh doctors hain: ${allDoctors2.map((d) => `[${d.id}] ${d.name}`).join(' | ')}`);
+    }
   }
 
-  if (!doctorExists) throw new Error(`Doctor "${doctorName || doctorId}" not found in database`);
+  dId = doctor.id;
 
   // Load all sub-depts and departments once
   const allSubDepts = await prisma.clinicSubDepartment.findMany({ select: { id: true, name: true, departmentId: true } });
