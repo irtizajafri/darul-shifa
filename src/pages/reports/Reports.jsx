@@ -2103,19 +2103,34 @@ export default function Reports() {
         ...dynamicAllowanceRows,
         { label: "TOTAL", amount: effectiveBaseTotalSal },
         ...(empIncentive > 0 ? [
-          { label: "INCENTIVE", amount: empIncentive },
+          { label: "EXTRA ALLOWANCE.", amount: empIncentive },
           { label: "G.TOTAL", amount: effectiveBaseTotalSal + empIncentive },
         ] : []),
       ];
-      const allowanceLineRaw = allowanceInlineParts
-        .map((p) => `${p.label}: ${Number(p.amount || 0).toLocaleString()}`)
-        .join("   |   ");
-      const allowanceLine = allowanceLineRaw.length > 130 ? `${allowanceLineRaw.slice(0, 127)}...` : allowanceLineRaw;
-
-  const allowanceLineY = summaryTopY + 133;
+      const allowanceLineY = summaryTopY + 133;
       pdf.setFontSize(9);
       pdf.setFont("helvetica", "bold");
-      pdf.text(allowanceLine, 40, allowanceLineY);
+      const allowanceMargin = 40;
+      const allowanceMaxWidth = pdf.internal.pageSize.getWidth() - allowanceMargin * 2;
+      const separator = "   |   ";
+      const sepWidth = pdf.getTextWidth(separator);
+      let currentLineX = allowanceMargin;
+      let currentLineY = allowanceLineY;
+      allowanceInlineParts.forEach((p, idx) => {
+        const text = `${p.label}: ${Number(p.amount || 0).toLocaleString()}`;
+        const textWidth = pdf.getTextWidth(text);
+        const needsSep = idx > 0;
+        const neededWidth = (needsSep ? sepWidth : 0) + textWidth;
+        if (needsSep && currentLineX + neededWidth > allowanceMargin + allowanceMaxWidth) {
+          currentLineY += 14;
+          currentLineX = allowanceMargin;
+        } else if (needsSep) {
+          pdf.text(separator, currentLineX, currentLineY);
+          currentLineX += sepWidth;
+        }
+        pdf.text(text, currentLineX, currentLineY);
+        currentLineX += textWidth;
+      });
       pdf.setFont("helvetica", "normal");
 
       const isPayslipScope = scope === "payslip" || scope === "payslip-detailed";
