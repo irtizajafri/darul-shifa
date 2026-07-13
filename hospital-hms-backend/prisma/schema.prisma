@@ -66,6 +66,7 @@ model Employee {
   disbursement        String?
   salaryMonthly       Float        @default(0)
   allowances          Json?        @default("[]")
+  incentive           Float?       @default(0)
   
   dutyType            String?
   dutyRoster          Json?        @default("[]")

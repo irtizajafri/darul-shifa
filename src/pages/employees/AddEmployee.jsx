@@ -96,6 +96,7 @@ export default function AddEmployee({ edit }) {
     defaultValues: existing
       ? {
           ...existing,
+          incentive: Number(existing.incentive || 0),
           allowances: existing.allowances || [],
           photo: existing.photo || null,
           signature: existing.signature || null,
@@ -123,6 +124,7 @@ export default function AddEmployee({ edit }) {
         }
       : {
           empCode: getNextEmpCode(),
+          incentive: 0,
           allowances: [],
           photo: null,
           signature: null,
@@ -929,6 +931,7 @@ export default function AddEmployee({ edit }) {
                 </div>
               </div>
               <Input label="Basic Salary" type="number" {...register('basicSalary', { required: true, valueAsNumber: true })} error={errors.basicSalary?.message} />
+              <Input label="Incentive (added to net salary)" type="number" {...register('incentive', { valueAsNumber: true })} />
               <div className="col-span-2 allowance-section">
                 <div className="flex justify-between items-center mb-2">
                   <label className="font-medium">Allowances</label>

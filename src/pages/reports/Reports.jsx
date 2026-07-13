@@ -1613,8 +1613,9 @@ export default function Reports() {
     return { earnedSal, deductions, otBonus, finalSal };
   }, [registerRangeRows]);
 
+  const empIncentive = Math.round(Number(emp?.incentive || 0));
   const finalSal = emp
-    ? Math.max(0, Math.round(calculatedSalaryFromRows + overtimeAddition - totalDeductions))
+    ? Math.max(0, Math.round(calculatedSalaryFromRows + overtimeAddition - totalDeductions)) + empIncentive
     : 0;
   const totalSal = finalSal;
 
@@ -1646,7 +1647,8 @@ export default function Reports() {
         ? (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0) + (manualDeductionTotal || 0)
         : 0;
       const rangeDeduction  = registerRangeSalaryData.deductions + extraDed;
-      const rangeFinalSal   = Math.max(0, registerRangeSalaryData.earnedSal + registerRangeSalaryData.otBonus - rangeDeduction);
+      const empInc = Math.round(Number(emp?.incentive || 0));
+      const rangeFinalSal   = Math.max(0, registerRangeSalaryData.earnedSal + registerRangeSalaryData.otBonus - rangeDeduction) + empInc;
       return [...prev, {
         code:          emp.empCode,
         name:          `${emp.firstName} ${emp.lastName}`,
@@ -2087,7 +2089,6 @@ export default function Reports() {
       pdf.text(`CURR. MONTH DEDUCTION`, rightColX, summaryTopY, { fontStyle: "bold" });
       pdf.text(`TOTAL : ${totalDeductions.toLocaleString()}`, rightColX, summaryTopY + 15);
       pdf.text(`ADV+LOAN : ${(advanceDeduction + loanDeduction).toLocaleString()}`, rightColX, summaryTopY + 30);
-      // pdf.text(`NET SALARY`, rightColX, summaryTopY + 34, { fontStyle: "bold" });
       pdf.text(`NET SALARY : ${totalSal.toLocaleString()}`, rightColX, summaryTopY + 49);
 
       const dynamicAllowanceRows = (emp?.allowances || [])
@@ -2100,7 +2101,11 @@ export default function Reports() {
       const allowanceInlineParts = [
         { label: "BASIC", amount: basic },
         ...dynamicAllowanceRows,
-  { label: "TOTAL", amount: effectiveBaseTotalSal },
+        { label: "TOTAL", amount: effectiveBaseTotalSal },
+        ...(empIncentive > 0 ? [
+          { label: "INCENTIVE", amount: empIncentive },
+          { label: "G.TOTAL", amount: effectiveBaseTotalSal + empIncentive },
+        ] : []),
       ];
       const allowanceLineRaw = allowanceInlineParts
         .map((p) => `${p.label}: ${Number(p.amount || 0).toLocaleString()}`)
@@ -2768,6 +2773,9 @@ export default function Reports() {
                     <tr><td>Total Deductions</td><td></td><td>{totalDeductions.toLocaleString()}</td></tr>
                   </tbody>
                 </table>
+                {empIncentive > 0 && (
+                  <div style={{ marginTop: '6px', color: '#16a34a' }}><strong>INCENTIVE: PKR {empIncentive.toLocaleString()}</strong></div>
+                )}
                 <div className="net-salary"><strong>NET SALARY: PKR {totalSal.toLocaleString()}</strong></div>
                 <p className="amount-words">Amount in words: {totalSal.toLocaleString()} Only</p>
                 {overtimeAddition > 0 && (

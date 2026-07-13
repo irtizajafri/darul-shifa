@@ -22,6 +22,7 @@ export const useEmployeeStore = create((set, get) => ({
         department: e.department || e.departmentText || '',
         designation: e.role || e.designation,
         basicSalary: e.basicSalary ?? e.salaryMonthly ?? 0,
+        incentive: Number(e.incentive || 0),
         joiningDate: e.createdAt,
         cnicFrontDoc: e.cnicFrontDoc || null,
         cnicBackDoc: e.cnicBackDoc || null,
@@ -109,8 +110,8 @@ export const useEmployeeStore = create((set, get) => ({
         weeklyHoliday: updates.weeklyHoliday,
         workingDays: updates.workingDays,
         disbursement: updates.disbursement,
-        allowances: updates.allowances
-        ,
+        allowances: updates.allowances,
+        incentive: Number(updates.incentive || 0),
         dutyType: updates.dutyType,
         dutyRoster: updates.dutyRoster,
   isNightShift: updates.isNightShift,

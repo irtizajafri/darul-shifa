@@ -376,6 +376,7 @@ async function create(payload) {
     disbursement: normalizeString(payload.disbursement, { emptyToNull: true }),
     salaryMonthly: normalizeNumber(payload.basicSalary, 0),
     allowances: normalizeJsonArray(payload.allowances, []),
+    incentive: normalizeNumber(payload.incentive, 0),
 
     dutyType: normalizeString(payload.dutyType, { emptyToNull: true }),
     dutyRoster: normalizeJsonArray(payload.dutyRoster, []),
@@ -438,6 +439,7 @@ async function update(id, payload) {
   }
 
   setIfDefined(data, 'allowances', normalizeJsonArray(payload.allowances, []));
+  setIfDefined(data, 'incentive', normalizeNumber(payload.incentive, 0));
   setIfDefined(data, 'dutyType', normalizeString(payload.dutyType, { emptyToNull: true }));
   setIfDefined(data, 'dutyRoster', normalizeJsonArray(payload.dutyRoster, []));
   if (employeeModelHasField('isNightShift')) {
