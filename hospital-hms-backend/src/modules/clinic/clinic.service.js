@@ -971,6 +971,15 @@ async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
   let dept = null;
   if (deptTitle) {
     dept = allDepts.find((d) => normNameSvc(d.name) === normNameSvc(deptTitle));
+    if (!dept) {
+      const deptCount = await prisma.clinicDepartment.count();
+      const newCode = String(deptCount + 1).padStart(2, '0');
+      dept = await prisma.clinicDepartment.create({
+        data: { code: newCode, name: deptTitle.trim() },
+        select: { id: true, name: true, code: true },
+      });
+      allDepts.push(dept);
+    }
   }
 
   let matched = 0, created = 0, updated = 0, autoCreatedSubDepts = 0;
