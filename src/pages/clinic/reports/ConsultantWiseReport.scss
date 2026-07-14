@@ -201,6 +201,144 @@
   font-size: 0.72rem; color: #777;
 }
 
+// ── Date Wise Summary ─────────────────────────────────────────────────────────
+.dws-print-header {
+  margin-bottom: 12px;
+}
+
+.dws-main-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  margin: 0 0 8px;
+  color: #1a1a2e;
+}
+
+.dws-info-bar {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  color: #333;
+  border-top: 1px solid #ccc;
+  border-bottom: 1px solid #ccc;
+  padding: 3px 6px;
+  margin-bottom: 2px;
+}
+
+.dws-date-bar {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  background: #fdecea;
+  padding: 3px 6px;
+  color: #333;
+}
+
+.dws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.79rem;
+
+  th {
+    background: #1a3c6e;
+    color: #fff;
+    padding: 5px 8px;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+    border-right: 1px solid #2a4c7e;
+    &.num { text-align: right; }
+  }
+
+  td {
+    padding: 3px 8px;
+    border-bottom: 1px solid #e8e8e8;
+  }
+
+  .td-num { text-align: right; }
+}
+
+.dws-col-date { min-width: 200px; }
+.dws-col-pts  { width: 70px; }
+.dws-col-num  { width: 110px; }
+
+.dws-con-row td {
+  background: #e8eef8;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #1a3c6e;
+  padding: 5px 8px;
+  border-top: 2px solid #1a3c6e;
+}
+
+.dws-con-right {
+  text-align: right;
+  color: #555 !important;
+  font-size: 0.76rem !important;
+}
+
+.dws-subdept-row td {
+  background: #f4f6fa;
+  font-weight: 700;
+  font-style: italic;
+  color: #2a2a4a;
+  padding-left: 20px !important;
+  border-top: 1px solid #d0d8e8;
+}
+
+.dws-date-row td {
+  padding-left: 28px !important;
+}
+
+.dws-subtotal-row td {
+  background: #dce8d4;
+  font-weight: 700;
+  border-top: 1px solid #5a8a4a;
+  color: #1a3a1a;
+}
+
+.dws-subtotal-label {
+  font-style: italic;
+}
+
+.dws-grand-row td {
+  background: #eef2f8;
+  font-weight: 700;
+  border-top: 3px solid #1a3c6e;
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.dws-grand-label { color: #1a3c6e; }
+
+// Signature area
+.dws-sign-area {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 36px;
+  font-size: 0.75rem;
+  color: #333;
+}
+
+.dws-sign-col {
+  text-align: center;
+  min-width: 130px;
+}
+
+.dws-sign-line {
+  border-top: 1px solid #333;
+  margin-bottom: 3px;
+  padding-top: 2px;
+  font-weight: 600;
+}
+
+.dws-sign-sub {
+  color: #555;
+  font-size: 0.72rem;
+}
+
 // ── Print ─────────────────────────────────────────────────────────────────────
 @media print {
   .no-print { display: none !important; }
@@ -209,4 +347,10 @@
   .cwr-rpt-table th { background: #1a3c6e !important; color: #fff !important; -webkit-print-color-adjust: exact; }
   .cwr-con-header   { background: #e8eef8 !important; -webkit-print-color-adjust: exact; }
   .cwr-sub-row td, .cwr-grand-table tfoot td { background: #eef2f8 !important; -webkit-print-color-adjust: exact; }
+  .dws-table th  { background: #1a3c6e !important; color: #fff !important; -webkit-print-color-adjust: exact; }
+  .dws-con-row td     { background: #e8eef8 !important; -webkit-print-color-adjust: exact; }
+  .dws-subdept-row td { background: #f4f6fa !important; -webkit-print-color-adjust: exact; }
+  .dws-subtotal-row td{ background: #dce8d4 !important; -webkit-print-color-adjust: exact; }
+  .dws-grand-row td   { background: #eef2f8 !important; -webkit-print-color-adjust: exact; }
+  .dws-date-bar       { background: #fdecea !important; -webkit-print-color-adjust: exact; }
 }
