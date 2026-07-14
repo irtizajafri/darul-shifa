@@ -76,8 +76,12 @@ export default function InventoryModuleDashboard() {
 
   useEffect(() => {
     if (!loading) {
-      if (canSeeInvAlerts) setShowLowStockPopup(true);
-      else if (canSeeFAAlerts) setShowFixedAssetPopup(true);
+      const alreadyShown = sessionStorage.getItem('inv_alerts_shown');
+      if (!alreadyShown) {
+        sessionStorage.setItem('inv_alerts_shown', '1');
+        if (canSeeInvAlerts) setShowLowStockPopup(true);
+        else if (canSeeFAAlerts) setShowFixedAssetPopup(true);
+      }
     }
   }, [loading, canSeeInvAlerts, canSeeFAAlerts]);
 
