@@ -15,12 +15,12 @@
 }
 
 .plf-window {
-  width: 520px;
+  width: 700px;
   background: #d4d0c8;
   border: 2px solid #7a7a7a;
   border-top-color: #fff;
   border-left-color: #fff;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   box-shadow: 3px 3px 8px rgba(0,0,0,0.35);
 }
 
@@ -91,10 +91,10 @@
 
 // Body
 .plf-body {
-  padding: 12px 16px 14px;
+  padding: 16px 22px 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 13px;
 }
 
 .plf-row {
@@ -104,7 +104,7 @@
 }
 
 .plf-lbl {
-  width: 36px;
+  width: 56px;
   text-align: right;
   color: #8b0000;
   font-weight: 600;
@@ -124,13 +124,13 @@
   border: 1px solid #7a7a7a;
   border-top-color: #555;
   border-left-color: #555;
-  padding: 2px 5px;
-  font-size: 0.78rem;
+  padding: 3px 7px;
+  font-size: 0.82rem;
   font-family: inherit;
-  width: 140px;
+  width: 180px;
   outline: none;
   &:focus { border-color: #0a3c8c; }
-  &--time { width: 110px; }
+  &--time { width: 140px; }
 }
 
 // Patient type fieldset

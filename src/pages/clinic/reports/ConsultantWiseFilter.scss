@@ -15,12 +15,12 @@
 }
 
 .cwf-window {
-  width: 560px;
+  width: 760px;
   background: #d4d0c8;
   border: 2px solid #7a7a7a;
   border-top-color: #fff;
   border-left-color: #fff;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   box-shadow: 3px 3px 8px rgba(0,0,0,0.35);
 }
 
@@ -37,10 +37,10 @@
 .cwf-title-right { font-size: 0.85rem; font-weight: 700; color: #c8d8f8; }
 
 .cwf-body {
-  padding: 10px 14px 12px;
+  padding: 16px 20px 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .cwf-row {
@@ -60,7 +60,7 @@
 }
 
 .cwf-lbl {
-  width: 60px;
+  width: 80px;
   text-align: right;
   color: #8b0000;
   font-weight: 600;
@@ -80,14 +80,14 @@
   border: 1px solid #7a7a7a;
   border-top-color: #555;
   border-left-color: #555;
-  padding: 2px 5px;
-  font-size: 0.78rem;
+  padding: 3px 7px;
+  font-size: 0.82rem;
   font-family: inherit;
-  width: 140px;
+  width: 180px;
   outline: none;
   &:focus { border-color: #0a3c8c; }
-  &--time { width: 110px; }
-  &--con  { width: 180px; }
+  &--time { width: 140px; }
+  &--con  { width: 260px; }
 }
 
 .cwf-section { flex: 1; }
