@@ -1484,12 +1484,12 @@ export default function Reports() {
             : (rowDutyMinutes / 60).toFixed(2),
           wrkHrs:  wrkHrsDisplay,
           ot:      isFuture ? "0.00" : otHrs,
-          otAmt:   isFixed ? '0' : String(Math.max(0, otVal)),
+          otAmt:   isFuture ? '0' : String(Math.max(0, otVal)),
           late:    (isFixed || isAvailOff || isWorkedExtra || effectiveOffDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
           status:  displayStatus,
           salary:  isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(grossPerDay),
           ded:     isFixed ? '0' : String(ded),
-          total:   isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(Math.max(0, grossPerDay - ded + otVal)),
+          total:   isFixed ? (isFuture ? '0' : String(Math.max(0, Math.round(perDayRate) + Math.max(0, otVal)))) : String(Math.max(0, grossPerDay - ded + otVal)),
           isManuallyEdited: Boolean(record?.isManuallyEdited),
         };
 
@@ -1543,12 +1543,12 @@ export default function Reports() {
             dutyHrs: shouldHideDutyHours ? '0.00' : (extraDutyMinutes / 60).toFixed(2),
             wrkHrs: workedHoursFromPair(extraIn, extraOut),
             ot: isFuture ? '0.00' : (extraOvertimeMinutes / 60).toFixed(2),
-            otAmt: isFixed ? '0' : String(extraOtVal),
+            otAmt: String(extraOtVal),
             late: 'N',
             status: displayStatus,
             salary: isFixed ? '0' : String(extraTotal),
             ded: '0',
-            total: isFixed ? '0' : String(extraTotal),
+            total: isFixed ? String(extraOtVal) : String(extraTotal),
           });
         }
 
@@ -2081,7 +2081,8 @@ export default function Reports() {
   pdf.text(`TOTAL : ${effectiveBaseTotalSal.toLocaleString()}`, 40, summaryTopY + 15);
       pdf.text(`CURRUENT SALARY : ${totalSal.toLocaleString()}`, 40, summaryTopY + 30);
       pdf.text(`CURRUENT OVER TIME : ${overtimeAddition.toLocaleString()}`, 40, summaryTopY + 45);
-      pdf.text(`DAILY DED : ${totalDeductions.toLocaleString()}`, 40, summaryTopY + 60);
+      const attendanceDed = detailedAttendanceRows.reduce((s, r) => s + Math.max(0, Math.round(Number(r.ded) || 0)), 0);
+      pdf.text(`DAILY DED : ${attendanceDed.toLocaleString()}`, 40, summaryTopY + 60);
       pdf.text(`GATE PASS DED (${gatepassMinutes} mins) : ${gatepassDeduction.toLocaleString()}`, 40, summaryTopY + 75);
       pdf.text(`ADVANCE DED (MONTH) : ${advanceDeduction.toLocaleString()}`, 40, summaryTopY + 90);
       pdf.text(`LOAN DED (MONTH) : ${loanDeduction.toLocaleString()}`, 40, summaryTopY + 105);

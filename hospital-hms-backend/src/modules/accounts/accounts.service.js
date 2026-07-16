@@ -206,11 +206,20 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   if (!head) return { type: null, headName: null, headId: null, entries: [], checkedNames: [] };
 
   if (head.sourceType === 'employee') {
+    const now = new Date();
+    const m = now.getMonth();
+    const prevMonth = String(m === 0 ? 12 : m).padStart(2, '0');
+    const prevYear  = String(m === 0 ? now.getFullYear() - 1 : now.getFullYear());
+    const paid = await prisma.employeeSalaryPayment.findMany({
+      where: { salaryMonth: prevMonth, salaryYear: prevYear },
+      select: { empCode: true },
+    });
+    const paidCodes = new Set(paid.map((p) => p.empCode));
     const rows = await prisma.employee.findMany({
       select: { id: true, firstName: true, lastName: true, empCode: true },
       orderBy: { firstName: 'asc' },
     });
-    return { type: 'employee', headName: head.name, headId: head.id, entries: rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode })), checkedNames: [] };
+    return { type: 'employee', headName: head.name, headId: head.id, entries: rows.filter((e) => !paidCodes.has(e.empCode)).map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode })), checkedNames: [] };
   }
 
   if (head.sourceType === 'vendor') {
@@ -395,7 +404,8 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
   const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
   const voucherNo = await generateVoucherNo(entityType, voucherDate);
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
-  return prisma.accVoucherExpense.create({
+
+  const voucher = await prisma.accVoucherExpense.create({
     data: {
       voucherNo, voucherType,
       voucherDate: new Date(voucherDate),
@@ -421,6 +431,28 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
     },
     include: { entries: true },
   });
+
+  const visitIds = entries.flatMap((e) => Array.isArray(e.visitIds) ? e.visitIds.map(Number) : []).filter(Boolean);
+  if (visitIds.length > 0) {
+    await prisma.patientVisit.updateMany({ where: { id: { in: visitIds } }, data: { isPaid: true } });
+  }
+
+  const grnIds = entries.flatMap((e) => Array.isArray(e.grnIds) ? e.grnIds.map(Number) : []).filter(Boolean);
+  if (grnIds.length > 0) {
+    await prisma.inventoryGRN.updateMany({ where: { id: { in: grnIds } }, data: { isPaid: true } });
+  }
+
+  for (const e of entries) {
+    if (e.salaryEmpCode && e.salaryMonth && e.salaryYear) {
+      await prisma.employeeSalaryPayment.upsert({
+        where: { empCode_salaryMonth_salaryYear: { empCode: e.salaryEmpCode, salaryMonth: e.salaryMonth, salaryYear: e.salaryYear } },
+        update: {},
+        create: { empCode: e.salaryEmpCode, salaryMonth: e.salaryMonth, salaryYear: e.salaryYear, voucherNo: voucher.voucherNo },
+      });
+    }
+  }
+
+  return voucher;
 }
 
 async function getVoucherExpenses(entityType) {
@@ -448,7 +480,7 @@ async function deleteIncomeCategory(id) {
 }
 
 async function getConsultantVisits(doctorName, dateFrom, dateTo) {
-  const where = { doctor: doctorName };
+  const where = { doctor: doctorName, isPaid: false };
   if (dateFrom) where.visitDate = { ...(where.visitDate || {}), gte: new Date(dateFrom) };
   if (dateTo)   where.visitDate = { ...(where.visitDate || {}), lte: new Date(dateTo) };
   return prisma.patientVisit.findMany({
@@ -460,7 +492,7 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
 
 async function getSupplierGRNs(supplierId) {
   return prisma.inventoryGRN.findMany({
-    where: { supplierId: Number(supplierId) },
+    where: { supplierId: Number(supplierId), isPaid: false },
     include: { item: { select: { name: true } } },
     orderBy: { receivedDate: 'desc' },
   });

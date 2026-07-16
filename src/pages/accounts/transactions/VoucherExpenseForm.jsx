@@ -178,6 +178,9 @@ const emptyEntry = () => ({
   payeeName: '', amount: '',
   chequeNo: '', chequeDate: todayStr(), chequeType: 'bearer',
   particulars: '',
+  visitIds: [],
+  grnIds: [],
+  salaryEmpCode: '', salaryMonth: '', salaryYear: '',
 });
 
 export default function VoucherExpenseForm() {
@@ -837,7 +840,11 @@ export default function VoucherExpenseForm() {
                     <button
                       className="ve-sal-modal__verify"
                       disabled={grnCheckedTotal === 0}
-                      onClick={() => { setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)) })); setGrnModal(null); }}
+                      onClick={() => {
+                        const ids = (grnModal.grns || []).filter((g) => checkedGrns[g.id]).map((g) => g.id);
+                        setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)), grnIds: ids }));
+                        setGrnModal(null);
+                      }}
                     >
                       Fill Amount
                     </button>
@@ -931,7 +938,11 @@ export default function VoucherExpenseForm() {
                     <button className="ve-sal-modal__cancel" onClick={() => setConsultantModal(null)}>Cancel</button>
                     <button className="ve-sal-modal__verify"
                       disabled={cvCheckedTotal === 0}
-                      onClick={() => { setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)) })); setConsultantModal(null); }}
+                      onClick={() => {
+                        const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map(Number);
+                        setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)), visitIds: ids }));
+                        setConsultantModal(null);
+                      }}
                     >
                       Fill Amount
                     </button>
@@ -978,7 +989,10 @@ export default function VoucherExpenseForm() {
                   <button className="ve-sal-modal__cancel" onClick={() => setSalaryModal(null)}>Cancel</button>
                   <button
                     className="ve-sal-modal__verify"
-                    onClick={() => { setEntry((f) => ({ ...f, amount: String(Math.round(salaryModal.netSalary ?? 0)) })); setSalaryModal(null); }}
+                    onClick={() => {
+                      setEntry((f) => ({ ...f, amount: String(Math.round(salaryModal.netSalary ?? 0)), salaryEmpCode: salaryModal.empCode, salaryMonth: salaryModal.month, salaryYear: salaryModal.year }));
+                      setSalaryModal(null);
+                    }}
                   >
                     Verify &amp; Fill Amount
                   </button>

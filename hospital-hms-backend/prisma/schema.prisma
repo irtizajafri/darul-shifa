@@ -423,6 +423,7 @@ model InventoryGRN {
   billDate         DateTime?
   paymentType      String               @default("cash")
   paymentNote      String?
+  isPaid           Boolean              @default(false)
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
 
@@ -431,6 +432,17 @@ model InventoryGRN {
   @@index([receivedDate])
   @@index([supplierId])
   @@index([categoryId, subcategoryId])
+}
+
+model EmployeeSalaryPayment {
+  id          Int      @id @default(autoincrement())
+  empCode     String
+  salaryMonth String
+  salaryYear  String
+  voucherNo   String
+  paidAt      DateTime @default(now())
+
+  @@unique([empCode, salaryMonth, salaryYear])
 }
 
 model InventoryGD {
@@ -1277,6 +1289,7 @@ model PatientVisit {
   received       Decimal  @default(0) @db.Decimal(10, 2)
   balance        Decimal  @default(0) @db.Decimal(10, 2)
   discount       Decimal  @default(0) @db.Decimal(10, 2)
+  isPaid         Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 }

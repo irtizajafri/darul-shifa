@@ -75,15 +75,9 @@ function groupByConsultant(rows) {
   return [...map.entries()].map(([consultant, patients]) => ({ consultant, patients }));
 }
 
-function groupByConsultantDateWise(rows, drMap, drFirstMap) {
-  const conMap = new Map();
+function groupByDate(rows, drMap, drFirstMap) {
+  const dateMap = new Map();
   for (const r of rows) {
-    const conKey = r.doctor || '(No Consultant)';
-    if (!conMap.has(conKey)) conMap.set(conKey, new Map());
-    const subMap = conMap.get(conKey);
-    const subKey = r.subDepartment || '(No Sub-Dept)';
-    if (!subMap.has(subKey)) subMap.set(subKey, new Map());
-    const dateMap = subMap.get(subKey);
     const dateKey = r.visitDate ? String(r.visitDate).split('T')[0] : '—';
     if (!dateMap.has(dateKey)) dateMap.set(dateKey, { count: 0, amount: 0, hosAmt: 0, consAmt: 0 });
     const entry = dateMap.get(dateKey);
@@ -94,28 +88,9 @@ function groupByConsultantDateWise(rows, drMap, drFirstMap) {
     entry.hosAmt  += hosAmt;
     entry.consAmt += consAmt;
   }
-
-  return [...conMap.entries()].map(([consultant, subMap]) => {
-    const subDepts = [...subMap.entries()].map(([name, dateMap]) => {
-      const dates = [...dateMap.entries()]
-        .map(([date, data]) => ({ date, ...data }))
-        .sort((a, b) => a.date.localeCompare(b.date));
-      const subTotal = dates.reduce((acc, d) => ({
-        count:   acc.count   + d.count,
-        amount:  acc.amount  + d.amount,
-        hosAmt:  acc.hosAmt  + d.hosAmt,
-        consAmt: acc.consAmt + d.consAmt,
-      }), { count: 0, amount: 0, hosAmt: 0, consAmt: 0 });
-      return { name, dates, subTotal };
-    });
-    const consultantTotal = subDepts.reduce((acc, s) => ({
-      count:   acc.count   + s.subTotal.count,
-      amount:  acc.amount  + s.subTotal.amount,
-      hosAmt:  acc.hosAmt  + s.subTotal.hosAmt,
-      consAmt: acc.consAmt + s.subTotal.consAmt,
-    }), { count: 0, amount: 0, hosAmt: 0, consAmt: 0 });
-    return { consultant, subDepts, consultantTotal };
-  });
+  return [...dateMap.entries()]
+    .map(([date, data]) => ({ date, ...data }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 export default function ConsultantWiseReport() {
@@ -161,7 +136,7 @@ export default function ConsultantWiseReport() {
   useEffect(() => { fetchData(); }, []);
 
   const groups    = groupByConsultant(rows);
-  const dwsGroups = groupByConsultantDateWise(rows, drMap, drFirstMap);
+  const dateRows  = groupByDate(rows, drMap, drFirstMap);
 
   const grandAmt   = rows.reduce((s, r) => s + Number(r.received || 0), 0);
   const grandCons  = rows.reduce((s, r) => s + calcShares(r, drMap, drFirstMap).consAmt, 0);
@@ -335,7 +310,7 @@ export default function ConsultantWiseReport() {
                 <div className="cwr-empty">No records found for the selected filters.</div>
               )}
 
-              {!loading && dwsGroups.length > 0 && (
+              {!loading && dateRows.length > 0 && (
                 <table className="dws-table">
                   <thead>
                     <tr>
@@ -347,46 +322,17 @@ export default function ConsultantWiseReport() {
                     </tr>
                   </thead>
                   <tbody>
-                    {dwsGroups.map(({ consultant, subDepts, consultantTotal }) => (
-                      <>
-                        {/* Consultant header row */}
-                        <tr key={`con-${consultant}`} className="dws-con-row">
-                          <td className="dws-con-name">{consultant}</td>
-                          <td colSpan={4} className="dws-con-right">{consultant}</td>
-                        </tr>
-
-                        {subDepts.map(({ name, dates, subTotal }) => (
-                          <>
-                            {/* Sub-dept label */}
-                            <tr key={`sd-${consultant}-${name}`} className="dws-subdept-row">
-                              <td colSpan={5}>{name}</td>
-                            </tr>
-
-                            {/* Date rows */}
-                            {dates.map((d) => (
-                              <tr key={`d-${consultant}-${name}-${d.date}`} className="dws-date-row">
-                                <td className="dws-td-date">{fmtDateWithDay(d.date)}</td>
-                                <td className="td-num">{d.count}</td>
-                                <td className="td-num">{fmtNum(d.amount)}</td>
-                                <td className="td-num cwr-td-hos">{fmtNum(d.hosAmt)}</td>
-                                <td className="td-num cwr-td-cons">{fmtNum(d.consAmt)}</td>
-                              </tr>
-                            ))}
-
-                            {/* Sub-dept subtotal */}
-                            <tr key={`st-${consultant}-${name}`} className="dws-subtotal-row">
-                              <td className="dws-subtotal-label">{name}</td>
-                              <td className="td-num">{subTotal.count}</td>
-                              <td className="td-num">{fmtNum(subTotal.amount)}</td>
-                              <td className="td-num cwr-td-hos">{fmtNum(subTotal.hosAmt)}</td>
-                              <td className="td-num cwr-td-cons">{fmtNum(subTotal.consAmt)}</td>
-                            </tr>
-                          </>
-                        ))}
-                      </>
+                    {dateRows.map((d) => (
+                      <tr key={d.date}>
+                        <td className="dws-td-date">{fmtDateWithDay(d.date)}</td>
+                        <td className="td-num">{d.count}</td>
+                        <td className="td-num">{fmtNum(d.amount)}</td>
+                        <td className="td-num cwr-td-hos">{fmtNum(d.hosAmt)}</td>
+                        <td className="td-num cwr-td-cons">{fmtNum(d.consAmt)}</td>
+                      </tr>
                     ))}
-
-                    {/* Grand Total */}
+                  </tbody>
+                  <tfoot>
                     <tr className="dws-grand-row">
                       <td className="dws-grand-label">Grand Total</td>
                       <td className="td-num">{rows.length}</td>
@@ -394,7 +340,7 @@ export default function ConsultantWiseReport() {
                       <td className="td-num cwr-td-hos">{fmtNum(grandHos)}</td>
                       <td className="td-num cwr-td-cons">{fmtNum(grandCons)}</td>
                     </tr>
-                  </tbody>
+                  </tfoot>
                 </table>
               )}
 
