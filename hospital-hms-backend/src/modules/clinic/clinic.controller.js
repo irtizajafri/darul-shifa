@@ -567,6 +567,13 @@ async function getOpdPatientByMrNo(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getOpdPatientsByPhone(req, res, next) {
+  try {
+    const records = await service.getOpdPatientsByPhone(req.params.phone);
+    success(res, records);
+  } catch (err) { next(err); }
+}
+
 async function getOpdVisitBySerial(req, res, next) {
   try {
     const record = await service.getOpdVisitBySerial(req.params.serialNo);
@@ -678,6 +685,14 @@ async function getPatientVisits(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getConsultantStatement(req, res, next) {
+  try {
+    const { consultantId, fromDate, toDate, fromTime, toTime } = req.query;
+    const data = await service.getConsultantStatement({ consultantId, fromDate, toDate, fromTime, toTime });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   getDepartments,
   createDepartment,
@@ -733,6 +748,7 @@ module.exports = {
   getAntenatalList,
   getAntenatalByNo,
   getOpdPatientByMrNo,
+  getOpdPatientsByPhone,
   getOpdVisitBySerial,
   getAdmissions,
   createAdmission,
@@ -746,4 +762,23 @@ module.exports = {
   getPatientVisits,
   getDoctorSubDeptRates,
   importDoctorSubDeptRates,
+  importBillComparison,
+  getBillComparisons,
+  getConsultantStatement,
 };
+
+async function importBillComparison(req, res, next) {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return fail(res, 400, 'No rows provided');
+    const result = await service.importBillComparison(rows);
+    success(res, result, `Imported ${result.rowsInserted} rows`);
+  } catch (err) { next(err); }
+}
+
+async function getBillComparisons(req, res, next) {
+  try {
+    const data = await service.getBillComparisons();
+    success(res, data);
+  } catch (err) { next(err); }
+}

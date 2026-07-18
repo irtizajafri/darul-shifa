@@ -162,9 +162,7 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
 
   <div class="footer-urdu">اسپتال کے کیش کاؤنٹر کے علاوہ کسی بھی شخص کو کسی بھی قسم کی ادائیگی نہ کریں۔ بصورت دیگر اسپتال ذمہ دار نہ ہوگا۔</div>
 
-  <div style="text-align:center;margin-top:12px;">
-    <button onclick="window.print()" style="padding:6px 20px;font-size:12px;cursor:pointer;background:#1d4ed8;color:#fff;border:none;border-radius:4px;">🖨 Print</button>
-  </div>
+  <script>window.onload = function(){ window.print(); }</script>
 </body>
 </html>`;
 }

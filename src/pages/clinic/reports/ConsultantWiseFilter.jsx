@@ -136,9 +136,9 @@ export default function ConsultantWiseFilter() {
             {/* Report Type radio */}
             <div className="cwf-radios">
               {[
-                { value: 'detail',           label: 'Detail' },
-                { value: 'header',           label: 'Header' },
-                { value: 'date_wise_summary',label: 'Date Wise Summary' },
+                { value: 'detail',            label: 'Detail' },
+                { value: 'header',            label: 'Header' },
+                { value: 'date_wise_summary', label: 'Date Wise Summary' },
               ].map(opt => (
                 <label key={opt.value} className="cwf-radio-label">
                   <input type="radio" name="reportType" value={opt.value}

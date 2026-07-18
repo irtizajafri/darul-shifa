@@ -380,7 +380,7 @@ function DoctorSearchInput({ value, onChange }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor' }) {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone } = useClinicStore();
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -392,12 +392,14 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const [receive, setReceive] = useState('');
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('amount');
-  const [saving, setSaving] = useState(false);
-  const [lastVisitId, setLastVisitId] = useState(null);
-  const lastVisitIdRef = useRef(null);
-  const [printing, setPrinting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneResults, setPhoneResults] = useState([]);
+  const [mrConfirm, setMrConfirm] = useState(null);
+  const [mrLookupLoading, setMrLookupLoading] = useState(false);
+  const [phoneLookupLoading, setPhoneLookupLoading] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -495,10 +497,72 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
   const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
 
-  async function handleSave() {
+  function applyPatientData(patient, useNewMr) {
+    if (useNewMr) {
+      // New MR: just close modal, keep form as-is (phone stays, rest is blank)
+      setMrConfirm(null);
+      setShowPhoneModal(false);
+      setPhoneResults([]);
+      return;
+    }
+    setForm(f => ({
+      ...f,
+      patientName: patient.patientName || '',
+      patientType: patient.patientType || 'MAST',
+      age: patient.age != null ? String(patient.age) : '',
+      ageMonths: Number(patient.ageMonths) || 0,
+      ageDays: Number(patient.ageDays) || 0,
+      gender: patient.gender || 'male',
+      phoneNo: patient.phoneNo || f.phoneNo,
+      referredBy: patient.referredBy || '',
+      mrNo: patient.mrNo != null ? String(patient.mrNo).padStart(3, '0') : f.mrNo,
+    }));
+    setMrConfirm(null);
+    setShowPhoneModal(false);
+    setPhoneResults([]);
+  }
+
+  async function handleMrLookup() {
+    const mr = form.mrNo?.trim();
+    if (!mr) return;
+    setMrLookupLoading(true);
+    try {
+      const patient = await fetchOpdPatientByMrNo(mr);
+      applyPatientData(patient, false);
+      toast.success(`Patient found: ${patient.patientName}`);
+    } catch {
+      toast.error('No patient found with MR# ' + mr);
+    } finally {
+      setMrLookupLoading(false);
+    }
+  }
+
+  async function handlePhoneLookup() {
+    const phone = form.phoneNo?.trim();
+    if (!phone || phone.length < 7) return;
+    setPhoneLookupLoading(true);
+    try {
+      const results = await fetchOpdPatientsByPhone(phone);
+      if (results.length === 0) return;
+      if (results.length === 1) {
+        setMrConfirm({ patient: results[0] });
+      } else {
+        setPhoneResults(results);
+        setShowPhoneModal(true);
+      }
+    } catch {
+      // silent — no match is fine
+    } finally {
+      setPhoneLookupLoading(false);
+    }
+  }
+
+  async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
-    setSaving(true);
+    const w = window.open('', '_blank', 'width=420,height=680');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    setBusy(true);
     try {
       const created = await createOpdVisit({
         ...form,
@@ -516,9 +580,6 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         })),
       });
       const newId = created?.id;
-      setLastVisitId(newId || null);
-      lastVisitIdRef.current = newId || null;
-      if (newId) sessionStorage.setItem('lastOpdVisitId', String(newId));
       toast.success('OPD Visit saved');
       setForm(EMPTY);
       setRightDoctors([]);
@@ -530,35 +591,26 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
       set('serialNo', next);
       set('mrNo', String(nextMr).padStart(3, '0'));
       loadDoctors(false);
-    } catch (err) {
-      toast.error(err.message || 'Failed to save');
-    } finally { setSaving(false); }
-  }
-
-  async function handlePrint() {
-    const vid = lastVisitIdRef.current ?? lastVisitId ?? (Number(sessionStorage.getItem('lastOpdVisitId')) || null);
-    if (!vid) { toast.error('Save the visit before printing'); return; }
-    // Open window synchronously (before any await) so browser doesn't block it
-    const w = window.open('', '_blank', 'width=420,height=680');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
-    setPrinting(true);
-    try {
-      const { visit, tokenNo, isDuplicate } = await printOpdVisit(vid);
-      const canvas = document.createElement('canvas');
-      JsBarcode(canvas, visit.serialNo, {
-        format: 'CODE128', width: 2, height: 48,
-        displayValue: true, fontSize: 11, margin: 4,
-      });
-      const barcodeDataUrl = canvas.toDataURL('image/png');
-      const printedBy = user?.name || user?.username || user?.email || '';
-      const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
-      w.document.write(html);
-      w.document.close();
+      if (newId) {
+        const { visit, tokenNo, isDuplicate } = await printOpdVisit(newId);
+        const canvas = document.createElement('canvas');
+        JsBarcode(canvas, visit.serialNo, {
+          format: 'CODE128', width: 2, height: 48,
+          displayValue: true, fontSize: 11, margin: 4,
+        });
+        const barcodeDataUrl = canvas.toDataURL('image/png');
+        const printedBy = user?.name || user?.username || user?.email || '';
+        const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
+        w.document.write(html);
+        w.document.close();
+      } else {
+        w.close();
+      }
     } catch (err) {
       w.close();
-      toast.error(err.message || 'Failed to print');
+      toast.error(err.message || 'Failed to save');
     } finally {
-      setPrinting(false);
+      setBusy(false);
     }
   }
 
@@ -578,12 +630,109 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         />
       )}
 
+      {/* ── MR Confirm Dialog (1 phone match) ─────────────────────────── */}
+      {mrConfirm && (
+        <div className="gopd-overlay">
+          <div className="gopd-mr-confirm">
+            <div className="gopd-mr-confirm-title">Patient Found</div>
+            <div className="gopd-mr-confirm-body">
+              <strong>{mrConfirm.patient.patientName}</strong>
+              {mrConfirm.patient.mrNo != null && (
+                <span className="gopd-mr-confirm-mr"> — MR# {String(mrConfirm.patient.mrNo).padStart(3, '0')}</span>
+              )}
+              {mrConfirm.patient.age != null && (
+                <span className="gopd-mr-confirm-age"> | Age: {mrConfirm.patient.age}</span>
+              )}
+              <span className="gopd-mr-confirm-gender"> | {mrConfirm.patient.gender}</span>
+            </div>
+            <div className="gopd-mr-confirm-q">Do you want to use the existing MR# or allot a new one?</div>
+            <div className="gopd-mr-confirm-actions">
+              {mrConfirm.patient.mrNo != null && (
+                <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--use" onClick={() => applyPatientData(mrConfirm.patient, false)}>
+                  Use MR# {String(mrConfirm.patient.mrNo).padStart(3, '0')}
+                </button>
+              )}
+              <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--new" onClick={() => applyPatientData(mrConfirm.patient, true)}>
+                Allot New MR
+              </button>
+              <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--cancel" onClick={() => setMrConfirm(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Phone Results Modal (multiple matches) ─────────────────────── */}
+      {showPhoneModal && (
+        <div className="gopd-overlay">
+          <div className="gopd-phone-modal">
+            <div className="gopd-phone-modal-title">
+              Patients with this Phone Number
+              <button className="gopd-phone-modal-close" onClick={() => setShowPhoneModal(false)}><X size={14} /></button>
+            </div>
+            <table className="gopd-phone-modal-table">
+              <thead>
+                <tr>
+                  <th>MR#</th>
+                  <th>Name</th>
+                  <th>Age</th>
+                  <th>Gender</th>
+                  <th>Phone</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {phoneResults.map((p, i) => (
+                  <tr key={i}>
+                    <td>{p.mrNo != null ? String(p.mrNo).padStart(3, '0') : '—'}</td>
+                    <td>{p.patientName}</td>
+                    <td>{p.age != null ? p.age : '—'}</td>
+                    <td>{p.gender}</td>
+                    <td>{p.phoneNo}</td>
+                    <td className="gopd-phone-modal-actions-cell">
+                      {p.mrNo != null && (
+                        <button
+                          className="gopd-phone-modal-sel"
+                          onClick={() => applyPatientData(p, false)}
+                        >
+                          Use MR# {String(p.mrNo).padStart(3, '0')}
+                        </button>
+                      )}
+                      <button
+                        className="gopd-phone-modal-sel gopd-phone-modal-sel--new"
+                        onClick={() => applyPatientData(p, true)}
+                      >
+                        New MR
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="gopd">
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
             <span className="gopd-serial-lbl">MR #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.mrNo} readOnly />
+            <input
+              className="gopd-serial-input gopd-mr-input"
+              value={form.mrNo}
+              onChange={e => set('mrNo', e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleMrLookup()}
+            />
+            <button
+              className="gopd-mr-lookup-btn"
+              onClick={handleMrLookup}
+              disabled={mrLookupLoading}
+              title="Search patient by MR#"
+            >
+              {mrLookupLoading ? '…' : <Search size={12} />}
+            </button>
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} readOnly />
           </div>
@@ -678,7 +827,20 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
             </div>
             <div className="gopd-contact-grp">
               <span className="gopd-lbl">Phone #</span>
-              <input className="gopd-inp-phone" value={form.phoneNo} onChange={e => set('phoneNo', e.target.value)} />
+              <input
+                className="gopd-inp-phone"
+                value={form.phoneNo}
+                onChange={e => set('phoneNo', e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handlePhoneLookup()}
+              />
+              <button
+                className="gopd-mr-lookup-btn"
+                onClick={handlePhoneLookup}
+                disabled={phoneLookupLoading}
+                title="Search patient by Phone#"
+              >
+                {phoneLookupLoading ? '…' : <Search size={12} />}
+              </button>
               <span className="gopd-lbl">Refered By</span>
               <DoctorSearchInput
                 value={form.referredBy}
@@ -915,12 +1077,9 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                   )}
                 </div>
                 <div className="gopd-action-btns">
-                  <button className="gopd-save-btn" onClick={handleSave} disabled={saving}>
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                  <button className="gopd-print-btn" onClick={handlePrint} disabled={printing}>
+                  <button className="gopd-print-btn" onClick={handleSaveAndPrint} disabled={busy}>
                     <Printer size={16} />
-                    {printing ? 'Printing...' : 'Print Slip'}
+                    {busy ? 'Please wait...' : 'Save & Print'}
                   </button>
                 </div>
               </div>

@@ -1322,3 +1322,21 @@ model AttendanceOverride {
 
   @@map("attendance_overrides")
 }
+
+// ─── Panel Bill Comparison ────────────────────────────────────────────────────
+
+model ClinicPanelBillRow {
+  id              Int      @id @default(autoincrement())
+  sno             Int?
+  admitNo         String?
+  patientName     String   @default("")
+  employeeName    String?
+  companyName     String?
+  panelCompanyId  Int?
+  panelEmployeeId Int?
+  relation        String   @default("SELF")
+  amount          Decimal? @db.Decimal(12, 2)
+  billAmount      Decimal? @db.Decimal(12, 2)
+  diff            Decimal? @db.Decimal(12, 2)
+  uploadedAt      DateTime @default(now())
+}

@@ -37,7 +37,170 @@
   width: 70px;
   background: #f1f5f9;
   color: #475569;
-  cursor: default;
+  cursor: text;
+}
+
+.gopd-mr-lookup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) { background: #cbd5e1; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── Overlay + Dialogs ─────────────────────────────────────────────────────────
+.gopd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gopd-mr-confirm {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.gopd-mr-confirm-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1a3c6e;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 6px;
+}
+
+.gopd-mr-confirm-body {
+  font-size: 0.85rem;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+}
+
+.gopd-mr-confirm-mr  { color: #1a3c6e; font-weight: 600; }
+.gopd-mr-confirm-age { color: #555; }
+.gopd-mr-confirm-gender { color: #555; }
+
+.gopd-mr-confirm-q {
+  font-size: 0.78rem;
+  color: #555;
+  margin-bottom: 14px;
+}
+
+.gopd-mr-confirm-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gopd-mr-confirm-btn {
+  padding: 5px 14px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+
+  &--use    { background: #1a3c6e; color: #fff; border-color: #1a3c6e; &:hover { background: #1e4a88; } }
+  &--new    { background: #166534; color: #fff; border-color: #166534; &:hover { background: #15803d; } }
+  &--cancel { background: #f1f5f9; color: #374151; &:hover { background: #e2e8f0; } }
+}
+
+.gopd-phone-modal {
+  background: #fff;
+  border-radius: 8px;
+  min-width: 500px;
+  max-width: 680px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+
+.gopd-phone-modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1a3c6e;
+  background: #e8eef8;
+  border-bottom: 1px solid #c8d8f0;
+}
+
+.gopd-phone-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #555;
+  display: flex;
+  align-items: center;
+  &:hover { color: #e00; }
+}
+
+.gopd-phone-modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  overflow-y: auto;
+
+  th {
+    background: #1a3c6e;
+    color: #fff;
+    padding: 5px 10px;
+    text-align: left;
+    font-weight: 600;
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #e8e8e8;
+    color: #1a1a1a;
+  }
+
+  tr:hover td { background: #f0f4ff; }
+}
+
+.gopd-phone-modal-actions-cell {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.gopd-phone-modal-sel {
+  background: #1a3c6e;
+  color: #fff;
+  border: none;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  &:hover { background: #1e4a88; }
+
+  &--new {
+    background: #166534;
+    &:hover { background: #15803d; }
+  }
 }
 
 .gopd-serial-input {

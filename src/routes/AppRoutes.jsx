@@ -32,6 +32,7 @@ import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
 import VoucherSummary from '../pages/accounts/reports/VoucherSummary';
 import VoucherSummaryMatrix from '../pages/accounts/reports/VoucherSummaryMatrix';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
+import EmergencyOPD from '../pages/clinic/EmergencyOPD';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
 import ClinicSubDepartmentPage from '../pages/clinic/parameters/ClinicSubDepartmentPage';
@@ -47,10 +48,13 @@ import ClinicPanelCompanyListPage from '../pages/clinic/panels/ClinicPanelCompan
 import ClinicPanelCompanyFormPage from '../pages/clinic/panels/ClinicPanelCompanyFormPage';
 import ClinicPanelEmployeeListPage from '../pages/clinic/panels/ClinicPanelEmployeeListPage';
 import ClinicPanelEmployeeFormPage from '../pages/clinic/panels/ClinicPanelEmployeeFormPage';
+import BillComparisonReport from '../pages/clinic/panels/BillComparisonReport';
 import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
 import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
 import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
 import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
+import ConsultantStatementFilter from '../pages/clinic/reports/ConsultantStatementFilter';
+import ConsultantStatementReport from '../pages/clinic/reports/ConsultantStatementReport';
 import ConsultantRates from '../pages/clinic/reports/ConsultantRates';
 import EmployeeList from '../pages/employees/EmployeeList';
 import AddEmployee from '../pages/employees/AddEmployee';
@@ -158,7 +162,7 @@ export default function AppRoutes() {
           <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
           <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Consultant OPD" /></PermissionGuard>} />
-          <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Emergency & Chest Pain Clinic" /></PermissionGuard>} />
+          <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><EmergencyOPD /></PermissionGuard>} />
           <Route path="clinic/dental" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Dental" layout="subdept" /></PermissionGuard>} />
           <Route path="clinic/therapy" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Therapy" layout="subdept" /></PermissionGuard>} />
           <Route path="clinic/laboratory" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Laboratory" layout="subdept" /></PermissionGuard>} />
@@ -184,11 +188,14 @@ export default function AppRoutes() {
           <Route path="clinic/panels/employees" element={<ClinicPanelEmployeeListPage />} />
           <Route path="clinic/panels/employees/new" element={<ClinicPanelEmployeeFormPage />} />
           <Route path="clinic/panels/employees/:id" element={<ClinicPanelEmployeeFormPage />} />
+          <Route path="clinic/panels/bill-comparison" element={<PermissionGuard module="clinic"><BillComparisonReport /></PermissionGuard>} />
           <Route path="clinic/reports/patients-list"      element={<PermissionGuard module="clinic"><PatientsListFilter /></PermissionGuard>} />
           <Route path="clinic/reports/patients-list/view" element={<PermissionGuard module="clinic"><PatientsListReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-wise"      element={<PermissionGuard module="clinic"><ConsultantWiseFilter /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-wise/view" element={<PermissionGuard module="clinic"><ConsultantWiseReport /></PermissionGuard>} />
-          <Route path="clinic/reports/consultant-rates"     element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
+          <Route path="clinic/reports/consultant-rates"      element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
+          <Route path="clinic/reports/consultant-statement"      element={<PermissionGuard module="clinic"><ConsultantStatementFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/consultant-statement/view" element={<PermissionGuard module="clinic"><ConsultantStatementReport /></PermissionGuard>} />
 
           <Route path="coming-soon" element={<ComingSoon />} />
         </Route>

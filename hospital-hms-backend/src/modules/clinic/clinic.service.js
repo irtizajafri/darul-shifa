@@ -322,6 +322,23 @@ async function getOpdPatientByMrNo(mrNo) {
   return enrichOpdPatient(visit);
 }
 
+async function getOpdPatientsByPhone(phoneNo) {
+  const phone = (phoneNo || '').trim();
+  if (!phone) return [];
+  const visits = await prisma.clinicOpdVisit.findMany({
+    where: { phoneNo: { contains: phone, mode: 'insensitive' } },
+    orderBy: { id: 'desc' },
+    select: { mrNo: true, patientType: true, patientName: true, age: true, ageMonths: true, ageDays: true, gender: true, phoneNo: true, referredBy: true, employeeId: true, panelCompanyId: true, panelEmployeeId: true, panelDependentId: true },
+  });
+  const seen = new Set();
+  const unique = [];
+  for (const v of visits) {
+    const key = v.mrNo != null ? String(v.mrNo) : `nophone_${v.patientName}`;
+    if (!seen.has(key)) { seen.add(key); unique.push(v); }
+  }
+  return unique;
+}
+
 async function getOpdVisitBySerial(serialNo) {
   const visit = await prisma.clinicOpdVisit.findFirst({
     where: { serialNo: { equals: serialNo.trim(), mode: 'insensitive' } },
@@ -918,8 +935,18 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     };
   }
 
+  // Build case-insensitive variants + map Complem. ↔ complementary
+  let typeVariants = null;
   if (paymentTypes && paymentTypes.length > 0) {
-    where.paymentType = { in: paymentTypes };
+    const variants = new Set();
+    for (const t of paymentTypes) {
+      variants.add(t);
+      variants.add(t.toLowerCase());
+      if (t.toLowerCase() === 'complem.') variants.add('complementary');
+      if (t.toLowerCase() === 'complementary') variants.add('complem.');
+    }
+    typeVariants = [...variants];
+    where.paymentType = { in: typeVariants };
   }
 
   if (fromConsultant && toConsultant) {
@@ -930,10 +957,110 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     where.doctor = { lte: toConsultant };
   }
 
-  return prisma.patientVisit.findMany({
+  const oldVisits = await prisma.patientVisit.findMany({
     where,
     orderBy: [{ doctor: 'asc' }, { visitDate: 'asc' }, { visitTime: 'asc' }],
   });
+
+  // Also fetch from ClinicOpdVisit (new General OPD)
+  const opdWhere = {};
+  if (fromDate && toDate) {
+    const from = new Date(fromDate + 'T00:00:00');
+    const to   = new Date(toDate   + 'T23:59:59');
+    opdWhere.createdAt = { gte: from, lte: to };
+  }
+  if (typeVariants) {
+    opdWhere.paymentType = { in: typeVariants };
+  }
+  const opdVisits = await prisma.clinicOpdVisit.findMany({
+    where: opdWhere,
+    include: {
+      doctors: {
+        include: {
+          doctor:  { select: { name: true } },
+          subDept: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  const toHHMM = (dt) => {
+    const d = new Date(dt);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+
+  const mapped = opdVisits.map((v) => {
+    const firstDoc = v.doctors[0];
+    return {
+      id:            `opd_${v.id}`,
+      serialNo:      v.serialNo,
+      admitNo:       null,
+      visitDate:     v.createdAt,
+      visitTime:     toHHMM(v.createdAt),
+      patientName:   v.patientName,
+      department:    v.department || 'General OPD',
+      subDepartment: firstDoc?.subDept?.name || null,
+      doctor:        firstDoc?.doctor?.name  || null,
+      paymentType:   v.paymentType,
+      received:      v.totalAmount,
+      balance:       0,
+      discount:      v.discount,
+      _source:       'opd',
+    };
+  });
+
+  // Also fetch from ClinicAdmission
+  const admWhere = {};
+  if (fromDate && toDate) {
+    admWhere.createdAt = {
+      gte: new Date(fromDate + 'T00:00:00'),
+      lte: new Date(toDate   + 'T23:59:59'),
+    };
+  }
+  if (typeVariants) {
+    // Map filter types to admission patientCategory values
+    const admCats = new Set();
+    for (const t of typeVariants) {
+      const lower = t.toLowerCase();
+      admCats.add(lower);
+      admCats.add(t);
+      if (lower === 'cash') admCats.add('private');
+      if (lower === 'private') admCats.add('private');
+    }
+    admWhere.patientCategory = { in: [...admCats] };
+  }
+  const admissions = await prisma.clinicAdmission.findMany({
+    where: admWhere,
+    orderBy: { createdAt: 'asc' },
+  });
+
+  // Fetch consultant names for admissions
+  const consultantIds = [...new Set(admissions.map(a => a.consultantId).filter(Boolean))];
+  const consultants = consultantIds.length
+    ? await prisma.clinicDoctor.findMany({ where: { id: { in: consultantIds } }, select: { id: true, name: true } })
+    : [];
+  const consultantMap = Object.fromEntries(consultants.map(c => [c.id, c.name]));
+
+  const mappedAdm = admissions.map((v) => ({
+    id:            `adm_${v.id}`,
+    serialNo:      v.admissionNo,
+    admitNo:       v.mrNo ? String(v.mrNo) : null,
+    visitDate:     v.createdAt,
+    visitTime:     toHHMM(v.createdAt),
+    patientName:   `${v.patientTitle || ''} ${v.patientName}`.trim(),
+    department:    'Admission',
+    subDepartment: null,
+    doctor:        v.consultantId ? (consultantMap[v.consultantId] || null) : null,
+    paymentType:   v.patientCategory === 'private' ? 'cash' : (v.patientCategory || null),
+    received:      Number(v.advancePayment) || 0,
+    balance:       0,
+    discount:      0,
+    _source:       'admission',
+  }));
+
+  // Merge: old first, then OPD, then admissions
+  return [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm];
 }
 
 function normNameSvc(s) {
@@ -1010,10 +1137,12 @@ async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
       where: { doctorId: dId, subDeptId: subDept.id },
     });
 
+    const rate = Number(row.normalFees) || 0;
     if (existing) {
+      // Only update patient charges — preserve doctor's % (normalFees/paymentType) set via UI
       await prisma.clinicDoctorSubDept.update({
         where: { id: existing.id },
-        data: { normalFees: Number(row.normalFees) || 0, oddFees: Number(row.normalFees) || 0, paymentType: 'amount' },
+        data: { normalCharges: rate, oddCharges: rate },
       });
       updated++;
     } else {
@@ -1021,11 +1150,11 @@ async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
         data: {
           doctorId: dId,
           subDeptId: subDept.id,
-          paymentType: 'amount',
-          normalFees: Number(row.normalFees) || 0,
-          oddFees:    Number(row.normalFees) || 0,
-          normalCharges: 0,
-          oddCharges:    0,
+          paymentType: 'percent',
+          normalFees: 0,
+          oddFees:    0,
+          normalCharges: rate,
+          oddCharges:    rate,
           onCall:        false,
           consultantDays: [],
         },
@@ -1036,6 +1165,116 @@ async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
   }
 
   return { matched, created, updated, autoCreatedSubDepts, notFound };
+}
+
+async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime, toTime }) {
+  const doctorId = Number(consultantId);
+  if (!doctorId) throw new Error('consultantId required');
+
+  const consultant = await prisma.clinicDoctor.findUnique({
+    where: { id: doctorId },
+    select: { id: true, code: true, name: true, speciality: true },
+  });
+  if (!consultant) throw new Error('Consultant not found');
+
+  // Build rate maps: by subDeptId (for new OPD) and by normalised subDept name (for old PatientVisit)
+  const rateRows = await prisma.clinicDoctorSubDept.findMany({
+    where: { doctorId },
+    include: { subDept: { select: { id: true, name: true } } },
+  });
+  const rateBySubDeptId = {};
+  const rateBySubDeptName = {};
+  for (const r of rateRows) {
+    const info = { paymentType: r.paymentType, normalFees: Number(r.normalFees) };
+    rateBySubDeptId[r.subDeptId] = info;
+    rateBySubDeptName[normNameSvc(r.subDept.name)] = info;
+  }
+
+  const calcCons = (amount, admitPatient, rateInfo) => {
+    if (admitPatient || !rateInfo?.normalFees) return 0;
+    return rateInfo.paymentType === 'percent'
+      ? amount * rateInfo.normalFees / 100
+      : rateInfo.normalFees;
+  };
+
+  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
+  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+
+  const timeInRange = (t) => {
+    if (!fromTime || !toTime || fromTime === toTime) return true;
+    if (fromTime <= toTime) return t >= fromTime && t <= toTime;
+    return t >= fromTime || t <= toTime;   // overnight
+  };
+
+  const toHHMM = (dt) => {
+    const d = new Date(dt);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  };
+
+  const result = [];
+
+  // ── 1. Old PatientVisit table (imported data) ──────────────────────────────
+  const oldWhere = { doctor: { equals: consultant.name, mode: 'insensitive' } };
+  if (fromDt && toDt) oldWhere.visitDate = { gte: fromDt, lte: toDt };
+  const oldVisits = await prisma.patientVisit.findMany({
+    where: oldWhere,
+    orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
+  });
+  for (const v of oldVisits) {
+    const t = v.visitTime || '00:00';
+    if (!timeInRange(t)) continue;
+    const rateInfo = rateBySubDeptName[normNameSvc(v.subDepartment || '')] || null;
+    const amount   = Number(v.received || 0);
+    result.push({
+      id:            `old_${v.id}`,
+      serialNo:      v.serialNo ? String(v.serialNo) : '—',
+      mrNo:          v.admitNo || null,
+      visitTime:     t,
+      patientName:   v.patientName,
+      paymentType:   (v.paymentType || 'Cash').toLowerCase(),
+      amount,
+      consAmt:       calcCons(amount, false, rateInfo),
+      admitPatient:  false,
+      department:    v.department,
+      subDepartment: v.subDepartment,
+    });
+  }
+
+  // ── 2. New ClinicOpdVisit table ────────────────────────────────────────────
+  const newWhere = { doctors: { some: { doctorId } } };
+  if (fromDt && toDt) newWhere.createdAt = { gte: fromDt, lte: toDt };
+  const newVisits = await prisma.clinicOpdVisit.findMany({
+    where: newWhere,
+    include: {
+      doctors: {
+        where: { doctorId },
+        include: { subDept: { select: { id: true, name: true } } },
+      },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  for (const v of newVisits) {
+    const docEntry = v.doctors[0];
+    if (!docEntry) continue;
+    const t = toHHMM(v.createdAt);
+    if (!timeInRange(t)) continue;
+    const rateInfo = rateBySubDeptId[docEntry.subDeptId] || null;
+    result.push({
+      id:            `new_${v.id}`,
+      serialNo:      v.serialNo,
+      mrNo:          v.mrNo,
+      visitTime:     t,
+      patientName:   v.patientName,
+      paymentType:   (v.paymentType || 'cash').toLowerCase(),
+      amount:        v.totalAmount,
+      consAmt:       calcCons(v.totalAmount, v.admitPatient, rateInfo),
+      admitPatient:  v.admitPatient,
+      department:    v.department,
+      subDepartment: docEntry.subDept?.name || null,
+    });
+  }
+
+  return { consultant, visits: result };
 }
 
 module.exports = {
@@ -1094,6 +1333,7 @@ module.exports = {
   getAntenatalList,
   getAntenatalByNo,
   getOpdPatientByMrNo,
+  getOpdPatientsByPhone,
   getOpdVisitBySerial,
   getAdmissions,
   createAdmission,
@@ -1107,4 +1347,188 @@ module.exports = {
   getPatientVisits,
   getDoctorSubDeptRates,
   importDoctorSubDeptRates,
+  importBillComparison,
+  getBillComparisons,
+  getConsultantStatement,
 };
+
+// ─── Panel Bill Comparison ────────────────────────────────────────────────────
+
+async function generateCompanyCode(name) {
+  const base = name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().substring(0, 8) || 'CO';
+  const exists = await prisma.clinicPanelCompany.findUnique({ where: { code: base } });
+  if (!exists) return base;
+  for (let i = 1; i <= 999; i++) {
+    const c = `${base}${i}`;
+    const ex = await prisma.clinicPanelCompany.findUnique({ where: { code: c } });
+    if (!ex) return c;
+  }
+  return `${base}_${Date.now()}`;
+}
+
+async function generateEmpCode(companyId, name) {
+  const base = `${companyId}-${name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().substring(0, 6) || 'EMP'}`;
+  const exists = await prisma.clinicPanelEmployee.findUnique({ where: { empCode: base } });
+  if (!exists) return base;
+  for (let i = 1; i <= 999; i++) {
+    const c = `${base}${i}`;
+    const ex = await prisma.clinicPanelEmployee.findUnique({ where: { empCode: c } });
+    if (!ex) return c;
+  }
+  return `${base}_${Date.now()}`;
+}
+
+const TITLES_RE = /^(MRS?\.?|MS\.?|MISS|DR\.?|PROF\.?|COL\.?|GEN\.?|BRIG\.?|MAJ\.?|CPT\.?|LT\.?|SQN\.?|SGT\.?|CH\.?|HAFIZ|HAFIZA|HAJI|HAJIA|MIAN|BEGUM|SYED)\s+/i;
+const FEMALE_TITLES = new Set(['MRS', 'MS', 'MISS', 'BEGUM', 'HAFIZA', 'HAJIA']);
+
+function stripTitle(name) {
+  return (name || '').replace(TITLES_RE, '').trim().toLowerCase();
+}
+
+function extractTitleInfo(rawName) {
+  const m = (rawName || '').match(TITLES_RE);
+  const rawTitle = m ? m[1].replace('.', '').toUpperCase() : 'MR';
+  const title = rawTitle === 'MRS' ? 'MRS' : rawTitle === 'MS' ? 'MS' : rawTitle;
+  const cleanName = (rawName || '').replace(TITLES_RE, '').trim().toUpperCase();
+  const gender = FEMALE_TITLES.has(title) ? 'female' : 'male';
+  return { title, cleanName, gender };
+}
+
+async function importBillComparison(rows) {
+  const result = { companiesCreated: 0, employeesCreated: 0, dependentsCreated: 0, rowsInserted: 0 };
+
+  // ── Step 1: find-or-create companies ──
+  const companyMap = {};
+  const uniqueCompanies = [...new Set(rows.map(r => (r.companyName || '').trim()).filter(Boolean))];
+  for (const name of uniqueCompanies) {
+    let co = await prisma.clinicPanelCompany.findFirst({
+      where: { name: { equals: name, mode: 'insensitive' } },
+    });
+    if (!co) {
+      const code = await generateCompanyCode(name);
+      co = await prisma.clinicPanelCompany.create({ data: { name, code, status: 'active' } });
+      result.companiesCreated++;
+    }
+    companyMap[name.toLowerCase()] = co.id;
+  }
+
+  // ── Step 2: find-or-create employees + auto-add dependents from patient names ──
+  const employeeMap = {};
+  const uniqueEmps = [
+    ...new Map(
+      rows
+        .filter(r => r.employeeName && r.companyName)
+        .map(r => [`${r.companyName.trim().toLowerCase()}||${r.employeeName.trim().toLowerCase()}`, r])
+    ).values(),
+  ];
+
+  for (const row of uniqueEmps) {
+    const companyId = companyMap[row.companyName.trim().toLowerCase()];
+    if (!companyId) continue;
+    const empName = row.employeeName.trim();
+    let emp = await prisma.clinicPanelEmployee.findFirst({
+      where: { companyId, name: { equals: empName, mode: 'insensitive' } },
+      include: { dependents: true },
+    });
+    if (!emp) {
+      const empCode = await generateEmpCode(companyId, empName);
+      emp = await prisma.clinicPanelEmployee.create({
+        data: { companyId, name: empName, empCode, status: 'active' },
+        include: { dependents: true },
+      });
+      result.employeesCreated++;
+    }
+
+    const empKey = `${companyId}||${empName.toLowerCase()}`;
+    const empEntry = {
+      id:         emp.id,
+      empCode:    emp.empCode,
+      nameLower:  stripTitle(emp.name),
+      dependents: (emp.dependents || []).map(d => ({
+        nameLower: stripTitle(d.name),
+        relation:  (d.relation || 'DEPENDENT').toUpperCase(),
+      })),
+    };
+    employeeMap[empKey] = empEntry;
+
+    // Auto-add dependents: patient names that differ from employee name
+    const empRows = rows.filter(r =>
+      r.companyName?.trim().toLowerCase() === row.companyName.trim().toLowerCase() &&
+      r.employeeName?.trim().toLowerCase() === empName.toLowerCase() &&
+      r.patientName?.trim() &&
+      stripTitle(r.patientName) !== empEntry.nameLower
+    );
+
+    const seenPatients = new Set();
+    for (const empRow of empRows) {
+      const patientNorm = stripTitle(empRow.patientName);
+      if (seenPatients.has(patientNorm)) continue;
+      seenPatients.add(patientNorm);
+
+      // Skip if already a dependent
+      if (empEntry.dependents.some(d => d.nameLower === patientNorm)) continue;
+
+      const { title, cleanName, gender } = extractTitleInfo(empRow.patientName);
+      const existingCount = await prisma.clinicPanelEmployeeDependent.count({ where: { employeeId: empEntry.id } });
+      const depCode = `${emp.empCode}-D${existingCount + 1}`;
+
+      await prisma.clinicPanelEmployeeDependent.create({
+        data: {
+          employeeId: empEntry.id,
+          code:       depCode,
+          title,
+          name:       cleanName,
+          relation:   '',
+          gender,
+          status:     'active',
+        },
+      });
+
+      empEntry.dependents.push({ nameLower: patientNorm, relation: 'DEPENDENT' });
+      result.dependentsCreated++;
+    }
+  }
+
+  // ── Step 3: replace all bill rows ──
+  await prisma.clinicPanelBillRow.deleteMany({});
+  for (const row of rows) {
+    const companyId = row.companyName ? companyMap[row.companyName.trim().toLowerCase()] : null;
+    const empName   = row.employeeName?.trim().toLowerCase();
+    const empKey    = companyId && empName ? `${companyId}||${empName}` : null;
+    const empEntry  = empKey ? (employeeMap[empKey] || null) : null;
+    const panelEmployeeId = empEntry?.id || null;
+
+    let relation = 'SELF';
+    if (empEntry && row.patientName) {
+      const patientNorm = stripTitle(row.patientName);
+      if (patientNorm === empEntry.nameLower) {
+        relation = 'SELF';
+      } else {
+        const depMatch = empEntry.dependents.find(d => d.nameLower === patientNorm);
+        relation = depMatch ? depMatch.relation : 'DEPENDENT';
+      }
+    }
+
+    await prisma.clinicPanelBillRow.create({
+      data: {
+        sno:            row.sno       || null,
+        admitNo:        row.admitNo   || null,
+        patientName:    row.patientName || '',
+        employeeName:   row.employeeName || null,
+        companyName:    row.companyName  || null,
+        panelCompanyId: companyId || null,
+        panelEmployeeId,
+        relation,
+        amount:         row.amount     ?? 0,
+        billAmount:     row.billAmount ?? 0,
+        diff:           row.diff       ?? 0,
+      },
+    });
+    result.rowsInserted++;
+  }
+  return result;
+}
+
+async function getBillComparisons() {
+  return prisma.clinicPanelBillRow.findMany({ orderBy: { sno: 'asc' } });
+}

@@ -420,6 +420,10 @@ export const useClinicStore = create((set) => ({
     return request(`/opd/by-mr/${encodeURIComponent(mrNo)}`);
   },
 
+  fetchOpdPatientsByPhone: async (phone) => {
+    return request(`/opd/by-phone/${encodeURIComponent(phone)}`);
+  },
+
   fetchOpdVisitBySerial: async (serialNo) => {
     return request(`/opd/by-serial/${encodeURIComponent(serialNo)}`);
   },

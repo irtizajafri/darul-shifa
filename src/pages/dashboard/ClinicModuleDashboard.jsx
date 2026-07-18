@@ -55,8 +55,8 @@ const sections = [
     title: 'Payments',
     color: 'rose',
     cards: [
-      { title: 'Discharge & Refund', icon: LogOut, path: null },
-      { title: 'Consultant Statement', icon: FileText, path: null },
+      { title: 'Discharge & Refund',      icon: LogOut,     path: null },
+      { title: 'Consultant Statement',      icon: FileText,   path: '/clinic/reports/consultant-statement', active: true },
     ],
   },
 ];

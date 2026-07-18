@@ -22,6 +22,7 @@ const menuItems = [
     label: 'Transactions',
     items: [
       { label: 'General OPD', path: '/clinic/general-opd' },
+      { label: 'Emergency OPD', path: '/clinic/emergency-opd' },
       { label: 'Antenatal',   path: '/clinic/antenatal' },
     ],
   },
@@ -33,6 +34,12 @@ const menuItems = [
         subItems: [
           { label: 'Panel Companies',  path: '/clinic/panels/companies' },
           { label: 'Panel Employees',  path: '/clinic/panels/employees' },
+        ],
+      },
+      {
+        label: 'Reports',
+        subItems: [
+          { label: 'Bill Comparison Report', path: '/clinic/panels/bill-comparison' },
         ],
       },
     ],

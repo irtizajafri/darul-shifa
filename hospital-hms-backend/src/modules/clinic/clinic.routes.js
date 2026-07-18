@@ -77,6 +77,7 @@ router.delete('/panel-employees/:id', controller.deletePanelEmployee);
 
 // OPD patient lookup by MR#
 router.get('/opd/by-mr/:mrNo', controller.getOpdPatientByMrNo);
+router.get('/opd/by-phone/:phone', controller.getOpdPatientsByPhone);
 
 // Antenatal
 router.get('/antenatal', controller.getAntenatalList);
@@ -100,5 +101,12 @@ router.post('/patient-visits/bulk', controller.bulkCreatePatientVisits);
 router.get('/patient-visits/consultants', controller.getConsultantNames);
 router.get('/patient-visits/by-admit/:admitNo', controller.getPatientVisitByAdmitNo);
 router.get('/patient-visits', controller.getPatientVisits);
+
+// Bill Comparison
+router.post('/bill-comparison/import', controller.importBillComparison);
+router.get('/bill-comparison', controller.getBillComparisons);
+
+// Consultant Statement
+router.get('/consultant-statement', controller.getConsultantStatement);
 
 module.exports = router;
