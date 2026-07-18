@@ -61,6 +61,8 @@ export default function AddEmployee({ edit }) {
   const [depForm, setDepForm] = useState({ code: '', name: '', relation: '', dob: '', gender: 'male', status: 'active' });
   const [editingDepIdx, setEditingDepIdx] = useState(null);
   const [depSaving, setDepSaving] = useState(false);
+  const [rosterEffectiveMode, setRosterEffectiveMode] = useState('today');
+  const [rosterEffectiveDate, setRosterEffectiveDate] = useState('');
   const fileInputRef = useRef(null);
   const signatureInputRef = useRef(null);
   const cnicFrontInputRef = useRef(null);
@@ -338,6 +340,9 @@ export default function AddEmployee({ edit }) {
         ...data,
         empCode: enteredEmpCode || null,
         dutyType: normalizeDutyType(data.dutyType),
+        rosterEffectiveFrom: (edit && rosterEffectiveMode === 'custom' && rosterEffectiveDate)
+          ? rosterEffectiveDate
+          : undefined,
       };
 
       if (payload.dutyType === 'alternative') {
@@ -999,6 +1004,36 @@ export default function AddEmployee({ edit }) {
               {/* <label><input type="radio" value="split" {...register('dutyType')} /> Split Shifts</label> */}
               <label><input type="radio" value="alternative" {...register('dutyType')} /> Alternative Shift</label>
             </div>
+
+            {edit && (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex flex-wrap gap-4 items-center">
+                <span className="text-sm font-semibold text-amber-800">Roster Effective From:</span>
+                <label className="flex items-center gap-2 text-sm text-amber-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={rosterEffectiveMode === 'today'}
+                    onChange={() => { setRosterEffectiveMode('today'); setRosterEffectiveDate(''); }}
+                  />
+                  Aaj ki date
+                </label>
+                <label className="flex items-center gap-2 text-sm text-amber-700 cursor-pointer">
+                  <input
+                    type="radio"
+                    checked={rosterEffectiveMode === 'custom'}
+                    onChange={() => setRosterEffectiveMode('custom')}
+                  />
+                  Custom date
+                </label>
+                {rosterEffectiveMode === 'custom' && (
+                  <input
+                    type="date"
+                    value={rosterEffectiveDate}
+                    onChange={e => setRosterEffectiveDate(e.target.value)}
+                    className="border border-amber-300 rounded px-2 py-1 text-sm"
+                  />
+                )}
+              </div>
+            )}
             
             {/* Alternative Shift Instructions */}
             {dutyType === 'alternative' && (

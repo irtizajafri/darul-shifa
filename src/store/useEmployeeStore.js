@@ -112,6 +112,7 @@ export const useEmployeeStore = create((set, get) => ({
         disbursement: updates.disbursement,
         allowances: updates.allowances,
         incentive: Number(updates.incentive || 0),
+        rosterEffectiveFrom: updates.rosterEffectiveFrom || undefined,
         dutyType: updates.dutyType,
         dutyRoster: updates.dutyRoster,
   isNightShift: updates.isNightShift,

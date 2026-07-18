@@ -2155,6 +2155,46 @@ export default function Reports() {
       });
       pdf.setFont("helvetica", "normal");
 
+      // ─── Roster Section ───────────────────────────────────────────────────
+      if (empRosterHistory.length > 0) {
+        const firstDay = new Date(`${year}-${month}-01`);
+        const lastDay  = new Date(Number(year), Number(month), 0);
+        const sorted   = [...empRosterHistory].sort((a, b) => new Date(a.effectiveFrom) - new Date(b.effectiveFrom));
+
+        const monthRosters = [];
+        for (let i = 0; i < sorted.length; i++) {
+          const effFrom  = new Date(sorted[i].effectiveFrom);
+          const nextFrom = i + 1 < sorted.length ? new Date(sorted[i + 1].effectiveFrom) : null;
+          if (nextFrom && nextFrom <= firstDay) continue;
+          if (effFrom > lastDay) continue;
+          const rangeStart = effFrom < firstDay ? firstDay : effFrom;
+          const rangeEnd   = nextFrom && nextFrom <= lastDay
+            ? new Date(nextFrom.getTime() - 86400000)
+            : lastDay;
+          const roster = Array.isArray(sorted[i].dutyRoster) ? sorted[i].dutyRoster : [];
+          const activeDay = roster.find(r => r.timeIn !== 'OFF' && r.timeOut !== 'OFF');
+          if (!activeDay) continue;
+          monthRosters.push({ timeIn: activeDay.timeIn, timeOut: activeDay.timeOut, hours: activeDay.hours, from: rangeStart, to: rangeEnd });
+        }
+
+        if (monthRosters.length >= 1) {
+          const mnths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const fmtD  = (d) => `${String(d.getDate()).padStart(2,'0')} ${mnths[d.getMonth()]}`;
+          let rosterY = currentLineY + 16;
+          pdf.setFontSize(9);
+          pdf.setFont("helvetica", "bold");
+          monthRosters.forEach((r, idx) => {
+            const label = monthRosters.length > 1 ? `ROSTER ${idx + 1}: ` : `ROSTER: `;
+            pdf.text(
+              `${label}${r.timeIn} - ${r.timeOut}  |  ${r.hours} hrs  |  ${fmtD(r.from)} - ${fmtD(r.to)}`,
+              allowanceMargin, rosterY
+            );
+            rosterY += 13;
+          });
+          pdf.setFont("helvetica", "normal");
+        }
+      }
+
       const isPayslipScope = scope === "payslip" || scope === "payslip-detailed";
       const toNumber = (value) => {
         const parsed = Number(String(value ?? "0").replace(/[^0-9.-]/g, ""));

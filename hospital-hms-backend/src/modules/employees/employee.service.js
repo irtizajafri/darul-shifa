@@ -90,12 +90,14 @@ async function ensureRosterHistoryTable() {
   isRosterHistoryTableReady = true;
 }
 
-async function saveRosterHistory(employeeId, dutyRoster, isNightShift) {
+async function saveRosterHistory(employeeId, dutyRoster, isNightShift, effectiveFrom) {
   await ensureRosterHistoryTable();
   const id = toIntId(employeeId, 'employee id');
   const rosterJson = JSON.stringify(Array.isArray(dutyRoster) ? dutyRoster : []);
   const nightShift = Boolean(isNightShift);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = effectiveFrom
+    ? String(effectiveFrom).slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
   await prisma.$executeRawUnsafe(`
     INSERT INTO employee_roster_history (employee_id, duty_roster, is_night_shift, effective_from)
     VALUES ($1, $2::jsonb, $3, $4)
@@ -505,12 +507,39 @@ async function update(id, payload) {
   setIfDefined(data, 'notes', normalizeString(payload.notes, { emptyToNull: true }));
   setIfDefined(data, 'qualification', normalizeString(payload.qualification, { emptyToNull: true }));
 
+  // Capture OLD roster BEFORE update (needed for auto-backfill)
+  let oldEmpRoster = null;
+  if (payload.dutyRoster !== undefined) {
+    oldEmpRoster = await prisma.employee.findUnique({
+      where: { id: parseInt(id) },
+      select: { dutyRoster: true, isNightShift: true },
+    });
+  }
+
   const updated = await updateEmployeeWithFallback(id, data);
   const extended = await upsertExtendedEmployeeFields(id, payload);
 
   if (payload.dutyRoster !== undefined) {
     const nightShift = payload.isNightShift !== undefined ? payload.isNightShift : (updated.isNightShift ?? false);
-    await saveRosterHistory(id, payload.dutyRoster, nightShift);
+    const newEffFrom  = payload.rosterEffectiveFrom || new Date().toISOString().slice(0, 10);
+    const newEffDate  = new Date(newEffFrom);
+    const firstOfMonth = new Date(Date.UTC(newEffDate.getUTCFullYear(), newEffDate.getUTCMonth(), 1));
+    const firstOfMonthStr = firstOfMonth.toISOString().slice(0, 10);
+
+    // Auto-backfill: if mid-month change and old roster exists and no history covers start of month
+    if (newEffDate > firstOfMonth && oldEmpRoster?.dutyRoster) {
+      await ensureRosterHistoryTable();
+      const empIdInt = toIntId(id, 'employee id');
+      const covered = await prisma.$queryRawUnsafe(
+        `SELECT id FROM employee_roster_history WHERE employee_id = $1 AND effective_from <= $2::date LIMIT 1`,
+        empIdInt, firstOfMonthStr
+      );
+      if (covered.length === 0) {
+        await saveRosterHistory(id, oldEmpRoster.dutyRoster, oldEmpRoster.isNightShift ?? false, firstOfMonthStr);
+      }
+    }
+
+    await saveRosterHistory(id, payload.dutyRoster, nightShift, newEffFrom);
   }
 
   return mergeExtendedFields(updated, extended);
