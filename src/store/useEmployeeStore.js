@@ -32,6 +32,8 @@ export const useEmployeeStore = create((set, get) => ({
         hasHealthCard: Boolean(e.hasHealthCard),
         hasOtherBenefit: Boolean(e.hasOtherBenefit),
         otherBenefitText: e.otherBenefitText || '',
+        incrementMonths: e.incrementMonths ?? null,
+        incrementPercentage: e.incrementPercentage ?? null,
         eobiContribution: Number(e.eobiContribution || 0),
         socialSecurityContribution: Number(e.socialSecurityContribution || 0),
         healthCardContribution: Number(e.healthCardContribution || 0),
@@ -135,6 +137,8 @@ export const useEmployeeStore = create((set, get) => ({
         socialSecurityContribution: updates.socialSecurityContribution,
         healthCardContribution: updates.healthCardContribution,
         otherBenefitContribution: updates.otherBenefitContribution,
+        incrementMonths: updates.incrementMonths ?? null,
+        incrementPercentage: updates.incrementPercentage ?? null,
       };
 
       const res = await fetch(`${API_URL}/${id}`, {

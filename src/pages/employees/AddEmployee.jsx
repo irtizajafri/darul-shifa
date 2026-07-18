@@ -937,6 +937,8 @@ export default function AddEmployee({ edit }) {
               </div>
               <Input label="Basic Salary" type="number" {...register('basicSalary', { required: true, valueAsNumber: true })} error={errors.basicSalary?.message} />
               <Input label="Incentive (added to net salary)" type="number" {...register('incentive', { valueAsNumber: true })} />
+              <Input label="Increment (Months)" type="number" min="1" placeholder="e.g. 12" {...register('incrementMonths', { valueAsNumber: true })} />
+              <Input label="Increment %" type="number" min="0" step="0.1" placeholder="e.g. 10" {...register('incrementPercentage', { valueAsNumber: true })} />
               <div className="col-span-2 allowance-section">
                 <div className="flex justify-between items-center mb-2">
                   <label className="font-medium">Allowances</label>

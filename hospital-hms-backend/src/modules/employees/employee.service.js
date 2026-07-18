@@ -143,6 +143,8 @@ async function ensureExtendedEmployeeColumns() {
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "otherBenefitContribution" DOUBLE PRECISION DEFAULT 0');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "late" BOOLEAN DEFAULT FALSE');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "short" BOOLEAN DEFAULT FALSE');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "incrementMonths" INTEGER');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "incrementPercentage" DOUBLE PRECISION');
   await prisma.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_emp_code_unique ON "Employee" ("empCode") WHERE "empCode" IS NOT NULL');
 
 }
@@ -197,6 +199,8 @@ function normalizeExtendedFields(payload = {}) {
     otherBenefitContribution: normalizeNumber(payload.otherBenefitContribution, 0),
     late: normalizeNumber(payload.late, 0),
     short: normalizeNumber(payload.short, 0),
+    incrementMonths: payload.incrementMonths != null && payload.incrementMonths !== '' ? Math.max(1, Math.round(Number(payload.incrementMonths) || 1)) : null,
+    incrementPercentage: payload.incrementPercentage != null && payload.incrementPercentage !== '' ? Number(payload.incrementPercentage) || 0 : null,
   };
 }
 
@@ -217,6 +221,8 @@ function mergeExtendedFields(base, extended = {}) {
     otherBenefitContribution: normalizeNumber(extended.otherBenefitContribution, 0),
     late: normalizeNumber(extended.late, 0),
     short: normalizeNumber(extended.short, 0),
+    incrementMonths: extended.incrementMonths ?? null,
+    incrementPercentage: extended.incrementPercentage ?? null,
   };
 }
 
@@ -241,7 +247,9 @@ async function upsertExtendedEmployeeFields(employeeId, payload = {}) {
       "healthCardContribution" = ${f.healthCardContribution},
       "otherBenefitContribution" = ${f.otherBenefitContribution},
       "late" = ${f.late},
-      "short" = ${f.short}
+      "short" = ${f.short},
+      "incrementMonths" = ${f.incrementMonths},
+      "incrementPercentage" = ${f.incrementPercentage}
     WHERE id = ${id}
   `;
 
@@ -272,7 +280,9 @@ async function getExtendedFieldsByEmployeeIds(employeeIds = []) {
       "healthCardContribution",
       "otherBenefitContribution",
       "late",
-      "short"
+      "short",
+      "incrementMonths",
+      "incrementPercentage"
     FROM "Employee"
     WHERE id IN (${ids.join(',')})
   `);
