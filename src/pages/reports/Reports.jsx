@@ -82,6 +82,7 @@ export default function Reports() {
   const { attendanceRecords, fetchAttendance, apiAttendanceCache, setApiAttendanceCache, clearApiAttendanceCache } = useAttendanceStore();
   const { gatepasses, fetchGatepasses } = useGatePassStore();
   const { records: advanceLoans, fetchAdvanceLoans } = useAdvanceLoanStore();
+  const [empRosterHistory, setEmpRosterHistory] = useState([]);
   const employeeSearchRef = useRef(null);
   const apiAttendanceReqRef = useRef(0);
   const rawPunchReqRef = useRef(0);
@@ -185,6 +186,14 @@ export default function Reports() {
     return employees.find((e) => normalizeEmpCode(e.empCode) === target);
   }, [employees, empCode, normalizeEmpCode]);
 
+  useEffect(() => {
+    if (!emp?.id) { setEmpRosterHistory([]); return; }
+    fetch(`http://localhost:5001/api/employees/${emp.id}/roster-history`)
+      .then(r => r.json())
+      .then(json => { setEmpRosterHistory(Array.isArray(json.data) ? json.data : []); })
+      .catch(() => setEmpRosterHistory([]));
+  }, [emp?.id]);
+
   const filteredEmployees = useMemo(() => {
     const q = String(empSearch || '').trim().toLowerCase();
     if (!q) return employees || [];
@@ -250,12 +259,24 @@ export default function Reports() {
   }, []);
 
   const getRosterForDate = useCallback((dateStr) => {
-    if (!emp?.dutyRoster || !Array.isArray(emp.dutyRoster)) return null;
     const dayIndex = new Date(dateStr).getDay();
     const map = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayKey = map[dayIndex];
+
+    if (empRosterHistory.length > 0) {
+      const dateObj = new Date(dateStr);
+      const applicable = empRosterHistory
+        .filter(h => new Date(h.effectiveFrom) <= dateObj)
+        .sort((a, b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom));
+      if (applicable.length > 0) {
+        const roster = applicable[0].dutyRoster;
+        return Array.isArray(roster) ? roster.find(d => d.day === dayKey) || null : null;
+      }
+    }
+
+    if (!emp?.dutyRoster || !Array.isArray(emp.dutyRoster)) return null;
     return emp.dutyRoster.find((d) => d.day === dayKey) || null;
-  }, [emp]);
+  }, [emp, empRosterHistory]);
 
   const isRosterOff = useCallback((dateStr) => {
     const roster = getRosterForDate(dateStr);

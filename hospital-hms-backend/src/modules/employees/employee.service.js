@@ -2,6 +2,7 @@ const prisma = require('../../config/db');
 
 let isMasterTableReady = false;
 let isExtendedEmployeeColumnsReady = false;
+let isRosterHistoryTableReady = false;
 
 function normalizeString(value, { emptyToNull = false } = {}) {
   if (value === undefined) return undefined;
@@ -68,6 +69,58 @@ async function ensureEmployeeMasterTables() {
 
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS idx_employee_designations_department_id ON employee_designations(department_id)');
   isMasterTableReady = true;
+}
+
+async function ensureRosterHistoryTable() {
+  if (isRosterHistoryTableReady) return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS employee_roster_history (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER NOT NULL REFERENCES "Employee"(id) ON DELETE CASCADE,
+      duty_roster JSONB NOT NULL DEFAULT '[]',
+      is_night_shift BOOLEAN NOT NULL DEFAULT false,
+      effective_from DATE NOT NULL,
+      created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+    )
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_roster_history_emp_date
+    ON employee_roster_history(employee_id, effective_from)
+  `);
+  isRosterHistoryTableReady = true;
+}
+
+async function saveRosterHistory(employeeId, dutyRoster, isNightShift) {
+  await ensureRosterHistoryTable();
+  const id = toIntId(employeeId, 'employee id');
+  const rosterJson = JSON.stringify(Array.isArray(dutyRoster) ? dutyRoster : []);
+  const nightShift = Boolean(isNightShift);
+  const today = new Date().toISOString().slice(0, 10);
+  await prisma.$executeRawUnsafe(`
+    INSERT INTO employee_roster_history (employee_id, duty_roster, is_night_shift, effective_from)
+    VALUES ($1, $2::jsonb, $3, $4)
+    ON CONFLICT (employee_id, effective_from) DO UPDATE SET
+      duty_roster = EXCLUDED.duty_roster,
+      is_night_shift = EXCLUDED.is_night_shift
+  `, id, rosterJson, nightShift, today);
+}
+
+async function getRosterHistory(employeeId) {
+  await ensureRosterHistoryTable();
+  const id = toIntId(employeeId, 'employee id');
+  const rows = await prisma.$queryRawUnsafe(`
+    SELECT id, employee_id, duty_roster, is_night_shift, effective_from
+    FROM employee_roster_history
+    WHERE employee_id = $1
+    ORDER BY effective_from ASC
+  `, id);
+  return rows.map(r => ({
+    id: Number(r.id),
+    employeeId: Number(r.employee_id),
+    dutyRoster: typeof r.duty_roster === 'string' ? JSON.parse(r.duty_roster) : (r.duty_roster || []),
+    isNightShift: Boolean(r.is_night_shift),
+    effectiveFrom: r.effective_from,
+  }));
 }
 
 async function ensureExtendedEmployeeColumns() {
@@ -454,6 +507,12 @@ async function update(id, payload) {
 
   const updated = await updateEmployeeWithFallback(id, data);
   const extended = await upsertExtendedEmployeeFields(id, payload);
+
+  if (payload.dutyRoster !== undefined) {
+    const nightShift = payload.isNightShift !== undefined ? payload.isNightShift : (updated.isNightShift ?? false);
+    await saveRosterHistory(id, payload.dutyRoster, nightShift);
+  }
+
   return mergeExtendedFields(updated, extended);
 }
 
@@ -618,6 +677,7 @@ module.exports = {
   create,
   update,
   remove,
+  getRosterHistory,
   listDepartmentHeads,
   createDepartmentHead,
   removeDepartmentHead,

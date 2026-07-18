@@ -143,6 +143,15 @@ async function removeDesignationHead(req, res, next) {
   }
 }
 
+async function getRosterHistory(req, res, next) {
+  try {
+    const data = await service.getRosterHistory(req.params.id);
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getDependents(req, res, next) {
   try {
     const data = await service.getDependents(req.params.id);
@@ -178,6 +187,7 @@ module.exports = {
   create,
   update,
   remove,
+  getRosterHistory,
   listDepartmentHeads,
   createDepartmentHead,
   removeDepartmentHead,
