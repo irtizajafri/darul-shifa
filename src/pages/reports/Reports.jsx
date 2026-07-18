@@ -948,11 +948,24 @@ export default function Reports() {
     });
 
     // Sort all results by date
-    return result.sort((a, b) => {
-      const dateA = new Date(a.date);
-      const dateB = new Date(b.date);
-      return dateA - dateB;
-    });
+    const sorted = result.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Alternative shift: sirf punch aaye ya holiday wali rows
+    const dutyType = String(emp?.dutyType || '').toLowerCase();
+    if (dutyType === 'alternative' || dutyType === 'alternate') {
+      return sorted
+        .filter(r => {
+          const st = String(r.status || '').toLowerCase();
+          return r.actualIn || st === 'holiday_avail' || st === 'holiday_not_avail';
+        })
+        .map(r => {
+          const st = String(r.status || '').toLowerCase();
+          if (st === 'off_not_avail') return { ...r, status: 'present' };
+          return r;
+        });
+    }
+
+    return sorted;
   }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
 
   const effectiveAttendanceWithOverrides = liveAttendanceWithOverrides;
