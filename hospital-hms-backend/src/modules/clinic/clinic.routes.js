@@ -41,6 +41,8 @@ router.get('/opd/employee-search', controller.searchEmployees);
 router.get('/opd', controller.getOpdVisits);
 router.post('/opd', controller.createOpdVisit);
 router.post('/opd/:id/print', controller.printOpdVisit);
+router.get('/opd/balance-slips', controller.getBalanceSlips);
+router.post('/opd/:id/receive-balance', controller.receiveBalancePayment);
 
 // Room Category
 router.get('/room-categories', controller.getRoomCategories);
@@ -108,5 +110,8 @@ router.get('/bill-comparison', controller.getBillComparisons);
 
 // Consultant Statement
 router.get('/consultant-statement', controller.getConsultantStatement);
+
+// Inquiries
+router.get('/inquiries/revenue-dashboard', controller.getRevenueDashboard);
 
 module.exports = router;

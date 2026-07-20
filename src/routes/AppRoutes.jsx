@@ -56,6 +56,8 @@ import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
 import ConsultantStatementFilter from '../pages/clinic/reports/ConsultantStatementFilter';
 import ConsultantStatementReport from '../pages/clinic/reports/ConsultantStatementReport';
 import ConsultantRates from '../pages/clinic/reports/ConsultantRates';
+import RevenueDashboard from '../pages/clinic/inquiries/RevenueDashboard';
+import ReceiveBalanceSlip from '../pages/clinic/ReceiveBalanceSlip';
 import EmployeeList from '../pages/employees/EmployeeList';
 import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
@@ -196,6 +198,8 @@ export default function AppRoutes() {
           <Route path="clinic/reports/consultant-rates"      element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement"      element={<PermissionGuard module="clinic"><ConsultantStatementFilter /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement/view" element={<PermissionGuard module="clinic"><ConsultantStatementReport /></PermissionGuard>} />
+          <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic"><RevenueDashboard /></PermissionGuard>} />
+          <Route path="clinic/transactions/receive-balance-slip" element={<PermissionGuard module="clinic"><ReceiveBalanceSlip /></PermissionGuard>} />
 
           <Route path="coming-soon" element={<ComingSoon />} />
         </Route>

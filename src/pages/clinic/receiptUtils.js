@@ -46,6 +46,7 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   const discount  = isComplementary ? 0 : (doc.discount   || 0);
   const received  = isComplementary ? 0 : (doc.receive    || 0);
   const grossAmt  = total + discount;
+  const balanceAmt = Math.max(0, total - received);
 
   const ageStr = [
     doc.age != null ? `${doc.age} Year(s)` : '',
@@ -140,6 +141,7 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   <div class="amount-row"><span>Total:</span><span>${fmt(grossAmt)}</span></div>
   <div class="amount-row"><span>Discount:</span><span>${fmt(discount)}</span></div>
   <div class="amount-row"><span>Received:</span><span>${fmt(received)}</span></div>
+  ${balanceAmt > 0 ? `<div class="amount-row" style="color:#c00;font-weight:700"><span>Balance:</span><span>${fmt(balanceAmt)}</span></div>` : ''}
   <div class="amount-row grand"><span>Grand Total:</span><span>Rs. ${fmt(total)}</span></div>
 
   <div class="divider"></div>

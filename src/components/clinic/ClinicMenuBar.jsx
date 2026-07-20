@@ -21,9 +21,14 @@ const menuItems = [
   {
     label: 'Transactions',
     items: [
-      { label: 'General OPD', path: '/clinic/general-opd' },
-      { label: 'Emergency OPD', path: '/clinic/emergency-opd' },
-      { label: 'Antenatal',   path: '/clinic/antenatal' },
+      { label: 'General OPD',     path: '/clinic/general-opd' },
+      { label: 'Emergency OPD',   path: '/clinic/emergency-opd' },
+      { label: 'Antenatal',       path: '/clinic/antenatal' },
+      { label: 'General Payment', path: '/accounts/non-corporate/transactions/voucher-expense/form' },
+      { label: 'Mark Attendance', path: '/attendance' },
+      { label: 'Short Leave',     path: '/shortleave' },
+      { label: 'Gate Pass',                path: '/gatepass' },
+      { label: 'Receive Balance against Slip', path: '/clinic/transactions/receive-balance-slip' },
     ],
   },
   {
@@ -44,7 +49,12 @@ const menuItems = [
       },
     ],
   },
-  { label: 'Inquiries', items: [] },
+  {
+    label: 'Inquiries',
+    items: [
+      { label: 'Revenue Dashboard', path: '/clinic/inquiries/revenue-dashboard' },
+    ],
+  },
   {
     label: 'Report',
     items: [

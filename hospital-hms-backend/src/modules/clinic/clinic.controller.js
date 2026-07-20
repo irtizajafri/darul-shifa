@@ -693,6 +693,33 @@ async function getConsultantStatement(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getRevenueDashboard(req, res, next) {
+  try {
+    const { period, year, month, department, subDept, consultant, paymentType } = req.query;
+    const data = await service.getRevenueDashboard({ period, year, month, department, subDept, consultant, paymentType });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getBalanceSlips(req, res, next) {
+  try {
+    success(res, await service.getBalanceSlips());
+  } catch (err) { next(err); }
+}
+
+async function receiveBalancePayment(req, res, next) {
+  try {
+    const { amount } = req.body;
+    if (!amount || Number(amount) <= 0) return fail(res, 400, 'Valid amount required');
+    const data = await service.receiveBalancePayment(req.params.id, Number(amount));
+    success(res, data, 'Balance received successfully');
+  } catch (err) {
+    if (err.message === 'Visit not found') return fail(res, 404, err.message);
+    if (err.message === 'Invalid amount') return fail(res, 400, err.message);
+    next(err);
+  }
+}
+
 module.exports = {
   getDepartments,
   createDepartment,
@@ -765,6 +792,9 @@ module.exports = {
   importBillComparison,
   getBillComparisons,
   getConsultantStatement,
+  getRevenueDashboard,
+  getBalanceSlips,
+  receiveBalancePayment,
 };
 
 async function importBillComparison(req, res, next) {

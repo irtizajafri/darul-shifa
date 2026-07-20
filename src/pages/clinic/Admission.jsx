@@ -3,11 +3,29 @@ import { Printer, Save, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
+import logoSrc from '../../assets/logo.jpg';
 import './Admission.scss';
 import './Antenatal.scss';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
+}
+
+function numToWords(n) {
+  if (n === 0) return 'zero';
+  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+    'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  function cvt(num) {
+    if (num === 0) return '';
+    if (num < 20) return ones[num] + ' ';
+    if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? '-' + ones[num % 10] : '') + ' ';
+    if (num < 1000) return ones[Math.floor(num / 100)] + ' hundred ' + cvt(num % 100);
+    if (num < 100000) return cvt(Math.floor(num / 1000)) + 'thousand ' + cvt(num % 1000);
+    return cvt(Math.floor(num / 100000)) + 'lakh ' + cvt(num % 100000);
+  }
+  return cvt(Math.abs(Math.floor(n))).trim();
 }
 
 // ── Employee Modal ─────────────────────────────────────────────────────────────
@@ -121,6 +139,184 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
   );
 }
 
+// ── Admission Print Template ───────────────────────────────────────────────────
+function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds }) {
+  const consultant = doctors.find(d => String(d.id) === String(form.consultantId));
+  const roomCat    = roomCategories.find(r => String(r.id) === String(form.roomCategoryId));
+  const bed        = availableBeds.find(b => String(b.id) === String(form.bedId));
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const admitDateTime = `${dateStr.replace(',', '')} ${timeStr}`;
+
+  const statusLabel = { private: 'Private', staff: 'Staff', panel: 'Panel', cc: 'CC', complementary: 'Complementary' }[form.patientCategory] || 'Private';
+
+  const ageStr = `${form.ageYears || 0} Year(s) ${form.ageMonths || 0} Month(s) ${form.ageDays || 0} Day(s)`;
+
+  const advAmt   = parseFloat(form.advancePayment || 0);
+  const advWords = advAmt > 0 ? numToWords(Math.floor(advAmt)) : '';
+
+  return (
+    <div className="adm-print">
+      {/* Header */}
+      <div className="adm-print-hdr">
+        <img src={logoSrc} alt="Darul Shifa" className="adm-print-logo" />
+        <div className="adm-print-hdr-center">
+          <div className="adm-print-hosp-name">DARUL SHIFA</div>
+          <div className="adm-print-hosp-sub">IMAM KHOMEINI (REGD)</div>
+          <div className="adm-print-hosp-addr">Sultanar Toper Co-operative Housing Society, Malir Karachi</div>
+          <div className="adm-print-hosp-addr">Ph: +92300-41 &nbsp;|&nbsp; Fax: +9260260-41 &nbsp;|&nbsp; Email: darulshifa@yahoo.com</div>
+        </div>
+        <div className="adm-print-duplicate">Duplicate</div>
+      </div>
+
+      {/* Status bar */}
+      <div className="adm-print-status-bar">
+        <span>Patient Status: <strong>{statusLabel}</strong></span>
+        <span className="adm-print-form-title">ADMISSION FORM</span>
+        <span>Printed By: <strong>SYSTEM</strong></span>
+      </div>
+
+      {/* Fields table */}
+      <table className="adm-print-fields">
+        <tbody>
+          <tr>
+            <td className="apf-lbl">Admission #:</td>
+            <td className="apf-val">{form.admissionNo}</td>
+            <td className="apf-lbl">Admit Date &amp; Time:</td>
+            <td className="apf-val">{admitDateTime}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Patient Name:</td>
+            <td className="apf-val">{form.patientTitle} {form.patientName}</td>
+            <td className="apf-lbl">D/o:</td>
+            <td className="apf-val">{form.responsibleParty}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Room Category:</td>
+            <td className="apf-val">{roomCat?.name || '—'}</td>
+            <td className="apf-lbl">Room #:</td>
+            <td className="apf-val">{bed?.name || '—'}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Age:</td>
+            <td className="apf-val">{ageStr}</td>
+            <td className="apf-lbl">Gender:</td>
+            <td className="apf-val">{form.gender === 'male' ? 'Male' : 'Female'}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Address:</td>
+            <td className="apf-val">{form.address}</td>
+            <td className="apf-lbl">Phone / Mobile #:</td>
+            <td className="apf-val">{form.phoneNo}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Arrived under RMO:</td>
+            <td className="apf-val">{form.arrivedUnderRmo || 'Visiting Doctor (RMO)'}</td>
+            <td className="apf-lbl">Consultant:</td>
+            <td className="apf-val">{consultant?.name || '—'}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Responsible Party:</td>
+            <td className="apf-val">{form.responsibleParty}</td>
+            <td className="apf-lbl">Authority Letter:</td>
+            <td className="apf-val">{form.authorityLetter ? 'Yes' : 'No'}</td>
+          </tr>
+          <tr>
+            <td className="apf-lbl">Adv. Received:</td>
+            <td className="apf-val">{advAmt > 0 ? `Rs. ${advAmt.toFixed(2)}` : ''}</td>
+            <td className="apf-lbl">Discharge Date:</td>
+            <td className="apf-val"></td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Received line */}
+      {advAmt > 0 && (
+        <div className="adm-print-recv-line">
+          Received with thanks from <strong>{form.responsibleParty || form.patientName}</strong> Rupees {advWords} only.
+        </div>
+      )}
+
+      {/* Room History */}
+      <div className="adm-print-section-hdr">ROOM HISTORY</div>
+      <table className="adm-print-history">
+        <tbody>
+          {[0, 1].map(i => (
+            <tr key={i}>
+              <td>Shifted to <span className="dln dln-md" /></td>
+              <td>Category <span className="dln dln-sm" /></td>
+              <td>Room # <span className="dln dln-sm" /></td>
+              <td>Date &amp; Time <span className="dln dln-md" /></td>
+              <td>Sign. <span className="dln dln-sm" /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Payment History */}
+      <div className="adm-print-section-hdr">PAYMENT HISTORY</div>
+      <table className="adm-print-history">
+        <tbody>
+          <tr>
+            <td>Date: <span>{advAmt > 0 ? admitDateTime : <span className="dln dln-md" />}</span></td>
+            <td>Amount: <span>{advAmt > 0 ? advAmt.toFixed(2) : <span className="dln dln-sm" />}</span></td>
+            <td>Slip #: <span>{form.admissionNo || <span className="dln dln-sm" />}</span></td>
+            <td>Sig. <span className="dln dln-sm" /></td>
+          </tr>
+          {[1, 2, 3].map(i => (
+            <tr key={i}>
+              <td>Date: <span className="dln dln-md" /></td>
+              <td>Amount: <span className="dln dln-sm" /></td>
+              <td>Slip #: <span className="dln dln-sm" /></td>
+              <td>Sig. <span className="dln dln-sm" /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Halafnama */}
+      <div className="adm-print-oath">
+        <div className="adm-print-oath-title">حلف نامہ</div>
+        <p className="adm-print-oath-text" dir="rtl">
+          میں / ہم بخوبی واقف ہوں کہ یہ ایک نجی ہسپتال ہے اور یہ کہ مجھے / ہمیں یہاں جو سہولت (جو مجھے فراہم کی جائے گی) اس کا معاوضہ ادا کرنا ہے۔ میں اللہ تعالیٰ کو حاضر ناظر جان کر کہتا ہوں / کرتی ہوں کہ ہسپتال کے بل کی ادائیگی کروں گا / کروں گی۔
+        </p>
+      </div>
+
+      {/* Signature row */}
+      <div className="adm-print-sig-row">
+        <span>Name: <span className="dln dln-lg" /></span>
+        <span>Signature: <span className="dln dln-lg" /></span>
+      </div>
+      <div className="adm-print-sig-row">
+        <span>Address: <span className="dln dln-lg" /></span>
+        <span>Phone #: <span className="dln dln-lg" /></span>
+      </div>
+
+      {/* Diagnosis */}
+      <table className="adm-print-diag">
+        <tbody>
+          <tr>
+            <td className="apd-lbl">Provisional Diagnosis</td>
+            <td className="apd-val"></td>
+            <td className="apd-lbl apd-lbl-sm">Code Number</td>
+            <td className="apd-val apd-val-sm"></td>
+          </tr>
+          <tr>
+            <td className="apd-lbl">Final Diagnosis</td>
+            <td colSpan={3} className="apd-val"></td>
+          </tr>
+          <tr>
+            <td className="apd-lbl">Operations</td>
+            <td colSpan={3} className="apd-val"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Panel Modal ────────────────────────────────────────────────────────────────
 function PanelModal({ onSelect, onClose }) {
   const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
@@ -161,19 +357,26 @@ function PanelModal({ onSelect, onClose }) {
           <div className="ant-panel-body">
             <div className="ant-panel-field">
               <label>Company</label>
-              <select value={companyId} onChange={e => { setCompanyId(e.target.value); setEmployeeId(''); setDependentIdx(''); }}>
-                <option value="">— Select Company —</option>
-                {panelCompanies.filter(c => c.status === 'active').map(c => (
-                  <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={panelCompanies.filter(c => c.status === 'active')}
+                value={companyId}
+                onChange={val => { setCompanyId(val); setEmployeeId(''); setDependentIdx(''); }}
+                placeholder="— Select Company —"
+                getLabel={c => `${c.code} — ${c.name}`}
+                getKey={c => c.id}
+              />
             </div>
             <div className="ant-panel-field">
               <label>Employee</label>
-              <select value={employeeId} onChange={e => { setEmployeeId(e.target.value); setDependentIdx(''); }} disabled={!companyId}>
-                <option value="">— Select Employee —</option>
-                {companyEmps.map(e => <option key={e.id} value={e.id}>{e.empCode} — {e.title} {e.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={companyEmps}
+                value={employeeId}
+                onChange={val => { setEmployeeId(val); setDependentIdx(''); }}
+                placeholder={companyId ? '— Select Employee —' : '— Select Company First —'}
+                getLabel={e => `${e.empCode} — ${e.title} ${e.name}`}
+                getKey={e => e.id}
+                disabled={!companyId}
+              />
             </div>
             {selEmp && deps.length > 0 && (
               <div className="ant-panel-field">
@@ -416,6 +619,23 @@ export default function Admission() {
     }
   }
 
+  async function handleSaveAndPrint() {
+    if (!form.admissionNo.trim()) return toast.error('Admission # is required');
+    if (!form.patientName.trim()) return toast.error('Patient Name is required');
+    setSaving(true);
+    try {
+      await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes' });
+      toast.success('Admission saved');
+      window.print();
+      setForm(EMPTY);
+      setAvailableBeds([]);
+    } catch (err) {
+      toast.error(err.message || 'Failed to save admission');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <>
       {showEmpModal && (
@@ -613,17 +833,14 @@ export default function Admission() {
                 </div>
                 <div className="adm-field">
                   <label>Consultant</label>
-                  <select value={form.consultantId} onChange={e => set('consultantId', e.target.value)}>
-                    <option value="">— Select Consultant —</option>
-                    {doctors.filter(d =>
-                      d.status === 'active' &&
-                      d.subDepts?.some(s =>
-                        s.subDept?.department?.name?.toLowerCase().includes('consultant')
-                      )
-                    ).map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={doctors.filter(d => d.status === 'active')}
+                    value={form.consultantId}
+                    onChange={val => set('consultantId', val)}
+                    placeholder="— Select Consultant —"
+                    getLabel={d => d.name}
+                    getKey={d => d.id}
+                  />
                 </div>
               </div>
             </div>
@@ -708,9 +925,9 @@ export default function Admission() {
 
             {/* Actions */}
             <div className="adm-actions">
-              <button className="adm-btn adm-btn--print" onClick={() => toast('Print feature coming soon')}>
+              <button className="adm-btn adm-btn--save-print" onClick={handleSaveAndPrint} disabled={saving}>
                 <Printer size={16} />
-                Print Form
+                {saving ? 'Saving...' : 'Save & Print'}
               </button>
               <button className="adm-btn adm-btn--save" onClick={handleSave} disabled={saving}>
                 <Save size={16} />
@@ -719,6 +936,16 @@ export default function Admission() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ── Print Area (hidden on screen, shown when printing) ── */}
+      <div className="adm-print-area">
+        <AdmissionPrintTemplate
+          form={form}
+          doctors={doctors}
+          roomCategories={roomCategories}
+          availableBeds={availableBeds}
+        />
       </div>
     </>
   );

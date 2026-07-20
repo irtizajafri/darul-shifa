@@ -4,6 +4,7 @@ import { ChevronLeft, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ClinicPanelEmployeeFormPage.scss';
 
 const TITLES = ['MR', 'MRS', 'MISS', 'DR', 'PROF'];
@@ -296,12 +297,14 @@ export default function ClinicPanelEmployeeFormPage() {
               <span className="pe-label">Company</span>
             </div>
             <div className="pe-field pe-field--company">
-              <select className="pe-input" value={companyId} onChange={(e) => setCompanyId(e.target.value)}>
-                <option value="">— Select Company —</option>
-                {panelCompanies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={panelCompanies}
+                value={companyId}
+                onChange={val => setCompanyId(val)}
+                placeholder="— Select Company —"
+                getLabel={c => `${c.code} — ${c.name}`}
+                getKey={c => c.id}
+              />
             </div>
             <div className="pe-field pe-field--label" style={{ marginLeft: '1.5rem' }}>
               <span className="pe-label">Panel Emp. #</span>
@@ -374,12 +377,14 @@ export default function ClinicPanelEmployeeFormPage() {
               <span className="pe-label">Bill Company</span>
             </div>
             <div className="pe-field pe-field--billcompany">
-              <select className="pe-input" value={billCompanyId} onChange={(e) => setBillCompanyId(e.target.value)}>
-                <option value="">— None —</option>
-                {panelCompanies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={panelCompanies}
+                value={billCompanyId}
+                onChange={val => setBillCompanyId(val)}
+                placeholder="— None —"
+                getLabel={c => `${c.code} — ${c.name}`}
+                getKey={c => c.id}
+              />
             </div>
             <div className="pe-field pe-field--entitlement">
               <label className="pe-radio">

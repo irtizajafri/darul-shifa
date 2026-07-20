@@ -495,7 +495,8 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     ? Math.round((grossAmount * (Number(discount) || 0)) / 100)
     : (Number(discount) || 0);
   const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
-  const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
+  const refundAmt  = Math.max(0, (Number(receive) || 0) - totalAmount);
+  const balanceAmt = Math.max(0, totalAmount - (Number(receive) || 0));
 
   function applyPatientData(patient, useNewMr) {
     if (useNewMr) {
@@ -1064,6 +1065,12 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Refund</span>
                     <span className="gopd-refund-val">{refundAmt > 0 ? refundAmt : '–'}</span>
+                  </div>
+                  <div className="gopd-total-row">
+                    <span className="gopd-total-lbl">Balance</span>
+                    <span className="gopd-balance-val" style={{ color: balanceAmt > 0 ? '#dc2626' : '#16a34a', fontWeight: 700 }}>
+                      {balanceAmt > 0 ? balanceAmt : '–'}
+                    </span>
                   </div>
                 </div>
                 <div className="gopd-total-amount">

@@ -871,6 +871,35 @@ async function bulkCreatePatientVisits(rows) {
   }));
 
   const result = await prisma.patientVisit.createMany({ data });
+
+  // Auto-create new doctors in ClinicDoctor from imported doctor names
+  const uniqueNames = [...new Set(
+    data.map(r => r.doctor).filter(Boolean).map(n => n.trim())
+  )];
+
+  if (uniqueNames.length > 0) {
+    const existing = await prisma.clinicDoctor.findMany({
+      select: { name: true },
+    });
+    const existingNames = new Set(existing.map(d => d.name.toLowerCase()));
+
+    for (const name of uniqueNames) {
+      if (existingNames.has(name.toLowerCase())) continue;
+
+      // Generate unique code from name initials
+      const initials = name.split(/\s+/).filter(Boolean)
+        .map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DR';
+      let code = initials;
+      let i = 1;
+      while (await prisma.clinicDoctor.findUnique({ where: { code } })) {
+        code = `${initials}${i++}`;
+      }
+
+      await prisma.clinicDoctor.create({ data: { code, name } });
+      existingNames.add(name.toLowerCase());
+    }
+  }
+
   return result;
 }
 
@@ -1003,8 +1032,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       subDepartment: firstDoc?.subDept?.name || null,
       doctor:        firstDoc?.doctor?.name  || null,
       paymentType:   v.paymentType,
-      received:      v.totalAmount,
-      balance:       0,
+      received:      v.receive,
+      balance:       v.totalAmount - v.receive,
       discount:      v.discount,
       _source:       'opd',
     };
@@ -1277,6 +1306,262 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
   return { consultant, visits: result };
 }
 
+// ─── Revenue Dashboard (Inquiries) ───────────────────────────────────────────
+
+async function getRevenueDashboard({ period, year, month, department, subDept, consultant, paymentType }) {
+  year   = parseInt(year)  || new Date().getFullYear();
+  month  = parseInt(month) || (new Date().getMonth() + 1);
+  period = period || 'monthly_daily';
+
+  // ── PatientVisit WHERE ────────────────────────────────────────────────────
+  const pvConds  = [`"paymentType" != 'CANCELED'`];
+  const pvParams = [];
+  if (department && department !== 'ALL') { pvParams.push(department);             pvConds.push(`department ILIKE $${pvParams.length}`); }
+  if (subDept    && subDept    !== 'ALL') { pvParams.push(subDept);                pvConds.push(`"subDepartment" ILIKE $${pvParams.length}`); }
+  if (consultant && consultant !== 'ALL') { pvParams.push(consultant);             pvConds.push(`doctor ILIKE $${pvParams.length}`); }
+  if (paymentType && paymentType !== 'ALL') { pvParams.push(paymentType);          pvConds.push(`"paymentType" = $${pvParams.length}`); }
+  const pvWhere = pvConds.join(' AND ');
+
+  // ── ClinicOpdVisit WHERE ──────────────────────────────────────────────────
+  const ovConds  = [];
+  const ovParams = [];
+  if (department && department !== 'ALL') { ovParams.push(department);             ovConds.push(`department ILIKE $${ovParams.length}`); }
+  if (subDept    && subDept    !== 'ALL') { ovParams.push(subDept);                ovConds.push(`EXISTS (SELECT 1 FROM "ClinicOpdVisitDoctor" cod JOIN "ClinicSubDept" sd ON sd.id = cod."subDeptId" WHERE cod."visitId" = "ClinicOpdVisit".id AND sd.name ILIKE $${ovParams.length})`); }
+  if (consultant && consultant !== 'ALL') { ovParams.push(consultant);             ovConds.push(`EXISTS (SELECT 1 FROM "ClinicOpdVisitDoctor" cod JOIN "ClinicDoctor" d ON d.id = cod."doctorId" WHERE cod."visitId" = "ClinicOpdVisit".id AND d.name ILIKE $${ovParams.length})`); }
+  if (paymentType && paymentType !== 'ALL') { ovParams.push(paymentType.toLowerCase()); ovConds.push(`LOWER("paymentType") = $${ovParams.length}`); }
+  const ovWhere = ovConds.length > 0 ? ovConds.join(' AND ') : 'TRUE';
+
+  // ── Helper: aggregate row → object ───────────────────────────────────────
+  const toObj = (r, keyField) => ({
+    [keyField]:    r[keyField],
+    totalPatients: Number(r.totalPatients),
+    totalAmount:   Number(r.totalAmount),
+    cashPatients:  Number(r.cashPatients),
+    cashAmount:    Number(r.cashAmount),
+    panelPatients: Number(r.panelPatients),
+    panelAmount:   Number(r.panelAmount),
+    ccPatients:    Number(r.ccPatients),
+    ccAmount:      Number(r.ccAmount),
+  });
+
+  // ── Helper: merge two maps by key ─────────────────────────────────────────
+  const mergeMap = (pvMap, ovMap, keyField) => {
+    const keys = new Set([...Object.keys(pvMap), ...Object.keys(ovMap)]);
+    const out  = {};
+    for (const k of keys) {
+      const a = pvMap[k] || {}, b = ovMap[k] || {};
+      out[k] = {
+        [keyField]:    a[keyField] ?? b[keyField],
+        totalPatients: (a.totalPatients||0) + (b.totalPatients||0),
+        totalAmount:   (a.totalAmount  ||0) + (b.totalAmount  ||0),
+        cashPatients:  (a.cashPatients ||0) + (b.cashPatients ||0),
+        cashAmount:    (a.cashAmount   ||0) + (b.cashAmount   ||0),
+        panelPatients: (a.panelPatients||0) + (b.panelPatients||0),
+        panelAmount:   (a.panelAmount  ||0) + (b.panelAmount  ||0),
+        ccPatients:    (a.ccPatients   ||0) + (b.ccPatients   ||0),
+        ccAmount:      (a.ccAmount     ||0) + (b.ccAmount     ||0),
+      };
+    }
+    return out;
+  };
+
+  // ── SQL fragments shared across periods ───────────────────────────────────
+  const pvAggCols = `
+    COUNT(*)::int AS "totalPatients",
+    COALESCE(SUM(received),0) AS "totalAmount",
+    COUNT(*) FILTER (WHERE "paymentType" = 'Cash')::int  AS "cashPatients",
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Cash'),0)  AS "cashAmount",
+    COUNT(*) FILTER (WHERE "paymentType" = 'Panel')::int AS "panelPatients",
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Panel'),0) AS "panelAmount",
+    COUNT(*) FILTER (WHERE "paymentType" = 'C Card')::int AS "ccPatients",
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount"`;
+
+  const ovAggCols = `
+    COUNT(*)::int AS "totalPatients",
+    COALESCE(SUM(receive),0) AS "totalAmount",
+    COUNT(*) FILTER (WHERE LOWER("paymentType") = 'cash')::int  AS "cashPatients",
+    COALESCE(SUM(receive) FILTER (WHERE LOWER("paymentType") = 'cash'),0)  AS "cashAmount",
+    COUNT(*) FILTER (WHERE LOWER("paymentType") = 'panel')::int AS "panelPatients",
+    COALESCE(SUM(receive) FILTER (WHERE LOWER("paymentType") = 'panel'),0) AS "panelAmount",
+    COUNT(*) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card'))::int AS "ccPatients",
+    COALESCE(SUM(receive) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card')),0) AS "ccAmount"`;
+
+  let data = [];
+
+  if (period === 'monthly_daily') {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startDate   = `${year}-${String(month).padStart(2,'0')}-01`;
+    const endDate     = `${year}-${String(month).padStart(2,'0')}-${String(daysInMonth).padStart(2,'0')}`;
+
+    const pvP = [...pvParams, startDate, endDate];
+    const pvSi = pvParams.length + 1, pvEi = pvParams.length + 2;
+    const pvRows = await prisma.$queryRawUnsafe(`
+      SELECT "visitDate"::text AS date, ${pvAggCols}
+      FROM "PatientVisit"
+      WHERE ${pvWhere} AND "visitDate" >= $${pvSi}::date AND "visitDate" <= $${pvEi}::date
+      GROUP BY "visitDate" ORDER BY "visitDate"
+    `, ...pvP);
+
+    const ovP = [...ovParams, startDate, endDate];
+    const ovSi = ovParams.length + 1, ovEi = ovParams.length + 2;
+    const ovRows = await prisma.$queryRawUnsafe(`
+      SELECT DATE("createdAt")::text AS date, ${ovAggCols}
+      FROM "ClinicOpdVisit"
+      WHERE ${ovWhere} AND DATE("createdAt") >= $${ovSi}::date AND DATE("createdAt") <= $${ovEi}::date
+      GROUP BY DATE("createdAt") ORDER BY date
+    `, ...ovP);
+
+    const pvMap = {}, ovMap = {};
+    for (const r of pvRows) pvMap[r.date] = toObj(r, 'date');
+    for (const r of ovRows) ovMap[r.date] = toObj(r, 'date');
+
+    const merged = mergeMap(pvMap, ovMap, 'date');
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      if (!merged[key]) merged[key] = { date: key, totalPatients:0, totalAmount:0, cashPatients:0, cashAmount:0, panelPatients:0, panelAmount:0, ccPatients:0, ccAmount:0 };
+    }
+    data = Object.values(merged).sort((a,b) => a.date.localeCompare(b.date));
+
+  } else if (period === 'yearly_monthly' || period === 'yearly_daily') {
+    const pvP = [...pvParams, year];
+    const pvYi = pvParams.length + 1;
+    const pvRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(MONTH FROM "visitDate")::int AS month, ${pvAggCols}
+      FROM "PatientVisit"
+      WHERE ${pvWhere} AND EXTRACT(YEAR FROM "visitDate") = $${pvYi}
+      GROUP BY EXTRACT(MONTH FROM "visitDate") ORDER BY month
+    `, ...pvP);
+
+    const ovP = [...ovParams, year];
+    const ovYi = ovParams.length + 1;
+    const ovRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(MONTH FROM "createdAt")::int AS month, ${ovAggCols}
+      FROM "ClinicOpdVisit"
+      WHERE ${ovWhere} AND EXTRACT(YEAR FROM "createdAt") = $${ovYi}
+      GROUP BY EXTRACT(MONTH FROM "createdAt") ORDER BY month
+    `, ...ovP);
+
+    const pvMap = {}, ovMap = {};
+    for (const r of pvRows) pvMap[r.month] = toObj(r, 'month');
+    for (const r of ovRows) ovMap[r.month] = toObj(r, 'month');
+
+    const merged = mergeMap(pvMap, ovMap, 'month');
+    for (let m = 1; m <= 12; m++) {
+      if (!merged[m]) merged[m] = { month: m, totalPatients:0, totalAmount:0, cashPatients:0, cashAmount:0, panelPatients:0, panelAmount:0, ccPatients:0, ccAmount:0 };
+    }
+    data = Object.values(merged).sort((a,b) => a.month - b.month);
+
+  } else if (period === 'multi_year') {
+    const pvRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM "visitDate")::int AS year, ${pvAggCols}
+      FROM "PatientVisit" WHERE ${pvWhere}
+      GROUP BY EXTRACT(YEAR FROM "visitDate") ORDER BY year
+    `, ...pvParams);
+
+    const ovRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM "createdAt")::int AS year, ${ovAggCols}
+      FROM "ClinicOpdVisit" WHERE ${ovWhere}
+      GROUP BY EXTRACT(YEAR FROM "createdAt") ORDER BY year
+    `, ...ovParams);
+
+    const pvMap = {}, ovMap = {};
+    for (const r of pvRows) pvMap[r.year] = toObj(r, 'year');
+    for (const r of ovRows) ovMap[r.year] = toObj(r, 'year');
+
+    const merged = mergeMap(pvMap, ovMap, 'year');
+    data = Object.values(merged).sort((a,b) => a.year - b.year);
+  }
+
+  const totalPatients = data.reduce((s,d) => s + d.totalPatients, 0);
+  const totalAmount   = data.reduce((s,d) => s + d.totalAmount,   0);
+  const daysWithData  = data.filter(d => d.totalPatients > 0).length;
+  const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;
+  const daysInMonth   = new Date(year, month, 0).getDate();
+  const prognosis     = period === 'monthly_daily' ? dailyAvg * daysInMonth : 0;
+
+  // Last year same month
+  let lastYearAmount = 0;
+  if (period === 'monthly_daily') {
+    const dim2    = new Date(year-1, month, 0).getDate();
+    const lyStart = `${year-1}-${String(month).padStart(2,'0')}-01`;
+    const lyEnd   = `${year-1}-${String(month).padStart(2,'0')}-${String(dim2).padStart(2,'0')}`;
+    const pvLyP   = [...pvParams, lyStart, lyEnd];
+    const pvLySi  = pvParams.length + 1, pvLyEi = pvParams.length + 2;
+    const ovLyP   = [...ovParams, lyStart, lyEnd];
+    const ovLySi  = ovParams.length + 1, ovLyEi = ovParams.length + 2;
+    const [pvLy, ovLy] = await Promise.all([
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND "visitDate" >= $${pvLySi}::date AND "visitDate" <= $${pvLyEi}::date`, ...pvLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(receive),0) AS total FROM "ClinicOpdVisit" WHERE ${ovWhere} AND DATE("createdAt") >= $${ovLySi}::date AND DATE("createdAt") <= $${ovLyEi}::date`, ...ovLyP),
+    ]);
+    lastYearAmount = Number(pvLy[0]?.total||0) + Number(ovLy[0]?.total||0);
+  }
+
+  // Trend: last 12 months (both tables)
+  const [pvTrend, ovTrend] = await Promise.all([
+    prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM "visitDate")::int AS year, EXTRACT(MONTH FROM "visitDate")::int AS month,
+        COUNT(*)::int AS "totalPatients", COALESCE(SUM(received),0) AS "totalAmount"
+      FROM "PatientVisit"
+      WHERE ${pvWhere} AND "visitDate" >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY EXTRACT(YEAR FROM "visitDate"), EXTRACT(MONTH FROM "visitDate") ORDER BY year, month
+    `, ...pvParams),
+    prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM "createdAt")::int AS year, EXTRACT(MONTH FROM "createdAt")::int AS month,
+        COUNT(*)::int AS "totalPatients", COALESCE(SUM(receive),0) AS "totalAmount"
+      FROM "ClinicOpdVisit"
+      WHERE ${ovWhere} AND "createdAt" >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY EXTRACT(YEAR FROM "createdAt"), EXTRACT(MONTH FROM "createdAt") ORDER BY year, month
+    `, ...ovParams),
+  ]);
+
+  const trendMap = {};
+  for (const r of pvTrend) { const k = `${r.year}-${r.month}`; trendMap[k] = { year: r.year, month: r.month, totalPatients: Number(r.totalPatients), totalAmount: Number(r.totalAmount) }; }
+  for (const r of ovTrend) {
+    const k = `${r.year}-${r.month}`;
+    if (trendMap[k]) { trendMap[k].totalPatients += Number(r.totalPatients); trendMap[k].totalAmount += Number(r.totalAmount); }
+    else trendMap[k] = { year: r.year, month: r.month, totalPatients: Number(r.totalPatients), totalAmount: Number(r.totalAmount) };
+  }
+
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const trendData = Object.values(trendMap)
+    .sort((a,b) => a.year !== b.year ? a.year - b.year : a.month - b.month)
+    .map(r => ({ label: `${MN[r.month-1]} ${r.year}`, totalPatients: r.totalPatients, totalAmount: r.totalAmount }));
+
+  return { period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis, lastYearAmount, daysWithData }, trendData };
+}
+
+async function getBalanceSlips() {
+  const rows = await prisma.$queryRaw`
+    SELECT id, "serialNo", "patientType", "patientName", "totalAmount", receive, "createdAt", department
+    FROM "ClinicOpdVisit"
+    WHERE "totalAmount" > receive AND "totalAmount" > 0 AND status != 'CANCELED'
+    ORDER BY "createdAt" DESC
+  `;
+  return rows.map(r => ({
+    id:          Number(r.id),
+    serialNo:    r.serialNo,
+    patientType: r.patientType,
+    patientName: r.patientName,
+    totalAmount: Number(r.totalAmount),
+    receive:     Number(r.receive),
+    balance:     Number(r.totalAmount) - Number(r.receive),
+    createdAt:   r.createdAt,
+    department:  r.department,
+  }));
+}
+
+async function receiveBalancePayment(id, amount) {
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
+  if (!visit) throw new Error('Visit not found');
+  const balance = visit.totalAmount - visit.receive;
+  if (amount <= 0 || amount > balance + 0.01) throw new Error('Invalid amount');
+  return prisma.clinicOpdVisit.update({
+    where: { id: Number(id) },
+    data:  { receive: visit.receive + amount },
+    select: { id: true, serialNo: true, patientName: true, totalAmount: true, receive: true },
+  });
+}
+
 module.exports = {
   getAllDepartments,
   createDepartment,
@@ -1350,6 +1635,9 @@ module.exports = {
   importBillComparison,
   getBillComparisons,
   getConsultantStatement,
+  getRevenueDashboard,
+  getBalanceSlips,
+  receiveBalancePayment,
 };
 
 // ─── Panel Bill Comparison ────────────────────────────────────────────────────

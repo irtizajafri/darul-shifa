@@ -1,0 +1,452 @@
+$blue:  #1a3c6e;
+$teal:  #00897b;
+$red:   #c62828;
+$green: #2e7d32;
+$ora:   #e65100;
+
+.rd-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #dde3ea;
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+  overflow: hidden;
+}
+
+// ─── Body ─────────────────────────────────────────────────────────────────────
+.rd-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+.rd-sidebar {
+  width: 220px;
+  min-width: 220px;
+  background: #fff;
+  border-right: 1px solid #bbb;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px;
+  overflow-y: auto;
+  gap: 8px;
+}
+
+.rd-filter-group { display: flex; flex-direction: column; gap: 3px; }
+
+.rd-flabel {
+  font-size: 10px;
+  font-weight: 600;
+  color: #444;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.rd-select {
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 5px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  background: #f9f9f9;
+  color: #111;
+  width: 100%;
+  &:focus { outline: none; border-color: $blue; }
+}
+
+.rd-last-run {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: $teal;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  font-weight: 600;
+  &:hover:not(:disabled) { background: #00796b; }
+  &:disabled { opacity: 0.7; cursor: not-allowed; }
+}
+
+// ─── Radio Grid ───────────────────────────────────────────────────────────────
+.rd-radio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px;
+  background: #fafafa;
+}
+
+.rd-radio-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  cursor: pointer;
+  color: #333;
+  input { margin: 0; cursor: pointer; accent-color: $blue; }
+  &--active { font-weight: 700; color: $blue; }
+}
+
+// ─── Chart ────────────────────────────────────────────────────────────────────
+.rd-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.rd-chart-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #555;
+  text-transform: uppercase;
+}
+
+.rd-ct-toggle {
+  display: flex;
+  gap: 2px;
+}
+
+.rd-ct-btn {
+  display: flex;
+  align-items: center;
+  padding: 2px 5px;
+  border: 1px solid #ccc;
+  background: #f0f0f0;
+  border-radius: 3px;
+  cursor: pointer;
+  color: #555;
+  &.--on { background: $blue; color: #fff; border-color: $blue; }
+  &:hover:not(.--on) { background: #e0e8f0; }
+}
+
+.rd-chart-wrap { margin-top: 2px; }
+
+.rd-prognosis-box {
+  background: #f0f4f8;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 10.5px;
+}
+
+.rd-prog-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 1px 0;
+  strong { color: $blue; }
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+.rd-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.rd-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #777;
+  font-size: 13px;
+}
+
+// ─── Calendar ─────────────────────────────────────────────────────────────────
+.rd-calendar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 4px;
+  overflow: auto;
+}
+
+.rd-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.rd-cal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: $blue;
+  min-width: 200px;
+  text-align: center;
+}
+
+.rd-nav-btn {
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  color: $blue;
+  &:hover { background: #eef2f8; border-color: $blue; }
+}
+
+.rd-cal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+}
+
+// Header row — 8 columns
+.rd-cal-hdr-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr) 1.1fr;
+  gap: 3px;
+}
+
+.rd-cal-hdr {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #555;
+  padding: 4px 0;
+  background: #dde3ea;
+  border-radius: 3px;
+  &--total { background: #c8d4e8; color: $blue; }
+}
+
+// Each week row — 7 day cells + 1 total cell
+.rd-week-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr) 1.1fr;
+  gap: 3px;
+}
+
+// ─── Day Cells ────────────────────────────────────────────────────────────────
+.rd-cell {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 4px 5px;
+  min-height: 72px;
+  cursor: default;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+
+  &--blank       { background: transparent; border-color: transparent; }
+  &--zero        { background: #fafafa; border-color: #eee; }
+  &--today       { background: #fde8ec; border-color: #f06292; }
+  &--max         { background: #fff9c4; border-color: #f9a825; }
+  &--min         { background: #eeeeee; border-color: #bdbdbd; }
+  &--week-total  { background: #e8eef8; border-color: #a0b4d0; border-width: 1.5px; }
+  &--col-total   { background: #e4f0e8; border-color: #88bb99; border-width: 1.5px; }
+  &--grand-corner{ background: #d0dff0; border-color: $blue; border-width: 2px; }
+}
+
+.rd-col-total-row { margin-top: 4px; border-top: 2px solid #aaa; padding-top: 4px; }
+
+.rd-cell-wk-label {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: $blue;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 1px;
+}
+
+.rd-cell-day {
+  font-size: 12px;
+  font-weight: 700;
+  color: #333;
+}
+
+.rd-cell-total {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1565c0;
+  line-height: 1;
+}
+
+.rd-cell-amt {
+  font-size: 11px;
+  color: $red;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.rd-cell-badges {
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.rd-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1.4;
+  &--panel { background: #e8f5e9; color: $green; border: 1px solid #a5d6a7; }
+  &--cash  { background: #fff3e0; color: $ora;   border: 1px solid #ffcc80; }
+}
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+.rd-cal-legend {
+  display: flex;
+  gap: 12px;
+  padding: 6px 2px;
+  font-size: 10px;
+}
+
+.rd-leg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  &::before {
+    content: '';
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 1px solid #bbb;
+  }
+  &--today::before  { background: #fde8ec; border-color: #f06292; }
+  &--max::before    { background: #fff9c4; border-color: #f9a825; }
+  &--min::before    { background: #eeeeee; border-color: #bdbdbd; }
+  &--panel::before  { background: #e8f5e9; border-color: #a5d6a7; }
+  &--cash::before   { background: #fff3e0; border-color: #ffcc80; }
+}
+
+// ─── Yearly Monthly ───────────────────────────────────────────────────────────
+.rd-yearly {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 4px;
+  overflow: auto;
+}
+
+.rd-month-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rd-month-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  &--max { background: #fff9c4; border-color: #f9a825; }
+  &--zero { background: #fafafa; color: #aaa; }
+}
+
+.rd-mc-name     { font-size: 13px; font-weight: 700; color: $blue; }
+.rd-mc-patients { font-size: 12px; color: #1565c0; font-weight: 600; }
+.rd-mc-amount   { font-size: 11px; color: $red; font-weight: 600; }
+.rd-mc-bar-wrap { background: #eee; border-radius: 2px; height: 4px; margin: 3px 0; }
+.rd-mc-bar      { background: $blue; height: 100%; border-radius: 2px; transition: width 0.3s; }
+.rd-mc-sub      { display: flex; gap: 4px; margin-top: 2px; }
+
+// ─── Multi Year ───────────────────────────────────────────────────────────────
+.rd-multiyear {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px 4px;
+  overflow: auto;
+}
+
+.rd-year-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+.rd-year-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+.rd-yr-label    { width: 50px; font-weight: 700; color: $blue; font-size: 13px; }
+.rd-yr-bar-wrap { flex: 1; background: #eee; border-radius: 3px; height: 10px; }
+.rd-yr-bar      { background: $blue; height: 100%; border-radius: 3px; transition: width 0.3s; }
+.rd-yr-patients { width: 80px; text-align: right; color: #1565c0; font-size: 11px; font-weight: 600; }
+.rd-yr-amount   { width: 110px; text-align: right; color: $red; font-size: 11px; font-weight: 600; }
+
+// ─── Summary Bar ──────────────────────────────────────────────────────────────
+.rd-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-top: 2px solid #bbb;
+  padding: 8px 16px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.rd-sum-left {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.rd-sum-item { padding: 0 16px; }
+
+.rd-sum-sep {
+  width: 1px;
+  height: 36px;
+  background: #ddd;
+}
+
+.rd-sum-lbl { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.3px; }
+.rd-sum-val { font-size: 13px; font-weight: 700; color: #333; }
+
+.rd-sum-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: #f0f4fa;
+  border-radius: 6px;
+  padding: 8px 16px;
+  border: 1px solid #d0daea;
+}
+
+.rd-sum-big {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rd-sum-icon { font-size: 18px; }
+
+.rd-sum-big-val {
+  font-size: 18px;
+  font-weight: 700;
+  &--p { color: #c62828; }
+  &--a { color: #1565c0; }
+}
+
+// ─── Spinner ──────────────────────────────────────────────────────────────────
+@keyframes rd-spin { to { transform: rotate(360deg); } }
+.rd-spin { animation: rd-spin 0.8s linear infinite; }
