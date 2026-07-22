@@ -194,7 +194,15 @@ const SUBDEPT_INCLUDE = {
 async function getAvailableDoctors({ day, time, onCall, departmentName }) {
   const where = { doctor: { status: 'active' } };
   if (departmentName) {
-    where.subDept = { department: { name: { equals: departmentName, mode: 'insensitive' } } };
+    // Department ko NORMALIZED tareeqe se match karo (case, spaces, punctuation ignore).
+    // Isse "Blood Bank" ↔ "BLOOD BANK", "Dental OPD" ↔ "DENTAL OPD" jaise minor farak khud
+    // handle ho jaate hain — har baar exact naam match ki zaroorat nahi (kam breakage).
+    const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const target = norm(departmentName);
+    const depts = await prisma.clinicDepartment.findMany({ select: { id: true, name: true } });
+    const ids = depts.filter((d) => norm(d.name) === target).map((d) => d.id);
+    if (ids.length === 0) return [];
+    where.subDept = { departmentId: { in: ids } };
   }
   const rows = await prisma.clinicDoctorSubDept.findMany({
     where,
@@ -873,20 +881,17 @@ async function bulkCreatePatientVisits(rows) {
   const result = await prisma.patientVisit.createMany({ data });
 
   // Auto-create new doctors in ClinicDoctor from imported doctor names
-  const uniqueNames = [...new Set(
+  const uniqueDoctorNames = [...new Set(
     data.map(r => r.doctor).filter(Boolean).map(n => n.trim())
   )];
 
-  if (uniqueNames.length > 0) {
-    const existing = await prisma.clinicDoctor.findMany({
-      select: { name: true },
-    });
+  if (uniqueDoctorNames.length > 0) {
+    const existing = await prisma.clinicDoctor.findMany({ select: { name: true } });
     const existingNames = new Set(existing.map(d => d.name.toLowerCase()));
 
-    for (const name of uniqueNames) {
+    for (const name of uniqueDoctorNames) {
       if (existingNames.has(name.toLowerCase())) continue;
 
-      // Generate unique code from name initials
       const initials = name.split(/\s+/).filter(Boolean)
         .map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DR';
       let code = initials;
@@ -895,8 +900,33 @@ async function bulkCreatePatientVisits(rows) {
         code = `${initials}${i++}`;
       }
 
-      await prisma.clinicDoctor.create({ data: { code, name } });
+      await prisma.clinicDoctor.create({ data: { code, name, consultantDays: [] } });
       existingNames.add(name.toLowerCase());
+    }
+  }
+
+  // Auto-create new departments in ClinicDepartment from imported department names
+  const uniqueDeptNames = [...new Set(
+    data.map(r => r.department).filter(Boolean).map(n => n.trim())
+  )];
+
+  if (uniqueDeptNames.length > 0) {
+    const existingDepts = await prisma.clinicDepartment.findMany({ select: { name: true } });
+    const existingDeptNames = new Set(existingDepts.map(d => d.name.toLowerCase()));
+
+    for (const name of uniqueDeptNames) {
+      if (existingDeptNames.has(name.toLowerCase())) continue;
+
+      const words = name.split(/\s+/).filter(Boolean);
+      const initials = words.map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DEPT';
+      let code = initials;
+      let i = 1;
+      while (await prisma.clinicDepartment.findFirst({ where: { code } })) {
+        code = `${initials}${i++}`;
+      }
+
+      await prisma.clinicDepartment.create({ data: { code, name } });
+      existingDeptNames.add(name.toLowerCase());
     }
   }
 
@@ -1144,8 +1174,12 @@ async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
   for (const row of rows) {
     const normTest = normNameSvc(row.testName);
 
-    // Try to find existing sub-dept
-    let subDept = allSubDepts.find((sd) => normNameSvc(sd.name) === normTest);
+    // Try to find existing sub-dept — SIRF selected department ke andar (poore DB mein nahi).
+    // Warna ek test jo kisi aur department mein mojood ho, wo galti se reuse ho jaata tha aur
+    // selected department khali reh jaata (phantom empty department). Isliye dept.id se scope.
+    let subDept = dept
+      ? allSubDepts.find((sd) => sd.departmentId === dept.id && normNameSvc(sd.name) === normTest)
+      : allSubDepts.find((sd) => normNameSvc(sd.name) === normTest);
 
     // If not found and we have a department → auto-create sub-dept
     if (!subDept && dept) {
@@ -1314,7 +1348,8 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   period = period || 'monthly_daily';
 
   // ── PatientVisit WHERE ────────────────────────────────────────────────────
-  const pvConds  = [`"paymentType" != 'CANCELED'`];
+  // Cancelled slips revenue dashboard mein NAHI aayengi (case-insensitive, dono spellings).
+  const pvConds  = [`LOWER("paymentType") NOT IN ('canceled','cancelled')`];
   const pvParams = [];
   if (department && department !== 'ALL') { pvParams.push(department);             pvConds.push(`department ILIKE $${pvParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { pvParams.push(subDept);                pvConds.push(`"subDepartment" ILIKE $${pvParams.length}`); }
@@ -1323,13 +1358,25 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   const pvWhere = pvConds.join(' AND ');
 
   // ── ClinicOpdVisit WHERE ──────────────────────────────────────────────────
-  const ovConds  = [];
+  // Cancelled slips revenue dashboard mein NAHI aayengi (PatientVisit side "paymentType != CANCELED"
+  // se hota hai; OPD side status se — dono tables consistent).
+  const ovConds  = [`(status IS NULL OR LOWER(status) NOT IN ('canceled','cancelled'))`];
   const ovParams = [];
   if (department && department !== 'ALL') { ovParams.push(department);             ovConds.push(`department ILIKE $${ovParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { ovParams.push(subDept);                ovConds.push(`EXISTS (SELECT 1 FROM "ClinicOpdVisitDoctor" cod JOIN "ClinicSubDept" sd ON sd.id = cod."subDeptId" WHERE cod."visitId" = "ClinicOpdVisit".id AND sd.name ILIKE $${ovParams.length})`); }
   if (consultant && consultant !== 'ALL') { ovParams.push(consultant);             ovConds.push(`EXISTS (SELECT 1 FROM "ClinicOpdVisitDoctor" cod JOIN "ClinicDoctor" d ON d.id = cod."doctorId" WHERE cod."visitId" = "ClinicOpdVisit".id AND d.name ILIKE $${ovParams.length})`); }
   if (paymentType && paymentType !== 'ALL') { ovParams.push(paymentType.toLowerCase()); ovConds.push(`LOWER("paymentType") = $${ovParams.length}`); }
   const ovWhere = ovConds.length > 0 ? ovConds.join(' AND ') : 'TRUE';
+
+  // ── Business day (hospital day) ───────────────────────────────────────────
+  // Hospital ka din subah 8:00 AM se shuru ho kar agle din 7:59:59 AM tak chalta hai,
+  // aur wo START waale din ke naam se count hota hai. To kisi visit ka business date =
+  // DATE(timestamp - 8 hours). e.g. 3 July 07:59 AM → 2 July; 3 July 08:00 AM → 3 July.
+  //   PatientVisit: visitDate (date) + visitTime (text "HH:MM") ko jodo, phir 8h ghatao.
+  //                 time null/blank ho to midday maan lo taake apne hi visitDate par rahe.
+  //   ClinicOpdVisit: createdAt timestamp se seedha 8h ghatao.
+  const PV_BIZ = `(("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time)) - INTERVAL '8 hours')::date`;
+  const OV_BIZ = `("createdAt" - INTERVAL '8 hours')::date`;
 
   // ── Helper: aggregate row → object ───────────────────────────────────────
   const toObj = (r, keyField) => ({
@@ -1396,19 +1443,19 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     const pvP = [...pvParams, startDate, endDate];
     const pvSi = pvParams.length + 1, pvEi = pvParams.length + 2;
     const pvRows = await prisma.$queryRawUnsafe(`
-      SELECT "visitDate"::text AS date, ${pvAggCols}
+      SELECT ${PV_BIZ}::text AS date, ${pvAggCols}
       FROM "PatientVisit"
-      WHERE ${pvWhere} AND "visitDate" >= $${pvSi}::date AND "visitDate" <= $${pvEi}::date
-      GROUP BY "visitDate" ORDER BY "visitDate"
+      WHERE ${pvWhere} AND ${PV_BIZ} >= $${pvSi}::date AND ${PV_BIZ} <= $${pvEi}::date
+      GROUP BY ${PV_BIZ} ORDER BY ${PV_BIZ}
     `, ...pvP);
 
     const ovP = [...ovParams, startDate, endDate];
     const ovSi = ovParams.length + 1, ovEi = ovParams.length + 2;
     const ovRows = await prisma.$queryRawUnsafe(`
-      SELECT DATE("createdAt")::text AS date, ${ovAggCols}
+      SELECT ${OV_BIZ}::text AS date, ${ovAggCols}
       FROM "ClinicOpdVisit"
-      WHERE ${ovWhere} AND DATE("createdAt") >= $${ovSi}::date AND DATE("createdAt") <= $${ovEi}::date
-      GROUP BY DATE("createdAt") ORDER BY date
+      WHERE ${ovWhere} AND ${OV_BIZ} >= $${ovSi}::date AND ${OV_BIZ} <= $${ovEi}::date
+      GROUP BY ${OV_BIZ} ORDER BY date
     `, ...ovP);
 
     const pvMap = {}, ovMap = {};
@@ -1426,19 +1473,19 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     const pvP = [...pvParams, year];
     const pvYi = pvParams.length + 1;
     const pvRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(MONTH FROM "visitDate")::int AS month, ${pvAggCols}
+      SELECT EXTRACT(MONTH FROM ${PV_BIZ})::int AS month, ${pvAggCols}
       FROM "PatientVisit"
-      WHERE ${pvWhere} AND EXTRACT(YEAR FROM "visitDate") = $${pvYi}
-      GROUP BY EXTRACT(MONTH FROM "visitDate") ORDER BY month
+      WHERE ${pvWhere} AND EXTRACT(YEAR FROM ${PV_BIZ}) = $${pvYi}
+      GROUP BY EXTRACT(MONTH FROM ${PV_BIZ}) ORDER BY month
     `, ...pvP);
 
     const ovP = [...ovParams, year];
     const ovYi = ovParams.length + 1;
     const ovRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(MONTH FROM "createdAt")::int AS month, ${ovAggCols}
+      SELECT EXTRACT(MONTH FROM ${OV_BIZ})::int AS month, ${ovAggCols}
       FROM "ClinicOpdVisit"
-      WHERE ${ovWhere} AND EXTRACT(YEAR FROM "createdAt") = $${ovYi}
-      GROUP BY EXTRACT(MONTH FROM "createdAt") ORDER BY month
+      WHERE ${ovWhere} AND EXTRACT(YEAR FROM ${OV_BIZ}) = $${ovYi}
+      GROUP BY EXTRACT(MONTH FROM ${OV_BIZ}) ORDER BY month
     `, ...ovP);
 
     const pvMap = {}, ovMap = {};
@@ -1453,15 +1500,15 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
 
   } else if (period === 'multi_year') {
     const pvRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM "visitDate")::int AS year, ${pvAggCols}
+      SELECT EXTRACT(YEAR FROM ${PV_BIZ})::int AS year, ${pvAggCols}
       FROM "PatientVisit" WHERE ${pvWhere}
-      GROUP BY EXTRACT(YEAR FROM "visitDate") ORDER BY year
+      GROUP BY EXTRACT(YEAR FROM ${PV_BIZ}) ORDER BY year
     `, ...pvParams);
 
     const ovRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM "createdAt")::int AS year, ${ovAggCols}
+      SELECT EXTRACT(YEAR FROM ${OV_BIZ})::int AS year, ${ovAggCols}
       FROM "ClinicOpdVisit" WHERE ${ovWhere}
-      GROUP BY EXTRACT(YEAR FROM "createdAt") ORDER BY year
+      GROUP BY EXTRACT(YEAR FROM ${OV_BIZ}) ORDER BY year
     `, ...ovParams);
 
     const pvMap = {}, ovMap = {};
@@ -1490,8 +1537,8 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     const ovLyP   = [...ovParams, lyStart, lyEnd];
     const ovLySi  = ovParams.length + 1, ovLyEi = ovParams.length + 2;
     const [pvLy, ovLy] = await Promise.all([
-      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND "visitDate" >= $${pvLySi}::date AND "visitDate" <= $${pvLyEi}::date`, ...pvLyP),
-      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(receive),0) AS total FROM "ClinicOpdVisit" WHERE ${ovWhere} AND DATE("createdAt") >= $${ovLySi}::date AND DATE("createdAt") <= $${ovLyEi}::date`, ...ovLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND ${PV_BIZ} >= $${pvLySi}::date AND ${PV_BIZ} <= $${pvLyEi}::date`, ...pvLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(receive),0) AS total FROM "ClinicOpdVisit" WHERE ${ovWhere} AND ${OV_BIZ} >= $${ovLySi}::date AND ${OV_BIZ} <= $${ovLyEi}::date`, ...ovLyP),
     ]);
     lastYearAmount = Number(pvLy[0]?.total||0) + Number(ovLy[0]?.total||0);
   }
@@ -1499,18 +1546,18 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   // Trend: last 12 months (both tables)
   const [pvTrend, ovTrend] = await Promise.all([
     prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM "visitDate")::int AS year, EXTRACT(MONTH FROM "visitDate")::int AS month,
+      SELECT EXTRACT(YEAR FROM ${PV_BIZ})::int AS year, EXTRACT(MONTH FROM ${PV_BIZ})::int AS month,
         COUNT(*)::int AS "totalPatients", COALESCE(SUM(received),0) AS "totalAmount"
       FROM "PatientVisit"
-      WHERE ${pvWhere} AND "visitDate" >= (CURRENT_DATE - INTERVAL '12 months')
-      GROUP BY EXTRACT(YEAR FROM "visitDate"), EXTRACT(MONTH FROM "visitDate") ORDER BY year, month
+      WHERE ${pvWhere} AND ${PV_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY EXTRACT(YEAR FROM ${PV_BIZ}), EXTRACT(MONTH FROM ${PV_BIZ}) ORDER BY year, month
     `, ...pvParams),
     prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM "createdAt")::int AS year, EXTRACT(MONTH FROM "createdAt")::int AS month,
+      SELECT EXTRACT(YEAR FROM ${OV_BIZ})::int AS year, EXTRACT(MONTH FROM ${OV_BIZ})::int AS month,
         COUNT(*)::int AS "totalPatients", COALESCE(SUM(receive),0) AS "totalAmount"
       FROM "ClinicOpdVisit"
-      WHERE ${ovWhere} AND "createdAt" >= (CURRENT_DATE - INTERVAL '12 months')
-      GROUP BY EXTRACT(YEAR FROM "createdAt"), EXTRACT(MONTH FROM "createdAt") ORDER BY year, month
+      WHERE ${ovWhere} AND ${OV_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY EXTRACT(YEAR FROM ${OV_BIZ}), EXTRACT(MONTH FROM ${OV_BIZ}) ORDER BY year, month
     `, ...ovParams),
   ]);
 

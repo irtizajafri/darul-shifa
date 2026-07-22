@@ -53,21 +53,29 @@ function parseExcelFile(file) {
 
         const rows = [];
         for (const row of raw) {
-          if (typeof row[0] !== 'number' || row[0] < 1000) continue;
-          if (typeof row[2] !== 'number' || row[2] < 40000) continue;
+          const sNo = Number(row[0]);
+          if (!sNo || sNo < 1000) continue;
+          // Some rows: col[2]=AdmitNo (large), col[3]=Date, col[4]=Time, col[5]=PatientName
+          // Other rows: col[2]=DateTime combined, col[4]=PatientName (string)
+          const col2 = Number(row[2]);
+          const col3 = Number(row[3]);
+          const shifted = col3 >= 40000 && col3 < 65000;
+          const dateSerial = shifted ? col3 : col2;
+          if (!dateSerial || dateSerial < 40000) continue;
+          const s = shifted ? 1 : 0;
           rows.push({
-            serialNo:      row[0],
-            admitNo:       row[1] !== '' ? row[1] : null,
-            visitDate:     excelSerialToDateStr(row[2]),
-            visitTime:     excelFractionToTime(row[2]),
-            patientName:   String(row[4]          || '').trim(),
-            department:    String(row[COL.dept]   || '').trim() || null,
-            subDepartment: COL.subDept != null ? (String(row[COL.subDept] || '').trim() || null) : null,
-            doctor:        String(row[COL.doctor]   || '').trim() || null,
-            paymentType:   String(row[COL.type]     || '').trim() || null,
-            received:      Number(row[COL.received]) || 0,
-            balance:       Number(row[COL.bal])      || 0,
-            discount:      Number(row[COL.dis])      || 0,
+            serialNo:      sNo,
+            admitNo:       shifted ? (col2 || null) : (row[1] !== '' ? Number(row[1]) || null : null),
+            visitDate:     excelSerialToDateStr(dateSerial),
+            visitTime:     shifted ? excelFractionToTime(row[4]) : excelFractionToTime(row[2]),
+            patientName:   String(row[4 + s]                || '').trim(),
+            department:    String(row[COL.dept    + s]      || '').trim() || null,
+            subDepartment: COL.subDept != null ? (String(row[COL.subDept + s] || '').trim() || null) : null,
+            doctor:        String(row[COL.doctor  + s]      || '').trim() || null,
+            paymentType:   String(row[COL.type    + s]      || '').trim() || null,
+            received:      Number(row[COL.received + s])    || 0,
+            balance:       Number(row[COL.bal      + s])    || 0,
+            discount:      Number(row[COL.dis      + s])    || 0,
           });
         }
         resolve(rows);
@@ -87,8 +95,8 @@ export default function PatientsListReport() {
 
   const fromDate = searchParams.get('fromDate') || new Date().toISOString().split('T')[0];
   const toDate   = searchParams.get('toDate')   || fromDate;
-  const fromTime = searchParams.get('fromTime') || '08:00';
-  const toTime   = searchParams.get('toTime')   || '07:59';
+  const fromTime = searchParams.get('fromTime') || '08:00:00';
+  const toTime   = searchParams.get('toTime')   || '07:59:59';
   const types    = searchParams.get('types')?.split(',').filter(Boolean) || [];
 
   const [visits, setVisits]       = useState([]);

@@ -25,10 +25,17 @@ function parseRatesExcel(file) {
         const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
         if (raw.length < 2) return resolve({ deptTitle: '', rows: [] });
 
-        // Detect if row 0 is a title or headers
-        // Headers contain "Sr" or "Test" or "Rate"
-        const row0Str = raw[0].map((c) => String(c).toLowerCase()).join(' ');
-        const isHeader0 = row0Str.includes('sr') || row0Str.includes('test') || row0Str.includes('rate');
+        // Detect if row 0 is a proper column-header row vs a department title.
+        // A title like "OUTSIDE TEST" contains the word "test" but is a single cell —
+        // a real header has multiple column signals (Sr# + Test Name + Rate).
+        const cells0    = raw[0].map((c) => String(c).toLowerCase().replace(/[\s()#.]/g, ''));
+        const nonEmpty0 = cells0.filter(Boolean).length;
+        const hasSr   = cells0.some((h) => h.startsWith('sr') || h === 'no' || h === 'srno');
+        const hasName = cells0.some((h) => h.includes('test') || h.includes('name'));
+        const hasRate = cells0.some((h) => h.includes('rate') || h.includes('rs') || h.includes('fee'));
+        const isHeader0 =
+          (hasSr && hasName) || (hasName && hasRate) || (hasSr && hasRate) ||
+          (nonEmpty0 >= 2 && (hasSr || hasName || hasRate));
         const headerRowIdx = isHeader0 ? 0 : 1;
         const deptTitle = !isHeader0 ? String(raw[0][0] || '').trim() : '';
         const dataStart = headerRowIdx + 1;
@@ -94,6 +101,7 @@ export default function ClinicDoctorPage() {
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadRows, setUploadRows] = useState([]);
   const [uploadDeptTitle, setUploadDeptTitle] = useState('');
+  const [detectedTitle, setDetectedTitle] = useState(''); // file ka title row — sirf suggestion, auto-fill nahi
   const [uploadParsing, setUploadParsing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const uploadFileRef = useRef(null);
@@ -266,9 +274,14 @@ export default function ClinicDoctorPage() {
     try {
       const { deptTitle, rows } = await parseRatesExcel(file);
       setUploadRows(rows);
-      setUploadDeptTitle(deptTitle);
-      if (deptTitle) toast(`Department: ${deptTitle} — ${rows.length} tests found`);
-      else toast.success(`${rows.length} rows parsed`);
+      setDetectedTitle(deptTitle);
+      // Sirf jab file ka title kisi EXISTING department se EXACTLY match kare to auto-select
+      // (safe — ye real department hai). Warna blank rehta hai, user dropdown se sahi dept chune.
+      const match = departments.find(
+        (d) => d.name.trim().toLowerCase() === (deptTitle || '').trim().toLowerCase()
+      );
+      setUploadDeptTitle(match ? match.name : '');
+      toast.success(`${rows.length} tests mile${match ? ` — Department: ${match.name}` : ' — ab Department chuno'}`);
     } catch {
       toast.error('Excel parse failed');
       setUploadRows([]);
@@ -280,6 +293,7 @@ export default function ClinicDoctorPage() {
   async function handleUploadSubmit() {
     if (!uploadDoctorId) return toast.error('Doctor select karo pehle');
     if (uploadRows.length === 0) return toast.error('Koi rows nahi mili Excel mein');
+    if (!uploadDeptTitle.trim()) return toast.error('Department naam daalo (Excel mein title nahi mila)');
     setUploading(true);
     try {
       const uploadDoctor = doctors.find((d) => String(d.id) === uploadDoctorId);
@@ -300,6 +314,7 @@ export default function ClinicDoctorPage() {
       setUploadFile(null);
       setUploadRows([]);
       setUploadDeptTitle('');
+      setDetectedTitle('');
       if (uploadFileRef.current) uploadFileRef.current.value = '';
       await fetchDoctors();
       const { doctors: freshDoctors } = useClinicStore.getState();
@@ -319,6 +334,7 @@ export default function ClinicDoctorPage() {
     setUploadFile(null);
     setUploadRows([]);
     setUploadDeptTitle('');
+    setDetectedTitle('');
     if (uploadFileRef.current) uploadFileRef.current.value = '';
   }
 
@@ -327,6 +343,7 @@ export default function ClinicDoctorPage() {
     setUploadFile(null);
     setUploadRows([]);
     setUploadDeptTitle('');
+    setDetectedTitle('');
     if (uploadFileRef.current) uploadFileRef.current.value = '';
     setShowUploadModal(true);
   }
@@ -768,6 +785,34 @@ export default function ClinicDoctorPage() {
             />
           </div>
 
+          {/* Department — strict dropdown of existing departments (phantom dept banne se bachne ke liye) */}
+          <div className="cdp-field mt-3">
+            <label className="cdp-label">
+              Department <span style={{ color: '#ef4444' }}>*</span>
+              <span style={{ fontWeight: 400, color: '#888' }}> — inn tests ka department (list se chuno)</span>
+            </label>
+            <select
+              className="cdp-upload-file-input"
+              value={uploadDeptTitle}
+              onChange={(e) => setUploadDeptTitle(e.target.value)}
+            >
+              <option value="">— Department chuno —</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+            {detectedTitle && !uploadDeptTitle && (
+              <p className="cdp-upload-info">
+                File ka title: <strong>{detectedTitle}</strong> — is naam ka exact department nahi mila, upar list se sahi department chuno.
+              </p>
+            )}
+            {uploadFile && !uploadDeptTitle && (
+              <p className="cdp-upload-info" style={{ color: '#b45309' }}>
+                ⚠ Department chuno warna tests kisi department mein sync nahi honge.
+              </p>
+            )}
+          </div>
+
           {/* Parsing indicator */}
           {uploadParsing && <p className="cdp-upload-info">Parsing…</p>}
 
@@ -813,10 +858,11 @@ export default function ClinicDoctorPage() {
 
           {/* Format hint */}
           <div className="cdp-upload-hint">
-            <strong>Expected format (ULTRA SOUND.xlsx jesa):</strong><br />
-            Row 1: Department naam (e.g. ULTRA SOUND)<br />
-            Row 2: Sr# &nbsp;|&nbsp; Test Name &nbsp;|&nbsp; Rate (Rs.)<br />
-            Row 3+: 1 &nbsp;|&nbsp; BREAST BOTH &nbsp;|&nbsp; 1600
+            <strong>Do format chalte hain:</strong><br />
+            <u>Title row ke sath</u> (Radiology.xlsx): Row 1 = ULTRA SOUND → suggestion dikhega, chaho to use karo<br />
+            <u>Bina title (lab_tests.xlsx):</u> Row 1 = Sr# | Test Name | Rate<br />
+            <strong>Department hamesha aap khud select karo</strong> — file ka title zaroori nahi department ho.<br />
+            Data: 1 &nbsp;|&nbsp; BREAST BOTH &nbsp;|&nbsp; 1600
           </div>
         </div>
 
@@ -826,7 +872,7 @@ export default function ClinicDoctorPage() {
             label={uploading ? 'Uploading…' : `Import ${uploadRows.length > 0 ? uploadRows.length + ' tests' : ''}`}
             onClick={handleUploadSubmit}
             loading={uploading}
-            disabled={!uploadDoctorId || uploadRows.length === 0 || uploading}
+            disabled={!uploadDoctorId || uploadRows.length === 0 || !uploadDeptTitle.trim() || uploading}
           />
         </div>
       </Modal>
