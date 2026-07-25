@@ -16,6 +16,7 @@ const menuItems = [
       { label: 'Bed',                  path: '/clinic/parameters/bed' },
       { label: 'Bill Heads',           path: '/clinic/parameters/bill-heads' },
       { label: 'Surgery Type',         path: '/clinic/parameters/surgery-types' },
+      { label: 'Death Certificate',    path: '/clinic/parameters/death-certificate' },
     ],
   },
   {
@@ -42,9 +43,16 @@ const menuItems = [
         ],
       },
       {
+        label: 'Transaction',
+        subItems: [
+          { label: 'Provisional Bill', path: '/clinic/panels/provisional-bill' },
+        ],
+      },
+      {
         label: 'Reports',
         subItems: [
           { label: 'Bill Comparison Report', path: '/clinic/panels/bill-comparison' },
+          { label: 'Billing Detail Report',  path: '/clinic/panels/billing-detail' },
         ],
       },
     ],
@@ -60,6 +68,7 @@ const menuItems = [
     items: [
       { label: 'Patients List',            path: '/clinic/reports/patients-list' },
       { label: 'Consultant Wise Patients', path: '/clinic/reports/consultant-wise' },
+      { label: 'Death Certificate Report', path: '/clinic/reports/death-certificate' },
     ],
   },
   { label: 'Window',    items: [] },

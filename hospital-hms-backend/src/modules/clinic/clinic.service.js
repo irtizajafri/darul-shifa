@@ -1685,7 +1685,145 @@ module.exports = {
   getRevenueDashboard,
   getBalanceSlips,
   receiveBalancePayment,
+  importPanelBillingDetail,
+  getPanelBillingDetails,
+  getPanelBillingByAdmit,
+  lookupAdmissionByNo,
+  searchAdmissions,
+  createDeathCertificate,
+  getDeathCertificates,
+  getDeathCertificate,
+  updateDeathCertificate,
+  bulkImportDeathCertificates,
 };
+
+// ─── Panel Billing Detail (bill-head wise) ───────────────────────────────────
+const PANEL_BILL_HEADS = [
+  { key: 'constFee',        label: 'Const Fee' },
+  { key: 'followUp',        label: 'Follow-up' },
+  { key: 'anesthesia',      label: 'Anesthesia' },
+  { key: 'medicine',        label: 'Medicine' },
+  { key: 'laboratory',      label: 'Laboratory' },
+  { key: 'costOfBlood',     label: 'Cost of Blood' },
+  { key: 'echocardiograph', label: 'Echocardiograph' },
+  { key: 'ultrasound',      label: 'Ultrasound' },
+  { key: 'xRay',            label: 'X-Ray' },
+  { key: 'physiotherapy',   label: 'Physiotherapy' },
+  { key: 'ctScan',          label: 'C.T. Scan' },
+  { key: 'surgeonFee',      label: 'Surgeon Fee' },
+];
+
+async function generateBillHeadCode(label) {
+  const base = label.split(/\s+/).filter(Boolean).map(w => w[0]).join('')
+    .toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 8) || 'BH';
+  if (!(await prisma.clinicBillHead.findUnique({ where: { headCode: base } }))) return base;
+  for (let i = 1; i <= 999; i++) {
+    const c = `${base}${i}`;
+    if (!(await prisma.clinicBillHead.findUnique({ where: { headCode: c } }))) return c;
+  }
+  return `${base}_${Date.now()}`;
+}
+
+const dnum = (v) => (v == null ? 0 : Number(v));
+function panelRowToNum(r) {
+  return {
+    id: r.id, admitNo: r.admitNo, patientName: r.patientName, consCode: r.consCode,
+    companyName: r.companyName, panelCompanyId: r.panelCompanyId,
+    constFee: dnum(r.constFee), followUp: dnum(r.followUp), anesthesia: dnum(r.anesthesia),
+    medicine: dnum(r.medicine), laboratory: dnum(r.laboratory), costOfBlood: dnum(r.costOfBlood),
+    echocardiograph: dnum(r.echocardiograph), ultrasound: dnum(r.ultrasound), xRay: dnum(r.xRay),
+    physiotherapy: dnum(r.physiotherapy), ctScan: dnum(r.ctScan), surgeonFee: dnum(r.surgeonFee),
+    totalAmount: dnum(r.totalAmount), periodFrom: r.periodFrom, periodTo: r.periodTo,
+  };
+}
+
+// Upload: auto-create 12 bill heads + panel companies, then REPLACE all rows (cumulative snapshot)
+async function importPanelBillingDetail({ rows, periodFrom, periodTo }) {
+  const result = { billHeadsCreated: 0, companiesCreated: 0, rowsInserted: 0 };
+  if (!Array.isArray(rows) || rows.length === 0) return result;
+
+  // 1. Auto-create the 12 bill heads (find-or-create by description)
+  for (const bh of PANEL_BILL_HEADS) {
+    const existing = await prisma.clinicBillHead.findFirst({
+      where: { description: { equals: bh.label, mode: 'insensitive' } },
+    });
+    if (!existing) {
+      const headCode = await generateBillHeadCode(bh.label);
+      await prisma.clinicBillHead.create({ data: { headCode, description: bh.label, type: 'both', status: 'active' } });
+      result.billHeadsCreated++;
+    }
+  }
+
+  // 2. Auto-create panel companies (find-or-create by name)
+  const companyMap = {};
+  const uniqueCompanies = [...new Set(rows.map(r => (r.companyName || '').trim()).filter(Boolean))];
+  for (const name of uniqueCompanies) {
+    let co = await prisma.clinicPanelCompany.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+    if (!co) {
+      const code = await generateCompanyCode(name);
+      co = await prisma.clinicPanelCompany.create({ data: { name, code, status: 'active' } });
+      result.companiesCreated++;
+    }
+    companyMap[name.toLowerCase()] = co.id;
+  }
+
+  // 3. Replace all existing rows with this upload
+  const pf = periodFrom ? new Date(periodFrom) : null;
+  const pt = periodTo   ? new Date(periodTo)   : null;
+  const data = rows.map(r => ({
+    admitNo:        r.admitNo != null && r.admitNo !== '' ? String(r.admitNo) : null,
+    patientName:    r.patientName || '',
+    consCode:       (r.consCode && r.consCode !== '.') ? r.consCode : null,
+    companyName:    r.companyName || null,
+    panelCompanyId: r.companyName ? (companyMap[r.companyName.trim().toLowerCase()] || null) : null,
+    constFee: dnum(r.constFee), followUp: dnum(r.followUp), anesthesia: dnum(r.anesthesia),
+    medicine: dnum(r.medicine), laboratory: dnum(r.laboratory), costOfBlood: dnum(r.costOfBlood),
+    echocardiograph: dnum(r.echocardiograph), ultrasound: dnum(r.ultrasound), xRay: dnum(r.xRay),
+    physiotherapy: dnum(r.physiotherapy), ctScan: dnum(r.ctScan), surgeonFee: dnum(r.surgeonFee),
+    totalAmount: dnum(r.totalAmount), periodFrom: pf, periodTo: pt,
+  }));
+
+  await prisma.clinicPanelBillingDetail.deleteMany({});
+  const CHUNK = 1000;
+  for (let i = 0; i < data.length; i += CHUNK) {
+    await prisma.clinicPanelBillingDetail.createMany({ data: data.slice(i, i + CHUNK) });
+  }
+  result.rowsInserted = data.length;
+  return result;
+}
+
+// Report list with filters (organisation / person / consultant)
+async function getPanelBillingDetails({ organisation, person, consultant } = {}) {
+  const where = {};
+  if (organisation && organisation !== 'ALL') where.companyName = { equals: organisation, mode: 'insensitive' };
+  if (consultant && consultant !== 'ALL' && consultant.trim()) where.consCode = { contains: consultant.trim(), mode: 'insensitive' };
+  if (person && person.trim()) where.patientName = { contains: person.trim(), mode: 'insensitive' };
+
+  const rows = await prisma.clinicPanelBillingDetail.findMany({ where, orderBy: { id: 'asc' } });
+  const periodRow = await prisma.clinicPanelBillingDetail.findFirst({ select: { periodFrom: true, periodTo: true } });
+
+  const HEAD_KEYS = PANEL_BILL_HEADS.map(h => h.key).concat('totalAmount');
+  const totals = {};
+  for (const k of HEAD_KEYS) totals[k] = 0;
+  const mapped = rows.map(r => {
+    const m = panelRowToNum(r);
+    for (const k of HEAD_KEYS) totals[k] += m[k];
+    return m;
+  });
+  return {
+    rows: mapped,
+    count: mapped.length,
+    totals,
+    period: periodRow ? { from: periodRow.periodFrom, to: periodRow.periodTo } : null,
+    heads: PANEL_BILL_HEADS,
+  };
+}
+
+// Single admission lookup for the Provisional Bill screen
+async function getPanelBillingByAdmit(admitNo) {
+  const row = await prisma.clinicPanelBillingDetail.findFirst({ where: { admitNo: String(admitNo) } });
+  return row ? panelRowToNum(row) : null;
+}
 
 // ─── Panel Bill Comparison ────────────────────────────────────────────────────
 
@@ -1866,4 +2004,273 @@ async function importBillComparison(rows) {
 
 async function getBillComparisons() {
   return prisma.clinicPanelBillRow.findMany({ orderBy: { sno: 'asc' } });
+}
+
+// ─── Death Certificate ────────────────────────────────────────────────────────
+
+// Lookup an admission by its admission number — used by the Death Certificate
+// screen's Admission # search. Priority:
+//   1. ClinicDeathCertificate — a certificate already exists (manual entry earlier,
+//      or bulk-imported from the report's Excel format) → return the FULL record
+//      so the form auto-fills everything (Death Time, Place, Relation, Religion,
+//      Occupation, Cause, Medical Officer, Dr Address), not just the admission snapshot.
+//   2. ClinicAdmission — new admissions created via the Admission screen.
+//   3. PatientVisit.admitNo — old bulk-imported patient list (no age/gender/slip#,
+//      those stay blank for manual entry).
+async function lookupAdmissionByNo(admissionNo) {
+  const no = String(admissionNo).trim();
+
+  // Many legacy "Brought Dead" certificates share a placeholder admissionNo ("1"),
+  // so also match on arrivedSlipNo (the hospital's real unique certificate/slip #).
+  const cert = await prisma.clinicDeathCertificate.findFirst({
+    where: { OR: [{ admissionNo: no }, { arrivedSlipNo: no }] },
+    orderBy: { id: 'desc' },
+  });
+  if (cert) {
+    return {
+      admissionId: cert.admissionId, admissionNo: cert.admissionNo, arrivedSlipNo: cert.arrivedSlipNo,
+      patientName: cert.patientName, ageYears: cert.ageYears, ageMonths: cert.ageMonths,
+      ageDays: cert.ageDays, gender: cert.gender, source: 'certificate',
+      existingCertificateId: cert.id,
+      deathTime: cert.deathTime, deathPlace: cert.deathPlace,
+      relationType: cert.relationType, relationName: cert.relationName,
+      religion: cert.religion, occupation: cert.occupation, causeOfDeath: cert.causeOfDeath,
+      medicalOfficerId: cert.medicalOfficerId, drAddress: cert.drAddress,
+    };
+  }
+
+  const adm = await prisma.clinicAdmission.findFirst({ where: { admissionNo: no }, orderBy: { id: 'desc' } });
+  if (adm) {
+    return {
+      admissionId: adm.id, admissionNo: adm.admissionNo, arrivedSlipNo: adm.arrivedSlipNo,
+      patientName: adm.patientName, ageYears: adm.ageYears, ageMonths: adm.ageMonths,
+      ageDays: adm.ageDays, gender: adm.gender, source: 'admission',
+    };
+  }
+
+  const admitNoNum = Number(no);
+  if (admitNoNum) {
+    const pv = await prisma.patientVisit.findFirst({ where: { admitNo: admitNoNum }, orderBy: { id: 'asc' } });
+    if (pv) {
+      return {
+        admissionId: null, admissionNo: no, arrivedSlipNo: null,
+        patientName: pv.patientName, ageYears: 0, ageMonths: 0, ageDays: 0,
+        gender: 'male', source: 'patientVisit',
+      };
+    }
+  }
+  return null;
+}
+
+// Searchable suggestions for the Admission # combobox — merges existing
+// ClinicDeathCertificate records (already on file), ClinicAdmission records,
+// and distinct PatientVisit.admitNo values, so the user can see & pick from
+// what actually exists instead of guessing a number.
+async function searchAdmissions(q) {
+  const term = (q || '').trim();
+  const LIMIT = 20;
+
+  const certs = await prisma.clinicDeathCertificate.findMany({
+    where: term ? { OR: [
+      { admissionNo: { contains: term, mode: 'insensitive' } },
+      { arrivedSlipNo: { contains: term, mode: 'insensitive' } },
+      { patientName: { contains: term, mode: 'insensitive' } },
+    ] } : undefined,
+    select: { admissionNo: true, arrivedSlipNo: true, patientName: true },
+    orderBy: { id: 'desc' },
+    take: LIMIT,
+  });
+
+  const admissions = await prisma.clinicAdmission.findMany({
+    where: term ? { OR: [
+      { admissionNo: { contains: term, mode: 'insensitive' } },
+      { patientName: { contains: term, mode: 'insensitive' } },
+    ] } : undefined,
+    select: { admissionNo: true, patientName: true },
+    orderBy: { id: 'desc' },
+    take: LIMIT,
+  });
+
+  const pvWhere = term
+    ? `WHERE "admitNo" IS NOT NULL AND (CAST("admitNo" AS TEXT) ILIKE $1 OR "patientName" ILIKE $1)`
+    : `WHERE "admitNo" IS NOT NULL`;
+  const pvParams = term ? [`%${term}%`] : [];
+  const pvRows = await prisma.$queryRawUnsafe(`
+    SELECT DISTINCT ON ("admitNo") "admitNo", "patientName"
+    FROM "PatientVisit" ${pvWhere}
+    ORDER BY "admitNo" DESC
+    LIMIT ${LIMIT}
+  `, ...pvParams);
+
+  const seen = new Set();
+  const certSeen = new Set(); // separate dedup key: many legacy "Brought Dead" certs
+                              // share admissionNo="1", so dedupe by arrivedSlipNo instead
+  const results = [];
+  for (const c of certs) {
+    const lookupKey = c.arrivedSlipNo || c.admissionNo;
+    if (certSeen.has(lookupKey)) continue;
+    certSeen.add(lookupKey);
+    results.push({
+      admissionNo: c.admissionNo, arrivedSlipNo: c.arrivedSlipNo, patientName: c.patientName,
+      source: 'certificate', lookupKey,
+    });
+  }
+  for (const a of admissions) {
+    if (seen.has(a.admissionNo) || certSeen.has(a.admissionNo)) continue;
+    seen.add(a.admissionNo);
+    results.push({ admissionNo: a.admissionNo, patientName: a.patientName, source: 'admission', lookupKey: a.admissionNo });
+  }
+  for (const r of pvRows) {
+    const no = String(r.admitNo);
+    if (seen.has(no) || certSeen.has(no)) continue;
+    seen.add(no);
+    results.push({ admissionNo: no, patientName: r.patientName, source: 'patientVisit', lookupKey: no });
+  }
+  return results.slice(0, LIMIT);
+}
+
+async function createDeathCertificate(data) {
+  return prisma.clinicDeathCertificate.create({
+    data: {
+      admissionId:      data.admissionId ? Number(data.admissionId) : null,
+      admissionNo:       data.admissionNo,
+      arrivedSlipNo:     data.arrivedSlipNo || null,
+      patientName:       data.patientName || '',
+      ageYears:          Number(data.ageYears) || 0,
+      ageMonths:         Number(data.ageMonths) || 0,
+      ageDays:           Number(data.ageDays) || 0,
+      gender:            data.gender || 'male',
+      deathTime:         data.deathTime ? new Date(data.deathTime) : null,
+      deathPlace:        data.deathPlace || null,
+      relationType:      data.relationType || 'S/o',
+      relationName:      data.relationName || null,
+      religion:          data.religion || null,
+      occupation:        data.occupation || null,
+      causeOfDeath:      data.causeOfDeath || null,
+      medicalOfficerId:  data.medicalOfficerId ? Number(data.medicalOfficerId) : null,
+      drAddress:         data.drAddress || null,
+    },
+  });
+}
+
+async function getDeathCertificates({ fromDate, toDate } = {}) {
+  const where = {};
+  if (fromDate && toDate) {
+    where.deathTime = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59`) };
+  }
+  return prisma.clinicDeathCertificate.findMany({ where, orderBy: { deathTime: 'desc' } });
+}
+
+async function getDeathCertificate(admissionNo) {
+  return prisma.clinicDeathCertificate.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+  });
+}
+
+async function updateDeathCertificate(id, data) {
+  return prisma.clinicDeathCertificate.update({
+    where: { id: Number(id) },
+    data: {
+      patientName:       data.patientName || '',
+      ageYears:          Number(data.ageYears) || 0,
+      ageMonths:         Number(data.ageMonths) || 0,
+      ageDays:           Number(data.ageDays) || 0,
+      gender:            data.gender || 'male',
+      deathTime:         data.deathTime ? new Date(data.deathTime) : null,
+      deathPlace:        data.deathPlace || null,
+      relationType:      data.relationType || 'S/o',
+      relationName:      data.relationName || null,
+      religion:          data.religion || null,
+      occupation:        data.occupation || null,
+      causeOfDeath:      data.causeOfDeath || null,
+      medicalOfficerId:  data.medicalOfficerId ? Number(data.medicalOfficerId) : null,
+      drAddress:         data.drAddress || null,
+    },
+  });
+}
+
+async function generateDoctorCode(name) {
+  const initials = name.split(/\s+/).filter(Boolean)
+    .map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DR';
+  let code = initials;
+  let i = 1;
+  while (await prisma.clinicDoctor.findUnique({ where: { code } })) {
+    code = `${initials}${i++}`;
+  }
+  return code;
+}
+
+// Bulk import — same layout as the Death Certificate Report / its Excel export
+// (Certificate = "arrivedSlipNo/admissionNo", Reason = cause of death, Date/Time,
+// Place of death, Address of doctor, Patient name, W/o./S/o./D/o., Gender, Age,
+// Religion, Occupation, plus a raw Doctor name from the source file).
+//
+// Real legacy exports show most "Brought Dead" certificates (no proper admission)
+// share a placeholder admissionNo like "1" — that can't be used as a unique key or
+// hundreds of unrelated certificates would collide. arrivedSlipNo is the hospital's
+// actual unique certificate/slip number, so upserts are keyed on THAT (falling back
+// to admissionNo only when a row has no slip number at all).
+//
+// doctorName (free text from the sheet) is matched against existing ClinicDoctor by
+// normalized name; unmatched names auto-create a new doctor, same pattern used for
+// bulk patient-list imports, so Medical Officer stays a proper linked record.
+async function bulkImportDeathCertificates(rows) {
+  const result = { created: 0, updated: 0, skipped: 0, doctorsCreated: 0 };
+
+  const doctors = await prisma.clinicDoctor.findMany({ select: { id: true, name: true } });
+  const doctorMap = new Map(doctors.map(d => [d.name.toLowerCase().trim(), d.id]));
+
+  for (const row of rows) {
+    const arrivedSlipNo = row.arrivedSlipNo ? String(row.arrivedSlipNo).trim() : '';
+    const admissionNo = String(row.admissionNo || '').trim();
+    const upsertKey = arrivedSlipNo || admissionNo;
+    if (!upsertKey) { result.skipped++; continue; }
+
+    let medicalOfficerId = null;
+    const doctorName = (row.doctorName || '').trim();
+    if (doctorName) {
+      const key = doctorName.toLowerCase();
+      if (doctorMap.has(key)) {
+        medicalOfficerId = doctorMap.get(key);
+      } else {
+        const code = await generateDoctorCode(doctorName);
+        const newDoc = await prisma.clinicDoctor.create({ data: { code, name: doctorName, consultantDays: [] } });
+        doctorMap.set(key, newDoc.id);
+        medicalOfficerId = newDoc.id;
+        result.doctorsCreated++;
+      }
+    }
+
+    const data = {
+      admissionNo:      admissionNo || upsertKey,
+      arrivedSlipNo:    arrivedSlipNo || null,
+      patientName:      row.patientName || '',
+      ageYears:         Number(row.ageYears) || 0,
+      ageMonths:        Number(row.ageMonths) || 0,
+      ageDays:          Number(row.ageDays) || 0,
+      gender:           row.gender || 'male',
+      deathTime:        row.deathTime ? new Date(row.deathTime) : null,
+      deathPlace:       row.deathPlace || null,
+      relationType:     row.relationType || 'S/o',
+      relationName:     row.relationName || null,
+      religion:         row.religion || null,
+      occupation:       row.occupation || null,
+      causeOfDeath:     row.causeOfDeath || null,
+      drAddress:        row.drAddress || null,
+      medicalOfficerId,
+    };
+
+    const existing = arrivedSlipNo
+      ? await prisma.clinicDeathCertificate.findFirst({ where: { arrivedSlipNo } })
+      : await prisma.clinicDeathCertificate.findFirst({ where: { admissionNo } });
+    if (existing) {
+      await prisma.clinicDeathCertificate.update({ where: { id: existing.id }, data });
+      result.updated++;
+    } else {
+      await prisma.clinicDeathCertificate.create({ data });
+      result.created++;
+    }
+  }
+  return result;
 }

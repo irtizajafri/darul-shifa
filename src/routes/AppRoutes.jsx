@@ -43,14 +43,19 @@ import Admission from '../pages/clinic/Admission';
 import ClinicRoomCategoryPage from '../pages/clinic/parameters/ClinicRoomCategoryPage';
 import ClinicBedPage from '../pages/clinic/parameters/ClinicBedPage';
 import ClinicBillHeadListPage from '../pages/clinic/parameters/ClinicBillHeadListPage';
+import DeathCertificatePage from '../pages/clinic/parameters/DeathCertificatePage';
 import ClinicBillHeadFormPage from '../pages/clinic/parameters/ClinicBillHeadFormPage';
 import ClinicPanelCompanyListPage from '../pages/clinic/panels/ClinicPanelCompanyListPage';
 import ClinicPanelCompanyFormPage from '../pages/clinic/panels/ClinicPanelCompanyFormPage';
 import ClinicPanelEmployeeListPage from '../pages/clinic/panels/ClinicPanelEmployeeListPage';
 import ClinicPanelEmployeeFormPage from '../pages/clinic/panels/ClinicPanelEmployeeFormPage';
 import BillComparisonReport from '../pages/clinic/panels/BillComparisonReport';
+import PanelBillingDetailReport from '../pages/clinic/panels/PanelBillingDetailReport';
+import PanelProvisionalBill from '../pages/clinic/panels/PanelProvisionalBill';
 import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
 import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
+import DeathCertificateFilter from '../pages/clinic/reports/DeathCertificateFilter';
+import DeathCertificateReport from '../pages/clinic/reports/DeathCertificateReport';
 import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
 import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
 import ConsultantStatementFilter from '../pages/clinic/reports/ConsultantStatementFilter';
@@ -182,6 +187,7 @@ export default function AppRoutes() {
           <Route path="clinic/parameters/room-category" element={<PermissionGuard module="clinic" subModule="room-category"><ClinicRoomCategoryPage /></PermissionGuard>} />
           <Route path="clinic/parameters/bed" element={<PermissionGuard module="clinic" subModule="bed"><ClinicBedPage /></PermissionGuard>} />
           <Route path="clinic/parameters/bill-heads" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadListPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/death-certificate" element={<PermissionGuard module="clinic"><DeathCertificatePage /></PermissionGuard>} />
           <Route path="clinic/parameters/bill-heads/new" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadFormPage /></PermissionGuard>} />
           <Route path="clinic/parameters/bill-heads/:id" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadFormPage /></PermissionGuard>} />
           <Route path="clinic/panels/companies" element={<ClinicPanelCompanyListPage />} />
@@ -191,9 +197,13 @@ export default function AppRoutes() {
           <Route path="clinic/panels/employees/new" element={<ClinicPanelEmployeeFormPage />} />
           <Route path="clinic/panels/employees/:id" element={<ClinicPanelEmployeeFormPage />} />
           <Route path="clinic/panels/bill-comparison" element={<PermissionGuard module="clinic"><BillComparisonReport /></PermissionGuard>} />
+          <Route path="clinic/panels/billing-detail" element={<PermissionGuard module="clinic"><PanelBillingDetailReport /></PermissionGuard>} />
+          <Route path="clinic/panels/provisional-bill" element={<PermissionGuard module="clinic"><PanelProvisionalBill /></PermissionGuard>} />
           <Route path="clinic/reports/patients-list"      element={<PermissionGuard module="clinic"><PatientsListFilter /></PermissionGuard>} />
           <Route path="clinic/reports/patients-list/view" element={<PermissionGuard module="clinic"><PatientsListReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-wise"      element={<PermissionGuard module="clinic"><ConsultantWiseFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/death-certificate"      element={<PermissionGuard module="clinic"><DeathCertificateFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/death-certificate/view" element={<PermissionGuard module="clinic"><DeathCertificateReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-wise/view" element={<PermissionGuard module="clinic"><ConsultantWiseReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-rates"      element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement"      element={<PermissionGuard module="clinic"><ConsultantStatementFilter /></PermissionGuard>} />

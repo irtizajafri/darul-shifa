@@ -795,6 +795,16 @@ module.exports = {
   getRevenueDashboard,
   getBalanceSlips,
   receiveBalancePayment,
+  importPanelBillingDetail,
+  getPanelBillingDetails,
+  getPanelBillingByAdmit,
+  lookupAdmissionByNo,
+  searchAdmissions,
+  createDeathCertificate,
+  getDeathCertificates,
+  getDeathCertificate,
+  updateDeathCertificate,
+  bulkImportDeathCertificates,
 };
 
 async function importBillComparison(req, res, next) {
@@ -810,5 +820,83 @@ async function getBillComparisons(req, res, next) {
   try {
     const data = await service.getBillComparisons();
     success(res, data);
+  } catch (err) { next(err); }
+}
+
+// ─── Panel Billing Detail (bill-head wise) ───────────────────────────────────
+async function importPanelBillingDetail(req, res, next) {
+  try {
+    const { rows, periodFrom, periodTo } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return fail(res, 400, 'No rows provided');
+    const result = await service.importPanelBillingDetail({ rows, periodFrom, periodTo });
+    success(res, result, `${result.rowsInserted} bills imported (${result.billHeadsCreated} bill heads, ${result.companiesCreated} companies auto-created)`);
+  } catch (err) { next(err); }
+}
+
+async function getPanelBillingDetails(req, res, next) {
+  try {
+    const { organisation, person, consultant } = req.query;
+    const data = await service.getPanelBillingDetails({ organisation, person, consultant });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getPanelBillingByAdmit(req, res, next) {
+  try {
+    const data = await service.getPanelBillingByAdmit(req.params.admitNo);
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+// ─── Death Certificate ────────────────────────────────────────────────────────
+async function lookupAdmissionByNo(req, res, next) {
+  try {
+    const data = await service.lookupAdmissionByNo(req.params.admissionNo);
+    if (!data) return fail(res, 404, 'Is admission # ka koi record nahi mila');
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function searchAdmissions(req, res, next) {
+  try {
+    const data = await service.searchAdmissions(req.query.q);
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function createDeathCertificate(req, res, next) {
+  try {
+    if (!req.body.admissionNo) return fail(res, 400, 'Admission # zaroori hai');
+    const data = await service.createDeathCertificate(req.body);
+    success(res, data, 'Death Certificate saved');
+  } catch (err) { next(err); }
+}
+
+async function getDeathCertificates(req, res, next) {
+  try {
+    const { fromDate, toDate } = req.query;
+    success(res, await service.getDeathCertificates({ fromDate, toDate }));
+  } catch (err) { next(err); }
+}
+
+async function getDeathCertificate(req, res, next) {
+  try {
+    success(res, await service.getDeathCertificate(req.params.admissionNo));
+  } catch (err) { next(err); }
+}
+
+async function updateDeathCertificate(req, res, next) {
+  try {
+    const data = await service.updateDeathCertificate(req.params.id, req.body);
+    success(res, data, 'Death Certificate updated');
+  } catch (err) { next(err); }
+}
+
+async function bulkImportDeathCertificates(req, res, next) {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return fail(res, 400, 'No rows provided');
+    const result = await service.bulkImportDeathCertificates(rows);
+    success(res, result, `${result.created} naye, ${result.updated} update, ${result.skipped} skip, ${result.doctorsCreated} naye doctors auto-created`);
   } catch (err) { next(err); }
 }

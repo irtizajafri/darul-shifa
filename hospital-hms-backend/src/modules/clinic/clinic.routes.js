@@ -108,6 +108,20 @@ router.get('/patient-visits', controller.getPatientVisits);
 router.post('/bill-comparison/import', controller.importBillComparison);
 router.get('/bill-comparison', controller.getBillComparisons);
 
+// Panel Billing Detail (bill-head wise)
+router.post('/panel-billing/import', controller.importPanelBillingDetail);
+router.get('/panel-billing', controller.getPanelBillingDetails);
+router.get('/panel-billing/by-admit/:admitNo', controller.getPanelBillingByAdmit);
+
+// Death Certificate
+router.get('/admission/search', controller.searchAdmissions);
+router.get('/admission/lookup/:admissionNo', controller.lookupAdmissionByNo);
+router.post('/death-certificates/import', controller.bulkImportDeathCertificates);
+router.post('/death-certificates', controller.createDeathCertificate);
+router.get('/death-certificates', controller.getDeathCertificates);
+router.put('/death-certificates/:id', controller.updateDeathCertificate);
+router.get('/death-certificates/:admissionNo', controller.getDeathCertificate);
+
 // Consultant Statement
 router.get('/consultant-statement', controller.getConsultantStatement);
 

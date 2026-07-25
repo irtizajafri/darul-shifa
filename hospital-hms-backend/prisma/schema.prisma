@@ -1340,3 +1340,60 @@ model ClinicPanelBillRow {
   diff            Decimal? @db.Decimal(12, 2)
   uploadedAt      DateTime @default(now())
 }
+
+// Panel Billing Detail (bill-head wise) — "all panal pt bills details bill head wise" Excel
+model ClinicPanelBillingDetail {
+  id              Int       @id @default(autoincrement())
+  admitNo         String?
+  patientName     String    @default("")
+  consCode        String?
+  companyName     String?
+  panelCompanyId  Int?
+  constFee        Decimal?  @db.Decimal(14, 2)
+  followUp        Decimal?  @db.Decimal(14, 2)
+  anesthesia      Decimal?  @db.Decimal(14, 2)
+  medicine        Decimal?  @db.Decimal(14, 2)
+  laboratory      Decimal?  @db.Decimal(14, 2)
+  costOfBlood     Decimal?  @db.Decimal(14, 2)
+  echocardiograph Decimal?  @db.Decimal(14, 2)
+  ultrasound      Decimal?  @db.Decimal(14, 2)
+  xRay            Decimal?  @db.Decimal(14, 2)
+  physiotherapy   Decimal?  @db.Decimal(14, 2)
+  ctScan          Decimal?  @db.Decimal(14, 2)
+  surgeonFee      Decimal?  @db.Decimal(14, 2)
+  totalAmount     Decimal?  @db.Decimal(14, 2)
+  periodFrom      DateTime?
+  periodTo        DateTime?
+  uploadedAt      DateTime  @default(now())
+
+  @@index([admitNo])
+  @@index([companyName])
+  @@index([consCode])
+}
+
+// Death Certificate — linked to an admission; everything except the admission
+// snapshot (admissionNo/arrivedSlipNo/patientName/age/gender) is filled manually.
+model ClinicDeathCertificate {
+  id              Int      @id @default(autoincrement())
+  admissionId     Int?
+  admissionNo     String
+  arrivedSlipNo   String?
+  patientName     String   @default("")
+  ageYears        Int      @default(0)
+  ageMonths       Int      @default(0)
+  ageDays         Int      @default(0)
+  gender          String   @default("male")
+  deathTime       DateTime?
+  deathPlace      String?
+  relationType    String   @default("S/o")
+  relationName    String?
+  religion        String?
+  occupation      String?
+  causeOfDeath    String?
+  medicalOfficerId Int?
+  drAddress       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([admissionNo])
+}
