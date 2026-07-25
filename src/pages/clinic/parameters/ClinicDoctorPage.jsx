@@ -90,6 +90,7 @@ export default function ClinicDoctorPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [subDeptRows, setSubDeptRows] = useState([]);
   const [subDeptForm, setSubDeptForm] = useState(EMPTY_SUBDEPT);
+  const [editingRowIdx, setEditingRowIdx] = useState(null); // null = adding new; index = editing that row (double-click)
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [bulkRate, setBulkRate] = useState('');
@@ -128,6 +129,7 @@ export default function ClinicDoctorPage() {
     setForm(EMPTY_FORM);
     setSubDeptRows([]);
     setSubDeptForm(EMPTY_SUBDEPT);
+    setEditingRowIdx(null);
     setActiveTab('main');
     setShowModal(true);
   }
@@ -162,6 +164,7 @@ export default function ClinicDoctorPage() {
       }))
     );
     setSubDeptForm(EMPTY_SUBDEPT);
+    setEditingRowIdx(null);
     setActiveTab('main');
     setShowModal(true);
   }
@@ -172,6 +175,7 @@ export default function ClinicDoctorPage() {
     setForm(EMPTY_FORM);
     setSubDeptRows([]);
     setSubDeptForm(EMPTY_SUBDEPT);
+    setEditingRowIdx(null);
   }
 
   function toggleDay(day) {
@@ -187,6 +191,24 @@ export default function ClinicDoctorPage() {
     if (!subDeptForm.subDeptId) return toast.error('Select a sub department');
     const subDept = subDepartments.find((s) => String(s.id) === String(subDeptForm.subDeptId));
     const dept = departments.find((d) => String(d.id) === String(subDeptForm.departmentId));
+
+    // Editing an existing row (double-click) — update it in place instead of adding a new one.
+    if (editingRowIdx !== null) {
+      const alreadyAdded = subDeptRows.some((r, i) =>
+        i !== editingRowIdx && String(r.subDeptId) === String(subDeptForm.subDeptId)
+      );
+      if (alreadyAdded) return toast.error('Sub department already added');
+      setSubDeptRows((rows) => rows.map((r, i) => (
+        i === editingRowIdx
+          ? { ...subDeptForm, id: r.id, subDeptName: subDept?.name || '', deptName: dept?.name || '', consultantDays: subDeptForm.consultantDays || [] }
+          : r
+      )));
+      setSubDeptForm(EMPTY_SUBDEPT);
+      setEditingRowIdx(null);
+      toast.success('Row updated');
+      return;
+    }
+
     const alreadyAdded = subDeptRows.some((r) => String(r.subDeptId) === String(subDeptForm.subDeptId));
     if (alreadyAdded) return toast.error('Sub department already added');
     setSubDeptRows((rows) => [
@@ -201,9 +223,33 @@ export default function ClinicDoctorPage() {
     setSubDeptForm(EMPTY_SUBDEPT);
   }
 
+  function editSubDeptRow(idx) {
+    const row = subDeptRows[idx];
+    setSubDeptForm({
+      departmentId: row.departmentId,
+      subDeptId: row.subDeptId,
+      consultantDays: row.consultantDays || [],
+      fromTime: row.fromTime || '',
+      toTime: row.toTime || '',
+      normalCharges: row.normalCharges || '',
+      oddCharges: row.oddCharges || '',
+      paymentType: row.paymentType || 'amount',
+      normalFees: row.normalFees || '',
+      oddFees: row.oddFees || '',
+      onCall: row.onCall || false,
+    });
+    setEditingRowIdx(idx);
+  }
+
+  function cancelEditSubDeptRow() {
+    setSubDeptForm(EMPTY_SUBDEPT);
+    setEditingRowIdx(null);
+  }
+
   function removeSubDeptRow(idx) {
     setSubDeptRows((rows) => rows.filter((_, i) => i !== idx));
     setSelectedRows((s) => s.filter((i) => i !== idx).map((i) => (i > idx ? i - 1 : i)));
+    if (editingRowIdx === idx) { setSubDeptForm(EMPTY_SUBDEPT); setEditingRowIdx(null); }
   }
 
   const allSelected = subDeptRows.length > 0 && selectedRows.length === subDeptRows.length;
@@ -659,12 +705,22 @@ export default function ClinicDoctorPage() {
                   <input type="checkbox" className="cdp-checkbox" checked={subDeptForm.onCall}
                     onChange={(e) => setSubDeptForm((f) => ({ ...f, onCall: e.target.checked }))} />
                 </div>
-                <div className="cdp-field cdp-field--bottom">
+                <div className="cdp-field cdp-field--bottom" style={{ display: 'flex', gap: 8 }}>
                   <button type="button" className="cdp-add-row-btn" onClick={addSubDeptRow}>
-                    <PlusCircle className="w-4 h-4" /> Add to List
+                    <PlusCircle className="w-4 h-4" /> {editingRowIdx !== null ? 'Update' : 'Add to List'}
                   </button>
+                  {editingRowIdx !== null && (
+                    <button type="button" className="cdp-add-row-btn" style={{ background: '#e2e8f0', color: '#334155' }} onClick={cancelEditSubDeptRow}>
+                      Cancel
+                    </button>
+                  )}
                 </div>
               </div>
+              {editingRowIdx !== null && (
+                <p style={{ fontSize: '0.78rem', color: '#b45309', marginTop: 6 }}>
+                  ✏️ Editing <strong>{subDeptRows[editingRowIdx]?.subDeptName}</strong> — values change karke "Update" dabao.
+                </p>
+              )}
             </div>
 
             {/* Sub dept rows table */}
@@ -713,8 +769,14 @@ export default function ClinicDoctorPage() {
                   </thead>
                   <tbody>
                     {subDeptRows.map((row, idx) => (
-                      <tr key={idx} className={selectedRows.includes(idx) ? 'cdp-row-selected' : ''}>
-                        <td style={{textAlign:'center'}}>
+                      <tr
+                        key={idx}
+                        className={`${selectedRows.includes(idx) ? 'cdp-row-selected' : ''} ${editingRowIdx === idx ? 'cdp-row-editing' : ''}`}
+                        onDoubleClick={() => editSubDeptRow(idx)}
+                        title="Double-click to edit this row"
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td style={{textAlign:'center'}} onDoubleClick={(e) => e.stopPropagation()}>
                           <input type="checkbox"
                             checked={selectedRows.includes(idx)}
                             onChange={() => toggleSelectRow(idx)} />

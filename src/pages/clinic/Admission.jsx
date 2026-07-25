@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Printer, Save, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
@@ -478,7 +479,9 @@ export default function Admission() {
   const [saving, setSaving] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
+  const [reprintReady, setReprintReady] = useState(false);
   const mrRef = useRef(null);
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     fetchDoctors();
@@ -486,6 +489,64 @@ export default function Admission() {
     fetchSurgeryTypes();
     mrRef.current?.focus();
   }, [fetchDoctors, fetchRoomCategories, fetchSurgeryTypes]);
+
+  // Reprint (Report > Reprint > Admission): reload an existing admission by its
+  // number and print it — does NOT call createAdmission, so no duplicate record.
+  useEffect(() => {
+    const reprintNo = searchParams.get('reprintNo');
+    if (!reprintNo) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API}/admission/by-number/${encodeURIComponent(reprintNo)}`);
+        const json = await res.json();
+        if (!res.ok) { toast.error(json.message || 'Admission nahi mili'); return; }
+        const rec = json.data;
+        setForm(f => ({
+          ...f,
+          admissionNo:       rec.admissionNo || '',
+          mrNo:              rec.mrNo != null ? String(rec.mrNo) : '',
+          arrivedSlipNo:     rec.arrivedSlipNo || '',
+          patientTitle:      rec.patientTitle || 'Mr',
+          patientCategory:   rec.patientCategory || 'private',
+          patientName:       rec.patientName || '',
+          ageYears:          rec.ageYears != null ? String(rec.ageYears) : '',
+          ageMonths:         rec.ageMonths != null ? String(rec.ageMonths) : '',
+          ageDays:           rec.ageDays != null ? String(rec.ageDays) : '',
+          gender:            rec.gender || 'male',
+          address:           rec.address || '',
+          phoneNo:           rec.phoneNo || '',
+          arrivedUnderRmo:   rec.arrivedUnderRmo || '',
+          consultantId:      rec.consultantId != null ? String(rec.consultantId) : '',
+          referredBy:        rec.referredBy || '',
+          authorityLetter:   !!rec.authorityLetter,
+          responsibleParty:  rec.responsibleParty || '',
+          previousAdmission: rec.previousAdmission || '',
+          advancePayment:    rec.advancePayment != null ? String(rec.advancePayment) : '',
+          roomCategoryId:    rec.roomCategoryId != null ? String(rec.roomCategoryId) : '',
+          bedId:             rec.bedId != null ? String(rec.bedId) : '',
+          surgery:           !!rec.surgery,
+          surgeryTypeId:     rec.surgeryTypeId != null ? String(rec.surgeryTypeId) : '',
+          referralPatient:   rec.referralPatient ? 'yes' : 'no',
+          referralNote:      rec.referralNote || '',
+          antenatal:         !!rec.antenatal,
+          antenatalNo:       rec.antenatalNo || '',
+        }));
+        if (rec.roomCategoryId) {
+          try { setAvailableBeds(await fetchAvailableBeds(rec.roomCategoryId)); } catch { /* ignore */ }
+        }
+        setReprintReady(true);
+      } catch {
+        toast.error('Admission reprint lookup failed');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!reprintReady) return;
+    const t = setTimeout(() => window.print(), 300);
+    return () => clearTimeout(t);
+  }, [reprintReady]);
 
   function set(field, value) {
     setForm(f => ({ ...f, [field]: value }));

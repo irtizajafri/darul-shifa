@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search, Plus, Printer } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
@@ -20,10 +21,12 @@ const TABS = ['Provisional Bill', 'Diagnostic Bill', 'Pharmacy Bill', 'MESS'];
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
 export default function PanelProvisionalBill() {
+  const [searchParams] = useSearchParams();
   const [admitNo, setAdmitNo] = useState('');
   const [bill, setBill] = useState(null);          // looked-up billing detail
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState('Provisional Bill');
+  const [reprintReady, setReprintReady] = useState(false);
 
   const [billHeads, setBillHeads] = useState([]);   // for the Heads dropdown (manual add)
 
@@ -35,8 +38,8 @@ export default function PanelProvisionalBill() {
     fetch(`${API}/bill-heads`).then((r) => r.json()).then((j) => setBillHeads(j.data || [])).catch(() => {});
   }, []);
 
-  async function lookup() {
-    const no = admitNo.trim();
+  async function lookup(overrideNo) {
+    const no = (overrideNo ?? admitNo).trim();
     if (!no) return toast.error('Admission # daalo');
     setLoading(true);
     try {
@@ -44,6 +47,7 @@ export default function PanelProvisionalBill() {
       const json = await res.json();
       if (!json.data) { setBill(null); setProvRows([]); toast.error('Is admission # ka koi panel bill nahi mila'); return; }
       const b = json.data;
+      setAdmitNo(no);
       setBill(b);
       // build Provisional Bill rows from non-zero bill-heads
       const rows = HEAD_KEYS
@@ -51,12 +55,32 @@ export default function PanelProvisionalBill() {
         .map((k, i) => ({ id: `d${i}`, ward: '', head: HEAD_LABELS[k], qty: 1, rate: Number(b[k]), amount: Number(b[k]), remarks: '', auto: true }));
       setProvRows(rows);
       setTab('Provisional Bill');
+      return rows;
     } catch {
       toast.error('Lookup failed');
     } finally {
       setLoading(false);
     }
   }
+
+  // Reprint (Report > Reprint > Provisional Bill): auto-lookup + auto-print when
+  // opened via ?admissionNo=...&autoprint=1
+  useEffect(() => {
+    const no = searchParams.get('admissionNo');
+    const autoprint = searchParams.get('autoprint');
+    if (!no) return;
+    (async () => {
+      const rows = await lookup(no);
+      if (autoprint && rows?.length) setReprintReady(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!reprintReady) return;
+    const t = setTimeout(() => window.print(), 300);
+    return () => clearTimeout(t);
+  }, [reprintReady]);
 
   function addManualRow() {
     if (!manual.head) return toast.error('Head select karo');

@@ -41,6 +41,7 @@ router.get('/opd/employee-search', controller.searchEmployees);
 router.get('/opd', controller.getOpdVisits);
 router.post('/opd', controller.createOpdVisit);
 router.post('/opd/:id/print', controller.printOpdVisit);
+router.get('/opd/reprint/:serialNo', controller.reprintOpdVisitBySerial);
 router.get('/opd/balance-slips', controller.getBalanceSlips);
 router.post('/opd/:id/receive-balance', controller.receiveBalancePayment);
 
@@ -89,6 +90,7 @@ router.post('/antenatal', controller.createAntenatal);
 // Admission
 router.get('/admission/available-beds', controller.getAvailableBeds);
 router.get('/admission', controller.getAdmissions);
+router.get('/admission/by-number/:admissionNo', controller.getAdmissionByNumber);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
 

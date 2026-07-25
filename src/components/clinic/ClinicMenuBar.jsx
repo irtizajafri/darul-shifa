@@ -4,6 +4,15 @@ import { ChevronRight } from 'lucide-react';
 import './ClinicMenuBar.scss';
 
 const menuItems = [
+  {
+    label: 'Report',
+    items: [
+      { label: 'Reprint',                  path: '/clinic/reports/reprint' },
+      { label: 'Patients List',            path: '/clinic/reports/patients-list' },
+      { label: 'Consultant Wise Patients', path: '/clinic/reports/consultant-wise' },
+      { label: 'Death Certificate Report', path: '/clinic/reports/death-certificate' },
+    ],
+  },
   { label: 'File', items: [] },
   {
     label: 'Parameters',
@@ -61,14 +70,6 @@ const menuItems = [
     label: 'Inquiries',
     items: [
       { label: 'Revenue Dashboard', path: '/clinic/inquiries/revenue-dashboard' },
-    ],
-  },
-  {
-    label: 'Report',
-    items: [
-      { label: 'Patients List',            path: '/clinic/reports/patients-list' },
-      { label: 'Consultant Wise Patients', path: '/clinic/reports/consultant-wise' },
-      { label: 'Death Certificate Report', path: '/clinic/reports/death-certificate' },
     ],
   },
   { label: 'Window',    items: [] },

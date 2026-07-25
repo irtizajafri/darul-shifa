@@ -807,10 +807,92 @@ async function printOpdVisit(id) {
   return { visit, tokenNo, isDuplicate };
 }
 
+// Normalize a PatientVisit.paymentType string (from the old bulk Excel import) into
+// the lowercase codes buildReceiptHtml/invoiceLabel expects.
+function normalizePvPaymentType(pt) {
+  const p = (pt || '').trim().toLowerCase();
+  if (p === 'panel') return 'panel';
+  if (p === 'complem.' || p === 'complementary') return 'complementary';
+  if (p === 'jazzcash') return 'jazzcash';
+  if (p === 'cc' || p === 'c card') return 'cc';
+  return 'cash';
+}
+
+// Reprint screen (Report > Reprint) — looks a visit up by Serial # instead of id,
+// then reuses the exact same print/duplicate logic as printOpdVisit.
+// Checks ClinicOpdVisit (new system) first, then falls back to PatientVisit
+// (the old bulk-imported "Patients List" — 6000+ rows, a different flat structure),
+// adapting it into the same shape buildReceiptHtml expects so the same slip
+// template renders either way.
+async function reprintOpdVisitBySerial(serialNo) {
+  const no = String(serialNo).trim();
+
+  const visit = await prisma.clinicOpdVisit.findFirst({
+    where: { serialNo: { equals: no, mode: 'insensitive' } },
+    include: {
+      doctors: {
+        include: {
+          doctor: { include: { staffCategory: { select: { name: true } } } },
+          subDept: { select: { id: true, name: true } },
+        },
+      },
+    },
+  });
+  if (visit) {
+    await prisma.$executeRaw`UPDATE "ClinicOpdVisit" SET "printCount" = COALESCE("printCount", 0) + 1 WHERE id = ${visit.id}`;
+    const doctorId = visit.doctors[0]?.doctorId;
+    const tokenNo = doctorId
+      ? await getTokenNumber(doctorId, new Date().toISOString().slice(0, 10))
+      : 0;
+    return { visit, tokenNo, isDuplicate: true, source: 'opd' };
+  }
+
+  const pvSerial = Number(no);
+  if (pvSerial) {
+    const pv = await prisma.patientVisit.findFirst({ where: { serialNo: pvSerial } });
+    if (pv) {
+      const total = Number(pv.received || 0) + Number(pv.discount || 0) + Number(pv.balance || 0);
+      const dateStr = pv.visitDate.toISOString().slice(0, 10);
+      const createdAt = pv.visitTime ? new Date(`${dateStr}T${pv.visitTime}:00`) : pv.visitDate;
+      const adapted = {
+        serialNo:    String(pv.serialNo),
+        patientType: '',
+        patientName: pv.patientName,
+        age: null, ageMonths: 0, ageDays: 0,
+        createdAt,
+        referredBy:  '',
+        antenatalNo: '',
+        totalAmount: total,
+        discount:    Number(pv.discount) || 0,
+        receive:     Number(pv.received) || 0,
+        paymentType: normalizePvPaymentType(pv.paymentType),
+        doctors: [{
+          doctor:  { name: pv.doctor || '' },
+          subDept: { name: pv.subDepartment || pv.department || '' },
+          amount:  total,
+        }],
+      };
+      return { visit: adapted, tokenNo: 0, isDuplicate: true, source: 'patientVisit' };
+    }
+  }
+
+  throw Object.assign(new Error('Is Slip # ka koi record nahi mila (na naye system mein, na Patients List mein)'), { status: 404 });
+}
+
 // ─── Admission ────────────────────────────────────────────────────────────────
 
 async function getAdmissions() {
   return prisma.clinicAdmission.findMany({ orderBy: { id: 'desc' } });
+}
+
+// Full admission record by its Admission # — used by the Reprint screen to reload
+// and re-print an existing Admission Form (unlike lookupAdmissionByNo, which only
+// returns a small snapshot for the Death Certificate screen).
+async function getAdmissionByNumber(admissionNo) {
+  return prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+  });
 }
 
 async function createAdmission(data) {
@@ -1647,6 +1729,7 @@ module.exports = {
   createOpdVisit,
   getOpdVisits,
   printOpdVisit,
+  reprintOpdVisitBySerial,
   getAllRoomCategories,
   createRoomCategory,
   updateRoomCategory,
@@ -1677,6 +1760,7 @@ module.exports = {
   getOpdPatientsByPhone,
   getOpdVisitBySerial,
   getAdmissions,
+  getAdmissionByNumber,
   createAdmission,
   getAvailableBeds,
   bulkCreatePatientVisits,

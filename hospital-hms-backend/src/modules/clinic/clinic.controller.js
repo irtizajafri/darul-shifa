@@ -588,6 +588,14 @@ async function getAdmissions(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getAdmissionByNumber(req, res, next) {
+  try {
+    const data = await service.getAdmissionByNumber(req.params.admissionNo);
+    if (!data) return fail(res, 404, 'Is Admission # ka koi record nahi mila');
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 async function createAdmission(req, res, next) {
   try {
     if (!req.body.admissionNo?.trim()) return fail(res, 400, 'Admission # is required');
@@ -608,6 +616,16 @@ async function getAvailableBeds(req, res, next) {
 async function printOpdVisit(req, res, next) {
   try {
     const data = await service.printOpdVisit(req.params.id);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function reprintOpdVisitBySerial(req, res, next) {
+  try {
+    const data = await service.reprintOpdVisitBySerial(req.params.serialNo);
     success(res, data);
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -771,6 +789,7 @@ module.exports = {
   updatePanelEmployee,
   deletePanelEmployee,
   printOpdVisit,
+  reprintOpdVisitBySerial,
   createAntenatal,
   getAntenatalList,
   getAntenatalByNo,
@@ -778,6 +797,7 @@ module.exports = {
   getOpdPatientsByPhone,
   getOpdVisitBySerial,
   getAdmissions,
+  getAdmissionByNumber,
   createAdmission,
   getAvailableBeds,
   bulkCreatePatientVisits,
