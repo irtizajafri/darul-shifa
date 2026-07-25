@@ -1,7 +1,8 @@
 const prisma = require('../../config/db');
 
-const START_MONTH = '2026-06';
+const START_MONTH = '2026-07';
 let isTableReady = false;
+let isEmpColumnsReady = false;
 
 async function ensureTable() {
   if (isTableReady) return;
@@ -27,6 +28,15 @@ async function ensureTable() {
   isTableReady = true;
 }
 
+async function ensureEmpColumns() {
+  if (isEmpColumnsReady) return;
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentEnabled" BOOLEAN DEFAULT FALSE');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentRate" DOUBLE PRECISION DEFAULT 0');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentPastLeaves" DOUBLE PRECISION DEFAULT 0');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentMonthlyLeaves" DOUBLE PRECISION DEFAULT 2');
+  isEmpColumnsReady = true;
+}
+
 function daysInMonth(monthKey) {
   const [year, month] = String(monthKey).split('-').map(Number);
   return new Date(year, month, 0).getDate();
@@ -49,10 +59,17 @@ function round2(v) {
 
 async function summary(filters = {}) {
   await ensureTable();
+  await ensureEmpColumns();
 
-  const employees = await prisma.employee.findMany({
-    orderBy: { empCode: 'asc' },
-  });
+  const employees = await prisma.$queryRawUnsafe(`
+    SELECT id, "empCode", "firstName", "lastName", "role", "departmentText", "salaryMonthly",
+           COALESCE("leaveEncashmentRate", 0) AS "leaveEncashmentRate",
+           COALESCE("leaveEncashmentPastLeaves", 0) AS "leaveEncashmentPastLeaves",
+           COALESCE("leaveEncashmentMonthlyLeaves", 2) AS "leaveEncashmentMonthlyLeaves"
+    FROM "Employee"
+    WHERE COALESCE("leaveEncashmentEnabled", false) = true
+    ORDER BY "empCode" ASC
+  `);
 
   const usedRows = await prisma.$queryRawUnsafe(`
     SELECT employee_id, SUM(leaves_count) AS total_used
@@ -63,26 +80,34 @@ async function summary(filters = {}) {
 
   const nowKey = currentMonthKey();
   const elapsed = monthsElapsed(START_MONTH, nowKey);
-  const accumulated = elapsed * 2;
 
   let rows = employees.map((emp) => {
+    const pastLeaveRate = Number(emp.leaveEncashmentRate) || 0;
+    const pastLeaves = Number(emp.leaveEncashmentPastLeaves) || 0;
+    const monthlyLeaves = Number(emp.leaveEncashmentMonthlyLeaves) || 2;
     const basicSalary = Number(emp.salaryMonthly || 0);
     const days = daysInMonth(nowKey);
     const perDayRate = days > 0 ? round2(basicSalary / days) : 0;
-    const used = usedMap.get(emp.id) || 0;
-    const available = Math.max(0, round2(accumulated - used));
-    const amount = round2(available * perDayRate);
+    const monthlyAccumulated = elapsed * monthlyLeaves;
+    const used = usedMap.get(Number(emp.id)) || 0;
+    const monthlyAvailable = Math.max(0, round2(monthlyAccumulated - used));
+    const pastLeavesValue = round2(pastLeaves * pastLeaveRate);
+    const amount = round2(monthlyAvailable * perDayRate + pastLeavesValue);
 
     return {
-      employeeId: emp.id,
+      employeeId: Number(emp.id),
       empCode: emp.empCode || '',
       name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
       designation: emp.role || '',
       department: emp.departmentText || '',
       months: elapsed,
-      accumulatedLeaves: accumulated,
+      leaveEncashmentRate: monthlyLeaves,
+      accumulatedLeaves: monthlyAccumulated,
       usedLeaves: used,
-      availableLeaves: available,
+      availableLeaves: monthlyAvailable,
+      pastLeaves,
+      pastLeaveRate,
+      pastLeavesValue,
       basicSalary,
       perDayRate,
       amount,
@@ -99,9 +124,27 @@ async function summary(filters = {}) {
   if (filters.month) {
     const mKey = filters.month;
     const mDays = daysInMonth(mKey);
+    const monthUsedRows = await prisma.$queryRawUnsafe(`
+      SELECT employee_id, SUM(leaves_count) AS total_used
+      FROM leave_encashments
+      WHERE month = $1
+      GROUP BY employee_id
+    `, mKey);
+    const monthUsedMap = new Map(monthUsedRows.map((r) => [Number(r.employee_id), round2(r.total_used)]));
+
     rows = rows.map((r) => {
       const perDayRate = mDays > 0 ? round2(r.basicSalary / mDays) : 0;
-      return { ...r, perDayRate, amount: round2(2 * perDayRate) };
+      const monthUsed = monthUsedMap.get(r.employeeId) || 0;
+      const monthAvailable = Math.max(0, round2(r.leaveEncashmentRate - monthUsed));
+      return {
+        ...r,
+        perDayRate,
+        accumulatedLeaves: r.leaveEncashmentRate,
+        usedLeaves: monthUsed,
+        availableLeaves: monthAvailable,
+        pastLeavesValue: 0,
+        amount: round2(monthAvailable * perDayRate),
+      };
     });
   }
 
@@ -110,8 +153,16 @@ async function summary(filters = {}) {
 
 async function getBalance(employeeId) {
   await ensureTable();
+  await ensureEmpColumns();
 
-  const emp = await prisma.employee.findUnique({ where: { id: Number(employeeId) } });
+  const rows = await prisma.$queryRawUnsafe(`
+    SELECT id, "empCode", "firstName", "lastName", "role", "departmentText", "salaryMonthly",
+           COALESCE("leaveEncashmentRate", 0) AS "leaveEncashmentRate",
+           COALESCE("leaveEncashmentPastLeaves", 0) AS "leaveEncashmentPastLeaves",
+           COALESCE("leaveEncashmentMonthlyLeaves", 2) AS "leaveEncashmentMonthlyLeaves"
+    FROM "Employee" WHERE id = $1
+  `, Number(employeeId));
+  const emp = rows[0];
   if (!emp) throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
 
   const usedRows = await prisma.$queryRawUnsafe(
@@ -121,14 +172,18 @@ async function getBalance(employeeId) {
   const used = round2(usedRows[0]?.total_used || 0);
   const nowKey = currentMonthKey();
   const elapsed = monthsElapsed(START_MONTH, nowKey);
-  const accumulated = elapsed * 2;
-  const available = Math.max(0, round2(accumulated - used));
+  const pastLeaveRate = Number(emp.leaveEncashmentRate) || 0;
+  const pastLeaves = Number(emp.leaveEncashmentPastLeaves) || 0;
+  const monthlyLeaves = Number(emp.leaveEncashmentMonthlyLeaves) || 2;
+  const monthlyAccumulated = elapsed * monthlyLeaves;
+  const monthlyAvailable = Math.max(0, round2(monthlyAccumulated - used));
   const basicSalary = Number(emp.salaryMonthly || 0);
   const days = daysInMonth(nowKey);
   const perDayRate = days > 0 ? round2(basicSalary / days) : 0;
+  const pastLeavesValue = round2(pastLeaves * pastLeaveRate);
 
   return {
-    employeeId: emp.id,
+    employeeId: Number(emp.id),
     empCode: emp.empCode || '',
     name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
     designation: emp.role || '',
@@ -136,9 +191,12 @@ async function getBalance(employeeId) {
     basicSalary,
     perDayRate,
     months: elapsed,
-    accumulatedLeaves: accumulated,
+    accumulatedLeaves: monthlyAccumulated,
     usedLeaves: used,
-    availableLeaves: available,
+    availableLeaves: monthlyAvailable,
+    pastLeaves,
+    pastLeaveRate,
+    pastLeavesValue,
     currentMonth: nowKey,
     daysInCurrentMonth: days,
   };
@@ -253,6 +311,103 @@ async function syncAttendanceLeaves({ empCode, rows }) {
   }
 }
 
+async function getMonthlyTotal(monthKey) {
+  const rows = await summary({ month: monthKey || undefined });
+  const total = round2(rows.reduce((s, r) => s + (r.amount || 0), 0));
+  return {
+    total,
+    month: monthKey || null,
+    count: rows.length,
+    employees: rows.map(r => ({ empCode: r.empCode, name: r.name, amount: r.amount })),
+  };
+}
+
+async function getEmployeeReport(employeeId) {
+  await ensureTable();
+  await ensureEmpColumns();
+
+  const empRows = await prisma.$queryRawUnsafe(`
+    SELECT id, "empCode", "firstName", "lastName", "salaryMonthly",
+           COALESCE("leaveEncashmentMonthlyLeaves", 2) AS "leaveEncashmentMonthlyLeaves",
+           COALESCE("leaveEncashmentRate", 0)          AS "leaveEncashmentRate",
+           COALESCE("leaveEncashmentPastLeaves", 0)    AS "leaveEncashmentPastLeaves"
+    FROM "Employee" WHERE id = $1
+  `, Number(employeeId));
+  const emp = empRows[0];
+  if (!emp) throw Object.assign(new Error('Employee not found'), { statusCode: 404 });
+
+  const nowKey = currentMonthKey();
+  const monthlyLeaves = Number(emp.leaveEncashmentMonthlyLeaves) || 2;
+  const basicSalary = Number(emp.salaryMonthly || 0);
+
+  const breakdown = [];
+  let cur = START_MONTH;
+  while (cur <= nowKey) {
+    const [cy, cm] = cur.split('-').map(Number);
+    const days = daysInMonth(cur);
+    const rate = days > 0 ? round2(basicSalary / days) : 0;
+    breakdown.push({
+      month: cur,
+      label: new Date(cy, cm - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }),
+      leaves: monthlyLeaves,
+      rate,
+      amount: round2(monthlyLeaves * rate),
+    });
+    const next = new Date(cy, cm, 1);
+    cur = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+  }
+
+  const issuedRows = await prisma.$queryRawUnsafe(`
+    SELECT id, month, leaves_count, per_day_rate, amount, type, attendance_date, created_at
+    FROM leave_encashments WHERE employee_id = $1
+    ORDER BY month ASC, created_at ASC
+  `, Number(employeeId));
+
+  const issued = issuedRows.map(r => ({
+    id: Number(r.id),
+    month: r.month,
+    leavesCount: round2(Number(r.leaves_count)),
+    perDayRate: round2(Number(r.per_day_rate)),
+    amount: round2(Number(r.amount)),
+    type: r.type,
+    attendanceDate: r.attendance_date,
+  }));
+
+  const totalAccumulated = round2(breakdown.reduce((s, r) => s + r.leaves, 0));
+  const totalIssued = round2(issued.reduce((s, r) => s + r.leavesCount, 0));
+  const totalAmountAccumulated = round2(breakdown.reduce((s, r) => s + r.amount, 0));
+  const totalAmountIssued = round2(issued.reduce((s, r) => s + r.amount, 0));
+  const pastLeaves = Number(emp.leaveEncashmentPastLeaves) || 0;
+  const pastLeaveRate = Number(emp.leaveEncashmentRate) || 0;
+  const pastLeavesValue = round2(pastLeaves * pastLeaveRate);
+
+  return {
+    employee: {
+      id: Number(emp.id),
+      empCode: emp.empCode,
+      name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+      basicSalary,
+      monthlyLeaves,
+      pastLeaves,
+      pastLeaveRate,
+      pastLeavesValue,
+    },
+    monthlyBreakdown: breakdown,
+    issued,
+    balance: {
+      totalAccumulated,
+      totalIssued,
+      remainingLeaves: round2(Math.max(0, totalAccumulated - totalIssued)),
+      totalAmountAccumulated,
+      totalAmountIssued,
+      remainingAmount: round2(Math.max(0, totalAmountAccumulated - totalAmountIssued)),
+      pastLeaves,
+      pastLeaveRate,
+      pastLeavesValue,
+    },
+  };
+}
+
 async function remove(id) {
   await ensureTable();
 
@@ -265,4 +420,4 @@ async function remove(id) {
   await prisma.$executeRawUnsafe(`DELETE FROM leave_encashments WHERE id = $1`, Number(id));
 }
 
-module.exports = { summary, getBalance, listRecords, create, syncAttendanceLeaves, remove };
+module.exports = { summary, getBalance, getMonthlyTotal, getEmployeeReport, listRecords, create, syncAttendanceLeaves, remove };

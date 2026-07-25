@@ -59,6 +59,27 @@ async function syncAttendance(req, res, next) {
   }
 }
 
+async function getMonthlyTotal(req, res, next) {
+  try {
+    const data = await service.getMonthlyTotal(req.query.month || null);
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getEmployeeReport(req, res, next) {
+  try {
+    const employeeId = Number(req.params.employeeId);
+    if (!employeeId) return fail(res, 400, 'Invalid employeeId');
+    const data = await service.getEmployeeReport(employeeId);
+    return success(res, data);
+  } catch (err) {
+    if (err?.statusCode) return fail(res, err.statusCode, err.message);
+    next(err);
+  }
+}
+
 async function remove(req, res, next) {
   try {
     const id = Number(req.params.id);
@@ -70,4 +91,4 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { getSummary, getBalance, listRecords, create, syncAttendance, remove };
+module.exports = { getSummary, getBalance, getMonthlyTotal, getEmployeeReport, listRecords, create, syncAttendance, remove };

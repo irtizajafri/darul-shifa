@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const authRoutes = require('./modules/auth/auth.routes');
 const employeeRoutes = require('./modules/employees/employee.routes');
 const attendanceRoutes = require('./modules/attendance/attendance.routes');
@@ -18,6 +19,7 @@ const { errorHandler } = require('./middleware/error.middleware');
 const app = express();
 
 app.use(cors());
+app.use(compression()); // gzip large JSON responses (reports/lists can be several MB)
 app.use(express.json({ limit: '10mb' })); // Increased limit to accept base64 photos
 
 app.get('/health', (_req, res) => {

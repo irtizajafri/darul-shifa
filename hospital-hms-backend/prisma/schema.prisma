@@ -739,6 +739,9 @@ model ClinicDoctorSubDept {
   consultantDays String[]
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
+
+  @@index([doctorId])
+  @@index([subDeptId])
 }
 
 // ─── Clinic OPD ───────────────────────────────────────────────────────────────
@@ -776,6 +779,8 @@ model ClinicOpdVisit {
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   doctors         ClinicOpdVisitDoctor[]
+
+  @@index([createdAt])
 }
 
 model ClinicOpdVisitDoctor {
@@ -1292,6 +1297,12 @@ model PatientVisit {
   isPaid         Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([visitDate])
+  @@index([admitNo])
+  @@index([department])
+  @@index([doctor])
+  @@index([paymentType])
 }
 
 model ConsultantRate {

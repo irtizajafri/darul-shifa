@@ -23,7 +23,7 @@ export default function ConsultantStatementFilter() {
   const [shift,      setShift]      = useState('ALL');
 
   useEffect(() => {
-    fetch(`${API}/doctors`)
+    fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
       .then(j => {
         const list = (j.data || []).filter(d => !activeOnly || d.status === 'active');

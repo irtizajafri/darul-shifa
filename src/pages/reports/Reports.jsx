@@ -164,6 +164,8 @@ export default function Reports() {
   const [isGenerating, setIsGenerating]         = useState(false);
   const [genQueue, setGenQueue]                 = useState([]);
   const [registerView, setRegisterView]         = useState('full');
+  const [leaveEncashTotal, setLeaveEncashTotal] = useState(0);
+  const [leaveEncashMeta, setLeaveEncashMeta]   = useState({ count: 0, employees: [] });
   const [timestampFilter, setTimestampFilter]   = useState('punched');
 
   // ─── Register Date Range ──────────────────────────────────────────────────
@@ -1647,7 +1649,8 @@ export default function Reports() {
     return { earnedSal, deductions, otBonus, finalSal };
   }, [registerRangeRows]);
 
-  const empIncentive = Math.round(Number(emp?.incentive || 0));
+  const empExtraAllowances = Array.isArray(emp?.extraAllowances) ? emp.extraAllowances.filter(a => Number(a.amount) > 0) : [];
+  const empIncentive = empExtraAllowances.reduce((s, a) => s + Math.round(Number(a.amount) || 0), 0);
   const finalSal = emp
     ? Math.max(0, Math.round(calculatedSalaryFromRows + overtimeAddition - totalDeductions)) + empIncentive
     : 0;
@@ -1681,7 +1684,7 @@ export default function Reports() {
         ? (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0) + (manualDeductionTotal || 0)
         : 0;
       const rangeDeduction  = registerRangeSalaryData.deductions + extraDed;
-      const empInc = Math.round(Number(emp?.incentive || 0));
+      const empInc = (Array.isArray(emp?.extraAllowances) ? emp.extraAllowances : []).reduce((s, a) => s + Math.round(Number(a.amount) || 0), 0);
       const rangeFinalSal   = Math.max(0, registerRangeSalaryData.earnedSal + registerRangeSalaryData.otBonus - rangeDeduction) + empInc;
       return [...prev, {
         code:          emp.empCode,
@@ -1703,6 +1706,45 @@ export default function Reports() {
     setIsGenerating(false);
   }, [month, year, registerStartDay, registerEndDay]);
 
+  // ─── Leave Encashment monthly total fetch ─────────────────────────────────
+  useEffect(() => {
+    const isRegister = payrollTab === 'register';
+    const is51214Payslip = activeReport === 'payslip' && selectedEmpCode === '51214';
+    if (!isRegister && !is51214Payslip) return;
+    const monthKey = `${year}-${month}`;
+    fetch(`http://localhost:5001/api/leave-encashment/monthly-total?month=${monthKey}`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok) {
+          setLeaveEncashTotal(json.data?.total || 0);
+          setLeaveEncashMeta({ count: json.data?.count || 0, employees: json.data?.employees || [] });
+        }
+      })
+      .catch(() => {});
+  }, [payrollTab, activeReport, selectedEmpCode, month, year]);
+
+  // ─── Append Leave Encashment row after generation completes ───────────────
+  useEffect(() => {
+    if (isGenerating) return;
+    if (payrollTab !== 'register') return;
+    setRegisterRows(prev => {
+      if (!prev.length) return prev;
+      const exists = prev.find(r => r.code === '51214');
+      if (exists) {
+        return prev.map(r => r.code === '51214' ? { ...r, finalSalary: leaveEncashTotal } : r);
+      }
+      return [...prev, {
+        code:          '51214',
+        name:          'Leave Encashment',
+        deduction:     0,
+        otBonus:       0,
+        finalSalary:   leaveEncashTotal,
+        timestamps:    null,
+        timestampRows: [],
+      }];
+    });
+  }, [isGenerating, payrollTab, leaveEncashTotal]);
+
   // ─── Auto-generate when register tab opens or month/year/employees change ──
   const isGeneratingRef = useRef(false);
   useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
@@ -1710,7 +1752,7 @@ export default function Reports() {
     if (payrollTab !== 'register') return;
     if (employees.length === 0) return;
     if (isGeneratingRef.current) return;
-    const activeEmployees = employees.filter(e => e.status === 'Active');
+    const activeEmployees = employees.filter(e => e.status === 'Active' && e.empCode !== '51214');
     if (activeEmployees.length === 0) return;
     setRegisterRows([]);
     setGenQueue([...activeEmployees]);
@@ -1799,6 +1841,7 @@ export default function Reports() {
     if (!registerRows.length) return null;
     return {
       rawAmount:   registerRows.reduce((s, r) => {
+        if (r.code === '51214') return s + r.finalSalary;
         const e = employees.find(emp => String(emp.empCode) === String(r.code));
         return s + (e ? getTotalSalary(e.basicSalary, e.allowances || []) : 0);
       }, 0),
@@ -2137,8 +2180,8 @@ export default function Reports() {
         { label: "BASIC", amount: basic },
         ...dynamicAllowanceRows,
         { label: "TOTAL", amount: effectiveBaseTotalSal },
-        ...(empIncentive > 0 ? [
-          { label: "EXTRA ALLOWANCE.", amount: empIncentive },
+        ...(empExtraAllowances.length > 0 ? [
+          ...empExtraAllowances.map(a => ({ label: String(a.type || 'EXTRA').toUpperCase(), amount: Math.round(Number(a.amount) || 0) })),
           { label: "G.TOTAL", amount: effectiveBaseTotalSal + empIncentive },
         ] : []),
       ];
@@ -2558,17 +2601,73 @@ export default function Reports() {
   };
 
   const salaryRegisterRows = useMemo(() => {
-    return employees.map((e) => ({
-      code:      e.empCode,
-      name:      `${e.firstName} ${e.lastName}`,
-      rawAmount: getTotalSalary(e.basicSalary, e.allowances || []),
-      amount:    `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
-    }));
+    return employees
+      .filter(e => e.empCode !== '51214')
+      .map((e) => ({
+        code:      e.empCode,
+        name:      `${e.firstName} ${e.lastName}`,
+        rawAmount: getTotalSalary(e.basicSalary, e.allowances || []),
+        amount:    `PKR ${getTotalSalary(e.basicSalary, e.allowances || []).toLocaleString()}`,
+      }));
   }, [employees]);
+
+  const exportLeaveEncashmentPdf = ({ autoPrint = false } = {}) => {
+    const pdf = new jsPDF("p", "pt", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const monthLabel = `${monthNames[parseInt(month)]} ${year}`;
+    const today = new Date().toISOString().split('T')[0].split('-').reverse().join('-');
+
+    // Header
+    pdf.setFontSize(14);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Leave Encashment — 51214", pageWidth / 2, 40, { align: "center" });
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.text(`Month: ${monthLabel}`, 40, 60);
+    pdf.text(`Date: ${today}`, pageWidth - 40, 60, { align: "right" });
+    pdf.text(`Total Employees: ${leaveEncashMeta.count}`, 40, 74);
+    pdf.text(`Total Amount: PKR ${Math.round(leaveEncashTotal).toLocaleString()}`, pageWidth - 40, 74, { align: "right" });
+    pdf.line(40, 82, pageWidth - 40, 82);
+
+    // Employee table
+    const tableBody = leaveEncashMeta.employees.map((e, i) => [
+      String(i + 1),
+      e.empCode || '-',
+      e.name || '-',
+      `PKR ${Math.round(e.amount || 0).toLocaleString()}`,
+    ]);
+    tableBody.push(["", "", "TOTAL", `PKR ${Math.round(leaveEncashTotal).toLocaleString()}`]);
+
+    autoTable(pdf, {
+      startY: 90,
+      head: [["#", "Emp Code", "Employee Name", "Amount (PKR)"]],
+      body: tableBody,
+      margin: { left: 40, right: 40 },
+      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      didParseCell: (data) => {
+        if (data.row.index === tableBody.length - 1) {
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+
+    if (autoPrint) {
+      pdf.autoPrint();
+      window.open(pdf.output("bloburl"), "_blank");
+    } else {
+      pdf.save(`leave-encashment-${monthLabel.replace(' ', '-')}.pdf`);
+    }
+  };
 
   const handleExport = (type, scope) => {
     try {
       if (type === "pdf" || type === "print") {
+        if ((scope === "payslip" || scope === "payslip-detailed") && emp?.empCode === '51214') {
+          exportLeaveEncashmentPdf({ autoPrint: type === "print" });
+          return;
+        }
         const pdfScope = scope === "payslip" && payslipView === "detailed" ? "payslip-detailed" : scope;
         exportReportPdf(pdfScope, { autoPrint: type === "print" });
         return;
@@ -2863,8 +2962,12 @@ export default function Reports() {
                     <tr><td>Total Deductions</td><td></td><td>{totalDeductions.toLocaleString()}</td></tr>
                   </tbody>
                 </table>
-                {empIncentive > 0 && (
-                  <div style={{ marginTop: '6px', color: '#16a34a' }}><strong>INCENTIVE: PKR {empIncentive.toLocaleString()}</strong></div>
+                {empExtraAllowances.length > 0 && (
+                  <div style={{ marginTop: '6px', color: '#16a34a' }}>
+                    {empExtraAllowances.map((a, i) => (
+                      <div key={i}><strong>{String(a.type || 'Extra').toUpperCase()}: PKR {Math.round(Number(a.amount) || 0).toLocaleString()}</strong></div>
+                    ))}
+                  </div>
                 )}
                 <div className="net-salary"><strong>NET SALARY: PKR {totalSal.toLocaleString()}</strong></div>
                 <p className="amount-words">Amount in words: {totalSal.toLocaleString()} Only</p>
@@ -2889,10 +2992,19 @@ export default function Reports() {
                   <p className="muted">Month: <strong>{month}/{year}</strong></p>
                 </div>
                 <div className="sheet-summary">
-                  <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(calculatedSalaryFromRows).toLocaleString()}</strong></div>
-                  <div className="summary-box"><span className="muted">Current Month Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
-                  <div className="summary-box"><span className="muted">Loan Remaining</span><strong>PKR {loanRemainingBalance.toLocaleString()}</strong></div>
-                  <div className="summary-box"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
+                  {emp?.empCode === '51214' ? (
+                    <>
+                      <div className="summary-box"><span className="muted">Leave Encashment (This Month)</span><strong>PKR {Math.round(leaveEncashTotal).toLocaleString()}</strong></div>
+                      <div className="summary-box"><span className="muted">Net Amount</span><strong>PKR {Math.round(leaveEncashTotal).toLocaleString()}</strong></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="summary-box"><span className="muted">Current Month Salary</span><strong>PKR {Math.round(calculatedSalaryFromRows).toLocaleString()}</strong></div>
+                      <div className="summary-box"><span className="muted">Current Month Deduction</span><strong>PKR {totalDeductions.toLocaleString()}</strong></div>
+                      <div className="summary-box"><span className="muted">Loan Remaining</span><strong>PKR {loanRemainingBalance.toLocaleString()}</strong></div>
+                      <div className="summary-box"><span className="muted">Net Salary</span><strong>PKR {totalSal.toLocaleString()}</strong></div>
+                    </>
+                  )}
                 </div>
               </div>
               <div className="table-wrap">
@@ -3328,7 +3440,7 @@ export default function Reports() {
                             <td style={{ ...tdStyle, textAlign: 'left', color: '#94a3b8' }}>{idx + 1}</td>
                             <td style={{ ...tdStyle, textAlign: 'left', fontWeight: 600 }}>{r.code}</td>
                             <td style={{ ...tdStyle, textAlign: 'left' }}>{r.name}</td>
-                            <td style={tdStyle}>PKR {(salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0).toLocaleString()}</td>
+                            <td style={tdStyle}>PKR {(r.code === '51214' ? r.finalSalary : (salaryRegisterRows.find(s => s.code === r.code)?.rawAmount || 0)).toLocaleString()}</td>
                             <td style={{ ...tdStyle, color: r.deduction > 0 ? '#dc2626' : '#475569' }}>PKR {r.deduction.toLocaleString()}</td>
                             <td style={{ ...tdStyle, color: r.otBonus > 0 ? '#2563eb' : '#475569' }}>PKR {r.otBonus.toLocaleString()}</td>
                             <td style={{ ...tdStyle, fontWeight: 700, color: '#16a34a' }}>PKR {r.finalSalary.toLocaleString()}</td>

@@ -145,6 +145,12 @@ async function ensureExtendedEmployeeColumns() {
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "short" BOOLEAN DEFAULT FALSE');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "incrementMonths" INTEGER');
   await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "incrementPercentage" DOUBLE PRECISION');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentEnabled" BOOLEAN DEFAULT FALSE');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentRate" DOUBLE PRECISION DEFAULT 0');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentPastLeaves" DOUBLE PRECISION DEFAULT 0');
+  await prisma.$executeRawUnsafe('ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "leaveEncashmentMonthlyLeaves" DOUBLE PRECISION DEFAULT 2');
+  await prisma.$executeRawUnsafe(`ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "extraAllowances" JSONB DEFAULT '[]'`);
+  await prisma.$executeRawUnsafe(`ALTER TABLE "Employee" ADD COLUMN IF NOT EXISTS "educationDocs" JSONB DEFAULT '[]'`);
   await prisma.$executeRawUnsafe('CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_emp_code_unique ON "Employee" ("empCode") WHERE "empCode" IS NOT NULL');
 
 }
@@ -201,6 +207,16 @@ function normalizeExtendedFields(payload = {}) {
     short: normalizeNumber(payload.short, 0),
     incrementMonths: payload.incrementMonths != null && payload.incrementMonths !== '' ? Math.max(1, Math.round(Number(payload.incrementMonths) || 1)) : null,
     incrementPercentage: payload.incrementPercentage != null && payload.incrementPercentage !== '' ? Number(payload.incrementPercentage) || 0 : null,
+    leaveEncashmentEnabled: normalizeBoolean(payload.leaveEncashmentEnabled, false),
+    leaveEncashmentRate: payload.leaveEncashmentRate != null && payload.leaveEncashmentRate !== '' ? Math.max(0, Number(payload.leaveEncashmentRate) || 0) : 0,
+    leaveEncashmentPastLeaves: payload.leaveEncashmentPastLeaves != null && payload.leaveEncashmentPastLeaves !== '' ? Math.max(0, Number(payload.leaveEncashmentPastLeaves) || 0) : 0,
+    leaveEncashmentMonthlyLeaves: payload.leaveEncashmentMonthlyLeaves != null && payload.leaveEncashmentMonthlyLeaves !== '' ? Math.max(0, Number(payload.leaveEncashmentMonthlyLeaves) || 2) : 2,
+    extraAllowances: Array.isArray(payload.extraAllowances)
+      ? payload.extraAllowances.filter(a => a && a.type && Number(a.amount) > 0).map(a => ({ type: String(a.type).trim(), amount: Number(a.amount) }))
+      : [],
+    educationDocs: Array.isArray(payload.educationDocs)
+      ? payload.educationDocs.filter(d => d && (String(d.title || '').trim() || d.file)).map(d => ({ title: String(d.title || '').trim(), file: d.file || null }))
+      : [],
   };
 }
 
@@ -223,6 +239,12 @@ function mergeExtendedFields(base, extended = {}) {
     short: normalizeNumber(extended.short, 0),
     incrementMonths: extended.incrementMonths ?? null,
     incrementPercentage: extended.incrementPercentage ?? null,
+    leaveEncashmentEnabled: Boolean(extended.leaveEncashmentEnabled),
+    leaveEncashmentRate: extended.leaveEncashmentRate != null ? Number(extended.leaveEncashmentRate) : 0,
+    leaveEncashmentPastLeaves: extended.leaveEncashmentPastLeaves != null ? Number(extended.leaveEncashmentPastLeaves) : 0,
+    leaveEncashmentMonthlyLeaves: extended.leaveEncashmentMonthlyLeaves != null ? Number(extended.leaveEncashmentMonthlyLeaves) : 2,
+    extraAllowances: Array.isArray(extended.extraAllowances) ? extended.extraAllowances : (typeof extended.extraAllowances === 'string' ? JSON.parse(extended.extraAllowances || '[]') : []),
+    educationDocs: Array.isArray(extended.educationDocs) ? extended.educationDocs : (typeof extended.educationDocs === 'string' ? JSON.parse(extended.educationDocs || '[]') : []),
   };
 }
 
@@ -249,9 +271,23 @@ async function upsertExtendedEmployeeFields(employeeId, payload = {}) {
       "late" = ${f.late},
       "short" = ${f.short},
       "incrementMonths" = ${f.incrementMonths},
-      "incrementPercentage" = ${f.incrementPercentage}
+      "incrementPercentage" = ${f.incrementPercentage},
+      "leaveEncashmentEnabled" = ${f.leaveEncashmentEnabled},
+      "leaveEncashmentRate" = ${f.leaveEncashmentRate},
+      "leaveEncashmentPastLeaves" = ${f.leaveEncashmentPastLeaves},
+      "leaveEncashmentMonthlyLeaves" = ${f.leaveEncashmentMonthlyLeaves}
     WHERE id = ${id}
   `;
+  await prisma.$executeRawUnsafe(
+    `UPDATE "Employee" SET "extraAllowances" = $1::jsonb WHERE id = $2`,
+    JSON.stringify(f.extraAllowances),
+    id
+  );
+  await prisma.$executeRawUnsafe(
+    `UPDATE "Employee" SET "educationDocs" = $1::jsonb WHERE id = $2`,
+    JSON.stringify(f.educationDocs),
+    id
+  );
 
   return f;
 }
@@ -282,7 +318,13 @@ async function getExtendedFieldsByEmployeeIds(employeeIds = []) {
       "late",
       "short",
       "incrementMonths",
-      "incrementPercentage"
+      "incrementPercentage",
+      "leaveEncashmentEnabled",
+      "leaveEncashmentRate",
+      "leaveEncashmentPastLeaves",
+      "leaveEncashmentMonthlyLeaves",
+      "extraAllowances",
+      "educationDocs"
     FROM "Employee"
     WHERE id IN (${ids.join(',')})
   `);

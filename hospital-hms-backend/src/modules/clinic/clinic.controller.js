@@ -186,7 +186,7 @@ async function deleteStaffCategory(req, res, next) {
 
 async function getDoctors(req, res, next) {
   try {
-    const data = await service.getAllDoctors();
+    const data = await service.getAllDoctors({ minimal: req.query.minimal === 'true' });
     success(res, data);
   } catch (err) { next(err); }
 }

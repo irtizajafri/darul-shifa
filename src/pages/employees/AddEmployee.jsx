@@ -67,6 +67,11 @@ export default function AddEmployee({ edit }) {
   const signatureInputRef = useRef(null);
   const cnicFrontInputRef = useRef(null);
   const cnicBackInputRef = useRef(null);
+  const eduDocFileInputRef = useRef(null);
+  const pendingEduDocIdx = useRef(null);
+  const [educationDocs, setEducationDocs] = useState(
+    Array.isArray(existing?.educationDocs) ? existing.educationDocs : []
+  );
   const normalizeRoster = (rows = []) => {
     const byDay = Object.fromEntries((rows || []).map((r) => [r.day, r]));
     return DAYS.map((d, i) => {
@@ -100,6 +105,7 @@ export default function AddEmployee({ edit }) {
           ...existing,
           incentive: Number(existing.incentive || 0),
           allowances: existing.allowances || [],
+          extraAllowances: existing.extraAllowances || [],
           photo: existing.photo || null,
           signature: existing.signature || null,
           dutyType: normalizeDutyType(existing.dutyType),
@@ -108,6 +114,10 @@ export default function AddEmployee({ edit }) {
           cnicFrontDoc: existing.cnicFrontDoc || null,
           cnicBackDoc: existing.cnicBackDoc || null,
           cnicExpiryDate: existing.cnicExpiryDate || '',
+          leaveEncashmentEnabled: Boolean(existing.leaveEncashmentEnabled),
+          leaveEncashmentMonthlyLeaves: existing.leaveEncashmentMonthlyLeaves ?? 2,
+          leaveEncashmentRate: existing.leaveEncashmentRate ?? 0,
+          leaveEncashmentPastLeaves: existing.leaveEncashmentPastLeaves ?? 0,
           hasEobi: Boolean(existing.hasEobi),
           hasSocialSecurity: Boolean(existing.hasSocialSecurity),
           hasHealthCard: Boolean(existing.hasHealthCard),
@@ -128,6 +138,7 @@ export default function AddEmployee({ edit }) {
           empCode: getNextEmpCode(),
           incentive: 0,
           allowances: [],
+          extraAllowances: [],
           photo: null,
           signature: null,
           dutyType: 'normal',
@@ -136,6 +147,10 @@ export default function AddEmployee({ edit }) {
           cnicFrontDoc: null,
           cnicBackDoc: null,
           cnicExpiryDate: '',
+          leaveEncashmentEnabled: false,
+          leaveEncashmentMonthlyLeaves: 2,
+          leaveEncashmentRate: 0,
+          leaveEncashmentPastLeaves: 0,
           hasEobi: false,
           hasSocialSecurity: false,
           hasHealthCard: false,
@@ -151,6 +166,7 @@ export default function AddEmployee({ edit }) {
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: 'allowances' });
+  const { fields: extraFields, append: appendExtra, remove: removeExtra } = useFieldArray({ control, name: 'extraAllowances' });
   const { fields: rosterFields } = useFieldArray({ control, name: 'dutyRoster' });
 
   const basicSalary = watch('basicSalary') || 0;
@@ -343,6 +359,7 @@ export default function AddEmployee({ edit }) {
         rosterEffectiveFrom: (edit && rosterEffectiveMode === 'custom' && rosterEffectiveDate)
           ? rosterEffectiveDate
           : undefined,
+        educationDocs,
       };
 
       if (payload.dutyType === 'alternative') {
@@ -666,6 +683,25 @@ export default function AddEmployee({ edit }) {
     <input type="hidden" {...register('signature')} />
     <input type="hidden" {...register('cnicFrontDoc')} />
     <input type="hidden" {...register('cnicBackDoc')} />
+        <input
+          ref={eduDocFileInputRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          className="sr-only"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            const idx = pendingEduDocIdx.current;
+            if (!file || idx === null) return;
+            if (file.size > 4 * 1024 * 1024) { toast.error('Max file size is 4MB'); return; }
+            const reader = new FileReader();
+            reader.onload = () => {
+              setEducationDocs(prev => prev.map((d, i) => i === idx ? { ...d, file: reader.result } : d));
+              toast.success('Document uploaded');
+            };
+            reader.readAsDataURL(file);
+            e.target.value = '';
+          }}
+        />
         {activeTab === 0 && (
           <Card title="Personal Information" className="form-card">
             <div className="form-grid">
@@ -936,9 +972,64 @@ export default function AddEmployee({ edit }) {
                 </div>
               </div>
               <Input label="Basic Salary" type="number" {...register('basicSalary', { required: true, valueAsNumber: true })} error={errors.basicSalary?.message} />
-              <Input label="Incentive (added to net salary)" type="number" {...register('incentive', { valueAsNumber: true })} />
+              <div className="col-span-2 allowance-section">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="font-medium">Extra Allowances <span style={{ fontWeight: 400, fontSize: '0.8rem', color: '#64748b' }}>(net salary mein add, attendance se nahi katega)</span></label>
+                  <Button type="button" label="+ Add Extra Allowance" size="sm" variant="outline" onClick={() => appendExtra({ type: '', amount: 0 })} />
+                </div>
+                <div className="space-y-2">
+                  <datalist id="extraAllowanceList">
+                    <option value="Utility Allowance" />
+                    <option value="Mobile Allowance" />
+                    <option value="Internet Allowance" />
+                    <option value="Children Education Allowance" />
+                    <option value="Special Allowance" />
+                    <option value="Personal Allowance" />
+                    <option value="Project Allowance" />
+                    <option value="Responsibility Allowance" />
+                    <option value="Skill Allowance" />
+                    <option value="Risk Allowance" />
+                    <option value="Hardship Allowance" />
+                    <option value="Entertainment Allowance" />
+                    <option value="Representation Allowance" />
+                    <option value="Attendance Allowance" />
+                    <option value="Executive Allowance" />
+                    <option value="Management Allowance" />
+                    <option value="Incentive Allowance" />
+                  </datalist>
+                  {extraFields.map((f, i) => (
+                    <div key={f.id} className="allowance-row">
+                      <input
+                        type="text"
+                        list="extraAllowanceList"
+                        {...register(`extraAllowances.${i}.type`)}
+                        className="form-input allowance-type-input"
+                        placeholder="Name (e.g. TA, Medical, Mobile)"
+                      />
+                      <input
+                        type="number"
+                        {...register(`extraAllowances.${i}.amount`, { valueAsNumber: true })}
+                        className="form-input allowance-amount-input"
+                        placeholder="Amount"
+                      />
+                      <button type="button" onClick={() => removeExtra(i)} className="text-danger">✕</button>
+                    </div>
+                  ))}
+                  {extraFields.length === 0 && <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Koi extra allowance nahi. "+ Add Extra Allowance" se add karo.</p>}
+                </div>
+              </div>
               <Input label="Increment (Months)" type="number" min="1" placeholder="e.g. 12" {...register('incrementMonths', { valueAsNumber: true })} />
               <Input label="Increment %" type="number" min="0" step="0.1" placeholder="e.g. 10" {...register('incrementPercentage', { valueAsNumber: true })} />
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-2">Leave Encashment</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" {...register('leaveEncashmentEnabled')} className="w-4 h-4" />
+                  <span className="text-sm">Enable Leave Encashment for this employee</span>
+                </label>
+              </div>
+              <Input label="Monthly Leaves Allotment" type="number" min="0" step="1" placeholder="e.g. 2" {...register('leaveEncashmentMonthlyLeaves', { valueAsNumber: true })} />
+              <Input label="Past Leave Rate (PKR per leave)" type="number" min="0" step="1" placeholder="e.g. 1000" {...register('leaveEncashmentRate', { valueAsNumber: true })} />
+              <Input label="Past Leaves (Opening Balance)" type="number" min="0" step="0.5" placeholder="e.g. 0" {...register('leaveEncashmentPastLeaves', { valueAsNumber: true })} />
               <div className="col-span-2 allowance-section">
                 <div className="flex justify-between items-center mb-2">
                   <label className="font-medium">Allowances</label>
@@ -1417,6 +1508,69 @@ export default function AddEmployee({ edit }) {
                 </div>
               </div>
 
+
+              <div className="col-span-2 allowance-section">
+                <div className="flex justify-between items-center mb-2">
+                  <label className="font-medium">
+                    Education Documents
+                    <span style={{ fontWeight: 400, fontSize: '0.8rem', color: '#64748b', marginLeft: '0.5rem' }}>(PNG/JPG, har document ka title bhi likho)</span>
+                  </label>
+                  <Button
+                    type="button"
+                    label="+ Add Document"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEducationDocs(prev => [...prev, { title: '', file: null }])}
+                  />
+                </div>
+                <div className="space-y-3">
+                  {educationDocs.map((doc, i) => (
+                    <div key={i} className="edu-doc-row">
+                      <input
+                        type="text"
+                        className="form-input edu-doc-title-input"
+                        placeholder="Document title (e.g. Matric Certificate, MBBS Degree)"
+                        value={doc.title}
+                        onChange={e => setEducationDocs(prev => prev.map((d, idx) => idx === i ? { ...d, title: e.target.value } : d))}
+                      />
+                      <div className="edu-doc-file-area">
+                        {doc.file ? (
+                          <>
+                            <img
+                              src={doc.file}
+                              alt={doc.title || `Doc ${i + 1}`}
+                              className="h-12 w-auto rounded border border-[#E2E8F0] object-contain bg-white"
+                            />
+                            <Button
+                              type="button"
+                              label="Replace"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => { pendingEduDocIdx.current = i; eduDocFileInputRef.current?.click(); }}
+                            />
+                          </>
+                        ) : (
+                          <Button
+                            type="button"
+                            label="Upload PNG"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => { pendingEduDocIdx.current = i; eduDocFileInputRef.current?.click(); }}
+                          />
+                        )}
+                        <button
+                          type="button"
+                          className="text-danger"
+                          onClick={() => setEducationDocs(prev => prev.filter((_, idx) => idx !== i))}
+                        >✕</button>
+                      </div>
+                    </div>
+                  ))}
+                  {educationDocs.length === 0 && (
+                    <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Koi education document nahi. "+ Add Document" se add karo.</p>
+                  )}
+                </div>
+              </div>
 
               <div className="col-span-2">
                 <label className="block text-sm font-medium mb-1">Additional Notes</label>

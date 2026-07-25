@@ -65,7 +65,7 @@ export default function RevenueDashboard() {
   useEffect(() => {
     fetch(`${API}/departments`).then(r=>r.json()).then(j=>setDepartments(j.data||[])).catch(()=>{});
     fetch(`${API}/sub-departments`).then(r=>r.json()).then(j=>setSubDepts(j.data||[])).catch(()=>{});
-    fetch(`${API}/doctors`).then(r=>r.json()).then(j=>setConsultants(j.data||[])).catch(()=>{});
+    fetch(`${API}/doctors?minimal=true`).then(r=>r.json()).then(j=>setConsultants(j.data||[])).catch(()=>{});
   }, []);
 
   const fetchData = useCallback(async () => {

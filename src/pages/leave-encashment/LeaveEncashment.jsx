@@ -46,7 +46,7 @@ function currentMonthKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
-const START_MONTH = '2026-06';
+const START_MONTH = '2026-07';
 
 function getAccumulatedMonthNames() {
   const names = [];
@@ -87,6 +87,9 @@ export default function LeaveEncashment() {
   const [leavesCount, setLeavesCount] = useState('');
   const [encashNotes, setEncashNotes] = useState('');
   const [savingEncash, setSavingEncash] = useState(false);
+  const [reportModal, setReportModal] = useState(false);
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
 
   useEffect(() => {
     setModule('employee');
@@ -184,7 +187,7 @@ export default function LeaveEncashment() {
     const pageWidth = pdf.internal.pageSize.getWidth();
     const title = monthFilter
       ? `Leave Encashment — ${formatMonthLabel(monthFilter)}`
-      : 'Leave Encashment — Summary';
+      : 'Leave Encashment';
 
     pdf.setFontSize(14);
     pdf.text('Darul Shifa Imam Khomeini', pageWidth / 2, 40, { align: 'center' });
@@ -198,7 +201,7 @@ export default function LeaveEncashment() {
       r.name,
       r.designation || '—',
       r.department || '—',
-      2,
+      r.leaveEncashmentRate ?? 2,
       r.accumulatedLeaves,
       r.availableLeaves,
       monthNamesStr,
@@ -241,7 +244,7 @@ export default function LeaveEncashment() {
       'Employee Name': r.name,
       Designation: r.designation || '',
       Department: r.department || '',
-      'Allotted Leaves': 2,
+      'Allotted Leaves': r.leaveEncashmentRate ?? 2,
       'Total Leaves': r.accumulatedLeaves,
       'Available Leaves': r.availableLeaves,
       Months: accumulatedMonthNames.join(', '),
@@ -265,12 +268,99 @@ export default function LeaveEncashment() {
     });
   };
 
+  const openReport = async (employeeId) => {
+    setReportData(null);
+    setReportModal(true);
+    setReportLoading(true);
+    try {
+      const res = await fetch(`${API}/employee-report/${employeeId}`);
+      const json = await res.json();
+      if (json.ok) setReportData(json.data);
+      else toast.error('Failed to load report');
+    } catch {
+      toast.error('Network error');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  const handleReportPrint = () => {
+    if (!reportData) return;
+    const { employee, monthlyBreakdown, issued, balance } = reportData;
+    const pdf = new jsPDF('p', 'pt', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const today = new Date().toISOString().split('T')[0].split('-').reverse().join('-');
+
+    pdf.setFontSize(14); pdf.setFont('helvetica', 'bold');
+    pdf.text('Darul Shifa Imam Khomeini', pageWidth / 2, 35, { align: 'center' });
+    pdf.setFontSize(11);
+    pdf.text('Leave Encashment Report', pageWidth / 2, 52, { align: 'center' });
+    pdf.setFontSize(9); pdf.setFont('helvetica', 'normal');
+    pdf.text(`Employee: ${employee.name} (${employee.empCode})`, 40, 70);
+    pdf.text(`Date: ${today}`, pageWidth - 40, 70, { align: 'right' });
+    pdf.text(`Basic Salary: PKR ${Number(employee.basicSalary).toLocaleString()}   |   Monthly Leaves: ${employee.monthlyLeaves}`, 40, 83);
+
+    // Section 1: Monthly Breakdown
+    pdf.setFontSize(10); pdf.setFont('helvetica', 'bold');
+    pdf.text('Monthly Breakdown', 40, 100);
+    const bBody = monthlyBreakdown.map(r => [r.label, r.leaves, `PKR ${Math.round(r.rate).toLocaleString()}`, `PKR ${Math.round(r.amount).toLocaleString()}`]);
+    bBody.push(['TOTAL', balance.totalAccumulated, '', `PKR ${Math.round(balance.totalAmountAccumulated).toLocaleString()}`]);
+    autoTable(pdf, {
+      startY: 106, head: [['Month', 'Leaves', 'Rate/Day', 'Amount']],
+      body: bBody, margin: { left: 40, right: 40 },
+      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      didParseCell: (d) => { if (d.row.index === bBody.length - 1) d.cell.styles.fontStyle = 'bold'; },
+    });
+
+    // Section 2: Issued Leaves
+    let y2 = pdf.lastAutoTable.finalY + 16;
+    pdf.setFontSize(10); pdf.setFont('helvetica', 'bold');
+    pdf.text('Issued Leaves', 40, y2);
+    if (issued.length === 0) {
+      pdf.setFontSize(8); pdf.setFont('helvetica', 'normal');
+      pdf.text('No leaves issued yet.', 40, y2 + 14);
+      y2 += 28;
+    } else {
+      const iBody = issued.map(r => [r.month, r.leavesCount, `PKR ${Math.round(r.perDayRate).toLocaleString()}`, `PKR ${Math.round(r.amount).toLocaleString()}`, r.type, r.attendanceDate || '—']);
+      autoTable(pdf, {
+        startY: y2 + 6, head: [['Month', 'Leaves', 'Rate/Day', 'Amount', 'Type', 'Date']],
+        body: iBody, margin: { left: 40, right: 40 },
+        headStyles: { fillColor: [71, 85, 105], textColor: 255, fontSize: 8 },
+        bodyStyles: { fontSize: 8 },
+      });
+      y2 = pdf.lastAutoTable.finalY + 16;
+    }
+
+    // Section 3: Balance
+    pdf.setFontSize(10); pdf.setFont('helvetica', 'bold');
+    pdf.text('Balance Summary', 40, y2);
+    const balBody = [
+      ['Total Accumulated', balance.totalAccumulated, `PKR ${Math.round(balance.totalAmountAccumulated).toLocaleString()}`],
+      ['Total Issued', balance.totalIssued, `PKR ${Math.round(balance.totalAmountIssued).toLocaleString()}`],
+      ['Remaining Balance', balance.remainingLeaves, `PKR ${Math.round(balance.remainingAmount).toLocaleString()}`],
+    ];
+    if (balance.pastLeaves > 0) {
+      balBody.push([`Past Leaves (${balance.pastLeaves} × PKR ${balance.pastLeaveRate})`, balance.pastLeaves, `PKR ${Math.round(balance.pastLeavesValue).toLocaleString()}`]);
+    }
+    autoTable(pdf, {
+      startY: y2 + 6, head: [['Description', 'Leaves', 'Amount']],
+      body: balBody, margin: { left: 40, right: 40 },
+      headStyles: { fillColor: [15, 118, 110], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      didParseCell: (d) => { if (d.row.index === 2) d.cell.styles.fontStyle = 'bold'; },
+    });
+
+    pdf.autoPrint();
+    window.open(pdf.output('bloburl'), '_blank');
+  };
+
   const accumulatedMonthNames = useMemo(() => getAccumulatedMonthNames(), []);
 
   // Month options: June 2026 to current
   const monthOptions = useMemo(() => {
     const opts = [];
-    const start = new Date(2026, 5, 1); // June 2026
+    const start = new Date(2026, 6, 1); // July 2026
     const now = new Date();
     const end = new Date(now.getFullYear(), now.getMonth(), 1);
     let cur = new Date(start);
@@ -288,7 +378,7 @@ export default function LeaveEncashment() {
     <div className="leave-encashment-page">
       <PageHeader
         title="Leave Encashment"
-        subtitle="2 leaves per employee per month from June 2026"
+        subtitle="Leave encashment from July 2026 — per-employee rate"
         action={
           <Button label="+ New Encashment" variant="primary" onClick={() => setEncashModal(true)} />
         }
@@ -328,11 +418,13 @@ export default function LeaveEncashment() {
                 <th>Employee Name</th>
                 <th>Designation</th>
                 <th>Department</th>
-                <th className="text-right">Allotted Leaves</th>
+                <th className="text-right">Allotted/Month</th>
                 <th className="text-right">Total Leaves</th>
                 <th className="text-right">Avail. Leaves</th>
                 <th>Months</th>
+                <th className="text-right">Past Leaves Value</th>
                 <th className="text-right">Amount (PKR)</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -350,7 +442,7 @@ export default function LeaveEncashment() {
                       <td>{r.name}</td>
                       <td>{r.designation || '—'}</td>
                       <td>{r.department || '—'}</td>
-                      <td className="text-right">2</td>
+                      <td className="text-right">{r.leaveEncashmentRate ?? 2}</td>
                       <td className="text-right">{r.accumulatedLeaves}</td>
                       <td className="text-right">{r.availableLeaves}</td>
                       <td>
@@ -358,7 +450,16 @@ export default function LeaveEncashment() {
                           <div key={mn} style={{ fontSize: '0.8rem', lineHeight: '1.6' }}>{mn}</div>
                         ))}
                       </td>
+                      <td className="text-right">{r.pastLeavesValue ? r.pastLeavesValue.toLocaleString() : '—'}</td>
                       <td className="text-right">{r.amount.toLocaleString()}</td>
+                      <td>
+                        <button
+                          onClick={() => openReport(r.employeeId)}
+                          style={{ padding: '3px 10px', fontSize: '0.78rem', cursor: 'pointer', borderRadius: '5px', border: '1px solid #0f766e', color: '#0f766e', background: 'transparent' }}
+                        >
+                          🖨 Detail
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   <tr className="total-row">
@@ -367,8 +468,9 @@ export default function LeaveEncashment() {
                     <td className="text-right"><strong>{summaryRows.reduce((s, r) => s + r.accumulatedLeaves, 0)}</strong></td>
                     <td className="text-right"><strong>{totals.availableLeaves}</strong></td>
                     <td />
+                    <td className="text-right"><strong>{summaryRows.reduce((s, r) => s + (r.pastLeavesValue || 0), 0).toLocaleString()}</strong></td>
                     <td className="text-right"><strong>{totals.amount.toLocaleString()}</strong></td>
-
+                    <td />
                   </tr>
                 </>
               )}
@@ -397,7 +499,7 @@ export default function LeaveEncashment() {
               onChange={(e) => setSelectedEmployee(e.target.value)}
             >
               <option value="">— Select Employee —</option>
-              {employees.map((e) => (
+              {employees.filter((e) => e.leaveEncashmentEnabled).map((e) => (
                 <option key={e.id} value={e.id}>
                   {e.empCode} — {e.firstName} {e.lastName}
                 </option>
@@ -419,6 +521,12 @@ export default function LeaveEncashment() {
                 <div className="bal-label">Available</div>
                 <div className="bal-value">{balance.availableLeaves}</div>
               </div>
+              {balance.pastLeavesValue > 0 && (
+                <div className="bal-item">
+                  <div className="bal-label">Past Leaves Value</div>
+                  <div className="bal-value" style={{ color: '#0f766e' }}>PKR {balance.pastLeavesValue.toLocaleString()}</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -477,6 +585,102 @@ export default function LeaveEncashment() {
               disabled={savingEncash}
             />
           </div>
+        </div>
+      </Modal>
+      {/* Employee Report Modal */}
+      <Modal
+        isOpen={reportModal}
+        title={reportData ? `${reportData.employee.name} — Leave Encashment Detail` : 'Loading...'}
+        onClose={() => { setReportModal(false); setReportData(null); }}
+      >
+        <div className="modal-body">
+          {reportLoading && <p style={{ textAlign: 'center', color: '#94a3b8' }}>Loading...</p>}
+          {reportData && (
+            <>
+              <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1rem' }}>
+                Emp Code: <strong>{reportData.employee.empCode}</strong> &nbsp;|&nbsp;
+                Basic Salary: <strong>PKR {Number(reportData.employee.basicSalary).toLocaleString()}</strong> &nbsp;|&nbsp;
+                Monthly Leaves: <strong>{reportData.employee.monthlyLeaves}</strong>
+              </p>
+
+              {/* Section 1 */}
+              <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: '#0f766e' }}>Monthly Breakdown</h4>
+              <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
+                <table className="data-table" style={{ fontSize: '0.83rem' }}>
+                  <thead>
+                    <tr><th>Month</th><th className="text-right">Leaves</th><th className="text-right">Rate/Day (PKR)</th><th className="text-right">Amount (PKR)</th></tr>
+                  </thead>
+                  <tbody>
+                    {reportData.monthlyBreakdown.map(r => (
+                      <tr key={r.month}>
+                        <td>{r.label}</td>
+                        <td className="text-right">{r.leaves}</td>
+                        <td className="text-right">{Math.round(r.rate).toLocaleString()}</td>
+                        <td className="text-right">{Math.round(r.amount).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ fontWeight: 700, background: '#f1f5f9' }}>
+                      <td>TOTAL</td>
+                      <td className="text-right">{reportData.balance.totalAccumulated}</td>
+                      <td />
+                      <td className="text-right">{Math.round(reportData.balance.totalAmountAccumulated).toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Section 2 */}
+              <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: '#475569' }}>Issued Leaves</h4>
+              <div style={{ overflowX: 'auto', marginBottom: '1.25rem' }}>
+                {reportData.issued.length === 0 ? (
+                  <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>No leaves issued yet.</p>
+                ) : (
+                  <table className="data-table" style={{ fontSize: '0.83rem' }}>
+                    <thead>
+                      <tr><th>Month</th><th className="text-right">Leaves</th><th className="text-right">Rate/Day</th><th className="text-right">Amount</th><th>Type</th><th>Date</th></tr>
+                    </thead>
+                    <tbody>
+                      {reportData.issued.map(r => (
+                        <tr key={r.id}>
+                          <td>{r.month}</td>
+                          <td className="text-right">{r.leavesCount}</td>
+                          <td className="text-right">{Math.round(r.perDayRate).toLocaleString()}</td>
+                          <td className="text-right">{Math.round(r.amount).toLocaleString()}</td>
+                          <td>{r.type}</td>
+                          <td>{r.attendanceDate || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Section 3 */}
+              <h4 style={{ fontSize: '0.9rem', marginBottom: '0.5rem', color: '#0f766e' }}>Balance Summary</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                {[
+                  { label: 'Accumulated', leaves: reportData.balance.totalAccumulated, amount: reportData.balance.totalAmountAccumulated, color: '#0f766e' },
+                  { label: 'Issued', leaves: reportData.balance.totalIssued, amount: reportData.balance.totalAmountIssued, color: '#dc2626' },
+                  { label: 'Balance', leaves: reportData.balance.remainingLeaves, amount: reportData.balance.remainingAmount, color: '#0f766e', bold: true },
+                ].map(b => (
+                  <div key={b.label} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '0.75rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{b.label}</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: b.bold ? 700 : 600, color: b.color }}>{b.leaves} leaves</div>
+                    <div style={{ fontSize: '0.85rem', color: '#475569' }}>PKR {Math.round(b.amount).toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+              {reportData.employee.pastLeaves > 0 && (
+                <p style={{ fontSize: '0.82rem', color: '#64748b', marginBottom: '1rem' }}>
+                  Past Leaves: {reportData.employee.pastLeaves} × PKR {reportData.employee.pastLeaveRate} = <strong>PKR {Math.round(reportData.employee.pastLeavesValue).toLocaleString()}</strong>
+                </p>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button label="🖨 Print" variant="primary" onClick={handleReportPrint} />
+              </div>
+            </>
+          )}
         </div>
       </Modal>
     </div>

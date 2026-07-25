@@ -113,7 +113,16 @@ const DOCTOR_INCLUDE = {
   },
 };
 
-async function getAllDoctors() {
+// minimal=true skips the nested subDepts/rates tree — used by dropdown-only screens
+// (Death Certificate, Revenue Dashboard filters, etc.) that just need id/code/name.
+// Default (full) behavior is unchanged for screens that edit doctor rates.
+async function getAllDoctors({ minimal } = {}) {
+  if (minimal) {
+    return prisma.clinicDoctor.findMany({
+      select: { id: true, code: true, name: true, status: true },
+      orderBy: { name: 'asc' },
+    });
+  }
   return prisma.clinicDoctor.findMany({
     include: DOCTOR_INCLUDE,
     orderBy: { name: 'asc' },
@@ -1963,8 +1972,11 @@ async function importBillComparison(rows) {
   }
 
   // ── Step 3: replace all bill rows ──
+  // All lookups (companyId, empEntry) are already resolved from in-memory maps
+  // built above — no per-row DB reads here, so this batches as one createMany
+  // instead of N sequential inserts (same result, far fewer round trips).
   await prisma.clinicPanelBillRow.deleteMany({});
-  for (const row of rows) {
+  const billRowsData = rows.map((row) => {
     const companyId = row.companyName ? companyMap[row.companyName.trim().toLowerCase()] : null;
     const empName   = row.employeeName?.trim().toLowerCase();
     const empKey    = companyId && empName ? `${companyId}||${empName}` : null;
@@ -1982,23 +1994,26 @@ async function importBillComparison(rows) {
       }
     }
 
-    await prisma.clinicPanelBillRow.create({
-      data: {
-        sno:            row.sno       || null,
-        admitNo:        row.admitNo   || null,
-        patientName:    row.patientName || '',
-        employeeName:   row.employeeName || null,
-        companyName:    row.companyName  || null,
-        panelCompanyId: companyId || null,
-        panelEmployeeId,
-        relation,
-        amount:         row.amount     ?? 0,
-        billAmount:     row.billAmount ?? 0,
-        diff:           row.diff       ?? 0,
-      },
-    });
-    result.rowsInserted++;
+    return {
+      sno:            row.sno       || null,
+      admitNo:        row.admitNo   || null,
+      patientName:    row.patientName || '',
+      employeeName:   row.employeeName || null,
+      companyName:    row.companyName  || null,
+      panelCompanyId: companyId || null,
+      panelEmployeeId,
+      relation,
+      amount:         row.amount     ?? 0,
+      billAmount:     row.billAmount ?? 0,
+      diff:           row.diff       ?? 0,
+    };
+  });
+
+  const CHUNK = 1000;
+  for (let i = 0; i < billRowsData.length; i += CHUNK) {
+    await prisma.clinicPanelBillRow.createMany({ data: billRowsData.slice(i, i + CHUNK) });
   }
+  result.rowsInserted = billRowsData.length;
   return result;
 }
 

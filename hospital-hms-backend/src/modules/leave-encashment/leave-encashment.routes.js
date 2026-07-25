@@ -4,7 +4,9 @@ const controller = require('./leave-encashment.controller');
 const router = express.Router();
 
 router.get('/summary', controller.getSummary);
+router.get('/monthly-total', controller.getMonthlyTotal);
 router.get('/balance/:employeeId', controller.getBalance);
+router.get('/employee-report/:employeeId', controller.getEmployeeReport);
 router.get('/records', controller.listRecords);
 router.post('/', controller.create);
 router.post('/sync-attendance', controller.syncAttendance);

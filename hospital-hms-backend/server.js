@@ -53,6 +53,21 @@ async function backfillOpeningStockMovements() {
   console.log(`✅ Opening stock backfill done for ${count} items`);
 }
 
+async function ensureLeaveEncashmentEmployee() {
+  try {
+    const existing = await prisma.$queryRawUnsafe(`SELECT id FROM "Employee" WHERE "empCode" = '51214' LIMIT 1`);
+    if (!existing.length) {
+      await prisma.$executeRawUnsafe(`
+        INSERT INTO "Employee" ("empCode", "firstName", "lastName", "status", "salaryMonthly", "dutyRoster", "allowances", "updatedAt")
+        VALUES ('51214', 'Leave', 'Encashment', 'Active', 0, '[]', '[]', NOW())
+      `);
+      console.log('✅ Leave Encashment employee (51214) created');
+    }
+  } catch (err) {
+    console.warn('⚠️ Leave Encashment employee check failed:', err.message);
+  }
+}
+
 app.get('/', (req, res) => {
   res.json({ message: '🏥 Darul Shifa Imam Khomeini API Running!' });
 });
@@ -61,4 +76,5 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   await backfillOpeningStockMovements().catch((err) => console.error('Backfill error:', err));
+  await ensureLeaveEncashmentEmployee();
 });

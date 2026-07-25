@@ -160,7 +160,7 @@ export default function DeathCertificateReport() {
   const fileRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API}/doctors`).then((r) => r.json()).then((j) => {
+    fetch(`${API}/doctors?minimal=true`).then((r) => r.json()).then((j) => {
       const map = {};
       (j.data || []).forEach((d) => { map[d.id] = d.name; });
       setDoctors(map);

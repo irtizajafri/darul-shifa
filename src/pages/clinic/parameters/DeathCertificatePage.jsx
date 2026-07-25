@@ -44,7 +44,7 @@ export default function DeathCertificatePage() {
   const boxRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API}/doctors`).then((r) => r.json()).then((j) => setDoctors(j.data || [])).catch(() => {});
+    fetch(`${API}/doctors?minimal=true`).then((r) => r.json()).then((j) => setDoctors(j.data || [])).catch(() => {});
   }, []);
 
   useEffect(() => {

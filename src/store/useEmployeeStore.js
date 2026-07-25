@@ -34,6 +34,12 @@ export const useEmployeeStore = create((set, get) => ({
         otherBenefitText: e.otherBenefitText || '',
         incrementMonths: e.incrementMonths ?? null,
         incrementPercentage: e.incrementPercentage ?? null,
+        extraAllowances: Array.isArray(e.extraAllowances) ? e.extraAllowances : [],
+        educationDocs: Array.isArray(e.educationDocs) ? e.educationDocs : [],
+        leaveEncashmentEnabled: Boolean(e.leaveEncashmentEnabled),
+        leaveEncashmentRate: e.leaveEncashmentRate != null ? Number(e.leaveEncashmentRate) : 0,
+        leaveEncashmentPastLeaves: e.leaveEncashmentPastLeaves != null ? Number(e.leaveEncashmentPastLeaves) : 0,
+        leaveEncashmentMonthlyLeaves: e.leaveEncashmentMonthlyLeaves != null ? Number(e.leaveEncashmentMonthlyLeaves) : 2,
         eobiContribution: Number(e.eobiContribution || 0),
         socialSecurityContribution: Number(e.socialSecurityContribution || 0),
         healthCardContribution: Number(e.healthCardContribution || 0),
@@ -114,6 +120,8 @@ export const useEmployeeStore = create((set, get) => ({
         disbursement: updates.disbursement,
         allowances: updates.allowances,
         incentive: Number(updates.incentive || 0),
+        extraAllowances: Array.isArray(updates.extraAllowances) ? updates.extraAllowances : [],
+        educationDocs: Array.isArray(updates.educationDocs) ? updates.educationDocs : [],
         rosterEffectiveFrom: updates.rosterEffectiveFrom || undefined,
         dutyType: updates.dutyType,
         dutyRoster: updates.dutyRoster,
@@ -139,6 +147,10 @@ export const useEmployeeStore = create((set, get) => ({
         otherBenefitContribution: updates.otherBenefitContribution,
         incrementMonths: updates.incrementMonths ?? null,
         incrementPercentage: updates.incrementPercentage ?? null,
+        leaveEncashmentEnabled: updates.leaveEncashmentEnabled ?? false,
+        leaveEncashmentRate: updates.leaveEncashmentRate ?? 0,
+        leaveEncashmentPastLeaves: updates.leaveEncashmentPastLeaves ?? 0,
+        leaveEncashmentMonthlyLeaves: updates.leaveEncashmentMonthlyLeaves ?? 2,
       };
 
       const res = await fetch(`${API_URL}/${id}`, {
