@@ -39,6 +39,10 @@ const menuItems = [
       { label: 'Short Leave',     path: '/shortleave' },
       { label: 'Gate Pass',                path: '/gatepass' },
       { label: 'Receive Balance against Slip', path: '/clinic/transactions/receive-balance-slip' },
+      { label: 'Cancel Slip',                  path: '/clinic/transactions/cancel-slip' },
+      { label: 'Slip Refund',                  path: '/clinic/transactions/slip-refund' },
+      { label: 'Slip Adjustment',              path: '/clinic/transactions/slip-adjustment' },
+      { label: 'Receiving against Admission',  path: '/clinic/transactions/receiving-against-admission' },
     ],
   },
   {

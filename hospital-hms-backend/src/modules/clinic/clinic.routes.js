@@ -42,6 +42,15 @@ router.get('/opd', controller.getOpdVisits);
 router.post('/opd', controller.createOpdVisit);
 router.post('/opd/:id/print', controller.printOpdVisit);
 router.get('/opd/reprint/:serialNo', controller.reprintOpdVisitBySerial);
+router.get('/opd/cancel/today-list', controller.getTodayOpdVisitsForCancel);
+router.get('/opd/cancel/:id', controller.getOpdVisitForCancel);
+router.post('/opd/cancel/:id', controller.cancelOpdVisit);
+router.get('/opd/refund/search', controller.searchVisitsForRefund);
+router.get('/opd/refund/:source/:id', controller.getVisitForRefund);
+router.post('/opd/refund/:source/:id', controller.refundVisit);
+router.get('/opd/adjustment/search', controller.searchVisitsForAdjustment);
+router.get('/opd/adjustment/:source/:id', controller.getVisitForAdjustment);
+router.put('/opd/adjustment/:source/:id', controller.updateVisitPersonalInfo);
 router.get('/opd/balance-slips', controller.getBalanceSlips);
 router.post('/opd/:id/receive-balance', controller.receiveBalancePayment);
 
@@ -91,6 +100,10 @@ router.post('/antenatal', controller.createAntenatal);
 router.get('/admission/available-beds', controller.getAvailableBeds);
 router.get('/admission', controller.getAdmissions);
 router.get('/admission/by-number/:admissionNo', controller.getAdmissionByNumber);
+router.get('/admission/receiving/search', controller.searchAdmissionsForReceiving);
+router.get('/admission/receiving/by-number/:admissionNo', controller.getAdmissionForReceiving);
+router.post('/admission/receiving/:admissionId/pay', controller.addAdmissionPayment);
+router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaymentForPrint);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
 

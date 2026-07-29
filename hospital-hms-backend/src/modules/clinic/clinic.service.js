@@ -234,10 +234,20 @@ async function getNextMrNo() {
   return ((last?.mrNo || 0) + 1);
 }
 
+// Serial # sequence is shared across ClinicOpdVisit (General/Emergency/Clinic OPD)
+// and ClinicAdmission — both draw from the same running number so Admission and
+// OPD slips never collide, even though they live in separate tables.
 async function getNextSerialNo() {
-  const last = await prisma.clinicOpdVisit.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } });
+  const [lastOpd, lastAdm, lastAdmPay] = await Promise.all([
+    prisma.clinicOpdVisit.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
+    prisma.clinicAdmission.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
+    prisma.clinicAdmissionPayment.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
+  ]);
   const BASE = 2826016;
-  const n = last ? Math.max((parseInt(last.serialNo, 10) || 0) + 1, BASE) : BASE;
+  const lastOpdNum    = lastOpd    ? parseInt(lastOpd.serialNo, 10)    || 0 : 0;
+  const lastAdmNum     = lastAdm    ? parseInt(lastAdm.serialNo, 10)    || 0 : 0;
+  const lastAdmPayNum = lastAdmPay ? parseInt(lastAdmPay.serialNo, 10) || 0 : 0;
+  const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, BASE);
   return String(n);
 }
 
@@ -357,11 +367,29 @@ async function getOpdPatientsByPhone(phoneNo) {
 }
 
 async function getOpdVisitBySerial(serialNo) {
+  const no = serialNo.trim();
   const visit = await prisma.clinicOpdVisit.findFirst({
-    where: { serialNo: { equals: serialNo.trim(), mode: 'insensitive' } },
+    where: { serialNo: { equals: no, mode: 'insensitive' } },
     select: { serialNo: true, mrNo: true, patientName: true, age: true, ageMonths: true, ageDays: true, gender: true, phoneNo: true, referredBy: true, employeeId: true, panelCompanyId: true, panelEmployeeId: true, panelDependentId: true },
   });
-  return enrichOpdPatient(visit);
+  if (visit) return enrichOpdPatient(visit);
+
+  // Fallback: Patients List (old bulk-imported Excel data) — only patientName is
+  // available there; MR#, phone, age and gender were never captured in that import.
+  const pvSerial = Number(no);
+  if (pvSerial > 0 && pvSerial <= 2147483647) {
+    const pv = await prisma.patientVisit.findFirst({ where: { serialNo: pvSerial } });
+    if (pv) {
+      return {
+        serialNo: no, mrNo: null, patientName: pv.patientName,
+        age: null, ageMonths: 0, ageDays: 0, gender: null,
+        phoneNo: null, referredBy: null,
+        employeeId: null, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null,
+        patientCategory: 'private', panelLabel: '',
+      };
+    }
+  }
+  return null;
 }
 
 async function getOpdVisits() {
@@ -795,6 +823,228 @@ async function getTokenNumber(doctorId, dateStr) {
   });
 }
 
+// Transactions > Cancel Slip: list today's (business-day) active slips to pick from.
+// Business day = 8:00 AM to 7:59:59 AM next day, same convention as the revenue dashboard.
+async function getTodayOpdVisitsForCancel() {
+  const now = new Date();
+  const bizDate = new Date(now.getTime() - 8 * 60 * 60 * 1000);
+  const y = bizDate.getFullYear(), m = bizDate.getMonth(), d = bizDate.getDate();
+  const start = new Date(y, m, d, 8, 0, 0, 0);
+  const end = new Date(y, m, d + 1, 7, 59, 59, 999);
+
+  // Cancelled slips bhi list mein rehti hain (status ke saath dikhti hain) —
+  // sirf revenue dashboard side amount exclude hota hai, list se nahi hatai jati.
+  return prisma.clinicOpdVisit.findMany({
+    where: { createdAt: { gte: start, lte: end } },
+    select: {
+      id: true, serialNo: true, patientName: true, department: true,
+      totalAmount: true, paymentType: true, createdAt: true, status: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function getOpdVisitForCancel(id) {
+  const visit = await prisma.clinicOpdVisit.findUnique({
+    where: { id: Number(id) },
+    include: {
+      doctors: {
+        include: {
+          doctor: { select: { code: true, name: true } },
+          subDept: { select: { code: true, name: true } },
+        },
+      },
+    },
+  });
+  if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+  return visit;
+}
+
+async function cancelOpdVisit(id, { reason, note, cancelledBy }) {
+  if (!reason) throw Object.assign(new Error('Cancel reason zaroori hai'), { status: 400 });
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
+  if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+  if (visit.status === 'cancelled') throw Object.assign(new Error('Ye slip pehle se cancelled hai'), { status: 400 });
+
+  return prisma.clinicOpdVisit.update({
+    where: { id: Number(id) },
+    data: {
+      status: 'cancelled',
+      cancelReason: reason,
+      cancelNote: note || null,
+      cancelledAt: new Date(),
+      cancelledBy: cancelledBy || null,
+    },
+  });
+}
+
+// Transactions > Slip Refund: full list (no date restriction, unlike Cancel Slip),
+// searches BOTH ClinicOpdVisit (new system) and PatientVisit (old bulk import).
+async function searchVisitsForRefund(q) {
+  const term = String(q || '').trim();
+
+  const ovWhere = term
+    ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+    : {};
+  const ovRows = await prisma.clinicOpdVisit.findMany({
+    where: ovWhere,
+    select: { id: true, serialNo: true, patientName: true, department: true, receive: true, refund: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+
+  const pvOr = [{ patientName: { contains: term, mode: 'insensitive' } }];
+  const pvTermNum = Number(term);
+  if (term && pvTermNum > 0 && pvTermNum <= 2147483647) pvOr.push({ serialNo: pvTermNum });
+  const pvWhere = term ? { OR: pvOr } : {};
+  const pvRows = await prisma.patientVisit.findMany({
+    where: pvWhere,
+    select: { id: true, serialNo: true, patientName: true, department: true, received: true, refund: true, visitDate: true },
+    orderBy: { visitDate: 'desc' },
+    take: 100,
+  });
+
+  const ov = ovRows.map(r => ({
+    source: 'opd', id: r.id, serialNo: r.serialNo, patientName: r.patientName,
+    department: r.department, receive: Number(r.receive), refund: Number(r.refund) || 0,
+    createdAt: r.createdAt,
+  }));
+  const pv = pvRows.map(r => ({
+    source: 'pv', id: r.id, serialNo: String(r.serialNo ?? ''), patientName: r.patientName,
+    department: r.department || '', receive: Number(r.received), refund: Number(r.refund) || 0,
+    createdAt: r.visitDate,
+  }));
+
+  return [...ov, ...pv].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 150);
+}
+
+async function getVisitForRefund(source, id) {
+  if (source === 'opd') {
+    const visit = await prisma.clinicOpdVisit.findUnique({
+      where: { id: Number(id) },
+      include: {
+        doctors: {
+          include: {
+            doctor: { select: { code: true, name: true } },
+            subDept: { select: { code: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    return { source: 'opd', ...visit };
+  }
+
+  if (source === 'pv') {
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    return {
+      source: 'pv', id: pv.id, serialNo: String(pv.serialNo ?? ''), patientName: pv.patientName,
+      department: pv.department, receive: Number(pv.received), refund: Number(pv.refund) || 0,
+      createdAt: pv.visitDate,
+      doctors: [{
+        id: 0,
+        doctor:  { code: '', name: pv.doctor || '' },
+        subDept: { code: '', name: pv.subDepartment || pv.department || '' },
+        amount:  Number(pv.received),
+      }],
+    };
+  }
+
+  throw Object.assign(new Error('Invalid source'), { status: 400 });
+}
+
+async function refundVisit(source, id, { amount, reason, note, refundedBy }) {
+  const amt = Number(amount);
+  if (!amt || amt <= 0) throw Object.assign(new Error('Refund amount 0 se zyada hona chahiye'), { status: 400 });
+  if (!reason) throw Object.assign(new Error('Refund reason zaroori hai'), { status: 400 });
+
+  if (source === 'opd') {
+    const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
+    if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    const remaining = Number(visit.receive) - Number(visit.refund || 0);
+    if (amt > remaining + 0.01) throw Object.assign(new Error(`Maximum ${remaining.toFixed(2)} refund ho sakta hai`), { status: 400 });
+    return prisma.clinicOpdVisit.update({
+      where: { id: Number(id) },
+      data: {
+        refund: Number(visit.refund || 0) + amt,
+        refundReason: reason, refundNote: note || null,
+        refundedAt: new Date(), refundedBy: refundedBy || null,
+      },
+    });
+  }
+
+  if (source === 'pv') {
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    const remaining = Number(pv.received) - Number(pv.refund || 0);
+    if (amt > remaining + 0.01) throw Object.assign(new Error(`Maximum ${remaining.toFixed(2)} refund ho sakta hai`), { status: 400 });
+    return prisma.patientVisit.update({
+      where: { id: Number(id) },
+      data: {
+        refund: Number(pv.refund || 0) + amt,
+        refundReason: reason, refundNote: note || null,
+        refundedAt: new Date(), refundedBy: refundedBy || null,
+      },
+    });
+  }
+
+  throw Object.assign(new Error('Invalid source'), { status: 400 });
+}
+
+// Transactions > Slip Adjustment: same full search/detail as Slip Refund (both
+// ClinicOpdVisit and PatientVisit, no date restriction) — just delegates to the
+// same lookups so the two screens never drift apart.
+async function searchVisitsForAdjustment(q) {
+  return searchVisitsForRefund(q);
+}
+
+async function getVisitForAdjustment(source, id) {
+  return getVisitForRefund(source, id);
+}
+
+// Only patient-identity fields are editable here — department, sub-department,
+// doctor and amount/rate are intentionally never accepted, even if sent.
+async function updateVisitPersonalInfo(source, id, fields) {
+  if (source === 'opd') {
+    const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
+    if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+
+    const patientName = fields.patientName?.trim();
+    if (!patientName) throw Object.assign(new Error('Patient Name khali nahi ho sakta'), { status: 400 });
+
+    return prisma.clinicOpdVisit.update({
+      where: { id: Number(id) },
+      data: {
+        patientName,
+        patientType: fields.patientType?.trim() || visit.patientType,
+        age:         fields.age === '' || fields.age == null ? null : Number(fields.age),
+        ageMonths:   Number(fields.ageMonths) || 0,
+        ageDays:     Number(fields.ageDays) || 0,
+        gender:      fields.gender || visit.gender,
+        phoneNo:     fields.phoneNo?.trim() || null,
+        referredBy:  fields.referredBy?.trim() || null,
+        antenatalNo: fields.antenatalNo?.trim() || null,
+      },
+    });
+  }
+
+  if (source === 'pv') {
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
+
+    const patientName = fields.patientName?.trim();
+    if (!patientName) throw Object.assign(new Error('Patient Name khali nahi ho sakta'), { status: 400 });
+
+    return prisma.patientVisit.update({
+      where: { id: Number(id) },
+      data: { patientName },
+    });
+  }
+
+  throw Object.assign(new Error('Invalid source'), { status: 400 });
+}
+
 async function printOpdVisit(id) {
   const visit = await getOpdVisitForReceipt(id);
   if (!visit) throw Object.assign(new Error('Visit not found'), { status: 404 });
@@ -848,7 +1098,7 @@ async function reprintOpdVisitBySerial(serialNo) {
   }
 
   const pvSerial = Number(no);
-  if (pvSerial) {
+  if (pvSerial > 0 && pvSerial <= 2147483647) {
     const pv = await prisma.patientVisit.findFirst({ where: { serialNo: pvSerial } });
     if (pv) {
       const total = Number(pv.received || 0) + Number(pv.discount || 0) + Number(pv.balance || 0);
@@ -889,15 +1139,125 @@ async function getAdmissions() {
 // and re-print an existing Admission Form (unlike lookupAdmissionByNo, which only
 // returns a small snapshot for the Death Certificate screen).
 async function getAdmissionByNumber(admissionNo) {
-  return prisma.clinicAdmission.findFirst({
-    where: { admissionNo: String(admissionNo).trim() },
+  const no = String(admissionNo).trim();
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: no },
     orderBy: { id: 'desc' },
   });
+  if (admission) return admission;
+
+  // Fallback: old bulk-imported Patients List — most real historical admissions
+  // only live here (ClinicAdmission only has ones created in the new system).
+  // Only patientName, doctor, amount and date were ever captured for these;
+  // room/bed/age/gender/phone/address etc. were never part of that Excel import.
+  const admNo = Number(no);
+  if (admNo > 0 && admNo <= 2147483647) {
+    const pv = await prisma.patientVisit.findFirst({ where: { admitNo: admNo } });
+    if (pv) {
+      return {
+        id: null,
+        serialNo: null,
+        admissionNo: no,
+        mrNo: null,
+        arrivedSlipNo: pv.serialNo != null ? String(pv.serialNo) : null,
+        patientTitle: 'Mr',
+        patientCategory: 'private',
+        patientName: pv.patientName,
+        ageYears: 0, ageMonths: 0, ageDays: 0,
+        gender: 'male',
+        address: null, phoneNo: null,
+        arrivedUnderRmo: null,
+        consultantId: null,
+        referredBy: pv.doctor || null,
+        authorityLetter: false,
+        responsibleParty: null,
+        previousAdmission: null,
+        advancePayment: Number(pv.received) || null,
+        roomCategoryId: null, bedId: null,
+        surgery: false, surgeryTypeId: null,
+        referralPatient: false, referralNote: null,
+        antenatal: false, antenatalNo: null,
+        status: 'active',
+        createdAt: pv.visitDate,
+        updatedAt: pv.visitDate,
+        _source: 'patientVisit',
+      };
+    }
+  }
+
+  return null;
+}
+
+// ─── Transactions > Receiving against Admission ──────────────────────────────
+function admPaidSoFar(admission) {
+  const adv = Number(admission.advancePayment) || 0;
+  const paid = (admission.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+  return adv + paid;
+}
+
+async function searchAdmissionsForReceiving(q) {
+  const term = String(q || '').trim();
+  const where = term
+    ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+    : {};
+  const rows = await prisma.clinicAdmission.findMany({
+    where,
+    include: { payments: { select: { amount: true } } },
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  return rows.map(a => ({
+    id: a.id,
+    admissionNo: a.admissionNo,
+    patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    createdAt: a.createdAt,
+    paidSoFar: admPaidSoFar(a),
+  }));
+}
+
+async function getAdmissionForReceiving(admissionNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    include: { payments: { orderBy: { id: 'desc' } } },
+    orderBy: { id: 'desc' },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+  return { ...admission, paidSoFar: admPaidSoFar(admission) };
+}
+
+async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy }) {
+  const amt = Number(amount);
+  if (!amt || amt <= 0) throw Object.assign(new Error('Amount 0 se zyada hona chahiye'), { status: 400 });
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const no = serialNo?.trim() || await getNextSerialNo();
+  const payment = await prisma.clinicAdmissionPayment.create({
+    data: {
+      serialNo: no,
+      admissionId: Number(admissionId),
+      amount: amt,
+      paymentType: paymentType === 'cc' ? 'cc' : 'cash',
+    },
+  });
+  return { payment, receivedBy, admission };
+}
+
+async function getAdmissionPaymentForPrint(id) {
+  const payment = await prisma.clinicAdmissionPayment.findUnique({
+    where: { id: Number(id) },
+    include: { admission: true },
+  });
+  if (!payment) throw Object.assign(new Error('Payment not found'), { status: 404 });
+  const isDuplicate = (payment.printCount || 0) > 0;
+  await prisma.clinicAdmissionPayment.update({ where: { id: Number(id) }, data: { printCount: { increment: 1 } } });
+  return { payment, isDuplicate };
 }
 
 async function createAdmission(data) {
   const admission = await prisma.clinicAdmission.create({
     data: {
+      serialNo:          data.serialNo?.trim() || null,
       admissionNo:       data.admissionNo?.trim() || '',
       mrNo:              data.mrNo ? Number(data.mrNo) : null,
       arrivedSlipNo:     data.arrivedSlipNo?.trim() || null,
@@ -1109,7 +1469,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
 
   const oldVisits = await prisma.patientVisit.findMany({
     where,
-    orderBy: [{ doctor: 'asc' }, { visitDate: 'asc' }, { visitTime: 'asc' }],
+    orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
   });
 
   // Also fetch from ClinicOpdVisit (new General OPD)
@@ -1194,8 +1554,11 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
 
   const mappedAdm = admissions.map((v) => ({
     id:            `adm_${v.id}`,
-    serialNo:      v.admissionNo,
-    admitNo:       v.mrNo ? String(v.mrNo) : null,
+    // Serial # is the shared running number (same sequence as General/Emergency
+    // OPD); older admissions created before that existed fall back to their
+    // Admission # so the row isn't blank. Admit No is always the Admission #.
+    serialNo:      v.serialNo || v.admissionNo,
+    admitNo:       v.admissionNo || null,
     visitDate:     v.createdAt,
     visitTime:     toHHMM(v.createdAt),
     patientName:   `${v.patientTitle || ''} ${v.patientName}`.trim(),
@@ -1209,8 +1572,58 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     _source:       'admission',
   }));
 
-  // Merge: old first, then OPD, then admissions
-  return [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm];
+  // Also fetch Receiving-against-Admission payments — each one is its own
+  // transaction (own Serial #), counted on the day it was actually RECEIVED,
+  // not the admission's original date. Without this, money taken via that
+  // screen never showed up anywhere in the Patients List.
+  const admPayWhere = {};
+  if (fromDate && toDate) {
+    admPayWhere.receivedAt = {
+      gte: new Date(fromDate + 'T00:00:00'),
+      lte: new Date(toDate   + 'T23:59:59'),
+    };
+  }
+  if (typeVariants) {
+    const wantsCash = typeVariants.some(t => t.toLowerCase() === 'cash');
+    const wantsCc   = typeVariants.some(t => ['c card', 'cc', 'credit card'].includes(t.toLowerCase()));
+    const allowed = [...(wantsCash ? ['cash'] : []), ...(wantsCc ? ['cc'] : [])];
+    admPayWhere.paymentType = { in: allowed.length ? allowed : ['__none__'] };
+  }
+  const admPayments = await prisma.clinicAdmissionPayment.findMany({
+    where: admPayWhere,
+    include: { admission: { select: { admissionNo: true, patientTitle: true, patientName: true } } },
+    orderBy: { receivedAt: 'asc' },
+  });
+
+  const mappedAdmPay = admPayments.map((p) => ({
+    id:            `admpay_${p.id}`,
+    serialNo:      p.serialNo,
+    admitNo:       p.admission?.admissionNo || null,
+    visitDate:     p.receivedAt,
+    visitTime:     toHHMM(p.receivedAt),
+    patientName:   `${p.admission?.patientTitle || ''} ${p.admission?.patientName || ''}`.trim(),
+    department:    'Admission',
+    subDepartment: null,
+    doctor:        null,
+    paymentType:   p.paymentType,
+    received:      Number(p.amount) || 0,
+    balance:       0,
+    discount:      0,
+    _source:       'admission-payment',
+  }));
+
+  // Merge all sources and sort chronologically (date + time) instead of
+  // stacking them as separate blocks — otherwise the list reads as "source-wise"
+  // even when each block is individually date-sorted.
+  const merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay];
+  const sortMs = (v) => {
+    const d = new Date(v.visitDate);
+    const [h, m] = String(v.visitTime || '00:00').split(':').map((n) => Number(n) || 0);
+    d.setHours(h, m, 0, 0);
+    return d.getTime();
+  };
+  merged.sort((a, b) => sortMs(a) - sortMs(b));
+  return merged;
 }
 
 function normNameSvc(s) {
@@ -1449,15 +1862,50 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   const pvWhere = pvConds.join(' AND ');
 
   // ── ClinicOpdVisit WHERE ──────────────────────────────────────────────────
-  // Cancelled slips revenue dashboard mein NAHI aayengi (PatientVisit side "paymentType != CANCELED"
-  // se hota hai; OPD side status se — dono tables consistent).
-  const ovConds  = [`(status IS NULL OR LOWER(status) NOT IN ('canceled','cancelled'))`];
+  // Cancelled slips ka patient dashboard mein dikhta rehta hai (count nahi ghatta) —
+  // sirf uska amount contribution 0 kar dete hain (OV_AMT fragment neeche).
+  const ovConds  = [];
   const ovParams = [];
   if (department && department !== 'ALL') { ovParams.push(department);             ovConds.push(`department ILIKE $${ovParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { ovParams.push(subDept);                ovConds.push(`EXISTS (SELECT 1 FROM "ClinicOpdVisitDoctor" cod JOIN "ClinicSubDept" sd ON sd.id = cod."subDeptId" WHERE cod."visitId" = "ClinicOpdVisit".id AND sd.name ILIKE $${ovParams.length})`); }
   if (consultant && consultant !== 'ALL') { ovParams.push(consultant);             ovConds.push(`EXISTS (SELECT 1 FROM "ClinicOpdVisitDoctor" cod JOIN "ClinicDoctor" d ON d.id = cod."doctorId" WHERE cod."visitId" = "ClinicOpdVisit".id AND d.name ILIKE $${ovParams.length})`); }
   if (paymentType && paymentType !== 'ALL') { ovParams.push(paymentType.toLowerCase()); ovConds.push(`LOWER("paymentType") = $${ovParams.length}`); }
   const ovWhere = ovConds.length > 0 ? ovConds.join(' AND ') : 'TRUE';
+
+  // ── ClinicAdmission WHERE ─────────────────────────────────────────────────
+  // Advance payment taken at admission is real revenue but previously wasn't
+  // included here at all. Admission rows have no real department/sub-dept —
+  // they're always treated as the "Admission" department; paymentType maps
+  // onto patientCategory (private=Cash, cc=C Card, etc.).
+  const ADM_PAYTYPE_MAP = { cash: 'private', staff: 'staff', panel: 'panel', complementary: 'complementary', 'c card': 'cc' };
+  const admConds  = [];
+  const admParams = [];
+  if (department && department !== 'ALL') { admParams.push(department);           admConds.push(`'Admission' ILIKE $${admParams.length}`); }
+  if (subDept    && subDept    !== 'ALL') { admConds.push('FALSE'); } // admission has no sub-department
+  if (consultant && consultant !== 'ALL') { admParams.push(consultant);           admConds.push(`EXISTS (SELECT 1 FROM "ClinicDoctor" d WHERE d.id = "ClinicAdmission"."consultantId" AND d.name ILIKE $${admParams.length})`); }
+  if (paymentType && paymentType !== 'ALL') {
+    const mapped = ADM_PAYTYPE_MAP[paymentType.toLowerCase()];
+    if (mapped) { admParams.push(mapped); admConds.push(`"patientCategory" = $${admParams.length}`); }
+    else { admConds.push('FALSE'); }
+  }
+  const admWhere = admConds.length > 0 ? admConds.join(' AND ') : 'TRUE';
+
+  // ── ClinicAdmissionPayment WHERE (Receiving against Admission) ───────────
+  // Later top-up payments count as revenue on the day they're actually
+  // RECEIVED (not the original admission day) — but don't count as an extra
+  // "patient" since it's the same admission, not a new one.
+  const admPayConds  = [];
+  const admPayParams = [];
+  if (department && department !== 'ALL') { admPayParams.push(department); admPayConds.push(`'Admission' ILIKE $${admPayParams.length}`); }
+  if (subDept    && subDept    !== 'ALL') { admPayConds.push('FALSE'); }
+  if (consultant && consultant !== 'ALL') { admPayParams.push(consultant); admPayConds.push(`EXISTS (SELECT 1 FROM "ClinicAdmission" a JOIN "ClinicDoctor" d ON d.id = a."consultantId" WHERE a.id = "ClinicAdmissionPayment"."admissionId" AND d.name ILIKE $${admPayParams.length})`); }
+  if (paymentType && paymentType !== 'ALL') {
+    const ptl = paymentType.toLowerCase();
+    const mapped = ptl === 'cash' ? 'cash' : (ptl === 'c card' || ptl === 'cc' ? 'cc' : null);
+    if (mapped) { admPayParams.push(mapped); admPayConds.push(`"paymentType" = $${admPayParams.length}`); }
+    else { admPayConds.push('FALSE'); }
+  }
+  const admPayWhere = admPayConds.length > 0 ? admPayConds.join(' AND ') : 'TRUE';
 
   // ── Business day (hospital day) ───────────────────────────────────────────
   // Hospital ka din subah 8:00 AM se shuru ho kar agle din 7:59:59 AM tak chalta hai,
@@ -1466,8 +1914,13 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   //   PatientVisit: visitDate (date) + visitTime (text "HH:MM") ko jodo, phir 8h ghatao.
   //                 time null/blank ho to midday maan lo taake apne hi visitDate par rahe.
   //   ClinicOpdVisit: createdAt timestamp se seedha 8h ghatao.
-  const PV_BIZ = `(("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time)) - INTERVAL '8 hours')::date`;
-  const OV_BIZ = `("createdAt" - INTERVAL '8 hours')::date`;
+  const PV_BIZ      = `(("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time)) - INTERVAL '8 hours')::date`;
+  const OV_BIZ      = `("createdAt" - INTERVAL '8 hours')::date`;
+  const ADM_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
+  const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '8 hours')::date`;
+
+  // Cancelled ClinicOpdVisit rows: patient still counts (COUNT(*) untouched), amount is 0.
+  const OV_AMT = `(CASE WHEN LOWER(COALESCE(status,'')) IN ('canceled','cancelled') THEN 0 ELSE (receive - COALESCE(refund,0)) END)`;
 
   // ── Helper: aggregate row → object ───────────────────────────────────────
   const toObj = (r, keyField) => ({
@@ -1506,23 +1959,44 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   // ── SQL fragments shared across periods ───────────────────────────────────
   const pvAggCols = `
     COUNT(*)::int AS "totalPatients",
-    COALESCE(SUM(received),0) AS "totalAmount",
+    COALESCE(SUM(received - COALESCE(refund,0)),0) AS "totalAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'Cash')::int  AS "cashPatients",
-    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Cash'),0)  AS "cashAmount",
+    COALESCE(SUM(received - COALESCE(refund,0)) FILTER (WHERE "paymentType" = 'Cash'),0)  AS "cashAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'Panel')::int AS "panelPatients",
-    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Panel'),0) AS "panelAmount",
+    COALESCE(SUM(received - COALESCE(refund,0)) FILTER (WHERE "paymentType" = 'Panel'),0) AS "panelAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'C Card')::int AS "ccPatients",
-    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount"`;
+    COALESCE(SUM(received - COALESCE(refund,0)) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount"`;
 
   const ovAggCols = `
     COUNT(*)::int AS "totalPatients",
-    COALESCE(SUM(receive),0) AS "totalAmount",
+    COALESCE(SUM(${OV_AMT}),0) AS "totalAmount",
     COUNT(*) FILTER (WHERE LOWER("paymentType") = 'cash')::int  AS "cashPatients",
-    COALESCE(SUM(receive) FILTER (WHERE LOWER("paymentType") = 'cash'),0)  AS "cashAmount",
+    COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") = 'cash'),0)  AS "cashAmount",
     COUNT(*) FILTER (WHERE LOWER("paymentType") = 'panel')::int AS "panelPatients",
-    COALESCE(SUM(receive) FILTER (WHERE LOWER("paymentType") = 'panel'),0) AS "panelAmount",
+    COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") = 'panel'),0) AS "panelAmount",
     COUNT(*) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card'))::int AS "ccPatients",
-    COALESCE(SUM(receive) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card')),0) AS "ccAmount"`;
+    COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card')),0) AS "ccAmount"`;
+
+  const admAggCols = `
+    COUNT(*)::int AS "totalPatients",
+    COALESCE(SUM("advancePayment"),0) AS "totalAmount",
+    COUNT(*) FILTER (WHERE "patientCategory" = 'private')::int AS "cashPatients",
+    COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'private'),0) AS "cashAmount",
+    COUNT(*) FILTER (WHERE "patientCategory" = 'panel')::int AS "panelPatients",
+    COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'panel'),0) AS "panelAmount",
+    COUNT(*) FILTER (WHERE "patientCategory" = 'cc')::int AS "ccPatients",
+    COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'cc'),0) AS "ccAmount"`;
+
+  // Receiving-against-Admission payments: amount only, never counted as a patient.
+  const admPayAggCols = `
+    0::int AS "totalPatients",
+    COALESCE(SUM(amount),0) AS "totalAmount",
+    0::int AS "cashPatients",
+    COALESCE(SUM(amount) FILTER (WHERE "paymentType" = 'cash'),0) AS "cashAmount",
+    0::int AS "panelPatients",
+    0::numeric AS "panelAmount",
+    0::int AS "ccPatients",
+    COALESCE(SUM(amount) FILTER (WHERE "paymentType" = 'cc'),0) AS "ccAmount"`;
 
   let data = [];
 
@@ -1549,11 +2023,31 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
       GROUP BY ${OV_BIZ} ORDER BY date
     `, ...ovP);
 
-    const pvMap = {}, ovMap = {};
+    const admP = [...admParams, startDate, endDate];
+    const admSi = admParams.length + 1, admEi = admParams.length + 2;
+    const admRows = await prisma.$queryRawUnsafe(`
+      SELECT ${ADM_BIZ}::text AS date, ${admAggCols}
+      FROM "ClinicAdmission"
+      WHERE ${admWhere} AND ${ADM_BIZ} >= $${admSi}::date AND ${ADM_BIZ} <= $${admEi}::date
+      GROUP BY ${ADM_BIZ} ORDER BY date
+    `, ...admP);
+
+    const admPayP = [...admPayParams, startDate, endDate];
+    const admPaySi = admPayParams.length + 1, admPayEi = admPayParams.length + 2;
+    const admPayRows = await prisma.$queryRawUnsafe(`
+      SELECT ${ADM_PAY_BIZ}::text AS date, ${admPayAggCols}
+      FROM "ClinicAdmissionPayment"
+      WHERE ${admPayWhere} AND ${ADM_PAY_BIZ} >= $${admPaySi}::date AND ${ADM_PAY_BIZ} <= $${admPayEi}::date
+      GROUP BY ${ADM_PAY_BIZ} ORDER BY date
+    `, ...admPayP);
+
+    const pvMap = {}, ovMap = {}, admMap = {}, admPayMap = {};
     for (const r of pvRows) pvMap[r.date] = toObj(r, 'date');
     for (const r of ovRows) ovMap[r.date] = toObj(r, 'date');
+    for (const r of admRows) admMap[r.date] = toObj(r, 'date');
+    for (const r of admPayRows) admPayMap[r.date] = toObj(r, 'date');
 
-    const merged = mergeMap(pvMap, ovMap, 'date');
+    const merged = mergeMap(mergeMap(mergeMap(pvMap, ovMap, 'date'), admMap, 'date'), admPayMap, 'date');
     for (let d = 1; d <= daysInMonth; d++) {
       const key = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       if (!merged[key]) merged[key] = { date: key, totalPatients:0, totalAmount:0, cashPatients:0, cashAmount:0, panelPatients:0, panelAmount:0, ccPatients:0, ccAmount:0 };
@@ -1579,11 +2073,31 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
       GROUP BY EXTRACT(MONTH FROM ${OV_BIZ}) ORDER BY month
     `, ...ovP);
 
-    const pvMap = {}, ovMap = {};
+    const admP = [...admParams, year];
+    const admYi = admParams.length + 1;
+    const admRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(MONTH FROM ${ADM_BIZ})::int AS month, ${admAggCols}
+      FROM "ClinicAdmission"
+      WHERE ${admWhere} AND EXTRACT(YEAR FROM ${ADM_BIZ}) = $${admYi}
+      GROUP BY EXTRACT(MONTH FROM ${ADM_BIZ}) ORDER BY month
+    `, ...admP);
+
+    const admPayYP = [...admPayParams, year];
+    const admPayYi = admPayParams.length + 1;
+    const admPayRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(MONTH FROM ${ADM_PAY_BIZ})::int AS month, ${admPayAggCols}
+      FROM "ClinicAdmissionPayment"
+      WHERE ${admPayWhere} AND EXTRACT(YEAR FROM ${ADM_PAY_BIZ}) = $${admPayYi}
+      GROUP BY EXTRACT(MONTH FROM ${ADM_PAY_BIZ}) ORDER BY month
+    `, ...admPayYP);
+
+    const pvMap = {}, ovMap = {}, admMap = {}, admPayMap = {};
     for (const r of pvRows) pvMap[r.month] = toObj(r, 'month');
     for (const r of ovRows) ovMap[r.month] = toObj(r, 'month');
+    for (const r of admRows) admMap[r.month] = toObj(r, 'month');
+    for (const r of admPayRows) admPayMap[r.month] = toObj(r, 'month');
 
-    const merged = mergeMap(pvMap, ovMap, 'month');
+    const merged = mergeMap(mergeMap(mergeMap(pvMap, ovMap, 'month'), admMap, 'month'), admPayMap, 'month');
     for (let m = 1; m <= 12; m++) {
       if (!merged[m]) merged[m] = { month: m, totalPatients:0, totalAmount:0, cashPatients:0, cashAmount:0, panelPatients:0, panelAmount:0, ccPatients:0, ccAmount:0 };
     }
@@ -1602,11 +2116,25 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
       GROUP BY EXTRACT(YEAR FROM ${OV_BIZ}) ORDER BY year
     `, ...ovParams);
 
-    const pvMap = {}, ovMap = {};
+    const admRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM ${ADM_BIZ})::int AS year, ${admAggCols}
+      FROM "ClinicAdmission" WHERE ${admWhere}
+      GROUP BY EXTRACT(YEAR FROM ${ADM_BIZ}) ORDER BY year
+    `, ...admParams);
+
+    const admPayRows = await prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM ${ADM_PAY_BIZ})::int AS year, ${admPayAggCols}
+      FROM "ClinicAdmissionPayment" WHERE ${admPayWhere}
+      GROUP BY EXTRACT(YEAR FROM ${ADM_PAY_BIZ}) ORDER BY year
+    `, ...admPayParams);
+
+    const pvMap = {}, ovMap = {}, admMap = {}, admPayMap = {};
     for (const r of pvRows) pvMap[r.year] = toObj(r, 'year');
     for (const r of ovRows) ovMap[r.year] = toObj(r, 'year');
+    for (const r of admRows) admMap[r.year] = toObj(r, 'year');
+    for (const r of admPayRows) admPayMap[r.year] = toObj(r, 'year');
 
-    const merged = mergeMap(pvMap, ovMap, 'year');
+    const merged = mergeMap(mergeMap(mergeMap(pvMap, ovMap, 'year'), admMap, 'year'), admPayMap, 'year');
     data = Object.values(merged).sort((a,b) => a.year - b.year);
   }
 
@@ -1627,34 +2155,54 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     const pvLySi  = pvParams.length + 1, pvLyEi = pvParams.length + 2;
     const ovLyP   = [...ovParams, lyStart, lyEnd];
     const ovLySi  = ovParams.length + 1, ovLyEi = ovParams.length + 2;
-    const [pvLy, ovLy] = await Promise.all([
-      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND ${PV_BIZ} >= $${pvLySi}::date AND ${PV_BIZ} <= $${pvLyEi}::date`, ...pvLyP),
-      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(receive),0) AS total FROM "ClinicOpdVisit" WHERE ${ovWhere} AND ${OV_BIZ} >= $${ovLySi}::date AND ${OV_BIZ} <= $${ovLyEi}::date`, ...ovLyP),
+    const admLyP  = [...admParams, lyStart, lyEnd];
+    const admLySi = admParams.length + 1, admLyEi = admParams.length + 2;
+    const admPayLyP  = [...admPayParams, lyStart, lyEnd];
+    const admPayLySi = admPayParams.length + 1, admPayLyEi = admPayParams.length + 2;
+    const [pvLy, ovLy, admLy, admPayLy] = await Promise.all([
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received - COALESCE(refund,0)),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND ${PV_BIZ} >= $${pvLySi}::date AND ${PV_BIZ} <= $${pvLyEi}::date`, ...pvLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(${OV_AMT}),0) AS total FROM "ClinicOpdVisit" WHERE ${ovWhere} AND ${OV_BIZ} >= $${ovLySi}::date AND ${OV_BIZ} <= $${ovLyEi}::date`, ...ovLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM("advancePayment"),0) AS total FROM "ClinicAdmission" WHERE ${admWhere} AND ${ADM_BIZ} >= $${admLySi}::date AND ${ADM_BIZ} <= $${admLyEi}::date`, ...admLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(amount),0) AS total FROM "ClinicAdmissionPayment" WHERE ${admPayWhere} AND ${ADM_PAY_BIZ} >= $${admPayLySi}::date AND ${ADM_PAY_BIZ} <= $${admPayLyEi}::date`, ...admPayLyP),
     ]);
-    lastYearAmount = Number(pvLy[0]?.total||0) + Number(ovLy[0]?.total||0);
+    lastYearAmount = Number(pvLy[0]?.total||0) + Number(ovLy[0]?.total||0) + Number(admLy[0]?.total||0) + Number(admPayLy[0]?.total||0);
   }
 
-  // Trend: last 12 months (both tables)
-  const [pvTrend, ovTrend] = await Promise.all([
+  // Trend: last 12 months (all three sources)
+  const [pvTrend, ovTrend, admTrend, admPayTrend] = await Promise.all([
     prisma.$queryRawUnsafe(`
       SELECT EXTRACT(YEAR FROM ${PV_BIZ})::int AS year, EXTRACT(MONTH FROM ${PV_BIZ})::int AS month,
-        COUNT(*)::int AS "totalPatients", COALESCE(SUM(received),0) AS "totalAmount"
+        COUNT(*)::int AS "totalPatients", COALESCE(SUM(received - COALESCE(refund,0)),0) AS "totalAmount"
       FROM "PatientVisit"
       WHERE ${pvWhere} AND ${PV_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
       GROUP BY EXTRACT(YEAR FROM ${PV_BIZ}), EXTRACT(MONTH FROM ${PV_BIZ}) ORDER BY year, month
     `, ...pvParams),
     prisma.$queryRawUnsafe(`
       SELECT EXTRACT(YEAR FROM ${OV_BIZ})::int AS year, EXTRACT(MONTH FROM ${OV_BIZ})::int AS month,
-        COUNT(*)::int AS "totalPatients", COALESCE(SUM(receive),0) AS "totalAmount"
+        COUNT(*)::int AS "totalPatients", COALESCE(SUM(${OV_AMT}),0) AS "totalAmount"
       FROM "ClinicOpdVisit"
       WHERE ${ovWhere} AND ${OV_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
       GROUP BY EXTRACT(YEAR FROM ${OV_BIZ}), EXTRACT(MONTH FROM ${OV_BIZ}) ORDER BY year, month
     `, ...ovParams),
+    prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM ${ADM_BIZ})::int AS year, EXTRACT(MONTH FROM ${ADM_BIZ})::int AS month,
+        COUNT(*)::int AS "totalPatients", COALESCE(SUM("advancePayment"),0) AS "totalAmount"
+      FROM "ClinicAdmission"
+      WHERE ${admWhere} AND ${ADM_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY EXTRACT(YEAR FROM ${ADM_BIZ}), EXTRACT(MONTH FROM ${ADM_BIZ}) ORDER BY year, month
+    `, ...admParams),
+    prisma.$queryRawUnsafe(`
+      SELECT EXTRACT(YEAR FROM ${ADM_PAY_BIZ})::int AS year, EXTRACT(MONTH FROM ${ADM_PAY_BIZ})::int AS month,
+        0::int AS "totalPatients", COALESCE(SUM(amount),0) AS "totalAmount"
+      FROM "ClinicAdmissionPayment"
+      WHERE ${admPayWhere} AND ${ADM_PAY_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
+      GROUP BY EXTRACT(YEAR FROM ${ADM_PAY_BIZ}), EXTRACT(MONTH FROM ${ADM_PAY_BIZ}) ORDER BY year, month
+    `, ...admPayParams),
   ]);
 
   const trendMap = {};
   for (const r of pvTrend) { const k = `${r.year}-${r.month}`; trendMap[k] = { year: r.year, month: r.month, totalPatients: Number(r.totalPatients), totalAmount: Number(r.totalAmount) }; }
-  for (const r of ovTrend) {
+  for (const r of [...ovTrend, ...admTrend, ...admPayTrend]) {
     const k = `${r.year}-${r.month}`;
     if (trendMap[k]) { trendMap[k].totalPatients += Number(r.totalPatients); trendMap[k].totalAmount += Number(r.totalAmount); }
     else trendMap[k] = { year: r.year, month: r.month, totalPatients: Number(r.totalPatients), totalAmount: Number(r.totalAmount) };
@@ -1669,10 +2217,12 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
 }
 
 async function getBalanceSlips() {
+  // Sirf admitted patients ki slips (jin par General OPD form mein "Admit Patient"
+  // checkbox tick tha) — walk-in OPD balance is feature ka scope nahi hai.
   const rows = await prisma.$queryRaw`
     SELECT id, "serialNo", "patientType", "patientName", "totalAmount", receive, "createdAt", department
     FROM "ClinicOpdVisit"
-    WHERE "totalAmount" > receive AND "totalAmount" > 0 AND status != 'CANCELED'
+    WHERE "totalAmount" > receive AND "totalAmount" > 0 AND status != 'CANCELED' AND "admitPatient" = true
     ORDER BY "createdAt" DESC
   `;
   return rows.map(r => ({
@@ -1730,6 +2280,15 @@ module.exports = {
   getOpdVisits,
   printOpdVisit,
   reprintOpdVisitBySerial,
+  getTodayOpdVisitsForCancel,
+  getOpdVisitForCancel,
+  cancelOpdVisit,
+  searchVisitsForRefund,
+  getVisitForRefund,
+  refundVisit,
+  searchVisitsForAdjustment,
+  getVisitForAdjustment,
+  updateVisitPersonalInfo,
   getAllRoomCategories,
   createRoomCategory,
   updateRoomCategory,
@@ -1761,6 +2320,10 @@ module.exports = {
   getOpdVisitBySerial,
   getAdmissions,
   getAdmissionByNumber,
+  searchAdmissionsForReceiving,
+  getAdmissionForReceiving,
+  addAdmissionPayment,
+  getAdmissionPaymentForPrint,
   createAdmission,
   getAvailableBeds,
   bulkCreatePatientVisits,

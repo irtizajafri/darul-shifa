@@ -596,6 +596,41 @@ async function getAdmissionByNumber(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function searchAdmissionsForReceiving(req, res, next) {
+  try { success(res, await service.searchAdmissionsForReceiving(req.query.q)); } catch (err) { next(err); }
+}
+
+async function getAdmissionForReceiving(req, res, next) {
+  try {
+    const data = await service.getAdmissionForReceiving(req.params.admissionNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addAdmissionPayment(req, res, next) {
+  try {
+    const { serialNo, amount, paymentType, receivedBy } = req.body;
+    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy });
+    success(res, data, 'Payment receive ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getAdmissionPaymentForPrint(req, res, next) {
+  try {
+    const data = await service.getAdmissionPaymentForPrint(req.params.id);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function createAdmission(req, res, next) {
   try {
     if (!req.body.admissionNo?.trim()) return fail(res, 400, 'Admission # is required');
@@ -627,6 +662,80 @@ async function reprintOpdVisitBySerial(req, res, next) {
   try {
     const data = await service.reprintOpdVisitBySerial(req.params.serialNo);
     success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getTodayOpdVisitsForCancel(req, res, next) {
+  try { success(res, await service.getTodayOpdVisitsForCancel()); } catch (err) { next(err); }
+}
+
+async function getOpdVisitForCancel(req, res, next) {
+  try {
+    const data = await service.getOpdVisitForCancel(req.params.id);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function cancelOpdVisit(req, res, next) {
+  try {
+    const { reason, note, cancelledBy } = req.body;
+    const data = await service.cancelOpdVisit(req.params.id, { reason, note, cancelledBy });
+    success(res, data, 'Slip cancel ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function searchVisitsForRefund(req, res, next) {
+  try { success(res, await service.searchVisitsForRefund(req.query.q)); } catch (err) { next(err); }
+}
+
+async function getVisitForRefund(req, res, next) {
+  try {
+    const data = await service.getVisitForRefund(req.params.source, req.params.id);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function refundVisit(req, res, next) {
+  try {
+    const { amount, reason, note, refundedBy } = req.body;
+    const data = await service.refundVisit(req.params.source, req.params.id, { amount, reason, note, refundedBy });
+    success(res, data, 'Refund process ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function searchVisitsForAdjustment(req, res, next) {
+  try { success(res, await service.searchVisitsForAdjustment(req.query.q)); } catch (err) { next(err); }
+}
+
+async function getVisitForAdjustment(req, res, next) {
+  try {
+    const data = await service.getVisitForAdjustment(req.params.source, req.params.id);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updateVisitPersonalInfo(req, res, next) {
+  try {
+    const data = await service.updateVisitPersonalInfo(req.params.source, req.params.id, req.body);
+    success(res, data, 'Slip update ho gayi');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -790,6 +899,15 @@ module.exports = {
   deletePanelEmployee,
   printOpdVisit,
   reprintOpdVisitBySerial,
+  getTodayOpdVisitsForCancel,
+  getOpdVisitForCancel,
+  cancelOpdVisit,
+  searchVisitsForRefund,
+  getVisitForRefund,
+  refundVisit,
+  searchVisitsForAdjustment,
+  getVisitForAdjustment,
+  updateVisitPersonalInfo,
   createAntenatal,
   getAntenatalList,
   getAntenatalByNo,
@@ -798,6 +916,10 @@ module.exports = {
   getOpdVisitBySerial,
   getAdmissions,
   getAdmissionByNumber,
+  searchAdmissionsForReceiving,
+  getAdmissionForReceiving,
+  addAdmissionPayment,
+  getAdmissionPaymentForPrint,
   createAdmission,
   getAvailableBeds,
   bulkCreatePatientVisits,

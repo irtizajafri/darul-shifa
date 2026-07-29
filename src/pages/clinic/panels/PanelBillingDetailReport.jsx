@@ -7,6 +7,29 @@ import './PanelBillingDetailReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
+// `@page` is a document-level rule — other pages (Admission, Death Certificate
+// Report) each declare their own `@page` with different size/margin, and since
+// Vite bundles every page's SCSS into one global stylesheet, whichever rule
+// loads last wins for the WHOLE app's prints. Inject a highest-priority
+// override right before printing this page, and remove it once the print
+// dialog closes so it doesn't leak into other pages.
+function printBillingDetailReport() {
+  const styleId = 'pbd-page-size-override';
+  let style = document.getElementById(styleId);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = styleId;
+    document.head.appendChild(style);
+  }
+  style.textContent = '@page { size: A4 landscape !important; margin: 6mm !important; }';
+
+  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 5000);
+
+  window.print();
+}
+
 // Bill-head columns (order = report columns)
 const HEADS = [
   { key: 'constFee',        label: 'Const Fee' },
@@ -198,7 +221,7 @@ export default function PanelBillingDetailReport() {
               <button className="pbd-btn pbd-btn--upload" onClick={() => fileRef.current?.click()} disabled={uploading}>
                 <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Excel'}
               </button>
-              <button className="pbd-btn pbd-btn--print" onClick={() => window.print()} disabled={!shown || !rows.length}>
+              <button className="pbd-btn pbd-btn--print" onClick={printBillingDetailReport} disabled={!shown || !rows.length}>
                 <Printer size={14} /> Print
               </button>
             </div>

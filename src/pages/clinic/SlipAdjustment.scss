@@ -1,0 +1,361 @@
+$blue:   #1a3c6e;
+$amber:  #b8730b;
+$border: #bbb;
+$bg:     #dde3ea;
+
+.sadj-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: $bg;
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+}
+
+// ─── Toolbar ───────────────────────────────────────────────────────────────────
+.sadj-toolbar {
+  background: #eef2f7;
+  border-bottom: 1px solid #b8c4d4;
+  padding: 4px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sadj-toolbar-icons {
+  display: flex;
+  align-items: center;
+}
+
+.sadj-tbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  border: none;
+  border-right: 1px solid #c7d0dc;
+  background: none;
+  color: #5b6b7f;
+  cursor: default;
+  padding: 0;
+
+  &--disabled { color: #aab4c0; opacity: 0.75; }
+
+  &--exit {
+    color: #c9822a;
+    cursor: pointer;
+    &:hover { background: #e2e8f0; }
+  }
+}
+
+.sadj-toolbar-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  font-style: italic;
+  font-size: 21px;
+  color: #26317a;
+}
+
+// ─── Content ─────────────────────────────────────────────────────────────────
+.sadj-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+// ─── Search Row ───────────────────────────────────────────────────────────────
+.sadj-search-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 10px 14px;
+
+  label {
+    color: #8a3b3b;
+    font-weight: 700;
+    font-size: 13px;
+    min-width: 62px;
+  }
+}
+
+.sadj-search-box {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #93a2b8;
+  border-radius: 2px;
+  overflow: hidden;
+  width: 380px;
+  background: #fff;
+
+  input {
+    flex: 1;
+    border: none;
+    padding: 6px 10px;
+    font-size: 12.5px;
+    font-family: inherit;
+    outline: none;
+  }
+
+  button {
+    width: 34px;
+    background: #20242b;
+    color: #fff;
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    &:hover:not(:disabled) { background: #33383f; }
+    &:disabled { opacity: 0.6; cursor: not-allowed; }
+  }
+}
+
+// ─── Search Results ───────────────────────────────────────────────────────────
+.sadj-search-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  margin: 4px 10px 0;
+
+  thead tr { background: #e8eef8; }
+
+  th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    cursor: pointer;
+    &:nth-child(even) { background: #f9f9f9; }
+    &:hover { background: #dbe8f8; }
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+  }
+}
+
+.sadj-loading {
+  padding: 40px;
+  color: #888;
+}
+
+// ─── Source badge ──────────────────────────────────────────────────────────────
+.sadj-src-badge {
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+
+  &--opd { background: #e3f0ff; color: #1a5fb4; border: 1px solid #a9c9ec; }
+  &--pv  { background: #f1eaff; color: #6b3fa0; border: 1px solid #cbb8e8; }
+}
+
+.sadj-form-card {
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  max-width: 780px;
+}
+
+// ─── Form Rows ────────────────────────────────────────────────────────────────
+.sadj-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+}
+
+.sadj-label {
+  width: 110px;
+  min-width: 110px;
+  text-align: right;
+  font-weight: 600;
+  color: #444;
+  font-size: 11.5px;
+
+  &--serial { width: 80px; min-width: 80px; }
+  &--inline { width: auto; min-width: auto; margin-left: 24px; }
+}
+
+.sadj-input {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 7px;
+  background: #f0f0f0;
+  color: #111;
+  &[readonly] { cursor: default; }
+
+  &--serial { width: 120px; font-weight: 700; }
+}
+
+.sadj-dept-badge {
+  margin-left: auto;
+  background: #e8eef8;
+  border: 1px solid #b0c0dc;
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: $blue;
+  letter-spacing: 0.3px;
+}
+
+.sadj-value {
+  font-size: 12px;
+  color: #222;
+  font-weight: 600;
+
+  &--cap { text-transform: capitalize; }
+}
+
+.sadj-separator {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 6px 0;
+}
+
+// ─── Editable fields ────────────────────────────────────────────────────────────
+.sadj-name-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sadj-edit-input {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $amber;
+  border-radius: 3px;
+  padding: 5px 8px;
+  background: #fffdf6;
+  flex: 1;
+  max-width: 260px;
+  &:focus { outline: none; border-color: $blue; }
+
+  &--sm { max-width: 80px; flex: none; }
+}
+
+.sadj-select {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 7px;
+  background: #fff;
+  &:focus { outline: none; border-color: $blue; }
+
+  &--type { width: 90px; border-color: $amber; background: #fffdf6; }
+}
+
+.sadj-readonly-note {
+  font-size: 11px;
+  color: #888;
+  font-style: italic;
+  margin: 2px 0 4px;
+}
+
+// ─── Doctor / Sub-Dept Grid (always read-only) ─────────────────────────────────
+.sadj-doc-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  margin: 4px 0;
+  opacity: 0.85;
+
+  thead tr { background: #f0f0f0; }
+
+  th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: #666;
+    border-bottom: 2px solid #ccc;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+    color: #555;
+  }
+}
+
+.sadj-td-r { text-align: right; }
+.sadj-td-empty { text-align: center; color: #999; padding: 20px !important; }
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+.sadj-footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 780px;
+  justify-content: center;
+}
+
+.sadj-edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: $amber;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 28px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover { background: #96590a; }
+}
+
+.sadj-save-btn {
+  background: $blue;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 28px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover:not(:disabled) { background: #142f57; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.sadj-close-btn {
+  background: #f1f5f9;
+  color: #1e293b;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 7px 28px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  &:hover:not(:disabled) { background: #e2e8f0; }
+}

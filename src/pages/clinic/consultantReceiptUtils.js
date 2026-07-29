@@ -33,7 +33,7 @@ export function invoiceLabel(paymentType) {
 }
 
 // ── Receipt HTML ──────────────────────────────────────────────────────────────
-export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy }) {
+export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy }) {
   const doc = visit;
   const docEntries = doc.doctors || [];
   // Distinct performing-doctor names (a visit can have multiple selected services/doctors)

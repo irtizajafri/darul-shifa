@@ -32,11 +32,35 @@
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  padding: 20px 24px;
-  max-width: 860px;
+  padding: 22px 28px 20px;
+  max-width: 900px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+/* ── Section grouping ── */
+.adm-section {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eef2f7;
+
+  &--last { padding-bottom: 4px; border-bottom: none; }
+}
+
+.adm-section-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1a3c6e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding-left: 9px;
+  border-left: 3px solid #3b82f6;
+  line-height: 1.1;
 }
 
 .adm-row {
@@ -112,6 +136,15 @@
     gap: 10px;
     flex-wrap: wrap;
   }
+}
+
+/* ── Serial # (auto-generated, read-only) ── */
+.adm-serial-input {
+  font-weight: 700 !important;
+  color: #1a3c6e !important;
+  background: #eef4ff !important;
+  border-color: #bcd0f0 !important;
+  cursor: default;
 }
 
 /* ── Lookup row ── */
@@ -357,6 +390,7 @@
   .adm-print-area * { visibility: visible !important; }
 
   .adm-print-area {
+    display: block !important;
     position: fixed;
     inset: 0;
     width: 100%;
@@ -372,39 +406,23 @@
   background: #fff;
   padding: 0;
 
-  /* ── Header ── */
-  .adm-print-hdr {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    border-bottom: 2px solid #000;
-    padding-bottom: 6px;
-    margin-bottom: 4px;
-    position: relative;
+  /* ── Header — logo and hospital info are separate full-width divs so the
+     logo's width always tracks the form's own content width. ── */
+  .adm-print-logo-box {
+    width: 100%;
   }
 
   .adm-print-logo {
-    height: 70px;
-    width: auto;
-    flex-shrink: 0;
+    width: 100%;
+    height: 50px;
   }
 
-  .adm-print-hdr-center {
-    flex: 1;
+  .adm-print-info-box {
+    position: relative;
     text-align: center;
-  }
-
-  .adm-print-hosp-name {
-    font-size: 18pt;
-    font-weight: 900;
-    letter-spacing: 2px;
-    line-height: 1.1;
-  }
-
-  .adm-print-hosp-sub {
-    font-size: 11pt;
-    font-weight: 700;
-    letter-spacing: 1px;
+    border-bottom: 2px solid #000;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
   }
 
   .adm-print-hosp-addr {
@@ -529,13 +547,11 @@
     margin: 0;
   }
 
-  /* ── Signature Rows ── */
+  /* ── Signature Rows (free-standing, no box) ── */
   .adm-print-sig-row {
     display: flex;
     justify-content: space-between;
-    padding: 4px 8px;
-    border: 1px solid #000;
-    border-top: none;
+    padding: 6px 8px;
     font-size: 9pt;
   }
 
@@ -560,4 +576,22 @@
   .apd-val { min-height: 20px; }
   .apd-lbl-sm { width: 12%; }
   .apd-val-sm { width: 10%; }
+  .apd-val--tall { min-height: 60px; }
+
+  /* ── Footer: form code + barcode ── */
+  .adm-print-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: 4px;
+  }
+
+  .adm-print-form-code {
+    font-size: 8pt;
+    color: #333;
+  }
+
+  .adm-print-barcode {
+    height: 32px;
+  }
 }

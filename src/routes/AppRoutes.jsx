@@ -32,6 +32,7 @@ import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
 import VoucherSummary from '../pages/accounts/reports/VoucherSummary';
 import VoucherSummaryMatrix from '../pages/accounts/reports/VoucherSummaryMatrix';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
+import ConsultantOPD from '../pages/clinic/ConsultantOPD';
 import EmergencyOPD from '../pages/clinic/EmergencyOPD';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
@@ -64,6 +65,10 @@ import ConsultantStatementReport from '../pages/clinic/reports/ConsultantStateme
 import ConsultantRates from '../pages/clinic/reports/ConsultantRates';
 import RevenueDashboard from '../pages/clinic/inquiries/RevenueDashboard';
 import ReceiveBalanceSlip from '../pages/clinic/ReceiveBalanceSlip';
+import CancelSlip from '../pages/clinic/CancelSlip';
+import SlipRefund from '../pages/clinic/SlipRefund';
+import SlipAdjustment from '../pages/clinic/SlipAdjustment';
+import ReceivingAgainstAdmission from '../pages/clinic/ReceivingAgainstAdmission';
 import EmployeeList from '../pages/employees/EmployeeList';
 import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
@@ -169,7 +174,7 @@ export default function AppRoutes() {
 
           <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
-          <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Consultant OPD" /></PermissionGuard>} />
+          <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><ConsultantOPD /></PermissionGuard>} />
           <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><EmergencyOPD /></PermissionGuard>} />
           <Route path="clinic/dental" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Dental OPD" layout="subdept" /></PermissionGuard>} />
           <Route path="clinic/therapy" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Therapy" layout="subdept" /></PermissionGuard>} />
@@ -212,6 +217,10 @@ export default function AppRoutes() {
           <Route path="clinic/reports/consultant-statement/view" element={<PermissionGuard module="clinic"><ConsultantStatementReport /></PermissionGuard>} />
           <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic"><RevenueDashboard /></PermissionGuard>} />
           <Route path="clinic/transactions/receive-balance-slip" element={<PermissionGuard module="clinic"><ReceiveBalanceSlip /></PermissionGuard>} />
+          <Route path="clinic/transactions/cancel-slip" element={<PermissionGuard module="clinic"><CancelSlip /></PermissionGuard>} />
+          <Route path="clinic/transactions/slip-refund" element={<PermissionGuard module="clinic"><SlipRefund /></PermissionGuard>} />
+          <Route path="clinic/transactions/slip-adjustment" element={<PermissionGuard module="clinic"><SlipAdjustment /></PermissionGuard>} />
+          <Route path="clinic/transactions/receiving-against-admission" element={<PermissionGuard module="clinic"><ReceivingAgainstAdmission /></PermissionGuard>} />
 
           <Route path="coming-soon" element={<ComingSoon />} />
         </Route>

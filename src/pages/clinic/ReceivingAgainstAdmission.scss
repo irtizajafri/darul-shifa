@@ -1,0 +1,319 @@
+$blue:    #1a3c6e;
+$green:   #1f7a4d;
+$red:     #c62828;
+$border:  #bbb;
+$bg:      #dde3ea;
+
+.raa-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: $bg;
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+}
+
+// ─── Title Bar ────────────────────────────────────────────────────────────────
+.raa-title-bar {
+  background: $blue;
+  color: #fff;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+}
+
+.raa-title-text {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+// ─── Content ─────────────────────────────────────────────────────────────────
+.raa-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+.raa-form-card {
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 680px;
+}
+
+// ─── Form Rows ────────────────────────────────────────────────────────────────
+.raa-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+
+  &--amount { margin-top: 2px; }
+}
+
+.raa-label {
+  width: 150px;
+  min-width: 150px;
+  text-align: right;
+  font-weight: 600;
+  color: #444;
+  font-size: 11.5px;
+
+  &--serial { width: 80px; min-width: 80px; }
+}
+
+.raa-input {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 7px;
+  background: #f9f9f9;
+  color: #111;
+  &:focus { outline: none; border-color: $blue; }
+  &[readonly] { background: #f0f0f0; cursor: default; }
+
+  &--serial  { width: 130px; font-weight: 600; }
+  &--amount  { width: 130px; font-weight: 700; color: $green; }
+}
+
+.raa-lookup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  background: #f0f0f0;
+  cursor: pointer;
+  color: #444;
+  padding: 0;
+  &:hover { background: #e0e8f0; border-color: $blue; color: $blue; }
+}
+
+.raa-inline-patient {
+  font-weight: 700;
+  color: $blue;
+  font-size: 12px;
+}
+
+.raa-check-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #667;
+  margin-left: auto;
+
+  &--closed { color: #888; }
+}
+
+.raa-value {
+  font-size: 12px;
+  color: #222;
+  font-weight: 600;
+}
+
+.raa-separator {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
+.raa-radio-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  background: #f8fafc;
+
+  input { accent-color: $blue; }
+
+  &--active {
+    border-color: $blue;
+    background: #eff6ff;
+    color: $blue;
+  }
+}
+
+// ─── Paid Amount Box ──────────────────────────────────────────────────────────
+.raa-paid-box {
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+
+  span {
+    color: $green;
+    font-weight: 800;
+    font-size: 16px;
+    margin-left: 8px;
+  }
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+.raa-footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.raa-add-btn {
+  background: $blue;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 22px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover:not(:disabled) { background: #1e4a88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.raa-print-btn {
+  background: $green;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 22px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover:not(:disabled) { background: #175f3d; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+// ─── Lookup Modal ─────────────────────────────────────────────────────────────
+.raa-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.raa-modal {
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 5px;
+  width: 720px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+
+.raa-modal-hdr {
+  background: $blue;
+  color: #fff;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.raa-modal-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  &:hover { color: #ffcccc; }
+}
+
+.raa-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ddd;
+  background: #f5f7fa;
+}
+
+.raa-modal-search-icon { color: #777; flex-shrink: 0; }
+
+.raa-modal-search-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 8px;
+  &:focus { outline: none; border-color: $blue; }
+}
+
+.raa-modal-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.raa-modal-loading {
+  padding: 24px;
+  text-align: center;
+  color: #888;
+}
+
+.raa-modal-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+
+  thead tr {
+    background: #e8eef8;
+    position: sticky;
+    top: 0;
+  }
+
+  th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    cursor: pointer;
+    &:nth-child(even) { background: #f9f9f9; }
+    &:hover { background: #dbe8f8; }
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+  }
+}
+
+.raa-td-r     { text-align: right; }
+.raa-td-empty { text-align: center; color: #999; padding: 20px !important; }

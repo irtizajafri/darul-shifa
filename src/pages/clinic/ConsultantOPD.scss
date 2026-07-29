@@ -1,0 +1,1281 @@
+// ── GOPD – General OPD ───────────────────────────────────────────────────────
+
+.gopd {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.82rem;
+  color: #0f172a;
+  min-height: 100%;
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+.gopd-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.gopd-serial-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gopd-serial-lbl {
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.gopd-mr-input {
+  width: 70px;
+  background: #f1f5f9;
+  color: #475569;
+  cursor: text;
+}
+
+.gopd-mr-lookup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #374151;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) { background: #cbd5e1; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── Overlay + Dialogs ─────────────────────────────────────────────────────────
+.gopd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gopd-mr-confirm {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  min-width: 320px;
+  max-width: 420px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.gopd-mr-confirm-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1a3c6e;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 6px;
+}
+
+.gopd-mr-confirm-body {
+  font-size: 0.85rem;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+}
+
+.gopd-mr-confirm-mr  { color: #1a3c6e; font-weight: 600; }
+.gopd-mr-confirm-age { color: #555; }
+.gopd-mr-confirm-gender { color: #555; }
+
+.gopd-mr-confirm-q {
+  font-size: 0.78rem;
+  color: #555;
+  margin-bottom: 14px;
+}
+
+.gopd-mr-confirm-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.gopd-mr-confirm-btn {
+  padding: 5px 14px;
+  border-radius: 5px;
+  border: 1px solid #ccc;
+  font-size: 0.78rem;
+  cursor: pointer;
+  font-family: inherit;
+
+  &--use    { background: #1a3c6e; color: #fff; border-color: #1a3c6e; &:hover { background: #1e4a88; } }
+  &--new    { background: #166534; color: #fff; border-color: #166534; &:hover { background: #15803d; } }
+  &--cancel { background: #f1f5f9; color: #374151; &:hover { background: #e2e8f0; } }
+}
+
+.gopd-phone-modal {
+  background: #fff;
+  border-radius: 8px;
+  min-width: 500px;
+  max-width: 680px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  overflow: hidden;
+}
+
+.gopd-phone-modal-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #1a3c6e;
+  background: #e8eef8;
+  border-bottom: 1px solid #c8d8f0;
+}
+
+.gopd-phone-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #555;
+  display: flex;
+  align-items: center;
+  &:hover { color: #e00; }
+}
+
+.gopd-phone-modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  overflow-y: auto;
+
+  th {
+    background: #1a3c6e;
+    color: #fff;
+    padding: 5px 10px;
+    text-align: left;
+    font-weight: 600;
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #e8e8e8;
+    color: #1a1a1a;
+  }
+
+  tr:hover td { background: #f0f4ff; }
+}
+
+.gopd-phone-modal-actions-cell {
+  display: flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.gopd-phone-modal-sel {
+  background: #1a3c6e;
+  color: #fff;
+  border: none;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  &:hover { background: #1e4a88; }
+
+  &--new {
+    background: #166534;
+    &:hover { background: #15803d; }
+  }
+}
+
+.gopd-serial-input {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  width: 130px;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  letter-spacing: 0.01em;
+}
+
+// ── Patient section ───────────────────────────────────────────────────────────
+.gopd-patient {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.gopd-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.gopd-row-1 {
+  align-items: center;
+}
+
+.gopd-row-2 {
+  align-items: center;
+}
+
+.gopd-row-radio {
+  gap: 1.5rem;
+  padding: 0.1rem 0;
+}
+
+.gopd-lbl {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #475569;
+  white-space: nowrap;
+}
+
+// ── Name group ────────────────────────────────────────────────────────────────
+.gopd-name-grp {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.gopd-sel-type {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-inp-name {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+// ── Admit / Antenatal group ───────────────────────────────────────────────────
+.gopd-admit-grp {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.gopd-chk-lbl {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input[type='checkbox'] { cursor: pointer; accent-color: #2563eb; }
+}
+
+.gopd-inp-antenatal {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  width: 80px;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+  &:disabled { background: #f8fafc; color: #94a3b8; cursor: not-allowed; }
+}
+
+.gopd-browse-btn {
+  padding: 0.28rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f1f5f9;
+  font-size: 0.8rem;
+  color: #475569;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: #e2e8f0; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+// ── Age group ─────────────────────────────────────────────────────────────────
+.gopd-age-grp {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gopd-inp-age {
+  width: 52px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-sel-sm {
+  padding: 0.3rem 0.35rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  outline: none;
+  background: #fff;
+  cursor: pointer;
+
+  &:focus { border-color: #2563eb; }
+}
+
+// ── Gender group ──────────────────────────────────────────────────────────────
+.gopd-gender-grp {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+// ── Contact group ─────────────────────────────────────────────────────────────
+.gopd-contact-grp {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.gopd-inp-phone {
+  width: 130px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-inp-dob {
+  width: 130px;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-ref-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.gopd-inp-ref {
+  width: 100%;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  outline: none;
+  box-sizing: border-box;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-ref-dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  z-index: 200;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.gopd-ref-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.81rem;
+  color: #1e293b;
+
+  &:hover { background: #eff6ff; }
+}
+
+.gopd-ref-code {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  min-width: 40px;
+}
+
+.gopd-ref-empty {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+// ── Radio ─────────────────────────────────────────────────────────────────────
+.gopd-radio-lbl {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input[type='radio'] { cursor: pointer; accent-color: #2563eb; }
+
+  &--dim {
+    opacity: 0.4;
+    cursor: not-allowed;
+    input[type='radio'] { cursor: not-allowed; }
+  }
+}
+
+// ── ON CALL ───────────────────────────────────────────────────────────────────
+.gopd-oncall-row {
+  padding: 0.2rem 0.1rem;
+}
+
+.gopd-oncall-lbl {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #dc2626;
+  cursor: pointer;
+
+  input[type='checkbox'] { cursor: pointer; accent-color: #dc2626; }
+}
+
+// ── Two-panel main ────────────────────────────────────────────────────────────
+.gopd-main {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  flex: 1;
+  min-height: 0;
+}
+
+// ── Left panel ────────────────────────────────────────────────────────────────
+.gopd-left-panel {
+  flex: 3;
+  min-width: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.gopd-doctor-dropdown-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.gopd-doctor-select {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #0f172a;
+  outline: none;
+  &:focus { border-color: #3b82f6; }
+}
+
+// ── Transfer buttons ──────────────────────────────────────────────────────────
+.gopd-transfer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-self: center;
+  padding: 0.5rem 0;
+}
+
+.gopd-xfer-btn {
+  padding: 0.45rem 0.8rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: background 0.12s;
+
+  &:hover { background: #1d4ed8; }
+}
+
+// ── Right panel ───────────────────────────────────────────────────────────────
+.gopd-right-panel {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+// ── Table wrapper ─────────────────────────────────────────────────────────────
+.gopd-table-wrap {
+  overflow-y: auto;
+  overflow-x: auto;
+  flex: 1;
+  min-height: 160px;
+  max-height: 380px;
+
+  &--right {
+    min-height: 140px;
+    max-height: 380px;
+  }
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+.gopd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+
+  thead {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    z-index: 1;
+
+    th {
+      padding: 0.45rem 0.65rem;
+      text-align: left;
+      font-weight: 600;
+      color: #475569;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+      text-transform: uppercase;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+    }
+  }
+
+  tbody {
+    tr {
+      cursor: pointer;
+
+      &:not(:last-child) td {
+        border-bottom: 1px solid #f1f5f9;
+      }
+
+      &:hover {
+        background: #eff6ff;
+      }
+
+      &.gopd-tr--sel {
+        background: #dbeafe;
+
+        &:hover { background: #bfdbfe; }
+      }
+    }
+
+    td {
+      padding: 0.42rem 0.65rem;
+      color: #0f172a;
+      vertical-align: middle;
+
+      input[type='checkbox'] {
+        cursor: pointer;
+        accent-color: #2563eb;
+      }
+    }
+  }
+}
+
+.gopd-empty-cell {
+  text-align: center;
+  color: #94a3b8;
+  font-style: italic;
+  padding: 1.5rem 0 !important;
+}
+
+// ── Total section ─────────────────────────────────────────────────────────────
+.gopd-total {
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.gopd-total-title {
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  padding: 0.45rem 0.75rem 0.3rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #eff6ff;
+}
+
+.gopd-total-body {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+}
+
+.gopd-total-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.gopd-total-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.gopd-total-lbl {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #475569;
+  white-space: nowrap;
+  width: 52px;
+}
+
+.gopd-total-inp {
+  width: 80px;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-discount-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.gopd-discount-toggle {
+  display: flex;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gopd-disc-btn {
+  padding: 0.28rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: #f8fafc;
+  color: #64748b;
+  border: none;
+  cursor: pointer;
+  line-height: 1;
+
+  & + & { border-left: 1px solid #d1d5db; }
+  &:hover { background: #f1f5f9; }
+
+  &--active {
+    background: #2563eb;
+    color: #fff;
+  }
+}
+
+.gopd-disc-calc {
+  font-size: 0.75rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.gopd-refund-val {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.gopd-total-amount {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 60px;
+  text-align: center;
+}
+
+.gopd-action-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.gopd-save-btn {
+  padding: 0.45rem 1rem;
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) { background: #15803d; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.gopd-print-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.45rem 1rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+  white-space: nowrap;
+
+  &:hover { background: #1d4ed8; }
+}
+
+// ── Employee change button ────────────────────────────────────────────────────
+.gopd-emp-change-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #475569;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover { background: #e2e8f0; color: #1d4ed8; border-color: #2563eb; }
+}
+
+// ── Employee modal ────────────────────────────────────────────────────────────
+.gopd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.gopd-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  max-height: 80vh;
+  overflow: hidden;
+}
+
+.gopd-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gopd-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.gopd-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 6px;
+  color: #64748b;
+  cursor: pointer;
+
+  &:hover { background: #fee2e2; color: #dc2626; }
+}
+
+.gopd-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.gopd-modal-search-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.gopd-modal-search-input {
+  flex: 1;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.82rem;
+  outline: none;
+
+  &:focus { border-color: #2563eb; }
+}
+
+.gopd-modal-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.gopd-modal-empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.gopd-modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+
+  thead {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+
+    th {
+      padding: 0.45rem 0.75rem;
+      text-align: left;
+      font-weight: 600;
+      color: #475569;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #e2e8f0;
+    }
+  }
+}
+
+.gopd-modal-row {
+  cursor: pointer;
+
+  td { padding: 0.5rem 0.75rem; color: #0f172a; border-bottom: 1px solid #f1f5f9; }
+
+  &:hover td { background: #eff6ff; }
+}
+
+.gopd-modal-phone {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+// ── Employee search ───────────────────────────────────────────────────────────
+.gopd-emp-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.gopd-emp-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 0.5rem;
+
+  &:focus-within { border-color: #2563eb; }
+}
+
+.gopd-emp-icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.gopd-emp-input-row input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 0.3rem 0;
+  font-size: 0.82rem;
+  background: transparent;
+}
+
+.gopd-emp-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.gopd-emp-drop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+  z-index: 50;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.gopd-emp-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #0f172a;
+
+  &:hover { background: #eff6ff; }
+}
+
+.gopd-emp-code {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  white-space: nowrap;
+}
+
+.gopd-emp-phone {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+// ── Loading ───────────────────────────────────────────────────────────────────
+.gopd-loading {
+  text-align: center;
+  padding: 2rem;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+// ── Panel badge ───────────────────────────────────────────────────────────────
+.gopd-panel-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 0.15rem 0.45rem;
+  white-space: nowrap;
+}
+
+// ── Panel Modal ───────────────────────────────────────────────────────────────
+.gopd-modal--panel {
+  width: 420px;
+  max-width: 96vw;
+}
+
+.gopd-panel-modal-body {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.gopd-panel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.gopd-panel-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.gopd-panel-select {
+  padding: 0.38rem 0.6rem;
+  border: 1px solid #9ca3af;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  color: #111827;
+  outline: none;
+  background: #fff;
+  transition: border-color 0.12s;
+  width: 100%;
+
+  &:focus { border-color: #2563eb; }
+  &:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; }
+}
+
+.gopd-panel-hint {
+  font-size: 0.72rem;
+  color: #f59e0b;
+  font-style: italic;
+}
+
+.gopd-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.gopd-panel-cancel {
+  padding: 0.35rem 1rem;
+  background: #e5e7eb;
+  color: #374151;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover { background: #d1d5db; }
+}
+
+.gopd-panel-confirm {
+  padding: 0.35rem 1.2rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover { background: #1d4ed8; }
+}
+
+/* ════════════════════════════════════════════
+   CLINICAL RECORD FORM (print-only)
+   ════════════════════════════════════════════ */
+.copd-crf-print-area { display: none; }
+
+@media print {
+  @page { size: A4 portrait; margin: 8mm; }
+
+  body * { visibility: hidden; }
+  .copd-crf-print-area,
+  .copd-crf-print-area * { visibility: visible !important; }
+
+  .copd-crf-print-area {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    background: #fff;
+  }
+}
+
+.copd-crf {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  color: #000;
+  background: #fff;
+  border: 1.5px solid #000;
+  padding: 6px 8px 8px;
+}
+
+.copd-crf-title {
+  border: 1.5px solid #000;
+  text-align: center;
+  font-weight: 900;
+  font-size: 13pt;
+  letter-spacing: 0.5px;
+  padding: 5px;
+  margin-bottom: 6px;
+}
+
+.copd-crf-consultant {
+  font-weight: 700;
+  font-size: 10pt;
+  margin-bottom: 6px;
+}
+
+.copd-crf-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 5px;
+  font-size: 10pt;
+}
+
+.copd-crf-grp {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+
+  strong { font-weight: 700; white-space: nowrap; }
+}
+
+.copd-crf-dln {
+  display: inline-block;
+  border-bottom: 1px solid #000;
+  min-width: 260px;
+  padding: 0 4px;
+  font-weight: 600;
+
+  &--sm { min-width: 80px; }
+  &--md { min-width: 180px; }
+  &--lg { min-width: 200px; }
+}
+
+.copd-crf-barcode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  img { height: 28px; }
+}
+
+.copd-crf-section-hdr {
+  font-weight: 700;
+  font-size: 10.5pt;
+  text-decoration: underline;
+  margin: 8px 0 4px;
+}
+
+.copd-crf-vitals {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9.5pt;
+  margin-bottom: 4px;
+
+  td { padding: 3px 4px; vertical-align: baseline; }
+  .vp { font-weight: 700; white-space: nowrap; }
+  .vm { border-bottom: 1px solid #000; width: 70px; display: inline-block; min-height: 12px; }
+}
+
+.copd-crf-body {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.copd-crf-body-left { flex: 1; }
+
+.copd-crf-body-right {
+  width: 34%;
+  border-left: 1.5px solid #000;
+  padding-left: 8px;
+}
+
+.copd-crf-right-hdr {
+  font-weight: 700;
+  font-size: 9pt;
+  border-bottom: 1.5px solid #000;
+  padding-bottom: 3px;
+  margin-bottom: 3px;
+}
+
+.copd-crf-line {
+  border-bottom: 1px solid #999;
+  height: 20px;
+}
+
+.copd-crf-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1.5px solid #000;
+  font-weight: 700;
+  font-size: 10pt;
+}
