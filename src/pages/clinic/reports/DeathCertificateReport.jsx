@@ -8,6 +8,30 @@ import './DeathCertificateReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
+// `@page` is a document-level rule shared across the whole bundled app (Vite
+// bundles every page's SCSS into one stylesheet) — other pages (Admission,
+// Provisional Bill, etc.) each declare their own `@page`, so whichever one
+// loads last in the bundle silently wins for the WHOLE app's prints unless a
+// page protects itself. Inject a highest-priority override right before
+// printing so this report's landscape layout isn't overridden by whichever
+// other page's `@page` rule happens to come later in the build.
+function printDeathCertificateReport() {
+  const styleId = 'dcr-page-size-override';
+  let style = document.getElementById(styleId);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = styleId;
+    document.head.appendChild(style);
+  }
+  style.textContent = '@page { size: A4 landscape !important; margin: 8mm !important; }';
+
+  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 5000);
+
+  window.print();
+}
+
 const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MN_IDX = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
 
@@ -249,7 +273,7 @@ export default function DeathCertificateReport() {
             <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Excel'}
           </button>
           <button className="dcr-tool-btn dcr-tool-btn--excel" onClick={handleExportExcel} disabled={!rows.length}>Export Excel</button>
-          <button className="dcr-tool-btn dcr-tool-btn--pdf" onClick={() => window.print()} disabled={!rows.length}>Print / PDF</button>
+          <button className="dcr-tool-btn dcr-tool-btn--pdf" onClick={printDeathCertificateReport} disabled={!rows.length}>Print / PDF</button>
         </div>
 
         <div className="dcr-sheet">

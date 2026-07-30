@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
@@ -12,6 +13,7 @@ import './ClinicBedPage.scss';
 
 
 export default function ClinicBedPage() {
+  const navigate = useNavigate();
   const {
     roomCategories,
     beds,
@@ -93,10 +95,11 @@ export default function ClinicBedPage() {
   }
 
   function BedCard({ bed }) {
-    const occupied = bed.status === 'occupied';
+    const occupied   = bed.status === 'occupied';
+    const notWorking = bed.status === 'not_working';
     return (
       <div
-        className={`bed-card ${occupied ? 'bed-card--occupied' : 'bed-card--available'}`}
+        className={`bed-card ${occupied ? 'bed-card--occupied' : notWorking ? 'bed-card--not-working' : 'bed-card--available'}`}
         onClick={() => setSelectedBed(bed)}
       >
         <div className="bed-card__actions">
@@ -120,6 +123,8 @@ export default function ClinicBedPage() {
             <span className="bed-card__patient">{bed.admission?.patientTitle} {bed.admission?.patientName || '—'}</span>
             <span className="bed-card__adm">Adm# {bed.admission?.admissionNo || '—'}</span>
           </div>
+        ) : notWorking ? (
+          <div className="bed-card__status-label bed-card__status-label--not-working">Not Working</div>
         ) : (
           <div className="bed-card__status-label">Available</div>
         )}
@@ -230,7 +235,7 @@ export default function ClinicBedPage() {
       {selectedBed && (
         <div className="bed-detail-overlay" onClick={() => setSelectedBed(null)}>
           <div className="bed-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <div className={`bed-detail-header ${selectedBed.status === 'occupied' ? 'bed-detail-header--red' : 'bed-detail-header--green'}`}>
+            <div className={`bed-detail-header ${selectedBed.status === 'occupied' ? 'bed-detail-header--red' : selectedBed.status === 'not_working' ? 'bed-detail-header--amber' : 'bed-detail-header--green'}`}>
               <span>{selectedBed.name}</span>
               <button className="bed-detail-close" onClick={() => setSelectedBed(null)}>✕</button>
             </div>
@@ -254,10 +259,37 @@ export default function ClinicBedPage() {
                     {selectedBed.roomCategory?.rate > 0 && (
                       <tr><td>Rate</td><td>Rs. {selectedBed.roomCategory.rate.toLocaleString()} / day</td></tr>
                     )}
-                    <tr><td>Status</td><td style={{ color: '#16a34a', fontWeight: 600 }}>Available</td></tr>
+                    <tr>
+                      <td>Status</td>
+                      <td style={{ color: selectedBed.status === 'not_working' ? '#d97706' : '#16a34a', fontWeight: 600 }}>
+                        {selectedBed.status === 'not_working' ? 'Not Working' : 'Available'}
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               )}
+
+              <div className="bed-detail-actions">
+                {selectedBed.status === 'occupied' && selectedBed.admission?.admissionNo && (
+                  <>
+                    <button onClick={() => navigate(`/clinic/transactions/receiving-against-admission?admissionNo=${encodeURIComponent(selectedBed.admission.admissionNo)}`)}>
+                      Receiving against Admission
+                    </button>
+                    <button onClick={() => navigate(`/clinic/transactions/bed-shifting?admissionNo=${encodeURIComponent(selectedBed.admission.admissionNo)}`)}>
+                      Bed Shifting
+                    </button>
+                    <button onClick={() => navigate(`/clinic/transactions/admission-adjustment?admissionNo=${encodeURIComponent(selectedBed.admission.admissionNo)}`)}>
+                      Admission Adjustment
+                    </button>
+                    <button onClick={() => navigate(`/clinic/billing/provisional-bill?admissionNo=${encodeURIComponent(selectedBed.admission.admissionNo)}`)}>
+                      Provisional Bill
+                    </button>
+                  </>
+                )}
+                <button onClick={() => navigate(`/clinic/transactions/bed-status?roomCategoryId=${selectedBed.roomCategoryId}&bedId=${selectedBed.id}`)}>
+                  Bed Status
+                </button>
+              </div>
             </div>
           </div>
         </div>

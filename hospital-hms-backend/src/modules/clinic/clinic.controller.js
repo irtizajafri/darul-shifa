@@ -138,6 +138,325 @@ async function deleteSurgeryType(req, res, next) {
   }
 }
 
+// ─── Symptom ────────────────────────────────────────────────────────────────
+
+async function getSymptoms(req, res, next) {
+  try {
+    const data = await service.getAllSymptoms();
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function createSymptom(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.createSymptom({ name });
+    success(res, data, 'Symptom created');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Symptom already exists');
+    next(err);
+  }
+}
+
+async function updateSymptom(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.updateSymptom(req.params.id, { name });
+    success(res, data, 'Symptom updated');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Symptom already exists');
+    if (err.code === 'P2025') return fail(res, 404, 'Symptom not found');
+    next(err);
+  }
+}
+
+async function deleteSymptom(req, res, next) {
+  try {
+    await service.deleteSymptom(req.params.id);
+    success(res, null, 'Symptom deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Symptom not found');
+    if (err.code === 'P2003') return fail(res, 409, 'Cannot delete — Symptom is linked to existing records');
+    next(err);
+  }
+}
+
+// ─── Disease ────────────────────────────────────────────────────────────────
+
+async function getDiseases(req, res, next) {
+  try {
+    const data = await service.getAllDiseases();
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function createDisease(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.createDisease({ name });
+    success(res, data, 'Disease created');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Disease already exists');
+    next(err);
+  }
+}
+
+async function updateDisease(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.updateDisease(req.params.id, { name });
+    success(res, data, 'Disease updated');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Disease already exists');
+    if (err.code === 'P2025') return fail(res, 404, 'Disease not found');
+    next(err);
+  }
+}
+
+async function deleteDisease(req, res, next) {
+  try {
+    await service.deleteDisease(req.params.id);
+    success(res, null, 'Disease deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Disease not found');
+    if (err.code === 'P2003') return fail(res, 409, 'Cannot delete — Disease is linked to existing records');
+    next(err);
+  }
+}
+
+// ─── Document Type ────────────────────────────────────────────────────────────
+
+async function getDocumentTypes(req, res, next) {
+  try {
+    const data = await service.getAllDocumentTypes();
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function createDocumentType(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.createDocumentType({ name });
+    success(res, data, 'Document Type created');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Document Type already exists');
+    next(err);
+  }
+}
+
+async function updateDocumentType(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.updateDocumentType(req.params.id, { name });
+    success(res, data, 'Document Type updated');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Document Type already exists');
+    if (err.code === 'P2025') return fail(res, 404, 'Document Type not found');
+    next(err);
+  }
+}
+
+async function deleteDocumentType(req, res, next) {
+  try {
+    await service.deleteDocumentType(req.params.id);
+    success(res, null, 'Document Type deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Document Type not found');
+    if (err.code === 'P2003') return fail(res, 409, 'Cannot delete — Document Type is linked to existing records');
+    next(err);
+  }
+}
+
+// ─── Discharge Type ───────────────────────────────────────────────────────────
+
+async function getDischargeTypes(req, res, next) {
+  try {
+    const data = await service.getAllDischargeTypes();
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function createDischargeType(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.createDischargeType({ name });
+    success(res, data, 'Discharge Type created');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Discharge Type already exists');
+    next(err);
+  }
+}
+
+async function updateDischargeType(req, res, next) {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    const data = await service.updateDischargeType(req.params.id, { name });
+    success(res, data, 'Discharge Type updated');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Discharge Type already exists');
+    if (err.code === 'P2025') return fail(res, 404, 'Discharge Type not found');
+    next(err);
+  }
+}
+
+async function deleteDischargeType(req, res, next) {
+  try {
+    await service.deleteDischargeType(req.params.id);
+    success(res, null, 'Discharge Type deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Discharge Type not found');
+    if (err.code === 'P2003') return fail(res, 409, 'Cannot delete — Discharge Type is linked to existing records');
+    next(err);
+  }
+}
+
+// ─── Upload Patient Document ──────────────────────────────────────────────────
+
+async function searchAdmissionsForDocuments(req, res, next) {
+  try {
+    success(res, await service.searchAdmissionsForDocuments(req.query.q));
+  } catch (err) { next(err); }
+}
+
+async function getPatientDocuments(req, res, next) {
+  try {
+    success(res, await service.getPatientDocuments(req.params.admissionId));
+  } catch (err) { next(err); }
+}
+
+async function uploadPatientDocument(req, res, next) {
+  try {
+    if (!req.file) return fail(res, 400, 'File is required');
+    const { admissionId, documentTypeId, uploadedBy } = req.body;
+    if (!admissionId) return fail(res, 400, 'Admission is required');
+    const data = await service.createPatientDocument({
+      admissionId,
+      documentTypeId,
+      uploadedBy,
+      fileName: req.file.originalname,
+      filePath: `patient-documents/${req.file.filename}`,
+      mimeType: req.file.mimetype,
+      fileSize: req.file.size,
+    });
+    success(res, data, 'Document uploaded');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function getPatientDocumentsReport(req, res, next) {
+  try {
+    const { dateFrom, dateTo, q, documentTypeId } = req.query;
+    success(res, await service.getPatientDocumentsReport({ dateFrom, dateTo, q, documentTypeId }));
+  } catch (err) { next(err); }
+}
+
+// ─── Provisional Bill ─────────────────────────────────────────────────────────
+
+async function getProvisionalBillDetail(req, res, next) {
+  try {
+    success(res, await service.getProvisionalBillDetail(req.params.admissionId));
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function addProvisionalBillItem(req, res, next) {
+  try {
+    const { roomCategoryId, billHeadId, qty, rate, remarks, patientType } = req.body;
+    const data = await service.addProvisionalBillItem(req.params.admissionId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType });
+    success(res, data, 'Row added');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function addProvisionalBillItemFromVisit(req, res, next) {
+  try {
+    const data = await service.addProvisionalBillItemFromVisit(req.params.admissionId, req.body.opdVisitId);
+    success(res, data, 'Slip Provisional Bill mein add ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deleteProvisionalBillItem(req, res, next) {
+  try {
+    await service.deleteProvisionalBillItem(req.params.itemId);
+    success(res, null, 'Row deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Row not found');
+    next(err);
+  }
+}
+
+async function updateProvisionalBillHeader(req, res, next) {
+  try {
+    const { surgery, surgeryTypeId, dischargeTypeId } = req.body;
+    const data = await service.updateProvisionalBillHeader(req.params.admissionId, { surgery, surgeryTypeId, dischargeTypeId });
+    success(res, data, 'Updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+// ─── Discharge and Refund ────────────────────────────────────────────────────
+
+async function getDischargeBillDetail(req, res, next) {
+  try {
+    success(res, await service.getDischargeBillDetail(req.params.admissionId));
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function addDischargeBillItem(req, res, next) {
+  try {
+    const { billHeadId, doctorId, amount } = req.body;
+    const data = await service.addDischargeBillItem(req.params.admissionId, { billHeadId, doctorId, amount });
+    success(res, data, 'Row added');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function deleteDischargeBillItem(req, res, next) {
+  try {
+    await service.deleteDischargeBillItem(req.params.itemId);
+    success(res, null, 'Row deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Row not found');
+    next(err);
+  }
+}
+
+async function finalizeDischarge(req, res, next) {
+  try {
+    const { discountAmount, closedFiles, changedBy } = req.body;
+    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, closedFiles, changedBy });
+    success(res, data, closedFiles ? 'File closed' : 'Patient discharged');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.status === 400) return fail(res, 400, err.message);
+    next(err);
+  }
+}
+
 // ─── Staff Category ───────────────────────────────────────────────────────────
 
 async function getStaffCategories(req, res, next) {
@@ -642,10 +961,91 @@ async function createAdmission(req, res, next) {
 
 async function getAvailableBeds(req, res, next) {
   try {
-    const { roomCategoryId } = req.query;
+    const { roomCategoryId, excludeAdmissionId } = req.query;
     if (!roomCategoryId) return success(res, []);
-    success(res, await service.getAvailableBeds(roomCategoryId));
+    success(res, await service.getAvailableBeds(roomCategoryId, excludeAdmissionId));
   } catch (err) { next(err); }
+}
+
+// ─── Admission Adjustment ────────────────────────────────────────────────────
+
+async function searchAdmissionsForAdjustment(req, res, next) {
+  try {
+    success(res, await service.searchAdmissionsForAdjustment(req.query.q));
+  } catch (err) { next(err); }
+}
+
+async function getAdmissionForAdjustment(req, res, next) {
+  try {
+    success(res, await service.getAdmissionForAdjustment(req.params.id));
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function updateAdmissionAdjustment(req, res, next) {
+  try {
+    const data = await service.updateAdmissionAdjustment(req.params.id, req.body);
+    success(res, data, 'Admission updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+// ─── Admission Status Change ─────────────────────────────────────────────────
+
+async function updateAdmissionStatus(req, res, next) {
+  try {
+    const { status, reason, changedBy } = req.body;
+    const data = await service.updateAdmissionStatus(req.params.id, { status, reason, changedBy });
+    success(res, data, status === 'wipeout' ? 'Admission wiped out' : 'Admission status updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.status === 400) return fail(res, 400, err.message);
+    next(err);
+  }
+}
+
+async function getAdmissionWipeoutReport(req, res, next) {
+  try {
+    success(res, await service.getAdmissionWipeoutReport());
+  } catch (err) { next(err); }
+}
+
+// ─── Bed Shifting ─────────────────────────────────────────────────────────────
+
+async function getBedShiftHistory(req, res, next) {
+  try {
+    success(res, await service.getBedShiftHistory(req.params.id));
+  } catch (err) { next(err); }
+}
+
+async function shiftAdmissionBed(req, res, next) {
+  try {
+    const { newBedId, shiftedBy } = req.body;
+    const data = await service.shiftAdmissionBed(req.params.id, { newBedId, shiftedBy });
+    success(res, data, 'Bed shifted');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.status === 400) return fail(res, 400, err.message);
+    if (err.status === 409) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
+// ─── Bed Status ───────────────────────────────────────────────────────────────
+
+async function setBedStatus(req, res, next) {
+  try {
+    const data = await service.setBedStatus(req.params.id, req.body.status);
+    success(res, data, 'Bed status updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.status === 400) return fail(res, 400, err.message);
+    next(err);
+  }
 }
 
 async function printOpdVisit(req, res, next) {
@@ -736,6 +1136,33 @@ async function updateVisitPersonalInfo(req, res, next) {
   try {
     const data = await service.updateVisitPersonalInfo(req.params.source, req.params.id, req.body);
     success(res, data, 'Slip update ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+// ─── Slip Transfer ────────────────────────────────────────────────────────────
+
+async function searchVisitsForSlipTransfer(req, res, next) {
+  try {
+    success(res, await service.searchVisitsForSlipTransfer(req.query.q));
+  } catch (err) { next(err); }
+}
+
+async function getVisitForSlipTransfer(req, res, next) {
+  try {
+    success(res, await service.getVisitForSlipTransfer(req.params.source, req.params.id));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function transferSlipAdmission(req, res, next) {
+  try {
+    const data = await service.transferSlipAdmission(req.params.source, req.params.id, req.body.admitNo);
+    success(res, data, 'Slip transfer ho gayi');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -860,6 +1287,35 @@ module.exports = {
   createSurgeryType,
   updateSurgeryType,
   deleteSurgeryType,
+  getSymptoms,
+  createSymptom,
+  updateSymptom,
+  deleteSymptom,
+  getDiseases,
+  createDisease,
+  updateDisease,
+  deleteDisease,
+  getDocumentTypes,
+  createDocumentType,
+  updateDocumentType,
+  deleteDocumentType,
+  getDischargeTypes,
+  createDischargeType,
+  updateDischargeType,
+  deleteDischargeType,
+  searchAdmissionsForDocuments,
+  getPatientDocuments,
+  uploadPatientDocument,
+  getPatientDocumentsReport,
+  getProvisionalBillDetail,
+  addProvisionalBillItem,
+  addProvisionalBillItemFromVisit,
+  deleteProvisionalBillItem,
+  updateProvisionalBillHeader,
+  getDischargeBillDetail,
+  addDischargeBillItem,
+  deleteDischargeBillItem,
+  finalizeDischarge,
   getStaffCategories,
   createStaffCategory,
   updateStaffCategory,
@@ -908,6 +1364,9 @@ module.exports = {
   searchVisitsForAdjustment,
   getVisitForAdjustment,
   updateVisitPersonalInfo,
+  searchVisitsForSlipTransfer,
+  getVisitForSlipTransfer,
+  transferSlipAdmission,
   createAntenatal,
   getAntenatalList,
   getAntenatalByNo,
@@ -922,6 +1381,14 @@ module.exports = {
   getAdmissionPaymentForPrint,
   createAdmission,
   getAvailableBeds,
+  searchAdmissionsForAdjustment,
+  getAdmissionForAdjustment,
+  updateAdmissionAdjustment,
+  updateAdmissionStatus,
+  getAdmissionWipeoutReport,
+  getBedShiftHistory,
+  shiftAdmissionBed,
+  setBedStatus,
   bulkCreatePatientVisits,
   getConsultantRates,
   upsertConsultantRate,

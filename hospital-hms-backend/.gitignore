@@ -3,3 +3,7 @@ node_modules
 .env
 
 /src/generated/prisma
+
+# Uploaded patient documents (files live on this server's disk, not in git)
+/uploads/*
+!/uploads/.gitkeep

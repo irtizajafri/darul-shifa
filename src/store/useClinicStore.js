@@ -103,6 +103,78 @@ export const useClinicStore = create((set) => ({
     set((s) => ({ surgeryTypes: s.surgeryTypes.filter((c) => c.id !== id) }));
   },
 
+  // ── Symptom ──────────────────────────────────────────────────────────────────
+  symptoms: [],
+
+  fetchSymptoms: async () => {
+    set({ loading: true, error: null });
+    try {
+      const symptoms = await request('/symptoms');
+      set({ symptoms, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createSymptom: async (payload) => {
+    const data = await request('/symptoms', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ symptoms: [...s.symptoms, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updateSymptom: async (id, payload) => {
+    const data = await request(`/symptoms/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ symptoms: s.symptoms.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deleteSymptom: async (id) => {
+    await request(`/symptoms/${id}`, { method: 'DELETE' });
+    set((s) => ({ symptoms: s.symptoms.filter((c) => c.id !== id) }));
+  },
+
+  // ── Disease ──────────────────────────────────────────────────────────────────
+  diseases: [],
+
+  fetchDiseases: async () => {
+    set({ loading: true, error: null });
+    try {
+      const diseases = await request('/diseases');
+      set({ diseases, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createDisease: async (payload) => {
+    const data = await request('/diseases', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ diseases: [...s.diseases, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updateDisease: async (id, payload) => {
+    const data = await request(`/diseases/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ diseases: s.diseases.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deleteDisease: async (id) => {
+    await request(`/diseases/${id}`, { method: 'DELETE' });
+    set((s) => ({ diseases: s.diseases.filter((c) => c.id !== id) }));
+  },
+
   // ── Staff Category ──────────────────────────────────────────────────────────
   staffCategories: [],
 
@@ -428,11 +500,180 @@ export const useClinicStore = create((set) => ({
     return request(`/opd/by-serial/${encodeURIComponent(serialNo)}`);
   },
 
-  fetchAvailableBeds: async (roomCategoryId) => {
-    return request(`/admission/available-beds?roomCategoryId=${roomCategoryId}`);
+  fetchAvailableBeds: async (roomCategoryId, excludeAdmissionId) => {
+    const suffix = excludeAdmissionId ? `&excludeAdmissionId=${excludeAdmissionId}` : '';
+    return request(`/admission/available-beds?roomCategoryId=${roomCategoryId}${suffix}`);
   },
 
   createAdmission: async (payload) => {
     return request('/admission', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  searchAdmissionsForAdjustment: async (q) => {
+    return request(`/admission/adjustment/search?q=${encodeURIComponent(q || '')}`);
+  },
+
+  fetchAdmissionForAdjustment: async (id) => {
+    return request(`/admission/adjustment/${id}`);
+  },
+
+  updateAdmissionAdjustment: async (id, payload) => {
+    return request(`/admission/adjustment/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
+  updateAdmissionStatus: async (id, payload) => {
+    return request(`/admission/status/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
+  fetchAdmissionWipeoutReport: async () => {
+    return request('/admission/status-change-report');
+  },
+
+  fetchBedShiftHistory: async (admissionId) => {
+    return request(`/admission/${admissionId}/bed-shifts`);
+  },
+
+  shiftAdmissionBed: async (admissionId, payload) => {
+    return request(`/admission/${admissionId}/bed-shift`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  setBedStatus: async (bedId, status) => {
+    return request(`/beds/${bedId}/status`, { method: 'PUT', body: JSON.stringify({ status }) });
+  },
+
+  // ── Document Type ────────────────────────────────────────────────────────────
+  documentTypes: [],
+
+  fetchDocumentTypes: async () => {
+    set({ loading: true, error: null });
+    try {
+      const documentTypes = await request('/document-types');
+      set({ documentTypes, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createDocumentType: async (payload) => {
+    const data = await request('/document-types', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ documentTypes: [...s.documentTypes, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updateDocumentType: async (id, payload) => {
+    const data = await request(`/document-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ documentTypes: s.documentTypes.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deleteDocumentType: async (id) => {
+    await request(`/document-types/${id}`, { method: 'DELETE' });
+    set((s) => ({ documentTypes: s.documentTypes.filter((c) => c.id !== id) }));
+  },
+
+  // ── Upload Patient Document ──────────────────────────────────────────────────
+  searchAdmissionsForDocuments: async (q) => {
+    return request(`/patient-documents/search?q=${encodeURIComponent(q || '')}`);
+  },
+
+  fetchPatientDocuments: async (admissionId) => {
+    return request(`/patient-documents/by-admission/${admissionId}`);
+  },
+
+  uploadPatientDocument: async (formData) => {
+    const token = getToken();
+    const res = await fetch(`${API_URL}/patient-documents/upload`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json?.message || `Request failed (${res.status})`);
+    return json?.data;
+  },
+
+  fetchPatientDocumentsReport: async (params) => {
+    const q = new URLSearchParams(params).toString();
+    return request(`/patient-documents/report?${q}`);
+  },
+
+  // ── Discharge Type ───────────────────────────────────────────────────────────
+  dischargeTypes: [],
+
+  fetchDischargeTypes: async () => {
+    set({ loading: true, error: null });
+    try {
+      const dischargeTypes = await request('/discharge-types');
+      set({ dischargeTypes, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createDischargeType: async (payload) => {
+    const data = await request('/discharge-types', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ dischargeTypes: [...s.dischargeTypes, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updateDischargeType: async (id, payload) => {
+    const data = await request(`/discharge-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ dischargeTypes: s.dischargeTypes.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deleteDischargeType: async (id) => {
+    await request(`/discharge-types/${id}`, { method: 'DELETE' });
+    set((s) => ({ dischargeTypes: s.dischargeTypes.filter((c) => c.id !== id) }));
+  },
+
+  // ── Provisional Bill ─────────────────────────────────────────────────────────
+  fetchProvisionalBillDetail: async (admissionId) => {
+    return request(`/provisional-bill/${admissionId}`);
+  },
+
+  addProvisionalBillItem: async (admissionId, payload) => {
+    return request(`/provisional-bill/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  addProvisionalBillItemFromVisit: async (admissionId, opdVisitId) => {
+    return request(`/provisional-bill/${admissionId}/add-from-visit`, { method: 'POST', body: JSON.stringify({ opdVisitId }) });
+  },
+
+  deleteProvisionalBillItem: async (itemId) => {
+    return request(`/provisional-bill/items/${itemId}`, { method: 'DELETE' });
+  },
+
+  updateProvisionalBillHeader: async (admissionId, payload) => {
+    return request(`/provisional-bill/${admissionId}/header`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
+  // ── Discharge and Refund ─────────────────────────────────────────────────────
+  fetchDischargeBillDetail: async (admissionId) => {
+    return request(`/discharge-bill/${admissionId}`);
+  },
+
+  addDischargeBillItem: async (admissionId, payload) => {
+    return request(`/discharge-bill/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  deleteDischargeBillItem: async (itemId) => {
+    return request(`/discharge-bill/items/${itemId}`, { method: 'DELETE' });
+  },
+
+  finalizeDischarge: async (admissionId, payload) => {
+    return request(`/discharge-bill/${admissionId}/finalize`, { method: 'PUT', body: JSON.stringify(payload) });
   },
 }));

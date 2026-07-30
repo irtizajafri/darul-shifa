@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
@@ -96,6 +97,7 @@ function AdmissionLookupModal({ onSelect, onClose }) {
 export default function ReceivingAgainstAdmission() {
   const { user } = useAuthStore();
   const printedBy = user?.name || user?.username || user?.email || '';
+  const [searchParams] = useSearchParams();
 
   const [serialNo, setSerialNo] = useState('');
   const [showLookup, setShowLookup] = useState(false);
@@ -110,6 +112,13 @@ export default function ReceivingAgainstAdmission() {
   }
 
   useEffect(() => { loadNextSerial(); }, []);
+
+  // Deep-link from Bed parameter page (or anywhere else): ?admissionNo=... skips
+  // the lookup and jumps straight to this admission's receiving screen.
+  useEffect(() => {
+    const admissionNo = searchParams.get('admissionNo');
+    if (admissionNo) handleSelect({ admissionNo });
+  }, [searchParams]);
 
   async function handleSelect(row) {
     setShowLookup(false);

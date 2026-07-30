@@ -1,0 +1,125 @@
+$blue:   #1a3c6e;
+$bg:     #dde3ea;
+$border: #bbb;
+
+.pdr-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: $bg;
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+}
+
+.pdr-header {
+  background: #eef2f7;
+  border-bottom: 1px solid #b8c4d4;
+  padding: 10px 16px;
+}
+
+.pdr-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  font-style: italic;
+  font-size: 19px;
+  color: #26317a;
+}
+
+.pdr-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: #fff;
+  border-bottom: 1px solid $border;
+}
+
+.pdr-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+
+  &--grow { flex: 1; min-width: 260px; }
+
+  label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #667;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    margin-bottom: 3px;
+  }
+
+  input, select {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 8px;
+    border: 1px solid $border;
+    border-radius: 3px;
+  }
+}
+
+.pdr-search-btn {
+  background: $blue;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  &:hover:not(:disabled) { background: darken($blue, 6%); }
+  &:disabled { background: #7f93b3; cursor: not-allowed; }
+}
+
+.pdr-body {
+  flex: 1;
+  padding: 14px 16px;
+}
+
+.pdr-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  font-size: 11.5px;
+  border: 1px solid $border;
+
+  thead tr {
+    background: #e8eef8;
+  }
+
+  th {
+    padding: 7px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+  }
+
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+}
+
+.pdr-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: $blue;
+  text-decoration: none;
+  font-weight: 600;
+  &:hover { text-decoration: underline; }
+}
+
+.pdr-empty-row {
+  text-align: center;
+  color: #999;
+  padding: 20px !important;
+}

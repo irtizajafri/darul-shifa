@@ -1,6 +1,17 @@
 const express = require('express');
+const path = require('path');
+const multer = require('multer');
 const controller = require('./clinic.controller');
 const router = express.Router();
+
+const documentStorage = multer.diskStorage({
+  destination: path.join(__dirname, '../../../uploads/patient-documents'),
+  filename: (req, file, cb) => {
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${Date.now()}-${safeName}`);
+  },
+});
+const uploadDocument = multer({ storage: documentStorage, limits: { fileSize: 20 * 1024 * 1024 } });
 
 // Department
 router.get('/departments', controller.getDepartments);
@@ -19,6 +30,49 @@ router.get('/surgery-types', controller.getSurgeryTypes);
 router.post('/surgery-types', controller.createSurgeryType);
 router.put('/surgery-types/:id', controller.updateSurgeryType);
 router.delete('/surgery-types/:id', controller.deleteSurgeryType);
+
+// Symptom
+router.get('/symptoms', controller.getSymptoms);
+router.post('/symptoms', controller.createSymptom);
+router.put('/symptoms/:id', controller.updateSymptom);
+router.delete('/symptoms/:id', controller.deleteSymptom);
+
+// Disease
+router.get('/diseases', controller.getDiseases);
+router.post('/diseases', controller.createDisease);
+router.put('/diseases/:id', controller.updateDisease);
+router.delete('/diseases/:id', controller.deleteDisease);
+
+// Document Type
+router.get('/document-types', controller.getDocumentTypes);
+router.post('/document-types', controller.createDocumentType);
+router.put('/document-types/:id', controller.updateDocumentType);
+router.delete('/document-types/:id', controller.deleteDocumentType);
+
+// Upload Patient Document
+router.get('/patient-documents/search', controller.searchAdmissionsForDocuments);
+router.get('/patient-documents/report', controller.getPatientDocumentsReport);
+router.get('/patient-documents/by-admission/:admissionId', controller.getPatientDocuments);
+router.post('/patient-documents/upload', uploadDocument.single('file'), controller.uploadPatientDocument);
+
+// Discharge Type
+router.get('/discharge-types', controller.getDischargeTypes);
+router.post('/discharge-types', controller.createDischargeType);
+router.put('/discharge-types/:id', controller.updateDischargeType);
+router.delete('/discharge-types/:id', controller.deleteDischargeType);
+
+// Provisional Bill
+router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
+router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);
+router.post('/provisional-bill/:admissionId/add-from-visit', controller.addProvisionalBillItemFromVisit);
+router.delete('/provisional-bill/items/:itemId', controller.deleteProvisionalBillItem);
+router.put('/provisional-bill/:admissionId/header', controller.updateProvisionalBillHeader);
+
+// Discharge and Refund
+router.get('/discharge-bill/:admissionId', controller.getDischargeBillDetail);
+router.post('/discharge-bill/:admissionId/items', controller.addDischargeBillItem);
+router.delete('/discharge-bill/items/:itemId', controller.deleteDischargeBillItem);
+router.put('/discharge-bill/:admissionId/finalize', controller.finalizeDischarge);
 
 // Staff Category
 router.get('/staff-categories', controller.getStaffCategories);
@@ -51,6 +105,11 @@ router.post('/opd/refund/:source/:id', controller.refundVisit);
 router.get('/opd/adjustment/search', controller.searchVisitsForAdjustment);
 router.get('/opd/adjustment/:source/:id', controller.getVisitForAdjustment);
 router.put('/opd/adjustment/:source/:id', controller.updateVisitPersonalInfo);
+
+// Slip Transfer
+router.get('/opd/slip-transfer/search', controller.searchVisitsForSlipTransfer);
+router.get('/opd/slip-transfer/:source/:id', controller.getVisitForSlipTransfer);
+router.put('/opd/slip-transfer/:source/:id', controller.transferSlipAdmission);
 router.get('/opd/balance-slips', controller.getBalanceSlips);
 router.post('/opd/:id/receive-balance', controller.receiveBalancePayment);
 
@@ -106,6 +165,22 @@ router.post('/admission/receiving/:admissionId/pay', controller.addAdmissionPaym
 router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaymentForPrint);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
+
+// Admission Adjustment
+router.get('/admission/adjustment/search', controller.searchAdmissionsForAdjustment);
+router.get('/admission/adjustment/:id', controller.getAdmissionForAdjustment);
+router.put('/admission/adjustment/:id', controller.updateAdmissionAdjustment);
+
+// Admission Status Change
+router.put('/admission/status/:id', controller.updateAdmissionStatus);
+router.get('/admission/status-change-report', controller.getAdmissionWipeoutReport);
+
+// Bed Shifting
+router.get('/admission/:id/bed-shifts', controller.getBedShiftHistory);
+router.post('/admission/:id/bed-shift', controller.shiftAdmissionBed);
+
+// Bed Status
+router.put('/beds/:id/status', controller.setBedStatus);
 
 // Consultant Rates
 router.get('/doctor-subdept-rates', controller.getDoctorSubDeptRates);

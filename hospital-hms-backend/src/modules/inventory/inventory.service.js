@@ -1662,8 +1662,13 @@ async function createSalesInvoiceWithItems(payload) {
       if (!item) throw new Error(`Item ${i + 1}: not found`);
       if (item.status !== ACTIVE) throw new Error(`Item ${i + 1}: ${item.name} is inactive`);
 
+      // Admission-billing lines were already deducted from stock when their GIN
+      // was issued — this invoice is billing-only for those, not a fresh sale,
+      // so it must not re-check or re-deduct stock a second time.
       const stock = Number(item.currentStock || 0);
-      if (quantity > stock) throw new Error(`Item ${i + 1}: insufficient stock for ${item.name} (available: ${stock})`);
+      if (customerType !== 'admission' && quantity > stock) {
+        throw new Error(`Item ${i + 1}: insufficient stock for ${item.name} (available: ${stock})`);
+      }
 
       const purchasePrice = Number(item.purchasePrice || 0);
       const retailPrice = Number(item.lastGrnRate || item.purchasePrice || 0);
@@ -1726,27 +1731,31 @@ async function createSalesInvoiceWithItems(payload) {
 
       invoiceLines.push(invoice);
 
-      const newStock = Number(line.item.currentStock || 0) - line.quantity;
-      await tx.inventoryStockMovement.create({
-        data: {
-          itemId: line.itemId,
-          movementType: 'OUT',
-          quantity: line.quantity,
-          unitRate: line.saleRate,
-          previousStock: Number(line.item.currentStock || 0),
-          newStock,
-          referenceType: 'SALES_INVOICE',
-          referenceId: lineCode,
-          note: `Sales invoice for ${customerType}`,
-        },
-      });
+      // Admission-billing lines: stock already left the store at GIN-issue time
+      // — this invoice must not move stock again (see the guard above).
+      if (customerType !== 'admission') {
+        const newStock = Number(line.item.currentStock || 0) - line.quantity;
+        await tx.inventoryStockMovement.create({
+          data: {
+            itemId: line.itemId,
+            movementType: 'OUT',
+            quantity: line.quantity,
+            unitRate: line.saleRate,
+            previousStock: Number(line.item.currentStock || 0),
+            newStock,
+            referenceType: 'SALES_INVOICE',
+            referenceId: lineCode,
+            note: `Sales invoice for ${customerType}`,
+          },
+        });
 
-      const updatedItem = await tx.inventoryItem.update({
-        where: { id: line.itemId },
-        data: { currentStock: newStock },
-      });
+        const updatedItem = await tx.inventoryItem.update({
+          where: { id: line.itemId },
+          data: { currentStock: newStock },
+        });
 
-      await syncReorderAlert(tx, updatedItem);
+        await syncReorderAlert(tx, updatedItem);
+      }
     }
 
     return { ...header, items: invoiceLines };

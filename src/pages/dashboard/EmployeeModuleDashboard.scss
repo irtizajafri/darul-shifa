@@ -103,14 +103,14 @@
     h3 {
       font-size: 0.875rem;
       font-weight: 600;
-      color: #0f172a;
+      color: $text-main;
       margin: 0;
       line-height: 1.3;
     }
 
     p {
       font-size: 0.75rem;
-      color: $text-muted;
+      color: $text-main;
       margin: 0;
       line-height: 1.4;
       display: -webkit-box;

@@ -11,6 +11,7 @@ const menuItems = [
       { label: 'Patients List',            path: '/clinic/reports/patients-list' },
       { label: 'Consultant Wise Patients', path: '/clinic/reports/consultant-wise' },
       { label: 'Death Certificate Report', path: '/clinic/reports/death-certificate' },
+      { label: 'Admission Status Change Report', path: '/clinic/reports/admission-status-change' },
     ],
   },
   { label: 'File', items: [] },
@@ -25,6 +26,10 @@ const menuItems = [
       { label: 'Bed',                  path: '/clinic/parameters/bed' },
       { label: 'Bill Heads',           path: '/clinic/parameters/bill-heads' },
       { label: 'Surgery Type',         path: '/clinic/parameters/surgery-types' },
+      { label: 'Symptoms',             path: '/clinic/parameters/symptoms' },
+      { label: 'Diseases',             path: '/clinic/parameters/diseases' },
+      { label: 'Upload Document Type', path: '/clinic/parameters/document-types' },
+      { label: 'Discharge Type',       path: '/clinic/parameters/discharge-types' },
       { label: 'Death Certificate',    path: '/clinic/parameters/death-certificate' },
     ],
   },
@@ -33,6 +38,7 @@ const menuItems = [
     items: [
       { label: 'General OPD',     path: '/clinic/general-opd' },
       { label: 'Emergency OPD',   path: '/clinic/emergency-opd' },
+      { label: 'Slip - Ambulance', path: '/clinic/ambulance' },
       { label: 'Antenatal',       path: '/clinic/antenatal' },
       { label: 'General Payment', path: '/accounts/non-corporate/transactions/voucher-expense/form' },
       { label: 'Mark Attendance', path: '/attendance' },
@@ -42,7 +48,13 @@ const menuItems = [
       { label: 'Cancel Slip',                  path: '/clinic/transactions/cancel-slip' },
       { label: 'Slip Refund',                  path: '/clinic/transactions/slip-refund' },
       { label: 'Slip Adjustment',              path: '/clinic/transactions/slip-adjustment' },
+      { label: 'Slip Transfer',                path: '/clinic/transactions/slip-transfer' },
       { label: 'Receiving against Admission',  path: '/clinic/transactions/receiving-against-admission' },
+      { label: 'Admission Adjustment',          path: '/clinic/transactions/admission-adjustment' },
+      { label: 'Admission Status Change',       path: '/clinic/transactions/admission-status-change' },
+      { label: 'Bed Shifting',                  path: '/clinic/transactions/bed-shifting' },
+      { label: 'Bed Status',                    path: '/clinic/transactions/bed-status' },
+      { label: 'Upload Patient Document',       path: '/clinic/transactions/upload-patient-document' },
     ],
   },
   {
@@ -74,9 +86,16 @@ const menuItems = [
     label: 'Inquiries',
     items: [
       { label: 'Revenue Dashboard', path: '/clinic/inquiries/revenue-dashboard' },
+      { label: 'Patient Documents', path: '/clinic/inquiries/patient-documents' },
     ],
   },
-  { label: 'Window',    items: [] },
+  {
+    label: 'Billing',
+    items: [
+      { label: 'Provisional Bill', path: '/clinic/billing/provisional-bill' },
+      { label: 'Discharge and Refund', path: '/clinic/discharge-refund' },
+    ],
+  },
 ];
 
 export default function ClinicMenuBar() {

@@ -2,22 +2,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
-import { buildEmergencyReceiptHtml } from './emergencyReceiptUtils';
+import { buildReceiptHtml } from './receiptUtils';
 import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
-// Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
-// map it onto the OPD slip's patientType options when auto-filling from an
-// admitted patient's record.
 const ADMISSION_TITLE_MAP = { Mr: 'MR', Mrs: 'MRS', Ms: 'MS', Master: 'MAST', Baby: 'BABY' };
-const DAY_MAP = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function todayDay() { return DAY_MAP[new Date().getDay()]; }
-function currentTime() {
-  const now = new Date();
-  return `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-}
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
 }
@@ -36,15 +27,20 @@ function dobToAge(dobStr) {
   if (months < 0) { years--;  months += 12; }
   return { age: String(Math.max(0, years)), ageMonths: Math.max(0, months), ageDays: Math.max(0, days) };
 }
+function formatDateTime(d) {
+  const dateStr = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '/');
+  const timeStr = d.toLocaleTimeString('en-GB', { hour12: false });
+  return `${dateStr} ${timeStr}`;
+}
 
 const EMPTY = {
-  serialNo: '', patientType: 'MAST', patientName: '',
+  serialNo: '', patientType: 'MS', patientName: '',
   admitPatient: false, admitNo: '', adjustPayment: false,
-  age: '', ageMonths: 0, ageDays: 0, dob: '', gender: 'male',
-  phoneNo: '', referredBy: '',
-  patientCategory: 'normal',
-  paymentMethod: 'cash',
-  visitType: 'opd', onCall: false,
+  driver: '', location: '',
+  age: '', ageMonths: 0, ageDays: 0, dob: '', gender: 'female',
+  phoneNo: '', referredBy: '', advisedBy: '',
+  hospitalPatient: true,
+  billingType: 'cash', // staff | panel | complementary | cash | cc
   employeeId: null,
   panelCompanyId: null, panelEmployeeId: null, panelDependentId: null,
   panelLabel: '',
@@ -237,18 +233,14 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function EmergencyOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment } = useClinicStore();
+export default function AmbulanceSlip() {
+  const { fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, doctors, fetchDoctors } = useClinicStore();
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
-  const [leftDoctors, setLeftDoctors] = useState([]);
-  const [loadingDoctors, setLoadingDoctors] = useState(false);
-  const [checkedLeft, setCheckedLeft] = useState([]);
-  const [rightDoctors, setRightDoctors] = useState([]);
+  const [dateTime, setDateTime] = useState(() => formatDateTime(new Date()));
   const [receive, setReceive] = useState('');
-  const [discount, setDiscount] = useState('');
-  const [discountType, setDiscountType] = useState('amount');
+  const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
@@ -258,34 +250,19 @@ export default function EmergencyOPD() {
 
   useEffect(() => {
     fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
-    loadDoctors(false);
+    if (doctors.length === 0) fetchDoctors().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    loadDoctors(form.onCall);
-    setCheckedLeft([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.onCall]);
-
-  async function loadDoctors(onCall) {
-    setLoadingDoctors(true);
-    try {
-      const rows = await fetchAvailableDoctors({ day: todayDay(), time: currentTime(), onCall, departmentName: 'Emergency' });
-      setLeftDoctors(rows || []);
-    } catch { setLeftDoctors([]); }
-    finally { setLoadingDoctors(false); }
-  }
-
-  function handleCategoryChange(v) {
+  function handleBillingTypeChange(v) {
     if (v === 'staff') {
-      setForm(f => ({ ...f, patientCategory: v, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '' }));
+      setForm(f => ({ ...f, billingType: v, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '' }));
       setShowEmpModal(true);
     } else if (v === 'panel') {
-      setForm(f => ({ ...f, patientCategory: v, employeeId: null }));
+      setForm(f => ({ ...f, billingType: v, employeeId: null }));
       setShowPanelModal(true);
     } else {
-      setForm(f => ({ ...f, patientCategory: v, employeeId: null, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '', patientName: v === 'normal' ? '' : f.patientName }));
+      setForm(f => ({ ...f, billingType: v, employeeId: null, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '' }));
     }
   }
 
@@ -302,34 +279,7 @@ export default function EmergencyOPD() {
     setShowPanelModal(false);
   }
 
-  function toggleLeft(rowId) {
-    setCheckedLeft(p => p.includes(rowId) ? [] : [rowId]);
-  }
-
-  function moveRight() {
-    if (!checkedLeft.length) return;
-    const selected = leftDoctors.find(r => r.id === checkedLeft[0]);
-    if (selected) setRightDoctors([selected]);
-    setCheckedLeft([]);
-  }
-
-  function moveLeft() { setRightDoctors([]); setCheckedLeft([]); }
-
-  const isComplementary = form.patientCategory === 'complementary';
-  const paymentMethodDisabled = form.patientCategory === 'panel' || isComplementary;
-  const effectivePaymentType = form.patientCategory === 'panel' ? 'panel'
-    : isComplementary ? 'complementary'
-    : form.paymentMethod;
-
-  const grossAmount = rightDoctors.reduce((s, r) => s + (r.normalCharges || 0), 0);
-  const discountAmt = discountType === 'percent'
-    ? Math.round((grossAmount * (Number(discount) || 0)) / 100)
-    : (Number(discount) || 0);
-  const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
-  const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
-
-  // Auto-fill the slip from the admitted patient's own record — the data
-  // already exists on their admission, no need to retype it.
+  // Auto-fill the slip from the admitted patient's own record.
   async function handleAdmitSelect(row) {
     set('admitNo', row.admissionNo);
     setShowAdmitModal(false);
@@ -350,6 +300,11 @@ export default function EmergencyOPD() {
     }
   }
 
+  const isComplementary = form.billingType === 'complementary';
+  const totalAmount = isComplementary ? 0 : (Number(amount) || 0);
+  const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
+  const fieldsDisabled = !form.hospitalPatient;
+
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
@@ -357,37 +312,30 @@ export default function EmergencyOPD() {
     if (!w) { toast.error('Popup blocked — please allow popups'); return; }
     setBusy(true);
     try {
+      const paymentType = form.billingType === 'staff' ? 'cash' : form.billingType;
       const created = await createOpdVisit({
         ...form,
         mrNo: null,
-        department: 'Emergency',
-        paymentType: effectivePaymentType,
+        department: 'Ambulance',
+        paymentType,
         totalAmount,
-        discount: discountAmt,
+        discount: 0,
         receive: Number(receive) || 0,
         refund: refundAmt,
-        doctors: rightDoctors.map(r => ({
-          doctorId: r.doctorId,
-          subDeptId: r.subDeptId,
-          amount: isComplementary ? 0 : (r.normalCharges || 0),
-          extAmount: 0,
-        })),
+        doctors: [],
       });
       const newId = created?.id;
-      toast.success('Emergency Visit saved');
+      toast.success('Ambulance Slip saved');
       setForm(EMPTY);
-      setRightDoctors([]);
-      setCheckedLeft([]);
       setReceive('');
-      setDiscount('');
-      setDiscountType('amount');
+      setAmount('');
       const next = await fetchNextSerialNo();
       set('serialNo', next);
-      loadDoctors(false);
+      setDateTime(formatDateTime(new Date()));
       if (newId) {
         const { visit, tokenNo, isDuplicate } = await printOpdVisit(newId);
         const printedBy = user?.name || user?.username || user?.email || '';
-        const html = buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
+        const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
         w.document.write(html);
         w.document.close();
       } else {
@@ -423,39 +371,16 @@ export default function EmergencyOPD() {
           <div className="gopd-serial-wrap">
             <span className="gopd-serial-lbl">Serial #</span>
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} readOnly />
-            <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.phoneNo} onChange={e => set('phoneNo', e.target.value)} />
+            <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Date &amp; Time</span>
+            <input className="gopd-serial-input gopd-mr-input" style={{ width: 160 }} value={dateTime} readOnly />
           </div>
-          <div className="gopd-title">Emergency OPD</div>
+          <div className="gopd-title">Slip - Ambulance</div>
         </div>
 
         {/* ── Patient section ── */}
         <div className="gopd-patient">
           {/* Row 1 */}
           <div className="gopd-row gopd-row-1">
-            <div className="gopd-name-grp">
-              <span className="gopd-lbl">Patient Name</span>
-              <select className="gopd-sel-type" value={form.patientType} onChange={e => set('patientType', e.target.value)}>
-                {PATIENT_TYPES.map(t => <option key={t}>{t}</option>)}
-              </select>
-              <input
-                className="gopd-inp-name"
-                value={form.patientName}
-                onChange={e => set('patientName', e.target.value)}
-                placeholder={form.patientCategory === 'staff' ? 'Select employee…' : form.patientCategory === 'panel' ? 'Select panel…' : ''}
-                readOnly={form.patientCategory === 'staff' || form.patientCategory === 'panel'}
-              />
-              {form.patientCategory === 'staff' && (
-                <button className="gopd-emp-change-btn" onClick={() => setShowEmpModal(true)}><Search size={13} /></button>
-              )}
-              {form.patientCategory === 'panel' && (
-                <button className="gopd-emp-change-btn" onClick={() => setShowPanelModal(true)}><Search size={13} /></button>
-              )}
-              {form.patientCategory === 'panel' && form.panelLabel && (
-                <span className="gopd-panel-badge">{form.panelLabel}</span>
-              )}
-            </div>
-
             <div className="gopd-admit-grp">
               <label className="gopd-chk-lbl">
                 <input type="checkbox" checked={form.admitPatient} onChange={e => set('admitPatient', e.target.checked)} />
@@ -463,12 +388,7 @@ export default function EmergencyOPD() {
               </label>
               {form.admitPatient && (
                 <>
-                  <input
-                    className="gopd-inp-antenatal"
-                    value={form.admitNo}
-                    readOnly
-                    placeholder="Admit No"
-                  />
+                  <input className="gopd-inp-antenatal" value={form.admitNo} readOnly placeholder="Admit No" />
                   <button className="gopd-browse-btn" onClick={() => setShowAdmitModal(true)} title="Select admitted patient">···</button>
                 </>
               )}
@@ -484,7 +404,44 @@ export default function EmergencyOPD() {
             )}
           </div>
 
-          {/* Row 2 */}
+          {/* Row 2 — Patient Name / Driver / Location */}
+          <div className="gopd-row gopd-row-1">
+            <div className="gopd-name-grp">
+              <span className="gopd-lbl">Patient Name</span>
+              <select className="gopd-sel-type" value={form.patientType} onChange={e => set('patientType', e.target.value)}>
+                {PATIENT_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+              <input
+                className="gopd-inp-name"
+                value={form.patientName}
+                onChange={e => set('patientName', e.target.value)}
+                placeholder={form.billingType === 'staff' ? 'Select employee…' : form.billingType === 'panel' ? 'Select panel…' : ''}
+                readOnly={form.billingType === 'staff' || form.billingType === 'panel'}
+              />
+              {form.billingType === 'staff' && (
+                <button className="gopd-emp-change-btn" onClick={() => setShowEmpModal(true)}><Search size={13} /></button>
+              )}
+              {form.billingType === 'panel' && (
+                <button className="gopd-emp-change-btn" onClick={() => setShowPanelModal(true)}><Search size={13} /></button>
+              )}
+              {form.billingType === 'panel' && form.panelLabel && (
+                <span className="gopd-panel-badge">{form.panelLabel}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="gopd-row gopd-row-1">
+            <div className="gopd-name-grp">
+              <span className="gopd-lbl">Driver</span>
+              <input className="gopd-inp-name" value={form.driver} onChange={e => set('driver', e.target.value)} />
+            </div>
+            <div className="gopd-name-grp">
+              <span className="gopd-lbl">Location</span>
+              <input className="gopd-inp-name" value={form.location} onChange={e => set('location', e.target.value)} />
+            </div>
+          </div>
+
+          {/* Row 3 — Age / DOB / Gender */}
           <div className="gopd-row gopd-row-2">
             <div className="gopd-age-grp">
               <span className="gopd-lbl">Age</span>
@@ -497,140 +454,75 @@ export default function EmergencyOPD() {
               <select className="gopd-sel-sm" value={form.ageDays} onChange={e => set('ageDays', e.target.value)}>
                 {Array.from({ length: 32 }, (_, i) => i).map(d => <option key={d}>{d}</option>)}
               </select>
-              <span className="gopd-lbl" style={{ marginLeft: 8 }}>DOB</span>
-              <input
-                className="gopd-inp-dob"
-                type="date"
-                value={form.dob}
-                onChange={e => { const v = e.target.value; setForm(f => ({ ...f, dob: v, ...dobToAge(v) })); }}
-              />
+              <span className="gopd-lbl" style={{ marginLeft: 8 }}>Phone #</span>
+              <input className="gopd-inp-name" style={{ width: 130 }} value={form.phoneNo} onChange={e => set('phoneNo', e.target.value)} />
             </div>
             <div className="gopd-gender-grp">
               <label className="gopd-radio-lbl">
-                <input type="radio" name="emr-gender" checked={form.gender === 'male'} onChange={() => set('gender', 'male')} /> Male
+                <input type="radio" name="amb-gender" checked={form.gender === 'male'} onChange={() => set('gender', 'male')} /> Male
               </label>
               <label className="gopd-radio-lbl">
-                <input type="radio" name="emr-gender" checked={form.gender === 'female'} onChange={() => set('gender', 'female')} /> Female
+                <input type="radio" name="amb-gender" checked={form.gender === 'female'} onChange={() => set('gender', 'female')} /> Female
               </label>
             </div>
           </div>
 
-          {/* Row 3 – Patient Category */}
+          {/* Row 4 — Refered By / Adviced By */}
+          <div className="gopd-row gopd-row-1">
+            <div className="gopd-name-grp">
+              <span className="gopd-lbl">Refered By</span>
+              <input
+                className="gopd-inp-name"
+                value={form.referredBy}
+                onChange={e => set('referredBy', e.target.value)}
+                disabled={fieldsDisabled}
+              />
+            </div>
+            <div className="gopd-name-grp">
+              <span className="gopd-lbl">Adviced By</span>
+              <select
+                className="gopd-sel-type"
+                style={{ width: 170 }}
+                value={form.advisedBy}
+                onChange={e => set('advisedBy', e.target.value)}
+                disabled={fieldsDisabled}
+              >
+                <option value="">— Select —</option>
+                {doctors.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 5 — Hospital Patient */}
+          <div className="gopd-oncall-row">
+            <label className="gopd-oncall-lbl">
+              <input type="checkbox" checked={form.hospitalPatient} onChange={e => set('hospitalPatient', e.target.checked)} />
+              Hospital Patient
+            </label>
+          </div>
+
+          {/* Row 6 — Billing Type (combined radio) */}
           <div className="gopd-row gopd-row-radio">
-            {[['normal','Normal'],['staff','Staff'],['panel','Panel'],['complementary','Complementary']].map(([v,l]) => (
+            {[['staff','Staff'],['panel','Panel'],['complementary','Compl.'],['cash','Cash'],['cc','CC']].map(([v,l]) => (
               <label key={v} className="gopd-radio-lbl">
-                <input type="radio" name="emr-category" value={v} checked={form.patientCategory === v} onChange={() => handleCategoryChange(v)} />
-                {l}
-              </label>
-            ))}
-          </div>
-
-          {/* Row 4 – Payment Method */}
-          <div className="gopd-row gopd-row-radio">
-            {[['cash','Cash'],['jazzcash','JazzCash'],['online','Online'],['cc','CC']].map(([v,l]) => (
-              <label key={v} className={`gopd-radio-lbl${paymentMethodDisabled ? ' gopd-radio-lbl--dim' : ''}`}>
-                <input type="radio" name="emr-payment" value={v} checked={form.paymentMethod === v}
-                  onChange={() => set('paymentMethod', v)} disabled={paymentMethodDisabled} />
+                <input type="radio" name="amb-billing" value={v} checked={form.billingType === v} onChange={() => handleBillingTypeChange(v)} />
                 {l}
               </label>
             ))}
           </div>
         </div>
 
-        {/* ── ON CALL ── */}
-        <div className="gopd-oncall-row">
-          <label className="gopd-oncall-lbl">
-            <input type="checkbox" checked={form.onCall} onChange={e => set('onCall', e.target.checked)} />
-            ON CALL
-          </label>
-        </div>
-
-        {/* ── Two-panel ── */}
+        {/* ── Amount / Receive / Refund + Save & Print ── */}
         <div className="gopd-main">
-          <div className="gopd-left-panel">
-            <div className="gopd-table-wrap">
-              {loadingDoctors ? (
-                <div className="gopd-loading">Loading doctors...</div>
-              ) : (
-                <table className="gopd-table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 28 }}></th>
-                      <th style={{ width: 52 }}>Code</th>
-                      <th>Doctor</th>
-                      <th style={{ width: 80 }}>Amount</th>
-                      <th>Sub Department</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leftDoctors.length === 0 ? (
-                      <tr><td colSpan={5} className="gopd-empty-cell">No doctors scheduled</td></tr>
-                    ) : leftDoctors.map(r => (
-                      <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={() => toggleLeft(r.id)}>
-                        <td><input type="checkbox" checked={checkedLeft.includes(r.id)} onChange={() => toggleLeft(r.id)} onClick={e => e.stopPropagation()} /></td>
-                        <td>{r.doctor?.code}</td>
-                        <td>{r.doctor?.name}</td>
-                        <td>{r.normalCharges}</td>
-                        <td>{r.subDept?.name}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-
-          <div className="gopd-transfer">
-            <button className="gopd-xfer-btn" onClick={moveRight}>&gt;&gt;</button>
-            <button className="gopd-xfer-btn" onClick={moveLeft}>&lt;&lt;</button>
-          </div>
-
-          <div className="gopd-right-panel">
-            <div className="gopd-table-wrap gopd-table-wrap--right">
-              <table className="gopd-table">
-                <thead>
-                  <tr>
-                    <th>Doctor Name</th>
-                    <th style={{ width: 72 }}>Amount</th>
-                    <th>Sub Department</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rightDoctors.length === 0 ? (
-                    <tr><td colSpan={3} className="gopd-empty-cell">No doctors selected</td></tr>
-                  ) : rightDoctors.map(r => (
-                    <tr key={r.id}>
-                      <td>{r.doctor?.name}</td>
-                      <td>{r.normalCharges}</td>
-                      <td>{r.subDept?.name}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
+          <div className="gopd-right-panel" style={{ marginLeft: 'auto' }}>
             <div className="gopd-total">
-              <div className="gopd-total-title">Total Amount</div>
+              <div className="gopd-total-title">Amount</div>
               <div className="gopd-total-body">
                 <div className="gopd-total-fields">
-                  {!isComplementary && (
-                    <div className="gopd-total-row">
-                      <span className="gopd-total-lbl">Discount</span>
-                      <div className="gopd-discount-wrap">
-                        <input className="gopd-total-inp" type="number" min={0}
-                          value={discount} onChange={e => setDiscount(e.target.value)} placeholder="0" />
-                        <div className="gopd-discount-toggle">
-                          <button className={`gopd-disc-btn ${discountType === 'amount' ? 'gopd-disc-btn--active' : ''}`}
-                            onClick={() => { setDiscountType('amount'); setDiscount(''); }} type="button">PKR</button>
-                          <button className={`gopd-disc-btn ${discountType === 'percent' ? 'gopd-disc-btn--active' : ''}`}
-                            onClick={() => { setDiscountType('percent'); setDiscount(''); }} type="button">%</button>
-                        </div>
-                      </div>
-                      {discountType === 'percent' && discount && (
-                        <span className="gopd-disc-calc">= {discountAmt}</span>
-                      )}
-                    </div>
-                  )}
+                  <div className="gopd-total-row">
+                    <span className="gopd-total-lbl">Amount</span>
+                    <input className="gopd-total-inp" value={amount} onChange={e => setAmount(e.target.value)} disabled={isComplementary} placeholder="0" />
+                  </div>
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Receive</span>
                     <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary} />
@@ -643,17 +535,12 @@ export default function EmergencyOPD() {
                 <div className="gopd-total-amount">
                   {isComplementary ? (
                     <span style={{ color: '#16a34a', fontSize: '0.78rem', fontWeight: 700 }}>Complementary</span>
-                  ) : (
-                    <>
-                      {discountAmt > 0 && <div style={{ fontSize: '0.7rem', color: '#94a3b8', textDecoration: 'line-through' }}>{grossAmount}</div>}
-                      {totalAmount}
-                    </>
-                  )}
+                  ) : totalAmount}
                 </div>
                 <div className="gopd-action-btns">
                   <button className="gopd-print-btn" onClick={handleSaveAndPrint} disabled={busy}>
                     <Printer size={16} />
-                    {busy ? 'Please wait...' : 'Save & Print'}
+                    {busy ? 'Please wait...' : 'Print Slip'}
                   </button>
                 </div>
               </div>

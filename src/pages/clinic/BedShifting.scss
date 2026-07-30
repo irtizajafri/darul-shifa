@@ -1,0 +1,154 @@
+$blue:   #1a3c6e;
+$green:  #1f7a4d;
+$border: #bbb;
+
+.bsh-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bsh-card {
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 14px 18px;
+  max-width: 980px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.bsh-patient-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dbe2ea;
+}
+
+.bsh-patient-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: #222;
+}
+
+.bsh-adm-no {
+  font-size: 12px;
+  color: #667;
+}
+
+.bsh-transfer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.bsh-bed-box {
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+
+  label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #667;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    margin-bottom: 3px;
+  }
+
+  select {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 8px;
+    border: 1px solid $border;
+    border-radius: 3px;
+  }
+
+  &--current {
+    background: #eef4ff;
+    border: 1px solid #c7d7f0;
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+}
+
+.bsh-bed-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: $blue;
+}
+
+.bsh-arrow { color: #99a; flex-shrink: 0; margin-bottom: 8px; }
+
+.bsh-no-beds {
+  font-size: 10.5px;
+  color: #c62828;
+  margin-top: 2px;
+}
+
+.bsh-shift-btn {
+  background: $green;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+
+  &:disabled { background: #9db8a9; cursor: not-allowed; }
+  &:hover:not(:disabled) { background: darken($green, 8%); }
+}
+
+.bsh-history-card {
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 14px 18px;
+  max-width: 980px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.bsh-history-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: $blue;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+
+.bsh-history-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+
+  th {
+    text-align: left;
+    padding: 6px 10px;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    background: #e8eef8;
+  }
+
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #eee;
+  }
+
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+}
+
+.bsh-history-empty {
+  text-align: center;
+  color: #999;
+  padding: 16px !important;
+}

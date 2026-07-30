@@ -14,6 +14,80 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 
+const CLINIC_API = 'http://localhost:5001/api/clinic';
+
+// ── Admission Lookup Modal — pick an admitted patient to fill Admission Number ─
+function AdmissionSearchModal({ onSelect, onClose }) {
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const timer = useRef(null);
+
+  function runSearch(term) {
+    fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(term)}`)
+      .then((r) => r.json())
+      .then((j) => setRows(j.data || []))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { runSearch(''); }, []);
+
+  function handleChange(val) {
+    setQ(val);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => { setLoading(true); runSearch(val); }, 300);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
+        <div className="bg-blue-50 border-b border-blue-100 px-5 py-3 flex items-center justify-between shrink-0">
+          <h2 className="text-sm font-bold text-blue-800">Select Admitted Patient</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-3 border-b border-slate-100 shrink-0">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => handleChange(e.target.value)}
+              placeholder="Search by Admission # or Patient Name…"
+              className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+        <div className="overflow-y-auto">
+          {loading ? (
+            <div className="text-center text-sm text-slate-400 py-8">Loading…</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
+                  <th className="px-4 py-2 text-left">Admission #</th>
+                  <th className="px-4 py-2 text-left">Patient</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r) => (
+                  <tr key={r.id} onClick={() => onSelect(r)} className="cursor-pointer hover:bg-blue-50">
+                    <td className="px-4 py-2 font-medium">{r.admissionNo}</td>
+                    <td className="px-4 py-2">{r.patientName}</td>
+                  </tr>
+                ))}
+                {!rows.length && (
+                  <tr><td colSpan={2} className="text-center text-slate-400 py-6">Koi admit patient nahi mila</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function GoodsIssue() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
@@ -70,6 +144,7 @@ export default function GoodsIssue() {
   const [gdSelectedItems, setGdSelectedItems] = useState([]);
   const [gdAdmissionEnabled, setGdAdmissionEnabled] = useState(false);
   const [gdAdmissionNumber, setGdAdmissionNumber] = useState('');
+  const [showGdAdmitModal, setShowGdAdmitModal] = useState(false);
   const [gdCommentEnabled, setGdCommentEnabled] = useState(false);
   const [gdComment, setGdComment] = useState('');
 
@@ -131,7 +206,10 @@ export default function GoodsIssue() {
 
   useModalKeys({
     active: showGDForm,
-    onEsc: () => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdCommentEnabled(false); setGdComment(''); },
+    onEsc: () => {
+      if (showGdAdmitModal) { setShowGdAdmitModal(false); return; }
+      setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdCommentEnabled(false); setGdComment('');
+    },
     onCtrlS: () => handleCreateGD(fakeEvent, false),
     onCtrlP: () => handleCreateGD(fakeEvent, true),
   });
@@ -433,6 +511,13 @@ export default function GoodsIssue() {
 
   return (
     <div className="p-6">
+
+      {showGdAdmitModal && (
+        <AdmissionSearchModal
+          onClose={() => setShowGdAdmitModal(false)}
+          onSelect={(row) => { setGdAdmissionNumber(row.admissionNo); setShowGdAdmitModal(false); }}
+        />
+      )}
 
       {createdGDHeader && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
@@ -905,19 +990,33 @@ export default function GoodsIssue() {
                   <input
                     type="checkbox"
                     checked={gdAdmissionEnabled}
-                    onChange={(e) => { setGdAdmissionEnabled(e.target.checked); if (!e.target.checked) setGdAdmissionNumber(''); }}
+                    onChange={(e) => {
+                      setGdAdmissionEnabled(e.target.checked);
+                      if (e.target.checked) { setShowGdAdmitModal(true); }
+                      else { setGdAdmissionNumber(''); }
+                    }}
                     className="w-4 h-4 accent-blue-600"
                   />
                   Admission Number
                 </label>
                 {gdAdmissionEnabled && (
-                  <input
-                    type="text"
-                    placeholder="Enter admission number"
-                    value={gdAdmissionNumber}
-                    onChange={(e) => setGdAdmissionNumber(e.target.value)}
-                    className="px-3 py-2 border border-blue-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Enter admission number"
+                      value={gdAdmissionNumber}
+                      onChange={(e) => setGdAdmissionNumber(e.target.value)}
+                      className="px-3 py-2 border border-blue-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowGdAdmitModal(true)}
+                      title="Search admitted patients"
+                      className="shrink-0 p-2 border border-blue-300 rounded-md text-blue-600 hover:bg-blue-50"
+                    >
+                      <Search size={14} />
+                    </button>
+                  </div>
                 )}
               </div>
 

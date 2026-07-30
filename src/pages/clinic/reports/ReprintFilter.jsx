@@ -78,7 +78,7 @@ export default function ReprintFilter() {
     }
 
     if (docType === 'provisional') {
-      navigate(`/clinic/panels/provisional-bill?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
+      navigate(`/clinic/billing/provisional-bill?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
       return;
     }
   }

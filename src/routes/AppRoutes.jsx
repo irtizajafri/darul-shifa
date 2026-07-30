@@ -34,12 +34,15 @@ import VoucherSummaryMatrix from '../pages/accounts/reports/VoucherSummaryMatrix
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import ConsultantOPD from '../pages/clinic/ConsultantOPD';
 import EmergencyOPD from '../pages/clinic/EmergencyOPD';
+import AmbulanceSlip from '../pages/clinic/AmbulanceSlip';
 import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
 import ClinicSubDepartmentPage from '../pages/clinic/parameters/ClinicSubDepartmentPage';
 import ClinicStaffCategoryPage from '../pages/clinic/parameters/ClinicStaffCategoryPage';
 import ClinicDoctorPage from '../pages/clinic/parameters/ClinicDoctorPage';
 import ClinicSurgeryTypePage from '../pages/clinic/parameters/ClinicSurgeryTypePage';
+import ClinicSymptomPage from '../pages/clinic/parameters/ClinicSymptomPage';
+import ClinicDiseasePage from '../pages/clinic/parameters/ClinicDiseasePage';
 import Admission from '../pages/clinic/Admission';
 import ClinicRoomCategoryPage from '../pages/clinic/parameters/ClinicRoomCategoryPage';
 import ClinicBedPage from '../pages/clinic/parameters/ClinicBedPage';
@@ -69,6 +72,18 @@ import CancelSlip from '../pages/clinic/CancelSlip';
 import SlipRefund from '../pages/clinic/SlipRefund';
 import SlipAdjustment from '../pages/clinic/SlipAdjustment';
 import ReceivingAgainstAdmission from '../pages/clinic/ReceivingAgainstAdmission';
+import AdmissionAdjustment from '../pages/clinic/AdmissionAdjustment';
+import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
+import AdmissionStatusChangeReport from '../pages/clinic/reports/AdmissionStatusChangeReport';
+import BedShifting from '../pages/clinic/BedShifting';
+import BedStatus from '../pages/clinic/BedStatus';
+import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTypePage';
+import UploadPatientDocument from '../pages/clinic/UploadPatientDocument';
+import PatientDocumentsReport from '../pages/clinic/inquiries/PatientDocumentsReport';
+import ClinicDischargeTypePage from '../pages/clinic/parameters/ClinicDischargeTypePage';
+import ProvisionalBill from '../pages/clinic/ProvisionalBill';
+import DischargeRefund from '../pages/clinic/DischargeRefund';
+import SlipTransfer from '../pages/clinic/SlipTransfer';
 import EmployeeList from '../pages/employees/EmployeeList';
 import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
@@ -176,6 +191,7 @@ export default function AppRoutes() {
           <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
           <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><ConsultantOPD /></PermissionGuard>} />
           <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><EmergencyOPD /></PermissionGuard>} />
+          <Route path="clinic/ambulance" element={<PermissionGuard module="clinic" subModule="general-opd"><AmbulanceSlip /></PermissionGuard>} />
           <Route path="clinic/dental" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Dental OPD" layout="subdept" /></PermissionGuard>} />
           <Route path="clinic/therapy" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Therapy" layout="subdept" /></PermissionGuard>} />
           <Route path="clinic/laboratory" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Laboratory" layout="subdept" /></PermissionGuard>} />
@@ -190,6 +206,8 @@ export default function AppRoutes() {
           <Route path="clinic/parameters/staff-category" element={<PermissionGuard module="clinic" subModule="staff-category"><ClinicStaffCategoryPage /></PermissionGuard>} />
           <Route path="clinic/parameters/doctors" element={<PermissionGuard module="clinic" subModule="doctors"><ClinicDoctorPage /></PermissionGuard>} />
           <Route path="clinic/parameters/surgery-types" element={<PermissionGuard module="clinic" subModule="surgery-types"><ClinicSurgeryTypePage /></PermissionGuard>} />
+          <Route path="clinic/parameters/symptoms" element={<PermissionGuard module="clinic" subModule="symptoms"><ClinicSymptomPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/diseases" element={<PermissionGuard module="clinic" subModule="diseases"><ClinicDiseasePage /></PermissionGuard>} />
           <Route path="clinic/parameters/room-category" element={<PermissionGuard module="clinic" subModule="room-category"><ClinicRoomCategoryPage /></PermissionGuard>} />
           <Route path="clinic/parameters/bed" element={<PermissionGuard module="clinic" subModule="bed"><ClinicBedPage /></PermissionGuard>} />
           <Route path="clinic/parameters/bill-heads" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadListPage /></PermissionGuard>} />
@@ -221,6 +239,18 @@ export default function AppRoutes() {
           <Route path="clinic/transactions/slip-refund" element={<PermissionGuard module="clinic"><SlipRefund /></PermissionGuard>} />
           <Route path="clinic/transactions/slip-adjustment" element={<PermissionGuard module="clinic"><SlipAdjustment /></PermissionGuard>} />
           <Route path="clinic/transactions/receiving-against-admission" element={<PermissionGuard module="clinic"><ReceivingAgainstAdmission /></PermissionGuard>} />
+          <Route path="clinic/transactions/admission-adjustment" element={<PermissionGuard module="clinic"><AdmissionAdjustment /></PermissionGuard>} />
+          <Route path="clinic/transactions/admission-status-change" element={<PermissionGuard module="clinic"><AdmissionStatusChange /></PermissionGuard>} />
+          <Route path="clinic/reports/admission-status-change" element={<PermissionGuard module="clinic"><AdmissionStatusChangeReport /></PermissionGuard>} />
+          <Route path="clinic/transactions/bed-shifting" element={<PermissionGuard module="clinic"><BedShifting /></PermissionGuard>} />
+          <Route path="clinic/transactions/bed-status" element={<PermissionGuard module="clinic"><BedStatus /></PermissionGuard>} />
+          <Route path="clinic/parameters/document-types" element={<PermissionGuard module="clinic"><ClinicDocumentTypePage /></PermissionGuard>} />
+          <Route path="clinic/transactions/upload-patient-document" element={<PermissionGuard module="clinic"><UploadPatientDocument /></PermissionGuard>} />
+          <Route path="clinic/inquiries/patient-documents" element={<PermissionGuard module="clinic"><PatientDocumentsReport /></PermissionGuard>} />
+          <Route path="clinic/parameters/discharge-types" element={<PermissionGuard module="clinic"><ClinicDischargeTypePage /></PermissionGuard>} />
+          <Route path="clinic/billing/provisional-bill" element={<PermissionGuard module="clinic"><ProvisionalBill /></PermissionGuard>} />
+          <Route path="clinic/discharge-refund" element={<PermissionGuard module="clinic"><DischargeRefund /></PermissionGuard>} />
+          <Route path="clinic/transactions/slip-transfer" element={<PermissionGuard module="clinic"><SlipTransfer /></PermissionGuard>} />
 
           <Route path="coming-soon" element={<ComingSoon />} />
         </Route>

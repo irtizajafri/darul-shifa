@@ -38,7 +38,7 @@ const sections = [
     cards: [
       { title: 'Miscellaneous', icon: HelpCircle, path: '/clinic/miscellaneous', active: true },
       { title: 'Admission', icon: BedDouble, path: '/clinic/admission', active: true },
-      { title: 'Ambulance', icon: BedDouble, path: null },
+      { title: 'Ambulance', icon: BedDouble, path: '/clinic/ambulance', active: true },
     ],
   },
   {
@@ -55,7 +55,7 @@ const sections = [
     title: 'Payments',
     color: 'rose',
     cards: [
-      { title: 'Discharge & Refund',      icon: LogOut,     path: null },
+      { title: 'Discharge & Refund',      icon: LogOut,     path: '/clinic/discharge-refund', active: true },
       { title: 'Consultant Statement',      icon: FileText,   path: '/clinic/reports/consultant-statement', active: true },
     ],
   },

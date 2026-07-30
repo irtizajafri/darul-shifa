@@ -695,6 +695,72 @@ model ClinicSurgeryType {
   updatedAt DateTime @updatedAt
 }
 
+model ClinicSymptom {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @default("")
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClinicDisease {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @default("")
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClinicDocumentType {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @default("")
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClinicDischargeType {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @default("")
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Provisional Bill (manual Ward/Heads line items per admission) ───────────
+model ClinicProvisionalBillItem {
+  id             Int             @id @default(autoincrement())
+  admissionId    Int
+  admission      ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  roomCategoryId Int?
+  billHeadId     Int?
+  qty            Int             @default(1)
+  rate           Float           @default(0)
+  amount         Float           @default(0)
+  remarks        String?
+  patientType    String?
+  sourceOpdVisitId Int?
+  createdAt      DateTime        @default(now())
+
+  @@index([admissionId])
+}
+
+// ─── Upload Patient Document ──────────────────────────────────────────────────
+model ClinicPatientDocument {
+  id             Int              @id @default(autoincrement())
+  admissionId    Int
+  admission      ClinicAdmission  @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  documentTypeId Int?
+  fileName       String
+  filePath       String
+  mimeType       String?
+  fileSize       Int?
+  uploadedBy     String?
+  uploadedAt     DateTime         @default(now())
+
+  @@index([admissionId])
+}
+
 model ClinicStaffCategory {
   id        Int            @id @default(autoincrement())
   name      String         @unique
@@ -753,6 +819,8 @@ model ClinicOpdVisit {
   patientType   String                 @default("MAST")
   patientName   String                 @default("")
   admitPatient  Boolean                @default(false)
+  admitNo       String?
+  adjustPayment Boolean                @default(false)
   antenatal     Boolean                @default(false)
   antenatalNo   String?
   age           Int?
@@ -761,6 +829,10 @@ model ClinicOpdVisit {
   gender        String                 @default("male")
   phoneNo       String?
   referredBy    String?
+  driver        String?
+  location      String?
+  hospitalPatient Boolean              @default(true)
+  advisedBy     String?
   paymentType   String                 @default("cash")
   visitType     String                 @default("opd")
   onCall        Boolean                @default(false)
@@ -833,6 +905,18 @@ model ClinicBed {
   @@index([roomCategoryId])
 }
 
+// ─── Bed Shifting (history of bed transfers for an admission) ────────────────
+model ClinicBedShiftHistory {
+  id          Int      @id @default(autoincrement())
+  admissionId Int
+  fromBedId   Int?
+  toBedId     Int
+  shiftedBy   String?
+  shiftedAt   DateTime @default(now())
+
+  @@index([admissionId])
+}
+
 // ─── Clinic Admission ─────────────────────────────────────────────────────────
 
 model ClinicAdmission {
@@ -861,15 +945,73 @@ model ClinicAdmission {
   bedId              Int?
   surgery            Boolean  @default(false)
   surgeryTypeId      Int?
+  dischargeTypeId    Int?
   referralPatient    Boolean  @default(false)
   referralNote       String?
   antenatal          Boolean  @default(false)
   antenatalNo        String?
+  dischargeDiscount  Float?
   status             String   @default("active")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   payments           ClinicAdmissionPayment[]
+  documents          ClinicPatientDocument[]
+  provisionalBillItems ClinicProvisionalBillItem[]
+  dischargeBillItems ClinicDischargeBillItem[]
+}
+
+// ─── Discharge and Refund (final bill at time of discharge) ──────────────────
+model ClinicDischargeBillItem {
+  id             Int             @id @default(autoincrement())
+  admissionId    Int
+  admission      ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  billHeadId     Int?
+  doctorId       Int?
+  amount         Float           @default(0)
+  createdAt      DateTime        @default(now())
+
+  @@index([admissionId])
+}
+
+// ─── Admission Status Change > Wipeout Log ───────────────────────────────────
+// Wipeout deletes the ClinicAdmission row entirely (and its payments, via
+// cascade) — this table keeps a full snapshot + reason so the "Admission
+// Status Change Report" can still show what was removed.
+model ClinicAdmissionWipeoutLog {
+  id                 Int      @id @default(autoincrement())
+  admissionNo        String
+  serialNo           String?
+  mrNo               Int?
+  arrivedSlipNo      String?
+  patientTitle       String?
+  patientCategory    String?
+  patientName        String?
+  ageYears           Int?
+  ageMonths          Int?
+  ageDays            Int?
+  gender             String?
+  address            String?
+  phoneNo            String?
+  arrivedUnderRmo    String?
+  consultantId       Int?
+  referredBy         String?
+  authorityLetter    Boolean?
+  responsibleParty   String?
+  previousAdmission  String?
+  advancePayment     Decimal? @db.Decimal(10, 2)
+  roomCategoryId     Int?
+  bedId              Int?
+  surgery            Boolean?
+  surgeryTypeId      Int?
+  referralPatient    Boolean?
+  referralNote       String?
+  antenatal          Boolean?
+  antenatalNo        String?
+  admittedAt         DateTime?
+  reason             String
+  wipedOutBy         String?
+  wipedOutAt         DateTime @default(now())
 }
 
 // ─── Receiving against Admission (payment history, one row per receipt) ──────

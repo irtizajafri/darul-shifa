@@ -409,64 +409,6 @@
   &:focus { border-color: #2563eb; }
 }
 
-.gopd-ref-wrap {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-}
-
-.gopd-inp-ref {
-  width: 100%;
-  padding: 0.3rem 0.55rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  outline: none;
-  box-sizing: border-box;
-
-  &:focus { border-color: #2563eb; }
-}
-
-.gopd-ref-dropdown {
-  position: absolute;
-  top: calc(100% + 2px);
-  left: 0;
-  right: 0;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  z-index: 200;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.gopd-ref-option {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.6rem;
-  cursor: pointer;
-  font-size: 0.81rem;
-  color: #1e293b;
-
-  &:hover { background: #eff6ff; }
-}
-
-.gopd-ref-code {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #64748b;
-  min-width: 40px;
-}
-
-.gopd-ref-empty {
-  padding: 0.5rem 0.6rem;
-  font-size: 0.8rem;
-  color: #94a3b8;
-  font-style: italic;
-}
-
 // ── Radio ─────────────────────────────────────────────────────────────────────
 .gopd-radio-lbl {
   display: flex;

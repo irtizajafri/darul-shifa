@@ -78,6 +78,98 @@ async function deleteSurgeryType(id) {
   return prisma.clinicSurgeryType.delete({ where: { id: Number(id) } });
 }
 
+// ─── Symptom ───────────────────────────────────────────────────────────────────
+
+async function getAllSymptoms() {
+  return prisma.clinicSymptom.findMany({ orderBy: { code: 'asc' } });
+}
+
+async function createSymptom({ name }) {
+  const count = await prisma.clinicSymptom.count();
+  const code = `SY${String(count + 1).padStart(3, '0')}`;
+  return prisma.clinicSymptom.create({ data: { code, name: name.trim() } });
+}
+
+async function updateSymptom(id, { name }) {
+  return prisma.clinicSymptom.update({
+    where: { id: Number(id) },
+    data: { name: name.trim() },
+  });
+}
+
+async function deleteSymptom(id) {
+  return prisma.clinicSymptom.delete({ where: { id: Number(id) } });
+}
+
+// ─── Disease ───────────────────────────────────────────────────────────────────
+
+async function getAllDiseases() {
+  return prisma.clinicDisease.findMany({ orderBy: { code: 'asc' } });
+}
+
+async function createDisease({ name }) {
+  const count = await prisma.clinicDisease.count();
+  const code = `DI${String(count + 1).padStart(3, '0')}`;
+  return prisma.clinicDisease.create({ data: { code, name: name.trim() } });
+}
+
+async function updateDisease(id, { name }) {
+  return prisma.clinicDisease.update({
+    where: { id: Number(id) },
+    data: { name: name.trim() },
+  });
+}
+
+async function deleteDisease(id) {
+  return prisma.clinicDisease.delete({ where: { id: Number(id) } });
+}
+
+// ─── Document Type ──────────────────────────────────────────────────────────────
+
+async function getAllDocumentTypes() {
+  return prisma.clinicDocumentType.findMany({ orderBy: { code: 'asc' } });
+}
+
+async function createDocumentType({ name }) {
+  const count = await prisma.clinicDocumentType.count();
+  const code = `DT${String(count + 1).padStart(3, '0')}`;
+  return prisma.clinicDocumentType.create({ data: { code, name: name.trim() } });
+}
+
+async function updateDocumentType(id, { name }) {
+  return prisma.clinicDocumentType.update({
+    where: { id: Number(id) },
+    data: { name: name.trim() },
+  });
+}
+
+async function deleteDocumentType(id) {
+  return prisma.clinicDocumentType.delete({ where: { id: Number(id) } });
+}
+
+// ─── Discharge Type ─────────────────────────────────────────────────────────────
+
+async function getAllDischargeTypes() {
+  return prisma.clinicDischargeType.findMany({ orderBy: { code: 'asc' } });
+}
+
+async function createDischargeType({ name }) {
+  const count = await prisma.clinicDischargeType.count();
+  const code = `DC${String(count + 1).padStart(3, '0')}`;
+  return prisma.clinicDischargeType.create({ data: { code, name: name.trim() } });
+}
+
+async function updateDischargeType(id, { name }) {
+  return prisma.clinicDischargeType.update({
+    where: { id: Number(id) },
+    data: { name: name.trim() },
+  });
+}
+
+async function deleteDischargeType(id) {
+  return prisma.clinicDischargeType.delete({ where: { id: Number(id) } });
+}
+
 // ─── Staff Category ───────────────────────────────────────────────────────────
 
 async function getAllStaffCategories() {
@@ -272,8 +364,8 @@ async function searchEmployees(q) {
 }
 
 async function createOpdVisit({
-  mrNo, serialNo, patientType, patientName, admitPatient, antenatal, antenatalNo,
-  age, ageMonths, ageDays, gender, phoneNo, referredBy,
+  mrNo, serialNo, patientType, patientName, admitPatient, admitNo, adjustPayment, antenatal, antenatalNo,
+  age, ageMonths, ageDays, gender, phoneNo, referredBy, driver, location, hospitalPatient, advisedBy,
   paymentType, visitType, onCall, employeeId, employeeName,
   totalAmount, discount, receive, refund,
   panelCompanyId, panelEmployeeId, panelDependentId,
@@ -288,6 +380,8 @@ async function createOpdVisit({
       patientType: patientType || 'MAST',
       patientName: patientName || '',
       admitPatient: Boolean(admitPatient),
+      admitNo: admitPatient ? (admitNo?.trim() || null) : null,
+      adjustPayment: admitPatient ? Boolean(adjustPayment) : false,
       antenatal: Boolean(antenatal),
       antenatalNo: antenatalNo || null,
       age: age ? Number(age) : null,
@@ -295,7 +389,11 @@ async function createOpdVisit({
       ageDays: Number(ageDays) || 0,
       gender: gender || 'male',
       phoneNo: phoneNo || null,
-      referredBy: referredBy || null,
+      referredBy: hospitalPatient === false ? null : (referredBy || null),
+      driver: driver || null,
+      location: location || null,
+      hospitalPatient: hospitalPatient === undefined ? true : Boolean(hospitalPatient),
+      advisedBy: hospitalPatient === false ? null : (advisedBy || null),
       paymentType: paymentType || 'cash',
       visitType: visitType || 'opd',
       onCall: Boolean(onCall),
@@ -476,7 +574,10 @@ const BILL_HEAD_INCLUDE = {
 
 async function getAllBillHeads() {
   return prisma.clinicBillHead.findMany({
-    include: { refDepartment: { select: { id: true, name: true } } },
+    include: {
+      refDepartment: { select: { id: true, name: true } },
+      wardRates: { include: { roomCategory: { select: { id: true, code: true, name: true } } } },
+    },
     orderBy: { headCode: 'asc' },
   });
 }
@@ -1045,6 +1146,52 @@ async function updateVisitPersonalInfo(source, id, fields) {
   throw Object.assign(new Error('Invalid source'), { status: 400 });
 }
 
+// ─── Transactions > Slip Transfer ─────────────────────────────────────────────
+// Corrects a slip that was accidentally billed against the wrong Admission #
+// (e.g. via the "Admit Patient" checkbox in General/Consultant/Emergency OPD) —
+// search by Slip # (not Admission #), then move it to the right admission.
+
+async function searchVisitsForSlipTransfer(q) {
+  return searchVisitsForRefund(q);
+}
+
+async function getVisitForSlipTransfer(source, id) {
+  const visit = await getVisitForRefund(source, id);
+  if (source === 'pv') {
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    visit.admitNo = pv?.admitNo != null ? String(pv.admitNo) : null;
+  }
+  return visit;
+}
+
+async function transferSlipAdmission(source, id, admitNo) {
+  const no = admitNo?.trim() || null;
+
+  if (source === 'opd') {
+    const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
+    if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    return prisma.clinicOpdVisit.update({
+      where: { id: Number(id) },
+      data: { admitNo: no, admitPatient: Boolean(no) },
+    });
+  }
+
+  if (source === 'pv') {
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    const numNo = no ? Number(no) : null;
+    if (no && (!Number.isFinite(numNo) || numNo <= 0)) {
+      throw Object.assign(new Error('Admission # numeric hona chahiye is purane record ke liye'), { status: 400 });
+    }
+    return prisma.patientVisit.update({
+      where: { id: Number(id) },
+      data: { admitNo: numNo },
+    });
+  }
+
+  throw Object.assign(new Error('Invalid source'), { status: 400 });
+}
+
 async function printOpdVisit(id) {
   const visit = await getOpdVisitForReceipt(id);
   if (!visit) throw Object.assign(new Error('Visit not found'), { status: 404 });
@@ -1296,18 +1443,637 @@ async function createAdmission(data) {
   return admission;
 }
 
-async function getAvailableBeds(roomCategoryId) {
+async function getAvailableBeds(roomCategoryId, excludeAdmissionId) {
+  const where = { status: 'active', bedId: { not: null } };
+  if (excludeAdmissionId) where.id = { not: Number(excludeAdmissionId) };
   const activeBedIds = await prisma.clinicAdmission.findMany({
-    where: { status: 'active', bedId: { not: null } },
+    where,
     select: { bedId: true },
   });
   const occupiedIds = activeBedIds.map((r) => r.bedId).filter(Boolean);
   return prisma.clinicBed.findMany({
     where: {
       roomCategoryId: Number(roomCategoryId),
+      status: { not: 'not_working' },
       id: { notIn: occupiedIds.length > 0 ? occupiedIds : [-1] },
     },
     orderBy: { name: 'asc' },
+  });
+}
+
+// ─── Transactions > Admission Adjustment ─────────────────────────────────────
+// Reopens an existing admission for editing — every field is editable except
+// advancePayment (locked: it's the original receipt amount, already reflected
+// in Revenue Dashboard / Patients List; changing it here would silently alter
+// past financial records without a corresponding payment trail).
+
+async function searchAdmissionsForAdjustment(q) {
+  const term = String(q || '').trim();
+  const where = {
+    status: 'active',
+    ...(term
+      ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+      : {}),
+  };
+  const rows = await prisma.clinicAdmission.findMany({
+    where,
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  return rows.map((a) => ({
+    id: a.id,
+    admissionNo: a.admissionNo,
+    patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    createdAt: a.createdAt,
+  }));
+}
+
+async function getAdmissionForAdjustment(id) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  return admission;
+}
+
+async function updateAdmissionAdjustment(id, data) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const newBedId = data.bedId ? Number(data.bedId) : null;
+  const oldBedId = admission.bedId;
+
+  const updated = await prisma.clinicAdmission.update({
+    where: { id: Number(id) },
+    data: {
+      serialNo:          data.serialNo?.trim() || null,
+      admissionNo:       data.admissionNo?.trim() || '',
+      mrNo:              data.mrNo ? Number(data.mrNo) : null,
+      arrivedSlipNo:     data.arrivedSlipNo?.trim() || null,
+      patientTitle:      data.patientTitle || 'Mr',
+      patientCategory:   data.patientCategory || 'private',
+      patientName:       data.patientName?.trim() || '',
+      ageYears:          data.ageYears ? Number(data.ageYears) : 0,
+      ageMonths:         data.ageMonths ? Number(data.ageMonths) : 0,
+      ageDays:           data.ageDays ? Number(data.ageDays) : 0,
+      gender:            data.gender || 'male',
+      address:           data.address?.trim() || null,
+      phoneNo:           data.phoneNo?.trim() || null,
+      arrivedUnderRmo:   data.arrivedUnderRmo?.trim() || null,
+      consultantId:      data.consultantId ? Number(data.consultantId) : null,
+      referredBy:        data.referredBy?.trim() || null,
+      authorityLetter:   Boolean(data.authorityLetter),
+      responsibleParty:  data.responsibleParty?.trim() || null,
+      previousAdmission: data.previousAdmission?.trim() || null,
+      // advancePayment intentionally omitted — not editable here
+      roomCategoryId:    data.roomCategoryId ? Number(data.roomCategoryId) : null,
+      bedId:             newBedId,
+      surgery:           Boolean(data.surgery),
+      surgeryTypeId:     data.surgeryTypeId ? Number(data.surgeryTypeId) : null,
+      referralPatient:   Boolean(data.referralPatient),
+      referralNote:      data.referralNote?.trim() || null,
+      antenatal:         Boolean(data.antenatal),
+      antenatalNo:       data.antenatalNo?.trim() || null,
+    },
+  });
+
+  if (newBedId !== oldBedId) {
+    if (oldBedId) {
+      await prisma.clinicBed.update({ where: { id: oldBedId }, data: { status: 'available' } }).catch(() => {});
+    }
+    if (newBedId) {
+      await prisma.clinicBed.update({ where: { id: newBedId }, data: { status: 'occupied' } }).catch(() => {});
+    }
+  }
+
+  return updated;
+}
+
+// ─── Transactions > Admission Status Change ──────────────────────────────────
+// File Status dropdown: active ("Admit") / discharge / closed / wipeout.
+// Wipeout deletes the admission (and its payments, via cascade) after saving
+// a full snapshot + reason into ClinicAdmissionWipeoutLog for the report.
+
+const WIPEOUT_REASONS = ['Baby file not allowed', 'Billing to other admission', 'Cancelled file', 'Cash Received', 'Panel closed'];
+
+async function updateAdmissionStatus(id, { status, reason, changedBy }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  if (!['active', 'discharge', 'closed', 'wipeout'].includes(status)) {
+    throw Object.assign(new Error('Invalid file status'), { status: 400 });
+  }
+
+  if (status === 'wipeout') {
+    if (!reason?.trim() || !WIPEOUT_REASONS.includes(reason)) {
+      throw Object.assign(new Error('A valid Reason is required for Wipeout'), { status: 400 });
+    }
+
+    await prisma.clinicAdmissionWipeoutLog.create({
+      data: {
+        admissionNo:       admission.admissionNo,
+        serialNo:          admission.serialNo,
+        mrNo:              admission.mrNo,
+        arrivedSlipNo:     admission.arrivedSlipNo,
+        patientTitle:      admission.patientTitle,
+        patientCategory:   admission.patientCategory,
+        patientName:       admission.patientName,
+        ageYears:          admission.ageYears,
+        ageMonths:         admission.ageMonths,
+        ageDays:           admission.ageDays,
+        gender:            admission.gender,
+        address:           admission.address,
+        phoneNo:           admission.phoneNo,
+        arrivedUnderRmo:   admission.arrivedUnderRmo,
+        consultantId:      admission.consultantId,
+        referredBy:        admission.referredBy,
+        authorityLetter:   admission.authorityLetter,
+        responsibleParty:  admission.responsibleParty,
+        previousAdmission: admission.previousAdmission,
+        advancePayment:    admission.advancePayment,
+        roomCategoryId:    admission.roomCategoryId,
+        bedId:             admission.bedId,
+        surgery:           admission.surgery,
+        surgeryTypeId:     admission.surgeryTypeId,
+        referralPatient:   admission.referralPatient,
+        referralNote:      admission.referralNote,
+        antenatal:         admission.antenatal,
+        antenatalNo:       admission.antenatalNo,
+        admittedAt:        admission.createdAt,
+        reason:            reason.trim(),
+        wipedOutBy:        changedBy || null,
+      },
+    });
+
+    if (admission.bedId) {
+      await prisma.clinicBed.update({ where: { id: admission.bedId }, data: { status: 'available' } }).catch(() => {});
+    }
+    await prisma.clinicAdmission.delete({ where: { id: Number(id) } });
+    return { wiped: true };
+  }
+
+  const updated = await prisma.clinicAdmission.update({ where: { id: Number(id) }, data: { status } });
+
+  if (admission.bedId) {
+    await prisma.clinicBed.update({
+      where: { id: admission.bedId },
+      data: { status: status === 'active' ? 'occupied' : 'available' },
+    }).catch(() => {});
+  }
+
+  return updated;
+}
+
+async function getAdmissionWipeoutReport() {
+  return prisma.clinicAdmissionWipeoutLog.findMany({ orderBy: { wipedOutAt: 'desc' } });
+}
+
+// ─── Transactions > Bed Shifting ──────────────────────────────────────────────
+
+async function getBedShiftHistory(admissionId) {
+  return prisma.clinicBedShiftHistory.findMany({
+    where: { admissionId: Number(admissionId) },
+    orderBy: { id: 'desc' },
+  });
+}
+
+async function shiftAdmissionBed(admissionId, { newBedId, shiftedBy }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const newBed = await prisma.clinicBed.findUnique({ where: { id: Number(newBedId) } });
+  if (!newBed) throw Object.assign(new Error('Bed not found'), { status: 404 });
+  if (newBed.status === 'not_working') throw Object.assign(new Error('Yeh bed "Not Working" hai — select nahi ho sakta'), { status: 400 });
+  if (newBed.id === admission.bedId) throw Object.assign(new Error('Patient pehle se isi bed par hai'), { status: 400 });
+
+  const conflict = await prisma.clinicAdmission.findFirst({
+    where: { status: 'active', bedId: newBed.id, id: { not: admission.id } },
+  });
+  if (conflict) throw Object.assign(new Error('Yeh bed pehle se kisi aur active patient ke pass hai'), { status: 409 });
+
+  const oldBedId = admission.bedId;
+
+  await prisma.clinicBedShiftHistory.create({
+    data: { admissionId: admission.id, fromBedId: oldBedId, toBedId: newBed.id, shiftedBy: shiftedBy || null },
+  });
+
+  const updated = await prisma.clinicAdmission.update({
+    where: { id: admission.id },
+    data: { bedId: newBed.id, roomCategoryId: newBed.roomCategoryId },
+  });
+
+  if (oldBedId) {
+    await prisma.clinicBed.update({ where: { id: oldBedId }, data: { status: 'available' } }).catch(() => {});
+  }
+  await prisma.clinicBed.update({ where: { id: newBed.id }, data: { status: 'occupied' } }).catch(() => {});
+
+  return updated;
+}
+
+// ─── Bed Status (manual free / not-working toggle) ────────────────────────────
+
+async function setBedStatus(bedId, status) {
+  if (!['available', 'occupied', 'not_working'].includes(status)) {
+    throw Object.assign(new Error('Invalid bed status'), { status: 400 });
+  }
+  const bed = await prisma.clinicBed.findUnique({ where: { id: Number(bedId) } });
+  if (!bed) throw Object.assign(new Error('Bed not found'), { status: 404 });
+  return prisma.clinicBed.update({ where: { id: Number(bedId) }, data: { status } });
+}
+
+// ─── Transactions > Upload Patient Document ──────────────────────────────────
+// Documents attach to an existing ClinicAdmission (searchable by Admission #,
+// MR #, phone, or patient name). documentTypeId is a loose reference (like
+// surgeryTypeId/consultantId elsewhere) — resolved manually below rather than
+// via a Prisma relation, since ClinicDocumentType rows can be added/removed
+// independently of ClinicPatientDocument's own lifecycle.
+
+function mapAdmissionForDocSearch(a) {
+  return {
+    id: a.id,
+    admissionNo: a.admissionNo,
+    mrNo: a.mrNo,
+    phoneNo: a.phoneNo,
+    patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    createdAt: a.createdAt,
+  };
+}
+
+async function searchAdmissionsForDocuments(q) {
+  const term = String(q || '').trim();
+  if (!term) {
+    const rows = await prisma.clinicAdmission.findMany({ orderBy: { id: 'desc' }, take: 50 });
+    return rows.map(mapAdmissionForDocSearch);
+  }
+  const or = [
+    { admissionNo: { contains: term, mode: 'insensitive' } },
+    { patientName: { contains: term, mode: 'insensitive' } },
+    { phoneNo: { contains: term, mode: 'insensitive' } },
+  ];
+  const asNum = Number(term);
+  if (!Number.isNaN(asNum)) or.push({ mrNo: asNum });
+  const rows = await prisma.clinicAdmission.findMany({ where: { OR: or }, orderBy: { id: 'desc' }, take: 100 });
+  return rows.map(mapAdmissionForDocSearch);
+}
+
+async function getDocumentTypeMap() {
+  const types = await prisma.clinicDocumentType.findMany();
+  const byId = {};
+  types.forEach((t) => { byId[t.id] = t; });
+  return byId;
+}
+
+async function getPatientDocuments(admissionId) {
+  const docs = await prisma.clinicPatientDocument.findMany({
+    where: { admissionId: Number(admissionId) },
+    orderBy: { id: 'desc' },
+  });
+  const typeById = await getDocumentTypeMap();
+  return docs.map((d) => ({ ...d, documentType: typeById[d.documentTypeId] || null }));
+}
+
+async function createPatientDocument(data) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(data.admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  return prisma.clinicPatientDocument.create({
+    data: {
+      admissionId:    Number(data.admissionId),
+      documentTypeId: data.documentTypeId ? Number(data.documentTypeId) : null,
+      fileName:       data.fileName,
+      filePath:       data.filePath,
+      mimeType:       data.mimeType || null,
+      fileSize:       data.fileSize || null,
+      uploadedBy:     data.uploadedBy || null,
+    },
+  });
+}
+
+async function getPatientDocumentsReport({ dateFrom, dateTo, q, documentTypeId }) {
+  const where = {};
+
+  if (dateFrom || dateTo) {
+    where.uploadedAt = {};
+    if (dateFrom) where.uploadedAt.gte = new Date(`${dateFrom}T00:00:00`);
+    if (dateTo) where.uploadedAt.lte = new Date(`${dateTo}T23:59:59`);
+  }
+  if (documentTypeId) where.documentTypeId = Number(documentTypeId);
+
+  const term = String(q || '').trim();
+  if (term) {
+    const or = [
+      { admission: { admissionNo: { contains: term, mode: 'insensitive' } } },
+      { admission: { patientName: { contains: term, mode: 'insensitive' } } },
+      { admission: { phoneNo: { contains: term, mode: 'insensitive' } } },
+    ];
+    const asNum = Number(term);
+    if (!Number.isNaN(asNum)) or.push({ admission: { mrNo: asNum } });
+    where.OR = or;
+  }
+
+  const docs = await prisma.clinicPatientDocument.findMany({
+    where,
+    include: { admission: true },
+    orderBy: { uploadedAt: 'desc' },
+  });
+  const typeById = await getDocumentTypeMap();
+  return docs.map((d) => ({ ...d, documentType: typeById[d.documentTypeId] || null }));
+}
+
+// ─── Transactions > Provisional Bill ──────────────────────────────────────────
+// "Diagnostic Bill" rows are NOT stored anywhere separately — they're computed
+// live from ClinicOpdVisit rows whose admitNo matches this admission's
+// admissionNo (set via the "Admit Patient" lookup added to General/Consultant/
+// Emergency OPD), one row per doctor/sub-department entry on each such visit.
+
+async function getProvisionalBillDetail(admissionId) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const [roomCategory, bed, surgeryType, dischargeType, billItems, labVisits, otherVisits, payments, salesInvoiceItems] = await Promise.all([
+    admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
+    admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
+    admission.surgeryTypeId ? prisma.clinicSurgeryType.findUnique({ where: { id: admission.surgeryTypeId } }) : null,
+    admission.dischargeTypeId ? prisma.clinicDischargeType.findUnique({ where: { id: admission.dischargeTypeId } }) : null,
+    prisma.clinicProvisionalBillItem.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
+    // Diagnostic Bill tab — only Laboratory counts toward this admission's
+    // bill, auto-shown. Only visits with "Adjust Payment" checked count — an
+    // admitNo-linked visit whose OPD slip was already paid for separately
+    // (Adjust Payment left unchecked) must not be billed twice.
+    prisma.clinicOpdVisit.findMany({
+      where: { admitNo: admission.admissionNo, adjustPayment: true, department: 'Laboratory' },
+      include: { doctors: { include: { doctor: true, subDept: true } } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    // Everything else (Consultant OPD, Emergency, Ambulance, etc.) shows as a
+    // "pending slip" the user must double-click to add to the Provisional
+    // Bill tab — never auto-counted into billAmount.
+    prisma.clinicOpdVisit.findMany({
+      where: { admitNo: admission.admissionNo, adjustPayment: true, department: { not: 'Laboratory' } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.clinicAdmissionPayment.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
+    // Pharmacy Bill — Inventory Sales Invoices billed against this admission
+    // (Search by Admission Number → Save Invoice flow); Clinic and Inventory
+    // share one Prisma client/DB so this is a direct query, no HTTP call.
+    prisma.inventorySalesInvoice.findMany({
+      where: { customerType: 'admission', customerName: admission.admissionNo },
+      include: { item: true },
+      orderBy: { invoiceDate: 'asc' },
+    }),
+  ]);
+
+  const roomCategoryIds = [...new Set(billItems.map((i) => i.roomCategoryId).filter(Boolean))];
+  const billHeadIds = [...new Set(billItems.map((i) => i.billHeadId).filter(Boolean))];
+  const [wardRows, headRows] = await Promise.all([
+    roomCategoryIds.length ? prisma.clinicRoomCategory.findMany({ where: { id: { in: roomCategoryIds } } }) : [],
+    billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } } }) : [],
+  ]);
+  const wardById = {}; wardRows.forEach((w) => { wardById[w.id] = w; });
+  const headById = {}; headRows.forEach((h) => { headById[h.id] = h; });
+
+  const resolvedBillItems = billItems.map((item) => ({
+    ...item,
+    roomCategory: item.roomCategoryId ? wardById[item.roomCategoryId] || null : null,
+    billHead: item.billHeadId ? headById[item.billHeadId] || null : null,
+  }));
+
+  const diagnosticRows = [];
+  labVisits.forEach((v) => {
+    (v.doctors || []).forEach((d) => {
+      diagnosticRows.push({
+        id: `${v.id}-${d.id}`,
+        date: v.createdAt,
+        conCode: d.doctor?.code || null,
+        department: v.department,
+        particulars: d.subDept?.name || null,
+        amount: d.amount || 0,
+      });
+    });
+    if (!v.doctors?.length) {
+      diagnosticRows.push({
+        id: `${v.id}`,
+        date: v.createdAt,
+        conCode: null,
+        department: v.department,
+        particulars: null,
+        amount: v.totalAmount || 0,
+      });
+    }
+  });
+
+  const addedVisitIds = new Set(resolvedBillItems.map((i) => i.sourceOpdVisitId).filter(Boolean));
+  const pendingSlips = otherVisits
+    .filter((v) => !addedVisitIds.has(v.id))
+    .map((v) => ({
+      id: v.id,
+      date: v.createdAt,
+      department: v.department,
+      patientName: v.patientName,
+      amount: v.totalAmount || 0,
+    }));
+
+  const pharmacyRows = salesInvoiceItems.map((si) => ({
+    id: si.id,
+    date: si.invoiceDate,
+    medicine: si.item?.name || '—',
+    qty: si.quantity,
+    rate: si.saleRate,
+    amount: si.totalAmount,
+  }));
+
+  const provisionalAmount = resolvedBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const diagnosticAmount  = diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const pharmacyAmount    = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const billAmount = provisionalAmount + diagnosticAmount + pharmacyAmount;
+
+  const paymentHistory = [];
+  if (Number(admission.advancePayment) > 0) {
+    paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
+  }
+  payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
+  const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
+
+  return {
+    admission,
+    roomCategory,
+    bed,
+    surgeryType,
+    dischargeType,
+    billItems: resolvedBillItems,
+    diagnosticRows,
+    pendingSlips,
+    pharmacyRows,
+    patientInfo: { paymentHistory, amountReceived },
+    balanceInfo: {
+      billAmount,
+      amountReceived,
+      balance: Math.max(0, billAmount - amountReceived),
+      refund: Math.max(0, amountReceived - billAmount),
+    },
+  };
+}
+
+async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  const q = Number(qty) || 1;
+  const r = Number(rate) || 0;
+  return prisma.clinicProvisionalBillItem.create({
+    data: {
+      admissionId: Number(admissionId),
+      roomCategoryId: roomCategoryId ? Number(roomCategoryId) : null,
+      billHeadId: billHeadId ? Number(billHeadId) : null,
+      qty: q,
+      rate: r,
+      amount: q * r,
+      remarks: remarks?.trim() || null,
+      patientType: patientType || null,
+    },
+  });
+}
+
+// First-4-letters-of-first-word match (e.g. "Consultant" vs "Const Fee" both
+// start "cons") — a deliberately simple heuristic, not a configured mapping;
+// falls back to no head (billHeadId null) when nothing lines up, rather than
+// guessing wrong.
+function firstWordKey(s) {
+  return String(s || '').trim().split(/\s+/)[0]?.toLowerCase().slice(0, 4) || '';
+}
+
+async function addProvisionalBillItemFromVisit(admissionId, opdVisitId) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(opdVisitId) } });
+  if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+  if (visit.admitNo !== admission.admissionNo || !visit.adjustPayment) {
+    throw Object.assign(new Error('Yeh slip is admission se linked nahi hai'), { status: 400 });
+  }
+  if (visit.department === 'Laboratory') {
+    throw Object.assign(new Error('Laboratory slips khud-ba-khud Diagnostic Bill mein aati hain'), { status: 400 });
+  }
+
+  const already = await prisma.clinicProvisionalBillItem.findFirst({ where: { sourceOpdVisitId: visit.id } });
+  if (already) throw Object.assign(new Error('Yeh slip pehle se add ho chuki hai'), { status: 409 });
+
+  const heads = await prisma.clinicBillHead.findMany({ where: { type: { in: ['provisional', 'both'] } } });
+  const deptKey = firstWordKey(visit.department);
+  const matchedHead = heads.find((h) => firstWordKey(h.description) === deptKey) || null;
+
+  const amount = Number(visit.totalAmount) || 0;
+  return prisma.clinicProvisionalBillItem.create({
+    data: {
+      admissionId: Number(admissionId),
+      roomCategoryId: admission.roomCategoryId || null,
+      billHeadId: matchedHead?.id || null,
+      qty: 1,
+      rate: amount,
+      amount,
+      remarks: `Auto-added from ${visit.department} slip (${visit.serialNo})`,
+      sourceOpdVisitId: visit.id,
+    },
+  });
+}
+
+async function deleteProvisionalBillItem(itemId) {
+  return prisma.clinicProvisionalBillItem.delete({ where: { id: Number(itemId) } });
+}
+
+async function updateProvisionalBillHeader(admissionId, { surgery, surgeryTypeId, dischargeTypeId }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  return prisma.clinicAdmission.update({
+    where: { id: Number(admissionId) },
+    data: {
+      surgery: Boolean(surgery),
+      surgeryTypeId: surgery && surgeryTypeId ? Number(surgeryTypeId) : null,
+      dischargeTypeId: dischargeTypeId ? Number(dischargeTypeId) : null,
+    },
+  });
+}
+
+// ─── Transactions > Discharge and Refund ─────────────────────────────────────
+// A separate, standalone final bill (not the running Provisional Bill) — when
+// finalized it discharges (or, if Closed Files is checked, closes) the file.
+
+async function getDischargeBillDetail(admissionId) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const [roomCategory, bed, billItems, payments] = await Promise.all([
+    admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
+    admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
+    prisma.clinicDischargeBillItem.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
+    prisma.clinicAdmissionPayment.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
+  ]);
+
+  const billHeadIds = [...new Set(billItems.map((i) => i.billHeadId).filter(Boolean))];
+  const doctorIds = [...new Set(billItems.map((i) => i.doctorId).filter(Boolean))];
+  const [headRows, doctorRows] = await Promise.all([
+    billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } } }) : [],
+    doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } } }) : [],
+  ]);
+  const headById = {}; headRows.forEach((h) => { headById[h.id] = h; });
+  const doctorById = {}; doctorRows.forEach((d) => { doctorById[d.id] = d; });
+
+  const resolvedBillItems = billItems.map((item) => ({
+    ...item,
+    billHead: item.billHeadId ? headById[item.billHeadId] || null : null,
+    doctor: item.doctorId ? doctorById[item.doctorId] || null : null,
+  }));
+
+  const paymentHistory = [];
+  if (Number(admission.advancePayment) > 0) {
+    paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
+  }
+  payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
+  const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
+
+  const billAmount = resolvedBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const discountAmount = Number(admission.dischargeDiscount) || 0;
+  const netAmount = Math.max(0, billAmount - discountAmount);
+
+  return {
+    admission,
+    roomCategory,
+    bed,
+    billItems: resolvedBillItems,
+    paymentHistory,
+    amountReceived,
+    billAmount,
+    discountAmount,
+    balance: Math.max(0, netAmount - amountReceived),
+    refund: Math.max(0, amountReceived - netAmount),
+  };
+}
+
+async function addDischargeBillItem(admissionId, { billHeadId, doctorId, amount }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  return prisma.clinicDischargeBillItem.create({
+    data: {
+      admissionId: Number(admissionId),
+      billHeadId: billHeadId ? Number(billHeadId) : null,
+      doctorId: doctorId ? Number(doctorId) : null,
+      amount: Number(amount) || 0,
+    },
+  });
+}
+
+async function deleteDischargeBillItem(itemId) {
+  return prisma.clinicDischargeBillItem.delete({ where: { id: Number(itemId) } });
+}
+
+async function finalizeDischarge(admissionId, { discountAmount, closedFiles, changedBy }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  await prisma.clinicAdmission.update({
+    where: { id: Number(admissionId) },
+    data: { dischargeDiscount: discountAmount != null ? Number(discountAmount) : null },
+  });
+
+  return updateAdmissionStatus(admissionId, {
+    status: closedFiles ? 'closed' : 'discharge',
+    changedBy,
   });
 }
 
@@ -2263,6 +3029,35 @@ module.exports = {
   createSurgeryType,
   updateSurgeryType,
   deleteSurgeryType,
+  getAllSymptoms,
+  createSymptom,
+  updateSymptom,
+  deleteSymptom,
+  getAllDiseases,
+  createDisease,
+  updateDisease,
+  deleteDisease,
+  getAllDocumentTypes,
+  createDocumentType,
+  updateDocumentType,
+  deleteDocumentType,
+  getAllDischargeTypes,
+  createDischargeType,
+  updateDischargeType,
+  deleteDischargeType,
+  searchAdmissionsForDocuments,
+  getPatientDocuments,
+  createPatientDocument,
+  getProvisionalBillDetail,
+  addProvisionalBillItem,
+  addProvisionalBillItemFromVisit,
+  deleteProvisionalBillItem,
+  updateProvisionalBillHeader,
+  getDischargeBillDetail,
+  addDischargeBillItem,
+  deleteDischargeBillItem,
+  finalizeDischarge,
+  getPatientDocumentsReport,
   getAllStaffCategories,
   createStaffCategory,
   updateStaffCategory,
@@ -2289,6 +3084,9 @@ module.exports = {
   searchVisitsForAdjustment,
   getVisitForAdjustment,
   updateVisitPersonalInfo,
+  searchVisitsForSlipTransfer,
+  getVisitForSlipTransfer,
+  transferSlipAdmission,
   getAllRoomCategories,
   createRoomCategory,
   updateRoomCategory,
@@ -2326,6 +3124,14 @@ module.exports = {
   getAdmissionPaymentForPrint,
   createAdmission,
   getAvailableBeds,
+  searchAdmissionsForAdjustment,
+  getAdmissionForAdjustment,
+  updateAdmissionAdjustment,
+  updateAdmissionStatus,
+  getAdmissionWipeoutReport,
+  getBedShiftHistory,
+  shiftAdmissionBed,
+  setBedStatus,
   bulkCreatePatientVisits,
   getAllConsultantRates,
   upsertConsultantRate,

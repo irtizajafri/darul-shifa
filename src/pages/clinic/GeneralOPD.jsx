@@ -8,6 +8,10 @@ import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
+// Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
+// map it onto the OPD slip's patientType options when auto-filling from an
+// admitted patient's record.
+const ADMISSION_TITLE_MAP = { Mr: 'MR', Mrs: 'MRS', Ms: 'MS', Master: 'MAST', Baby: 'BABY' };
 const DAY_MAP = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function todayDay() { return DAY_MAP[new Date().getDay()]; }
@@ -39,7 +43,7 @@ function dobToAge(dobStr) {
 
 const EMPTY = {
   mrNo: '', serialNo: '', patientType: 'MAST', patientName: '',
-  admitPatient: false, antenatal: false, antenatalNo: 'NA',
+  admitPatient: false, admitNo: '', adjustPayment: false, antenatal: false, antenatalNo: 'NA',
   age: '', ageMonths: 0, ageDays: 0, dob: '', gender: 'male',
   phoneNo: '', referredBy: '',
   patientCategory: 'normal',
@@ -311,6 +315,75 @@ function PanelModal({ onSelect, onClose }) {
   );
 }
 
+// ── Admit Patient Lookup Modal — pick an admitted patient to fill Admit No ────
+function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    searchAdmissionsForAdjustment('')
+      .then(data => setResults(data || []))
+      .catch(() => setResults([]))
+      .finally(() => setLoading(false));
+  }, [searchAdmissionsForAdjustment]);
+
+  function handleSearch(val) {
+    setQ(val);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      setLoading(true);
+      searchAdmissionsForAdjustment(val)
+        .then(data => setResults(data || []))
+        .catch(() => setResults([]))
+        .finally(() => setLoading(false));
+    }, 300);
+  }
+
+  return (
+    <div className="gopd-modal-overlay" onMouseDown={onClose}>
+      <div className="gopd-modal" onMouseDown={e => e.stopPropagation()}>
+        <div className="gopd-modal-header">
+          <div className="gopd-modal-title"><User size={16} /> Select Admitted Patient</div>
+          <button className="gopd-modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="gopd-modal-body">
+          <input
+            autoFocus
+            className="gopd-modal-search"
+            placeholder="Admission # ya patient name…"
+            value={q}
+            onChange={e => handleSearch(e.target.value)}
+          />
+          {loading && <div className="gopd-modal-loading">Loading…</div>}
+          {!loading && (
+            <table className="gopd-modal-table">
+              <thead>
+                <tr>
+                  <th>Admission #</th>
+                  <th>Patient</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map(r => (
+                  <tr key={r.id} onClick={() => onSelect(r)} className="gopd-modal-row">
+                    <td>{r.admissionNo}</td>
+                    <td>{r.patientName}</td>
+                  </tr>
+                ))}
+                {!results.length && (
+                  <tr><td colSpan={2} className="gopd-modal-empty">Koi admit patient nahi mila</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Doctor Search Input (Referred By) ─────────────────────────────────────────
 function DoctorSearchInput({ value, onChange }) {
   const { doctors, fetchDoctors } = useClinicStore();
@@ -380,7 +453,7 @@ function DoctorSearchInput({ value, onChange }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor' }) {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment } = useClinicStore();
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -395,6 +468,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const [busy, setBusy] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
+  const [showAdmitModal, setShowAdmitModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [phoneResults, setPhoneResults] = useState([]);
   const [mrConfirm, setMrConfirm] = useState(null);
@@ -558,10 +632,33 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     }
   }
 
+  // Auto-fill the slip from the admitted patient's own record — the data
+  // already exists on their admission, no need to retype it.
+  async function handleAdmitSelect(row) {
+    set('admitNo', row.admissionNo);
+    setShowAdmitModal(false);
+    try {
+      const adm = await fetchAdmissionForAdjustment(row.id);
+      setForm(f => ({
+        ...f,
+        patientName: adm.patientName || f.patientName,
+        patientType: ADMISSION_TITLE_MAP[adm.patientTitle] || f.patientType,
+        age: adm.ageYears != null ? String(adm.ageYears) : f.age,
+        ageMonths: adm.ageMonths != null ? Number(adm.ageMonths) : f.ageMonths,
+        ageDays: adm.ageDays != null ? Number(adm.ageDays) : f.ageDays,
+        gender: adm.gender || f.gender,
+        phoneNo: adm.phoneNo || f.phoneNo,
+        mrNo: adm.mrNo != null ? String(adm.mrNo) : f.mrNo,
+      }));
+    } catch {
+      // admitNo is already set; auto-fill is best-effort
+    }
+  }
+
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
-    if (!form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
+    if (departmentName !== 'General OPD' && !form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
     const w = window.open('', '_blank', 'width=420,height=680');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
     setBusy(true);
@@ -629,6 +726,13 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         <PanelModal
           onSelect={handlePanelSelect}
           onClose={() => setShowPanelModal(false)}
+        />
+      )}
+      {showAdmitModal && (
+        <AdmitPatientLookupModal
+          searchAdmissionsForAdjustment={searchAdmissionsForAdjustment}
+          onSelect={handleAdmitSelect}
+          onClose={() => setShowAdmitModal(false)}
         />
       )}
 
@@ -737,6 +841,21 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
             </button>
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} readOnly />
+            <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
+            <input
+              className="gopd-serial-input gopd-mr-input"
+              value={form.phoneNo}
+              onChange={e => set('phoneNo', e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handlePhoneLookup()}
+            />
+            <button
+              className="gopd-mr-lookup-btn"
+              onClick={handlePhoneLookup}
+              disabled={phoneLookupLoading}
+              title="Search patient by Phone#"
+            >
+              {phoneLookupLoading ? '…' : <Search size={12} />}
+            </button>
           </div>
           <div className="gopd-title">{departmentName}</div>
         </div>
@@ -780,6 +899,17 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                 <input type="checkbox" checked={form.admitPatient} onChange={e => set('admitPatient', e.target.checked)} />
                 Admit Patient
               </label>
+              {form.admitPatient && (
+                <>
+                  <input
+                    className="gopd-inp-antenatal"
+                    value={form.admitNo}
+                    readOnly
+                    placeholder="Admit No"
+                  />
+                  <button className="gopd-browse-btn" onClick={() => setShowAdmitModal(true)} title="Select admitted patient">···</button>
+                </>
+              )}
               <label className="gopd-chk-lbl">
                 <input type="checkbox" checked={form.antenatal} onChange={e => set('antenatal', e.target.checked)} />
                 Antenatal #
@@ -794,6 +924,15 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
               />
               <button className="gopd-browse-btn" disabled={!form.antenatal} onClick={handleAntenatalLookup}>···</button>
             </div>
+
+            {form.admitPatient && form.admitNo && (
+              <div className="gopd-admit-grp">
+                <label className="gopd-chk-lbl">
+                  <input type="checkbox" checked={form.adjustPayment} onChange={e => set('adjustPayment', e.target.checked)} />
+                  Adjust Payment
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Row 2 */}
@@ -827,28 +966,15 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                 Female
               </label>
             </div>
-            <div className="gopd-contact-grp">
-              <span className="gopd-lbl">Phone #</span>
-              <input
-                className="gopd-inp-phone"
-                value={form.phoneNo}
-                onChange={e => set('phoneNo', e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handlePhoneLookup()}
-              />
-              <button
-                className="gopd-mr-lookup-btn"
-                onClick={handlePhoneLookup}
-                disabled={phoneLookupLoading}
-                title="Search patient by Phone#"
-              >
-                {phoneLookupLoading ? '…' : <Search size={12} />}
-              </button>
-              <span className="gopd-lbl">Refered By</span>
-              <DoctorSearchInput
-                value={form.referredBy}
-                onChange={v => set('referredBy', v)}
-              />
-            </div>
+            {departmentName !== 'General OPD' && (
+              <div className="gopd-contact-grp">
+                <span className="gopd-lbl">Refered By</span>
+                <DoctorSearchInput
+                  value={form.referredBy}
+                  onChange={v => set('referredBy', v)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Row 3 – Patient Category */}

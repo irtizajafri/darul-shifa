@@ -1,0 +1,97 @@
+$blue:   #1a3c6e;
+$green:  #16a34a;
+$red:    #dc2626;
+$amber:  #d97706;
+$border: #bbb;
+
+.bst-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.bst-card {
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 18px 20px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.bst-row {
+  display: flex;
+  gap: 16px;
+}
+
+.bst-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+
+  label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #667;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+    margin-bottom: 3px;
+  }
+
+  select {
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 8px;
+    border: 1px solid $border;
+    border-radius: 3px;
+  }
+}
+
+.bst-separator {
+  border-top: 1px solid #dbe2ea;
+  margin: 16px 0;
+}
+
+.bst-occupant-box {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #7f1d1d;
+  padding: 8px 12px;
+  border-radius: 3px;
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+
+.bst-status-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.bst-status-label {
+  font-weight: 700;
+  font-size: 12.5px;
+  color: $blue;
+}
+
+.bst-radio-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: 1.5px solid #ccc;
+  border-radius: 20px;
+  cursor: pointer;
+  color: #556;
+
+  &--available.bst-radio-btn--active { border-color: $green; background: #dcfce7; color: #14532d; }
+  &--occupied.bst-radio-btn--active   { border-color: $red;   background: #fee2e2; color: #7f1d1d; }
+  &--not_working.bst-radio-btn--active { border-color: $amber; background: #fef3c7; color: #78350f; }
+}
+
+.bst-actions {
+  margin-top: 18px;
+}

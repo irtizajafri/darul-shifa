@@ -1,0 +1,67 @@
+$blue:   #1a3c6e;
+$border: #bbb;
+
+.st-transfer-row {
+  display: flex;
+  gap: 30px;
+  padding: 10px 0;
+  flex-wrap: wrap;
+}
+
+.st-transfer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+
+  label {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #667;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+  }
+}
+
+.st-current-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: $blue;
+  padding: 6px 0;
+}
+
+.st-transfer-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  input {
+    flex: 1;
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 8px;
+    border: 1px solid $border;
+    border-radius: 3px;
+    background: #f8fafc;
+  }
+
+  button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid $border;
+    border-radius: 3px;
+    background: #eef4ff;
+    color: $blue;
+    cursor: pointer;
+    &:hover { background: #dce8fb; }
+  }
+}
+
+.st-clear-btn {
+  color: #c62828 !important;
+  background: #fdeaea !important;
+  &:hover { background: #fbd5d5 !important; }
+}
