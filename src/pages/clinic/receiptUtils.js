@@ -119,7 +119,6 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   }
 
   @media print {
-    body { width:100%; }
     /* Explicit width×height (148mm × 105mm = A6 landscape) instead of the
        named "A6 landscape" form — printers whose driver doesn't recognize
        "A6" as a named size silently drop the whole size+orientation value
@@ -127,6 +126,20 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
        mm dimensions keep the wide/landscape shape even when a printer
        can't match the exact paper size. */
     @page { margin:3mm; size: 148mm 105mm; }
+    /* Pin the body to the EXACT printable area (page size minus the @page
+       3mm margins) and drop the on-screen padding — otherwise the body's own
+       padding stacks on top of the @page margin (double-margin), shrinking
+       usable height, and with no explicit height a stray 1-2mm of overflow
+       (sub-pixel rounding) tips the whole footer onto a needless 2nd page.
+       overflow:hidden is the safety belt so that never happens. */
+    html { margin:0; padding:0; }
+    body {
+      width:142mm;   /* 148 - 3 - 3 */
+      height:99mm;   /* 105 - 3 - 3 */
+      margin:0;
+      padding:0;
+      overflow:hidden;
+    }
   }
 </style>
 </head>
