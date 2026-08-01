@@ -6,6 +6,20 @@ const wrap = (fn) => async (req, res, next) => {
 };
 
 module.exports = {
+  // Generators
+  listGenerators: wrap(async (req, res) => {
+    const data = await service.listGenerators();
+    success(res, data);
+  }),
+  createGenerator: wrap(async (req, res) => {
+    const data = await service.createGenerator(req.body);
+    success(res, data, 'Generator created');
+  }),
+  updateGenerator: wrap(async (req, res) => {
+    const data = await service.updateGenerator(req.params.id, req.body);
+    success(res, data, 'Generator updated');
+  }),
+
   // Vehicles
   listVehicles: wrap(async (req, res) => {
     const data = await service.listVehicles();
@@ -49,8 +63,8 @@ module.exports = {
     success(res, data);
   }),
   getLastGeneratorEntry: wrap(async (req, res) => {
-    const { entryType } = req.query;
-    const data = await service.getLastGeneratorEntry(entryType);
+    const { generatorId, entryType } = req.query;
+    const data = await service.getLastGeneratorEntry(generatorId, entryType);
     success(res, data);
   }),
   createGeneratorEntry: wrap(async (req, res) => {
@@ -86,11 +100,13 @@ module.exports = {
 
   // Daily sheets
   listDailySheets: wrap(async (req, res) => {
-    const data = await service.listDailySheets();
+    const { generatorId } = req.query;
+    const data = await service.listDailySheets(generatorId);
     success(res, data);
   }),
   getLastDailySheet: wrap(async (req, res) => {
-    const data = await service.getLastDailySheet();
+    const { generatorId } = req.query;
+    const data = await service.getLastDailySheet(generatorId);
     success(res, data);
   }),
   createDailySheet: wrap(async (req, res) => {

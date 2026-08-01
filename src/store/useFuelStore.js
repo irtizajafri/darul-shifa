@@ -14,6 +14,7 @@ async function request(path, options = {}) {
 
 export const useFuelStore = create((set) => ({
   vehicles: [],
+  generators: [],
   vehicleEntries: [],
   generatorEntries: [],
   dailySheets: [],
@@ -21,6 +22,26 @@ export const useFuelStore = create((set) => ({
   fuelBalance: null,
   loading: false,
   error: null,
+
+  // ── Generators ────────────────────────────────────────────────────────────
+  fetchGenerators: async () => {
+    try {
+      const data = await request('/generators');
+      set({ generators: Array.isArray(data) ? data : [] });
+    } catch (err) { throw err; }
+  },
+
+  createGenerator: async (payload) => {
+    const data = await request('/generators', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ generators: [...s.generators, data] }));
+    return data;
+  },
+
+  updateGenerator: async (id, payload) => {
+    const data = await request(`/generators/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    set((s) => ({ generators: s.generators.map((g) => (g.id === id ? data : g)) }));
+    return data;
+  },
 
   // ── Vehicles ──────────────────────────────────────────────────────────────
   fetchVehicles: async () => {
@@ -78,18 +99,22 @@ export const useFuelStore = create((set) => ({
   },
 
   // ── Generator Entries ──────────────────────────────────────────────────────
-  fetchGeneratorEntries: async ({ entryType } = {}) => {
+  fetchGeneratorEntries: async ({ generatorId, entryType } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
+      if (generatorId) qs.set('generatorId', generatorId);
       if (entryType) qs.set('entryType', entryType);
       const data = await request(`/generator-entries?${qs}`);
       set({ generatorEntries: Array.isArray(data) ? data : [], loading: false });
     } catch (err) { set({ error: err.message, loading: false }); throw err; }
   },
 
-  fetchLastGeneratorEntry: async ({ entryType }) => {
-    return request(`/generator-entries/last?entryType=${entryType}`);
+  fetchLastGeneratorEntry: async ({ generatorId, entryType }) => {
+    const qs = new URLSearchParams();
+    if (generatorId) qs.set('generatorId', generatorId);
+    if (entryType) qs.set('entryType', entryType);
+    return request(`/generator-entries/last?${qs}`);
   },
 
   createGeneratorEntry: async (payload) => {
@@ -137,15 +162,19 @@ export const useFuelStore = create((set) => ({
   },
 
   // ── Daily Sheets ───────────────────────────────────────────────────────────
-  fetchDailySheets: async () => {
+  fetchDailySheets: async (generatorId) => {
     set({ loading: true, error: null });
     try {
-      const data = await request('/daily-sheets');
+      const qs = generatorId ? `?generatorId=${generatorId}` : '';
+      const data = await request(`/daily-sheets${qs}`);
       set({ dailySheets: Array.isArray(data) ? data : [], loading: false });
     } catch (err) { set({ error: err.message, loading: false }); throw err; }
   },
 
-  fetchLastDailySheet: async () => request('/daily-sheets/last'),
+  fetchLastDailySheet: async (generatorId) => {
+    const qs = generatorId ? `?generatorId=${generatorId}` : '';
+    return request(`/daily-sheets/last${qs}`);
+  },
 
   createDailySheet: async (payload) => {
     const data = await request('/daily-sheets', { method: 'POST', body: JSON.stringify(payload) });

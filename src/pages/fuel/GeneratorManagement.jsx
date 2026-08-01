@@ -24,12 +24,13 @@ const EMPTY_SHEET = {
   notes: '',
 };
 
-export default function GeneratorManagement({ onBack }) {
+export default function GeneratorManagement({ generator, onBack }) {
   const {
     generatorEntries, fetchGeneratorEntries, fetchLastGeneratorEntry, createGeneratorEntry, updateGeneratorEntry, deleteGeneratorEntry,
     dailySheets, fetchDailySheets, fetchLastDailySheet, createDailySheet, updateDailySheet, deleteDailySheet,
     fuelBalance, fetchFuelBalance,
   } = useFuelStore();
+  const gid = generator?.id;
 
   const [activeTab, setActiveTab] = useState('Fuel');
   const [showForm, setShowForm] = useState(false);
@@ -47,15 +48,15 @@ export default function GeneratorManagement({ onBack }) {
 
   useEffect(() => {
     if (activeTab === 'Daily Sheets') {
-      fetchDailySheets().catch((e) => toast.error(e.message));
+      fetchDailySheets(gid).catch((e) => toast.error(e.message));
     } else {
-      fetchGeneratorEntries({ entryType }).catch((e) => toast.error(e.message));
-      fetchLastGeneratorEntry({ entryType }).then(setLastEntry).catch(() => setLastEntry(null));
+      fetchGeneratorEntries({ generatorId: gid, entryType }).catch((e) => toast.error(e.message));
+      fetchLastGeneratorEntry({ generatorId: gid, entryType }).then(setLastEntry).catch(() => setLastEntry(null));
     }
     setShowForm(false);
     setEditingEntry(null);
     setEditingSheet(null);
-  }, [activeTab]);
+  }, [activeTab, gid]);
 
   const handleEntrySubmit = async (payload) => {
     try {
@@ -63,20 +64,24 @@ export default function GeneratorManagement({ onBack }) {
         await updateGeneratorEntry(editingEntry.id, payload);
         toast.success('Entry updated');
       } else {
-        await createGeneratorEntry(payload);
+        await createGeneratorEntry({ ...payload, generatorId: gid });
         toast.success('Entry saved');
       }
       setShowForm(false);
-      fetchGeneratorEntries({ entryType });
-      fetchLastGeneratorEntry({ entryType }).then(setLastEntry).catch(() => {});
+      fetchGeneratorEntries({ generatorId: gid, entryType });
+      fetchLastGeneratorEntry({ generatorId: gid, entryType }).then(setLastEntry).catch(() => {});
       fetchFuelBalance();
     } catch (err) { toast.error(err.message); throw err; }
   };
 
   const handleDeleteEntry = async (id) => {
     if (!confirm('Delete this entry?')) return;
-    try { await deleteGeneratorEntry(id); toast.success('Deleted'); fetchFuelBalance(); }
-    catch (err) { toast.error(err.message); }
+    try {
+      await deleteGeneratorEntry(id);
+      toast.success('Deleted');
+      fetchGeneratorEntries({ generatorId: gid, entryType });
+      fetchFuelBalance();
+    } catch (err) { toast.error(err.message); }
   };
 
   // Daily sheet submit
@@ -89,18 +94,19 @@ export default function GeneratorManagement({ onBack }) {
         await updateDailySheet(editingSheet.id, payload);
         toast.success('Sheet updated');
       } else {
-        await createDailySheet(payload);
+        await createDailySheet({ ...payload, generatorId: gid });
         toast.success('Sheet saved');
       }
       setShowForm(false);
       setEditingSheet(null);
-      fetchDailySheets();
+      fetchDailySheets(gid);
+      fetchFuelBalance();
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
   };
 
   const openAddSheet = async () => {
-    const last = await fetchLastDailySheet().catch(() => null);
+    const last = await fetchLastDailySheet(gid).catch(() => null);
     // Prefer last sheet's remaining fuel; if unavailable, use total generator fuel balance
     const gaugeOn = last?.fuelGaugeOff != null
       ? String(last.fuelGaugeOff)
@@ -136,8 +142,12 @@ export default function GeneratorManagement({ onBack }) {
 
   const handleDeleteSheet = async (id) => {
     if (!confirm('Delete this sheet?')) return;
-    try { await deleteDailySheet(id); toast.success('Deleted'); }
-    catch (err) { toast.error(err.message); }
+    try {
+      await deleteDailySheet(id);
+      toast.success('Deleted');
+      fetchDailySheets(gid);
+      fetchFuelBalance();
+    } catch (err) { toast.error(err.message); }
   };
 
   const sf = (k, v) => setSheetForm((p) => {
@@ -173,8 +183,10 @@ export default function GeneratorManagement({ onBack }) {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <div className="flex-1">
-          <h1 className="text-xl font-bold text-slate-800">Generator</h1>
-          <p className="text-sm text-slate-500">Fuel, oil and daily operation sheets</p>
+          <h1 className="text-xl font-bold text-slate-800">{generator?.name ?? 'Generator'}</h1>
+          <p className="text-sm text-slate-500">
+            {[generator?.modelNo, generator?.serialNo, generator?.location].filter(Boolean).join(' • ') || 'Fuel, oil and daily operation sheets'}
+          </p>
         </div>
         {!showForm && (
           <Button

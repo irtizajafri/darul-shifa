@@ -1636,10 +1636,27 @@ model FuelVehicleEntry {
   @@index([date])
 }
 
+model FuelGenerator {
+  id          Int                   @id @default(autoincrement())
+  name        String
+  modelNo     String?
+  serialNo    String?
+  location    String?
+  status      String                @default("active")
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  entries     FuelGeneratorEntry[]
+  dailySheets GeneratorDailySheet[]
+
+  @@index([status])
+}
+
 model FuelGeneratorEntry {
-  id           Int      @id @default(autoincrement())
-  entryType    String   // fuel | oil
-  date         DateTime @default(now())
+  id           Int            @id @default(autoincrement())
+  generatorId  Int?
+  generator    FuelGenerator? @relation(fields: [generatorId], references: [id], onDelete: SetNull)
+  entryType    String
+  date         DateTime       @default(now())
   quantity     Float
   rate         Float
   amount       Float
@@ -1648,16 +1665,18 @@ model FuelGeneratorEntry {
   netRunning   Float?
   avgPerHour   Float?
   notes        String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
-  @@index([entryType])
+  @@index([generatorId, entryType])
   @@index([date])
 }
 
 model GeneratorDailySheet {
-  id                   Int      @id @default(autoincrement())
-  date                 DateTime @default(now())
+  id                   Int            @id @default(autoincrement())
+  generatorId          Int?
+  generator            FuelGenerator? @relation(fields: [generatorId], references: [id], onDelete: SetNull)
+  date                 DateTime       @default(now())
   timeStart            String?
   timeClose            String?
   fuelGaugeOn          Float?
@@ -1666,9 +1685,10 @@ model GeneratorDailySheet {
   lastReading          Float?
   currentReading       Float?
   notes                String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
 
+  @@index([generatorId, date])
   @@index([date])
 }
 

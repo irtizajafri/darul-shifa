@@ -58,11 +58,15 @@ export default function FuelEntryForm({ mode = 'vehicle', entryType, lastEntry, 
     const r = parseFloat(updated.rate);
     const a = parseFloat(updated.amount);
 
-    if (field === 'quantity' && !isNaN(r)) updated.amount = (parseFloat(val) * r).toFixed(2);
-    else if (field === 'rate' && !isNaN(q)) updated.amount = (q * parseFloat(val)).toFixed(2);
-    else if (field === 'amount') {
-      if (!isNaN(q) && q > 0) updated.rate = (parseFloat(val) / q).toFixed(2);
-      else if (!isNaN(r) && r > 0) updated.quantity = (parseFloat(val) / r).toFixed(2);
+    if (field === 'quantity') {
+      if (!isNaN(r)) updated.amount = (parseFloat(val) * r).toFixed(2);
+      else if (!isNaN(a) && a > 0) updated.rate = (a / parseFloat(val)).toFixed(2);
+    } else if (field === 'rate') {
+      if (!isNaN(q) && q > 0) updated.amount = (q * parseFloat(val)).toFixed(2);
+      else if (!isNaN(a) && a > 0) updated.quantity = (a / parseFloat(val)).toFixed(2);
+    } else if (field === 'amount') {
+      if (!isNaN(r) && r > 0) updated.quantity = (parseFloat(val) / r).toFixed(2);
+      else if (!isNaN(q) && q > 0) updated.rate = (parseFloat(val) / q).toFixed(2);
     }
     setForm(updated);
   };

@@ -102,23 +102,52 @@ async function deleteVehicleEntry(id) {
   return prisma.fuelVehicleEntry.delete({ where: { id: Number(id) } });
 }
 
+// ── Generators ────────────────────────────────────────────────────────────────
+
+async function listGenerators() {
+  return prisma.fuelGenerator.findMany({ orderBy: { createdAt: 'asc' } });
+}
+
+async function createGenerator({ name, modelNo, serialNo, location, status = 'active' }) {
+  if (!name?.trim()) throw new Error('Generator name is required');
+  return prisma.fuelGenerator.create({
+    data: { name: name.trim(), modelNo: modelNo?.trim() || null, serialNo: serialNo?.trim() || null, location: location?.trim() || null, status },
+  });
+}
+
+async function updateGenerator(id, { name, modelNo, serialNo, location, status }) {
+  const data = {};
+  if (name !== undefined) data.name = name.trim();
+  if (modelNo !== undefined) data.modelNo = modelNo?.trim() || null;
+  if (serialNo !== undefined) data.serialNo = serialNo?.trim() || null;
+  if (location !== undefined) data.location = location?.trim() || null;
+  if (status !== undefined) data.status = status;
+  return prisma.fuelGenerator.update({ where: { id: Number(id) }, data });
+}
+
 // ── Generator Entries (fuel / oil) ────────────────────────────────────────────
 
-async function listGeneratorEntries({ entryType }) {
+async function listGeneratorEntries({ generatorId, entryType }) {
   return prisma.fuelGeneratorEntry.findMany({
-    where: entryType ? { entryType } : {},
+    where: {
+      ...(generatorId ? { generatorId: Number(generatorId) } : {}),
+      ...(entryType ? { entryType } : {}),
+    },
     orderBy: { date: 'desc' },
   });
 }
 
-async function getLastGeneratorEntry(entryType) {
+async function getLastGeneratorEntry(generatorId, entryType) {
   return prisma.fuelGeneratorEntry.findFirst({
-    where: { entryType },
+    where: {
+      ...(generatorId ? { generatorId: Number(generatorId) } : {}),
+      ...(entryType ? { entryType } : {}),
+    },
     orderBy: { date: 'desc' },
   });
 }
 
-async function createGeneratorEntry({ entryType, date, quantity, rate, amount, lastHours, currentHours, notes }) {
+async function createGeneratorEntry({ generatorId, entryType, date, quantity, rate, amount, lastHours, currentHours, notes }) {
   if (!['fuel', 'oil'].includes(entryType)) throw new Error('entryType must be fuel or oil');
 
   const qty = requireNum(quantity, 'Quantity');
@@ -131,6 +160,7 @@ async function createGeneratorEntry({ entryType, date, quantity, rate, amount, l
 
   return prisma.fuelGeneratorEntry.create({
     data: {
+      generatorId: generatorId ? Number(generatorId) : null,
       entryType,
       date: date ? new Date(date) : new Date(),
       quantity: qty, rate: rt, amount: amt,
@@ -171,17 +201,24 @@ async function deleteGeneratorEntry(id) {
 
 // ── Generator Daily Sheets ────────────────────────────────────────────────────
 
-async function listDailySheets() {
-  return prisma.generatorDailySheet.findMany({ orderBy: { date: 'desc' } });
+async function listDailySheets(generatorId) {
+  return prisma.generatorDailySheet.findMany({
+    where: generatorId ? { generatorId: Number(generatorId) } : {},
+    orderBy: { date: 'desc' },
+  });
 }
 
-async function getLastDailySheet() {
-  return prisma.generatorDailySheet.findFirst({ orderBy: { date: 'desc' } });
+async function getLastDailySheet(generatorId) {
+  return prisma.generatorDailySheet.findFirst({
+    where: generatorId ? { generatorId: Number(generatorId) } : {},
+    orderBy: { date: 'desc' },
+  });
 }
 
-async function createDailySheet({ date, timeStart, timeClose, fuelGaugeOn, fuelGaugeOff, hourlyFuelAssumption, lastReading, currentReading, notes }) {
+async function createDailySheet({ generatorId, date, timeStart, timeClose, fuelGaugeOn, fuelGaugeOff, hourlyFuelAssumption, lastReading, currentReading, notes }) {
   return prisma.generatorDailySheet.create({
     data: {
+      generatorId: generatorId ? Number(generatorId) : null,
       date: date ? new Date(date) : new Date(),
       timeStart: timeStart || null,
       timeClose: timeClose || null,
@@ -261,6 +298,7 @@ async function getFuelBalance() {
 module.exports = {
   listVehicles, createVehicle, updateVehicle,
   listVehicleEntries, getLastVehicleEntry, createVehicleEntry, updateVehicleEntry, deleteVehicleEntry,
+  listGenerators, createGenerator, updateGenerator,
   listGeneratorEntries, getLastGeneratorEntry, createGeneratorEntry, updateGeneratorEntry, deleteGeneratorEntry,
   listDailySheets, getLastDailySheet, createDailySheet, updateDailySheet, deleteDailySheet,
   listFuelStock, createFuelStock, deleteFuelStock, getFuelBalance,

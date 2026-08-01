@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./fuel.controller');
 
+// Generators
+router.get('/generators', controller.listGenerators);
+router.post('/generators', controller.createGenerator);
+router.patch('/generators/:id', controller.updateGenerator);
+
 // Vehicles
 router.get('/vehicles', controller.listVehicles);
 router.post('/vehicles', controller.createVehicle);
