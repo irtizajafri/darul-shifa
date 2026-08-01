@@ -1598,3 +1598,89 @@ model ClinicDeathCertificate {
 
   @@index([admissionNo])
 }
+
+// ─── Fuel Management ──────────────────────────────────────────────────────────
+
+model FuelVehicle {
+  id          Int                @id @default(autoincrement())
+  name        String
+  plateNo     String?
+  type        String             @default("van")
+  status      String             @default("active")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  entries     FuelVehicleEntry[]
+
+  @@index([status])
+}
+
+model FuelVehicleEntry {
+  id           Int         @id @default(autoincrement())
+  vehicleId    Int
+  vehicle      FuelVehicle @relation(fields: [vehicleId], references: [id])
+  entryType    String      // fuel | oil
+  date         DateTime    @default(now())
+  driverName   String?
+  quantity     Float
+  rate         Float
+  amount       Float
+  lastKm       Float?
+  currentKm    Float?
+  netRunning   Float?
+  avgPerLiter  Float?
+  notes        String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([vehicleId, entryType])
+  @@index([date])
+}
+
+model FuelGeneratorEntry {
+  id           Int      @id @default(autoincrement())
+  entryType    String   // fuel | oil
+  date         DateTime @default(now())
+  quantity     Float
+  rate         Float
+  amount       Float
+  lastHours    Float?
+  currentHours Float?
+  netRunning   Float?
+  avgPerHour   Float?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([entryType])
+  @@index([date])
+}
+
+model GeneratorDailySheet {
+  id                   Int      @id @default(autoincrement())
+  date                 DateTime @default(now())
+  timeStart            String?
+  timeClose            String?
+  fuelGaugeOn          Float?
+  fuelGaugeOff         Float?
+  hourlyFuelAssumption Float?
+  lastReading          Float?
+  currentReading       Float?
+  notes                String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([date])
+}
+
+model FuelStock {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @default(now())
+  quantity  Float
+  rate      Float?
+  amount    Float?
+  supplier  String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([date])
+}

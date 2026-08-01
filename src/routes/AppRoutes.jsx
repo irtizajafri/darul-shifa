@@ -112,6 +112,7 @@ import GoodsDiscard from '../pages/inventory/GoodsDiscard';
 import SalesInvoice from '../pages/inventory/SalesInvoice';
 import InventoryReports from '../pages/inventory/InventoryReports';
 import Maintenance from '../pages/inventory/Maintenance';
+import FuelManagement from '../pages/fuel/FuelManagement';
 import UserManagement from '../pages/admin/UserManagement';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
@@ -171,6 +172,7 @@ export default function AppRoutes() {
           <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
           <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
           <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
+          <Route path="inventory/fuel" element={<PermissionGuard module="inventory"><FuelManagement /></PermissionGuard>} />
 
           <Route path="accounts-module" element={<PermissionGuard module="accounts"><AccountsModuleDashboard /></PermissionGuard>} />
           <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />

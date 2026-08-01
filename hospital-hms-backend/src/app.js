@@ -15,6 +15,7 @@ const clinicRoutes = require('./modules/clinic/clinic.routes');
 const leaveEncashmentRoutes = require('./modules/leave-encashment/leave-encashment.routes');
 const accountsRoutes = require('./modules/accounts/accounts.routes');
 const payslipSnapshotRoutes = require('./modules/payslip-snapshot/payslip-snapshot.routes');
+const fuelRoutes = require('./modules/fuel/fuel.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -41,6 +42,7 @@ app.use('/api/clinic', clinicRoutes);
 app.use('/api/leave-encashment', leaveEncashmentRoutes);
 app.use('/api/accounts', accountsRoutes);
 app.use('/api/payslip-snapshot', payslipSnapshotRoutes);
+app.use('/api/fuel', fuelRoutes);
 
 app.use(errorHandler);
 

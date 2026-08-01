@@ -19,6 +19,7 @@ import {
   ArrowDownRight,
   FileText,
   BarChart3,
+  Fuel,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -38,6 +39,7 @@ const subModules = [
   { title: 'Sales Invoice', icon: FileText, desc: 'Fair Price Shop customer billing', stat: 'Generate invoice & PDF', path: '/inventory/sales-invoice', Illustration: SalesInvoiceIllustration },
   { title: 'Discard/Return (GDN)', icon: ArrowDownRight, desc: 'Discard expired/damaged stock', stat: 'Track wastage and return', path: '/inventory/gdn', Illustration: DiscardGDNIllustration },
   { title: 'Inventory Reports', icon: BarChart3, desc: 'Ledgers, stock positions, short expiry', stat: 'View stock reports', path: '/inventory/reports', Illustration: InventoryReportsIllustration },
+  { title: 'Fuel Management', icon: Fuel, desc: 'Vehicles & Generator — Fuel, Oil, Daily Sheets', stat: 'Track fuel & oil usage', path: '/inventory/fuel', Illustration: null },
 ];
 
 export default function InventoryModuleDashboard() {
@@ -133,7 +135,7 @@ export default function InventoryModuleDashboard() {
               </button>
             </div>
             <div className="card-illustration">
-              <sm.Illustration />
+              {sm.Illustration ? <sm.Illustration /> : <Fuel className="w-20 h-20 text-slate-200" />}
             </div>
           </div>
         ))}
