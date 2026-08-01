@@ -126,20 +126,16 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
        mm dimensions keep the wide/landscape shape even when a printer
        can't match the exact paper size. */
     @page { margin:3mm; size: 148mm 105mm; }
-    /* Pin the body to the EXACT printable area (page size minus the @page
-       3mm margins) and drop the on-screen padding — otherwise the body's own
-       padding stacks on top of the @page margin (double-margin), shrinking
-       usable height, and with no explicit height a stray 1-2mm of overflow
-       (sub-pixel rounding) tips the whole footer onto a needless 2nd page.
-       overflow:hidden is the safety belt so that never happens. */
-    html { margin:0; padding:0; }
-    body {
-      width:142mm;   /* 148 - 3 - 3 */
-      height:99mm;   /* 105 - 3 - 3 */
-      margin:0;
-      padding:0;
-      overflow:hidden;
-    }
+    /* Let the body fill whatever printable box the printer actually gives
+       (width:100%) instead of a hard-coded 142mm — real printers have hardware
+       margins, so a fixed 142mm can exceed the printable width and make the
+       driver shrink the WHOLE slip to "fit" (tiny print). padding:0 drops the
+       on-screen padding so it doesn't stack on top of the @page 3mm margin
+       (that double-margin was what pushed the footer onto a 2nd page). No
+       fixed height / overflow:hidden — those clipped content on printers whose
+       imageable height is under 99mm. */
+    html, body { margin:0; padding:0; }
+    body { width:100%; }
   }
 </style>
 </head>
