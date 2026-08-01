@@ -119,23 +119,19 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   }
 
   @media print {
-    /* Explicit width×height (148mm × 105mm = A6 landscape) instead of the
-       named "A6 landscape" form — printers whose driver doesn't recognize
-       "A6" as a named size silently drop the whole size+orientation value
-       and fall back to their own default (usually A4 portrait). Explicit
-       mm dimensions keep the wide/landscape shape even when a printer
-       can't match the exact paper size. */
-    @page { margin:3mm; size: 148mm 105mm; }
-    /* Let the body fill whatever printable box the printer actually gives
-       (width:100%) instead of a hard-coded 142mm — real printers have hardware
-       margins, so a fixed 142mm can exceed the printable width and make the
-       driver shrink the WHOLE slip to "fit" (tiny print). padding:0 drops the
-       on-screen padding so it doesn't stack on top of the @page 3mm margin
-       (that double-margin was what pushed the footer onto a 2nd page). No
-       fixed height / overflow:hidden — those clipped content on printers whose
-       imageable height is under 99mm. */
-    html, body { margin:0; padding:0; }
-    body { width:100%; }
+    /* Print at a FIXED physical A6 size on WHATEVER paper is loaded.
+       size:auto = don't force a paper size, just use whatever the printer
+       has (A6/A5/A4/A3). The body is then pinned to a fixed 148mm width (A6
+       landscape width) so the slip always renders at true A6 size: on A6 paper
+       it fills the sheet, on bigger paper it sits at the top-left corner at
+       actual size with blank space around it. Because there's no page-size
+       MISMATCH, the driver never shrinks/scales the slip ("thora sa content"),
+       which is what a forced 148×105 @page caused on printers lacking A6.
+       5mm padding keeps content off the physical edge (printers can't print
+       edge-to-edge); height is left natural so nothing is ever clipped. */
+    @page { size: auto; margin: 0; }
+    html, body { margin: 0; padding: 0; }
+    body { width: 148mm; padding: 5mm; }
   }
 </style>
 </head>
