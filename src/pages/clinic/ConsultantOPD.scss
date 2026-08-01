@@ -1107,117 +1107,190 @@
 
 .copd-crf {
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 10pt;
+  font-size: 9.5pt;
   color: #000;
   background: #fff;
   border: 1.5px solid #000;
-  padding: 6px 8px 8px;
+  padding: 8px;
+  // A4 height minus the @page's 8mm top+bottom margins — content is sized
+  // (fonts/spacing below) to naturally fill this, not just stretched boxes
+  // with empty padding.
+  min-height: 281mm;
+  display: flex;
+  flex-direction: column;
 }
 
-.copd-crf-title {
+// ── Header: logo (fills the space up to the title) | boxed title ─────────────
+.copd-crf-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.copd-crf-hdr-brand { flex: 1; min-width: 0; }
+.copd-crf-hdr-logo { height: 58px; max-width: 100%; object-fit: contain; object-position: left center; }
+
+.copd-crf-hdr-title {
+  width: fit-content;
   border: 1.5px solid #000;
-  text-align: center;
+  border-radius: 5px;
   font-weight: 900;
-  font-size: 13pt;
-  letter-spacing: 0.5px;
-  padding: 5px;
-  margin-bottom: 6px;
+  font-size: 14pt;
+  letter-spacing: 0.3px;
+  padding: 9px 18px;
+  white-space: nowrap;
 }
 
-.copd-crf-consultant {
-  font-weight: 700;
-  font-size: 10pt;
-  margin-bottom: 6px;
-}
-
-.copd-crf-row {
+// ── Info row: slip/MR/date + consultant/received + barcode ──────────────────
+.copd-crf-info {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 5px;
-  font-size: 10pt;
+  align-items: flex-start;
+  gap: 10px;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  padding: 5px 0;
+  margin-bottom: 7px;
 }
-
-.copd-crf-grp {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-
-  strong { font-weight: 700; white-space: nowrap; }
-}
+.copd-crf-info-text > div { margin: 2px 0; }
 
 .copd-crf-dln {
   display: inline-block;
   border-bottom: 1px solid #000;
-  min-width: 260px;
-  padding: 0 4px;
+  min-width: 160px;
+  padding: 0 5px;
   font-weight: 600;
 
-  &--sm { min-width: 80px; }
-  &--md { min-width: 180px; }
-  &--lg { min-width: 200px; }
+  &--sm { min-width: 90px; }
+  &--md { min-width: 200px; }
+  &--xs { min-width: 38px; text-align: center; }
+  &--full { min-width: 100%; width: 100%; }
+  // Fills whatever room is left on the row instead of a fixed width, so
+  // "Respiratory Rate ___ /min" and "Weight ___ kg" both end up with a
+  // blank that's sized to their own row, not one shared fixed length.
+  &--vit { flex: 1; min-width: 20px; }
 }
 
 .copd-crf-barcode {
   display: flex;
   align-items: center;
-  gap: 6px;
-
-  img { height: 28px; }
+  flex-shrink: 0;
+  img { height: 32px; }
 }
 
-.copd-crf-section-hdr {
-  font-weight: 700;
-  font-size: 10.5pt;
-  text-decoration: underline;
-  margin: 8px 0 4px;
-}
-
-.copd-crf-vitals {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 9.5pt;
-  margin-bottom: 4px;
-
-  td { padding: 3px 4px; vertical-align: baseline; }
-  .vp { font-weight: 700; white-space: nowrap; }
-  .vm { border-bottom: 1px solid #000; width: 70px; display: inline-block; min-height: 12px; }
-}
-
-.copd-crf-body {
+// ── Two-column body ───────────────────────────────────────────────────────────
+.copd-crf-cols {
   display: flex;
-  gap: 10px;
-  margin-top: 4px;
+  flex: 1;
+  gap: 8px;
+  align-items: stretch;
+}
+.copd-crf-col-left {
+  flex: 0.8;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.copd-crf-col-right {
+  flex: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 
-.copd-crf-body-left { flex: 1; }
-
-.copd-crf-body-right {
-  width: 34%;
-  border-left: 1.5px solid #000;
-  padding-left: 8px;
+// ── Boxed section (rounded border + grey header bar) ─────────────────────────
+.copd-crf-box {
+  border: 1px solid #000;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.copd-crf-box--rx { flex: 1; display: flex; flex-direction: column; }
+.copd-crf-box--inv { flex: 1; display: flex; flex-direction: column; }
+.copd-crf-box--inv .copd-crf-box-body { flex: 1; }
+.copd-crf-box-hdr {
+  background: #d9d9d9;
+  font-weight: 700;
+  font-size: 9.5pt;
+  padding: 3px 8px;
+  border-bottom: 1px solid #000;
+}
+.copd-crf-box-body {
+  padding: 6px 8px;
+  > div { margin: 2px 0; }
 }
 
-.copd-crf-right-hdr {
+.copd-crf-vitals > div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 4px 0;
+  white-space: nowrap;
+}
+
+// ── Investigation checklist ───────────────────────────────────────────────────
+.copd-crf-subhdr {
+  background: #ececec;
+  border: 1px solid #999;
+  border-radius: 3px;
+  text-align: center;
   font-weight: 700;
   font-size: 9pt;
-  border-bottom: 1.5px solid #000;
-  padding-bottom: 3px;
+  padding: 2px 0;
+  margin: 6px 0 3px;
+}
+.copd-crf-checkgrid {
+  display: flex;
+  gap: 5px;
+}
+.copd-crf-checkcol { flex: 1; min-width: 0; }
+
+.copd-crf-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 8.5pt;
+  line-height: 1.4;
+  margin-bottom: 2px;
+}
+.copd-crf-checkbox {
+  width: 8pt;
+  height: 8pt;
+  border: 1px solid #000;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.copd-crf-check--blank { align-items: center; }
+.copd-crf-blankfill {
+  flex: 1;
+  border-bottom: 1px solid #999;
+  height: 9pt;
+}
+
+// ── Symptoms/Diagnosis fill lines ─────────────────────────────────────────────
+.copd-crf-fillrow { display: flex; align-items: baseline; gap: 5px; }
+.copd-crf-dashline {
+  flex: 1;
+  border-bottom: 1px solid #000;
+  height: 1px;
+  align-self: flex-end;
   margin-bottom: 3px;
 }
 
+// ── Prescription pad ──────────────────────────────────────────────────────────
+.copd-crf-rx-body { flex: 1; position: relative; }
+.copd-crf-rx-symbol { font-size: 19pt; font-weight: 700; margin-bottom: 3px; }
 .copd-crf-line {
-  border-bottom: 1px solid #999;
-  height: 20px;
+  border-bottom: 1px solid #e6e6e6;
+  height: 22px;
 }
 
+// ── Footer ─────────────────────────────────────────────────────────────────────
 .copd-crf-footer {
   display: flex;
   justify-content: space-between;
-  margin-top: 8px;
+  margin-top: 7px;
   padding-top: 6px;
-  border-top: 1.5px solid #000;
+  border-top: 1px solid #000;
   font-weight: 700;
   font-size: 10pt;
 }

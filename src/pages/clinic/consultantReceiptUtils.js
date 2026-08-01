@@ -47,6 +47,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   const discount  = isComplementary ? 0 : (doc.discount   || 0);
   const received  = isComplementary ? 0 : (doc.receive    || 0);
   const grossAmt  = total + discount;
+  const balance   = Math.max(0, total - received);
 
   const ageStr = [
     doc.age != null ? `${doc.age} Year(s)` : '0 Year(s)',
@@ -72,37 +73,47 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
 <title>OPD Receipt - ${doc.serialNo}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background:#fff; width:520px; margin:auto; padding:10px 14px; }
+  /* A6 landscape usable height is only ~105mm (~367px) minus margins — every
+     size below is deliberately tight (not just "small") so that a slip with
+     several line items (multiple doctors/services) still fits on ONE page
+     instead of spilling onto a 2nd. The logo was the single biggest offender
+     at a fixed 100px (~27% of the whole usable height on its own). */
+  body { font-family: Arial, sans-serif; font-size: 9.5px; color: #000; background:#fff; width:520px; margin:auto; padding:6px 10px; }
   /* Logo box takes the SAME width as the rest of the slip content (body minus padding) */
   .logo-box { width:100%; }
-  .logo-box .logo-img { width:100%; height:100px; }
-  .address-box { text-align:center; margin-top:4px; }
-  .address-box .address { font-size:9.5px; font-weight:700; margin-top:2px; color:#000; }
-  .divider { border-top:1px solid #000; margin:5px 0; }
+  .logo-box .logo-img { width:100%; height:48px; object-fit:contain; }
+  .address-box { text-align:center; margin-top:2px; }
+  .address-box .address { font-size:8px; font-weight:700; margin-top:1px; color:#000; }
+  .divider { border-top:1px solid #000; margin:3px 0; }
   .divider.thick { border-top:2px solid #000; }
 
-  .info-grid { display:grid; grid-template-columns: 1.1fr 1fr 1fr; row-gap:3px; margin-top:4px; }
-  .info-grid span { font-size:10.5px; }
+  .info-grid { display:grid; grid-template-columns: 1.1fr 1fr 1fr; row-gap:2px; margin-top:2px; }
+  .info-grid span { font-size:9px; }
   .info-grid .lbl { font-weight:600; }
 
-  .line-item { display:flex; justify-content:space-between; font-size:11px; padding:2px 0; }
+  .line-item { display:flex; justify-content:space-between; font-size:9.5px; padding:1px 0; }
 
-  .amount-row { display:flex; justify-content:space-between; padding: 1px 0; font-size:11px; }
+  .amount-row { display:flex; justify-content:space-between; padding: 1px 0; font-size:9.5px; }
   .amount-row.total { font-weight:700; }
-  .amount-row.grand { font-weight:700; border-top:2px double #000; margin-top:3px; padding-top:4px; font-size:12px; }
+  .amount-row.balance-row { font-weight:700; color:#b91c1c; }
+  .amount-row.grand { font-weight:700; border-top:2px double #000; margin-top:2px; padding-top:2px; font-size:10.5px; }
 
-  .invoice-row { display:flex; justify-content:space-between; align-items:center; margin-top:4px; }
-  .invoice-left { display:flex; align-items:baseline; gap:10px; }
-  .duplicate-lbl { font-weight:700; font-size:12px; }
-  .invoice-label { font-size:16px; font-weight:900; }
-  .received-lbl { font-size:12px; font-weight:700; }
+  .invoice-row { display:flex; justify-content:space-between; align-items:center; margin-top:2px; }
+  .invoice-left { display:flex; align-items:baseline; gap:8px; }
+  .duplicate-lbl { font-weight:700; font-size:10.5px; }
+  .invoice-label { font-size:13px; font-weight:900; }
+  .received-lbl { font-size:10.5px; font-weight:700; }
 
-  .in-words { font-size:10px; margin: 6px 0 2px; }
-  .disclaimer { font-size:9px; text-align:center; margin-top:6px; color:#111; }
+  .in-words { font-size:8.5px; margin: 3px 0 1px; }
+  .disclaimer { font-size:7.5px; text-align:center; margin-top:3px; color:#111; }
 
-  .bottom { display:flex; justify-content:space-between; align-items:flex-end; margin-top:10px; }
-  .barcode-area img { height:40px; }
-  .footer-urdu { font-size:9px; text-align:right; direction:rtl; max-width:280px; }
+  .bottom { display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px; }
+  .barcode-area img { height:28px; }
+  .footer-urdu { font-size:7.5px; text-align:right; direction:rtl; max-width:280px; }
+
+  .info-grid, .line-item, .amount-row, .invoice-row, .bottom {
+    page-break-inside: avoid;
+  }
 
   @media print {
     body { width:100%; }
@@ -112,7 +123,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
        and fall back to their own default (usually A4 portrait). Explicit
        mm dimensions keep the wide/landscape shape even when a printer
        can't match the exact paper size. */
-    @page { margin:4mm; size: 148mm 105mm; }
+    @page { margin:3mm; size: 148mm 105mm; }
   }
 </style>
 </head>
@@ -121,8 +132,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
     <img class="logo-img" src="${RECEIPT_LOGO_DATA_URI}" alt="logo" />
   </div>
   <div class="address-box">
-    <div class="address">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi</div>
-    <div class="address">Ph.:4508390-91, Fax:4508392 &nbsp; Email : darulshifa@yahoo.com</div>
+    <div class="address">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi &nbsp; Ph.:4508390-91</div>
   </div>
 
   ${isDuplicate ? '<div style="text-align:center;color:red;font-weight:900;font-size:14px;letter-spacing:2px;">DUPLICATE</div>' : ''}
@@ -161,6 +171,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
     </div>
     <span class="received-lbl">Received&nbsp;&nbsp;${fmt(received)}</span>
   </div>
+  ${balance > 0.01 ? `<div class="amount-row balance-row"><span>Balance:</span><span>${fmt(balance)}</span></div>` : ''}
 
   <div class="divider"></div>
   <div class="amount-row grand"><span>Grand Total:</span><span>${fmt(total)}</span></div>

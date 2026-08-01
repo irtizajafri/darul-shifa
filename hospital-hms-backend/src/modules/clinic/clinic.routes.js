@@ -61,6 +61,12 @@ router.post('/discharge-types', controller.createDischargeType);
 router.put('/discharge-types/:id', controller.updateDischargeType);
 router.delete('/discharge-types/:id', controller.deleteDischargeType);
 
+// Shift
+router.get('/shifts', controller.getShifts);
+router.post('/shifts', controller.createShift);
+router.put('/shifts/:id', controller.updateShift);
+router.delete('/shifts/:id', controller.deleteShift);
+
 // Provisional Bill
 router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
 router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);
@@ -217,5 +223,10 @@ router.get('/consultant-statement', controller.getConsultantStatement);
 
 // Inquiries
 router.get('/inquiries/revenue-dashboard', controller.getRevenueDashboard);
+
+// Reports
+router.get('/reports/department-doctor-performance', controller.getDepartmentDoctorPerformance);
+router.get('/reports/admission-wise', controller.getAdmissionWiseReport);
+router.get('/reports/user-date-summary', controller.getUserDateSummary);
 
 module.exports = router;

@@ -193,8 +193,7 @@ function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, 
         <img src={RECEIPT_LOGO_DATA_URI} alt="Darul Shifa" className="adm-print-logo" />
       </div>
       <div className="adm-print-info-box">
-        <div className="adm-print-hosp-addr">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi</div>
-        <div className="adm-print-hosp-addr">Ph.:4508390-91, Fax:4508392 &nbsp; Email : darulshifa@yahoo.com</div>
+        <div className="adm-print-hosp-addr">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi &nbsp; Ph.:4508390-91</div>
         {isDuplicate && <div className="adm-print-duplicate">Duplicate</div>}
       </div>
 

@@ -55,8 +55,7 @@ export function buildAdmissionPaymentReceiptHtml({ payment, admission, printedBy
     <img class="logo-img" src="${RECEIPT_LOGO_DATA_URI}" alt="logo" />
   </div>
   <div class="address-box">
-    <div class="address">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi</div>
-    <div class="address">Ph.:4508390-91, Fax:4508392 &nbsp; Email : darulshifa@yahoo.com</div>
+    <div class="address">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi &nbsp; Ph.:4508390-91</div>
   </div>
 
   ${isDuplicate ? '<div style="text-align:center;color:red;font-weight:900;font-size:14px;letter-spacing:2px;">DUPLICATE</div>' : ''}

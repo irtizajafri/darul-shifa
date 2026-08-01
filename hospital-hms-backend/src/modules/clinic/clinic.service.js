@@ -170,6 +170,39 @@ async function deleteDischargeType(id) {
   return prisma.clinicDischargeType.delete({ where: { id: Number(id) } });
 }
 
+// ─── Shift (Parameters) ─────────────────────────────────────────────────────
+async function getAllShifts() {
+  return prisma.clinicShift.findMany({ orderBy: { name: 'asc' } });
+}
+
+async function createShift({ name, fromTime, toTime }) {
+  if (!name?.trim()) throw new Error('Shift name is required');
+  if (!fromTime || !toTime) throw new Error('From/To time is required');
+  return prisma.clinicShift.create({ data: { name: name.trim(), fromTime, toTime } });
+}
+
+async function updateShift(id, { name, fromTime, toTime }) {
+  return prisma.clinicShift.update({
+    where: { id: Number(id) },
+    data: { name: name?.trim(), fromTime, toTime },
+  });
+}
+
+async function deleteShift(id) {
+  return prisma.clinicShift.delete({ where: { id: Number(id) } });
+}
+
+// Match a timestamp's time-of-day against configured shifts (handles a shift
+// that wraps past midnight, e.g. 22:00 -> 06:00). Returns null if no shift is
+// configured yet, or none of the configured ranges cover this time.
+async function resolveShiftForTime(date) {
+  const shifts = await prisma.clinicShift.findMany();
+  if (!shifts.length) return null;
+  const hhmm = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const inRange = (t, from, to) => (from <= to ? (t >= from && t <= to) : (t >= from || t <= to));
+  return shifts.find(s => inRange(hhmm, s.fromTime, s.toTime)) || null;
+}
+
 // ─── Staff Category ───────────────────────────────────────────────────────────
 
 async function getAllStaffCategories() {
@@ -330,16 +363,18 @@ async function getNextMrNo() {
 // and ClinicAdmission — both draw from the same running number so Admission and
 // OPD slips never collide, even though they live in separate tables.
 async function getNextSerialNo() {
-  const [lastOpd, lastAdm, lastAdmPay] = await Promise.all([
+  const [lastOpd, lastAdm, lastAdmPay, lastPbi] = await Promise.all([
     prisma.clinicOpdVisit.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicAdmission.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicAdmissionPayment.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
+    prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
   ]);
   const BASE = 2826016;
   const lastOpdNum    = lastOpd    ? parseInt(lastOpd.serialNo, 10)    || 0 : 0;
   const lastAdmNum     = lastAdm    ? parseInt(lastAdm.serialNo, 10)    || 0 : 0;
   const lastAdmPayNum = lastAdmPay ? parseInt(lastAdmPay.serialNo, 10) || 0 : 0;
-  const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, BASE);
+  const lastPbiNum    = lastPbi    ? parseInt(lastPbi.serialNo, 10)    || 0 : 0;
+  const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, lastPbiNum + 1, BASE);
   return String(n);
 }
 
@@ -370,11 +405,18 @@ async function createOpdVisit({
   totalAmount, discount, receive, refund,
   panelCompanyId, panelEmployeeId, panelDependentId,
   department,
+  createdByUserId, createdByName,
   doctors = [],
 }) {
+  const now = new Date();
+  const shift = await resolveShiftForTime(now);
   return prisma.clinicOpdVisit.create({
     data: {
       mrNo: mrNo ? Number(mrNo) : null,
+      createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
+      createdByName: createdByName || null,
+      shiftId: shift?.id || null,
+      shiftName: shift?.name || null,
       serialNo,
       department: department || 'General OPD',
       patientType: patientType || 'MAST',
@@ -1916,6 +1958,10 @@ async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId,
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
   const q = Number(qty) || 1;
   const r = Number(rate) || 0;
+  // Manually-entered items have no OPD visit to borrow a slip # from — assign
+  // one from the shared running sequence so this line still shows up as a
+  // real slip in the Admission Wise Report's "With Slip" view.
+  const serialNo = await getNextSerialNo();
   return prisma.clinicProvisionalBillItem.create({
     data: {
       admissionId: Number(admissionId),
@@ -1926,6 +1972,7 @@ async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId,
       amount: q * r,
       remarks: remarks?.trim() || null,
       patientType: patientType || null,
+      serialNo,
     },
   });
 }
@@ -2282,6 +2329,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       received:      v.receive,
       balance:       v.totalAmount - v.receive,
       discount:      v.discount,
+      shiftName:     v.shiftName || null,
+      createdByName: v.createdByName || null,
       _source:       'opd',
     };
   });
@@ -3004,6 +3053,300 @@ async function getBalanceSlips() {
   }));
 }
 
+// ─── Department wise Doctor's Performance ──────────────────────────────────
+// Flat, one-row-per-doctor summary: GOPD/COPD/EMR columns = how many patients
+// this doctor personally saw (treating doctor) in each of those 3 OPD
+// departments; Admit/Not Admit = split of that same patient set by whether
+// they ended up admitted; LAB/US/XRAY = how many of this doctor's patients he
+// referred onward to Laboratory / Ultrasound / Radiology (via the visit's
+// `referredBy` field on the diagnostic-department visit). Old PatientVisit
+// rows have no referredBy column at all (didn't exist in that era), so
+// LAB/US/XRAY can only ever reflect ClinicOpdVisit (new-system) data — a real
+// data gap in the old import, not a bug here.
+const OWN_DEPT_BUCKETS = {
+  GOPD: { contains: 'GENERAL OPD', excludes: ['CONSULTANT'], newName: 'General OPD' },
+  COPD: { contains: 'CONSULTANT',  excludes: [],             newName: 'Consultant OPD' },
+  EMR:  { contains: 'EMERGENCY',   excludes: [],             newName: 'Emergency' },
+};
+const REFERRAL_DEPT_BUCKETS = {
+  LAB:  'Laboratory',
+  US:   'Ultra Sound, Echo & Color Doppler',
+  XRAY: 'Radiology',
+};
+
+async function getDepartmentDoctorPerformance({
+  fromDate, toDate, fromDoctorCode, toDoctorCode, activeOnly,
+}) {
+  // Doctor codes here are short alphabetic strings (e.g. "DA2", "DABZ"), not
+  // numbers — range filtering has to be lexicographic.
+  const where = activeOnly ? { status: 'active' } : {};
+  let doctorScope = await prisma.clinicDoctor.findMany({ where, select: { code: true, name: true } });
+  const fromCode = fromDoctorCode ? fromDoctorCode.trim().toUpperCase() : null;
+  const toCode   = toDoctorCode   ? toDoctorCode.trim().toUpperCase()   : null;
+  if (fromCode != null || toCode != null) {
+    doctorScope = doctorScope.filter(d => {
+      const code = (d.code || '').trim().toUpperCase();
+      if (fromCode != null && code < fromCode) return false;
+      if (toCode   != null && code > toCode)   return false;
+      return true;
+    });
+  }
+
+  const acc = new Map(); // nameLower -> accumulator
+  for (const d of doctorScope) {
+    acc.set(d.name.trim().toLowerCase(), {
+      code: d.code, name: d.name,
+      GOPD: 0, COPD: 0, EMR: 0, admit: 0, notAdmit: 0, LAB: 0, US: 0, XRAY: 0,
+      detail: { GOPD: [], COPD: [], EMR: [], LAB: [], US: [], XRAY: [] },
+    });
+  }
+  const scopeNames = new Set(acc.keys());
+
+  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
+  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+
+  const bump = (nameLower, key, row) => {
+    const a = acc.get(nameLower);
+    if (!a) return;
+    a[key] += 1;
+    a.detail[key].push(row);
+    if (['GOPD', 'COPD', 'EMR'].includes(key)) {
+      if (row.admitted) a.admit += 1; else a.notAdmit += 1;
+    }
+  };
+
+  // ── Old PatientVisit (bulk-imported) — own-patient counts only ─────────
+  const ownOrConds = Object.values(OWN_DEPT_BUCKETS).map(cfg => {
+    const cond = { department: { contains: cfg.contains, mode: 'insensitive' } };
+    return cfg.excludes.length
+      ? { AND: [cond, ...cfg.excludes.map(x => ({ NOT: { department: { contains: x, mode: 'insensitive' } } }))] }
+      : cond;
+  });
+  const oldWhere = { OR: ownOrConds };
+  if (fromDt && toDt) oldWhere.visitDate = { gte: fromDt, lte: toDt };
+  const oldVisits = await prisma.patientVisit.findMany({ where: oldWhere });
+  for (const v of oldVisits) {
+    const nameLower = (v.doctor || '').trim().toLowerCase();
+    if (!scopeNames.has(nameLower)) continue;
+    const upper = (v.department || '').toUpperCase();
+    const bucketKey = Object.entries(OWN_DEPT_BUCKETS).find(([, cfg]) =>
+      upper.includes(cfg.contains) && !cfg.excludes.some(x => upper.includes(x))
+    )?.[0];
+    if (!bucketKey) continue;
+    bump(nameLower, bucketKey, {
+      slipNo: v.serialNo != null ? String(v.serialNo) : '—',
+      slipDate: v.visitDate,
+      patientName: v.patientName,
+      admitted: v.admitNo != null,
+      admissionNo: v.admitNo != null ? String(v.admitNo) : null,
+    });
+  }
+
+  // ── New ClinicOpdVisit — own-patient counts (GOPD/COPD/EMR) ─────────────
+  const ownNewNames = Object.values(OWN_DEPT_BUCKETS).map(c => c.newName);
+  const ownOpdWhere = { department: { in: ownNewNames } };
+  if (fromDt && toDt) ownOpdWhere.createdAt = { gte: fromDt, lte: toDt };
+  const ownOpdVisits = await prisma.clinicOpdVisit.findMany({
+    where: ownOpdWhere,
+    include: { doctors: { include: { doctor: { select: { name: true } } } } },
+  });
+  for (const v of ownOpdVisits) {
+    const bucketKey = Object.entries(OWN_DEPT_BUCKETS).find(([, cfg]) => cfg.newName === v.department)?.[0];
+    if (!bucketKey) continue;
+    const admitted = Boolean(v.admitPatient && v.admitNo);
+    const row = {
+      slipNo: v.serialNo, slipDate: v.createdAt, patientName: v.patientName,
+      admitted, admissionNo: admitted ? v.admitNo : null,
+    };
+    for (const d of v.doctors) {
+      const nameLower = (d.doctor?.name || '').trim().toLowerCase();
+      if (!scopeNames.has(nameLower)) continue;
+      bump(nameLower, bucketKey, row);
+    }
+  }
+
+  // ── New ClinicOpdVisit — referral counts (LAB/US/XRAY), via referredBy ──
+  const referralNewNames = Object.values(REFERRAL_DEPT_BUCKETS);
+  const refWhere = { department: { in: referralNewNames }, referredBy: { not: null } };
+  if (fromDt && toDt) refWhere.createdAt = { gte: fromDt, lte: toDt };
+  const refVisits = await prisma.clinicOpdVisit.findMany({ where: refWhere });
+  for (const v of refVisits) {
+    const nameLower = (v.referredBy || '').trim().toLowerCase();
+    if (!scopeNames.has(nameLower)) continue;
+    const bucketKey = Object.entries(REFERRAL_DEPT_BUCKETS).find(([, name]) => name === v.department)?.[0];
+    if (!bucketKey) continue;
+    bump(nameLower, bucketKey, {
+      slipNo: v.serialNo, slipDate: v.createdAt, patientName: v.patientName,
+      admitted: null, admissionNo: null,
+    });
+  }
+
+  const rows = [...acc.values()]
+    .map(a => ({ ...a, patients: a.GOPD + a.COPD + a.EMR }))
+    .filter(a => a.patients + a.LAB + a.US + a.XRAY > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const total = rows.reduce((s, r) => ({
+    patients: s.patients + r.patients, GOPD: s.GOPD + r.GOPD, COPD: s.COPD + r.COPD, EMR: s.EMR + r.EMR,
+    admit: s.admit + r.admit, notAdmit: s.notAdmit + r.notAdmit,
+    LAB: s.LAB + r.LAB, US: s.US + r.US, XRAY: s.XRAY + r.XRAY,
+  }), { patients: 0, GOPD: 0, COPD: 0, EMR: 0, admit: 0, notAdmit: 0, LAB: 0, US: 0, XRAY: 0 });
+
+  return { rows, total };
+}
+
+// ─── Admission Wise Report ──────────────────────────────────────────────────
+// Per admission: an "ADMIT" bucket (Provisional Bill items entered directly —
+// no sourceOpdVisitId) plus one bucket per department for items that were
+// auto-added from a linked OPD visit (ProvisionalBill's "Pending Slips"
+// mechanism, sourceOpdVisitId set) — COPD/Lab/MISC/US/XRay etc., matching the
+// legacy report's category breakdown. ClinicAdmission has no dedicated
+// discharge-date column, so "Dis Date" / the discharge-mode date filter both
+// use `updatedAt` as the closest available proxy — flagged here since it's an
+// approximation, not an exact field.
+const REPORT_DEPT_CODE = {
+  'General OPD': 'GOPD', 'Consultant OPD': 'COPD', 'Emergency': 'EMR',
+  'Laboratory': 'LAB', 'Miscellaneous': 'MISC',
+  'Ultra Sound, Echo & Color Doppler': 'US', 'Radiology': 'XRAY',
+  'Dental OPD': 'DENTAL', 'Therapy': 'THERAPY', 'Blood Bank': 'BB', 'Ambulance': 'AMB',
+};
+
+async function getAdmissionWiseReport({ fromDate, toDate, statusMode, patientType }) {
+  const where = {};
+  where.status = statusMode === 'admit' ? 'active' : { in: ['discharge', 'closed'] };
+  if (patientType && patientType !== 'ALL') where.patientCategory = patientType;
+
+  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
+  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+  const dateField = statusMode === 'admit' ? 'createdAt' : 'updatedAt';
+  if (fromDt && toDt) where[dateField] = { gte: fromDt, lte: toDt };
+
+  const admissions = await prisma.clinicAdmission.findMany({
+    where,
+    include: {
+      provisionalBillItems: true,
+    },
+    orderBy: { admissionNo: 'asc' },
+  });
+
+  // Resolve sourceOpdVisitId -> department for every linked item in one query.
+  const visitIds = [...new Set(
+    admissions.flatMap(a => a.provisionalBillItems.map(i => i.sourceOpdVisitId).filter(Boolean))
+  )];
+  const visits = visitIds.length
+    ? await prisma.clinicOpdVisit.findMany({ where: { id: { in: visitIds } }, select: { id: true, department: true, serialNo: true } })
+    : [];
+  const visitById = Object.fromEntries(visits.map(v => [v.id, v]));
+
+  const rows = admissions.map(a => {
+    const buckets = {}; // code -> { count, amount, items: [] }
+    // The admission's own booking is itself a slip (its own serialNo + the
+    // advance payment taken at admission time) — it must always count, even
+    // when no Provisional Bill items have been added yet.
+    buckets.ADMIT = { count: 1, amount: Number(a.advancePayment) || 0, items: [
+      { slipNo: a.serialNo || '—', patientName: a.patientName, amount: Number(a.advancePayment) || 0 },
+    ] };
+    for (const item of a.provisionalBillItems) {
+      const visit = item.sourceOpdVisitId ? visitById[item.sourceOpdVisitId] : null;
+      const code = visit ? (REPORT_DEPT_CODE[visit.department] || visit.department || 'OTHER') : 'ADMIT';
+      // Linked items reuse the source OPD visit's own slip #; manually-entered
+      // (ADMIT) items get their own serialNo assigned at creation time.
+      const slipNo = visit ? visit.serialNo : (item.serialNo || '—');
+      if (!buckets[code]) buckets[code] = { count: 0, amount: 0, items: [] };
+      buckets[code].count += 1;
+      buckets[code].amount += Number(item.amount) || 0;
+      buckets[code].items.push({ slipNo, patientName: a.patientName, amount: Number(item.amount) || 0 });
+    }
+    const slipCount = Object.values(buckets).reduce((s, b) => s + b.count, 0);
+    const amount    = Object.values(buckets).reduce((s, b) => s + b.amount, 0);
+    return {
+      admissionNo: a.admissionNo,
+      patientName: a.patientName,
+      patientType: a.patientCategory,
+      status: (a.status === 'discharge' || a.status === 'closed') ? 'Discharge' : 'Admit',
+      admitDate: a.createdAt,
+      disDate: (a.status === 'discharge' || a.status === 'closed') ? a.updatedAt : null,
+      // Patients-list-style demographic fields, straight off the admission record.
+      mrNo: a.mrNo || null,
+      age: `${a.ageYears || 0}Y ${a.ageMonths || 0}M ${a.ageDays || 0}D`,
+      gender: a.gender,
+      phoneNo: a.phoneNo || null,
+      slipCount, amount, buckets,
+    };
+  });
+
+  const bucketCodes = [...new Set(rows.flatMap(r => Object.keys(r.buckets)))].sort((a, b) => (a === 'ADMIT' ? -1 : b === 'ADMIT' ? 1 : a.localeCompare(b)));
+
+  const total = {
+    admissions: rows.length,
+    slipCount: rows.reduce((s, r) => s + r.slipCount, 0),
+    amount:    rows.reduce((s, r) => s + r.amount, 0),
+    byPatientType: {},
+  };
+  for (const r of rows) {
+    if (!total.byPatientType[r.patientType]) total.byPatientType[r.patientType] = { admissions: 0, slipCount: 0, amount: 0, buckets: {} };
+    const pt = total.byPatientType[r.patientType];
+    pt.admissions += 1; pt.slipCount += r.slipCount; pt.amount += r.amount;
+    for (const [code, b] of Object.entries(r.buckets)) {
+      if (!pt.buckets[code]) pt.buckets[code] = { count: 0, amount: 0 };
+      pt.buckets[code].count += b.count;
+      pt.buckets[code].amount += b.amount;
+    }
+  }
+
+  return { rows, bucketCodes, total };
+}
+
+// ─── User (by Date) Summary ──────────────────────────────────────────────────
+// "User" here = the logged-in User Management account that created the visit
+// (createdByUserId/createdByName, tagged automatically since the Shift
+// feature was added) — only visits created after that point have this, same
+// caveat as the Shift/User report above.
+async function getUserDateSummary({ userId, date, shift }) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true } });
+  if (!user) throw new Error('User not found');
+
+  const dayStart = new Date(date + 'T00:00:00');
+  const dayEnd   = new Date(date + 'T23:59:59');
+  const visits = await prisma.clinicOpdVisit.findMany({
+    where: { createdByUserId: userId, createdAt: { gte: dayStart, lte: dayEnd } },
+  });
+
+  const shifts = await prisma.clinicShift.findMany();
+  const inRange = (t, from, to) => (from <= to ? (t >= from && t <= to) : (t >= from || t <= to));
+  const resolveShift = (dt) => {
+    const hhmm = `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+    return shifts.find(s => inRange(hhmm, s.fromTime, s.toTime))?.name || null;
+  };
+
+  const scoped = (!shift || shift === 'ALL')
+    ? visits
+    : visits.filter(v => (v.shiftName || resolveShift(v.createdAt)) === shift);
+
+  const ptMap = new Map();
+  for (const v of scoped) {
+    const pt = v.paymentType || 'cash';
+    const dept = v.department || 'Unknown';
+    if (!ptMap.has(pt)) ptMap.set(pt, new Map());
+    const dm = ptMap.get(pt);
+    if (!dm.has(dept)) dm.set(dept, { count: 0, amount: 0 });
+    const e = dm.get(dept);
+    e.count += 1;
+    e.amount += Number(v.receive) || 0;
+  }
+
+  const groups = [...ptMap.entries()].map(([paymentType, dm]) => ({
+    paymentType,
+    depts: [...dm.entries()].map(([dept, e]) => ({ dept, ...e })).sort((a, b) => a.dept.localeCompare(b.dept)),
+    total: [...dm.values()].reduce((s, e) => ({ count: s.count + e.count, amount: s.amount + e.amount }), { count: 0, amount: 0 }),
+  }));
+
+  const usedShift = scoped.length ? (scoped[0].shiftName || resolveShift(scoped[0].createdAt)) : (shift !== 'ALL' ? shift : null);
+  const grandTotal = groups.reduce((s, g) => ({ count: s.count + g.total.count, amount: s.amount + g.total.amount }), { count: 0, amount: 0 });
+
+  return { userName: user.name, shiftUsed: usedShift, groups, grandTotal };
+}
+
 async function receiveBalancePayment(id, amount) {
   const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
   if (!visit) throw new Error('Visit not found');
@@ -3045,6 +3388,10 @@ module.exports = {
   createDischargeType,
   updateDischargeType,
   deleteDischargeType,
+  getAllShifts,
+  createShift,
+  updateShift,
+  deleteShift,
   searchAdmissionsForDocuments,
   getPatientDocuments,
   createPatientDocument,
@@ -3147,6 +3494,9 @@ module.exports = {
   getRevenueDashboard,
   getBalanceSlips,
   receiveBalancePayment,
+  getDepartmentDoctorPerformance,
+  getAdmissionWiseReport,
+  getUserDateSummary,
   importPanelBillingDetail,
   getPanelBillingDetails,
   getPanelBillingByAdmit,

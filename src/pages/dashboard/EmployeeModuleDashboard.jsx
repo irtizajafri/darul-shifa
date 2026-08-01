@@ -193,7 +193,7 @@ export default function EmployeeModuleDashboard() {
           </Card>
         ))}
       </div>
-      <Card title="Recent Activity" className="recent-activity">
+      {/* <Card title="Recent Activity" className="recent-activity">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[500px]">
             <thead>
@@ -226,7 +226,7 @@ export default function EmployeeModuleDashboard() {
             </tbody>
           </table>
         </div>
-      </Card>
+      </Card> */}
     </div>
   );
 }

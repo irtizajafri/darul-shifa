@@ -140,9 +140,9 @@ export default function Navbar({ onMenuClick }) {
   }, [matchedEmployee]);
 
   const avatarPhoto = useMemo(() => {
-    if (user?.name?.toLowerCase() === 'dr.nadeem abbasi') return ceoPhoto;
+    if (user?.id === 'super-admin') return ceoPhoto;
     return matchedEmployee?.photo || null;
-  }, [user?.name, matchedEmployee]);
+  }, [user?.id, matchedEmployee]);
 
   const formatDate = (dob) => {
     if (!dob) return null;

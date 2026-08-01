@@ -13,6 +13,7 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
   const discount = isComplementary ? 0 : (doc.discount    || 0);
   const received = isComplementary ? 0 : (doc.receive     || total);
   const grossAmt = total + discount;
+  const balance  = Math.max(0, total - received);
 
   const ageStr = [
     doc.age != null ? `${doc.age} Yr(s)` : '0 Yr(s)',
@@ -97,6 +98,7 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
   .inv-ref { font-size: 8.5px; color: #555; margin-top: 1px; }
   .inv-right { text-align: right; }
   .inv-received { font-size: 11px; font-weight: 700; }
+  .inv-balance { font-size: 11px; font-weight: 700; color: #b91c1c; }
   .inv-grand { font-size: 13px; font-weight: 900; border-top: 1px solid #000; margin-top: 3px; padding-top: 2px; }
   .inv-words { font-size: 9.5px; font-style: italic; margin-top: 3px; color: #333; }
 
@@ -212,8 +214,7 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
     <div class="hdr-text">
       <div class="hdr-h1">DARUL SHIFA</div>
       <div class="hdr-h2">IMAM KHOMEINI (REGD)</div>
-      <div class="hdr-addr">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi</div>
-      <div class="hdr-addr">Ph.: 4508390-91 &nbsp;|&nbsp; Fax: 4508392 &nbsp;|&nbsp; Email: darulshifa@yahoo.com</div>
+      <div class="hdr-addr">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi &nbsp; Ph.: 4508390-91</div>
     </div>
   </div>
 
@@ -264,6 +265,7 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
       </div>
       <div class="inv-right">
         <div class="inv-received">Received &nbsp;&nbsp; ${fmt(received)}</div>
+        ${balance > 0.01 ? `<div class="inv-balance">Balance &nbsp;&nbsp; ${fmt(balance)}</div>` : ''}
         <div class="inv-grand">Grand Total: &nbsp;&nbsp; ${fmt(total)}</div>
       </div>
     </div>

@@ -270,7 +270,18 @@ export const useClinicStore = create((set) => ({
   },
 
   createOpdVisit: async (payload) => {
-    return request('/opd', { method: 'POST', body: JSON.stringify(payload) });
+    // Every OPD-creating page (General/Consultant/Emergency OPD, Ambulance
+    // Slip) goes through this one function — tagging the logged-in user here
+    // means shift/user-wise reports never need each page touched again.
+    const user = useAuthStore.getState().user;
+    return request('/opd', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...payload,
+        createdByUserId: user?.id != null ? String(user.id) : null,
+        createdByName: user?.name || user?.username || user?.email || null,
+      }),
+    });
   },
 
   printOpdVisit: async (id) => {
@@ -637,6 +648,36 @@ export const useClinicStore = create((set) => ({
   deleteDischargeType: async (id) => {
     await request(`/discharge-types/${id}`, { method: 'DELETE' });
     set((s) => ({ dischargeTypes: s.dischargeTypes.filter((c) => c.id !== id) }));
+  },
+
+  // ── Shift ─────────────────────────────────────────────────────────────────────
+  shifts: [],
+
+  fetchShifts: async () => {
+    set({ loading: true, error: null });
+    try {
+      const shifts = await request('/shifts');
+      set({ shifts, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createShift: async (payload) => {
+    const data = await request('/shifts', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ shifts: [...s.shifts, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updateShift: async (id, payload) => {
+    const data = await request(`/shifts/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    set((s) => ({ shifts: s.shifts.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deleteShift: async (id) => {
+    await request(`/shifts/${id}`, { method: 'DELETE' });
+    set((s) => ({ shifts: s.shifts.filter((c) => c.id !== id) }));
   },
 
   // ── Provisional Bill ─────────────────────────────────────────────────────────

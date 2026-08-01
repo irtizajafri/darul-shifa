@@ -1,0 +1,130 @@
+.dpr-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: #eef1f4;
+}
+
+.dpr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+.dpr-toolbar-left { display: flex; align-items: center; gap: 6px; }
+.dpr-tool-sep { width: 1px; height: 20px; background: #e2e8f0; margin: 0 4px; }
+
+.dpr-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  &:hover:not(:disabled) { background: #f1f5f9; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.dpr-spin { animation: dpr-spin 1s linear infinite; }
+@keyframes dpr-spin { to { transform: rotate(360deg); } }
+
+.dpr-report-area {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  overflow-x: auto;
+}
+
+.dpr-report-page {
+  width: 100%;
+  max-width: 1100px;
+  background: #fff;
+  padding: 20px 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.dpr-print-header {
+  text-align: center;
+  margin-bottom: 12px;
+  h1 { font-size: 1rem; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  p  { font-size: 0.75rem; color: #64748b; margin: 0; }
+}
+
+.dpr-note {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  margin-top: 8px;
+  font-style: italic;
+}
+
+.dpr-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 40px 20px;
+  font-size: 0.85rem;
+}
+
+.dpr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+
+  th {
+    background: #1a3c6e;
+    color: #fff;
+    padding: 6px 8px;
+    text-align: left;
+    &.num { text-align: right; }
+  }
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #eee;
+  }
+  .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.dpr-dept-row td {
+  background: #bfe8e8;
+  font-weight: 700;
+}
+.dpr-doc-row td {
+  background: #e2e2e2;
+  font-weight: 700;
+}
+.dpr-sub-row td {
+  background: #eef2f8;
+  font-weight: 700;
+  border-top: 1px solid #1a3c6e;
+}
+.dpr-total-row td {
+  background: #eef2f8;
+  font-weight: 700;
+  border-top: 2px solid #1a3c6e;
+}
+
+// Date Wise Tabular — every cell boxed (full grid), matching the legacy
+// cross-tab print layout instead of the plain bottom-border row style.
+.dpr-table--boxed {
+  border: 1px solid #94a3b8;
+
+  th, td {
+    border: 1px solid #cbd5e1;
+    text-align: center;
+  }
+  th {
+    border-color: #1a3c6e;
+  }
+  td:first-child, th:first-child {
+    text-align: left;
+  }
+}
+
+@media print {
+  .no-print { display: none !important; }
+}

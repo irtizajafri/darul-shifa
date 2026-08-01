@@ -63,6 +63,14 @@ import DeathCertificateReport from '../pages/clinic/reports/DeathCertificateRepo
 import ReprintFilter from '../pages/clinic/reports/ReprintFilter';
 import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
 import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
+import DepartmentDoctorPerformanceFilter from '../pages/clinic/reports/DepartmentDoctorPerformanceFilter';
+import DepartmentDoctorPerformanceReport from '../pages/clinic/reports/DepartmentDoctorPerformanceReport';
+import AdmissionWiseFilter from '../pages/clinic/reports/AdmissionWiseFilter';
+import AdmissionWiseReport from '../pages/clinic/reports/AdmissionWiseReport';
+import DepartmentPatientsFilter from '../pages/clinic/reports/DepartmentPatientsFilter';
+import DepartmentPatientsReport from '../pages/clinic/reports/DepartmentPatientsReport';
+import UserDateSummaryFilter from '../pages/clinic/reports/UserDateSummaryFilter';
+import UserDateSummaryReport from '../pages/clinic/reports/UserDateSummaryReport';
 import ConsultantStatementFilter from '../pages/clinic/reports/ConsultantStatementFilter';
 import ConsultantStatementReport from '../pages/clinic/reports/ConsultantStatementReport';
 import ConsultantRates from '../pages/clinic/reports/ConsultantRates';
@@ -81,6 +89,7 @@ import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTyp
 import UploadPatientDocument from '../pages/clinic/UploadPatientDocument';
 import PatientDocumentsReport from '../pages/clinic/inquiries/PatientDocumentsReport';
 import ClinicDischargeTypePage from '../pages/clinic/parameters/ClinicDischargeTypePage';
+import ClinicShiftPage from '../pages/clinic/parameters/ClinicShiftPage';
 import ProvisionalBill from '../pages/clinic/ProvisionalBill';
 import DischargeRefund from '../pages/clinic/DischargeRefund';
 import SlipTransfer from '../pages/clinic/SlipTransfer';
@@ -233,6 +242,15 @@ export default function AppRoutes() {
           <Route path="clinic/reports/consultant-rates"      element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement"      element={<PermissionGuard module="clinic"><ConsultantStatementFilter /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement/view" element={<PermissionGuard module="clinic"><ConsultantStatementReport /></PermissionGuard>} />
+          <Route path="clinic/reports/department-performance"      element={<PermissionGuard module="clinic"><DepartmentDoctorPerformanceFilter title="Departmental Performance" /></PermissionGuard>} />
+          <Route path="clinic/reports/doctor-departmental-performance" element={<PermissionGuard module="clinic"><DepartmentDoctorPerformanceFilter title="Doctor Departmental Performance" /></PermissionGuard>} />
+          <Route path="clinic/reports/department-doctor-performance/view" element={<PermissionGuard module="clinic"><DepartmentDoctorPerformanceReport /></PermissionGuard>} />
+          <Route path="clinic/reports/admission-wise"      element={<PermissionGuard module="clinic"><AdmissionWiseFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/admission-wise/view" element={<PermissionGuard module="clinic"><AdmissionWiseReport /></PermissionGuard>} />
+          <Route path="clinic/reports/department-patients"      element={<PermissionGuard module="clinic"><DepartmentPatientsFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/department-patients/view" element={<PermissionGuard module="clinic"><DepartmentPatientsReport /></PermissionGuard>} />
+          <Route path="clinic/reports/user-date-summary"      element={<PermissionGuard module="clinic"><UserDateSummaryFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/user-date-summary/view" element={<PermissionGuard module="clinic"><UserDateSummaryReport /></PermissionGuard>} />
           <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic"><RevenueDashboard /></PermissionGuard>} />
           <Route path="clinic/transactions/receive-balance-slip" element={<PermissionGuard module="clinic"><ReceiveBalanceSlip /></PermissionGuard>} />
           <Route path="clinic/transactions/cancel-slip" element={<PermissionGuard module="clinic"><CancelSlip /></PermissionGuard>} />
@@ -248,6 +266,7 @@ export default function AppRoutes() {
           <Route path="clinic/transactions/upload-patient-document" element={<PermissionGuard module="clinic"><UploadPatientDocument /></PermissionGuard>} />
           <Route path="clinic/inquiries/patient-documents" element={<PermissionGuard module="clinic"><PatientDocumentsReport /></PermissionGuard>} />
           <Route path="clinic/parameters/discharge-types" element={<PermissionGuard module="clinic"><ClinicDischargeTypePage /></PermissionGuard>} />
+          <Route path="clinic/parameters/shift" element={<PermissionGuard module="clinic"><ClinicShiftPage /></PermissionGuard>} />
           <Route path="clinic/billing/provisional-bill" element={<PermissionGuard module="clinic"><ProvisionalBill /></PermissionGuard>} />
           <Route path="clinic/discharge-refund" element={<PermissionGuard module="clinic"><DischargeRefund /></PermissionGuard>} />
           <Route path="clinic/transactions/slip-transfer" element={<PermissionGuard module="clinic"><SlipTransfer /></PermissionGuard>} />

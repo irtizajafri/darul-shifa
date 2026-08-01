@@ -727,6 +727,18 @@ model ClinicDischargeType {
   updatedAt DateTime @updatedAt
 }
 
+// ─── Shift (Parameters) — timing configured by the admin; every transaction
+// records which shift & which logged-in user created it, so shift/user-wise
+// reports never need extra plumbing later. ───────────────────────────────────
+model ClinicShift {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  fromTime  String
+  toTime    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ─── Provisional Bill (manual Ward/Heads line items per admission) ───────────
 model ClinicProvisionalBillItem {
   id             Int             @id @default(autoincrement())
@@ -740,6 +752,7 @@ model ClinicProvisionalBillItem {
   remarks        String?
   patientType    String?
   sourceOpdVisitId Int?
+  serialNo       String?
   createdAt      DateTime        @default(now())
 
   @@index([admissionId])
@@ -833,6 +846,10 @@ model ClinicOpdVisit {
   location      String?
   hospitalPatient Boolean              @default(true)
   advisedBy     String?
+  createdByUserId String?
+  createdByName   String?
+  shiftId         Int?
+  shiftName       String?
   paymentType   String                 @default("cash")
   visitType     String                 @default("opd")
   onCall        Boolean                @default(false)

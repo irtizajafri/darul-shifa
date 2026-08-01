@@ -318,6 +318,48 @@ async function deleteDischargeType(req, res, next) {
   }
 }
 
+async function getShifts(req, res, next) {
+  try {
+    const data = await service.getAllShifts();
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function createShift(req, res, next) {
+  try {
+    const { name, fromTime, toTime } = req.body;
+    if (!name?.trim()) return fail(res, 400, 'Name is required');
+    if (!fromTime || !toTime) return fail(res, 400, 'From/To time is required');
+    const data = await service.createShift({ name, fromTime, toTime });
+    success(res, data, 'Shift created');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Shift already exists');
+    next(err);
+  }
+}
+
+async function updateShift(req, res, next) {
+  try {
+    const { name, fromTime, toTime } = req.body;
+    const data = await service.updateShift(req.params.id, { name, fromTime, toTime });
+    success(res, data, 'Shift updated');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Shift already exists');
+    if (err.code === 'P2025') return fail(res, 404, 'Shift not found');
+    next(err);
+  }
+}
+
+async function deleteShift(req, res, next) {
+  try {
+    await service.deleteShift(req.params.id);
+    success(res, null, 'Shift deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Shift not found');
+    next(err);
+  }
+}
+
 // ─── Upload Patient Document ──────────────────────────────────────────────────
 
 async function searchAdmissionsForDocuments(req, res, next) {
@@ -1255,6 +1297,33 @@ async function getRevenueDashboard(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getDepartmentDoctorPerformance(req, res, next) {
+  try {
+    const { fromDate, toDate, fromDoctorCode, toDoctorCode, activeOnly } = req.query;
+    const data = await service.getDepartmentDoctorPerformance({
+      fromDate, toDate, fromDoctorCode, toDoctorCode,
+      activeOnly: activeOnly === '1' || activeOnly === 'true',
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getAdmissionWiseReport(req, res, next) {
+  try {
+    const { fromDate, toDate, statusMode, patientType } = req.query;
+    const data = await service.getAdmissionWiseReport({ fromDate, toDate, statusMode, patientType });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getUserDateSummary(req, res, next) {
+  try {
+    const { userId, date, shift } = req.query;
+    const data = await service.getUserDateSummary({ userId, date, shift });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 async function getBalanceSlips(req, res, next) {
   try {
     success(res, await service.getBalanceSlips());
@@ -1303,6 +1372,10 @@ module.exports = {
   createDischargeType,
   updateDischargeType,
   deleteDischargeType,
+  getShifts,
+  createShift,
+  updateShift,
+  deleteShift,
   searchAdmissionsForDocuments,
   getPatientDocuments,
   uploadPatientDocument,
@@ -1402,6 +1475,9 @@ module.exports = {
   getBillComparisons,
   getConsultantStatement,
   getRevenueDashboard,
+  getDepartmentDoctorPerformance,
+  getAdmissionWiseReport,
+  getUserDateSummary,
   getBalanceSlips,
   receiveBalancePayment,
   importPanelBillingDetail,
