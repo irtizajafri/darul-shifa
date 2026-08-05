@@ -3,6 +3,7 @@ import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { buildEmergencyReceiptHtml } from './emergencyReceiptUtils';
+import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
 import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
 
@@ -254,6 +255,13 @@ export default function EmergencyOPD() {
   const [showPanelModal, setShowPanelModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
 
+  // Clinical Record Form — printed in-page after the slip; holds the data for
+  // whichever visit was just saved.
+  const [crfVisit, setCrfVisit] = useState(null);
+  const [crfConsultantName, setCrfConsultantName] = useState('');
+  const [crfBarcodeDataUrl, setCrfBarcodeDataUrl] = useState('');
+  const [crfReady, setCrfReady] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -261,6 +269,14 @@ export default function EmergencyOPD() {
     loadDoctors(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Wait one render cycle after crfVisit/etc are set so the hidden print area
+  // actually has the new data in the DOM before we call window.print().
+  useEffect(() => {
+    if (!crfReady) return;
+    const t = setTimeout(() => { printClinicalRecordForm(); setCrfReady(false); }, 300);
+    return () => clearTimeout(t);
+  }, [crfReady]);
 
   useEffect(() => {
     loadDoctors(form.onCall);
@@ -375,6 +391,7 @@ export default function EmergencyOPD() {
       });
       const newId = created?.id;
       toast.success('Emergency Visit saved');
+      const consultantName = rightDoctors[0]?.doctor?.name || '';
       setForm(EMPTY);
       setRightDoctors([]);
       setCheckedLeft([]);
@@ -390,6 +407,11 @@ export default function EmergencyOPD() {
         const html = buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
         w.document.write(html);
         w.document.close();
+
+        setCrfVisit(visit);
+        setCrfConsultantName(consultantName);
+        setCrfBarcodeDataUrl('');
+        setCrfReady(true);
       } else {
         w.close();
       }
@@ -660,6 +682,15 @@ export default function EmergencyOPD() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="copd-crf-print-area">
+        <ClinicalRecordPrintTemplate
+          visit={crfVisit}
+          consultantName={crfConsultantName}
+          barcodeDataUrl={crfBarcodeDataUrl}
+          formTitle="EMERGENCY FORM"
+        />
       </div>
     </>
   );

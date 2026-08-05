@@ -575,6 +575,27 @@ export default function ClinicDoctorPage() {
               </div>
             </div>
 
+            <div className="cdp-field mt-4">
+              <label className="cdp-label">Working Days</label>
+              <div className="cdp-days">
+                {DAYS.map((day) => (
+                  <button
+                    key={day}
+                    type="button"
+                    className={`cdp-day-btn ${form.consultantDays.includes(day) ? 'cdp-day-btn--on' : ''}`}
+                    onClick={() => setForm((f) => ({
+                      ...f,
+                      consultantDays: f.consultantDays.includes(day)
+                        ? f.consultantDays.filter((d) => d !== day)
+                        : [...f.consultantDays, day],
+                    }))}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            </div>
+
           </div>
         )}
 

@@ -4,8 +4,19 @@ import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import { useClinicStore } from '../../store/useClinicStore';
 import { buildReceiptHtml } from './receiptUtils';
+import { buildThermalReceiptHtml } from './thermalReceiptUtils';
+import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
+import ECGReportForm from './ECGReportForm';
 import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
+
+// Only these two departments (of the many GeneralOPD.jsx serves) also print the
+// A4 Clinical Record Form after the slip — same form Consultant OPD uses.
+const CRF_DEPTS = ['General OPD', 'Dental OPD'];
+
+// Normalize a sub-department name for matching (case/space/punctuation-insensitive) —
+// the "E C G" item under Miscellaneous is stored with spaces between letters.
+const normDeptName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
 // Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
@@ -452,7 +463,7 @@ function DoctorSearchInput({ value, onChange }) {
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
-export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor' }) {
+export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor', showDoctorColumn = true }) {
   const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment } = useClinicStore();
   const { user } = useAuthStore();
 
@@ -475,6 +486,20 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const [mrLookupLoading, setMrLookupLoading] = useState(false);
   const [phoneLookupLoading, setPhoneLookupLoading] = useState(false);
 
+  // Clinical Record Form — printed in-page after the slip (General OPD / Dental
+  // OPD only, see CRF_DEPTS); holds the data for whichever visit was just saved.
+  const [crfVisit, setCrfVisit] = useState(null);
+  const [crfConsultantName, setCrfConsultantName] = useState('');
+  const [crfBarcodeDataUrl, setCrfBarcodeDataUrl] = useState('');
+  const [crfPrintedBy, setCrfPrintedBy] = useState('');
+  const [crfReady, setCrfReady] = useState(false);
+  const [crfFormType, setCrfFormType] = useState('crf'); // 'crf' | 'ecg'
+
+  // Temporary manual switch until QZ Tray auto-routing is wired up — staff
+  // picks which slip format to print, then picks the matching printer
+  // themselves in the OS print dialog.
+  const [thermalPrint, setThermalPrint] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -483,6 +508,14 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     loadDoctors(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Wait one render cycle after crfVisit/etc are set so the hidden print area
+  // actually has the new data in the DOM before we call window.print().
+  useEffect(() => {
+    if (!crfReady) return;
+    const t = setTimeout(() => { printClinicalRecordForm(); setCrfReady(false); }, 300);
+    return () => clearTimeout(t);
+  }, [crfReady]);
 
   useEffect(() => {
     loadDoctors(form.onCall);
@@ -680,6 +713,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
       });
       const newId = created?.id;
       toast.success('OPD Visit saved');
+      const consultantName = rightDoctors[0]?.doctor?.name || '';
       setForm(EMPTY);
       setRightDoctors([]);
       setCheckedLeft([]);
@@ -699,9 +733,28 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         });
         const barcodeDataUrl = canvas.toDataURL('image/png');
         const printedBy = user?.name || user?.username || user?.email || '';
-        const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
+        const html = thermalPrint
+          ? buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy })
+          : buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
         w.document.write(html);
         w.document.close();
+
+        const isEcg = departmentName === 'Miscellaneous' &&
+          rightDoctors.some(r => normDeptName(r.subDept?.name) === 'ecg');
+
+        if (isEcg) {
+          setCrfFormType('ecg');
+          setCrfVisit(visit);
+          setCrfBarcodeDataUrl(barcodeDataUrl);
+          setCrfPrintedBy(printedBy);
+          setCrfReady(true);
+        } else if (CRF_DEPTS.includes(departmentName)) {
+          setCrfFormType('crf');
+          setCrfVisit(visit);
+          setCrfConsultantName(consultantName);
+          setCrfBarcodeDataUrl(barcodeDataUrl);
+          setCrfReady(true);
+        }
       } else {
         w.close();
       }
@@ -1092,24 +1145,24 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                     <thead>
                       <tr>
                         <th style={{ width: 28 }}></th>
-                        <th style={{ width: 52 }}>Code</th>
-                        <th>Doctor</th>
-                        <th style={{ width: 80 }}>Amount</th>
+                        {showDoctorColumn && <th style={{ width: 52 }}>Code</th>}
+                        {showDoctorColumn && <th>Doctor</th>}
                         <th>Sub Department</th>
+                        <th style={{ width: 80 }}>Amount</th>
                       </tr>
                     </thead>
                     <tbody>
                       {leftDoctors.length === 0 ? (
-                        <tr><td colSpan={5} className="gopd-empty-cell">
+                        <tr><td colSpan={showDoctorColumn ? 5 : 3} className="gopd-empty-cell">
                           {form.onCall ? 'No active doctors found' : 'No doctors scheduled for today at this time'}
                         </td></tr>
                       ) : leftDoctors.map(r => (
                         <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={() => toggleLeft(r.id)}>
                           <td><input type="checkbox" checked={checkedLeft.includes(r.id)} onChange={() => toggleLeft(r.id)} onClick={e => e.stopPropagation()} /></td>
-                          <td>{r.doctor?.code}</td>
-                          <td>{r.doctor?.name}</td>
-                          <td>{r.normalCharges}</td>
+                          {showDoctorColumn && <td>{r.doctor?.code}</td>}
+                          {showDoctorColumn && <td>{r.doctor?.name}</td>}
                           <td>{r.subDept?.name}</td>
+                          <td>{r.normalCharges}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1129,20 +1182,20 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
               <table className="gopd-table">
                 <thead>
                   <tr>
-                    <th>Doctor Name</th>
-                    <th style={{ width: 72 }}>Amount</th>
+                    {showDoctorColumn && <th>Doctor Name</th>}
                     <th>Sub Department</th>
+                    <th style={{ width: 72 }}>Amount</th>
                     <th style={{ width: 48 }}>Ext.</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rightDoctors.length === 0 ? (
-                    <tr><td colSpan={4} className="gopd-empty-cell">No doctors selected</td></tr>
+                    <tr><td colSpan={showDoctorColumn ? 4 : 3} className="gopd-empty-cell">No doctors selected</td></tr>
                   ) : rightDoctors.map(r => (
                     <tr key={r.id}>
-                      <td>{r.doctor?.name}</td>
-                      <td>{r.normalCharges}</td>
+                      {showDoctorColumn && <td>{r.doctor?.name}</td>}
                       <td>{r.subDept?.name}</td>
+                      <td>{r.normalCharges}</td>
                       <td></td>
                     </tr>
                   ))}
@@ -1210,6 +1263,10 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                     </>
                   )}
                 </div>
+                <label className="gopd-oncall-lbl" style={{ marginBottom: 6 }}>
+                  <input type="checkbox" checked={thermalPrint} onChange={e => setThermalPrint(e.target.checked)} />
+                  Thermal Print (80mm)
+                </label>
                 <div className="gopd-action-btns">
                   <button className="gopd-print-btn" onClick={handleSaveAndPrint} disabled={busy}>
                     <Printer size={16} />
@@ -1221,6 +1278,21 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
           </div>
         </div>
       </div>
+
+      {(CRF_DEPTS.includes(departmentName) || departmentName === 'Miscellaneous') && (
+        <div className="copd-crf-print-area">
+          {crfFormType === 'ecg' ? (
+            <ECGReportForm visit={crfVisit} barcodeDataUrl={crfBarcodeDataUrl} printedBy={crfPrintedBy} />
+          ) : (
+            <ClinicalRecordPrintTemplate
+              visit={crfVisit}
+              consultantName={crfConsultantName}
+              barcodeDataUrl={crfBarcodeDataUrl}
+              formTitle={`${departmentName.toUpperCase()} FORM`}
+            />
+          )}
+        </div>
+      )}
     </>
   );
 }

@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import { buildReceiptHtml } from '../receiptUtils';
+import { buildConsultantReceiptHtml } from '../consultantReceiptUtils';
+import { buildEmergencyReceiptHtml } from '../emergencyReceiptUtils';
 import { useAuthStore } from '../../../store/useAuthStore';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ReprintFilter.scss';
@@ -40,12 +42,24 @@ export default function ReprintFilter() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.message || 'Slip nahi mila');
     const { visit, tokenNo, isDuplicate } = json.data;
-
-    const canvas = document.createElement('canvas');
-    JsBarcode(canvas, visit.serialNo, { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
-    const barcodeDataUrl = canvas.toDataURL('image/png');
     const printedBy = user?.name || user?.username || user?.email || '';
-    const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
+
+    // Route to the SAME template the visit was originally printed with — each
+    // department has its own layout (Emergency = full A4 clinical form,
+    // Consultant = its own receipt with token always shown, everything else
+    // shares the generic A6 receipt).
+    const dept = String(visit.department || '').trim().toLowerCase();
+    let html;
+    if (dept === 'emergency') {
+      html = buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy });
+    } else {
+      const canvas = document.createElement('canvas');
+      JsBarcode(canvas, visit.serialNo, { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
+      const barcodeDataUrl = canvas.toDataURL('image/png');
+      html = dept === 'consultant opd'
+        ? buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy })
+        : buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
+    }
 
     const w = window.open('', '_blank', 'width=420,height=680');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }

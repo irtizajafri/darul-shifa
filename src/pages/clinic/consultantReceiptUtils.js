@@ -36,8 +36,21 @@ export function invoiceLabel(paymentType) {
 export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy }) {
   const doc = visit;
   const docEntries = doc.doctors || [];
-  // Distinct performing-doctor names (a visit can have multiple selected services/doctors)
-  const performNames = [...new Set(docEntries.map((d) => d.doctor?.name).filter(Boolean))].join(', ') || '—';
+  // Distinct performing doctors (a visit can have multiple selected services/doctors) —
+  // each gets its own row below the info-grid: name on the left, qualification/speciality parallel on the right.
+  const seenDoctors = new Map();
+  docEntries.forEach((d) => {
+    const doctor = d.doctor;
+    if (doctor?.name && !seenDoctors.has(doctor.name)) seenDoctors.set(doctor.name, doctor);
+  });
+  const doctorRowsHtml = [...seenDoctors.values()].map((doctor) => {
+    const extra = [doctor.qualification, doctor.speciality].filter(Boolean).join(', ');
+    const days = (doctor.consultantDays || []).join(', ');
+    const metaHtml = (extra || days)
+      ? `<div class="doctor-meta">${extra ? `<span class="doctor-qual">${extra}</span>` : ''}${days ? `<span class="doctor-days">${days}</span>` : ''}</div>`
+      : '';
+    return `<div class="doctor-row"><span class="doctor-name">${doctor.name}</span>${metaHtml}</div>`;
+  }).join('');
 
   const pt = doc.paymentType;
   const label = invoiceLabel(pt);
@@ -61,6 +74,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   const timeStr = visitDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   const fmt = (v) => Number(v || 0).toFixed(2);
+  const showToken = tokenNo > 0;
 
   const lineItemsHtml = (docEntries.length ? docEntries : [{ subDept: { name: doc.department || 'OPD' }, amount: grossAmt }])
     .map((d) => `<div class="line-item"><span>${(d.subDept?.name || '').toUpperCase()}</span><span>${fmt(d.amount)}</span></div>`)
@@ -91,6 +105,12 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   .info-grid span { font-size:9px; }
   .info-grid .lbl { font-weight:600; }
 
+  .doctor-row { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; font-size:9.5px; margin-top:2px; }
+  .doctor-row .doctor-name { font-weight:700; font-size:11px; }
+  .doctor-meta { display:flex; flex-direction:column; align-items:flex-end; }
+  .doctor-row .doctor-qual { font-weight:700; color:#333; text-align:right; }
+  .doctor-row .doctor-days { font-size:8px; font-weight:400; color:#555; text-align:right; margin-top:1px; }
+
   .line-item { display:flex; justify-content:space-between; font-size:9.5px; padding:1px 0; }
 
   .amount-row { display:flex; justify-content:space-between; padding: 1px 0; font-size:9.5px; }
@@ -105,10 +125,14 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   .received-lbl { font-size:10.5px; font-weight:700; }
 
   .in-words { font-size:8.5px; margin: 3px 0 1px; }
-  .disclaimer { font-size:7.5px; text-align:center; margin-top:3px; color:#111; }
+  .disclaimer { font-size:7.5px; text-align:right; margin-top:3px; margin-left:auto; max-width:280px; color:#111; }
 
   .bottom { display:flex; justify-content:space-between; align-items:flex-end; margin-top:5px; }
+  .barcode-area { display:flex; align-items:center; gap:10px; }
   .barcode-area img { height:28px; }
+  .token-badge { display:flex; flex-direction:column; align-items:center; line-height:1; }
+  .token-badge-lbl { font-size:7px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; }
+  .token-badge-no { font-size:22px; font-weight:900; }
   .footer-urdu { font-size:7.5px; text-align:right; direction:rtl; max-width:280px; }
 
   .info-grid, .line-item, .amount-row, .invoice-row, .bottom {
@@ -128,7 +152,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
        edge-to-edge); height is left natural so nothing is ever clipped. */
     @page { size: auto; margin: 0; }
     html, body { margin: 0; padding: 0; }
-    body { width: 148mm; padding: 5mm; }
+    body { width: 148mm; margin: 0 auto; padding: 5mm; }
   }
 </style>
 </head>
@@ -148,14 +172,14 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
     <span><span class="lbl">Printed By:</span> ${printedBy || '—'}</span>
 
     <span><span class="lbl">Patient :</span> ${doc.patientType} ${doc.patientName}</span>
-    <span></span>
+    ${doc.mrNo ? `<span><span class="lbl">MR #:</span> ${doc.mrNo}</span>` : '<span></span>'}
     <span><span class="lbl">Age:</span> ${ageStr}</span>
 
-    <span><span class="lbl">Ref. By</span> &nbsp;${doc.referredBy || '—'}</span>
-    <span><span class="lbl">Perform By :</span> ${performNames}</span>
+    ${doc.referredBy && String(doc.referredBy).trim() ? `<span><span class="lbl">Ref. By</span> &nbsp;${doc.referredBy}</span>` : '<span></span>'}
+    <span></span>
     <span></span>
 
-    <span>&nbsp;&nbsp;&nbsp;${doc.antenatalNo || 'NA'}</span>
+    ${doc.antenatalNo && String(doc.antenatalNo).trim().toUpperCase() !== 'NA' ? `<span><span class="lbl">Antenatal #:</span> ${doc.antenatalNo}</span>` : '<span></span>'}
     <span></span>
     <span></span>
   </div>
@@ -182,11 +206,15 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   <div class="amount-row grand"><span>Grand Total:</span><span>${fmt(total)}</span></div>
 
   <div class="in-words">Received Rupees ${isComplementary ? 'Zero (Complementary)' : numberToWords(received)}</div>
+
+  ${doctorRowsHtml}
+
   <div class="disclaimer">All Amount Received From Patients Treated As DONATION &amp; Exempt From Tax</div>
 
   <div class="bottom">
     <div class="barcode-area">
       ${barcodeDataUrl ? `<img src="${barcodeDataUrl}" alt="barcode"/>` : ''}
+      ${showToken ? `<div class="token-badge"><span class="token-badge-lbl">Token</span><span class="token-badge-no">${tokenNo}</span></div>` : ''}
     </div>
     <div class="footer-urdu">اسپتال کے کیش کاؤنٹر کے علاوہ کسی بھی شخص کو کسی بھی قسم کی ادائیگی نہ کریں۔ بصورت دیگر اسپتال ذمہ دار نہ ہوگا۔</div>
   </div>

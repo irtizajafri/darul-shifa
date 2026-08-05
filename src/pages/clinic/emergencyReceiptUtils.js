@@ -1,6 +1,7 @@
 import { numberToWords, invoiceLabel } from './receiptUtils';
+import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 
-export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printedBy }) {
+export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
   const doc   = visit;
   const dr    = doc.doctors?.[0];
   const drName = dr?.doctor?.name || '';
@@ -36,42 +37,29 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
   * { margin:0; padding:0; box-sizing:border-box; }
   body {
     font-family: Arial, sans-serif;
-    font-size: 11px;
+    font-size: 10px;
     color: #000;
     background: #fff;
     width: 710px;
     margin: auto;
-    padding: 12px 16px;
+    padding: 5px 16px;
   }
 
   /* ── Header ── */
   .hdr {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding-bottom: 8px;
+    padding-bottom: 5px;
     border-bottom: 3px double #000;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
   }
-  .hdr-logo { font-size: 44px; line-height: 1; }
-  .hdr-text { text-align: left; }
-  .hdr-h1 { font-size: 26px; font-weight: 900; letter-spacing: 3px; }
-  .hdr-h2 { font-size: 16px; font-weight: 700; letter-spacing: 1px; margin-top: 1px; }
-  .hdr-addr { font-size: 9px; color: #444; margin-top: 3px; line-height: 1.5; }
-
-  /* ── Token ── */
-  .token-line {
-    text-align: center;
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: 2px;
-    margin: 4px 0 6px;
-  }
+  .hdr-logo-img { height: 44px; object-fit: contain; }
+  .hdr-addr { font-size: 8.5px; color: #444; margin-top: 3px; line-height: 1.3; }
 
   /* ── Info rows ── */
   .info-table { width: 100%; border-collapse: collapse; margin-bottom: 2px; }
-  .info-table td { font-size: 10.5px; padding: 2px 3px; }
+  .info-table td { font-size: 10px; padding: 1.5px 3px; }
   .info-table .lbl { font-weight: 700; padding-right: 4px; white-space: nowrap; }
   .info-table .val { border-bottom: 1px solid #ccc; width: 100%; }
   .info-sep { border-bottom: 1px dashed #bbb; }
@@ -83,24 +71,24 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
     align-items: center;
     border-top: 2px solid #000;
     border-bottom: 2px solid #000;
-    padding: 5px 8px;
-    margin: 7px 0 5px;
+    padding: 3px 8px;
+    margin: 4px 0 3px;
     background: #f4f4f4;
   }
-  .emr-title { font-size: 14px; font-weight: 900; letter-spacing: 1.5px; }
-  .total-box { text-align: right; font-size: 11.5px; font-weight: 700; }
-  .total-box .amt { font-size: 14px; }
+  .emr-title { font-size: 13px; font-weight: 900; letter-spacing: 1.5px; }
+  .total-box { text-align: right; font-size: 11px; font-weight: 700; }
+  .total-box .amt { font-size: 13px; }
 
   /* ── Invoice block ── */
-  .inv-block { border: 1px solid #aaa; padding: 5px 8px; margin-bottom: 4px; }
+  .inv-block { border: 1px solid #aaa; padding: 4px 8px; margin-bottom: 3px; }
   .inv-top { display: flex; justify-content: space-between; align-items: flex-start; }
-  .inv-label { font-size: 14px; font-weight: 900; }
-  .inv-ref { font-size: 8.5px; color: #555; margin-top: 1px; }
+  .inv-label { font-size: 13px; font-weight: 900; }
+  .inv-ref { font-size: 8px; color: #555; margin-top: 1px; }
   .inv-right { text-align: right; }
-  .inv-received { font-size: 11px; font-weight: 700; }
-  .inv-balance { font-size: 11px; font-weight: 700; color: #b91c1c; }
-  .inv-grand { font-size: 13px; font-weight: 900; border-top: 1px solid #000; margin-top: 3px; padding-top: 2px; }
-  .inv-words { font-size: 9.5px; font-style: italic; margin-top: 3px; color: #333; }
+  .inv-received { font-size: 10.5px; font-weight: 700; }
+  .inv-balance { font-size: 10.5px; font-weight: 700; color: #b91c1c; }
+  .inv-grand { font-size: 12px; font-weight: 900; border-top: 1px solid #000; margin-top: 2px; padding-top: 2px; }
+  .inv-words { font-size: 9px; font-style: italic; margin-top: 2px; color: #333; }
 
   /* ── DUPLICATE stamp ── */
   .duplicate {
@@ -112,42 +100,42 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
 
   /* ── Urdu disclaimer ── */
   .urdu {
-    font-size: 9.5px; text-align: center; direction: rtl;
+    font-size: 8.5px; text-align: center; direction: rtl;
     border-top: 1px dashed #999; border-bottom: 1px dashed #999;
-    padding: 3px 0; margin: 5px 0; line-height: 1.7;
+    padding: 2px 0; margin: 3px 0; line-height: 1.4;
   }
 
   /* ══════════════ Clinical Form ══════════════ */
-  .form-wrap { border: 2px solid #000; margin-top: 8px; }
+  .form-wrap { border: 2px solid #000; margin-top: 4px; }
 
   .form-title {
     background: #2c2c2c; color: #fff;
-    font-size: 11px; font-weight: 700;
+    font-size: 10px; font-weight: 700;
     text-align: center; letter-spacing: 3px;
-    padding: 4px;
+    padding: 2.5px;
   }
 
   /* Standard label+value row */
-  .fr { display: flex; border-bottom: 1px solid #777; min-height: 36px; }
+  .fr { display: flex; border-bottom: 1px solid #777; min-height: 32px; page-break-inside: avoid; }
   .fr:last-child { border-bottom: none; }
   .fl {
-    font-weight: 700; font-size: 10px;
-    padding: 5px 7px;
-    width: 120px; min-width: 120px;
+    font-weight: 700; font-size: 9px;
+    padding: 3px 7px;
+    width: 105px; min-width: 105px;
     background: #f8f8f8;
     border-right: 1px solid #777;
     display: flex; align-items: center;
   }
-  .fv { flex: 1; padding: 5px 7px; }
-  .fv--tall { min-height: 52px; }
-  .fv--xl   { min-height: 68px; }
+  .fv { flex: 1; padding: 3px 7px; }
+  .fv--tall { min-height: 48px; }
+  .fv--xl   { min-height: 62px; }
 
   /* Multi-column rows */
-  .fc { display: flex; border-bottom: 1px solid #777; min-height: 32px; }
+  .fc { display: flex; border-bottom: 1px solid #777; min-height: 28px; page-break-inside: avoid; }
   .fc-cell {
-    flex: 1; padding: 5px 7px;
+    flex: 1; padding: 3px 7px;
     border-right: 1px solid #888;
-    font-size: 10px;
+    font-size: 9px;
     display: flex; align-items: center; gap: 6px;
   }
   .fc-cell:last-child { border-right: none; }
@@ -156,26 +144,26 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
 
   /* Checkbox style for alert/oriented/etc */
   .cb {
-    display: inline-block; width: 12px; height: 12px;
+    display: inline-block; width: 11px; height: 11px;
     border: 1px solid #555; flex-shrink: 0;
     vertical-align: middle; margin-left: 3px;
   }
 
   /* Vitals */
-  .vitals-row { display: flex; border-bottom: 1px solid #777; min-height: 42px; }
+  .vitals-row { display: flex; border-bottom: 1px solid #777; min-height: 38px; page-break-inside: avoid; }
   .vt {
-    flex: 1; padding: 5px 7px;
+    flex: 1; padding: 3px 7px;
     border-right: 1px solid #888;
-    font-size: 10px;
+    font-size: 9px;
   }
   .vt:last-child { border-right: none; }
-  .vt .lbl { font-weight: 700; display: block; margin-bottom: 4px; }
-  .vt-line { border-bottom: 1px solid #999; margin-top: 8px; }
+  .vt .lbl { font-weight: 700; display: block; margin-bottom: 2px; }
+  .vt-line { border-bottom: 1px solid #999; margin-top: 5px; }
 
   /* Section header inside form */
   .sec-hdr {
     background: #e0e0e0; font-weight: 700;
-    font-size: 10.5px; padding: 3px 7px;
+    font-size: 9.5px; padding: 2px 7px;
     border-bottom: 1px solid #777;
     border-top: 1px solid #777;
     letter-spacing: 1px;
@@ -185,23 +173,26 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
   .tx-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 5px; padding: 6px;
+    gap: 3px; padding: 4px;
   }
   .tx-box {
-    border: 1px solid #777; padding: 4px 7px;
-    min-height: 42px; font-size: 10px;
+    border: 1px solid #777; padding: 3px 7px;
+    min-height: 38px; font-size: 9px;
+    page-break-inside: avoid;
   }
   .tx-num { font-weight: 700; margin-right: 4px; }
 
   /* Investigation advice */
-  .inv-adv { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px 8px; }
-  .inv-adv-item { display: flex; align-items: center; gap: 4px; font-size: 10px; min-height: 26px; }
+  .inv-adv { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 4px 8px; }
+  .inv-adv-item { display: flex; align-items: center; gap: 4px; font-size: 9px; min-height: 23px; page-break-inside: avoid; }
   .inv-adv-item .lbl { font-weight: 700; white-space: nowrap; }
   .inv-adv-line { flex: 1; border-bottom: 1px solid #333; }
 
+  .title-bar, .inv-block { page-break-inside: avoid; }
+
   @media print {
-    body { width: 100%; padding: 6px; }
-    @page { margin: 5mm; size: A4; }
+    body { width: 100%; padding: 3px; }
+    @page { margin: 3.5mm; size: A4; }
     button { display: none !important; }
   }
 </style>
@@ -210,16 +201,9 @@ export function buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printed
 
   <!-- ══ Hospital Header ══ -->
   <div class="hdr">
-    <div class="hdr-logo">☾</div>
-    <div class="hdr-text">
-      <div class="hdr-h1">DARUL SHIFA</div>
-      <div class="hdr-h2">IMAM KHOMEINI (REGD)</div>
-      <div class="hdr-addr">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi &nbsp; Ph.: 4508390-91</div>
-    </div>
+    <img class="hdr-logo-img" src="${RECEIPT_LOGO_DATA_URI}" alt="Darul Shifa" />
+    <div class="hdr-addr">Jafar-e-Tayyar Co-operative Housing Society, Malir Karachi &nbsp; Ph.: 4508390-91</div>
   </div>
-
-  <!-- Token -->
-  <div class="token-line">${tokenNo ? `Token: ${tokenNo}` : ''}</div>
 
   <!-- Info rows -->
   <table class="info-table">

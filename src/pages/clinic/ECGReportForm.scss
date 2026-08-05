@@ -1,0 +1,118 @@
+/* ════════════════════════════════════════════
+   E C G REPORT (Department of Cardiology) — print-only
+   Reuses .copd-crf-print-area (visibility/print rules) and .copd-crf-dln /
+   .copd-crf-dashline (blank/fill-in styles) from ClinicalRecordForm.scss —
+   loaded automatically since GeneralOPD.jsx imports ClinicalRecordForm.jsx.
+   ════════════════════════════════════════════ */
+.ecg-rpt {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 10pt;
+  color: #000;
+  background: #fff;
+  min-height: 281mm;
+  display: flex;
+  flex-direction: column;
+}
+
+.ecg-rpt-hdr { margin-bottom: 4px; }
+.ecg-rpt-hdr-logo { height: 50px; max-width: 60%; object-fit: contain; object-position: left center; }
+
+.ecg-rpt-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  padding: 5px 0;
+  margin-bottom: 6px;
+}
+.ecg-rpt-info-cols { display: flex; gap: 24px; flex: 1; }
+.ecg-rpt-info-col { flex: 1; }
+.ecg-rpt-info-col > div { margin: 2px 0; font-size: 9.5pt; }
+.ecg-rpt-rec-code { font-size: 8pt; color: #333; margin-top: 4px; }
+.ecg-rpt-barcode { flex-shrink: 0; img { height: 32px; } }
+
+.ecg-rpt-svc {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 900;
+  font-size: 12pt;
+  letter-spacing: 1px;
+  border-bottom: 1px solid #000;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.ecg-rpt-title {
+  text-align: center;
+  font-weight: 900;
+  font-size: 14pt;
+  text-decoration: underline;
+  margin-bottom: 2px;
+}
+.ecg-rpt-subtitle {
+  text-align: center;
+  font-weight: 900;
+  font-size: 12pt;
+  text-decoration: underline;
+  margin-bottom: 10px;
+}
+
+.ecg-rpt-history {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ecg-rpt-history-lbl {
+  font-weight: 700;
+  font-size: 10pt;
+  writing-mode: horizontal-tb;
+  display: flex;
+  align-items: center;
+}
+.ecg-rpt-history-box {
+  flex: 1;
+  border: 1px solid #000;
+  min-height: 60px;
+}
+
+.ecg-rpt-cols {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+.ecg-rpt-col { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+
+.ecg-rpt-fillrow {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-weight: 700;
+  font-size: 9.5pt;
+  white-space: nowrap;
+}
+
+.ecg-rpt-diagnosis-lbl {
+  font-weight: 700;
+  font-size: 10pt;
+  text-decoration: underline;
+  margin: 6px 0 2px;
+}
+.ecg-rpt-lines { display: flex; flex-direction: column; }
+.ecg-rpt-line {
+  border-bottom: 1px solid #000;
+  height: 20px;
+}
+
+.ecg-rpt-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: auto;
+  padding-top: 14px;
+  font-weight: 700;
+  font-size: 10pt;
+}
