@@ -244,7 +244,7 @@ export default function Reports() {
   }, []);
 
   const normalizePayrollStatus = useCallback((statusRaw) => {
-    const status = String(statusRaw || '').toLowerCase();
+    const status = String(statusRaw || '').toLowerCase().trim().replace(/\s+/g, '_');
     if (status === 'festival' || status === 'holiday') return 'holiday_avail';
     if (status === 'off') return 'off_avail';
     return status;
@@ -1495,13 +1495,29 @@ export default function Reports() {
 
         const otVal = Math.round(overtimeMinutes * perMinuteRate);
 
-        // ─── Status display — missed_out clearly dikhao ────────────────────
+        // ─── Status display ─────────────────────────────────────────────────
+        const STATUS_LABEL_MAP = {
+          off_avail:          'Off Avail',
+          off_not_avail:      'Off Not Avail',
+          holiday_avail:      'Holiday Avail',
+          holiday_not_avail:  'Holiday Not Avail',
+          leave_with_pay:     'Leave With Pay',
+          leave:              'Leave',
+          absent:             'Absent',
+          missed_out:         'Missed Punch',
+          present:            'Present',
+          future:             'Future',
+        };
+        const toStatusLabel = (s) => STATUS_LABEL_MAP[s] ||
+          String(s || '').split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') ||
+          'Present';
+
         let displayStatus;
-        if (isFuture)          displayStatus = "Future";
-        else if (isAvailOff || isWorkedExtra) displayStatus = actStatus;
-  else if (effectiveOffDay)       displayStatus = "Off";
-        else if (isMissedOut)  displayStatus = "Missed Punch";
-        else                   displayStatus = actStatus || "present";
+        if (isFuture)                        displayStatus = 'Future';
+        else if (isAvailOff || isWorkedExtra) displayStatus = toStatusLabel(actStatus);
+        else if (effectiveOffDay)             displayStatus = 'Off Avail';
+        else if (isMissedOut)                 displayStatus = 'Missed Punch';
+        else                                  displayStatus = toStatusLabel(actStatus) || 'Present';
 
         const shouldHideDutyHours =
           isFuture ||
