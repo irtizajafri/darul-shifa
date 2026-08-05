@@ -878,6 +878,15 @@ export default function AttendanceList() {
 
       let dateOutVal = inferDateOut({ dateIn: dateValue, dateOut: '', timeIn: timeInVal, timeOut: timeOutVal });
 
+      const rawStatus = record?.status || (apiTimes.hasData ? 'present' : 'leave');
+      let derivedStatus = rawStatus;
+      if (apiTimes.hasData && (rawStatus === 'off_avail' || !record?.status)) {
+        const dowKey = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(dateValue).getDay()];
+        const rosterDay = Array.isArray(emp.dutyRoster) ? emp.dutyRoster.find(d => d.day === dowKey) : null;
+        if (rosterDay && (Number(rosterDay.hours) === 0 || rosterDay.timeIn === 'OFF' || rosterDay.timeOut === 'OFF')) {
+          derivedStatus = 'off_not_avail';
+        }
+      }
       return [{
         key: `row-${empCode}-${dateValue}`,
         empCode: emp.empCode,
@@ -886,7 +895,7 @@ export default function AttendanceList() {
         actualDateOut: dateOutVal || dateValue,
         timeIn: timeInVal || '-',
         timeOut: timeOutVal || '-',
-        status: record?.status || (apiTimes.hasData ? 'present' : 'leave')
+        status: derivedStatus
       }];
     });
 

@@ -272,7 +272,10 @@ export default function Reports() {
         .sort((a, b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom));
       if (applicable.length > 0) {
         const roster = applicable[0].dutyRoster;
-        return Array.isArray(roster) ? roster.find(d => d.day === dayKey) || null : null;
+        if (Array.isArray(roster)) {
+          const entry = roster.find(d => d.day === dayKey);
+          if (entry) return entry;
+        }
       }
     }
 
@@ -1057,10 +1060,13 @@ export default function Reports() {
   }, [minutesBetween, normalizePayrollStatus, getScheduledMinutes]);
 
   const getWorkedMinutes = useCallback((record) => {
+    if (record.actualIn && record.actualOut) {
+      const computed = minutesBetween(record.actualIn, record.actualOut);
+      if (computed > 0) return computed;
+    }
     const workedFromRecord = Number(record?.workedMinutes);
-    if (Number.isFinite(workedFromRecord)) return Math.max(0, Math.round(workedFromRecord));
-    if (!record.actualIn || !record.actualOut) return 0;
-    return minutesBetween(record.actualIn, record.actualOut);
+    if (Number.isFinite(workedFromRecord) && workedFromRecord > 0) return workedFromRecord;
+    return 0;
   }, [minutesBetween]);
 
   const overtimeMinutesByRecord = useMemo(() => {
