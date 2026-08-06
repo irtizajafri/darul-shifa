@@ -57,12 +57,29 @@ function round2(v) {
   return Math.round(Number(v) * 100) / 100;
 }
 
+const ENCASHMENT_ALLOWANCE_TYPES = ['house rent', 'medical'];
+
+function getTotalSalary(emp) {
+  const basic = Number(emp.salaryMonthly || 0);
+  let allowanceSum = 0;
+  try {
+    const arr = Array.isArray(emp.allowances)
+      ? emp.allowances
+      : (typeof emp.allowances === 'string' ? JSON.parse(emp.allowances) : []);
+    allowanceSum = arr
+      .filter(a => ENCASHMENT_ALLOWANCE_TYPES.includes(String(a?.type || '').toLowerCase().trim()))
+      .reduce((s, a) => s + (Number(a?.amount) || 0), 0);
+  } catch { allowanceSum = 0; }
+  return basic + allowanceSum;
+}
+
 async function summary(filters = {}) {
   await ensureTable();
   await ensureEmpColumns();
 
   const employees = await prisma.$queryRawUnsafe(`
     SELECT id, "empCode", "firstName", "lastName", "role", "departmentText", "salaryMonthly",
+           COALESCE("allowances", '[]'::jsonb) AS "allowances",
            COALESCE("leaveEncashmentRate", 0) AS "leaveEncashmentRate",
            COALESCE("leaveEncashmentPastLeaves", 0) AS "leaveEncashmentPastLeaves",
            COALESCE("leaveEncashmentMonthlyLeaves", 2) AS "leaveEncashmentMonthlyLeaves"
@@ -86,8 +103,9 @@ async function summary(filters = {}) {
     const pastLeaves = Number(emp.leaveEncashmentPastLeaves) || 0;
     const monthlyLeaves = Number(emp.leaveEncashmentMonthlyLeaves) || 2;
     const basicSalary = Number(emp.salaryMonthly || 0);
+    const totalSalary = getTotalSalary(emp);
     const days = daysInMonth(nowKey);
-    const perDayRate = days > 0 ? round2(basicSalary / days) : 0;
+    const perDayRate = days > 0 ? round2(totalSalary / days) : 0;
     const monthlyAccumulated = elapsed * monthlyLeaves;
     const used = usedMap.get(Number(emp.id)) || 0;
     const monthlyAvailable = Math.max(0, round2(monthlyAccumulated - used));
@@ -109,6 +127,7 @@ async function summary(filters = {}) {
       pastLeaveRate,
       pastLeavesValue,
       basicSalary,
+      totalSalary,
       perDayRate,
       amount,
     };
@@ -133,7 +152,7 @@ async function summary(filters = {}) {
     const monthUsedMap = new Map(monthUsedRows.map((r) => [Number(r.employee_id), round2(r.total_used)]));
 
     rows = rows.map((r) => {
-      const perDayRate = mDays > 0 ? round2(r.basicSalary / mDays) : 0;
+      const perDayRate = mDays > 0 ? round2((r.totalSalary ?? r.basicSalary) / mDays) : 0;
       const monthUsed = monthUsedMap.get(r.employeeId) || 0;
       const monthAvailable = Math.max(0, round2(r.leaveEncashmentRate - monthUsed));
       return {
@@ -157,6 +176,7 @@ async function getBalance(employeeId) {
 
   const rows = await prisma.$queryRawUnsafe(`
     SELECT id, "empCode", "firstName", "lastName", "role", "departmentText", "salaryMonthly",
+           COALESCE("allowances", '[]'::jsonb) AS "allowances",
            COALESCE("leaveEncashmentRate", 0) AS "leaveEncashmentRate",
            COALESCE("leaveEncashmentPastLeaves", 0) AS "leaveEncashmentPastLeaves",
            COALESCE("leaveEncashmentMonthlyLeaves", 2) AS "leaveEncashmentMonthlyLeaves"
@@ -178,8 +198,9 @@ async function getBalance(employeeId) {
   const monthlyAccumulated = elapsed * monthlyLeaves;
   const monthlyAvailable = Math.max(0, round2(monthlyAccumulated - used));
   const basicSalary = Number(emp.salaryMonthly || 0);
+  const totalSalary = getTotalSalary(emp);
   const days = daysInMonth(nowKey);
-  const perDayRate = days > 0 ? round2(basicSalary / days) : 0;
+  const perDayRate = days > 0 ? round2(totalSalary / days) : 0;
   const pastLeavesValue = round2(pastLeaves * pastLeaveRate);
 
   return {
@@ -189,6 +210,7 @@ async function getBalance(employeeId) {
     designation: emp.role || '',
     department: emp.departmentText || '',
     basicSalary,
+    totalSalary,
     perDayRate,
     months: elapsed,
     accumulatedLeaves: monthlyAccumulated,
@@ -283,7 +305,7 @@ async function syncAttendanceLeaves({ empCode, rows }) {
   if (!emp) return;
 
   const employeeId = emp.id;
-  const basicSalary = Number(emp.salaryMonthly || 0);
+  const totalSalary = getTotalSalary(emp);
 
   for (const row of rows) {
     const date = String(row.date || '').slice(0, 10);
@@ -292,13 +314,14 @@ async function syncAttendanceLeaves({ empCode, rows }) {
     if (row.hasLeaveWithPay) {
       const monthKey = date.slice(0, 7);
       const days = daysInMonth(monthKey);
-      const perDayRate = days > 0 ? round2(basicSalary / days) : 0;
+      const perDayRate = days > 0 ? round2(totalSalary / days) : 0;
       const amount = perDayRate;
 
       await prisma.$executeRawUnsafe(
         `INSERT INTO leave_encashments (employee_id, month, leaves_count, per_day_rate, amount, type, attendance_date)
          VALUES ($1, $2, 1, $3, $4, 'leave_with_pay', $5)
-         ON CONFLICT (employee_id, attendance_date) WHERE type = 'leave_with_pay' DO NOTHING`,
+         ON CONFLICT (employee_id, attendance_date) WHERE type = 'leave_with_pay'
+         DO UPDATE SET per_day_rate = EXCLUDED.per_day_rate, amount = EXCLUDED.amount`,
         employeeId, monthKey, perDayRate, amount, date
       );
     } else {
@@ -328,6 +351,7 @@ async function getEmployeeReport(employeeId) {
 
   const empRows = await prisma.$queryRawUnsafe(`
     SELECT id, "empCode", "firstName", "lastName", "salaryMonthly",
+           COALESCE("allowances", '[]'::jsonb) AS "allowances",
            COALESCE("leaveEncashmentMonthlyLeaves", 2) AS "leaveEncashmentMonthlyLeaves",
            COALESCE("leaveEncashmentRate", 0)          AS "leaveEncashmentRate",
            COALESCE("leaveEncashmentPastLeaves", 0)    AS "leaveEncashmentPastLeaves"
@@ -339,13 +363,14 @@ async function getEmployeeReport(employeeId) {
   const nowKey = currentMonthKey();
   const monthlyLeaves = Number(emp.leaveEncashmentMonthlyLeaves) || 2;
   const basicSalary = Number(emp.salaryMonthly || 0);
+  const totalSalary = getTotalSalary(emp);
 
   const breakdown = [];
   let cur = START_MONTH;
   while (cur <= nowKey) {
     const [cy, cm] = cur.split('-').map(Number);
     const days = daysInMonth(cur);
-    const rate = days > 0 ? round2(basicSalary / days) : 0;
+    const rate = days > 0 ? round2(totalSalary / days) : 0;
     breakdown.push({
       month: cur,
       label: new Date(cy, cm - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' }),

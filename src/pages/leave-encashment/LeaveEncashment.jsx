@@ -548,7 +548,7 @@ export default function LeaveEncashment() {
               {leavesCount && Number(leavesCount) > 0 && (
                 <div className="amount-preview">
                   <div style={{ color: '#475569', marginBottom: '4px', fontSize: '0.8rem' }}>
-                    {balance.name} — Basic: PKR {balance.basicSalary.toLocaleString()} ÷ {balance.daysInCurrentMonth} days × {leavesCount} leaves
+                    {balance.name} — Total Salary: PKR {(balance.totalSalary ?? balance.basicSalary).toLocaleString()} ÷ {balance.daysInCurrentMonth} days × {leavesCount} leaves
                   </div>
                   Amount: <strong>PKR {computedAmount.toLocaleString()}</strong>
                 </div>
