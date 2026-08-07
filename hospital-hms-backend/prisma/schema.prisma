@@ -816,6 +816,10 @@ model ClinicDoctorSubDept {
   oddFees        Float               @default(0)
   onCall         Boolean             @default(false)
   consultantDays String[]
+  // Miscellaneous-only: lets an item be priced/quantified at slip-creation
+  // time instead of using a fixed normalCharges value.
+  priceEditable    Boolean           @default(false)
+  quantityEditable Boolean           @default(false)
   createdAt      DateTime            @default(now())
   updatedAt      DateTime            @updatedAt
 
@@ -890,6 +894,7 @@ model ClinicOpdVisitDoctor {
   subDept     ClinicSubDepartment @relation(fields: [subDeptId], references: [id])
   amount      Float               @default(0)
   extAmount   Float               @default(0)
+  quantity    Int                 @default(1)
   createdAt   DateTime            @default(now())
 }
 

@@ -511,6 +511,10 @@ export const useClinicStore = create((set) => ({
     return request(`/opd/by-serial/${encodeURIComponent(serialNo)}`);
   },
 
+  searchOpdVisitsForAdmission: async (query) => {
+    return request(`/opd/search-for-admission?q=${encodeURIComponent(query)}`);
+  },
+
   fetchAvailableBeds: async (roomCategoryId, excludeAdmissionId) => {
     const suffix = excludeAdmissionId ? `&excludeAdmissionId=${excludeAdmissionId}` : '';
     return request(`/admission/available-beds?roomCategoryId=${roomCategoryId}${suffix}`);

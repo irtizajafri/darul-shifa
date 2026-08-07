@@ -943,6 +943,12 @@ async function getOpdVisitBySerial(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function searchOpdVisitsForAdmission(req, res, next) {
+  try {
+    success(res, await service.searchOpdVisitsForAdmission(req.query.q));
+  } catch (err) { next(err); }
+}
+
 async function getAdmissions(req, res, next) {
   try {
     success(res, await service.getAdmissions());
@@ -1446,6 +1452,7 @@ module.exports = {
   getOpdPatientByMrNo,
   getOpdPatientsByPhone,
   getOpdVisitBySerial,
+  searchOpdVisitsForAdmission,
   getAdmissions,
   getAdmissionByNumber,
   searchAdmissionsForReceiving,

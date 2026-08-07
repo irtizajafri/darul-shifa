@@ -9,6 +9,7 @@ import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
+import { validatePhoneNo, validateAge } from './opdValidation';
 import './Admission.scss';
 import './Antenatal.scss';
 
@@ -167,6 +168,67 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
   );
 }
 
+// ── Arrived Slip Lookup Modal ──────────────────────────────────────────────────
+// Search recent OPD visits by patient name or phone and pick one — instead of
+// having to already know the exact slip serial number.
+function ArrivedSlipModal({ onSelect, onClose, searchOpdVisitsForAdmission }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const timer = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSearch = useCallback((val) => {
+    setQ(val);
+    clearTimeout(timer.current);
+    if (!val.trim()) { setResults([]); return; }
+    timer.current = setTimeout(async () => {
+      setLoading(true);
+      try { setResults((await searchOpdVisitsForAdmission(val)) || []); }
+      catch { setResults([]); }
+      finally { setLoading(false); }
+    }, 300);
+  }, [searchOpdVisitsForAdmission]);
+
+  return (
+    <div className="ant-modal-overlay" onMouseDown={onClose}>
+      <div className="ant-modal" onMouseDown={e => e.stopPropagation()}>
+        <div className="ant-modal-header">
+          <div className="ant-modal-title"><Search size={16}/> Find Arrived Slip</div>
+          <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+        </div>
+        <div className="ant-modal-search">
+          <Search size={14} className="ant-modal-search-icon"/>
+          <input ref={inputRef} placeholder="Search by patient name, phone, MR # or Slip #..." value={q} onChange={e => handleSearch(e.target.value)}/>
+          {loading && <span className="ant-spinner"/>}
+        </div>
+        <div className="ant-modal-body">
+          {results.length === 0 && !loading && (
+            <div className="ant-modal-empty">{q.trim() ? 'No matching OPD slips found' : 'Type patient name or phone to search'}</div>
+          )}
+          {results.length > 0 && (
+            <table className="ant-modal-table">
+              <thead><tr><th>Slip #</th><th>Patient</th><th>Phone</th><th>Date</th></tr></thead>
+              <tbody>
+                {results.map(r => (
+                  <tr key={r.serialNo} onClick={() => onSelect(r)}>
+                    <td>{r.serialNo}</td>
+                    <td>{r.patientType} {r.patientName}</td>
+                    <td>{r.phoneNo || '–'}</td>
+                    <td>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '–'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Admission Print Template ───────────────────────────────────────────────────
 function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, isDuplicate, printedBy, barcodeDataUrl }) {
   const consultant = doctors.find(d => String(d.id) === String(form.consultantId));
@@ -306,8 +368,7 @@ function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, 
       <div className="adm-print-oath">
         <div className="adm-print-oath-title">حلف نامہ</div>
         <p className="adm-print-oath-text" dir="rtl">
-          میں / ہم بخوبی واقف ہوں کہ یہ ایک نجی ہسپتال ہے اور یہ کہ مجھے / ہمیں یہاں جو سہولت (جو مجھے فراہم کی جائے گی) اس کا معاوضہ ادا کرنا ہے۔ میں اللہ تعالیٰ کو حاضر ناظر جان کر کہتا ہوں / کرتی ہوں کہ ہسپتال کے بل کی ادائیگی کروں گا / کروں گی۔
-        </p>
+میں / ہم بخوبی واقف ہوں کہ یہ ایک نجی ہسپتال ہے اور یہ کہ مجھے / ہمیں یہاں جو سہولت (جو مجھے فراہم کی جائے گی) اس کا معاوضہ ادا کرنا ہے۔ میں اللہ تعالیٰ کو حاضر ناظر جان کر کہتا ہوں / کرتی ہوں کہ ہسپتال کے بل کی ادائیگی کروں گا / کروں گی۔کسی بھی قسم کا ریفنڈ صرف صاحب دستخط شخص کو دیا جائے گا.</p>
       </div>
 
       {/* Signature row */}
@@ -493,6 +554,41 @@ const EMPTY = {
   panelLabel: '',
 };
 
+// Every field is required except Referred By and Previous Admission.
+// Age/Phone reuse the same rules as the OPD slips (opdValidation.js) for
+// consistent messaging across the app.
+function validateAdmissionForm(form) {
+  const required = [
+    ['mrNo', 'MR #'],
+    ['arrivedSlipNo', 'Arrived Slip #'],
+    ['address', 'Address'],
+    ['arrivedUnderRmo', 'Arrived under RMO'],
+    ['consultantId', 'Consultant'],
+    ['responsibleParty', 'Responsible Party'],
+    ['roomCategoryId', 'Ward (Room Category)'],
+    ['bedId', 'Bed #'],
+  ];
+  for (const [key, label] of required) {
+    if (!String(form[key] || '').trim()) return `${label} is required`;
+  }
+
+  const phoneErr = validatePhoneNo(form.phoneNo);
+  if (phoneErr) return phoneErr;
+
+  const ageErr = validateAge(form.ageYears, form.ageMonths, form.ageDays);
+  if (ageErr) return ageErr;
+
+  if (form.advancePayment === '' || form.advancePayment == null || Number(form.advancePayment) < 1) {
+    return 'Advance Payment kam se kam Rs. 1 honi chahiye';
+  }
+
+  if (form.surgery && !form.surgeryTypeId) return 'Surgery Type select karo';
+  if (form.referralPatient === 'yes' && !form.referralNote.trim()) return 'Referral note likho (referred by name/hospital)';
+  if (form.antenatal && !form.antenatalNo.trim()) return 'Antenatal number likho';
+
+  return null;
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function Admission() {
   const {
@@ -502,6 +598,7 @@ export default function Admission() {
     searchEmployees,
     fetchOpdPatientByMrNo,
     fetchOpdVisitBySerial,
+    searchOpdVisitsForAdmission,
     fetchAvailableBeds,
     fetchNextSerialNo,
     createAdmission,
@@ -514,6 +611,7 @@ export default function Admission() {
   const [saving, setSaving] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
+  const [showArrivedSlipModal, setShowArrivedSlipModal] = useState(false);
   const [reprintReady, setReprintReady] = useState(false);
   const [barcodeDataUrl, setBarcodeDataUrl] = useState('');
   const mrRef = useRef(null);
@@ -678,31 +776,43 @@ export default function Admission() {
     }
   }
 
+  // Shared by both the typed-serial lookup and the search modal's row click —
+  // fills the form from whatever OPD visit record was resolved.
+  function applyArrivedSlip(rec, serialNo) {
+    setForm(f => ({
+      ...f,
+      arrivedSlipNo:    serialNo || rec.serialNo || f.arrivedSlipNo,
+      mrNo:             rec.mrNo != null ? String(rec.mrNo) : f.mrNo,
+      patientName:      rec.patientName   || f.patientName,
+      ageYears:         rec.age != null       ? String(rec.age)       : f.ageYears,
+      ageMonths:        rec.ageMonths != null  ? String(rec.ageMonths) : f.ageMonths,
+      ageDays:          rec.ageDays != null    ? String(rec.ageDays)   : f.ageDays,
+      gender:           rec.gender        || f.gender,
+      phoneNo:          rec.phoneNo       || f.phoneNo,
+      referredBy:       rec.referredBy    || f.referredBy,
+      patientCategory:  rec.patientCategory || f.patientCategory,
+      employeeId:       rec.employeeId     || f.employeeId,
+      panelCompanyId:   rec.panelCompanyId  || f.panelCompanyId,
+      panelEmployeeId:  rec.panelEmployeeId || f.panelEmployeeId,
+      panelDependentId: rec.panelDependentId || f.panelDependentId,
+      panelLabel:       rec.panelLabel      || f.panelLabel,
+    }));
+  }
+
   async function handleSlipLookup() {
     const slip = form.arrivedSlipNo?.trim();
     if (!slip) return;
     try {
       const rec = await fetchOpdVisitBySerial(slip);
-      setForm(f => ({
-        ...f,
-        mrNo:             rec.mrNo != null ? String(rec.mrNo) : f.mrNo,
-        patientName:      rec.patientName   || f.patientName,
-        ageYears:         rec.age != null       ? String(rec.age)       : f.ageYears,
-        ageMonths:        rec.ageMonths != null  ? String(rec.ageMonths) : f.ageMonths,
-        ageDays:          rec.ageDays != null    ? String(rec.ageDays)   : f.ageDays,
-        gender:           rec.gender        || f.gender,
-        phoneNo:          rec.phoneNo       || f.phoneNo,
-        referredBy:       rec.referredBy    || f.referredBy,
-        patientCategory:  rec.patientCategory || f.patientCategory,
-        employeeId:       rec.employeeId     || f.employeeId,
-        panelCompanyId:   rec.panelCompanyId  || f.panelCompanyId,
-        panelEmployeeId:  rec.panelEmployeeId || f.panelEmployeeId,
-        panelDependentId: rec.panelDependentId || f.panelDependentId,
-        panelLabel:       rec.panelLabel      || f.panelLabel,
-      }));
+      applyArrivedSlip(rec, slip);
     } catch {
       toast.error('No OPD visit found with this slip number');
     }
+  }
+
+  function handleArrivedSlipSelect(rec) {
+    applyArrivedSlip(rec, rec.serialNo);
+    setShowArrivedSlipModal(false);
   }
 
   async function handleRoomChange(roomCategoryId) {
@@ -719,6 +829,8 @@ export default function Admission() {
   async function handleSave() {
     if (!form.admissionNo.trim()) return toast.error('Admission # is required');
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
+    const formErr = validateAdmissionForm(form);
+    if (formErr) return toast.error(formErr);
     setSaving(true);
     try {
       await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes' });
@@ -768,6 +880,8 @@ export default function Admission() {
   async function handleSaveAndPrint() {
     if (!form.admissionNo.trim()) return toast.error('Admission # is required');
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
+    const formErr = validateAdmissionForm(form);
+    if (formErr) return toast.error(formErr);
     setSaving(true);
     try {
       const created = await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes' });
@@ -791,6 +905,13 @@ export default function Admission() {
       )}
       {showPanelModal && (
         <PanelModal onSelect={handlePanelSelect} onClose={() => setShowPanelModal(false)} />
+      )}
+      {showArrivedSlipModal && (
+        <ArrivedSlipModal
+          searchOpdVisitsForAdmission={searchOpdVisitsForAdmission}
+          onSelect={handleArrivedSlipSelect}
+          onClose={() => setShowArrivedSlipModal(false)}
+        />
       )}
 
       <div className="adm-page">
@@ -852,7 +973,9 @@ export default function Admission() {
                       onKeyDown={e => e.key === 'Enter' && handleSlipLookup()}
                       placeholder="OPD or Patients List serial number"
                     />
-                    <button className="adm-lookup-btn" onClick={handleSlipLookup} title="Lookup">↵</button>
+                    <button className="adm-lookup-btn" onClick={() => setShowArrivedSlipModal(true)} title="Search arrived slips">
+                      <Search size={14} />
+                    </button>
                   </div>
                 </div>
               </div>

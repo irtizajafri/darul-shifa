@@ -273,6 +273,8 @@ function mapSubDept(s) {
     oddFees: Number(s.oddFees) || 0,
     onCall: Boolean(s.onCall),
     consultantDays: s.consultantDays || [],
+    priceEditable: Boolean(s.priceEditable),
+    quantityEditable: Boolean(s.quantityEditable),
   };
 }
 
@@ -355,7 +357,15 @@ async function getAvailableDoctors({ day, time, onCall, departmentName }) {
 }
 
 async function getNextMrNo() {
-  const last = await prisma.clinicOpdVisit.findFirst({ orderBy: { mrNo: 'desc' }, select: { mrNo: true } });
+  // Postgres sorts NULLs FIRST in a DESC order by default — many visits
+  // (Emergency, etc.) save mrNo as null, so an unfiltered findFirst kept
+  // landing on a null row and returning 1 every time regardless of the
+  // real max. Exclude nulls so this actually finds the highest MR #.
+  const last = await prisma.clinicOpdVisit.findFirst({
+    where: { mrNo: { not: null } },
+    orderBy: { mrNo: 'desc' },
+    select: { mrNo: true },
+  });
   return ((last?.mrNo || 0) + 1);
 }
 
@@ -454,6 +464,7 @@ async function createOpdVisit({
           subDeptId: Number(d.subDeptId),
           amount: Number(d.amount) || 0,
           extAmount: Number(d.extAmount) || 0,
+          quantity: Number(d.quantity) || 1,
         })),
       },
     },
@@ -504,6 +515,65 @@ async function getOpdPatientsByPhone(phoneNo) {
     if (!seen.has(key)) { seen.add(key); unique.push(v); }
   }
   return unique;
+}
+
+// Admission > "Arrived Slip #" lookup modal — search recent OPD visits by
+// patient name, phone, MR # or Slip # so staff can pick the right slip
+// instead of having to already know its exact serial number.
+async function searchOpdVisitsForAdmission(query) {
+  const q = (query || '').trim();
+  if (!q) return [];
+  const mrNoNum = /^\d+$/.test(q) ? parseInt(q, 10) : null;
+  const visits = await prisma.clinicOpdVisit.findMany({
+    where: {
+      OR: [
+        { patientName: { contains: q, mode: 'insensitive' } },
+        { phoneNo: { contains: q, mode: 'insensitive' } },
+        { serialNo: { contains: q, mode: 'insensitive' } },
+        ...(mrNoNum != null ? [{ mrNo: mrNoNum }] : []),
+      ],
+    },
+    orderBy: { id: 'desc' },
+    take: 30,
+    select: {
+      serialNo: true, mrNo: true, patientType: true, patientName: true,
+      age: true, ageMonths: true, ageDays: true, gender: true, phoneNo: true,
+      referredBy: true, department: true, createdAt: true,
+      employeeId: true, panelCompanyId: true, panelEmployeeId: true, panelDependentId: true,
+    },
+  });
+  const enriched = await Promise.all(visits.map(enrichOpdPatient));
+
+  // Also search the old bulk-imported "Patients List" (PatientVisit) — it only
+  // ever captured patientName + serialNo (no phone/MR#/age/gender), so it can
+  // only match on those two.
+  const pvWhere = {
+    OR: [
+      { patientName: { contains: q, mode: 'insensitive' } },
+      ...(mrNoNum != null ? [{ serialNo: mrNoNum }] : []),
+    ],
+  };
+  const pvVisits = await prisma.patientVisit.findMany({
+    where: pvWhere,
+    orderBy: { id: 'desc' },
+    take: 30,
+    select: { serialNo: true, patientName: true, department: true, subDepartment: true, visitDate: true, visitTime: true },
+  });
+  const adaptedPv = pvVisits.map((pv) => {
+    const dateStr = pv.visitDate.toISOString().slice(0, 10);
+    const createdAt = pv.visitTime ? new Date(`${dateStr}T${pv.visitTime}:00`) : pv.visitDate;
+    return {
+      serialNo: pv.serialNo != null ? String(pv.serialNo) : '',
+      mrNo: null, patientType: '', patientName: pv.patientName,
+      age: null, ageMonths: 0, ageDays: 0, gender: null, phoneNo: null,
+      referredBy: null, department: pv.department || pv.subDepartment || '',
+      createdAt, patientCategory: 'private', panelLabel: '',
+    };
+  });
+
+  return [...enriched, ...adaptedPv]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 30);
 }
 
 async function getOpdVisitBySerial(serialNo) {
@@ -3463,6 +3533,7 @@ module.exports = {
   getOpdPatientByMrNo,
   getOpdPatientsByPhone,
   getOpdVisitBySerial,
+  searchOpdVisitsForAdmission,
   getAdmissions,
   getAdmissionByNumber,
   searchAdmissionsForReceiving,

@@ -171,6 +171,7 @@ router.post('/admission/receiving/:admissionId/pay', controller.addAdmissionPaym
 router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaymentForPrint);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
+router.get('/opd/search-for-admission', controller.searchOpdVisitsForAdmission);
 
 // Admission Adjustment
 router.get('/admission/adjustment/search', controller.searchAdmissionsForAdjustment);

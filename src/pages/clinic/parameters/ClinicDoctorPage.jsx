@@ -74,6 +74,7 @@ const EMPTY_SUBDEPT = {
   normalCharges: '', oddCharges: '',
   paymentType: 'amount', normalFees: '', oddFees: '',
   onCall: false,
+  priceEditable: false, quantityEditable: false,
 };
 
 export default function ClinicDoctorPage() {
@@ -161,6 +162,8 @@ export default function ClinicDoctorPage() {
         normalFees: String(s.normalFees),
         oddFees: String(s.oddFees),
         onCall: s.onCall,
+        priceEditable: s.priceEditable || false,
+        quantityEditable: s.quantityEditable || false,
       }))
     );
     setSubDeptForm(EMPTY_SUBDEPT);
@@ -237,6 +240,8 @@ export default function ClinicDoctorPage() {
       normalFees: row.normalFees || '',
       oddFees: row.oddFees || '',
       onCall: row.onCall || false,
+      priceEditable: row.priceEditable || false,
+      quantityEditable: row.quantityEditable || false,
     });
     setEditingRowIdx(idx);
   }
@@ -293,6 +298,8 @@ export default function ClinicDoctorPage() {
         normalFees: parseFloat(r.normalFees) || 0,
         oddFees: parseFloat(r.oddFees) || 0,
         onCall: r.onCall,
+        priceEditable: r.priceEditable || false,
+        quantityEditable: r.quantityEditable || false,
       })),
     };
     try {
@@ -688,6 +695,24 @@ export default function ClinicDoctorPage() {
                 </div>
               </div>
 
+              {/* Miscellaneous-only: editable Quantity/Price at slip time instead of a fixed rate */}
+              <div className="cdp-grid-2 mt-3">
+                <div className="cdp-field">
+                  <label className="cdp-radio">
+                    <input type="checkbox" checked={subDeptForm.quantityEditable}
+                      onChange={(e) => setSubDeptForm((f) => ({ ...f, quantityEditable: e.target.checked }))} />
+                    Quantity (slip banate waqt quantity poochi jayegi, rate × quantity)
+                  </label>
+                </div>
+                <div className="cdp-field">
+                  <label className="cdp-radio">
+                    <input type="checkbox" checked={subDeptForm.priceEditable}
+                      onChange={(e) => setSubDeptForm((f) => ({ ...f, priceEditable: e.target.checked }))} />
+                    Price (slip banate waqt custom rate poocha jayega)
+                  </label>
+                </div>
+              </div>
+
               {/* Row 4: Consultant Payment Type */}
               <div className="cdp-field mt-3">
                 <label className="cdp-label">Consultant Payment Type</label>
@@ -785,6 +810,7 @@ export default function ClinicDoctorPage() {
                       <th>Nor. Fees</th>
                       <th>Odd Fees</th>
                       <th>On Call</th>
+                      <th>Qty/Price</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -823,6 +849,9 @@ export default function ClinicDoctorPage() {
                             : `${row.oddFees || 0}`}
                         </td>
                         <td>{row.onCall ? '✓' : '—'}</td>
+                        <td className="text-xs">
+                          {[row.quantityEditable && 'Qty', row.priceEditable && 'Price'].filter(Boolean).join(' + ') || '—'}
+                        </td>
                         <td>
                           <button
                             type="button"

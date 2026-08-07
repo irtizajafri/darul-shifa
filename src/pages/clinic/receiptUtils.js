@@ -86,7 +86,7 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   const showToken = TOKEN_DEPTS.includes(String(doc.department || '').trim().toLowerCase()) && tokenNo > 0;
 
   const lineItemsHtml = (docEntries.length ? docEntries : [{ subDept: { name: doc.department || 'OPD' }, amount: grossAmt }])
-    .map((d) => `<div class="line-item"><span>${(d.subDept?.name || '').toUpperCase()}</span><span>${fmt(d.amount)}</span></div>`)
+    .map((d) => `<div class="line-item"><span>${(d.subDept?.name || '').toUpperCase()}${d.quantity > 1 ? ` x${d.quantity}` : ''}</span><span>${fmt(d.amount)}</span></div>`)
     .join('');
 
   return `<!DOCTYPE html>

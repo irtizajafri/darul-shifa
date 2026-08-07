@@ -1,0 +1,67 @@
+/* ════════════════════════════════════════════
+   80mm THERMAL RECEIPT (print-only, in-page)
+   Same visual design as thermalReceiptUtils.js's popup version, but printed
+   in-page so it can run alongside a slip that's already using its own popup.
+   ════════════════════════════════════════════ */
+.th-print-area { display: none; }
+
+@media print {
+  @page { size: 80mm auto; margin: 0; }
+
+  body * { visibility: hidden; }
+  .th-print-area,
+  .th-print-area * { visibility: visible !important; }
+
+  .th-print-area {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    width: 80mm;
+    background: #fff;
+  }
+}
+
+.th-rcpt {
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  color: #000;
+  background: #fff;
+  width: 100%;
+  padding: 2mm 3mm;
+}
+
+.th-logo { width: 100%; height: 40px; object-fit: contain; display: block; margin: 0 auto; }
+.th-addr { text-align: center; font-size: 8.5px; font-weight: 700; margin-top: 2px; }
+.th-duplicate { text-align: center; color: #000; font-weight: 900; font-size: 12px; letter-spacing: 2px; margin-top: 3px; }
+
+.th-divider { border-top: 1px dashed #000; margin: 5px 0; }
+.th-divider--solid { border-top: 1.5px solid #000; }
+
+.th-row { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; margin: 1.5px 0; }
+.th-row .lbl { font-weight: 700; }
+
+.th-doctor { margin: 3px 0; }
+.th-doctor-name { font-weight: 700; font-size: 11.5px; }
+.th-doctor-qual { font-size: 9.5px; font-weight: 700; color: #333; }
+
+.th-item { display: flex; justify-content: space-between; font-size: 11px; padding: 1.5px 0; }
+
+.th-amt { display: flex; justify-content: space-between; font-size: 11px; padding: 1.5px 0; }
+.th-amt--total { font-weight: 700; }
+.th-amt--balance { font-weight: 700; }
+.th-amt--grand { font-weight: 900; font-size: 13px; border-top: 1.5px solid #000; margin-top: 3px; padding-top: 3px; }
+
+.th-invoice { text-align: center; font-weight: 900; font-size: 13px; margin: 4px 0 2px; letter-spacing: 1px; }
+.th-received { display: flex; justify-content: space-between; font-weight: 700; font-size: 11.5px; margin: 2px 0; }
+
+.th-words { font-size: 9.5px; margin: 4px 0; }
+.th-disclaimer { font-size: 8.5px; text-align: center; margin: 4px 0; }
+
+.th-barcode { text-align: center; margin: 6px 0 2px; }
+.th-barcode img { max-width: 100%; height: 34px; }
+
+.th-token { text-align: center; margin: 4px 0; }
+.th-token-lbl { font-size: 8.5px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; display: block; }
+.th-token-no { font-size: 20px; font-weight: 900; display: block; }
+
+.th-urdu { font-size: 9px; text-align: center; direction: rtl; margin-top: 5px; line-height: 1.5; }

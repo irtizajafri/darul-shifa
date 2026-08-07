@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { buildEmergencyReceiptHtml } from './emergencyReceiptUtils';
 import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
+import { validatePhoneNo, validateAge } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
 
@@ -319,13 +320,13 @@ export default function EmergencyOPD() {
   }
 
   function toggleLeft(rowId) {
-    setCheckedLeft(p => p.includes(rowId) ? [] : [rowId]);
+    setCheckedLeft(p => p.includes(rowId) ? p.filter(id => id !== rowId) : [...p, rowId]);
   }
 
   function moveRight() {
     if (!checkedLeft.length) return;
-    const selected = leftDoctors.find(r => r.id === checkedLeft[0]);
-    if (selected) setRightDoctors([selected]);
+    const selected = leftDoctors.filter(r => checkedLeft.includes(r.id));
+    setRightDoctors(prev => [...prev, ...selected.filter(s => !prev.some(p => p.id === s.id))]);
     setCheckedLeft([]);
   }
 
@@ -369,6 +370,10 @@ export default function EmergencyOPD() {
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
+    const phoneErr = validatePhoneNo(form.phoneNo);
+    if (phoneErr) { toast.error(phoneErr); return; }
+    const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
+    if (ageErr) { toast.error(ageErr); return; }
     const w = window.open('', '_blank', 'width=740,height=900');
     if (!w) { toast.error('Popup blocked — please allow popups'); return; }
     setBusy(true);

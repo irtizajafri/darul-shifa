@@ -3,6 +3,8 @@ import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { buildReceiptHtml } from './receiptUtils';
+import { printThermalReceipt, ThermalReceiptPrintTemplate } from './ThermalReceiptPrintTemplate';
+import { validatePhoneNo, validateAge } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
 
@@ -246,6 +248,14 @@ export default function AmbulanceSlip() {
   const [showPanelModal, setShowPanelModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
 
+  // Thermal (80mm) receipt — printed in-page right after the A6 slip's own
+  // popup, so both come out of the same "Save & Print" click.
+  const [thermalVisit, setThermalVisit] = useState(null);
+  const [thermalTokenNo, setThermalTokenNo] = useState(0);
+  const [thermalIsDuplicate, setThermalIsDuplicate] = useState(false);
+  const [thermalPrintedBy, setThermalPrintedBy] = useState('');
+  const [thermalReady, setThermalReady] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -253,6 +263,14 @@ export default function AmbulanceSlip() {
     if (doctors.length === 0) fetchDoctors().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Wait one render cycle after thermal* state is set so the hidden print
+  // area actually has the new data in the DOM before window.print() runs.
+  useEffect(() => {
+    if (!thermalReady) return;
+    const t = setTimeout(() => { printThermalReceipt(); setThermalReady(false); }, 300);
+    return () => clearTimeout(t);
+  }, [thermalReady]);
 
   function handleBillingTypeChange(v) {
     if (v === 'staff') {
@@ -308,6 +326,10 @@ export default function AmbulanceSlip() {
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
+    const phoneErr = validatePhoneNo(form.phoneNo);
+    if (phoneErr) { toast.error(phoneErr); return; }
+    const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
+    if (ageErr) { toast.error(ageErr); return; }
     const w = window.open('', '_blank', 'width=740,height=900');
     if (!w) { toast.error('Popup blocked — please allow popups'); return; }
     setBusy(true);
@@ -338,6 +360,12 @@ export default function AmbulanceSlip() {
         const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
         w.document.write(html);
         w.document.close();
+
+        setThermalVisit(visit);
+        setThermalTokenNo(tokenNo);
+        setThermalIsDuplicate(isDuplicate);
+        setThermalPrintedBy(printedBy);
+        setThermalReady(true);
       } else {
         w.close();
       }
@@ -547,6 +575,15 @@ export default function AmbulanceSlip() {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="th-print-area">
+        <ThermalReceiptPrintTemplate
+          visit={thermalVisit}
+          tokenNo={thermalTokenNo}
+          isDuplicate={thermalIsDuplicate}
+          printedBy={thermalPrintedBy}
+        />
       </div>
     </>
   );

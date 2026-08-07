@@ -7,12 +7,62 @@ import { buildReceiptHtml } from './receiptUtils';
 import { buildThermalReceiptHtml } from './thermalReceiptUtils';
 import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
 import ECGReportForm from './ECGReportForm';
+import { validatePhoneNo, validateAge } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import './GeneralOPD.scss';
 
 // Only these two departments (of the many GeneralOPD.jsx serves) also print the
 // A4 Clinical Record Form after the slip — same form Consultant OPD uses.
 const CRF_DEPTS = ['General OPD', 'Dental OPD'];
+
+// Miscellaneous-only: collects Quantity and/or Price for an item flagged
+// quantityEditable/priceEditable (set in Doctor Parameters > Sub Dept Info).
+function MiscQtyPriceModal({ item, onConfirm, onClose }) {
+  const [quantity, setQuantity] = useState('1');
+  const [price, setPrice] = useState(item.priceEditable ? '' : String(item.normalCharges || 0));
+
+  function handleConfirm() {
+    if (item.priceEditable && !(Number(price) > 0)) { toast.error('Rate daalo'); return; }
+    if (item.quantityEditable && !(Number(quantity) > 0)) { toast.error('Quantity daalo'); return; }
+    onConfirm({ quantity, price });
+  }
+
+  return (
+    <div className="gopd-overlay">
+      <div className="gopd-mr-confirm">
+        <div className="gopd-mr-confirm-title">{item.subDept?.name}</div>
+        <div className="gopd-mr-confirm-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {item.quantityEditable && (
+            <div>
+              <span className="gopd-total-lbl">Quantity</span>
+              <input type="number" className="gopd-total-inp" min="1" autoFocus
+                style={{ width: '100%' }}
+                value={quantity} onChange={e => setQuantity(e.target.value)} />
+            </div>
+          )}
+          {item.priceEditable ? (
+            <div>
+              <span className="gopd-total-lbl">Rate</span>
+              <input type="number" className="gopd-total-inp" min="0" placeholder="0"
+                style={{ width: '100%' }}
+                autoFocus={!item.quantityEditable}
+                value={price} onChange={e => setPrice(e.target.value)} />
+            </div>
+          ) : (
+            <div>
+              <span className="gopd-total-lbl">Rate</span>
+              <div>{item.normalCharges || 0}</div>
+            </div>
+          )}
+        </div>
+        <div className="gopd-mr-confirm-actions">
+          <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--cancel" onClick={onClose}>Cancel</button>
+          <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--use" onClick={handleConfirm}>Add</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Normalize a sub-department name for matching (case/space/punctuation-insensitive) —
 // the "E C G" item under Miscellaneous is stored with spaces between letters.
@@ -500,6 +550,19 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   // themselves in the OS print dialog.
   const [thermalPrint, setThermalPrint] = useState(false);
 
+  // Miscellaneous-only: items flagged Quantity/Price-editable open this modal
+  // instead of the normal checkbox+transfer flow — the entered value(s)
+  // compute the final amount right away.
+  const [miscModalItem, setMiscModalItem] = useState(null);
+
+  function handleMiscModalConfirm({ quantity, price }) {
+    const item = miscModalItem;
+    const rate = item.priceEditable ? Number(price) || 0 : (item.normalCharges || 0);
+    const qty = item.quantityEditable ? Number(quantity) || 1 : 1;
+    setRightDoctors(prev => [...prev, { ...item, normalCharges: rate * qty, quantity: qty }]);
+    setMiscModalItem(null);
+  }
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -562,13 +625,13 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   }
 
   function toggleLeft(rowId) {
-    setCheckedLeft(p => p.includes(rowId) ? [] : [rowId]);
+    setCheckedLeft(p => p.includes(rowId) ? p.filter(id => id !== rowId) : [...p, rowId]);
   }
 
   function moveRight() {
     if (!checkedLeft.length) return;
-    const selected = leftDoctors.find(r => r.id === checkedLeft[0]);
-    if (selected) setRightDoctors([selected]);
+    const selected = leftDoctors.filter(r => checkedLeft.includes(r.id));
+    setRightDoctors(prev => [...prev, ...selected.filter(s => !prev.some(p => p.id === s.id))]);
     setCheckedLeft([]);
   }
 
@@ -691,6 +754,10 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
+    const phoneErr = validatePhoneNo(form.phoneNo);
+    if (phoneErr) { toast.error(phoneErr); return; }
+    const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
+    if (ageErr) { toast.error(ageErr); return; }
     if (departmentName !== 'General OPD' && !form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
     const w = window.open('', '_blank', 'width=420,height=680');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
@@ -709,6 +776,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
           subDeptId: r.subDeptId,
           amount: isComplementary ? 0 : (r.normalCharges || 0),
           extAmount: 0,
+          quantity: r.quantity || 1,
         })),
       });
       const newId = created?.id;
@@ -820,6 +888,14 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
             </div>
           </div>
         </div>
+      )}
+
+      {miscModalItem && (
+        <MiscQtyPriceModal
+          item={miscModalItem}
+          onConfirm={handleMiscModalConfirm}
+          onClose={() => setMiscModalItem(null)}
+        />
       )}
 
       {/* ── Phone Results Modal (multiple matches) ─────────────────────── */}
@@ -1156,15 +1232,23 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                         <tr><td colSpan={showDoctorColumn ? 5 : 3} className="gopd-empty-cell">
                           {form.onCall ? 'No active doctors found' : 'No doctors scheduled for today at this time'}
                         </td></tr>
-                      ) : leftDoctors.map(r => (
-                        <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={() => toggleLeft(r.id)}>
-                          <td><input type="checkbox" checked={checkedLeft.includes(r.id)} onChange={() => toggleLeft(r.id)} onClick={e => e.stopPropagation()} /></td>
-                          {showDoctorColumn && <td>{r.doctor?.code}</td>}
-                          {showDoctorColumn && <td>{r.doctor?.name}</td>}
-                          <td>{r.subDept?.name}</td>
-                          <td>{r.normalCharges}</td>
-                        </tr>
-                      ))}
+                      ) : leftDoctors.map(r => {
+                        const needsModal = departmentName === 'Miscellaneous' && (r.quantityEditable || r.priceEditable);
+                        const rowClick = () => (needsModal ? setMiscModalItem(r) : toggleLeft(r.id));
+                        return (
+                          <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={rowClick}>
+                            <td>
+                              {needsModal
+                                ? <span className="gopd-misc-tag" title="Quantity/Price is set when adding">{[r.quantityEditable && 'Qty', r.priceEditable && 'Price'].filter(Boolean).join('+')}</span>
+                                : <input type="checkbox" checked={checkedLeft.includes(r.id)} onChange={() => toggleLeft(r.id)} onClick={e => e.stopPropagation()} />}
+                            </td>
+                            {showDoctorColumn && <td>{r.doctor?.code}</td>}
+                            {showDoctorColumn && <td>{r.doctor?.name}</td>}
+                            <td>{r.subDept?.name}</td>
+                            <td>{r.normalCharges}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 )}

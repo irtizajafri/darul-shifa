@@ -716,6 +716,17 @@
   &:focus { border-color: #2563eb; }
 }
 
+.gopd-misc-tag {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  border-radius: 4px;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+
 .gopd-discount-wrap {
   display: flex;
   align-items: center;
