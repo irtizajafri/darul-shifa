@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ChevronRight, Printer } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import toast from 'react-hot-toast';
@@ -172,6 +172,50 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
   }, 400);
 }
 
+const SLIP_CSS = `
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:Arial,sans-serif; font-size:11px; color:#000; background:#fff; padding:28px 32px; }
+  .slip-table { width:100%; border-collapse:collapse; margin-bottom:32px; }
+  .slip-table th { font-size:11px; font-weight:700; text-transform:uppercase; border-bottom:2px solid #000; padding:5px 6px; text-align:left; }
+  .slip-table td { font-size:11px; padding:8px 6px; vertical-align:top; border-bottom:1px solid #ccc; }
+  .slip-amt { text-align:right !important; white-space:nowrap; font-weight:700; }
+  .slip-date { white-space:nowrap; }
+  .slip-sigs { display:flex; justify-content:space-between; margin-top:48px; }
+  .slip-sig { text-align:center; }
+  .slip-sig-line { border-top:1.5px solid #000; padding-top:5px; min-width:160px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; margin-top:40px; }
+`;
+
+function printEntrySlip({ entry, voucherDate, printBy }) {
+  const payDate = new Date(voucherDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: '2-digit', year: '2-digit' });
+  const html = `
+    <table class="slip-table">
+      <thead>
+        <tr>
+          <th style="width:120px">PayDate</th>
+          <th>Particulars</th>
+          <th style="width:110px;text-align:right">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="slip-date">${payDate}</td>
+          <td>${entry.particulars || entry.payeeName || '—'}</td>
+          <td class="slip-amt">${Number(entry.amount).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="slip-sigs">
+      <div class="slip-sig"><div class="slip-sig-line">${printBy || 'Paid By'}</div><div style="font-size:9px;margin-top:3px;color:#555">Paid By</div></div>
+      <div class="slip-sig"><div class="slip-sig-line">${entry.payeeName || 'Received By'}</div><div style="font-size:9px;margin-top:3px;color:#555">Received By</div></div>
+    </div>
+  `;
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><title>Payment Slip</title><style>${SLIP_CSS}</style></head><body>${html}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); win.onafterprint = () => win.close(); }, 400);
+}
+
 const emptyEntry = () => ({
   mainGlId: '', subGlId: '', mainAccountId: '', subAccountId: '',
   accountCode: '', accountName: '',
@@ -225,6 +269,20 @@ export default function VoucherExpenseForm() {
   const [cashSerial, setCashSerial]       = useState(1);
 
   useEffect(() => { fetchMainGLs(entityType); }, [entityType]);
+
+  // ── Auto Narration ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!entry.payeeName) return;
+    const mainGl  = mainGLs.find((g) => String(g.id) === String(entry.mainGlId));
+    const subGl   = subGLs.find((g)  => String(g.id) === String(entry.subGlId));
+    const mainAcc = mainAccs.find((a) => String(a.id) === String(entry.mainAccountId));
+    const subAcc  = subAccs.find((a)  => String(a.id) === String(entry.subAccountId));
+    if (!mainGl || !subGl || !mainAcc) return;
+    const narration = subAcc
+      ? `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${subAcc.name} ${entry.payeeName}`
+      : `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${entry.payeeName}`;
+    setEntry((e) => ({ ...e, particulars: narration.trim() }));
+  }, [entry.mainGlId, entry.subGlId, entry.mainAccountId, entry.subAccountId, entry.payeeName]);
 
   useEffect(() => {
     if (!isBank) return;
@@ -752,7 +810,14 @@ export default function VoucherExpenseForm() {
                   <td>{e.chequeNo || '—'}</td>
                   {isCheque && <td className="ve-form__td-cap">{e.chequeType}</td>}
                   <td><span className="ve-form__status-badge">Confirm</span></td>
-                  <td>
+                  <td style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button
+                      className="ve-form__del-btn"
+                      title="Print Slip"
+                      onClick={() => printEntrySlip({ entry: e, voucherDate: date, printBy: user?.name || 'Accountant' })}
+                    >
+                      <Printer size={14} />
+                    </button>
                     <button
                       className="ve-form__del-btn"
                       onClick={() => setEntries((es) => es.filter((_, idx) => idx !== i))}
