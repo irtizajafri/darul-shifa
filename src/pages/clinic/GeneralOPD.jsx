@@ -765,6 +765,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
     if (departmentName !== 'General OPD' && !form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
+    if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
     const w = window.open('', '_blank', 'width=420,height=680');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
     setBusy(true);

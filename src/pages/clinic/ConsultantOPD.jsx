@@ -621,6 +621,7 @@ export default function ConsultantOPD() {
     if (phoneErr) { toast.error(phoneErr); return; }
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
+    if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
     // Chrome blocks a SECOND popup opened from the same click/gesture (treated
     // as spam), even when opened synchronously — so the Clinical Record Form
     // can't use its own window. Instead we reuse this one popup: print the

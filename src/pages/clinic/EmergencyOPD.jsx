@@ -380,6 +380,7 @@ export default function EmergencyOPD() {
     if (phoneErr) { toast.error(phoneErr); return; }
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
+    if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
     const w = window.open('', '_blank', 'width=740,height=900');
     if (!w) { toast.error('Popup blocked — please allow popups'); return; }
     setBusy(true);
