@@ -525,6 +525,12 @@ export default function ConsultantOPD() {
   const refundAmt  = Math.max(0, (Number(receive) || 0) - totalAmount);
   const balanceAmt = Math.max(0, totalAmount - (Number(receive) || 0));
 
+  // Received amount auto-follows the selected slip amount (doctor/item +
+  // discount) so it never has to be typed manually.
+  useEffect(() => {
+    setReceive(isComplementary ? '' : String(totalAmount));
+  }, [totalAmount, isComplementary]);
+
   function applyPatientData(patient, useNewMr) {
     if (useNewMr) {
       // New MR: just close modal, keep form as-is (phone stays, rest is blank)

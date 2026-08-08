@@ -345,6 +345,12 @@ export default function EmergencyOPD() {
   const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
   const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
 
+  // Received amount auto-follows the selected slip amount (doctor/item +
+  // discount) so it never has to be typed manually.
+  useEffect(() => {
+    setReceive(isComplementary ? '' : String(totalAmount));
+  }, [totalAmount, isComplementary]);
+
   // Auto-fill the slip from the admitted patient's own record — the data
   // already exists on their admission, no need to retype it.
   async function handleAdmitSelect(row) {
