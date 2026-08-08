@@ -81,6 +81,7 @@ import SlipRefund from '../pages/clinic/SlipRefund';
 import SlipAdjustment from '../pages/clinic/SlipAdjustment';
 import ReceivingAgainstAdmission from '../pages/clinic/ReceivingAgainstAdmission';
 import DiscountRefundAdmission from '../pages/clinic/DiscountRefundAdmission';
+import OtRegister from '../pages/clinic/OtRegister';
 import AdmissionAdjustment from '../pages/clinic/AdmissionAdjustment';
 import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
 import AdmissionStatusChangeReport from '../pages/clinic/reports/AdmissionStatusChangeReport';
@@ -262,6 +263,7 @@ export default function AppRoutes() {
           <Route path="clinic/transactions/slip-adjustment" element={<PermissionGuard module="clinic"><SlipAdjustment /></PermissionGuard>} />
           <Route path="clinic/transactions/receiving-against-admission" element={<PermissionGuard module="clinic"><ReceivingAgainstAdmission /></PermissionGuard>} />
           <Route path="clinic/transactions/discount-refund-admission" element={<PermissionGuard module="clinic"><DiscountRefundAdmission /></PermissionGuard>} />
+          <Route path="clinic/transactions/ot-register" element={<PermissionGuard module="clinic"><OtRegister /></PermissionGuard>} />
           <Route path="clinic/transactions/admission-adjustment" element={<PermissionGuard module="clinic"><AdmissionAdjustment /></PermissionGuard>} />
           <Route path="clinic/transactions/admission-status-change" element={<PermissionGuard module="clinic"><AdmissionStatusChange /></PermissionGuard>} />
           <Route path="clinic/reports/admission-status-change" element={<PermissionGuard module="clinic"><AdmissionStatusChangeReport /></PermissionGuard>} />

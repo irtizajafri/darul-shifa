@@ -1038,6 +1038,26 @@ async function addAdmissionDiscountRefund(req, res, next) {
   }
 }
 
+async function getOtRegisterForAdmission(req, res, next) {
+  try {
+    const data = await service.getOtRegisterForAdmission(req.params.admissionNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function saveOtRegister(req, res, next) {
+  try {
+    const data = await service.saveOtRegister(req.params.admissionId, req.body);
+    success(res, data, 'OT Register save ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function createAdmission(req, res, next) {
   try {
     if (!req.body.admissionNo?.trim()) return fail(res, 400, 'Admission # is required');
@@ -1503,6 +1523,8 @@ module.exports = {
   getAdmissionPaymentForPrint,
   getAdmissionForDiscountRefund,
   addAdmissionDiscountRefund,
+  getOtRegisterForAdmission,
+  saveOtRegister,
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,

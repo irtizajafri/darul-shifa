@@ -175,6 +175,9 @@ router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaym
 
 router.get('/admission/discount-refund/by-number/:admissionNo', controller.getAdmissionForDiscountRefund);
 router.post('/admission/discount-refund/:admissionId/add', controller.addAdmissionDiscountRefund);
+
+router.get('/admission/ot-register/by-number/:admissionNo', controller.getOtRegisterForAdmission);
+router.post('/admission/ot-register/:admissionId/save', controller.saveOtRegister);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
 router.get('/opd/search-for-admission', controller.searchOpdVisitsForAdmission);

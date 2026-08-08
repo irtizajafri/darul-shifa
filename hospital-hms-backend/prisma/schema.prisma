@@ -998,6 +998,39 @@ model ClinicAdmission {
   provisionalBillItems ClinicProvisionalBillItem[]
   dischargeBillItems ClinicDischargeBillItem[]
   discountRefunds    ClinicAdmissionDiscountRefund[]
+  otRegisters        ClinicOtRegister[]
+}
+
+// ─── OT Register ──────────────────────────────────────────────────────────────
+// Anaesthesiologist/Surgeon/Tech are just ClinicDoctor rows whose staffCategory
+// matches that role (e.g. a "Surgeon" staff category assigned in Doctor
+// parameters) — no dedicated relation here, doctor ids are plain FKs and the
+// frontend resolves names/roles from the already-loaded doctors list.
+model ClinicOtRegister {
+  id                      Int             @id @default(autoincrement())
+  admissionId             Int
+  admission               ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  surgeryDateTime         DateTime
+  anaesthesiologistId     Int?
+  anaesthesiologistOnCall Boolean         @default(false)
+  surgeon1Id              Int?
+  surgeon1OnCall          Boolean         @default(false)
+  surgeon2Id              Int?
+  surgeon2OnCall          Boolean         @default(false)
+  tech1Id                 Int?
+  tech1OnCall             Boolean         @default(false)
+  tech2Id                 Int?
+  tech2OnCall             Boolean         @default(false)
+  surgeryTypeId           Int?
+  useBlood                Boolean         @default(false)
+  bloodType               String?
+  bloodQty                Float?
+  createdByUserId         String?
+  createdByName           String?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+
+  @@index([admissionId])
 }
 
 // ─── Discount & Refund Against Admission (mid-admission, before discharge) ───

@@ -1580,6 +1580,53 @@ async function addAdmissionDiscountRefund(admissionId, {
   });
 }
 
+// ─── Transactions > OT Register ───────────────────────────────────────────────
+async function getOtRegisterForAdmission(admissionNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+
+  const otRegister = await prisma.clinicOtRegister.findFirst({
+    where: { admissionId: admission.id },
+    orderBy: { id: 'desc' },
+  });
+
+  return { admission, otRegister };
+}
+
+async function saveOtRegister(admissionId, payload) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (!payload.surgeryDateTime) throw Object.assign(new Error('Surgery Date and Time is required'), { status: 400 });
+
+  const data = {
+    surgeryDateTime: new Date(payload.surgeryDateTime),
+    anaesthesiologistId: payload.anaesthesiologistId ? Number(payload.anaesthesiologistId) : null,
+    anaesthesiologistOnCall: Boolean(payload.anaesthesiologistOnCall),
+    surgeon1Id: payload.surgeon1Id ? Number(payload.surgeon1Id) : null,
+    surgeon1OnCall: Boolean(payload.surgeon1OnCall),
+    surgeon2Id: payload.surgeon2Id ? Number(payload.surgeon2Id) : null,
+    surgeon2OnCall: Boolean(payload.surgeon2OnCall),
+    tech1Id: payload.tech1Id ? Number(payload.tech1Id) : null,
+    tech1OnCall: Boolean(payload.tech1OnCall),
+    tech2Id: payload.tech2Id ? Number(payload.tech2Id) : null,
+    tech2OnCall: Boolean(payload.tech2OnCall),
+    surgeryTypeId: payload.surgeryTypeId ? Number(payload.surgeryTypeId) : null,
+    useBlood: Boolean(payload.useBlood),
+    bloodType: payload.useBlood ? (payload.bloodType || null) : null,
+    bloodQty: payload.useBlood && payload.bloodQty ? Number(payload.bloodQty) : null,
+    createdByUserId: payload.createdByUserId != null ? String(payload.createdByUserId) : null,
+    createdByName: payload.createdByName || null,
+  };
+
+  if (payload.id) {
+    return prisma.clinicOtRegister.update({ where: { id: Number(payload.id) }, data });
+  }
+  return prisma.clinicOtRegister.create({ data: { admissionId: Number(admissionId), ...data } });
+}
+
 async function createAdmission(data) {
   const admission = await prisma.clinicAdmission.create({
     data: {
@@ -3611,6 +3658,8 @@ module.exports = {
   getAdmissionPaymentForPrint,
   getAdmissionForDiscountRefund,
   addAdmissionDiscountRefund,
+  getOtRegisterForAdmission,
+  saveOtRegister,
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,
