@@ -64,7 +64,13 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   const total     = isComplementary ? 0 : (doc.totalAmount || 0);
   const discount  = isComplementary ? 0 : (doc.discount   || 0);
   const received  = isComplementary ? 0 : (doc.receive    || 0);
-  const grossAmt  = total + discount;
+  // doc.totalAmount already includes the CC surcharge (if any) — back it out
+  // to get the pre-discount subtotal of the line items.
+  const ccCharge     = isComplementary ? 0 : (doc.ccCharge     || 0);
+  const ccPercentage = doc.ccPercentage || 0;
+  const ccMinAmount  = doc.ccMinAmount  || 0;
+  const preChargeTotal = Math.max(0, total - ccCharge);
+  const grossAmt  = preChargeTotal + discount;
   const balance   = Math.max(0, total - received);
 
   const ageStr = [
@@ -203,6 +209,8 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   <div class="divider"></div>
   <div class="amount-row total"><span>Total:</span><span>${fmt(grossAmt)}</span></div>
   ${discount > 0 ? `<div class="amount-row"><span>Discount:</span><span>${fmt(discount)}</span></div>` : ''}
+  ${ccCharge > 0 ? `<div class="amount-row"><span>CC Charge (${ccPercentage}%, Min ${fmt(ccMinAmount)}):</span><span>${fmt(ccCharge)}</span></div>` : ''}
+  ${ccCharge === 0 && pt === 'cc' && (ccPercentage > 0 || ccMinAmount > 0) ? `<div class="amount-row"><span>CC Charge (${ccPercentage}%, Min ${fmt(ccMinAmount)}):</span><span>Not Applied</span></div>` : ''}
 
   <div class="divider"></div>
   <div class="invoice-row">

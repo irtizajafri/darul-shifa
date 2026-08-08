@@ -67,6 +67,9 @@ router.post('/shifts', controller.createShift);
 router.put('/shifts/:id', controller.updateShift);
 router.delete('/shifts/:id', controller.deleteShift);
 
+router.get('/cc-config', controller.getCcConfig);
+router.put('/cc-config', controller.updateCcConfig);
+
 // Provisional Bill
 router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
 router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);

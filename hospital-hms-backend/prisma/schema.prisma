@@ -827,6 +827,16 @@ model ClinicDoctorSubDept {
   @@index([subDeptId])
 }
 
+// ─── Credit Card Surcharge Parameter ──────────────────────────────────────────
+// Single-row config: if a CC-paid slip's amount >= minAmount, percentage is
+// added as a surcharge (see ccPercentage/ccMinAmount/ccCharge on ClinicOpdVisit).
+model ClinicCreditCardConfig {
+  id         Int      @id @default(autoincrement())
+  percentage Float    @default(0)
+  minAmount  Float    @default(0)
+  updatedAt  DateTime @updatedAt
+}
+
 // ─── Clinic OPD ───────────────────────────────────────────────────────────────
 
 model ClinicOpdVisit {
@@ -867,6 +877,12 @@ model ClinicOpdVisit {
   panelEmployeeId Int?
   panelDependentId Int?
   department      String                 @default("General OPD")
+  // Credit Card surcharge — snapshot of the configured percentage/min-amount
+  // (from ClinicCreditCardConfig) at slip-creation time plus the amount it
+  // actually added, so reprints stay accurate even if the config changes later.
+  ccPercentage    Float                  @default(0)
+  ccMinAmount     Float                  @default(0)
+  ccCharge        Float                  @default(0)
   printCount      Int                    @default(0)
   status          String                 @default("active")
   cancelReason    String?

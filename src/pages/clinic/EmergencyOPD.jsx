@@ -240,7 +240,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EmergencyOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore();
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -268,6 +268,7 @@ export default function EmergencyOPD() {
   useEffect(() => {
     fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     loadDoctors(false);
+    fetchCcConfig().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -343,13 +344,23 @@ export default function EmergencyOPD() {
     ? Math.round((grossAmount * (Number(discount) || 0)) / 100)
     : (Number(discount) || 0);
   const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
-  const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
+
+  // Credit Card surcharge — if paying by CC and the slip amount is >= the
+  // configured min amount, add the configured percentage on top.
+  const isCcMethod = effectivePaymentType === 'cc';
+  const ccPercentage = ccConfig?.percentage || 0;
+  const ccMinAmount = ccConfig?.minAmount || 0;
+  const ccApplicable = !isComplementary && isCcMethod && ccPercentage > 0 && totalAmount >= ccMinAmount;
+  const ccCharge = ccApplicable ? Math.round((totalAmount * ccPercentage) / 100) : 0;
+  const grandTotal = totalAmount + ccCharge;
+
+  const refundAmt = Math.max(0, (Number(receive) || 0) - grandTotal);
 
   // Received amount auto-follows the selected slip amount (doctor/item +
-  // discount) so it never has to be typed manually.
+  // discount + CC surcharge) so it never has to be typed manually.
   useEffect(() => {
-    setReceive(isComplementary ? '' : String(totalAmount));
-  }, [totalAmount, isComplementary]);
+    setReceive(isComplementary ? '' : String(grandTotal));
+  }, [grandTotal, isComplementary]);
 
   // Auto-fill the slip from the admitted patient's own record — the data
   // already exists on their admission, no need to retype it.
@@ -390,10 +401,13 @@ export default function EmergencyOPD() {
         mrNo: null,
         department: 'Emergency',
         paymentType: effectivePaymentType,
-        totalAmount,
+        totalAmount: grandTotal,
         discount: discountAmt,
         receive: Number(receive) || 0,
         refund: refundAmt,
+        ccPercentage: isCcMethod && !isComplementary ? ccPercentage : 0,
+        ccMinAmount: isCcMethod && !isComplementary ? ccMinAmount : 0,
+        ccCharge,
         doctors: rightDoctors.map(r => ({
           doctorId: r.doctorId,
           subDeptId: r.subDeptId,
@@ -680,7 +694,17 @@ export default function EmergencyOPD() {
                   ) : (
                     <>
                       {discountAmt > 0 && <div style={{ fontSize: '0.7rem', color: '#94a3b8', textDecoration: 'line-through' }}>{grossAmount}</div>}
-                      {totalAmount}
+                      {grandTotal}
+                      {ccCharge > 0 && (
+                        <div style={{ fontSize: '0.7rem', color: '#2563eb', fontWeight: 600 }}>
+                          + CC {ccPercentage}% = {ccCharge}
+                        </div>
+                      )}
+                      {!ccCharge && isCcMethod && ccMinAmount > 0 && (
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 500 }}>
+                          CC {ccPercentage}% not applied (min Rs.{ccMinAmount})
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

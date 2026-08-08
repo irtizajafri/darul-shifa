@@ -90,6 +90,7 @@ import UploadPatientDocument from '../pages/clinic/UploadPatientDocument';
 import PatientDocumentsReport from '../pages/clinic/inquiries/PatientDocumentsReport';
 import ClinicDischargeTypePage from '../pages/clinic/parameters/ClinicDischargeTypePage';
 import ClinicShiftPage from '../pages/clinic/parameters/ClinicShiftPage';
+import ClinicCreditCardConfigPage from '../pages/clinic/parameters/ClinicCreditCardConfigPage';
 import ProvisionalBill from '../pages/clinic/ProvisionalBill';
 import DischargeRefund from '../pages/clinic/DischargeRefund';
 import SlipTransfer from '../pages/clinic/SlipTransfer';
@@ -269,6 +270,7 @@ export default function AppRoutes() {
           <Route path="clinic/inquiries/patient-documents" element={<PermissionGuard module="clinic"><PatientDocumentsReport /></PermissionGuard>} />
           <Route path="clinic/parameters/discharge-types" element={<PermissionGuard module="clinic"><ClinicDischargeTypePage /></PermissionGuard>} />
           <Route path="clinic/parameters/shift" element={<PermissionGuard module="clinic"><ClinicShiftPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/credit-card" element={<PermissionGuard module="clinic"><ClinicCreditCardConfigPage /></PermissionGuard>} />
           <Route path="clinic/billing/provisional-bill" element={<PermissionGuard module="clinic"><ProvisionalBill /></PermissionGuard>} />
           <Route path="clinic/discharge-refund" element={<PermissionGuard module="clinic"><DischargeRefund /></PermissionGuard>} />
           <Route path="clinic/transactions/slip-transfer" element={<PermissionGuard module="clinic"><SlipTransfer /></PermissionGuard>} />

@@ -684,6 +684,21 @@ export const useClinicStore = create((set) => ({
     set((s) => ({ shifts: s.shifts.filter((c) => c.id !== id) }));
   },
 
+  // ── Credit Card Surcharge Parameter ─────────────────────────────────────────
+  ccConfig: { percentage: 0, minAmount: 0 },
+
+  fetchCcConfig: async () => {
+    const data = await request('/cc-config');
+    set({ ccConfig: data });
+    return data;
+  },
+
+  updateCcConfig: async (payload) => {
+    const data = await request('/cc-config', { method: 'PUT', body: JSON.stringify(payload) });
+    set({ ccConfig: data });
+    return data;
+  },
+
   // ── Provisional Bill ─────────────────────────────────────────────────────────
   fetchProvisionalBillDetail: async (admissionId) => {
     return request(`/provisional-bill/${admissionId}`);

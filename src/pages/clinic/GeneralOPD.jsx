@@ -514,7 +514,7 @@ function DoctorSearchInput({ value, onChange }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor', showDoctorColumn = true }) {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore();
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -569,6 +569,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch(() => {});
     loadDoctors(false);
+    fetchCcConfig().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -665,14 +666,24 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     ? Math.round((grossAmount * (Number(discount) || 0)) / 100)
     : (Number(discount) || 0);
   const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
-  const refundAmt  = Math.max(0, (Number(receive) || 0) - totalAmount);
-  const balanceAmt = Math.max(0, totalAmount - (Number(receive) || 0));
+
+  // Credit Card surcharge — if paying by CC and the slip amount is >= the
+  // configured min amount, add the configured percentage on top.
+  const isCcMethod = effectivePaymentType === 'cc';
+  const ccPercentage = ccConfig?.percentage || 0;
+  const ccMinAmount = ccConfig?.minAmount || 0;
+  const ccApplicable = !isComplementary && isCcMethod && ccPercentage > 0 && totalAmount >= ccMinAmount;
+  const ccCharge = ccApplicable ? Math.round((totalAmount * ccPercentage) / 100) : 0;
+  const grandTotal = totalAmount + ccCharge;
+
+  const refundAmt  = Math.max(0, (Number(receive) || 0) - grandTotal);
+  const balanceAmt = Math.max(0, grandTotal - (Number(receive) || 0));
 
   // Received amount auto-follows the selected slip amount (doctor/item +
-  // discount) so it never has to be typed manually.
+  // discount + CC surcharge) so it never has to be typed manually.
   useEffect(() => {
-    setReceive(isComplementary ? '' : String(totalAmount));
-  }, [totalAmount, isComplementary]);
+    setReceive(isComplementary ? '' : String(grandTotal));
+  }, [grandTotal, isComplementary]);
 
   function applyPatientData(patient, useNewMr) {
     if (useNewMr) {
@@ -774,10 +785,13 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         ...form,
         department: departmentName,
         paymentType: effectivePaymentType,
-        totalAmount,
+        totalAmount: grandTotal,
         discount: discountAmt,
         receive: Number(receive) || 0,
         refund: refundAmt,
+        ccPercentage: isCcMethod && !isComplementary ? ccPercentage : 0,
+        ccMinAmount: isCcMethod && !isComplementary ? ccMinAmount : 0,
+        ccCharge,
         doctors: rightDoctors.map(r => ({
           doctorId: r.doctorId,
           subDeptId: r.subDeptId,
@@ -1350,7 +1364,17 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                   ) : (
                     <>
                       {discountAmt > 0 && <div style={{ fontSize: '0.7rem', color: '#94a3b8', textDecoration: 'line-through' }}>{grossAmount}</div>}
-                      {totalAmount}
+                      {grandTotal}
+                      {ccCharge > 0 && (
+                        <div style={{ fontSize: '0.7rem', color: '#2563eb', fontWeight: 600 }}>
+                          + CC {ccPercentage}% = {ccCharge}
+                        </div>
+                      )}
+                      {!ccCharge && isCcMethod && ccMinAmount > 0 && (
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 500 }}>
+                          CC {ccPercentage}% not applied (min Rs.{ccMinAmount})
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

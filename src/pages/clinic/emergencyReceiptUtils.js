@@ -13,7 +13,13 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
   const total    = isComplementary ? 0 : (doc.totalAmount || 0);
   const discount = isComplementary ? 0 : (doc.discount    || 0);
   const received = isComplementary ? 0 : (doc.receive     || total);
-  const grossAmt = total + discount;
+  // doc.totalAmount already includes the CC surcharge (if any) — back it out
+  // to get the pre-discount subtotal of the line items.
+  const ccCharge     = isComplementary ? 0 : (doc.ccCharge     || 0);
+  const ccPercentage = doc.ccPercentage || 0;
+  const ccMinAmount  = doc.ccMinAmount  || 0;
+  const preChargeTotal = Math.max(0, total - ccCharge);
+  const grossAmt = preChargeTotal + discount;
   const balance  = Math.max(0, total - received);
 
   const ageStr = [
@@ -250,6 +256,8 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
       <div class="inv-right">
         <div class="inv-received">Received &nbsp;&nbsp; ${fmt(received)}</div>
         ${balance > 0.01 ? `<div class="inv-balance">Balance &nbsp;&nbsp; ${fmt(balance)}</div>` : ''}
+        ${ccCharge > 0 ? `<div class="inv-received">CC Charge (${ccPercentage}%, Min ${fmt(ccMinAmount)}) &nbsp;&nbsp; ${fmt(ccCharge)}</div>` : ''}
+        ${ccCharge === 0 && pt === 'cc' && (ccPercentage > 0 || ccMinAmount > 0) ? `<div class="inv-received">CC Charge (${ccPercentage}%, Min ${fmt(ccMinAmount)}) &nbsp;&nbsp; Not Applied</div>` : ''}
         <div class="inv-grand">Grand Total: &nbsp;&nbsp; ${fmt(total)}</div>
       </div>
     </div>

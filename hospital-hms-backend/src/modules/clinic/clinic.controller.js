@@ -360,6 +360,23 @@ async function deleteShift(req, res, next) {
   }
 }
 
+// ─── Credit Card Surcharge Parameter ──────────────────────────────────────────
+
+async function getCcConfig(req, res, next) {
+  try {
+    const data = await service.getCcConfig();
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function updateCcConfig(req, res, next) {
+  try {
+    const { percentage, minAmount } = req.body;
+    const data = await service.updateCcConfig({ percentage, minAmount });
+    success(res, data, 'Credit Card parameter updated');
+  } catch (err) { next(err); }
+}
+
 // ─── Upload Patient Document ──────────────────────────────────────────────────
 
 async function searchAdmissionsForDocuments(req, res, next) {
@@ -1382,6 +1399,8 @@ module.exports = {
   createShift,
   updateShift,
   deleteShift,
+  getCcConfig,
+  updateCcConfig,
   searchAdmissionsForDocuments,
   getPatientDocuments,
   uploadPatientDocument,

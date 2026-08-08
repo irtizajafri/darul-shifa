@@ -36,6 +36,7 @@ const menuItems = [
       { label: 'Upload Document Type', path: '/clinic/parameters/document-types' },
       { label: 'Discharge Type',       path: '/clinic/parameters/discharge-types' },
       { label: 'Shift',                path: '/clinic/parameters/shift' },
+      { label: 'Credit Card %',        path: '/clinic/parameters/credit-card' },
       { label: 'Death Certificate',    path: '/clinic/parameters/death-certificate' },
     ],
   },

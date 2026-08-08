@@ -408,11 +408,28 @@ async function searchEmployees(q) {
   });
 }
 
+// ─── Credit Card Surcharge Parameter ──────────────────────────────────────────
+
+async function getCcConfig() {
+  const row = await prisma.clinicCreditCardConfig.findFirst({ orderBy: { id: 'asc' } });
+  return row || { id: null, percentage: 0, minAmount: 0 };
+}
+
+async function updateCcConfig({ percentage, minAmount }) {
+  const existing = await prisma.clinicCreditCardConfig.findFirst({ orderBy: { id: 'asc' } });
+  const data = { percentage: Number(percentage) || 0, minAmount: Number(minAmount) || 0 };
+  if (existing) {
+    return prisma.clinicCreditCardConfig.update({ where: { id: existing.id }, data });
+  }
+  return prisma.clinicCreditCardConfig.create({ data });
+}
+
 async function createOpdVisit({
   mrNo, serialNo, patientType, patientName, admitPatient, admitNo, adjustPayment, antenatal, antenatalNo,
   age, ageMonths, ageDays, gender, phoneNo, referredBy, driver, location, hospitalPatient, advisedBy,
   paymentType, visitType, onCall, employeeId, employeeName,
   totalAmount, discount, receive, refund,
+  ccPercentage, ccMinAmount, ccCharge,
   panelCompanyId, panelEmployeeId, panelDependentId,
   department,
   createdByUserId, createdByName,
@@ -455,6 +472,9 @@ async function createOpdVisit({
       discount: Number(discount) || 0,
       receive: Number(receive) || 0,
       refund: Number(refund) || 0,
+      ccPercentage: Number(ccPercentage) || 0,
+      ccMinAmount: Number(ccMinAmount) || 0,
+      ccCharge: Number(ccCharge) || 0,
       panelCompanyId:  panelCompanyId  ? Number(panelCompanyId)  : null,
       panelEmployeeId: panelEmployeeId ? Number(panelEmployeeId) : null,
       panelDependentId: panelDependentId ? Number(panelDependentId) : null,
@@ -3462,6 +3482,8 @@ module.exports = {
   createShift,
   updateShift,
   deleteShift,
+  getCcConfig,
+  updateCcConfig,
   searchAdmissionsForDocuments,
   getPatientDocuments,
   createPatientDocument,
