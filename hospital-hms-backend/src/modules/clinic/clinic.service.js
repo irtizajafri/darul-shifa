@@ -1533,6 +1533,53 @@ async function getAdmissionPaymentForPrint(id) {
   return { payment, isDuplicate };
 }
 
+// ─── Transactions > Discount & Refund Against Admission ──────────────────────
+async function getAdmissionForDiscountRefund(admissionNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+
+  const [detail, history] = await Promise.all([
+    getProvisionalBillDetail(admission.id),
+    prisma.clinicAdmissionDiscountRefund.findMany({
+      where: { admissionId: admission.id },
+      orderBy: { id: 'desc' },
+    }),
+  ]);
+
+  return {
+    admission,
+    billAmount: detail.balanceInfo.billAmount,
+    receivedAmount: detail.balanceInfo.amountReceived,
+    history,
+  };
+}
+
+async function addAdmissionDiscountRefund(admissionId, {
+  billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount,
+  createdByUserId, createdByName,
+}) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  return prisma.clinicAdmissionDiscountRefund.create({
+    data: {
+      admissionId: Number(admissionId),
+      billAmount: Number(billAmount) || 0,
+      receivedAmount: Number(receivedAmount) || 0,
+      discountAmount: Number(discountAmount) || 0,
+      discountType: discountType === 'percent' ? 'percent' : 'amount',
+      permissionBy: permissionBy?.trim() || null,
+      netBalance: Number(netBalance) || 0,
+      refundAmount: Number(refundAmount) || 0,
+      createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
+      createdByName: createdByName || null,
+    },
+  });
+}
+
 async function createAdmission(data) {
   const admission = await prisma.clinicAdmission.create({
     data: {
@@ -3562,6 +3609,8 @@ module.exports = {
   getAdmissionForReceiving,
   addAdmissionPayment,
   getAdmissionPaymentForPrint,
+  getAdmissionForDiscountRefund,
+  addAdmissionDiscountRefund,
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,

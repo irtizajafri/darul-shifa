@@ -1,0 +1,335 @@
+$blue:    #1a3c6e;
+$green:   #1f7a4d;
+$red:     #c62828;
+$border:  #bbb;
+$bg:      #dde3ea;
+
+.dra-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: $bg;
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+}
+
+// ─── Title Bar ────────────────────────────────────────────────────────────────
+.dra-title-bar {
+  background: $blue;
+  color: #fff;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+}
+
+.dra-title-text {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+// ─── Content ─────────────────────────────────────────────────────────────────
+.dra-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+.dra-form-card {
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 760px;
+}
+
+// ─── Form Rows ────────────────────────────────────────────────────────────────
+.dra-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.dra-label {
+  width: 130px;
+  min-width: 130px;
+  text-align: right;
+  font-weight: 600;
+  color: #444;
+  font-size: 11.5px;
+
+  &--right { margin-left: 24px; }
+}
+
+.dra-input {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 7px;
+  background: #f9f9f9;
+  color: #111;
+  &:focus { outline: none; border-color: $blue; }
+  &[readonly] { background: #f0f0f0; cursor: default; }
+
+  &--serial  { width: 130px; font-weight: 600; }
+  &--amount  { width: 120px; font-weight: 700; color: $green; }
+  &--wide    { width: 200px; }
+}
+
+.dra-lookup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  background: #f0f0f0;
+  cursor: pointer;
+  color: #444;
+  padding: 0;
+  &:hover { background: #e0e8f0; border-color: $blue; color: $blue; }
+}
+
+.dra-inline-patient {
+  font-weight: 700;
+  color: $blue;
+  font-size: 12px;
+}
+
+.dra-check-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #667;
+  margin-left: auto;
+
+  &--closed { color: #888; }
+}
+
+.dra-value {
+  font-size: 13px;
+  color: #222;
+  font-weight: 700;
+
+  &--green { color: $green; }
+  &--red   { color: $red; }
+}
+
+.dra-separator {
+  height: 1px;
+  background: #e0e0e0;
+  margin: 4px 0;
+}
+
+.dra-disc-toggle {
+  display: flex;
+  border: 1px solid $border;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.dra-disc-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border: none;
+  background: #f0f0f0;
+  color: #555;
+  cursor: pointer;
+
+  &--active { background: $blue; color: #fff; }
+}
+
+.dra-disc-calc {
+  font-size: 11.5px;
+  color: #888;
+  font-weight: 600;
+}
+
+// ─── History Table ─────────────────────────────────────────────────────────────
+.dra-history {
+  margin-top: 4px;
+}
+
+.dra-history-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #667;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+.dra-history-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+
+  thead tr { background: #e8eef8; }
+
+  th {
+    padding: 5px 8px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    white-space: nowrap;
+  }
+
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+  }
+}
+
+.dra-td-r { text-align: right; }
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+.dra-footer {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dra-add-btn {
+  background: $blue;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 22px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover:not(:disabled) { background: #1e4a88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+// ─── Lookup Modal ─────────────────────────────────────────────────────────────
+.dra-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.dra-modal {
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 5px;
+  width: 720px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+
+.dra-modal-hdr {
+  background: $blue;
+  color: #fff;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.dra-modal-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  &:hover { color: #ffcccc; }
+}
+
+.dra-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ddd;
+  background: #f5f7fa;
+}
+
+.dra-modal-search-icon { color: #777; flex-shrink: 0; }
+
+.dra-modal-search-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 8px;
+  &:focus { outline: none; border-color: $blue; }
+}
+
+.dra-modal-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.dra-modal-loading {
+  padding: 24px;
+  text-align: center;
+  color: #888;
+}
+
+.dra-modal-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+
+  thead tr {
+    background: #e8eef8;
+    position: sticky;
+    top: 0;
+  }
+
+  th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    cursor: pointer;
+    &:nth-child(even) { background: #f9f9f9; }
+    &:hover { background: #dbe8f8; }
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eee;
+    white-space: nowrap;
+  }
+}
+
+.dra-td-empty { text-align: center; color: #999; padding: 20px !important; }

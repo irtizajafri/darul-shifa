@@ -1015,6 +1015,29 @@ async function getAdmissionPaymentForPrint(req, res, next) {
   }
 }
 
+async function getAdmissionForDiscountRefund(req, res, next) {
+  try {
+    const data = await service.getAdmissionForDiscountRefund(req.params.admissionNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addAdmissionDiscountRefund(req, res, next) {
+  try {
+    const { billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName } = req.body;
+    const data = await service.addAdmissionDiscountRefund(req.params.admissionId, {
+      billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName,
+    });
+    success(res, data, 'Discount/Refund save ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function createAdmission(req, res, next) {
   try {
     if (!req.body.admissionNo?.trim()) return fail(res, 400, 'Admission # is required');
@@ -1478,6 +1501,8 @@ module.exports = {
   getAdmissionForReceiving,
   addAdmissionPayment,
   getAdmissionPaymentForPrint,
+  getAdmissionForDiscountRefund,
+  addAdmissionDiscountRefund,
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,

@@ -57,6 +57,7 @@ const menuItems = [
       { label: 'Slip Adjustment',              path: '/clinic/transactions/slip-adjustment' },
       { label: 'Slip Transfer',                path: '/clinic/transactions/slip-transfer' },
       { label: 'Receiving against Admission',  path: '/clinic/transactions/receiving-against-admission' },
+      { label: 'Discount & Refund Against Admission', path: '/clinic/transactions/discount-refund-admission' },
       { label: 'Admission Adjustment',          path: '/clinic/transactions/admission-adjustment' },
       { label: 'Admission Status Change',       path: '/clinic/transactions/admission-status-change' },
       { label: 'Bed Shifting',                  path: '/clinic/transactions/bed-shifting' },

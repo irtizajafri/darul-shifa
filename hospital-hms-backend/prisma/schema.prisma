@@ -997,6 +997,30 @@ model ClinicAdmission {
   documents          ClinicPatientDocument[]
   provisionalBillItems ClinicProvisionalBillItem[]
   dischargeBillItems ClinicDischargeBillItem[]
+  discountRefunds    ClinicAdmissionDiscountRefund[]
+}
+
+// ─── Discount & Refund Against Admission (mid-admission, before discharge) ───
+// Bill Amount / Received Amount are snapshots pulled from the Provisional
+// Bill and admission payments at save time — discountAmount can be entered
+// as a flat Rupee value or a percentage of billAmount (discountType).
+// refundAmount = whatever was already received beyond the discounted balance.
+model ClinicAdmissionDiscountRefund {
+  id              Int             @id @default(autoincrement())
+  admissionId     Int
+  admission       ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  billAmount      Float           @default(0)
+  receivedAmount  Float           @default(0)
+  discountAmount  Float           @default(0)
+  discountType    String          @default("amount")
+  permissionBy    String?
+  netBalance      Float           @default(0)
+  refundAmount    Float           @default(0)
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime        @default(now())
+
+  @@index([admissionId])
 }
 
 // ─── Discharge and Refund (final bill at time of discharge) ──────────────────
