@@ -166,6 +166,7 @@ export default function Reports() {
   const [registerView, setRegisterView]         = useState('full');
   const [leaveEncashTotal, setLeaveEncashTotal] = useState(0);
   const [leaveEncashMeta, setLeaveEncashMeta]   = useState({ count: 0, employees: [] });
+  const [lwpRateByDate, setLwpRateByDate]       = useState({});
   const [timestampFilter, setTimestampFilter]   = useState('punched');
 
   // ─── Register Date Range ──────────────────────────────────────────────────
@@ -738,6 +739,24 @@ export default function Reports() {
     fetchSaved();
     return () => controller.abort();
   }, [emp?.empCode, month, year]);
+
+  useEffect(() => {
+    if (!emp?.id || !month || !year) { setLwpRateByDate({}); return; }
+    const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+    fetch(`http://localhost:5001/api/leave-encashment/records?employeeId=${emp.id}&month=${monthKey}`)
+      .then(r => r.json())
+      .then(json => {
+        if (!json.ok) return;
+        const map = {};
+        (json.data || []).forEach(r => {
+          if (r.type === 'leave_with_pay' && r.attendanceDate) {
+            map[r.attendanceDate.slice(0, 10)] = r.perDayRate;
+          }
+        });
+        setLwpRateByDate(map);
+      })
+      .catch(() => setLwpRateByDate({}));
+  }, [emp?.id, month, year]);
 
   const basic      = Number(emp?.basicSalary) || 0;
   const allowances = emp?.allowances || [];
@@ -1466,9 +1485,13 @@ export default function Reports() {
           : Math.max(0, workedMinutes - overtimeMinutes);
         const proratedGross = Math.round(Math.min(perDayRate, Math.max(0, baseWorkedMinutes * perMinuteRate)));
 
+        const effectiveDayRate = actStatus === 'leave_with_pay' && lwpRateByDate[dayStr] != null
+          ? lwpRateByDate[dayStr]
+          : perDayRate;
+
         const grossPerDay = (isFuture || actStatus === 'leave')
           ? 0
-          : (isPayablePresentRow ? proratedGross : Math.round(perDayRate));
+          : (isPayablePresentRow ? proratedGross : Math.round(effectiveDayRate));
 
         const wrkHrsRaw     = workedMinutes / 60;
         const wrkHrsRounded = isFuture ? 0 : parseFloat(wrkHrsRaw.toFixed(1));
@@ -1545,9 +1568,9 @@ export default function Reports() {
           otAmt:   isFuture ? '0' : String(Math.max(0, otVal)),
           late:    (isFixed || isAvailOff || isWorkedExtra || effectiveOffDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
           status:  displayStatus,
-          salary:  isFixed ? (isFuture ? '0' : String(Math.round(perDayRate))) : String(grossPerDay),
+          salary:  isFixed ? (isFuture ? '0' : String(Math.round(effectiveDayRate))) : String(grossPerDay),
           ded:     isFixed ? '0' : String(ded),
-          total:   isFixed ? (isFuture ? '0' : String(Math.max(0, Math.round(perDayRate) + Math.max(0, otVal)))) : String(Math.max(0, grossPerDay - ded + otVal)),
+          total:   isFixed ? (isFuture ? '0' : String(Math.max(0, Math.round(effectiveDayRate) + Math.max(0, otVal)))) : String(Math.max(0, grossPerDay - ded + otVal)),
           isManuallyEdited: Boolean(record?.isManuallyEdited),
         };
 
@@ -1644,7 +1667,7 @@ export default function Reports() {
       ded:     i % 5 === 0 ? Math.round(15 * fallbackPerMinute).toString() : "0",
       total:   i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
     }));
-  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, emp?.workingDays, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled, normalizeWaiveDeductionFlag]);
+  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, emp?.workingDays, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled, normalizeWaiveDeductionFlag, lwpRateByDate]);
 
   const calculatedSalaryFromRows = useMemo(() => {
     return detailedAttendanceRows.reduce((sum, row) => {
@@ -1811,7 +1834,7 @@ export default function Reports() {
       dutyHrs: r.dutyHrs,
       wrkDays: idx === 0 ? '28' : '12',
       ot:      r.ot,
-      perDay:  r.status === 'Future' ? '0' : Math.round(perDayRate).toString(),
+      perDay:  r.status === 'Future' ? '0' : (r.status === 'Leave With Pay' ? r.salary : Math.round(perDayRate).toString()),
       salary:  (() => {
         const salaryNum = Number(r.salary);
         const totalNum = Number(r.total);
@@ -1823,7 +1846,7 @@ export default function Reports() {
       ded:     r.ded,
       total:   r.total,
     }));
-  }, [detailedAttendanceRows, emp, perDayRate]);
+  }, [detailedAttendanceRows, emp, perDayRate, lwpRateByDate]);
 
   const payrollConsolidatedRows = useMemo(() => {
     return employees.map((e) => {
