@@ -1058,6 +1058,98 @@ async function saveOtRegister(req, res, next) {
   }
 }
 
+async function getOtRegisterReport(req, res, next) {
+  try {
+    const { fromDate, toDate, patientType, anaesthesiologistId, surgeonId, techId, surgeryTypeId } = req.query;
+    const data = await service.getOtRegisterReport({ fromDate, toDate, patientType, anaesthesiologistId, surgeonId, techId, surgeryTypeId });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function importOtRegister(req, res, next) {
+  try {
+    const data = await service.importOtRegister(req.body.rows);
+    success(res, data, 'OT Register imported');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getBirthCertificateForAdmission(req, res, next) {
+  try {
+    const { sequenceNo } = req.query;
+    const data = await service.getBirthCertificateForAdmission(req.params.admissionNo, sequenceNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function saveBirthCertificate(req, res, next) {
+  try {
+    const data = await service.saveBirthCertificate(req.params.admissionId, req.body);
+    success(res, data, 'Birth Certificate save ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getBirthCertificateReport(req, res, next) {
+  try {
+    const { fromDate, toDate } = req.query;
+    const data = await service.getBirthCertificateReport({ fromDate, toDate });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function importBirthCertificates(req, res, next) {
+  try {
+    const data = await service.importBirthCertificates(req.body.rows);
+    success(res, data, 'Birth Certificates imported');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function searchSlipsForAppointment(req, res, next) {
+  try {
+    const data = await service.searchSlipsForAppointment(req.query.q);
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getAppointmentForSlip(req, res, next) {
+  try {
+    const data = await service.getAppointmentForSlip(req.params.slipNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function saveAppointment(req, res, next) {
+  try {
+    const data = await service.saveAppointment(req.body);
+    success(res, data, 'Appointment save ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getAppointmentReport(req, res, next) {
+  try {
+    const { dateType, date } = req.query;
+    const data = await service.getAppointmentReport({ dateType, date });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 async function createAdmission(req, res, next) {
   try {
     if (!req.body.admissionNo?.trim()) return fail(res, 400, 'Admission # is required');
@@ -1525,6 +1617,16 @@ module.exports = {
   addAdmissionDiscountRefund,
   getOtRegisterForAdmission,
   saveOtRegister,
+  getOtRegisterReport,
+  importOtRegister,
+  getBirthCertificateForAdmission,
+  saveBirthCertificate,
+  getBirthCertificateReport,
+  importBirthCertificates,
+  searchSlipsForAppointment,
+  getAppointmentForSlip,
+  saveAppointment,
+  getAppointmentReport,
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,

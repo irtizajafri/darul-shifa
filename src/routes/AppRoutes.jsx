@@ -67,6 +67,12 @@ import DepartmentDoctorPerformanceFilter from '../pages/clinic/reports/Departmen
 import DepartmentDoctorPerformanceReport from '../pages/clinic/reports/DepartmentDoctorPerformanceReport';
 import AdmissionWiseFilter from '../pages/clinic/reports/AdmissionWiseFilter';
 import AdmissionWiseReport from '../pages/clinic/reports/AdmissionWiseReport';
+import OtRegisterFilter from '../pages/clinic/reports/OtRegisterFilter';
+import OtRegisterReport from '../pages/clinic/reports/OtRegisterReport';
+import BirthCertificateFilter from '../pages/clinic/reports/BirthCertificateFilter';
+import BirthCertificateReport from '../pages/clinic/reports/BirthCertificateReport';
+import AppointmentFilter from '../pages/clinic/reports/AppointmentFilter';
+import AppointmentReport from '../pages/clinic/reports/AppointmentReport';
 import DepartmentPatientsFilter from '../pages/clinic/reports/DepartmentPatientsFilter';
 import DepartmentPatientsReport from '../pages/clinic/reports/DepartmentPatientsReport';
 import UserDateSummaryFilter from '../pages/clinic/reports/UserDateSummaryFilter';
@@ -81,7 +87,9 @@ import SlipRefund from '../pages/clinic/SlipRefund';
 import SlipAdjustment from '../pages/clinic/SlipAdjustment';
 import ReceivingAgainstAdmission from '../pages/clinic/ReceivingAgainstAdmission';
 import DiscountRefundAdmission from '../pages/clinic/DiscountRefundAdmission';
+import Appointment from '../pages/clinic/Appointment';
 import OtRegister from '../pages/clinic/OtRegister';
+import BirthCertificate from '../pages/clinic/BirthCertificate';
 import AdmissionAdjustment from '../pages/clinic/AdmissionAdjustment';
 import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
 import AdmissionStatusChangeReport from '../pages/clinic/reports/AdmissionStatusChangeReport';
@@ -252,6 +260,12 @@ export default function AppRoutes() {
           <Route path="clinic/reports/department-doctor-performance/view" element={<PermissionGuard module="clinic"><DepartmentDoctorPerformanceReport /></PermissionGuard>} />
           <Route path="clinic/reports/admission-wise"      element={<PermissionGuard module="clinic"><AdmissionWiseFilter /></PermissionGuard>} />
           <Route path="clinic/reports/admission-wise/view" element={<PermissionGuard module="clinic"><AdmissionWiseReport /></PermissionGuard>} />
+          <Route path="clinic/reports/ot-register"      element={<PermissionGuard module="clinic"><OtRegisterFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/ot-register/view" element={<PermissionGuard module="clinic"><OtRegisterReport /></PermissionGuard>} />
+          <Route path="clinic/reports/birth-certificate"      element={<PermissionGuard module="clinic"><BirthCertificateFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/birth-certificate/view" element={<PermissionGuard module="clinic"><BirthCertificateReport /></PermissionGuard>} />
+          <Route path="clinic/reports/appointment"      element={<PermissionGuard module="clinic"><AppointmentFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/appointment/view" element={<PermissionGuard module="clinic"><AppointmentReport /></PermissionGuard>} />
           <Route path="clinic/reports/department-patients"      element={<PermissionGuard module="clinic"><DepartmentPatientsFilter /></PermissionGuard>} />
           <Route path="clinic/reports/department-patients/view" element={<PermissionGuard module="clinic"><DepartmentPatientsReport /></PermissionGuard>} />
           <Route path="clinic/reports/user-date-summary"      element={<PermissionGuard module="clinic"><UserDateSummaryFilter /></PermissionGuard>} />
@@ -264,6 +278,8 @@ export default function AppRoutes() {
           <Route path="clinic/transactions/receiving-against-admission" element={<PermissionGuard module="clinic"><ReceivingAgainstAdmission /></PermissionGuard>} />
           <Route path="clinic/transactions/discount-refund-admission" element={<PermissionGuard module="clinic"><DiscountRefundAdmission /></PermissionGuard>} />
           <Route path="clinic/transactions/ot-register" element={<PermissionGuard module="clinic"><OtRegister /></PermissionGuard>} />
+          <Route path="clinic/transactions/birth-certificate" element={<PermissionGuard module="clinic"><BirthCertificate /></PermissionGuard>} />
+          <Route path="clinic/transactions/appointment" element={<PermissionGuard module="clinic"><Appointment /></PermissionGuard>} />
           <Route path="clinic/transactions/admission-adjustment" element={<PermissionGuard module="clinic"><AdmissionAdjustment /></PermissionGuard>} />
           <Route path="clinic/transactions/admission-status-change" element={<PermissionGuard module="clinic"><AdmissionStatusChange /></PermissionGuard>} />
           <Route path="clinic/reports/admission-status-change" element={<PermissionGuard module="clinic"><AdmissionStatusChangeReport /></PermissionGuard>} />

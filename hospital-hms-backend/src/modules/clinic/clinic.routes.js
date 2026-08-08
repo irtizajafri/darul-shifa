@@ -178,6 +178,16 @@ router.post('/admission/discount-refund/:admissionId/add', controller.addAdmissi
 
 router.get('/admission/ot-register/by-number/:admissionNo', controller.getOtRegisterForAdmission);
 router.post('/admission/ot-register/:admissionId/save', controller.saveOtRegister);
+
+router.get('/admission/birth-certificate/by-number/:admissionNo', controller.getBirthCertificateForAdmission);
+router.post('/admission/birth-certificate/:admissionId/save', controller.saveBirthCertificate);
+router.get('/reports/birth-certificate', controller.getBirthCertificateReport);
+router.post('/reports/birth-certificate/import', controller.importBirthCertificates);
+
+router.get('/appointment/search', controller.searchSlipsForAppointment);
+router.get('/appointment/by-slip/:slipNo', controller.getAppointmentForSlip);
+router.post('/appointment/save', controller.saveAppointment);
+router.get('/reports/appointment', controller.getAppointmentReport);
 router.post('/admission', controller.createAdmission);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
 router.get('/opd/search-for-admission', controller.searchOpdVisitsForAdmission);
@@ -237,6 +247,8 @@ router.get('/inquiries/revenue-dashboard', controller.getRevenueDashboard);
 // Reports
 router.get('/reports/department-doctor-performance', controller.getDepartmentDoctorPerformance);
 router.get('/reports/admission-wise', controller.getAdmissionWiseReport);
+router.get('/reports/ot-register', controller.getOtRegisterReport);
+router.post('/reports/ot-register/import', controller.importOtRegister);
 router.get('/reports/user-date-summary', controller.getUserDateSummary);
 
 module.exports = router;

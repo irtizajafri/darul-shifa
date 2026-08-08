@@ -510,6 +510,7 @@ const PAYMENT_TYPE_MAP = {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TITLES = ['Mr', 'Ms', 'Mrs', 'Master', 'Baby'];
+const RELATION_TYPES = ['W/o', 'S/o', 'D/o', 'M/o', 'F/o', 'Self'];
 const CATEGORIES = [
   { value: 'staff',         label: 'Staff' },
   { value: 'panel',         label: 'Panel' },
@@ -526,6 +527,8 @@ const EMPTY = {
   patientTitle: 'Mr',
   patientCategory: 'private',
   patientName: '',
+  relationType: 'W/o',
+  relationName: '',
   ageYears: '',
   ageMonths: '',
   ageDays: '',
@@ -659,6 +662,8 @@ export default function Admission() {
           patientTitle:      rec.patientTitle || 'Mr',
           patientCategory:   rec.patientCategory || 'private',
           patientName:       rec.patientName || '',
+          relationType:      rec.relationType || 'W/o',
+          relationName:      rec.relationName || '',
           ageYears:          rec.ageYears != null ? String(rec.ageYears) : '',
           ageMonths:         rec.ageMonths != null ? String(rec.ageMonths) : '',
           ageDays:           rec.ageDays != null ? String(rec.ageDays) : '',
@@ -1082,6 +1087,29 @@ export default function Admission() {
                   {form.roomCategoryId && availableBeds.length === 0 && (
                     <span className="adm-no-beds">No available beds</span>
                   )}
+                </div>
+              </div>
+
+              <div className="adm-row">
+                <div className="adm-field adm-field--name">
+                  <label>Relation</label>
+                  <div className="adm-name-row">
+                    <select
+                      value={form.relationType}
+                      onChange={e => set('relationType', e.target.value)}
+                      className="adm-title-select"
+                    >
+                      {RELATION_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                    <input
+                      type="text"
+                      value={form.relationName}
+                      onChange={e => set('relationName', e.target.value)}
+                      placeholder="Name"
+                      className="adm-name-input"
+                      disabled={form.relationType === 'Self'}
+                    />
+                  </div>
                 </div>
               </div>
 

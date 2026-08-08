@@ -966,6 +966,8 @@ model ClinicAdmission {
   patientTitle       String   @default("Mr")
   patientCategory    String   @default("private")
   patientName        String   @default("")
+  relationType       String?
+  relationName       String?
   ageYears           Int      @default(0)
   ageMonths          Int      @default(0)
   ageDays            Int      @default(0)
@@ -999,6 +1001,61 @@ model ClinicAdmission {
   dischargeBillItems ClinicDischargeBillItem[]
   discountRefunds    ClinicAdmissionDiscountRefund[]
   otRegisters        ClinicOtRegister[]
+  birthCertificates  ClinicBirthCertificate[]
+}
+
+// ─── Birth Certificate ────────────────────────────────────────────────────────
+// One admission can have multiple births (twins etc.) — sequenceNo picks
+// which one. Mother Name/Father Name/Address default from the admission's own
+// Patient Name / relationName (when relationType is "W/o") / Address, but stay
+// freely editable per certificate.
+// ─── Appointment ───────────────────────────────────────────────────────────────
+// Looked up by Slip # (an OPD visit's serialNo) — Antenatal #/Consultant are
+// snapshotted from that visit at save time, purely informational; the only
+// thing actually being captured here is Next Appointment Date + Phone No.
+model ClinicAppointment {
+  id                  Int       @id @default(autoincrement())
+  slipNo              String
+  opdVisitId          Int?
+  patientName         String    @default("")
+  antenatalNo         String?
+  consultantName      String?
+  nextAppointmentDate DateTime?
+  phoneNo             String?
+  createdByUserId     String?
+  createdByName       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([slipNo])
+}
+
+model ClinicBirthCertificate {
+  id              Int             @id @default(autoincrement())
+  // Optional link — bulk Excel imports of historical births often reference
+  // an Admission # that predates this system and has no ClinicAdmission row.
+  // admissionNo is always stored directly either way (see ClinicOtRegister
+  // for the same pattern), so the report never depends on the link existing.
+  admissionId     Int?
+  admission       ClinicAdmission? @relation(fields: [admissionId], references: [id], onDelete: SetNull)
+  admissionNo     String
+  sequenceNo      Int             @default(1)
+  motherName      String          @default("")
+  fatherName      String?
+  address         String?
+  bloodGroup      String?
+  birthTime       DateTime?
+  weight          Float?
+  gender          String?
+  remarks         String?
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@unique([admissionId, sequenceNo])
+  @@index([admissionId])
+  @@index([admissionNo])
 }
 
 // ─── OT Register ──────────────────────────────────────────────────────────────
@@ -1008,8 +1065,16 @@ model ClinicAdmission {
 // frontend resolves names/roles from the already-loaded doctors list.
 model ClinicOtRegister {
   id                      Int             @id @default(autoincrement())
-  admissionId             Int
-  admission               ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  // Optional link — bulk Excel imports of historical OT data often reference
+  // an Admission # that predates this system and has no ClinicAdmission row.
+  // admissionNo/patientName/patientCategory are always stored directly (copied
+  // from the real admission when one is found, or straight from the Excel row
+  // when not) so the report never depends on the link existing.
+  admissionId             Int?
+  admission               ClinicAdmission? @relation(fields: [admissionId], references: [id], onDelete: SetNull)
+  admissionNo             String
+  patientName             String          @default("")
+  patientCategory         String          @default("private")
   surgeryDateTime         DateTime
   anaesthesiologistId     Int?
   anaesthesiologistOnCall Boolean         @default(false)
@@ -1031,6 +1096,7 @@ model ClinicOtRegister {
   updatedAt               DateTime        @updatedAt
 
   @@index([admissionId])
+  @@index([admissionNo])
 }
 
 // ─── Discount & Refund Against Admission (mid-admission, before discharge) ───

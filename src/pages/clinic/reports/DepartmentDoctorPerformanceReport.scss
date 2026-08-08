@@ -103,6 +103,18 @@
   border-top: 2px solid #1a3c6e;
 }
 
+.otr-group-hdr td {
+  font-weight: 700;
+  text-decoration: underline;
+  padding-top: 12px;
+  border-bottom: none;
+}
+.otr-group-ftr td {
+  font-weight: 700;
+  background: #f4f6fa;
+  border-top: 1px solid #cbd5e1;
+}
+
 @media print {
   .no-print { display: none !important; }
 }

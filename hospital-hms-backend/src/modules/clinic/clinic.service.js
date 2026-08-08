@@ -1442,6 +1442,7 @@ async function getAdmissionByNumber(admissionNo) {
         patientTitle: 'Mr',
         patientCategory: 'private',
         patientName: pv.patientName,
+        relationType: null, relationName: null,
         ageYears: 0, ageMonths: 0, ageDays: 0,
         gender: 'male',
         address: null, phoneNo: null,
@@ -1596,12 +1597,265 @@ async function getOtRegisterForAdmission(admissionNo) {
   return { admission, otRegister };
 }
 
+// ─── Appointment ───────────────────────────────────────────────────────────────
+function opdVisitConsultantNames(visit) {
+  return [...new Set((visit.doctors || []).map(d => d.doctor?.name).filter(Boolean))].join(', ');
+}
+
+async function searchSlipsForAppointment(q) {
+  const term = String(q || '').trim();
+  const where = term
+    ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+    : {};
+  const rows = await prisma.clinicOpdVisit.findMany({
+    where,
+    select: { id: true, serialNo: true, patientName: true, department: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+    take: 100,
+  });
+  return rows;
+}
+
+async function getAppointmentForSlip(slipNo) {
+  const visit = await prisma.clinicOpdVisit.findFirst({
+    where: { serialNo: { equals: String(slipNo).trim(), mode: 'insensitive' } },
+    include: { doctors: { include: { doctor: true } } },
+  });
+  if (!visit) throw Object.assign(new Error('Is Slip # ka koi record nahi mila'), { status: 404 });
+
+  const appointment = await prisma.clinicAppointment.findFirst({
+    where: { slipNo: visit.serialNo },
+    orderBy: { id: 'desc' },
+  });
+
+  return {
+    visit: {
+      serialNo: visit.serialNo,
+      patientName: `${visit.patientType || ''} ${visit.patientName || ''}`.trim(),
+      antenatalNo: visit.antenatalNo,
+      phoneNo: visit.phoneNo,
+      consultantName: opdVisitConsultantNames(visit),
+    },
+    appointment,
+  };
+}
+
+async function saveAppointment(payload) {
+  const slipNo = String(payload.slipNo || '').trim();
+  if (!slipNo) throw Object.assign(new Error('Slip # is required'), { status: 400 });
+
+  const visit = await prisma.clinicOpdVisit.findFirst({
+    where: { serialNo: { equals: slipNo, mode: 'insensitive' } },
+    include: { doctors: { include: { doctor: true } } },
+  });
+  if (!visit) throw Object.assign(new Error('Is Slip # ka koi record nahi mila'), { status: 404 });
+
+  const data = {
+    slipNo: visit.serialNo,
+    opdVisitId: visit.id,
+    patientName: `${visit.patientType || ''} ${visit.patientName || ''}`.trim(),
+    antenatalNo: visit.antenatalNo || null,
+    consultantName: opdVisitConsultantNames(visit) || null,
+    nextAppointmentDate: payload.nextAppointmentDate ? new Date(payload.nextAppointmentDate) : null,
+    phoneNo: payload.phoneNo?.trim() || null,
+    createdByUserId: payload.createdByUserId != null ? String(payload.createdByUserId) : null,
+    createdByName: payload.createdByName || null,
+  };
+
+  // One appointment record per slip — saving again updates it instead of
+  // piling up duplicates for the same slip.
+  const existing = await prisma.clinicAppointment.findFirst({ where: { slipNo: visit.serialNo } });
+  if (existing) {
+    return prisma.clinicAppointment.update({ where: { id: existing.id }, data });
+  }
+  return prisma.clinicAppointment.create({ data });
+}
+
+// ─── Reports > Appointment Register ───────────────────────────────────────────
+async function getAppointmentReport({ dateType, date }) {
+  const dt = date ? new Date(date + 'T00:00:00') : new Date();
+  const dayStart = new Date(dt); dayStart.setHours(0, 0, 0, 0);
+  const dayEnd   = new Date(dt); dayEnd.setHours(23, 59, 59, 999);
+
+  let appointments;
+  if (dateType === 'nextVisit') {
+    appointments = await prisma.clinicAppointment.findMany({
+      where: { nextAppointmentDate: { gte: dayStart, lte: dayEnd } },
+      orderBy: { slipNo: 'asc' },
+    });
+  } else if (dateType === 'entry') {
+    appointments = await prisma.clinicAppointment.findMany({
+      where: { createdAt: { gte: dayStart, lte: dayEnd } },
+      orderBy: { slipNo: 'asc' },
+    });
+  } else {
+    // 'lastVisit' — filter by the linked OPD visit's own createdAt.
+    const visitsThatDay = await prisma.clinicOpdVisit.findMany({
+      where: { createdAt: { gte: dayStart, lte: dayEnd } },
+      select: { id: true },
+    });
+    const visitIds = visitsThatDay.map(v => v.id);
+    appointments = visitIds.length
+      ? await prisma.clinicAppointment.findMany({ where: { opdVisitId: { in: visitIds } }, orderBy: { slipNo: 'asc' } })
+      : [];
+  }
+
+  // "Last Visit" is shown as a column regardless of which date type was
+  // filtered on, so always resolve the linked visit's createdAt.
+  const opdVisitIds = [...new Set(appointments.map(a => a.opdVisitId).filter(Boolean))];
+  const visits = opdVisitIds.length
+    ? await prisma.clinicOpdVisit.findMany({ where: { id: { in: opdVisitIds } }, select: { id: true, createdAt: true } })
+    : [];
+  const visitById = Object.fromEntries(visits.map(v => [v.id, v]));
+
+  const rows = appointments.map(a => ({
+    id: a.id,
+    slipNo: a.slipNo,
+    patientName: a.patientName,
+    consultantName: a.consultantName,
+    lastVisitDate: a.opdVisitId ? (visitById[a.opdVisitId]?.createdAt || null) : null,
+    nextAppointmentDate: a.nextAppointmentDate,
+    phoneNo: a.phoneNo,
+    createdByName: a.createdByName,
+  }));
+
+  return { rows, total: { count: rows.length } };
+}
+
+// ─── Birth Certificate ─────────────────────────────────────────────────────────
+async function getBirthCertificateForAdmission(admissionNo, sequenceNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+
+  const seq = Number(sequenceNo) || 1;
+  const birthCertificate = await prisma.clinicBirthCertificate.findUnique({
+    where: { admissionId_sequenceNo: { admissionId: admission.id, sequenceNo: seq } },
+  });
+
+  return { admission, birthCertificate };
+}
+
+async function saveBirthCertificate(admissionId, payload) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const seq = Number(payload.sequenceNo) || 1;
+  const data = {
+    admissionNo: admission.admissionNo,
+    motherName: payload.motherName?.trim() || '',
+    fatherName: payload.fatherName?.trim() || null,
+    address: payload.address?.trim() || null,
+    bloodGroup: payload.bloodGroup || null,
+    birthTime: payload.birthTime ? new Date(payload.birthTime) : null,
+    weight: payload.weight ? Number(payload.weight) : null,
+    gender: payload.gender || null,
+    remarks: payload.remarks?.trim() || null,
+    createdByUserId: payload.createdByUserId != null ? String(payload.createdByUserId) : null,
+    createdByName: payload.createdByName || null,
+  };
+
+  return prisma.clinicBirthCertificate.upsert({
+    where: { admissionId_sequenceNo: { admissionId: Number(admissionId), sequenceNo: seq } },
+    update: data,
+    create: { admissionId: Number(admissionId), sequenceNo: seq, ...data },
+  });
+}
+
+// ─── Reports > Birth Certificate Report ───────────────────────────────────────
+async function getBirthCertificateReport({ fromDate, toDate }) {
+  const where = {};
+  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
+  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+  if (fromDt || toDt) {
+    where.birthTime = {};
+    if (fromDt) where.birthTime.gte = fromDt;
+    if (toDt)   where.birthTime.lte = toDt;
+  }
+
+  const rows = await prisma.clinicBirthCertificate.findMany({ where, orderBy: { birthTime: 'asc' } });
+  return {
+    rows: rows.map(r => ({
+      id: r.id,
+      admissionNo: r.admissionNo,
+      motherName: r.motherName,
+      fatherName: r.fatherName,
+      address: r.address,
+      birthTime: r.birthTime,
+      gender: r.gender,
+      weight: r.weight,
+      bloodGroup: r.bloodGroup,
+    })),
+    total: { count: rows.length },
+  };
+}
+
+// ─── Reports > Birth Certificate — Bulk Excel Import ──────────────────────────
+async function importBirthCertificates(rows) {
+  if (!Array.isArray(rows) || !rows.length) throw Object.assign(new Error('Koi rows nahi milin'), { status: 400 });
+
+  const admissionNos = [...new Set(rows.map(r => String(r.admitNo || '').trim()).filter(Boolean))];
+  const admissions = admissionNos.length
+    ? await prisma.clinicAdmission.findMany({ where: { admissionNo: { in: admissionNos } }, orderBy: { id: 'desc' } })
+    : [];
+  const admByNo = {};
+  admissions.forEach(a => { if (!admByNo[a.admissionNo]) admByNo[a.admissionNo] = a; });
+
+  const result = { inserted: 0, linkedToExistingAdmission: 0, missingAdmitNo: 0, invalidDate: 0 };
+
+  for (const r of rows) {
+    const admissionNo = String(r.admitNo || '').trim();
+    if (!admissionNo) { result.missingAdmitNo++; continue; }
+    const admission = admByNo[admissionNo] || null;
+
+    const birthTime = r.dateOfBirth ? new Date(r.dateOfBirth) : null;
+    if (!birthTime || Number.isNaN(birthTime.getTime())) { result.invalidDate++; continue; }
+
+    // A bulk-imported row has no admission-form sequence to key off of — each
+    // import just appends a new record instead of upserting by sequence #.
+    // When linked to a real admission that already has a certificate (e.g.
+    // created via the entry form), the unique (admissionId, sequenceNo)
+    // constraint means sequenceNo 1 is taken — bump to the next free slot.
+    let seq = 1;
+    if (admission) {
+      const existing = await prisma.clinicBirthCertificate.findMany({
+        where: { admissionId: admission.id }, select: { sequenceNo: true },
+      });
+      if (existing.length) seq = Math.max(...existing.map(e => e.sequenceNo)) + 1;
+    }
+
+    await prisma.clinicBirthCertificate.create({
+      data: {
+        admissionId: admission?.id || null,
+        admissionNo,
+        sequenceNo: seq,
+        motherName: r.motherName?.trim() || '',
+        fatherName: r.fatherName?.trim() || null,
+        address: r.address?.trim() || null,
+        bloodGroup: r.bloodGroup?.trim() || null,
+        birthTime,
+        weight: r.weight ? Number(r.weight) : null,
+        gender: r.gender?.trim().toLowerCase() || null,
+      },
+    });
+    result.inserted++;
+    if (admission) result.linkedToExistingAdmission++;
+  }
+
+  return result;
+}
+
 async function saveOtRegister(admissionId, payload) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
   if (!payload.surgeryDateTime) throw Object.assign(new Error('Surgery Date and Time is required'), { status: 400 });
 
   const data = {
+    admissionNo: admission.admissionNo,
+    patientName: `${admission.patientTitle || ''} ${admission.patientName || ''}`.trim(),
+    patientCategory: admission.patientCategory || 'private',
     surgeryDateTime: new Date(payload.surgeryDateTime),
     anaesthesiologistId: payload.anaesthesiologistId ? Number(payload.anaesthesiologistId) : null,
     anaesthesiologistOnCall: Boolean(payload.anaesthesiologistOnCall),
@@ -1627,6 +1881,159 @@ async function saveOtRegister(admissionId, payload) {
   return prisma.clinicOtRegister.create({ data: { admissionId: Number(admissionId), ...data } });
 }
 
+// ─── Reports > OT Register Report ─────────────────────────────────────────────
+const OT_CATEGORY_ORDER = ['private', 'panel', 'staff', 'cc', 'complementary'];
+
+async function getOtRegisterReport({ fromDate, toDate, patientType, anaesthesiologistId, surgeonId, techId, surgeryTypeId }) {
+  const where = {};
+  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
+  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+  if (fromDt || toDt) {
+    where.surgeryDateTime = {};
+    if (fromDt) where.surgeryDateTime.gte = fromDt;
+    if (toDt)   where.surgeryDateTime.lte = toDt;
+  }
+
+  // Each lookup filters independently (AND across fields); Surgeon/Tech each
+  // match either of their two slots on a register entry (OR within the field).
+  const andConditions = [];
+  if (anaesthesiologistId) andConditions.push({ anaesthesiologistId: Number(anaesthesiologistId) });
+  if (surgeonId) andConditions.push({ OR: [{ surgeon1Id: Number(surgeonId) }, { surgeon2Id: Number(surgeonId) }] });
+  if (techId) andConditions.push({ OR: [{ tech1Id: Number(techId) }, { tech2Id: Number(techId) }] });
+  if (surgeryTypeId) andConditions.push({ surgeryTypeId: Number(surgeryTypeId) });
+  if (andConditions.length) where.AND = andConditions;
+  if (patientType && patientType !== 'ALL') where.patientCategory = patientType;
+
+  const otRows = await prisma.clinicOtRegister.findMany({ where, orderBy: { surgeryDateTime: 'asc' } });
+  if (!otRows.length) return { groups: [], total: { count: 0 } };
+
+  const doctorIds      = [...new Set(otRows.flatMap(r => [r.anaesthesiologistId, r.surgeon1Id, r.surgeon2Id, r.tech1Id, r.tech2Id]).filter(Boolean))];
+  const surgeryTypeIds = [...new Set(otRows.map(r => r.surgeryTypeId).filter(Boolean))];
+
+  const [doctors, surgeryTypes] = await Promise.all([
+    doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, name: true } }) : [],
+    surgeryTypeIds.length ? prisma.clinicSurgeryType.findMany({ where: { id: { in: surgeryTypeIds } } }) : [],
+  ]);
+  const docById = Object.fromEntries(doctors.map(d => [d.id, d]));
+  const stById  = Object.fromEntries(surgeryTypes.map(s => [s.id, s]));
+
+  const rows = otRows.map(r => ({
+    id: r.id,
+    admissionNo: r.admissionNo,
+    patientName: r.patientName,
+    patientCategory: r.patientCategory,
+    description: r.surgeryTypeId ? (stById[r.surgeryTypeId]?.name || '') : '',
+    surgeryDate: r.surgeryDateTime,
+    anaesthesiologist: r.anaesthesiologistId ? (docById[r.anaesthesiologistId]?.name || null) : null,
+    surgeon1: r.surgeon1Id ? (docById[r.surgeon1Id]?.name || null) : null,
+    surgeon2: r.surgeon2Id ? (docById[r.surgeon2Id]?.name || null) : null,
+    tech1: r.tech1Id ? (docById[r.tech1Id]?.name || null) : null,
+    tech2: r.tech2Id ? (docById[r.tech2Id]?.name || null) : null,
+    createdAt: r.createdAt,
+  }));
+
+  const groups = [];
+  const seenCats = new Set(rows.map(r => r.patientCategory));
+  const orderedCats = [...OT_CATEGORY_ORDER.filter(c => seenCats.has(c)), ...[...seenCats].filter(c => !OT_CATEGORY_ORDER.includes(c))];
+  for (const cat of orderedCats) {
+    const catRows = rows.filter(r => r.patientCategory === cat);
+    groups.push({ category: cat, rows: catRows, count: catRows.length });
+  }
+
+  return { groups, total: { count: rows.length } };
+}
+
+// ─── Reports > OT Register — Bulk Excel Import ────────────────────────────────
+function normName(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+
+async function importOtRegister(rows) {
+  if (!Array.isArray(rows) || !rows.length) throw Object.assign(new Error('Koi rows nahi milin'), { status: 400 });
+
+  const admissionNos = [...new Set(rows.map(r => String(r.admitNo || '').trim()).filter(Boolean))];
+  const admissions = admissionNos.length
+    ? await prisma.clinicAdmission.findMany({ where: { admissionNo: { in: admissionNos } }, orderBy: { id: 'desc' } })
+    : [];
+  // Last (most recent) admission wins if an admission # was ever reused.
+  const admByNo = {};
+  admissions.forEach(a => { if (!admByNo[a.admissionNo]) admByNo[a.admissionNo] = a; });
+
+  const allDoctors = await prisma.clinicDoctor.findMany({ select: { id: true, name: true } });
+  const docByName = {};
+  allDoctors.forEach(d => { docByName[normName(d.name)] = d; });
+  function findDoctor(name) {
+    const n = normName(name);
+    return n ? (docByName[n] || null) : null;
+  }
+
+  let surgeryTypes = await prisma.clinicSurgeryType.findMany();
+  const stByName = {};
+  surgeryTypes.forEach(s => { stByName[normName(s.name)] = s; });
+  let stCount = surgeryTypes.length;
+  async function findOrCreateSurgeryType(name) {
+    const n = normName(name);
+    if (!n) return null;
+    if (stByName[n]) return stByName[n];
+    stCount += 1;
+    const created = await prisma.clinicSurgeryType.create({
+      data: { code: `SU${String(stCount).padStart(3, '0')}`, name: String(name).trim() },
+    });
+    stByName[n] = created;
+    return created;
+  }
+
+  const result = { inserted: 0, linkedToExistingAdmission: 0, missingAdmitNo: 0, invalidDate: 0, doctorsNotMatched: 0, surgeryTypesCreated: 0 };
+
+  for (const r of rows) {
+    const admissionNo = String(r.admitNo || '').trim();
+    if (!admissionNo) { result.missingAdmitNo++; continue; }
+    // Historical rows are kept even when there's no matching ClinicAdmission —
+    // admissionNo/patientName/patientCategory are stored directly either way,
+    // linking to the real admission only when one exists.
+    const admission = admByNo[admissionNo] || null;
+
+    const surgeryDateTime = r.opDate ? new Date(r.opDate) : null;
+    if (!surgeryDateTime || Number.isNaN(surgeryDateTime.getTime())) { result.invalidDate++; continue; }
+
+    let surgeryTypeId = null;
+    if (r.description?.trim()) {
+      const existed = Boolean(stByName[normName(r.description)]);
+      const st = await findOrCreateSurgeryType(r.description);
+      if (!existed && st) result.surgeryTypesCreated++;
+      surgeryTypeId = st?.id || null;
+    }
+
+    const nameFields = [
+      ['anaesthesiologistId', r.anaesthetic],
+      ['surgeon1Id', r.surgeon1],
+      ['surgeon2Id', r.surgeon2],
+      ['tech1Id', r.tech1],
+      ['tech2Id', r.tech2],
+    ];
+    const resolved = {};
+    for (const [key, name] of nameFields) {
+      const doc = findDoctor(name);
+      resolved[key] = doc?.id || null;
+      if (name?.trim() && !doc) result.doctorsNotMatched++;
+    }
+
+    await prisma.clinicOtRegister.create({
+      data: {
+        admissionId: admission?.id || null,
+        admissionNo,
+        patientName: admission ? `${admission.patientTitle || ''} ${admission.patientName || ''}`.trim() : (r.patName?.trim() || ''),
+        patientCategory: admission?.patientCategory || 'private',
+        surgeryDateTime,
+        surgeryTypeId,
+        ...resolved,
+      },
+    });
+    if (admission) result.linkedToExistingAdmission++;
+    result.inserted++;
+  }
+
+  return result;
+}
+
 async function createAdmission(data) {
   const admission = await prisma.clinicAdmission.create({
     data: {
@@ -1637,6 +2044,8 @@ async function createAdmission(data) {
       patientTitle:      data.patientTitle || 'Mr',
       patientCategory:   data.patientCategory || 'private',
       patientName:       data.patientName?.trim() || '',
+      relationType:      data.relationType || null,
+      relationName:      data.relationName?.trim() || null,
       ageYears:          data.ageYears ? Number(data.ageYears) : 0,
       ageMonths:         data.ageMonths ? Number(data.ageMonths) : 0,
       ageDays:           data.ageDays ? Number(data.ageDays) : 0,
@@ -1737,6 +2146,8 @@ async function updateAdmissionAdjustment(id, data) {
       patientTitle:      data.patientTitle || 'Mr',
       patientCategory:   data.patientCategory || 'private',
       patientName:       data.patientName?.trim() || '',
+      relationType:      data.relationType || null,
+      relationName:      data.relationName?.trim() || null,
       ageYears:          data.ageYears ? Number(data.ageYears) : 0,
       ageMonths:         data.ageMonths ? Number(data.ageMonths) : 0,
       ageDays:           data.ageDays ? Number(data.ageDays) : 0,
@@ -3660,6 +4071,16 @@ module.exports = {
   addAdmissionDiscountRefund,
   getOtRegisterForAdmission,
   saveOtRegister,
+  getOtRegisterReport,
+  importOtRegister,
+  getBirthCertificateForAdmission,
+  saveBirthCertificate,
+  getBirthCertificateReport,
+  importBirthCertificates,
+  searchSlipsForAppointment,
+  getAppointmentForSlip,
+  saveAppointment,
+  getAppointmentReport,
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,

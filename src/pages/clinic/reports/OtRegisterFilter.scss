@@ -1,0 +1,161 @@
+$blue: #1a3c6e;
+$border: #7a7a7a;
+
+.otrf-date-lbl {
+  width: 100px !important;
+  color: #333;
+  cursor: default;
+}
+
+.otrf-two-col {
+  display: flex;
+  gap: 24px;
+  padding-top: 4px;
+}
+
+.otrf-col-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.otrf-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 2px;
+  min-width: 170px;
+}
+
+.otrf-lbl {
+  width: 130px !important;
+}
+
+.otrf-lookup-inp {
+  width: 190px !important;
+  background: #f0f0f0;
+}
+
+.otrf-lookup-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid $border;
+  background: #d4d0c8;
+  cursor: pointer;
+  color: #444;
+  padding: 0;
+  flex-shrink: 0;
+  &:hover { background: #c8c4bc; }
+}
+
+.otrf-clear-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #b91c1c;
+  font-size: 11px;
+  padding: 0;
+  flex-shrink: 0;
+  &:hover { color: #7f1d1d; }
+}
+
+// ─── Picker Modal ───────────────────────────────────────────────────────────
+.otrf-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.otrf-modal {
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 5px;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+}
+
+.otrf-modal-hdr {
+  background: $blue;
+  color: #fff;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.otrf-modal-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  &:hover { color: #ffcccc; }
+}
+
+.otrf-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ddd;
+  background: #f5f7fa;
+}
+
+.otrf-modal-search-icon { color: #777; flex-shrink: 0; }
+
+.otrf-modal-search-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 8px;
+  &:focus { outline: none; border-color: $blue; }
+}
+
+.otrf-modal-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.otrf-modal-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+
+  tr {
+    cursor: pointer;
+    &:nth-child(even) { background: #f9f9f9; }
+    &:hover { background: #dbe8f8; }
+  }
+
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #eee;
+  }
+}
+
+.otrf-td-empty { text-align: center; color: #999; padding: 20px !important; cursor: default; }
