@@ -1455,6 +1455,16 @@ async function getRevenueDashboard(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getDailyDepartmentStatement(req, res, next) {
+  try {
+    const data = await service.getDailyDepartmentStatement(req.query.date);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function getDepartmentDoctorPerformance(req, res, next) {
   try {
     const { fromDate, toDate, fromDoctorCode, toDoctorCode, activeOnly } = req.query;
@@ -1650,6 +1660,7 @@ module.exports = {
   getBillComparisons,
   getConsultantStatement,
   getRevenueDashboard,
+  getDailyDepartmentStatement,
   getDepartmentDoctorPerformance,
   getAdmissionWiseReport,
   getUserDateSummary,

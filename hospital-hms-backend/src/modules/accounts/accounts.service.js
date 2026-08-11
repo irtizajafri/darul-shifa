@@ -1,4 +1,8 @@
 const prisma = require('../../config/db');
+// Same shared Prisma client — reusing Clinic's own revenue aggregation here
+// (rather than re-deriving it) so "Income" for the Non-Corporate entity always
+// matches what the Clinic Revenue Dashboard itself shows for patient revenue.
+const clinicSvc = require('../clinic/clinic.service');
 
 // ── Main GL ───────────────────────────────────────────────────────────────────
 
@@ -150,6 +154,8 @@ const LINKED_ACCOUNTS_INCLUDE = {
       },
     },
   },
+  inventorySubcategory: { select: { id: true, code: true, name: true, category: { select: { id: true, name: true } } } },
+  mainAccount: { select: { id: true, code: true, name: true } },
 };
 
 async function getPayeeHeads(entityType) {
@@ -161,16 +167,40 @@ async function getPayeeHeads(entityType) {
   });
 }
 
-async function createPayeeHead({ name, sourceType = 'manual', entityType }) {
-  return prisma.accPayeeHead.create({
-    data: { name: name.trim(), sourceType, entityType },
-    include: LINKED_ACCOUNTS_INCLUDE,
+async function createPayeeHead({ name, sourceType = 'manual', entityType, inventorySubcategoryId, mainAccountId }) {
+  const data = { name: name.trim(), sourceType, entityType };
+  if (inventorySubcategoryId) data.inventorySubcategoryId = Number(inventorySubcategoryId);
+  if (mainAccountId)          data.mainAccountId          = Number(mainAccountId);
+  return prisma.accPayeeHead.create({ data, include: LINKED_ACCOUNTS_INCLUDE });
+}
+
+async function getInventoryHeadForMainAccount(mainAccountId) {
+  return prisma.accPayeeHead.findFirst({
+    where: { mainAccountId: Number(mainAccountId), sourceType: 'inventory' },
+    select: { id: true, name: true, inventorySubcategoryId: true },
+  });
+}
+
+async function getInventorySubcategories() {
+  return prisma.inventorySubcategory.findMany({
+    where: { status: 'active' },
+    select: { id: true, code: true, name: true, category: { select: { id: true, name: true } } },
+    orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }],
+  });
+}
+
+async function getInventoryItemsBySubcategory(subcategoryId) {
+  return prisma.inventoryItem.findMany({
+    where: { subcategoryId: Number(subcategoryId), status: 'active' },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: 'asc' },
   });
 }
 
 async function updatePayeeHead(id, body) {
   const data = {};
-  if (body.name !== undefined) data.name = body.name.trim();
+  if (body.name         !== undefined) data.name          = body.name.trim();
+  if (body.mainAccountId !== undefined) data.mainAccountId = body.mainAccountId ? Number(body.mainAccountId) : null;
   return prisma.accPayeeHead.update({
     where: { id: Number(id) },
     data,
@@ -200,7 +230,7 @@ async function removeHeadAccount(headId, subAccountId) {
 async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   const link = await prisma.accPayeeHeadAccount.findFirst({
     where: { subAccountId: Number(subAccountId), payeeHead: { entityType } },
-    include: { payeeHead: true },
+    include: { payeeHead: { include: { inventorySubcategory: { select: { id: true, name: true } } } } },
   });
   const head = link?.payeeHead;
   if (!head) return { type: null, headName: null, headId: null, entries: [], checkedNames: [] };
@@ -246,6 +276,16 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       orderBy: { name: 'asc' },
     });
     return { type: 'doctor', headName: head.name, entries: rows };
+  }
+
+  if (head.sourceType === 'inventory') {
+    if (!head.inventorySubcategoryId) return { type: 'inventory', headName: head.name, headId: head.id, entries: [], checkedNames: [] };
+    const rows = await prisma.inventoryItem.findMany({
+      where: { subcategoryId: head.inventorySubcategoryId, status: 'active' },
+      select: { id: true, code: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+    return { type: 'inventory', headName: head.name, headId: head.id, entries: rows.map((i) => ({ id: i.id, name: i.name, code: i.code })), checkedNames: [] };
   }
 
   const rows = await prisma.accPayeeEntry.findMany({ where: { payeeHeadId: head.id }, orderBy: { name: 'asc' } });
@@ -685,13 +725,158 @@ async function getBankDeposits(entityType) {
   });
 }
 
+// ─── Inquiry Dashboard (Expense + Income vouchers, calendar-style) ────────────
+// Same shape as the Clinic Revenue Dashboard's response (date/totalPatients/
+// totalAmount/cashPatients.../panelPatients...) so the frontend calendar
+// component ports over almost unchanged — "cash" slot carries Expense,
+// "panel" slot carries Income here.
+async function getAccountsInquiryDashboard({ entityType, period, year, month }) {
+  entityType = entityType || 'non-corporate';
+  year   = parseInt(year)  || new Date().getFullYear();
+  month  = parseInt(month) || (new Date().getMonth() + 1);
+  period = period || 'monthly_daily';
+
+  let dateFrom = null, dateTo = null;
+  if (period === 'monthly_daily') {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    dateFrom = new Date(year, month - 1, 1);
+    dateTo   = new Date(year, month - 1, daysInMonth, 23, 59, 59, 999);
+  } else if (period === 'yearly_monthly' || period === 'yearly_daily') {
+    dateFrom = new Date(year, 0, 1);
+    dateTo   = new Date(year, 11, 31, 23, 59, 59, 999);
+  }
+
+  const where = { entityType };
+  if (dateFrom && dateTo) where.voucherDate = { gte: dateFrom, lte: dateTo };
+
+  const [expenses, incomes] = await Promise.all([
+    prisma.accVoucherExpense.findMany({ where, select: { voucherDate: true, totalAmount: true } }),
+    prisma.accVoucherIncome.findMany({ where, select: { voucherDate: true, totalAmount: true } }),
+  ]);
+
+  const bucketKey = (d) => {
+    const dt = new Date(d);
+    if (period === 'monthly_daily') return dt.toISOString().slice(0, 10);
+    if (period === 'yearly_monthly' || period === 'yearly_daily') return dt.getMonth() + 1;
+    return dt.getFullYear();
+  };
+
+  const map = new Map();
+  function bumpKey(key, count, amount, isExpense) {
+    if (!map.has(key)) map.set(key, { key, totalCount: 0, totalAmount: 0, expenseCount: 0, expenseAmount: 0, incomeCount: 0, incomeAmount: 0 });
+    const e = map.get(key);
+    e.totalCount += count;
+    e.totalAmount += amount;
+    if (isExpense) { e.expenseCount += count; e.expenseAmount += amount; }
+    else { e.incomeCount += count; e.incomeAmount += amount; }
+  }
+  function bump(dateVal, amount, isExpense) {
+    bumpKey(bucketKey(dateVal), 1, amount, isExpense);
+  }
+  for (const v of expenses) bump(v.voucherDate, Number(v.totalAmount) || 0, true);
+  for (const v of incomes)  bump(v.voucherDate, Number(v.totalAmount) || 0, false);
+
+  // "Income" for the Non-Corporate entity also includes Clinic patient revenue
+  // (OPD + Admission), on top of manually-entered Voucher Income — pulled
+  // straight from the Clinic Revenue Dashboard's own aggregation so the two
+  // always agree.
+  if (entityType === 'non-corporate') {
+    const clinicRes = await clinicSvc.getRevenueDashboard({
+      period, year, month,
+      department: 'ALL', subDept: 'ALL', consultant: 'ALL', paymentType: 'ALL',
+    });
+    const keyField = period === 'monthly_daily' ? 'date' : period === 'multi_year' ? 'year' : 'month';
+    for (const row of clinicRes.data) {
+      bumpKey(row[keyField], Number(row.totalPatients) || 0, Number(row.totalAmount) || 0, false);
+    }
+  }
+
+  const toRow = (e, keyField) => ({
+    [keyField]: e.key,
+    totalPatients: e.totalCount, totalAmount: e.totalAmount,
+    cashPatients: e.expenseCount, cashAmount: e.expenseAmount,
+    panelPatients: e.incomeCount, panelAmount: e.incomeAmount,
+    ccPatients: 0, ccAmount: 0,
+  });
+
+  let data = [];
+  if (period === 'monthly_daily') {
+    data = [...map.values()].map(e => toRow(e, 'date')).sort((a, b) => a.date.localeCompare(b.date));
+  } else if (period === 'yearly_monthly' || period === 'yearly_daily') {
+    for (let m = 1; m <= 12; m++) {
+      const e = map.get(m) || { key: m, totalCount: 0, totalAmount: 0, expenseCount: 0, expenseAmount: 0, incomeCount: 0, incomeAmount: 0 };
+      data.push(toRow(e, 'month'));
+    }
+  } else {
+    data = [...map.values()].map(e => toRow(e, 'year')).sort((a, b) => a.year - b.year);
+  }
+
+  const totalCount  = data.reduce((s, d) => s + d.totalPatients, 0);
+  const totalAmount = data.reduce((s, d) => s + d.totalAmount, 0);
+  const daysWithData = data.filter(d => d.totalAmount > 0).length;
+  const dailyAvg = daysWithData > 0 ? totalAmount / daysWithData : 0;
+
+  // Prognosis (monthly_daily only): today's run-rate projected across the month.
+  let prognosis = 0;
+  if (period === 'monthly_daily') {
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === year && (today.getMonth() + 1) === month;
+    const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(year, month, 0).getDate();
+    const soFar = data.filter(d => Number(d.date.slice(-2)) <= dayOfMonth).reduce((s, d) => s + d.totalAmount, 0);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    prognosis = dayOfMonth > 0 ? (soFar / dayOfMonth) * daysInMonth : 0;
+  }
+
+  // Same month, previous year — for the sidebar comparison box.
+  const lastYearWhere = { entityType };
+  let lastYearAmount = 0;
+  if (period === 'monthly_daily') {
+    const lyFrom = new Date(year - 1, month - 1, 1);
+    const lyTo   = new Date(year - 1, month - 1, new Date(year - 1, month, 0).getDate(), 23, 59, 59, 999);
+    lastYearWhere.voucherDate = { gte: lyFrom, lte: lyTo };
+    const [lyExp, lyInc] = await Promise.all([
+      prisma.accVoucherExpense.findMany({ where: lastYearWhere, select: { totalAmount: true } }),
+      prisma.accVoucherIncome.findMany({ where: lastYearWhere, select: { totalAmount: true } }),
+    ]);
+    lastYearAmount = [...lyExp, ...lyInc].reduce((s, v) => s + (Number(v.totalAmount) || 0), 0);
+
+    if (entityType === 'non-corporate') {
+      const lyClinic = await clinicSvc.getRevenueDashboard({
+        period: 'monthly_daily', year: year - 1, month,
+        department: 'ALL', subDept: 'ALL', consultant: 'ALL', paymentType: 'ALL',
+      });
+      lastYearAmount += lyClinic.data.reduce((s, d) => s + (Number(d.totalAmount) || 0), 0);
+    }
+  }
+
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const trendData = period === 'monthly_daily'
+    ? data.map(d => ({ label: d.date.slice(-2), totalPatients: d.totalPatients, totalAmount: d.totalAmount }))
+    : period === 'multi_year'
+    ? data.map(d => ({ label: String(d.year), totalPatients: d.totalPatients, totalAmount: d.totalAmount }))
+    : data.map(d => ({ label: MN[d.month - 1], totalPatients: d.totalPatients, totalAmount: d.totalAmount }));
+
+  return {
+    period, year, month, data,
+    summary: { totalPatients: totalCount, totalAmount, dailyAvg, prognosis, lastYearAmount, daysWithData },
+    trendData,
+  };
+}
+
+// Thin passthrough to Clinic's own per-department daily statement — used by
+// the Inquiry calendar's double-click modal to show WHERE the Clinic-side
+// "Income" for that day actually came from.
+async function getClinicRevenueForDate(date) {
+  return clinicSvc.getDailyDepartmentStatement(date);
+}
+
 module.exports = {
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
@@ -703,6 +888,8 @@ module.exports = {
   createBankDeposit, getBankDeposits,
   createBankDepositAdj, getBankDepositAdjs,
   getVoucherSummary,
+  getAccountsInquiryDashboard,
+  getClinicRevenueForDate,
 };
 
 async function getVoucherSummary({ entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo }) {

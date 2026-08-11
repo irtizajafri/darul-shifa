@@ -28,6 +28,7 @@ import VoucherIncomeForm from '../pages/accounts/transactions/VoucherIncomeForm'
 import BankDeposit from '../pages/accounts/transactions/BankDeposit';
 import BankDepositAdj from '../pages/accounts/transactions/BankDepositAdj';
 import AccountsReports from '../pages/accounts/reports/AccountsReports';
+import AccountsInquiryDashboard from '../pages/accounts/inquiries/AccountsInquiryDashboard';
 import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
 import VoucherSummary from '../pages/accounts/reports/VoucherSummary';
 import VoucherSummaryMatrix from '../pages/accounts/reports/VoucherSummaryMatrix';
@@ -203,6 +204,7 @@ export default function AppRoutes() {
           <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts"><VoucherIncomeForm /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts"><BankDeposit /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts"><BankDepositAdj /></PermissionGuard>} />
+          <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts"><AccountsInquiryDashboard /></PermissionGuard>} />
           <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
           <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
           <Route path="accounts/:entityType/reports/voucher-summary" element={<PermissionGuard module="accounts"><VoucherSummary /></PermissionGuard>} />

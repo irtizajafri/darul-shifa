@@ -34,6 +34,9 @@ router.delete('/payee-entries/:id', ctrl.deletePayeeEntry);
 router.get('/linked/employees', ctrl.getEmployeeList);
 router.get('/linked/suppliers', ctrl.getSupplierList);
 router.get('/linked/doctors', ctrl.getDoctorList);
+router.get('/linked/inventory-subcategories', ctrl.getInventorySubcategories);
+router.get('/linked/inventory-items', ctrl.getInventoryItemsBySubcategory);
+router.get('/linked/inventory-head-for-main-account', ctrl.getInventoryHeadForMainAccount);
 
 router.get('/bank-accounts', ctrl.getBankAccounts);
 router.post('/bank-accounts', ctrl.createBankAccount);
@@ -73,5 +76,8 @@ router.post('/bank-deposits', ctrl.createBankDeposit);
 
 router.get('/bank-deposit-adjs', ctrl.getBankDepositAdjs);
 router.post('/bank-deposit-adjs', ctrl.createBankDepositAdj);
+
+router.get('/inquiry/dashboard', ctrl.getAccountsInquiryDashboard);
+router.get('/inquiry/clinic-revenue', ctrl.getClinicRevenueForDate);
 
 module.exports = router;

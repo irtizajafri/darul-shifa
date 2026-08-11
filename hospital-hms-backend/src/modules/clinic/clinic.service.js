@@ -3626,6 +3626,104 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   return { period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis, lastYearAmount, daysWithData }, trendData };
 }
 
+// ─── Inquiries > Daily Department Statement (Revenue Dashboard day double-click) ──
+// Same "Department wise Patients" source data as the calendar cells themselves
+// (PatientVisit + ClinicOpdVisit + ClinicAdmission + ClinicAdmissionPayment,
+// same business-day boundary), just grouped by department for one single day
+// instead of by day for a whole period.
+function canonicalRevenueDept(raw) {
+  const u = (raw || '').trim().toUpperCase();
+  if (!u) return 'Unknown';
+  if (u.includes('EMERGENCY') || u.includes('CHEST PAIN')) return 'EMR & Chest Pain Clinic';
+  if (u.includes('CONSULTANT')) return 'Consultant OPD';
+  if (u.includes('GENERAL OPD')) return 'General OPD';
+  if (u.includes('LAB')) return 'Laboratory';
+  if (u.includes('ULTRA') || u === 'US') return 'Ultrasound';
+  if (u.includes('X-RAY') || u.includes('XRAY') || u.includes('RADIOLOGY') || u.includes('C.T.') || u.includes('MRI')) return 'X-Ray & C.T. Scan/M.R.I';
+  if (u.includes('BLOOD')) return 'Blood Bank';
+  if (u.includes('MISC')) return 'Miscellaneous';
+  if (u.includes('DENTAL')) return 'Dental OPD';
+  if (u.includes('THERAPY')) return 'Therapy';
+  if (u.includes('AMBULANCE')) return 'Ambulance';
+  if (u.includes('ADMISSION')) return 'Admission';
+  return raw.trim();
+}
+
+async function getDailyDepartmentStatement(date) {
+  if (!date) throw Object.assign(new Error('Date is required'), { status: 400 });
+
+  // Hospital business day: 8:00 AM to 7:59:59 AM next day, named for the
+  // START day — same offset used by the Revenue Dashboard's own calendar
+  // so this modal's totals reconcile with the cell the user double-clicked.
+  const PV_BIZ      = `(("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time)) - INTERVAL '8 hours')::date`;
+  const OV_BIZ      = `("createdAt" - INTERVAL '8 hours')::date`;
+  const ADM_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
+  const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '8 hours')::date`;
+  // Cancelled ClinicOpdVisit rows: patient + cancel count still increment, amount/discount don't.
+  const OV_CANCELLED = `LOWER(COALESCE(status,'')) IN ('canceled','cancelled')`;
+
+  const [pvRows, ovRows, admRow, admPayRow] = await Promise.all([
+    prisma.$queryRawUnsafe(`
+      SELECT department,
+        COUNT(*)::int AS count,
+        COALESCE(SUM(received - COALESCE(refund,0)),0) AS amount,
+        COALESCE(SUM(COALESCE(discount,0)),0) AS discount,
+        0::int AS cancel
+      FROM "PatientVisit"
+      WHERE ${PV_BIZ} = $1::date
+      GROUP BY department
+    `, date),
+    prisma.$queryRawUnsafe(`
+      SELECT department,
+        COUNT(*)::int AS count,
+        COALESCE(SUM(CASE WHEN ${OV_CANCELLED} THEN 0 ELSE (receive - COALESCE(refund,0)) END),0) AS amount,
+        COALESCE(SUM(CASE WHEN ${OV_CANCELLED} THEN 0 ELSE COALESCE(discount,0) END),0) AS discount,
+        COUNT(*) FILTER (WHERE ${OV_CANCELLED})::int AS cancel
+      FROM "ClinicOpdVisit"
+      WHERE ${OV_BIZ} = $1::date
+      GROUP BY department
+    `, date),
+    prisma.$queryRawUnsafe(`
+      SELECT
+        COUNT(*)::int AS count,
+        COALESCE(SUM("advancePayment"),0) AS amount,
+        COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancel
+      FROM "ClinicAdmission"
+      WHERE ${ADM_BIZ} = $1::date
+    `, date),
+    prisma.$queryRawUnsafe(`
+      SELECT COALESCE(SUM(amount),0) AS amount
+      FROM "ClinicAdmissionPayment"
+      WHERE ${ADM_PAY_BIZ} = $1::date
+    `, date),
+  ]);
+
+  const map = new Map();
+  function bump(deptRaw, count, amount, discount, cancel) {
+    const key = canonicalRevenueDept(deptRaw);
+    if (!map.has(key)) map.set(key, { department: key, count: 0, amount: 0, discount: 0, cancel: 0 });
+    const e = map.get(key);
+    e.count += Number(count) || 0;
+    e.amount += Number(amount) || 0;
+    e.discount += Number(discount) || 0;
+    e.cancel += Number(cancel) || 0;
+  }
+
+  for (const r of pvRows) bump(r.department, r.count, r.amount, r.discount, r.cancel);
+  for (const r of ovRows) bump(r.department, r.count, r.amount, r.discount, r.cancel);
+  const adm = admRow[0];
+  if (adm && (Number(adm.count) > 0)) bump('Admission', adm.count, adm.amount, 0, adm.cancel);
+  const admPay = admPayRow[0];
+  if (admPay && Number(admPay.amount) > 0) bump('Admission', 0, admPay.amount, 0, 0);
+
+  const rows = [...map.values()].sort((a, b) => a.department.localeCompare(b.department));
+  const total = rows.reduce((s, r) => ({
+    count: s.count + r.count, amount: s.amount + r.amount, discount: s.discount + r.discount, cancel: s.cancel + r.cancel,
+  }), { count: 0, amount: 0, discount: 0, cancel: 0 });
+
+  return { date, rows, total, netReceived: total.amount };
+}
+
 async function getBalanceSlips() {
   // Sirf admitted patients ki slips (jin par General OPD form mein "Admit Patient"
   // checkbox tick tha) — walk-in OPD balance is feature ka scope nahi hai.
@@ -4104,6 +4202,7 @@ module.exports = {
   getBillComparisons,
   getConsultantStatement,
   getRevenueDashboard,
+  getDailyDepartmentStatement,
   getBalanceSlips,
   receiveBalancePayment,
   getDepartmentDoctorPerformance,

@@ -40,6 +40,83 @@ const todayStr = (() => {
   return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
 })();
 
+const fmtStmtDate = (dateStr) => {
+  const [y, m, d] = dateStr.split('-');
+  return `${d}-${MN[Number(m) - 1]}-${y}`;
+};
+
+// ── Daily Department Statement Modal (double-click a calendar day) ────────────
+// Same underlying data as the "Department wise Patients" report — just this
+// one day, grouped by department, so the numbers reconcile with the cell.
+function DailyStatementModal({ date, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API}/inquiries/daily-department-statement?date=${date}`)
+      .then(r => r.json())
+      .then(json => setData(json.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [date]);
+
+  return (
+    <div className="rd-stmt-overlay" onClick={onClose}>
+      <div className="rd-stmt-modal" onClick={e => e.stopPropagation()}>
+        <div className="rd-stmt-hdr">
+          <span>Statement for the Date of {fmtStmtDate(date)}</span>
+          <button className="rd-stmt-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="rd-stmt-body">
+          {loading && <div className="rd-stmt-loading">Loading…</div>}
+          {!loading && (!data || data.rows.length === 0) && (
+            <div className="rd-stmt-empty">Is date ke liye koi data nahi mila.</div>
+          )}
+          {!loading && data && data.rows.length > 0 && (
+            <table className="rd-stmt-tbl">
+              <thead>
+                <tr>
+                  <th>Department</th>
+                  <th className="num"># of Patients</th>
+                  <th className="num">Amount</th>
+                  <th className="num">Discount</th>
+                  <th className="num">Cancel</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.rows.map(r => (
+                  <tr key={r.department}>
+                    <td>{r.department.toUpperCase()}</td>
+                    <td className="td-num">{fmtN(r.count)}</td>
+                    <td className="td-num">{fmtA(r.amount)}</td>
+                    <td className="td-num">{fmtA(r.discount)}</td>
+                    <td className="td-num">{fmtN(r.cancel)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="rd-stmt-total-row">
+                  <td>TOTAL</td>
+                  <td className="td-num">{fmtN(data.total.count)}</td>
+                  <td className="td-num">{fmtA(data.total.amount)}</td>
+                  <td className="td-num">{fmtA(data.total.discount)}</td>
+                  <td className="td-num">{fmtN(data.total.cancel)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+        {!loading && data && data.rows.length > 0 && (
+          <div className="rd-stmt-net">
+            <span>Net Received</span>
+            <span>{fmtA(data.netReceived)}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function RevenueDashboard() {
   const now = new Date();
   const { user } = useAuthStore();
@@ -60,6 +137,8 @@ export default function RevenueDashboard() {
   const [dashData, setDashData] = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [lastRun,  setLastRun]  = useState(null);
+
+  const [statementDate, setStatementDate] = useState(null);
 
   // Load dropdowns on mount
   useEffect(() => {
@@ -188,7 +267,12 @@ export default function RevenueDashboard() {
           {weeks.map((week, wi) => (
             <div key={wi} className="rd-week-row">
               {week.days.map((cell, di) => (
-                <div key={di} className={cellClass(cell)}>
+                <div
+                  key={di}
+                  className={`${cellClass(cell)}${cell ? ' rd-cell--clickable' : ''}`}
+                  onDoubleClick={() => cell && setStatementDate(cell.dateStr)}
+                  title={cell ? 'Double-click for department-wise statement' : undefined}
+                >
                   {cell && (
                     <>
                       <div className="rd-cell-day">{cell.day}</div>
@@ -449,6 +533,10 @@ export default function RevenueDashboard() {
           </div>
         </div>
       </div>
+
+      {statementDate && (
+        <DailyStatementModal date={statementDate} onClose={() => setStatementDate(null)} />
+      )}
     </div>
   );
 }

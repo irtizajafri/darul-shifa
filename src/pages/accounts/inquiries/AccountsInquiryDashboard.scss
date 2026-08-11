@@ -4,7 +4,7 @@ $red:   #c62828;
 $green: #2e7d32;
 $ora:   #e65100;
 
-.rd-page {
+.aid-page {
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -15,15 +15,48 @@ $ora:   #e65100;
   overflow: hidden;
 }
 
+// ─── Top Bar ──────────────────────────────────────────────────────────────────
+.aid-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  background: #fff;
+  border-bottom: 1px solid #bbb;
+  flex-shrink: 0;
+}
+
+.aid-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #f0f0f0;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 5px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+  &:hover { background: #e0e8f0; border-color: $blue; color: $blue; }
+}
+
+.aid-topbar-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: $blue;
+}
+
 // ─── Body ─────────────────────────────────────────────────────────────────────
-.rd-body {
+.aid-body {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-.rd-sidebar {
+.aid-sidebar {
   width: 220px;
   min-width: 220px;
   background: #fff;
@@ -35,9 +68,9 @@ $ora:   #e65100;
   gap: 8px;
 }
 
-.rd-filter-group { display: flex; flex-direction: column; gap: 3px; }
+.aid-filter-group { display: flex; flex-direction: column; gap: 3px; }
 
-.rd-flabel {
+.aid-flabel {
   font-size: 10px;
   font-weight: 600;
   color: #444;
@@ -45,7 +78,7 @@ $ora:   #e65100;
   letter-spacing: 0.3px;
 }
 
-.rd-select {
+.aid-select {
   font-family: inherit;
   font-size: 11px;
   padding: 3px 5px;
@@ -57,7 +90,7 @@ $ora:   #e65100;
   &:focus { outline: none; border-color: $blue; }
 }
 
-.rd-last-run {
+.aid-last-run {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -75,7 +108,7 @@ $ora:   #e65100;
 }
 
 // ─── Radio Grid ───────────────────────────────────────────────────────────────
-.rd-radio-grid {
+.aid-radio-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px 6px;
@@ -85,7 +118,7 @@ $ora:   #e65100;
   background: #fafafa;
 }
 
-.rd-radio-item {
+.aid-radio-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -97,26 +130,26 @@ $ora:   #e65100;
 }
 
 // ─── Chart ────────────────────────────────────────────────────────────────────
-.rd-chart-header {
+.aid-chart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: 4px;
 }
 
-.rd-chart-title {
+.aid-chart-title {
   font-size: 10px;
   font-weight: 700;
   color: #555;
   text-transform: uppercase;
 }
 
-.rd-ct-toggle {
+.aid-ct-toggle {
   display: flex;
   gap: 2px;
 }
 
-.rd-ct-btn {
+.aid-ct-btn {
   display: flex;
   align-items: center;
   padding: 2px 5px;
@@ -129,16 +162,16 @@ $ora:   #e65100;
   &:hover:not(.--on) { background: #e0e8f0; }
 }
 
-.rd-chart-wrap { margin-top: 2px; }
+.aid-chart-wrap { margin-top: 2px; }
 
-.rd-prognosis-box {
+.aid-prognosis-box {
   background: #f0f4f8;
   border-radius: 4px;
   padding: 6px 8px;
   font-size: 10.5px;
 }
 
-.rd-prog-row {
+.aid-prog-row {
   display: flex;
   justify-content: space-between;
   gap: 4px;
@@ -147,14 +180,14 @@ $ora:   #e65100;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
-.rd-main {
+.aid-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.rd-loading {
+.aid-loading {
   flex: 1;
   display: flex;
   align-items: center;
@@ -165,7 +198,7 @@ $ora:   #e65100;
 }
 
 // ─── Calendar ─────────────────────────────────────────────────────────────────
-.rd-calendar {
+.aid-calendar {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -173,7 +206,7 @@ $ora:   #e65100;
   overflow: auto;
 }
 
-.rd-cal-nav {
+.aid-cal-nav {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -181,7 +214,7 @@ $ora:   #e65100;
   margin-bottom: 8px;
 }
 
-.rd-cal-title {
+.aid-cal-title {
   font-size: 16px;
   font-weight: 700;
   color: $blue;
@@ -189,7 +222,7 @@ $ora:   #e65100;
   text-align: center;
 }
 
-.rd-nav-btn {
+.aid-nav-btn {
   background: #fff;
   border: 1px solid #bbb;
   border-radius: 4px;
@@ -201,7 +234,7 @@ $ora:   #e65100;
   &:hover { background: #eef2f8; border-color: $blue; }
 }
 
-.rd-cal-grid {
+.aid-cal-grid {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -209,13 +242,13 @@ $ora:   #e65100;
 }
 
 // Header row — 8 columns
-.rd-cal-hdr-row {
+.aid-cal-hdr-row {
   display: grid;
   grid-template-columns: repeat(7, 1fr) 1.1fr;
   gap: 3px;
 }
 
-.rd-cal-hdr {
+.aid-cal-hdr {
   text-align: center;
   font-size: 11px;
   font-weight: 700;
@@ -227,14 +260,14 @@ $ora:   #e65100;
 }
 
 // Each week row — 7 day cells + 1 total cell
-.rd-week-row {
+.aid-week-row {
   display: grid;
   grid-template-columns: repeat(7, 1fr) 1.1fr;
   gap: 3px;
 }
 
 // ─── Day Cells ────────────────────────────────────────────────────────────────
-.rd-cell {
+.aid-cell {
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -257,9 +290,9 @@ $ora:   #e65100;
   &--grand-corner{ background: #d0dff0; border-color: $blue; border-width: 2px; }
 }
 
-.rd-col-total-row { margin-top: 4px; border-top: 2px solid #aaa; padding-top: 4px; }
+.aid-col-total-row { margin-top: 4px; border-top: 2px solid #aaa; padding-top: 4px; }
 
-.rd-cell-wk-label {
+.aid-cell-wk-label {
   font-size: 8.5px;
   font-weight: 700;
   color: $blue;
@@ -268,34 +301,34 @@ $ora:   #e65100;
   margin-bottom: 1px;
 }
 
-.rd-cell-day {
+.aid-cell-day {
   font-size: 12px;
   font-weight: 700;
   color: #333;
 }
 
-.rd-cell-total {
+.aid-cell-total {
   font-size: 13px;
   font-weight: 700;
   color: #1565c0;
   line-height: 1;
 }
 
-.rd-cell-amt {
+.aid-cell-amt {
   font-size: 11px;
   color: $red;
   font-weight: 600;
   line-height: 1;
 }
 
-.rd-cell-badges {
+.aid-cell-badges {
   display: flex;
   gap: 3px;
   margin-top: 2px;
   flex-wrap: wrap;
 }
 
-.rd-badge {
+.aid-badge {
   font-size: 9.5px;
   font-weight: 700;
   padding: 1px 4px;
@@ -306,14 +339,14 @@ $ora:   #e65100;
 }
 
 // ─── Legend ───────────────────────────────────────────────────────────────────
-.rd-cal-legend {
+.aid-cal-legend {
   display: flex;
   gap: 12px;
   padding: 6px 2px;
   font-size: 10px;
 }
 
-.rd-leg {
+.aid-leg {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -333,7 +366,7 @@ $ora:   #e65100;
 }
 
 // ─── Yearly Monthly ───────────────────────────────────────────────────────────
-.rd-yearly {
+.aid-yearly {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -341,14 +374,14 @@ $ora:   #e65100;
   overflow: auto;
 }
 
-.rd-month-grid {
+.aid-month-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   margin-top: 8px;
 }
 
-.rd-month-card {
+.aid-month-card {
   background: #fff;
   border: 1px solid #ddd;
   border-radius: 5px;
@@ -360,15 +393,15 @@ $ora:   #e65100;
   &--zero { background: #fafafa; color: #aaa; }
 }
 
-.rd-mc-name     { font-size: 13px; font-weight: 700; color: $blue; }
-.rd-mc-patients { font-size: 12px; color: #1565c0; font-weight: 600; }
-.rd-mc-amount   { font-size: 11px; color: $red; font-weight: 600; }
-.rd-mc-bar-wrap { background: #eee; border-radius: 2px; height: 4px; margin: 3px 0; }
-.rd-mc-bar      { background: $blue; height: 100%; border-radius: 2px; transition: width 0.3s; }
-.rd-mc-sub      { display: flex; gap: 4px; margin-top: 2px; }
+.aid-mc-name     { font-size: 13px; font-weight: 700; color: $blue; }
+.aid-mc-patients { font-size: 12px; color: #1565c0; font-weight: 600; }
+.aid-mc-amount   { font-size: 11px; color: $red; font-weight: 600; }
+.aid-mc-bar-wrap { background: #eee; border-radius: 2px; height: 4px; margin: 3px 0; }
+.aid-mc-bar      { background: $blue; height: 100%; border-radius: 2px; transition: width 0.3s; }
+.aid-mc-sub      { display: flex; gap: 4px; margin-top: 2px; }
 
 // ─── Multi Year ───────────────────────────────────────────────────────────────
-.rd-multiyear {
+.aid-multiyear {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -376,9 +409,9 @@ $ora:   #e65100;
   overflow: auto;
 }
 
-.rd-year-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.aid-year-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 
-.rd-year-row {
+.aid-year-row {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -388,14 +421,14 @@ $ora:   #e65100;
   padding: 8px 12px;
 }
 
-.rd-yr-label    { width: 50px; font-weight: 700; color: $blue; font-size: 13px; }
-.rd-yr-bar-wrap { flex: 1; background: #eee; border-radius: 3px; height: 10px; }
-.rd-yr-bar      { background: $blue; height: 100%; border-radius: 3px; transition: width 0.3s; }
-.rd-yr-patients { width: 80px; text-align: right; color: #1565c0; font-size: 11px; font-weight: 600; }
-.rd-yr-amount   { width: 110px; text-align: right; color: $red; font-size: 11px; font-weight: 600; }
+.aid-yr-label    { width: 50px; font-weight: 700; color: $blue; font-size: 13px; }
+.aid-yr-bar-wrap { flex: 1; background: #eee; border-radius: 3px; height: 10px; }
+.aid-yr-bar      { background: $blue; height: 100%; border-radius: 3px; transition: width 0.3s; }
+.aid-yr-patients { width: 80px; text-align: right; color: #1565c0; font-size: 11px; font-weight: 600; }
+.aid-yr-amount   { width: 110px; text-align: right; color: $red; font-size: 11px; font-weight: 600; }
 
 // ─── Summary Bar ──────────────────────────────────────────────────────────────
-.rd-summary {
+.aid-summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -406,24 +439,24 @@ $ora:   #e65100;
   flex-shrink: 0;
 }
 
-.rd-sum-left {
+.aid-sum-left {
   display: flex;
   align-items: center;
   gap: 0;
 }
 
-.rd-sum-item { padding: 0 16px; }
+.aid-sum-item { padding: 0 16px; }
 
-.rd-sum-sep {
+.aid-sum-sep {
   width: 1px;
   height: 36px;
   background: #ddd;
 }
 
-.rd-sum-lbl { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.3px; }
-.rd-sum-val { font-size: 13px; font-weight: 700; color: #333; }
+.aid-sum-lbl { font-size: 10px; color: #777; text-transform: uppercase; letter-spacing: 0.3px; }
+.aid-sum-val { font-size: 13px; font-weight: 700; color: #333; }
 
-.rd-sum-right {
+.aid-sum-right {
   display: flex;
   align-items: center;
   gap: 20px;
@@ -433,15 +466,15 @@ $ora:   #e65100;
   border: 1px solid #d0daea;
 }
 
-.rd-sum-big {
+.aid-sum-big {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.rd-sum-icon { font-size: 18px; }
+.aid-sum-icon { font-size: 18px; }
 
-.rd-sum-big-val {
+.aid-sum-big-val {
   font-size: 18px;
   font-weight: 700;
   &--p { color: #c62828; }
@@ -449,11 +482,11 @@ $ora:   #e65100;
 }
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
-@keyframes rd-spin { to { transform: rotate(360deg); } }
-.rd-spin { animation: rd-spin 0.8s linear infinite; }
+@keyframes aid-spin { to { transform: rotate(360deg); } }
+.aid-spin { animation: aid-spin 0.8s linear infinite; }
 
 // ─── Daily Statement Modal (double-click a calendar day) ──────────────────────
-.rd-stmt-overlay {
+.aid-stmt-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.45);
@@ -463,7 +496,7 @@ $ora:   #e65100;
   z-index: 1000;
 }
 
-.rd-stmt-modal {
+.aid-stmt-modal {
   background: #fff;
   border: 1px solid #999;
   border-radius: 5px;
@@ -477,7 +510,7 @@ $ora:   #e65100;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
 }
 
-.rd-stmt-hdr {
+.aid-stmt-hdr {
   background: $blue;
   color: #fff;
   padding: 8px 14px;
@@ -488,7 +521,7 @@ $ora:   #e65100;
   font-size: 13px;
 }
 
-.rd-stmt-close {
+.aid-stmt-close {
   background: none;
   border: none;
   color: #fff;
@@ -499,20 +532,20 @@ $ora:   #e65100;
   &:hover { color: #ffcccc; }
 }
 
-.rd-stmt-body {
+.aid-stmt-body {
   flex: 1;
   overflow: auto;
   padding: 4px 0;
 }
 
-.rd-stmt-loading, .rd-stmt-empty {
+.aid-stmt-loading, .aid-stmt-empty {
   padding: 30px;
   text-align: center;
   color: #888;
   font-size: 12px;
 }
 
-.rd-stmt-tbl {
+.aid-stmt-tbl {
   width: 100%;
   border-collapse: collapse;
   font-size: 11.5px;
@@ -536,7 +569,7 @@ $ora:   #e65100;
 
   tbody tr:nth-child(even) { background: #f9f9f9; }
 
-  .rd-stmt-total-row td {
+  .aid-stmt-total-row td {
     font-weight: 700;
     color: $blue;
     border-top: 2px solid $blue;
@@ -544,7 +577,7 @@ $ora:   #e65100;
   }
 }
 
-.rd-stmt-net {
+.aid-stmt-net {
   display: flex;
   justify-content: space-between;
   padding: 8px 14px;
@@ -555,3 +588,140 @@ $ora:   #e65100;
 
   span:last-child { color: $blue; }
 }
+
+// ─── Voucher Expense History Modal (double-click a calendar day) ──────────────
+.aid-hist-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.aid-hist-modal {
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 5px;
+  width: 680px;
+  max-width: 95vw;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+}
+
+.aid-hist-hdr {
+  background: $blue;
+  color: #fff;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.aid-hist-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+  &:hover { color: #ffcccc; }
+}
+
+.aid-hist-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+.aid-hist-loading, .aid-hist-empty {
+  padding: 30px;
+  text-align: center;
+  color: #888;
+  font-size: 12px;
+}
+
+.aid-hist-voucher {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.aid-hist-voucher-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #e8eef8;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.aid-hist-vno   { font-weight: 700; color: $blue; }
+.aid-hist-vmode { color: #666; font-size: 11px; }
+.aid-hist-vamt  {
+  margin-left: auto;
+  font-weight: 700;
+  color: $red;
+  &--exp { color: $red; }
+  &--inc { color: $green; }
+}
+
+.aid-hist-section-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin: 10px 0 6px;
+  padding-bottom: 3px;
+  border-bottom: 2px solid #ddd;
+
+  &--inc { color: $green; border-color: #a5d6a7; }
+  &--exp { color: $red;   border-color: #ef9a9a; }
+}
+
+.aid-hist-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+
+  th {
+    padding: 4px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: #555;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    &.num { text-align: right; }
+  }
+
+  td {
+    padding: 4px 10px;
+    border-bottom: 1px solid #eee;
+  }
+
+  .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.aid-hist-net {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-weight: 700;
+  font-size: 12.5px;
+  border-top: 1px solid #ddd;
+  color: #111;
+
+  span:last-child { color: $blue; }
+}
+
+.aid-hist-net-inc { color: $green !important; }
+.aid-hist-net-exp { color: $red !important; }

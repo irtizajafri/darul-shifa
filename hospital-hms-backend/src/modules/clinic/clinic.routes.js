@@ -243,6 +243,7 @@ router.get('/consultant-statement', controller.getConsultantStatement);
 
 // Inquiries
 router.get('/inquiries/revenue-dashboard', controller.getRevenueDashboard);
+router.get('/inquiries/daily-department-statement', controller.getDailyDepartmentStatement);
 
 // Reports
 router.get('/reports/department-doctor-performance', controller.getDepartmentDoctorPerformance);

@@ -35,6 +35,9 @@ async function bulkSavePayeeEntries(req, res, next) { try { success(res, await s
 async function getEmployeeList(req, res, next) { try { success(res, await svc.getEmployeeList()); } catch (e) { next(e); } }
 async function getSupplierList(req, res, next) { try { success(res, await svc.getSupplierList()); } catch (e) { next(e); } }
 async function getDoctorList(req, res, next) { try { success(res, await svc.getDoctorList()); } catch (e) { next(e); } }
+async function getInventorySubcategories(req, res, next) { try { success(res, await svc.getInventorySubcategories()); } catch (e) { next(e); } }
+async function getInventoryItemsBySubcategory(req, res, next) { try { success(res, await svc.getInventoryItemsBySubcategory(req.query.subcategoryId)); } catch (e) { next(e); } }
+async function getInventoryHeadForMainAccount(req, res, next) { try { success(res, await svc.getInventoryHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
 
 async function getBankAccounts(req, res, next) { try { success(res, await svc.getBankAccounts(et(req))); } catch (e) { next(e); } }
 async function createBankAccount(req, res, next) { try { success(res, await svc.createBankAccount(req.body), 'created'); } catch (e) { next(e); } }
@@ -119,13 +122,29 @@ async function getNextVoucherNo(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function getAccountsInquiryDashboard(req, res, next) {
+  try {
+    const { entityType, period, year, month } = req.query;
+    success(res, await svc.getAccountsInquiryDashboard({ entityType, period, year, month }));
+  } catch (e) { next(e); }
+}
+
+async function getClinicRevenueForDate(req, res, next) {
+  try {
+    success(res, await svc.getClinicRevenueForDate(req.query.date));
+  } catch (e) {
+    if (e.status) return fail(res, e.status, e.message);
+    next(e);
+  }
+}
+
 module.exports = {
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
@@ -137,4 +156,6 @@ module.exports = {
   addHeadAccount, removeHeadAccount,
   createBankDeposit, getBankDeposits,
   createBankDepositAdj, getBankDepositAdjs,
+  getAccountsInquiryDashboard,
+  getClinicRevenueForDate,
 };
