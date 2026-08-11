@@ -213,6 +213,7 @@ model InventorySubcategory {
   items       InventoryItem[]
   purchaseOrders InventoryPurchaseOrder[]
   grns        InventoryGRN[]
+  payeeHeads  AccPayeeHead[]
 
   @@unique([categoryId, name])
   @@index([status])
@@ -1429,14 +1430,15 @@ model AccSubGL {
 }
 
 model AccMainAccount {
-  id         Int             @id @default(autoincrement())
-  code       String          @unique
-  name       String
-  subGlId    Int
-  entityType String          @default("non-corporate")
-  createdAt  DateTime        @default(now())
-  subGL      AccSubGL        @relation(fields: [subGlId], references: [id], onDelete: Cascade)
-  subAccounts AccSubAccount[]
+  id            Int             @id @default(autoincrement())
+  code          String          @unique
+  name          String
+  subGlId       Int
+  entityType    String          @default("non-corporate")
+  createdAt     DateTime        @default(now())
+  subGL         AccSubGL        @relation(fields: [subGlId], references: [id], onDelete: Cascade)
+  subAccounts   AccSubAccount[]
+  inventoryHeads AccPayeeHead[]
 }
 
 model AccSubAccount {
@@ -1452,13 +1454,17 @@ model AccSubAccount {
 }
 
 model AccPayeeHead {
-  id             Int                    @id @default(autoincrement())
-  name           String
-  sourceType     String                 @default("manual")
-  entityType     String                 @default("non-corporate")
-  createdAt      DateTime               @default(now())
-  entries        AccPayeeEntry[]
-  linkedAccounts AccPayeeHeadAccount[]
+  id                     Int                    @id @default(autoincrement())
+  name                   String
+  sourceType             String                 @default("manual")
+  entityType             String                 @default("non-corporate")
+  inventorySubcategoryId Int?
+  mainAccountId          Int?
+  createdAt              DateTime               @default(now())
+  entries                AccPayeeEntry[]
+  linkedAccounts         AccPayeeHeadAccount[]
+  inventorySubcategory   InventorySubcategory?  @relation(fields: [inventorySubcategoryId], references: [id])
+  mainAccount            AccMainAccount?        @relation(fields: [mainAccountId], references: [id])
 }
 
 model AccPayeeHeadAccount {

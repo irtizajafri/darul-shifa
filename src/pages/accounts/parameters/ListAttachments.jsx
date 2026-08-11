@@ -8,10 +8,11 @@ import './ListAttachments.scss';
 const API = 'http://localhost:5001/api/accounts';
 
 const SOURCE_BADGE = {
-  employee: { label: 'HR Module',        color: '#3b82f6' },
-  vendor:   { label: 'Inventory Module', color: '#f59e0b' },
-  doctor:   { label: 'Clinic Module',    color: '#10b981' },
-  manual:   { label: 'Custom',           color: '#8b5cf6' },
+  employee:  { label: 'HR Module',        color: '#3b82f6' },
+  vendor:    { label: 'Inventory Module', color: '#f59e0b' },
+  doctor:    { label: 'Clinic Module',    color: '#10b981' },
+  inventory: { label: 'Inventory Items',  color: '#0ea5e9' },
+  manual:    { label: 'Custom',           color: '#8b5cf6' },
 };
 
 const emptyLink = () => ({ mainGlId: '', subGlId: '', mainAccountId: '', subAccountId: '', subGLs: [], mainAccs: [], subAccs: [], saving: false });
@@ -20,8 +21,8 @@ export default function ListAttachments() {
   const { entityType } = useParams();
   const navigate = useNavigate();
   const {
-    payeeHeads, payeeEntries, linkedEmployees, linkedSuppliers, linkedDoctors, mainGLs,
-    fetchPayeeHeads, fetchPayeeEntries, fetchLinkedEmployees, fetchLinkedSuppliers, fetchLinkedDoctors, fetchMainGLs,
+    payeeHeads, payeeEntries, linkedEmployees, linkedSuppliers, linkedDoctors, inventorySubcategories, mainGLs,
+    fetchPayeeHeads, fetchPayeeEntries, fetchLinkedEmployees, fetchLinkedSuppliers, fetchLinkedDoctors, fetchInventorySubcategories, fetchMainGLs,
     createPayeeHead, updatePayeeHead, deletePayeeHead,
     createPayeeEntry, deletePayeeEntry,
     addHeadAccount, removeHeadAccount,
@@ -31,9 +32,12 @@ export default function ListAttachments() {
   const [expandedHead, setExpandedHead] = useState(null);
   const [expandedLink, setExpandedLink] = useState(null);
   const [linkState, setLinkState] = useState({});
+  const [inventoryItems, setInventoryItems] = useState({});
 
   const [headModal, setHeadModal] = useState(null);
   const [headName, setHeadName] = useState('');
+  const [headType, setHeadType] = useState('manual');
+  const [headSubcatId, setHeadSubcatId] = useState('');
   const [entryModal, setEntryModal] = useState(null);
   const [entryName, setEntryName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -45,6 +49,7 @@ export default function ListAttachments() {
       fetchLinkedEmployees(),
       fetchLinkedSuppliers(),
       fetchLinkedDoctors(),
+      fetchInventorySubcategories(),
     ]).finally(() => setLoading(false));
   }, [entityType]);
 
@@ -68,6 +73,13 @@ export default function ListAttachments() {
         allSuppliers: linkedSuppliers,
         checked: checkedNames,
       });
+    }
+    if (head.sourceType === 'inventory' && head.inventorySubcategoryId) {
+      if (!inventoryItems[head.id]) {
+        const r = await fetch(`${API}/linked/inventory-items?subcategoryId=${head.inventorySubcategoryId}`);
+        const j = await r.json();
+        setInventoryItems((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
+      }
     }
   };
 
@@ -157,7 +169,8 @@ export default function ListAttachments() {
   };
 
   // ── Head modal ────────────────────────────────────────────────────────────
-  const openAddHead = () => { setHeadName(''); setHeadModal({ mode: 'add' }); };
+  // ── Custom (manual) head modal ───────────────────────────────────────────
+  const openAddHead = () => { setHeadName(''); setHeadType('manual'); setHeadSubcatId(''); setHeadModal({ mode: 'add' }); };
   const openEditHead = (h) => { setHeadName(h.name); setHeadModal({ mode: 'edit', row: h }); };
   const closeHeadModal = () => setHeadModal(null);
 
@@ -173,6 +186,23 @@ export default function ListAttachments() {
         toast.success('Head updated');
       }
       closeHeadModal();
+    } catch (err) { toast.error(err.message); }
+    finally { setSaving(false); }
+  };
+
+  // ── Inventory head modal ─────────────────────────────────────────────────
+  const [invModal, setInvModal] = useState(false);
+  const openAddInventoryHead = () => { setHeadName(''); setHeadSubcatId(''); setInvModal(true); };
+  const closeInvModal = () => setInvModal(false);
+
+  const saveInventoryHead = async () => {
+    if (!headName.trim()) return toast.error('Head name is required');
+    if (!headSubcatId) return toast.error('Select a Sub Category');
+    setSaving(true);
+    try {
+      await createPayeeHead({ name: headName, sourceType: 'inventory', entityType, inventorySubcategoryId: headSubcatId });
+      toast.success('Inventory head created');
+      closeInvModal();
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
   };
@@ -227,6 +257,17 @@ export default function ListAttachments() {
         <div key={d.id} className="list-attach__entry-row"><span>{d.code} — {d.name}</span></div>
       ));
     }
+    if (head.sourceType === 'inventory') {
+      if (!head.inventorySubcategoryId) return <p className="list-attach__empty">No Sub Category linked</p>;
+      const items = inventoryItems[head.id];
+      if (!items) return <p className="list-attach__empty">Loading…</p>;
+      if (items.length === 0) return <p className="list-attach__empty">No items found in this sub category</p>;
+      return items.map((item) => (
+        <div key={item.id} className="list-attach__entry-row">
+          <span>{item.code} — {item.name}</span>
+        </div>
+      ));
+    }
     // manual
     if (expandedHead !== head.id) return null;
     if (payeeEntries.length === 0) return <p className="list-attach__empty">No entries yet. Click + to add.</p>;
@@ -239,6 +280,26 @@ export default function ListAttachments() {
   };
 
   const renderLinkedAccounts = (head) => {
+    // Inventory heads link to a Main Account
+    if (head.sourceType === 'inventory') {
+      if (!head.mainAccount) return <span className="list-attach__no-link">No Main Account linked</span>;
+      return (
+        <div className="list-attach__linked-list">
+          <div className="list-attach__linked-tag">
+            <CheckCircle2 size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
+            <span>{head.mainAccount.code} — {head.mainAccount.name}</span>
+            <button
+              className="list-attach__tag-remove"
+              title="Remove link"
+              onClick={() => updatePayeeHead(head.id, { mainAccountId: null }).then(() => fetchPayeeHeads(entityType))}
+            >
+              <X size={10} />
+            </button>
+          </div>
+        </div>
+      );
+    }
+    // All other heads link to Sub Accounts
     const links = head.linkedAccounts || [];
     if (links.length === 0) return <span className="list-attach__no-link">No account linked</span>;
     return (
@@ -260,8 +321,61 @@ export default function ListAttachments() {
     );
   };
 
+  const saveInventoryLink = async (headId) => {
+    const ls = linkState[headId];
+    if (!ls?.mainAccountId) { toast.error('Select a Main Account to link'); return; }
+    updLink(headId, { saving: true });
+    try {
+      await updatePayeeHead(headId, { mainAccountId: ls.mainAccountId });
+      await fetchPayeeHeads(entityType);
+      toast.success('Main Account linked');
+      closeLink(headId);
+    } catch (err) { toast.error(err.message); }
+    finally { updLink(headId, { saving: false }); }
+  };
+
   const renderLinkSection = (head) => {
     const ls = linkState[head.id] || emptyLink();
+
+    // Inventory heads: link only up to Main Account
+    if (head.sourceType === 'inventory') {
+      return (
+        <div className="list-attach__link-form">
+          <div className="list-attach__link-title">Link to Main Account</div>
+          <div className="list-attach__link-grid">
+            <div className="list-attach__link-field">
+              <label>Main GL</label>
+              <select value={ls.mainGlId} onChange={(e) => loadSubGLs(head.id, e.target.value)}>
+                <option value="">Select Main GL</option>
+                {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
+              </select>
+            </div>
+            <div className="list-attach__link-field">
+              <label>Sub GL</label>
+              <select value={ls.subGlId} onChange={(e) => loadMainAccs(head.id, e.target.value)} disabled={!ls.mainGlId}>
+                <option value="">Select Sub GL</option>
+                {ls.subGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
+              </select>
+            </div>
+            <div className="list-attach__link-field">
+              <label>Main Account</label>
+              <select value={ls.mainAccountId} onChange={(e) => updLink(head.id, { mainAccountId: e.target.value })} disabled={!ls.subGlId}>
+                <option value="">Select Main Account</option>
+                {ls.mainAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="list-attach__link-actions">
+            <button className="list-attach__link-cancel" onClick={() => closeLink(head.id)}>Close</button>
+            <button className="list-attach__link-save" onClick={() => saveInventoryLink(head.id)} disabled={ls.saving || !ls.mainAccountId}>
+              {ls.saving ? 'Saving…' : '+ Link'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // All other heads: full cascade to Sub Account
     return (
       <div className="list-attach__link-form">
         <div className="list-attach__link-title">Add Account Link</div>
@@ -320,6 +434,7 @@ export default function ListAttachments() {
   const renderHead = (head) => {
     const badge = SOURCE_BADGE[head.sourceType] || SOURCE_BADGE.manual;
     const isManual = head.sourceType === 'manual';
+    const isInventory = head.sourceType === 'inventory';
     const isLinkOpen = expandedLink === head.id;
     const isExpanded = expandedHead === head.id;
 
@@ -347,6 +462,9 @@ export default function ListAttachments() {
                 <button className="btn-icon danger" title="Delete" onClick={() => removeHead(head.id)}><Trash2 className="w-3.5 h-3.5" /></button>
                 <button className="btn-icon" title="Add Entry" onClick={() => openAddEntry(head.id)}><Plus className="w-3.5 h-3.5" /></button>
               </>
+            )}
+            {isInventory && (
+              <button className="btn-icon danger" title="Delete" onClick={() => removeHead(head.id)}><Trash2 className="w-3.5 h-3.5" /></button>
             )}
             <button
               className="list-attach__expand-btn"
@@ -380,9 +498,14 @@ export default function ListAttachments() {
             <p>Payee heads — link each head to one or more Sub Accounts in your GL hierarchy</p>
           </div>
         </div>
-        <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={openAddHead}>
-          <Plus className="w-4 h-4" /> Add Custom Head
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#0ea5e9' }} onClick={openAddInventoryHead}>
+            <Plus className="w-4 h-4" /> Add Inventory Head
+          </button>
+          <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={openAddHead}>
+            <Plus className="w-4 h-4" /> Add Custom Head
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -403,7 +526,7 @@ export default function ListAttachments() {
         </>
       )}
 
-      {/* Head Modal */}
+      {/* Custom Head Modal */}
       {headModal && (
         <div className="acc-param-page__overlay" onClick={closeHeadModal}>
           <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
@@ -415,6 +538,32 @@ export default function ListAttachments() {
             <div className="acc-param-page__modal-actions">
               <button className="acc-param-page__btn-cancel" onClick={closeHeadModal}>Cancel</button>
               <button className="acc-param-page__btn-save" onClick={saveHead} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inventory Head Modal */}
+      {invModal && (
+        <div className="acc-param-page__overlay" onClick={closeInvModal}>
+          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Add Inventory Head</h3>
+            <div className="acc-param-page__field">
+              <label>Inventory Sub Category</label>
+              <select value={headSubcatId} onChange={(e) => setHeadSubcatId(e.target.value)} autoFocus>
+                <option value="">— Select Sub Category —</option>
+                {inventorySubcategories.map((s) => (
+                  <option key={s.id} value={s.id}>{s.category?.name} → {s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="acc-param-page__field">
+              <label>Head Name</label>
+              <input value={headName} onChange={(e) => setHeadName(e.target.value)} placeholder="e.g. Medicines" />
+            </div>
+            <div className="acc-param-page__modal-actions">
+              <button className="acc-param-page__btn-cancel" onClick={closeInvModal}>Cancel</button>
+              <button className="acc-param-page__btn-save" onClick={saveInventoryHead} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>

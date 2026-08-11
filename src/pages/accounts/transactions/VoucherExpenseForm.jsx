@@ -249,6 +249,7 @@ export default function VoucherExpenseForm() {
   const [subGLs, setSubGLs]             = useState([]);
   const [mainAccs, setMainAccs]         = useState([]);
   const [subAccs, setSubAccs]           = useState([]);
+  const [isInventoryAcc, setIsInventoryAcc] = useState(false);
   const [linkedPayees, setLinkedPayees] = useState([]);
   const [linkedHeadName, setLinkedHeadName] = useState('');
   const [linkedHeadType, setLinkedHeadType] = useState('');
@@ -314,8 +315,8 @@ export default function VoucherExpenseForm() {
   }, [selectedBankId]);
 
   const handleMainGlChange = async (v) => {
-    setEntry((e) => ({ ...e, mainGlId: v, subGlId: '', mainAccountId: '', subAccountId: '', accountCode: '', accountName: '' }));
-    setSubGLs([]); setMainAccs([]); setSubAccs([]);
+    setEntry((e) => ({ ...e, mainGlId: v, subGlId: '', mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '' }));
+    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
     if (!v) return;
     const r = await fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${v}`);
     const j = await r.json();
@@ -323,8 +324,8 @@ export default function VoucherExpenseForm() {
   };
 
   const handleSubGlChange = async (v) => {
-    setEntry((e) => ({ ...e, subGlId: v, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '' }));
-    setMainAccs([]); setSubAccs([]);
+    setEntry((e) => ({ ...e, subGlId: v, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '' }));
+    setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
     if (!v) return;
     const r = await fetch(`${API}/main-account?entityType=${entityType}&subGlId=${v}`);
     const j = await r.json();
@@ -333,16 +334,49 @@ export default function VoucherExpenseForm() {
 
   const handleMainAccChange = async (v) => {
     setSubAccs([]);
-    if (!v) { setEntry((e) => ({ ...e, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '' })); return; }
+    setIsInventoryAcc(false);
+    if (!v) { setEntry((e) => ({ ...e, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '' })); return; }
     const acc = mainAccs.find((a) => String(a.id) === v);
-    setEntry((e) => ({ ...e, mainAccountId: v, subAccountId: '', accountCode: acc?.code || '', accountName: acc?.name || '' }));
-    const r = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${v}`);
-    const j = await r.json();
-    setSubAccs(Array.isArray(j?.data) ? j.data : []);
+    setEntry((e) => ({ ...e, mainAccountId: v, subAccountId: '', accountCode: acc?.code || '', accountName: acc?.name || '', payeeName: '' }));
+
+    // Check if this main account has an inventory head linked
+    const invR = await fetch(`${API}/linked/inventory-head-for-main-account?mainAccountId=${v}`);
+    const invJ = await invR.json();
+    const invHead = invJ?.data;
+
+    if (invHead?.inventorySubcategoryId) {
+      // Load inventory items as sub account options
+      setIsInventoryAcc(true);
+      const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
+      const iJ = await iR.json();
+      setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
+    } else {
+      // Load regular sub accounts
+      const r = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${v}`);
+      const j = await r.json();
+      setSubAccs(Array.isArray(j?.data) ? j.data : []);
+    }
   };
 
   const handleSubAccChange = async (v) => {
     const sub = subAccs.find((s) => String(s.id) === v);
+    setLinkedPayees([]);
+    setLinkedHeadName('');
+    setLinkedHeadType('');
+    setPayeeSearch('');
+
+    if (isInventoryAcc) {
+      // sub is an inventory item — payeeName stays empty, user types manually
+      setEntry((e) => ({
+        ...e,
+        subAccountId: v,
+        accountCode: sub?.code || e.accountCode,
+        accountName: sub?.name || e.accountName,
+        payeeName: '',
+      }));
+      return;
+    }
+
     setEntry((e) => ({
       ...e,
       subAccountId: v,
@@ -350,10 +384,6 @@ export default function VoucherExpenseForm() {
       accountName: sub?.name || e.accountName,
       payeeName: '',
     }));
-    setLinkedPayees([]);
-    setLinkedHeadName('');
-    setLinkedHeadType('');
-    setPayeeSearch('');
     if (!v) return;
     const r = await fetch(`${API}/payee-entries/by-sub-account?subAccountId=${v}&entityType=${entityType}`);
     const j = await r.json();

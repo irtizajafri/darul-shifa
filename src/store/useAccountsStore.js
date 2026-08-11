@@ -160,6 +160,12 @@ export const useAccountsStore = create((set) => ({
     set({ linkedDoctors: Array.isArray(data) ? data : [] });
   },
 
+  inventorySubcategories: [],
+  fetchInventorySubcategories: async () => {
+    const data = await req('/linked/inventory-subcategories');
+    set({ inventorySubcategories: Array.isArray(data) ? data : [] });
+  },
+
   // Bank Accounts
   bankAccounts: [],
   fetchBankAccounts: async (entityType) => {
