@@ -155,7 +155,10 @@ const LINKED_ACCOUNTS_INCLUDE = {
     },
   },
   inventorySubcategory: { select: { id: true, code: true, name: true, category: { select: { id: true, name: true } } } },
-  mainAccount: { select: { id: true, code: true, name: true } },
+  linkedMainAccounts: {
+    orderBy: { id: 'asc' },
+    include: { mainAccount: { select: { id: true, code: true, name: true } } },
+  },
 };
 
 async function getPayeeHeads(entityType) {
@@ -175,10 +178,12 @@ async function createPayeeHead({ name, sourceType = 'manual', entityType, invent
 }
 
 async function getInventoryHeadForMainAccount(mainAccountId) {
-  return prisma.accPayeeHead.findFirst({
-    where: { mainAccountId: Number(mainAccountId), sourceType: 'inventory' },
-    select: { id: true, name: true, inventorySubcategoryId: true },
+  const link = await prisma.accPayeeHeadMainAccount.findFirst({
+    where: { mainAccountId: Number(mainAccountId) },
+    include: { payeeHead: { select: { id: true, name: true, inventorySubcategoryId: true, sourceType: true } } },
   });
+  if (!link?.payeeHead || link.payeeHead.sourceType !== 'inventory') return null;
+  return link.payeeHead;
 }
 
 async function getInventorySubcategories() {
@@ -199,12 +204,24 @@ async function getInventoryItemsBySubcategory(subcategoryId) {
 
 async function updatePayeeHead(id, body) {
   const data = {};
-  if (body.name         !== undefined) data.name          = body.name.trim();
-  if (body.mainAccountId !== undefined) data.mainAccountId = body.mainAccountId ? Number(body.mainAccountId) : null;
+  if (body.name !== undefined) data.name = body.name.trim();
   return prisma.accPayeeHead.update({
     where: { id: Number(id) },
     data,
     include: LINKED_ACCOUNTS_INCLUDE,
+  });
+}
+
+async function addInventoryHeadMainAccount(headId, mainAccountId) {
+  return prisma.accPayeeHeadMainAccount.create({
+    data: { payeeHeadId: Number(headId), mainAccountId: Number(mainAccountId) },
+    include: { mainAccount: { select: { id: true, code: true, name: true } } },
+  });
+}
+
+async function removeInventoryHeadMainAccount(headId, mainAccountId) {
+  return prisma.accPayeeHeadMainAccount.deleteMany({
+    where: { payeeHeadId: Number(headId), mainAccountId: Number(mainAccountId) },
   });
 }
 
@@ -652,6 +669,17 @@ async function createBankDeposit({ bankAccountId, depositOf, depositDate, deposi
   });
 }
 
+// Looks up the actual recorded Bank Deposit for a bank+date so the Deposit
+// Adjustment form can auto-fill its "POSTED" column instead of having the
+// user re-type numbers that already exist in the system.
+async function getBankDepositForDate({ entityType, bankAccountId, depositOf }) {
+  if (!bankAccountId || !depositOf) return null;
+  return prisma.accBankDeposit.findFirst({
+    where: { entityType, bankAccountId: Number(bankAccountId), depositOf: new Date(depositOf) },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
 async function createBankDepositAdj({ bankAccountId, postedDepositOf, postedDepositDate, postedDepositSlipNo, postedDepositedBy, postedAmount, adjDepositDate, adjDepositSlipNo, adjDepositedBy, adjAmount, adjustedBy, entityType }) {
   return prisma.accBankDepositAdj.create({
     data: {
@@ -751,8 +779,15 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
 
   const [expenses, incomes] = await Promise.all([
     prisma.accVoucherExpense.findMany({ where, select: { voucherDate: true, totalAmount: true } }),
-    prisma.accVoucherIncome.findMany({ where, select: { voucherDate: true, totalAmount: true } }),
+    prisma.accVoucherIncome.findMany({ where, select: { voucherDate: true, totalAmount: true, source: true } }),
   ]);
+
+  // Dates that already have an auto day-close voucher — the real voucher above
+  // (via the `incomes` loop) already carries that day's Clinic revenue, so the
+  // live Clinic merge below must skip these dates to avoid double-counting.
+  const closedDates = new Set(
+    incomes.filter((v) => v.source === 'auto').map((v) => v.voucherDate.toISOString().slice(0, 10))
+  );
 
   const bucketKey = (d) => {
     const dt = new Date(d);
@@ -762,13 +797,17 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
   };
 
   const map = new Map();
-  function bumpKey(key, count, amount, isExpense) {
-    if (!map.has(key)) map.set(key, { key, totalCount: 0, totalAmount: 0, expenseCount: 0, expenseAmount: 0, incomeCount: 0, incomeAmount: 0 });
+  // clinicPatients is tracked separately from incomeCount (which mixes voucher
+  // counts with patient counts for the calendar's "In" badge) — it exists purely
+  // so the summary bar can show a real patient headcount alongside the amounts.
+  function bumpKey(key, count, amount, isExpense, clinicPatientCount = 0) {
+    if (!map.has(key)) map.set(key, { key, totalCount: 0, totalAmount: 0, expenseCount: 0, expenseAmount: 0, incomeCount: 0, incomeAmount: 0, clinicPatients: 0 });
     const e = map.get(key);
     e.totalCount += count;
     e.totalAmount += amount;
     if (isExpense) { e.expenseCount += count; e.expenseAmount += amount; }
     else { e.incomeCount += count; e.incomeAmount += amount; }
+    e.clinicPatients += clinicPatientCount;
   }
   function bump(dateVal, amount, isExpense) {
     bumpKey(bucketKey(dateVal), 1, amount, isExpense);
@@ -787,7 +826,14 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
     });
     const keyField = period === 'monthly_daily' ? 'date' : period === 'multi_year' ? 'year' : 'month';
     for (const row of clinicRes.data) {
-      bumpKey(row[keyField], Number(row.totalPatients) || 0, Number(row.totalAmount) || 0, false);
+      const patients = Number(row.totalPatients) || 0;
+      if (period === 'monthly_daily' && closedDates.has(row.date)) {
+        // Amount is already booked via the real auto voucher (summed above) —
+        // only add the live patient headcount so "Total Patients" stays accurate.
+        bumpKey(row[keyField], 0, 0, false, patients);
+        continue;
+      }
+      bumpKey(row[keyField], patients, Number(row.totalAmount) || 0, false, patients);
     }
   }
 
@@ -796,6 +842,7 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
     totalPatients: e.totalCount, totalAmount: e.totalAmount,
     cashPatients: e.expenseCount, cashAmount: e.expenseAmount,
     panelPatients: e.incomeCount, panelAmount: e.incomeAmount,
+    clinicPatients: e.clinicPatients,
     ccPatients: 0, ccAmount: 0,
   });
 
@@ -811,8 +858,11 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
     data = [...map.values()].map(e => toRow(e, 'year')).sort((a, b) => a.year - b.year);
   }
 
-  const totalCount  = data.reduce((s, d) => s + d.totalPatients, 0);
   const totalAmount = data.reduce((s, d) => s + d.totalAmount, 0);
+  const totalPatients  = data.reduce((s, d) => s + (d.clinicPatients || 0), 0);
+  const incomeAmount   = data.reduce((s, d) => s + d.panelAmount, 0);
+  const expenseAmount  = data.reduce((s, d) => s + d.cashAmount, 0);
+  const netAmount       = incomeAmount - expenseAmount;
   const daysWithData = data.filter(d => d.totalAmount > 0).length;
   const dailyAvg = daysWithData > 0 ? totalAmount / daysWithData : 0;
 
@@ -858,16 +908,106 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
 
   return {
     period, year, month, data,
-    summary: { totalPatients: totalCount, totalAmount, dailyAvg, prognosis, lastYearAmount, daysWithData },
+    summary: { totalPatients, totalAmount, incomeAmount, expenseAmount, netAmount, dailyAvg, prognosis, lastYearAmount, daysWithData },
     trendData,
   };
 }
 
 // Thin passthrough to Clinic's own per-department daily statement — used by
 // the Inquiry calendar's double-click modal to show WHERE the Clinic-side
-// "Income" for that day actually came from.
+// "Income" for that day actually came from. Once a day is auto-closed, that
+// revenue is already booked as a real Voucher Income (shown as its own card
+// in the modal) — return null so it isn't shown/counted twice.
 async function getClinicRevenueForDate(date) {
+  const autoVoucher = await prisma.accVoucherIncome.findFirst({
+    where: { entityType: 'non-corporate', source: 'auto', voucherDate: new Date(date) },
+    select: { id: true },
+  });
+  if (autoVoucher) return null;
   return clinicSvc.getDailyDepartmentStatement(date);
+}
+
+// Single-day Income/Expense/Diff — same numbers the Inquiry calendar's day
+// cell shows for that date, used to pre-fill the read-only diff hint on the
+// Bank Deposit form when a "Deposit Of" date is picked.
+async function getDailyIncomeExpenseDiff(date, entityType) {
+  if (!date) throw Object.assign(new Error('Date is required'), { status: 400 });
+  entityType = entityType || 'non-corporate';
+
+  const where = { entityType, voucherDate: new Date(date) };
+  const [expenses, incomes] = await Promise.all([
+    prisma.accVoucherExpense.findMany({ where, select: { totalAmount: true } }),
+    prisma.accVoucherIncome.findMany({ where, select: { totalAmount: true, source: true } }),
+  ]);
+  const expenseAmount = expenses.reduce((s, v) => s + (Number(v.totalAmount) || 0), 0);
+  let incomeAmount = incomes.reduce((s, v) => s + (Number(v.totalAmount) || 0), 0);
+
+  // Once the day is auto-closed, its Clinic revenue is already inside `incomes`
+  // above (the frozen auto voucher) — only live-merge for still-open days.
+  const alreadyClosed = incomes.some((v) => v.source === 'auto');
+  if (entityType === 'non-corporate' && !alreadyClosed) {
+    const clinic = await clinicSvc.getDailyDepartmentStatement(date);
+    incomeAmount += Number(clinic.total.amount) || 0;
+  }
+
+  return { date, entityType, incomeAmount, expenseAmount, diff: incomeAmount - expenseAmount };
+}
+
+// ─── Day Close — auto Income Voucher generation ───────────────────────────────
+// Every night at 8:00 AM (the hospital's business-day boundary) the previous
+// business day is "closed": its Clinic patient revenue is booked as a real,
+// frozen Voucher Income (one line per department) instead of being merged
+// live into the dashboard on every request. See dayClose.job.js for the
+// scheduler that calls this once a day.
+
+async function ensureClinicIncomeCategories(entityType, departmentNames) {
+  const names = [...new Set(departmentNames)];
+  if (!names.length) return new Map();
+  const existing = await prisma.accIncomeCategory.findMany({ where: { entityType, name: { in: names } } });
+  const byName = new Map(existing.map((c) => [c.name, c]));
+  for (const name of names) {
+    if (byName.has(name)) continue;
+    const created = await prisma.accIncomeCategory.create({ data: { name, entityType } });
+    byName.set(name, created);
+  }
+  return byName;
+}
+
+async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporate') {
+  const existing = await prisma.accVoucherIncome.findFirst({
+    where: { entityType, source: 'auto', voucherDate: new Date(date) },
+    include: { entries: true },
+  });
+  if (existing) return existing;
+
+  const stmt = await clinicSvc.getDailyDepartmentStatement(date);
+  const amount = Number(stmt.total.amount) || 0;
+  if (amount <= 0) return null;
+
+  const rows = stmt.rows.filter((r) => Number(r.amount) > 0);
+  const categories = await ensureClinicIncomeCategories(entityType, rows.map((r) => r.department));
+  const voucherNo = await generateIncomeVoucherNo(entityType, date);
+
+  return prisma.accVoucherIncome.create({
+    data: {
+      voucherNo,
+      voucherType: 'AUTO',
+      voucherDate: new Date(date),
+      mode: 'system',
+      entityType,
+      totalAmount: amount,
+      source: 'auto',
+      entries: {
+        create: rows.map((r) => ({
+          incomeCategoryId:   categories.get(r.department)?.id || null,
+          incomeCategoryName: r.department,
+          amount:             r.amount,
+          particulars:        `Auto day-close — ${r.count} patient(s)`,
+        })),
+      },
+    },
+    include: { entries: true },
+  });
 }
 
 module.exports = {
@@ -875,7 +1015,7 @@ module.exports = {
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
-  getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount,
+  getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
@@ -885,11 +1025,13 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummaryMatrix,
-  createBankDeposit, getBankDeposits,
+  createBankDeposit, getBankDeposits, getBankDepositForDate,
   createBankDepositAdj, getBankDepositAdjs,
   getVoucherSummary,
   getAccountsInquiryDashboard,
   getClinicRevenueForDate,
+  getDailyIncomeExpenseDiff,
+  generateAutoIncomeVoucherForDate,
 };
 
 async function getVoucherSummary({ entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo }) {

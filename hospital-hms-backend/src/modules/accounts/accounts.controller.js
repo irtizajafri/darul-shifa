@@ -68,6 +68,12 @@ async function createBankDeposit(req, res, next) {
 async function getBankDeposits(req, res, next) {
   try { success(res, await svc.getBankDeposits(et(req))); } catch (e) { next(e); }
 }
+async function getBankDepositForDate(req, res, next) {
+  try {
+    const { bankAccountId, depositOf } = req.query;
+    success(res, await svc.getBankDepositForDate({ entityType: et(req), bankAccountId, depositOf }));
+  } catch (e) { next(e); }
+}
 async function createBankDepositAdj(req, res, next) {
   try { success(res, await svc.createBankDepositAdj({ ...req.body, entityType: et(req) }), 'saved'); } catch (e) { next(e); }
 }
@@ -86,6 +92,21 @@ async function removeHeadAccount(req, res, next) {
   try {
     const { headId, subAccountId } = req.params;
     await svc.removeHeadAccount(headId, subAccountId);
+    success(res, null, 'unlinked');
+  } catch (e) { next(e); }
+}
+
+async function addInventoryHeadMainAccount(req, res, next) {
+  try {
+    const { headId, mainAccountId } = req.body;
+    success(res, await svc.addInventoryHeadMainAccount(headId, mainAccountId), 'linked');
+  } catch (e) { next(e); }
+}
+
+async function removeInventoryHeadMainAccount(req, res, next) {
+  try {
+    const { headId, mainAccountId } = req.params;
+    await svc.removeInventoryHeadMainAccount(headId, mainAccountId);
     success(res, null, 'unlinked');
   } catch (e) { next(e); }
 }
@@ -138,6 +159,15 @@ async function getClinicRevenueForDate(req, res, next) {
   }
 }
 
+async function getDailyIncomeExpenseDiff(req, res, next) {
+  try {
+    success(res, await svc.getDailyIncomeExpenseDiff(req.query.date, req.query.entityType));
+  } catch (e) {
+    if (e.status) return fail(res, e.status, e.message);
+    next(e);
+  }
+}
+
 module.exports = {
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
@@ -153,9 +183,10 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix,
-  addHeadAccount, removeHeadAccount,
-  createBankDeposit, getBankDeposits,
+  addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
+  createBankDeposit, getBankDeposits, getBankDepositForDate,
   createBankDepositAdj, getBankDepositAdjs,
   getAccountsInquiryDashboard,
   getClinicRevenueForDate,
+  getDailyIncomeExpenseDiff,
 };

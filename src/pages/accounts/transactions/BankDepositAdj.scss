@@ -143,6 +143,22 @@
   }
 
   &--search { padding-left: 2rem !important; }
+
+  &:disabled {
+    background: #f1f5f9;
+    color: #475569;
+    cursor: not-allowed;
+    border-color: #e2e8f0;
+  }
+}
+
+.bda-match-hint {
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
+
+  &--ok   { color: $success; }
+  &--none { color: #b45309; }
 }
 
 // ── Employee search ───────────────────────────────────────────────────────────

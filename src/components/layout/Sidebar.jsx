@@ -84,7 +84,7 @@ function NewTabButton({ onClick }) {
 export default function Sidebar({ isOpen, onClose, collapsed }) {
   const { activeModule, setModule, clearModule } = useModuleStore();
   const { user } = useAuthStore();
-  const { activeTabId, createNewTab, updateTabModule } = useTabStore();
+  const { activeTabId, createNewTab, updateTabModule, updateTabLabel } = useTabStore();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -105,12 +105,13 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     </>
   );
 
-  const go = (path, module, state) => {
+  const go = (path, module, state, label, Icon) => {
     if (module !== undefined) {
       if (module) setModule(module);
       else clearModule();
       updateTabModule(activeTabId, module);
     }
+    if (label) updateTabLabel(activeTabId, label, Icon);
     if (state) navigate(path, { state });
     else navigate(path);
     onClose();
@@ -141,7 +142,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
-              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
+              onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, undefined, item.label, item.Icon)}
             >
               {navItem(item)}
             </div>
@@ -163,7 +164,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
-              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
+              onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, undefined, item.label, item.Icon)}
             >
               {navItem(item)}
             </div>
@@ -185,7 +186,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
-              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path, undefined, item.state)}
+              onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, item.state, item.label, item.Icon)}
             >
               {navItem(item)}
             </div>
@@ -215,7 +216,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
               <div
                 key={item.path + item.label}
                 className={navClass(item.path)}
-                onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
+                onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, undefined, item.label, item.Icon)}
               >
                 {navItem(item)}
               </div>
@@ -234,7 +235,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <div className={navClass('/dashboard')} onClick={() => go('/dashboard', null)}>
+          <div className={navClass('/dashboard')} onClick={() => go('/dashboard', null, undefined, 'Dashboard', LayoutDashboard)}>
             <ArrowLeft className="w-5 h-5 shrink-0" />
             {!collapsed && <span>Main Dashboard</span>}
           </div>
@@ -271,7 +272,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           <div
             key={item.path + item.label}
             className={navClass(item.path)}
-            onClick={() => go(item.path, item.module ?? null)}
+            onClick={() => go(item.path, item.module ?? null, undefined, item.label, item.Icon)}
           >
             <item.Icon className="w-5 h-5 shrink-0" />
             {!collapsed && <span>{item.label}</span>}
@@ -281,7 +282,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
         {user?.isSuperAdmin && (
           <div
             className={navClass('/admin/users')}
-            onClick={() => go('/admin/users', null)}
+            onClick={() => go('/admin/users', null, undefined, 'User Management', ShieldCheck)}
           >
             <ShieldCheck className="w-5 h-5 shrink-0" />
             {!collapsed && <span>User Management</span>}

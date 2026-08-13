@@ -127,6 +127,13 @@
     color: $dark-blue;
     letter-spacing: 0.02em;
   }
+
+  &:disabled {
+    background: #f1f5f9;
+    color: #475569;
+    cursor: not-allowed;
+    border-color: #e2e8f0;
+  }
 }
 
 .bd-select {

@@ -70,8 +70,11 @@ router.post('/voucher-income', ctrl.createVoucherIncome);
 
 router.post('/payee-head-accounts', ctrl.addHeadAccount);
 router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccount);
+router.post('/payee-head-main-accounts', ctrl.addInventoryHeadMainAccount);
+router.delete('/payee-head-main-accounts/:headId/:mainAccountId', ctrl.removeInventoryHeadMainAccount);
 
 router.get('/bank-deposits', ctrl.getBankDeposits);
+router.get('/bank-deposits/for-date', ctrl.getBankDepositForDate);
 router.post('/bank-deposits', ctrl.createBankDeposit);
 
 router.get('/bank-deposit-adjs', ctrl.getBankDepositAdjs);
@@ -79,5 +82,6 @@ router.post('/bank-deposit-adjs', ctrl.createBankDepositAdj);
 
 router.get('/inquiry/dashboard', ctrl.getAccountsInquiryDashboard);
 router.get('/inquiry/clinic-revenue', ctrl.getClinicRevenueForDate);
+router.get('/inquiry/daily-diff', ctrl.getDailyIncomeExpenseDiff);
 
 module.exports = router;

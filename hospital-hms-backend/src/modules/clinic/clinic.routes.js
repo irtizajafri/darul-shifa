@@ -216,6 +216,7 @@ router.delete('/consultant-rates/:id', controller.deleteConsultantRate);
 
 // Patient Visits
 router.post('/patient-visits/bulk', controller.bulkCreatePatientVisits);
+router.post('/admission/generate-from-visits', controller.generateAdmissionsFromVisits);
 router.get('/patient-visits/consultants', controller.getConsultantNames);
 router.get('/patient-visits/by-admit/:admitNo', controller.getPatientVisitByAdmitNo);
 router.get('/patient-visits', controller.getPatientVisits);

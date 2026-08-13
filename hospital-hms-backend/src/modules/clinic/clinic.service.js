@@ -2792,6 +2792,152 @@ async function bulkCreatePatientVisits(rows) {
   return result;
 }
 
+// Legacy patient names carry the title inline ("MRS. SHAHEEN", "BABY /O MEHREEN")
+// — split it out so it doesn't get double-printed against the schema's default
+// patientTitle ("Mr"), and infer gender from it where the title makes it clear.
+const NAME_TITLE_MAP = {
+  'mr':     { title: 'Mr',     gender: 'male' },
+  'mr.':    { title: 'Mr',     gender: 'male' },
+  'mrs':    { title: 'Mrs',    gender: 'female' },
+  'mrs.':   { title: 'Mrs',    gender: 'female' },
+  'ms':     { title: 'Ms',     gender: 'female' },
+  'ms.':    { title: 'Ms',     gender: 'female' },
+  'master': { title: 'Master', gender: 'male' },
+  'baby':   { title: 'Baby',   gender: null },
+};
+
+function splitLegacyPatientName(rawName) {
+  const raw = String(rawName || '').trim();
+  const m = raw.match(/^([A-Za-z.]+)\s+(.+)$/);
+  if (m) {
+    const mapped = NAME_TITLE_MAP[m[1].toLowerCase()];
+    if (mapped) return { title: mapped.title, name: m[2].trim(), gender: mapped.gender };
+  }
+  return { title: 'Mr', name: raw, gender: null };
+}
+
+// Legacy exports don't have a separate "Admission list" — admission events are
+// rows inside the same Patients List export where department/subDepartment
+// mentions "Admission" and Admit No is filled in (the deposit row). Once those
+// visits are imported (bulkCreatePatientVisits), this turns each into a real,
+// active ClinicAdmission so it shows up wherever admitted patients are looked
+// up (e.g. Provisional Bill's admission search) — bed/room stay unassigned,
+// filled in later via Admission Adjustment. Safe to re-run: existing admission
+// numbers are skipped.
+async function generateAdmissionsFromVisits() {
+  const candidateRows = await prisma.patientVisit.findMany({
+    where: {
+      admitNo: { not: null },
+      OR: [
+        { department:    { contains: 'admission', mode: 'insensitive' } },
+        { subDepartment: { contains: 'admission', mode: 'insensitive' } },
+      ],
+    },
+    orderBy: { id: 'asc' },
+  });
+
+  if (!candidateRows.length) return { created: 0, skipped: 0 };
+
+  // A long admission often has several "Admission Deposit" rows under the same
+  // Admit No — one per top-up payment during the stay, not just the first one.
+  // Keep all of them per Admit No, oldest first; the first becomes the
+  // admission's own advance payment, the rest become additional payment slips
+  // (same as manually "Receiving Against Admission") so the total isn't lost.
+  const byAdmitNo = new Map();
+  for (const r of candidateRows) {
+    if (!byAdmitNo.has(r.admitNo)) byAdmitNo.set(r.admitNo, []);
+    byAdmitNo.get(r.admitNo).push(r);
+  }
+  for (const rows of byAdmitNo.values()) {
+    rows.sort((a, b) => {
+      const ka = `${a.visitDate.toISOString().slice(0, 10)}T${a.visitTime || '00:00'}`;
+      const kb = `${b.visitDate.toISOString().slice(0, 10)}T${b.visitTime || '00:00'}`;
+      return ka < kb ? -1 : ka > kb ? 1 : a.id - b.id;
+    });
+  }
+
+  const admitNos = [...byAdmitNo.keys()].map(String);
+  const existing = await prisma.clinicAdmission.findMany({
+    where: { admissionNo: { in: admitNos } },
+    select: { admissionNo: true },
+  });
+  const existingSet = new Set(existing.map((a) => a.admissionNo));
+
+  const PAYMENT_TYPE_MAP = { cash: 'private', staff: 'staff', panel: 'panel', cc: 'cc' };
+
+  let created = 0;
+  let skipped = 0;
+  for (const [admitNo, allRows] of byAdmitNo) {
+    const admissionNo = String(admitNo);
+    if (existingSet.has(admissionNo)) { skipped++; continue; }
+    const [row, ...extraRows] = allRows;
+
+    let consultantId = null;
+    if (row.doctor) {
+      const doctor = await prisma.clinicDoctor.findFirst({
+        where: { name: { equals: row.doctor, mode: 'insensitive' } },
+      });
+      if (doctor) {
+        consultantId = doctor.id;
+      } else {
+        const initials = row.doctor.split(/\s+/).filter(Boolean)
+          .map((w) => w[0].toUpperCase()).join('').substring(0, 6) || 'DR';
+        let code = initials;
+        let i = 1;
+        while (await prisma.clinicDoctor.findUnique({ where: { code } })) {
+          code = `${initials}${i++}`;
+        }
+        const newDoctor = await prisma.clinicDoctor.create({ data: { code, name: row.doctor, consultantDays: [] } });
+        consultantId = newDoctor.id;
+      }
+    }
+
+    const rowDateTime = (r) => {
+      if (!r.visitTime) return r.visitDate;
+      const dt = new Date(`${r.visitDate.toISOString().slice(0, 10)}T${r.visitTime}:00`);
+      return isNaN(dt.getTime()) ? r.visitDate : dt;
+    };
+
+    const { title, name, gender } = splitLegacyPatientName(row.patientName);
+
+    const createdAdmission = await prisma.clinicAdmission.create({
+      data: {
+        admissionNo,
+        patientTitle:    title,
+        patientName:     name,
+        ...(gender ? { gender } : {}),
+        patientCategory: PAYMENT_TYPE_MAP[(row.paymentType || '').toLowerCase()] || 'private',
+        consultantId,
+        advancePayment:  Number(row.received) || 0,
+        status:          'active',
+        createdAt:       rowDateTime(row),
+      },
+    });
+
+    // Extra "Admission Deposit" rows for this Admit No are later top-up
+    // payments during the stay — record them the same way manually "Receiving
+    // Against Admission" would, so the total isn't silently dropped.
+    for (const extra of extraRows) {
+      const amount = Number(extra.received) || 0;
+      if (amount <= 0) continue;
+      await prisma.clinicAdmissionPayment.create({
+        data: {
+          serialNo:    extra.serialNo ? String(extra.serialNo) : `LEGACY-${extra.id}`,
+          admissionId: createdAdmission.id,
+          amount,
+          paymentType: (extra.paymentType || '').toLowerCase() === 'cc' ? 'cc' : 'cash',
+          receivedAt:  rowDateTime(extra),
+        },
+      });
+    }
+
+    existingSet.add(admissionNo);
+    created++;
+  }
+
+  return { created, skipped };
+}
+
 async function getAllConsultantRates() {
   return prisma.consultantRate.findMany({ orderBy: { consultantName: 'asc' } });
 }
@@ -2950,10 +3096,25 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     }
     admWhere.patientCategory = { in: [...admCats] };
   }
-  const admissions = await prisma.clinicAdmission.findMany({
+  // Admissions generated from a legacy "Admission Deposit" visit (see
+  // generateAdmissionsFromVisits) are already represented by that PatientVisit
+  // row above — skip them here so the same event doesn't show twice.
+  const legacyAdmissionVisits = await prisma.patientVisit.findMany({
+    where: {
+      admitNo: { not: null },
+      OR: [
+        { department:    { contains: 'admission', mode: 'insensitive' } },
+        { subDepartment: { contains: 'admission', mode: 'insensitive' } },
+      ],
+    },
+    select: { admitNo: true },
+  });
+  const legacyAdmitNoSet = new Set(legacyAdmissionVisits.map((v) => String(v.admitNo)));
+
+  const admissions = (await prisma.clinicAdmission.findMany({
     where: admWhere,
     orderBy: { createdAt: 'asc' },
-  });
+  })).filter((a) => !legacyAdmitNoSet.has(String(a.admissionNo)));
 
   // Fetch consultant names for admissions
   const consultantIds = [...new Set(admissions.map(a => a.consultantId).filter(Boolean))];
@@ -4190,6 +4351,7 @@ module.exports = {
   shiftAdmissionBed,
   setBedStatus,
   bulkCreatePatientVisits,
+  generateAdmissionsFromVisits,
   getAllConsultantRates,
   upsertConsultantRate,
   deleteConsultantRate,

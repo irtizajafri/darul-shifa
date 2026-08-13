@@ -8,6 +8,7 @@ import './BankDeposit.scss';
 const API = 'http://localhost:5001/api/accounts';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const fmtA = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const emptyForm = () => ({
   bankAccountId: '',
@@ -29,12 +30,26 @@ export default function BankDeposit() {
   const [empDropOpen, setEmpDropOpen] = useState(false);
   const empRef = useRef();
 
+  const [diffLoading, setDiffLoading] = useState(false);
+
+  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+
   useEffect(() => {
     fetchBankAccounts(entityType);
     fetchLinkedEmployees();
   }, [entityType]);
 
-  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  // AMOUNT is auto-filled from the Accounts Revenue Dashboard's Income − Expense
+  // diff for the selected "Deposit Of" date, and is uneditable.
+  useEffect(() => {
+    if (!form.depositOf) { set('amount', ''); return; }
+    setDiffLoading(true);
+    fetch(`${API}/inquiry/daily-diff?date=${form.depositOf}&entityType=${entityType}`)
+      .then((r) => r.json())
+      .then((j) => set('amount', j?.data ? j.data.diff : ''))
+      .catch(() => set('amount', ''))
+      .finally(() => setDiffLoading(false));
+  }, [form.depositOf, entityType]);
 
   const filteredEmps = linkedEmployees.filter((e) => {
     const full = `${e.firstName} ${e.lastName}`.toLowerCase();
@@ -184,7 +199,7 @@ export default function BankDeposit() {
                   className="bd-input bd-input--search"
                   placeholder="Search employee…"
                   value={empSearch}
-                  onChange={(e) => { setEmpSearch(e.target.value); setEmpDropOpen(true); set('depositedBy', ''); }}
+                  onChange={(e) => { const v = e.target.value; setEmpSearch(v); setEmpDropOpen(true); set('depositedBy', v); }}
                   onFocus={() => setEmpDropOpen(true)}
                 />
               </div>
@@ -207,17 +222,16 @@ export default function BankDeposit() {
             </div>
           </div>
 
-          {/* AMOUNT */}
+          {/* AMOUNT — auto-filled (Income − Expense for the selected Deposit Of date), uneditable */}
           <div className="bd-field bd-field--amount">
             <label className="bd-label">AMOUNT (PKR)</label>
             <input
-              type="number"
+              type="text"
               className="bd-input bd-input--amount"
-              placeholder="0.00"
-              min="0"
-              step="0.01"
-              value={form.amount}
-              onChange={(e) => set('amount', e.target.value)}
+              placeholder={diffLoading ? 'Loading…' : '0.00'}
+              value={form.amount === '' ? '' : fmtA(form.amount)}
+              readOnly
+              disabled
             />
           </div>
 

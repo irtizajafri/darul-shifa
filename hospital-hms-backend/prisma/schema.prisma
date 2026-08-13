@@ -1438,7 +1438,7 @@ model AccMainAccount {
   createdAt     DateTime        @default(now())
   subGL         AccSubGL        @relation(fields: [subGlId], references: [id], onDelete: Cascade)
   subAccounts   AccSubAccount[]
-  inventoryHeads AccPayeeHead[]
+  inventoryHeadLinks AccPayeeHeadMainAccount[]
 }
 
 model AccSubAccount {
@@ -1454,17 +1454,27 @@ model AccSubAccount {
 }
 
 model AccPayeeHead {
-  id                     Int                    @id @default(autoincrement())
+  id                     Int                       @id @default(autoincrement())
   name                   String
-  sourceType             String                 @default("manual")
-  entityType             String                 @default("non-corporate")
+  sourceType             String                    @default("manual")
+  entityType             String                    @default("non-corporate")
   inventorySubcategoryId Int?
-  mainAccountId          Int?
-  createdAt              DateTime               @default(now())
+  createdAt              DateTime                  @default(now())
   entries                AccPayeeEntry[]
   linkedAccounts         AccPayeeHeadAccount[]
-  inventorySubcategory   InventorySubcategory?  @relation(fields: [inventorySubcategoryId], references: [id])
-  mainAccount            AccMainAccount?        @relation(fields: [mainAccountId], references: [id])
+  linkedMainAccounts     AccPayeeHeadMainAccount[]
+  inventorySubcategory   InventorySubcategory?     @relation(fields: [inventorySubcategoryId], references: [id])
+}
+
+model AccPayeeHeadMainAccount {
+  id            Int            @id @default(autoincrement())
+  payeeHeadId   Int
+  mainAccountId Int
+  createdAt     DateTime       @default(now())
+  payeeHead     AccPayeeHead   @relation(fields: [payeeHeadId], references: [id], onDelete: Cascade)
+  mainAccount   AccMainAccount @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
+
+  @@unique([payeeHeadId, mainAccountId])
 }
 
 model AccPayeeHeadAccount {
@@ -1587,6 +1597,7 @@ model AccVoucherIncome {
   bankId      Int?
   entityType  String
   totalAmount Decimal                 @db.Decimal(12, 2) @default(0)
+  source      String                  @default("manual")
   createdAt   DateTime                @default(now())
   entries     AccVoucherIncomeEntry[]
 }

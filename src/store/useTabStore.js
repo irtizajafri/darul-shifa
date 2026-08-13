@@ -43,6 +43,12 @@ export const useTabStore = create((set, get) => ({
     }));
   },
 
+  updateTabLabel: (tabId, label, Icon) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) => (t.id === tabId ? { ...t, label, Icon } : t)),
+    }));
+  },
+
   activateTab: (tabId) => {
     const { tabs } = get();
     const tab = tabs.find((t) => t.id === tabId);

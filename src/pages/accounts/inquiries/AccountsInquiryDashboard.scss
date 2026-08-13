@@ -272,7 +272,7 @@ $ora:   #e65100;
   border: 1px solid #ddd;
   border-radius: 4px;
   padding: 4px 5px;
-  min-height: 72px;
+  min-height: 78px;
   cursor: default;
   position: relative;
   display: flex;
@@ -326,6 +326,37 @@ $ora:   #e65100;
   gap: 3px;
   margin-top: 2px;
   flex-wrap: wrap;
+}
+
+// Income / Expense / Difference breakdown shown per day (and per week/column/grand total)
+.aid-cell-fin {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 1px;
+}
+
+.aid-cell-inc {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: $blue;
+  line-height: 1.2;
+}
+
+.aid-cell-exp {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: $red;
+  line-height: 1.2;
+}
+
+.aid-cell-diff {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-top: 1px;
+  &--profit { color: $green; }
+  &--loss   { color: #111; }
 }
 
 .aid-badge {
@@ -459,7 +490,8 @@ $ora:   #e65100;
 .aid-sum-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 14px;
   background: #f0f4fa;
   border-radius: 6px;
   padding: 8px 16px;
@@ -470,6 +502,9 @@ $ora:   #e65100;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-right: 14px;
+  border-right: 1px solid #d0daea;
+  &:last-child { padding-right: 0; border-right: none; }
 }
 
 .aid-sum-icon { font-size: 18px; }
@@ -477,8 +512,12 @@ $ora:   #e65100;
 .aid-sum-big-val {
   font-size: 18px;
   font-weight: 700;
-  &--p { color: #c62828; }
+  &--p { color: #1565c0; }
   &--a { color: #1565c0; }
+  &--inc { color: $blue; }
+  &--exp { color: #c62828; }
+  &--profit { color: #2e7d32; }
+  &--loss { color: #111; }
 }
 
 // ─── Spinner ──────────────────────────────────────────────────────────────────
@@ -667,6 +706,17 @@ $ora:   #e65100;
 
 .aid-hist-vno   { font-weight: 700; color: $blue; }
 .aid-hist-vmode { color: #666; font-size: 11px; }
+.aid-hist-vauto {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: $blue;
+  background: #dbe6f7;
+  border: 1px solid #b8cdec;
+  border-radius: 3px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
 .aid-hist-vamt  {
   margin-left: auto;
   font-weight: 700;

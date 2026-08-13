@@ -24,7 +24,7 @@ const fmtDateLong = (d) => {
 };
 
 const modeLabel = (m) =>
-  m === 'cheque' ? 'Cheque' : m === 'online' ? 'Online Transfer' : 'Cash';
+  m === 'cheque' ? 'Cheque' : m === 'online' ? 'Online Transfer' : m === 'system' ? 'System (Auto Day Close)' : 'Cash';
 
 function amountInWords(amount) {
   const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',

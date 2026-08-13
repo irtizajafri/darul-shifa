@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { RefreshCw, Upload, Printer, FileDown, ArrowLeft } from 'lucide-react';
+import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
@@ -102,6 +102,7 @@ export default function PatientsListReport() {
   const [visits, setVisits]       = useState([]);
   const [loading, setLoading]     = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -149,6 +150,20 @@ export default function PatientsListReport() {
     } finally {
       setUploading(false);
       e.target.value = '';
+    }
+  };
+
+  const handleGenerateAdmissions = async () => {
+    setGenerating(true);
+    try {
+      const res  = await fetch(`${API}/admission/generate-from-visits`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+      toast.success(`${json.data.created} admission(s) created, ${json.data.skipped} already existed`);
+    } catch (err) {
+      toast.error(err.message || 'Generate failed');
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -268,6 +283,10 @@ export default function PatientsListReport() {
             <span>{uploading ? 'Importing...' : 'Import Excel'}</span>
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={handleUpload} />
+          <button className="plr-tool-btn plr-tool-btn--upload" onClick={handleGenerateAdmissions} disabled={generating} title="Create Admission records from imported Admission visits">
+            <BedDouble size={14} />
+            <span>{generating ? 'Generating...' : 'Generate Admissions'}</span>
+          </button>
         </div>
         <div className="plr-toolbar-right">
           {lastRefresh && <span className="plr-last-refresh">Refreshed: {lastRefresh.toLocaleTimeString()}</span>}

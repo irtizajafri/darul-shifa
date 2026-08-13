@@ -43,7 +43,7 @@ function pickFields(row, voucherType) {
   return { count: row.totalPatients, amount: row.totalAmount };
 }
 
-const modeLabel = (m) => m === 'cheque' ? 'Cheque' : m === 'online' ? 'Online' : 'Cash';
+const modeLabel = (m) => m === 'cheque' ? 'Cheque' : m === 'online' ? 'Online' : m === 'system' ? 'System' : 'Cash';
 const fmtStmtDate = (dateStr) => {
   const [y, m, d] = dateStr.split('-');
   return `${d}-${MN[Number(m) - 1]}-${y}`;
@@ -88,6 +88,7 @@ function IncomeVoucherCard({ v }) {
     <div className="aid-hist-voucher" key={v.id}>
       <div className="aid-hist-voucher-hdr">
         <span className="aid-hist-vno">{v.voucherNo}</span>
+        {v.source === 'auto' && <span className="aid-hist-vauto">Auto (Day Close)</span>}
         <span className="aid-hist-vmode">{modeLabel(v.mode)}</span>
         <span className="aid-hist-vamt aid-hist-vamt--inc">{fmtA(v.totalAmount)}</span>
       </div>
@@ -310,27 +311,27 @@ export default function AccountsInquiryDashboard() {
         return {
           count: acc.count + (c.count || 0),
           amount: acc.amount + (c.amount || 0),
-          expenseCount: acc.expenseCount + (c.expenseCount || 0),
-          incomeCount: acc.incomeCount + (c.incomeCount || 0),
+          incomeAmount: acc.incomeAmount + (c.incomeAmount || 0),
+          expenseAmount: acc.expenseAmount + (c.expenseAmount || 0),
         };
-      }, { count: 0, amount: 0, expenseCount: 0, incomeCount: 0 });
+      }, { count: 0, amount: 0, incomeAmount: 0, expenseAmount: 0 });
       weeks.push({ days: week, total: wTotal });
     }
 
-    const colTotals = Array.from({ length: 7 }, () => ({ count:0, amount:0, expenseCount:0, incomeCount:0 }));
+    const colTotals = Array.from({ length: 7 }, () => ({ count:0, amount:0, incomeAmount:0, expenseAmount:0 }));
     for (const { days } of weeks) {
       days.forEach((cell, di) => {
         if (!cell) return;
         colTotals[di].count += cell.count || 0;
         colTotals[di].amount += cell.amount || 0;
-        colTotals[di].expenseCount += cell.expenseCount || 0;
-        colTotals[di].incomeCount += cell.incomeCount || 0;
+        colTotals[di].incomeAmount += cell.incomeAmount || 0;
+        colTotals[di].expenseAmount += cell.expenseAmount || 0;
       });
     }
     const grandColTotal = colTotals.reduce((acc, c) => ({
       count: acc.count + c.count, amount: acc.amount + c.amount,
-      expenseCount: acc.expenseCount + c.expenseCount, incomeCount: acc.incomeCount + c.incomeCount,
-    }), { count:0, amount:0, expenseCount:0, incomeCount:0 });
+      incomeAmount: acc.incomeAmount + c.incomeAmount, expenseAmount: acc.expenseAmount + c.expenseAmount,
+    }), { count:0, amount:0, incomeAmount:0, expenseAmount:0 });
 
     const cellClass = (cell) => {
       if (!cell) return 'aid-cell aid-cell--blank';
@@ -366,29 +367,29 @@ export default function AccountsInquiryDashboard() {
                   {cell && (
                     <>
                       <div className="aid-cell-day">{cell.day}</div>
-                      {cell.count > 0 && (
-                        <>
-                          <div className="aid-cell-total">{cell.count}</div>
-                          <div className="aid-cell-amt">{fmtN(cell.amount)}</div>
-                          <div className="aid-cell-badges">
-                            {cell.incomeCount > 0 && <span className="aid-badge aid-badge--panel">{cell.incomeCount} In</span>}
-                            {cell.expenseCount > 0 && <span className="aid-badge aid-badge--cash">{cell.expenseCount} Exp</span>}
+                      {(cell.incomeAmount > 0 || cell.expenseAmount > 0) && (
+                        <div className="aid-cell-fin">
+                          <div className="aid-cell-inc">In {fmtN(cell.incomeAmount)}</div>
+                          <div className="aid-cell-exp">Exp {fmtN(cell.expenseAmount)}</div>
+                          <div className={`aid-cell-diff ${(cell.incomeAmount - cell.expenseAmount) >= 0 ? 'aid-cell-diff--profit' : 'aid-cell-diff--loss'}`}>
+                            {(cell.incomeAmount - cell.expenseAmount) >= 0 ? '+' : ''}{fmtN(cell.incomeAmount - cell.expenseAmount)}
                           </div>
-                        </>
+                        </div>
                       )}
                     </>
                   )}
                 </div>
               ))}
-              <div className={`aid-cell aid-cell--week-total ${week.total.count === 0 ? 'aid-cell--zero' : ''}`}>
-                {week.total.count > 0 && (
+              <div className={`aid-cell aid-cell--week-total ${(week.total.incomeAmount + week.total.expenseAmount) === 0 ? 'aid-cell--zero' : ''}`}>
+                {(week.total.incomeAmount > 0 || week.total.expenseAmount > 0) && (
                   <>
                     <div className="aid-cell-wk-label">Wk Total</div>
-                    <div className="aid-cell-total">{week.total.count}</div>
-                    <div className="aid-cell-amt">{fmtN(week.total.amount)}</div>
-                    <div className="aid-cell-badges">
-                      {week.total.incomeCount > 0 && <span className="aid-badge aid-badge--panel">{week.total.incomeCount} In</span>}
-                      {week.total.expenseCount > 0 && <span className="aid-badge aid-badge--cash">{week.total.expenseCount} Exp</span>}
+                    <div className="aid-cell-fin">
+                      <div className="aid-cell-inc">In {fmtN(week.total.incomeAmount)}</div>
+                      <div className="aid-cell-exp">Exp {fmtN(week.total.expenseAmount)}</div>
+                      <div className={`aid-cell-diff ${(week.total.incomeAmount - week.total.expenseAmount) >= 0 ? 'aid-cell-diff--profit' : 'aid-cell-diff--loss'}`}>
+                        {(week.total.incomeAmount - week.total.expenseAmount) >= 0 ? '+' : ''}{fmtN(week.total.incomeAmount - week.total.expenseAmount)}
+                      </div>
                     </div>
                   </>
                 )}
@@ -399,18 +400,24 @@ export default function AccountsInquiryDashboard() {
             {colTotals.map((ct, di) => (
               <div key={di} className="aid-cell aid-cell--col-total">
                 <div className="aid-cell-wk-label">{['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][di]}</div>
-                <div className="aid-cell-total">{ct.count}</div>
-                <div className="aid-cell-amt">{fmtN(ct.amount)}</div>
-                <div className="aid-cell-badges">
-                  {ct.incomeCount > 0 && <span className="aid-badge aid-badge--panel">{ct.incomeCount} In</span>}
-                  {ct.expenseCount > 0 && <span className="aid-badge aid-badge--cash">{ct.expenseCount} Exp</span>}
+                <div className="aid-cell-fin">
+                  <div className="aid-cell-inc">In {fmtN(ct.incomeAmount)}</div>
+                  <div className="aid-cell-exp">Exp {fmtN(ct.expenseAmount)}</div>
+                  <div className={`aid-cell-diff ${(ct.incomeAmount - ct.expenseAmount) >= 0 ? 'aid-cell-diff--profit' : 'aid-cell-diff--loss'}`}>
+                    {(ct.incomeAmount - ct.expenseAmount) >= 0 ? '+' : ''}{fmtN(ct.incomeAmount - ct.expenseAmount)}
+                  </div>
                 </div>
               </div>
             ))}
             <div className="aid-cell aid-cell--grand-corner">
               <div className="aid-cell-wk-label">Grand</div>
-              <div className="aid-cell-total">{grandColTotal.count}</div>
-              <div className="aid-cell-amt">{fmtN(grandColTotal.amount)}</div>
+              <div className="aid-cell-fin">
+                <div className="aid-cell-inc">In {fmtN(grandColTotal.incomeAmount)}</div>
+                <div className="aid-cell-exp">Exp {fmtN(grandColTotal.expenseAmount)}</div>
+                <div className={`aid-cell-diff ${(grandColTotal.incomeAmount - grandColTotal.expenseAmount) >= 0 ? 'aid-cell-diff--profit' : 'aid-cell-diff--loss'}`}>
+                  {(grandColTotal.incomeAmount - grandColTotal.expenseAmount) >= 0 ? '+' : ''}{fmtN(grandColTotal.incomeAmount - grandColTotal.expenseAmount)}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -584,17 +591,33 @@ export default function AccountsInquiryDashboard() {
             </div>
             <div className="aid-sum-right">
               <div className="aid-sum-big">
-                <span className="aid-sum-icon">🧾</span>
+                <span className="aid-sum-icon">👥</span>
                 <div>
-                  <div className="aid-sum-lbl">Total Vouchers:</div>
+                  <div className="aid-sum-lbl">Total Patients:</div>
                   <div className="aid-sum-big-val aid-sum-big-val--p">{fmtN(summary.totalPatients)}</div>
                 </div>
               </div>
               <div className="aid-sum-big">
                 <span className="aid-sum-icon">💰</span>
                 <div>
-                  <div className="aid-sum-lbl">Total Amount:</div>
-                  <div className="aid-sum-big-val aid-sum-big-val--a">{fmtA(summary.totalAmount)}</div>
+                  <div className="aid-sum-lbl">Income Amount:</div>
+                  <div className="aid-sum-big-val aid-sum-big-val--inc">{fmtA(summary.incomeAmount)}</div>
+                </div>
+              </div>
+              <div className="aid-sum-big">
+                <span className="aid-sum-icon">💸</span>
+                <div>
+                  <div className="aid-sum-lbl">Expense Amount:</div>
+                  <div className="aid-sum-big-val aid-sum-big-val--exp">{fmtA(summary.expenseAmount)}</div>
+                </div>
+              </div>
+              <div className="aid-sum-big">
+                <span className="aid-sum-icon">{Number(summary.netAmount) >= 0 ? '📈' : '📉'}</span>
+                <div>
+                  <div className="aid-sum-lbl">Difference:</div>
+                  <div className={`aid-sum-big-val ${Number(summary.netAmount) >= 0 ? 'aid-sum-big-val--profit' : 'aid-sum-big-val--loss'}`}>
+                    {Number(summary.netAmount) >= 0 ? '+' : '-'}{fmtA(Math.abs(summary.netAmount || 0))}
+                  </div>
                 </div>
               </div>
             </div>

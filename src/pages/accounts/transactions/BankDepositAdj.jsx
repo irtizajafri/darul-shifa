@@ -7,6 +7,8 @@ import './BankDepositAdj.scss';
 
 const API = 'http://localhost:5001/api/accounts';
 const todayStr = () => new Date().toISOString().slice(0, 10);
+const toDateInput = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
+const fmtA = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const emptyForm = () => ({
   bankAccountId:      '',
@@ -48,7 +50,7 @@ function EmpSearch({ value, employees, onChange }) {
           className="bda-input bda-input--search"
           placeholder="Search employee…"
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setOpen(true); onChange(''); }}
+          onChange={(e) => { const v = e.target.value; setSearch(v); setOpen(true); onChange(v); }}
           onFocus={() => setOpen(true)}
         />
       </div>
@@ -80,16 +82,44 @@ export default function BankDepositAdj() {
   const [form, setForm]     = useState(emptyForm());
   const [saving, setSaving] = useState(false);
 
+  const [postedMatch, setPostedMatch]     = useState(null);
+  const [postedLoading, setPostedLoading] = useState(false);
+
+  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+
   useEffect(() => {
     fetchBankAccounts(entityType);
     fetchLinkedEmployees();
   }, [entityType]);
 
-  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  // Auto-fill the POSTED column from the actual recorded Bank Deposit for this
+  // bank + date, instead of making the user re-type numbers that already exist.
+  useEffect(() => {
+    if (!form.bankAccountId || !form.postedDepositOf) {
+      setPostedMatch(null);
+      set('postedDepositDate', ''); set('postedDepositSlipNo', ''); set('postedDepositedBy', ''); set('postedAmount', '');
+      return;
+    }
+    setPostedLoading(true);
+    const q = new URLSearchParams({ entityType, bankAccountId: form.bankAccountId, depositOf: form.postedDepositOf });
+    fetch(`${API}/bank-deposits/for-date?${q}`)
+      .then((r) => r.json())
+      .then((j) => {
+        const d = j?.data || null;
+        setPostedMatch(d);
+        set('postedDepositDate',   d ? toDateInput(d.depositDate) : '');
+        set('postedDepositSlipNo', d ? (d.depositSlipNo || '') : '');
+        set('postedDepositedBy',   d ? (d.depositedBy || '') : '');
+        set('postedAmount',        d ? Number(d.amount) : '');
+      })
+      .catch(() => setPostedMatch(null))
+      .finally(() => setPostedLoading(false));
+  }, [form.bankAccountId, form.postedDepositOf, entityType]);
 
   const handleSave = async () => {
     if (!form.bankAccountId)                              return toast.error('Please select a bank');
     if (!form.postedDepositOf)                            return toast.error('Posted Deposit Of is required');
+    if (!postedMatch)                                     return toast.error('No recorded deposit found for this bank & date');
     if (!form.postedDepositDate)                          return toast.error('Posted Deposit Date is required');
     if (!form.postedAmount || Number(form.postedAmount) <= 0) return toast.error('Posted Amount must be greater than zero');
     if (!form.adjDepositDate)                             return toast.error('Adjustment Deposit Date is required');
@@ -179,14 +209,18 @@ export default function BankDepositAdj() {
             <div className="bda-cell">
               <input type="date" className="bda-input" value={form.postedDepositOf}
                 onChange={(e) => set('postedDepositOf', e.target.value)} />
+              {form.bankAccountId && form.postedDepositOf && (
+                <div className={`bda-match-hint ${postedLoading ? '' : postedMatch ? 'bda-match-hint--ok' : 'bda-match-hint--none'}`}>
+                  {postedLoading ? 'Looking up deposit…' : postedMatch ? '✓ Deposit found — auto-filled below' : '⚠ No recorded deposit for this bank & date'}
+                </div>
+              )}
             </div>
             <div className="bda-cell bda-cell--empty" />
 
             {/* DEPOSIT DATE */}
             <div className="bda-row-label">DEPOSIT DATE:</div>
             <div className="bda-cell">
-              <input type="date" className="bda-input" value={form.postedDepositDate}
-                onChange={(e) => set('postedDepositDate', e.target.value)} />
+              <input type="date" className="bda-input" value={form.postedDepositDate} readOnly disabled />
             </div>
             <div className="bda-cell">
               <input type="date" className="bda-input" value={form.adjDepositDate}
@@ -196,9 +230,8 @@ export default function BankDepositAdj() {
             {/* DEPOSIT SLIP NUMBER */}
             <div className="bda-row-label">DEPOSIT SLIP NUMBER:</div>
             <div className="bda-cell">
-              <input type="text" className="bda-input" placeholder="e.g. DS-001234"
-                value={form.postedDepositSlipNo}
-                onChange={(e) => set('postedDepositSlipNo', e.target.value)} />
+              <input type="text" className="bda-input" placeholder="—"
+                value={form.postedDepositSlipNo} readOnly disabled />
             </div>
             <div className="bda-cell">
               <input type="text" className="bda-input" placeholder="e.g. DS-001235"
@@ -209,11 +242,8 @@ export default function BankDepositAdj() {
             {/* DEPOSITED BY */}
             <div className="bda-row-label">DEPOSITED BY:</div>
             <div className="bda-cell">
-              <EmpSearch
-                value={form.postedDepositedBy}
-                employees={linkedEmployees}
-                onChange={(v) => set('postedDepositedBy', v)}
-              />
+              <input type="text" className="bda-input" placeholder="—"
+                value={form.postedDepositedBy} readOnly disabled />
             </div>
             <div className="bda-cell">
               <EmpSearch
@@ -226,9 +256,8 @@ export default function BankDepositAdj() {
             {/* AMOUNT */}
             <div className="bda-row-label">AMOUNT (PKR):</div>
             <div className="bda-cell">
-              <input type="number" className="bda-input bda-input--amt" placeholder="0.00"
-                min="0" step="0.01" value={form.postedAmount}
-                onChange={(e) => set('postedAmount', e.target.value)} />
+              <input type="text" className="bda-input bda-input--amt" placeholder="—"
+                value={form.postedAmount === '' ? '' : fmtA(form.postedAmount)} readOnly disabled />
             </div>
             <div className="bda-cell">
               <input type="number" className="bda-input bda-input--amt" placeholder="0.00"

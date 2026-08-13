@@ -1430,6 +1430,13 @@ async function bulkCreatePatientVisits(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function generateAdmissionsFromVisits(req, res, next) {
+  try {
+    const result = await service.generateAdmissionsFromVisits();
+    success(res, result, `${result.created} admission(s) created, ${result.skipped} already existed`);
+  } catch (err) { next(err); }
+}
+
 async function getPatientVisits(req, res, next) {
   try {
     const { fromDate, toDate, fromTime, toTime, paymentTypes, fromConsultant, toConsultant } = req.query;
@@ -1648,6 +1655,7 @@ module.exports = {
   shiftAdmissionBed,
   setBedStatus,
   bulkCreatePatientVisits,
+  generateAdmissionsFromVisits,
   getConsultantRates,
   upsertConsultantRate,
   deleteConsultantRate,
