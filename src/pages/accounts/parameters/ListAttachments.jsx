@@ -36,7 +36,6 @@ export default function ListAttachments() {
 
   const [headModal, setHeadModal] = useState(null);
   const [headName, setHeadName] = useState('');
-  const [headType, setHeadType] = useState('manual');
   const [headSubcatId, setHeadSubcatId] = useState('');
   const [entryModal, setEntryModal] = useState(null);
   const [entryName, setEntryName] = useState('');
@@ -75,11 +74,10 @@ export default function ListAttachments() {
       });
     }
     if (head.sourceType === 'inventory' && head.inventorySubcategoryId) {
-      if (!inventoryItems[head.id]) {
-        const r = await fetch(`${API}/linked/inventory-items?subcategoryId=${head.inventorySubcategoryId}`);
-        const j = await r.json();
-        setInventoryItems((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
-      }
+      // Always fetch fresh on expand
+      const r = await fetch(`${API}/linked/inventory-items?subcategoryId=${head.inventorySubcategoryId}`);
+      const j = await r.json();
+      setInventoryItems((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
     }
   };
 
@@ -170,7 +168,7 @@ export default function ListAttachments() {
 
   // ── Head modal ────────────────────────────────────────────────────────────
   // ── Custom (manual) head modal ───────────────────────────────────────────
-  const openAddHead = () => { setHeadName(''); setHeadType('manual'); setHeadSubcatId(''); setHeadModal({ mode: 'add' }); };
+  const openAddHead = () => { setHeadName(''); setHeadSubcatId(''); setHeadModal({ mode: 'add' }); };
   const openEditHead = (h) => { setHeadName(h.name); setHeadModal({ mode: 'edit', row: h }); };
   const closeHeadModal = () => setHeadModal(null);
 
@@ -279,23 +277,35 @@ export default function ListAttachments() {
     ));
   };
 
+  const handleRemoveInventoryLink = async (headId, mainAccountId) => {
+    try {
+      const r = await fetch(`${API}/payee-head-main-accounts/${headId}/${mainAccountId}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error('Failed');
+      await fetchPayeeHeads(entityType);
+      toast.success('Link removed');
+    } catch (err) { toast.error(err.message); }
+  };
+
   const renderLinkedAccounts = (head) => {
-    // Inventory heads link to a Main Account
+    // Inventory heads link to multiple Main Accounts
     if (head.sourceType === 'inventory') {
-      if (!head.mainAccount) return <span className="list-attach__no-link">No Main Account linked</span>;
+      const links = head.linkedMainAccounts || [];
+      if (links.length === 0) return <span className="list-attach__no-link">No Main Account linked</span>;
       return (
         <div className="list-attach__linked-list">
-          <div className="list-attach__linked-tag">
-            <CheckCircle2 size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
-            <span>{head.mainAccount.code} — {head.mainAccount.name}</span>
-            <button
-              className="list-attach__tag-remove"
-              title="Remove link"
-              onClick={() => updatePayeeHead(head.id, { mainAccountId: null }).then(() => fetchPayeeHeads(entityType))}
-            >
-              <X size={10} />
-            </button>
-          </div>
+          {links.map((lma) => (
+            <div key={lma.id} className="list-attach__linked-tag">
+              <CheckCircle2 size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
+              <span>{lma.mainAccount.code} — {lma.mainAccount.name}</span>
+              <button
+                className="list-attach__tag-remove"
+                title="Remove link"
+                onClick={() => handleRemoveInventoryLink(head.id, lma.mainAccountId)}
+              >
+                <X size={10} />
+              </button>
+            </div>
+          ))}
         </div>
       );
     }
@@ -324,12 +334,25 @@ export default function ListAttachments() {
   const saveInventoryLink = async (headId) => {
     const ls = linkState[headId];
     if (!ls?.mainAccountId) { toast.error('Select a Main Account to link'); return; }
+
+    // Check if already linked
+    const head = payeeHeads.find((h) => h.id === headId);
+    const alreadyLinked = (head?.linkedMainAccounts || []).some(
+      (lma) => String(lma.mainAccountId) === String(ls.mainAccountId)
+    );
+    if (alreadyLinked) { toast.error('This Main Account is already linked'); return; }
+
     updLink(headId, { saving: true });
     try {
-      await updatePayeeHead(headId, { mainAccountId: ls.mainAccountId });
+      const r = await fetch(`${API}/payee-head-main-accounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ headId, mainAccountId: ls.mainAccountId }),
+      });
+      if (!r.ok) throw new Error('Failed to link');
       await fetchPayeeHeads(entityType);
       toast.success('Main Account linked');
-      closeLink(headId);
+      setLinkState((prev) => ({ ...prev, [headId]: emptyLink() }));
     } catch (err) { toast.error(err.message); }
     finally { updLink(headId, { saving: false }); }
   };
@@ -495,7 +518,7 @@ export default function ListAttachments() {
           </button>
           <div>
             <h2>List Attachments</h2>
-            <p>Payee heads — link each head to one or more Sub Accounts in your GL hierarchy</p>
+            <p>Payee heads — Employee/Vendor/Doctor link to Sub Account · Inventory links to Main Account</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
