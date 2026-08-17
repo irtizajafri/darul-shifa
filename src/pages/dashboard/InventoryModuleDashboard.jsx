@@ -10,6 +10,9 @@ import {
   SalesInvoiceIllustration,
   DiscardGDNIllustration,
   InventoryReportsIllustration,
+  MaintenanceIllustration,
+  MRNIllustration,
+  FuelManagementIllustration,
 } from '../../assets/InventoryIllustrations';
 import {
   Settings,
@@ -17,9 +20,12 @@ import {
   Truck,
   ArrowUpRight,
   ArrowDownRight,
+  RotateCcw,
+  Wrench,
   FileText,
   BarChart3,
   Fuel,
+  PlugZap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -38,8 +44,11 @@ const subModules = [
   { title: 'Good Demands & Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments', stat: 'Manage outward stock', path: '/inventory/gin', Illustration: IssuanceGINIllustration },
   { title: 'Sales Invoice', icon: FileText, desc: 'Fair Price Shop customer billing', stat: 'Generate invoice & PDF', path: '/inventory/sales-invoice', Illustration: SalesInvoiceIllustration },
   { title: 'Discard/Return (GDN)', icon: ArrowDownRight, desc: 'Discard expired/damaged stock', stat: 'Track wastage and return', path: '/inventory/gdn', Illustration: DiscardGDNIllustration },
+  { title: 'Material Return (MRN)', icon: RotateCcw, desc: 'Department se maal wapas lena', stat: 'Stock wapas restore hoga', path: '/inventory/mrn', Illustration: MRNIllustration },
+  { title: 'Maintenance (MO)', icon: Wrench, desc: 'Asset repair & maintenance orders', stat: 'Track repair & GDN on discard', path: '/inventory/maintenance', Illustration: MaintenanceIllustration },
   { title: 'Inventory Reports', icon: BarChart3, desc: 'Ledgers, stock positions, short expiry', stat: 'View stock reports', path: '/inventory/reports', Illustration: InventoryReportsIllustration },
-  { title: 'Fuel Management', icon: Fuel, desc: 'Vehicles & Generator — Fuel, Oil, Daily Sheets', stat: 'Track fuel & oil usage', path: '/inventory/fuel', Illustration: null },
+  { title: 'Fuel Management', icon: Fuel, desc: 'Vehicles & Generator — Fuel, Oil, Daily Sheets', stat: 'Track fuel & oil usage', path: '/inventory/fuel', Illustration: FuelManagementIllustration },
+  { title: 'Utilities Bill', icon: PlugZap, desc: 'Electricity meters — daily readings, expected & actual bill', stat: 'Track billing & department meters', path: '/inventory/utilities-bill' },
 ];
 
 export default function InventoryModuleDashboard() {
@@ -135,7 +144,7 @@ export default function InventoryModuleDashboard() {
               </button>
             </div>
             <div className="card-illustration">
-              {sm.Illustration ? <sm.Illustration /> : <Fuel className="w-20 h-20 text-slate-200" />}
+              {sm.Illustration ? <sm.Illustration /> : <sm.icon className="w-20 h-20 text-slate-200" />}
             </div>
           </div>
         ))}

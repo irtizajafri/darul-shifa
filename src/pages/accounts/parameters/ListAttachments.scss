@@ -102,6 +102,12 @@
     gap: 0.4rem;
   }
 
+  &__entry-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
   &__entry-row {
     display: flex;
     align-items: center;
@@ -112,6 +118,37 @@
     color: $text-main;
     background: white;
     border: 1px solid $border;
+  }
+
+  &__entry-count {
+    font-size: 0.75rem;
+    color: $text-muted;
+    font-weight: 400;
+  }
+
+  &__meter-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0 0 0.2rem 0.75rem;
+    padding-left: 0.6rem;
+    border-left: 2px solid $border;
+  }
+
+  &__meter-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.32rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: #fbfdff;
+    border: 1px solid #e2e8f0;
+  }
+
+  &__meter-no {
+    font-weight: 600;
+    color: $text-main;
   }
 
   &__empty {
@@ -161,6 +198,17 @@
     font-size: 0.72rem;
     color: #15803d;
     font-weight: 600;
+  }
+
+  &__bill-date {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #0369a1;
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 20px;
+    padding: 0.15rem 0.55rem;
+    white-space: nowrap;
   }
 
   &__tag-remove {

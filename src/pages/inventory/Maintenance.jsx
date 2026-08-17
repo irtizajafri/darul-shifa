@@ -5,6 +5,8 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
 import { Download, Printer, CheckCircle, Trash2, X } from 'lucide-react';
 import { useInventoryStore } from '../../store/useInventoryStore';
+import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { generateMaintenanceBillPdf } from '../../utils/exportInventoryReports';
 
 // Status badge
@@ -198,12 +200,15 @@ function ReceiveModal({ record, onClose, onDone }) {
 
 export default function Maintenance() {
   const today = new Date().toISOString().split('T')[0];
+  const { user } = useAuthStore();
+  const { employees, fetchEmployees } = useEmployeeStore();
 
   const [formData, setFormData] = useState({
     itemId: '',
     natureOfRepair: '',
     cost: '',
     supplierId: '',
+    employeeId: '',
     date: today,
   });
   const [lastRepair, setLastRepair] = useState(null);
@@ -227,14 +232,24 @@ export default function Maintenance() {
   } = useInventoryStore();
 
   useEffect(() => {
-    Promise.all([fetchItems(), fetchMastersOptions(), fetchMaintenanceRecords()]).catch((err) =>
+    Promise.all([fetchItems(), fetchMastersOptions(), fetchMaintenanceRecords(), fetchEmployees()]).catch((err) =>
       toast.error(err.message || 'Failed to load data')
     );
-  }, [fetchItems, fetchMastersOptions, fetchMaintenanceRecords]);
+  }, [fetchItems, fetchMastersOptions, fetchMaintenanceRecords, fetchEmployees]);
 
   const selectedItem = useMemo(
     () => (items || []).find((i) => String(i.id) === String(formData.itemId)),
     [items, formData.itemId]
+  );
+
+  // Format employees for SearchableSelect
+  const employeeOptions = useMemo(
+    () => (employees || []).map((e) => ({
+      id: e.id,
+      name: `${e.firstName || ''} ${e.lastName || ''}`.trim(),
+      code: e.empCode || '',
+    })),
+    [employees]
   );
 
   const handleItemChange = async (itemId) => {
@@ -276,23 +291,29 @@ export default function Maintenance() {
     if (!formData.date) { toast.error('Date is required'); return; }
 
     setSubmitting(true);
+    const now = new Date();
+    const printedBy = user ? `${user.name || user.username || user.email || 'Unknown'}` : 'Unknown';
+    const generatedAt = now.toISOString();
     try {
       const created = await createMaintenanceRecord({
         itemId: Number(formData.itemId),
         natureOfRepair: formData.natureOfRepair.trim(),
         cost: formData.cost !== '' ? Number(formData.cost) : null,
         supplierId: Number(formData.supplierId),
+        employeeId: formData.employeeId ? Number(formData.employeeId) : undefined,
         date: formData.date,
         assetInstanceIds: selectedInstanceIds,
+        printedBy,
+        generatedAt,
       });
       toast.success('Maintenance record saved');
-      setFormData({ itemId: '', natureOfRepair: '', cost: '', supplierId: '', date: today });
+      setFormData({ itemId: '', natureOfRepair: '', cost: '', supplierId: '', employeeId: '', date: today });
       setLastRepair(null);
       setAssetInstances([]);
       setSelectedInstanceIds([]);
       fetchMaintenanceRecords().catch(() => {});
       // Auto-print Bill 1 (sent for repair)
-      generateMaintenanceBillPdf({ record: created, billType: 'sent', mode: 'print' });
+      generateMaintenanceBillPdf({ record: created, billType: 'sent', mode: 'print', printedBy, generatedAt });
     } catch (err) {
       toast.error(err.message || 'Failed to save record');
     } finally {
@@ -338,6 +359,20 @@ export default function Maintenance() {
                 placeholder="Search supplier by name or code..."
               />
             </div>
+          </div>
+
+          {/* Employee who is taking the item for repair */}
+          <div>
+            <label className="block text-xs font-medium text-[#64748B] mb-1">
+              Employee / Carrier
+              <span className="ml-1 text-slate-400 font-normal">(who is taking the item for repair)</span>
+            </label>
+            <SearchableSelect
+              options={employeeOptions}
+              value={formData.employeeId}
+              onChange={(val) => setFormData((prev) => ({ ...prev, employeeId: val }))}
+              placeholder="Search employee by name or code..."
+            />
           </div>
 
           {/* Last Repair Info */}
@@ -454,6 +489,11 @@ export default function Maintenance() {
         const activeRecords = (maintenanceRecords || []).filter(r => !r.status || r.status === 'in_repair');
         const historyRecords = (maintenanceRecords || []).filter(r => r.status && r.status !== 'in_repair');
 
+        const getReprintMeta = () => {
+          const name = user ? `${user.name || user.username || user.email || 'Unknown'}` : 'Unknown';
+          return { printedBy: name, generatedAt: new Date().toISOString() };
+        };
+
         const renderRow = (r) => (
           <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
             <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-700">{r.moNumber || '-'}</td>
@@ -464,15 +504,20 @@ export default function Maintenance() {
                 ? r.assetInstances.map((a) => a.assetTag).join(', ') : '—'}
             </td>
             <td className="px-4 py-3 text-[#475569]">{r.supplier?.name || '—'}</td>
+            <td className="px-4 py-3 text-[#475569] text-xs">
+              {r.employee
+                ? `${r.employee.firstName || ''} ${r.employee.lastName || ''}`.trim() || '—'
+                : '—'}
+            </td>
             <td className="px-4 py-3 text-[#475569]">{r.cost != null ? Number(r.cost).toLocaleString() : '—'}</td>
             <td className="px-4 py-3"><StatusBadge status={r.status || 'in_repair'} /></td>
             <td className="px-4 py-3">
               <div className="flex items-center gap-1 flex-wrap">
-                <button title="Download Sent Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'sent', mode: 'download' })}
+                <button title="Download Sent Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'sent', mode: 'download', ...getReprintMeta() })}
                   className="p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                   <Download className="w-3.5 h-3.5" />
                 </button>
-                <button title="Print Sent Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'sent', mode: 'print' })}
+                <button title="Print Sent Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'sent', mode: 'print', ...getReprintMeta() })}
                   className="p-1.5 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
                   <Printer className="w-3.5 h-3.5" />
                 </button>
@@ -484,11 +529,11 @@ export default function Maintenance() {
                 )}
                 {r.status && r.status !== 'in_repair' && (
                   <>
-                    <button title="Download Received Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'received', mode: 'download' })}
+                    <button title="Download Received Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'received', mode: 'download', ...getReprintMeta() })}
                       className="p-1.5 rounded text-slate-500 hover:text-green-600 hover:bg-green-50 transition-colors">
                       <Download className="w-3.5 h-3.5" />
                     </button>
-                    <button title="Print Received Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'received', mode: 'print' })}
+                    <button title="Print Received Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'received', mode: 'print', ...getReprintMeta() })}
                       className="p-1.5 rounded text-slate-500 hover:text-green-600 hover:bg-green-50 transition-colors">
                       <Printer className="w-3.5 h-3.5" />
                     </button>
@@ -502,7 +547,7 @@ export default function Maintenance() {
         const tableHead = (
           <thead>
             <tr className="bg-[#F8FAFC] border-b border-[#E2E8F0]">
-              {['MO No', 'Date Sent', 'Item', 'Asset Tags', 'Supplier', 'Cost (PKR)', 'Status', 'Actions'].map(h => (
+              {['MO No', 'Date Sent', 'Item', 'Asset Tags', 'Supplier', 'Employee', 'Cost (PKR)', 'Status', 'Actions'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-[#64748B] uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -526,7 +571,7 @@ export default function Maintenance() {
                   {tableHead}
                   <tbody>
                     {activeRecords.length === 0 ? (
-                      <tr><td colSpan={8} className="text-center py-10 text-[#94A3B8]">No active repair records</td></tr>
+                      <tr><td colSpan={9} className="text-center py-10 text-[#94A3B8]">No active repair records</td></tr>
                     ) : activeRecords.map(renderRow)}
                   </tbody>
                 </table>

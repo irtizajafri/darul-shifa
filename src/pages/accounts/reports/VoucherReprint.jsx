@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Printer, Search } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Printer, Search, Pencil } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './VoucherReprint.scss';
 
@@ -208,7 +209,7 @@ const PRINT_CSS = `
 export default function VoucherReprint() {
   const { entityType } = useParams();
   const navigate = useNavigate();
-  const printRef = useRef();
+  const cardRefs = useRef(new Map());
   const { user } = useAuthStore();
   const printBy  = user?.name || 'System';
 
@@ -246,9 +247,9 @@ export default function VoucherReprint() {
     }
   };
 
-  const handlePrint = () => {
-    const content = printRef.current?.innerHTML;
+  const printHTML = (content) => {
     const win = window.open('', '_blank');
+    if (!win) { toast.error('Print popup was blocked by the browser'); return; }
     win.document.write(
       `<!DOCTYPE html><html><head><title>Voucher Reprint</title><style>${PRINT_CSS}</style></head><body>${content}</body></html>`
     );
@@ -258,6 +259,23 @@ export default function VoucherReprint() {
       win.print();
       win.onafterprint = () => win.close();
     }, 400);
+  };
+
+  const handlePrint = () => {
+    const content = vouchers.map((v) => cardRefs.current.get(v.id)?.outerHTML || '').join('');
+    printHTML(content);
+  };
+
+  const handlePrintOne = (voucherId) => {
+    const content = cardRefs.current.get(voucherId)?.outerHTML;
+    if (content) printHTML(content);
+  };
+
+  const handleEdit = (v) => {
+    const formPath = isExpense
+      ? `/accounts/${entityType}/transactions/voucher-expense/form`
+      : `/accounts/${entityType}/transactions/voucher-income/form`;
+    navigate(formPath, { state: { mode: v.mode, bankId: v.bankId, editVoucher: v } });
   };
 
   return (
@@ -347,19 +365,37 @@ export default function VoucherReprint() {
               <div className="vr-results-count">
                 {vouchers.length} voucher{vouchers.length > 1 ? 's' : ''} found
               </div>
-              <div ref={printRef}>
-                {vouchers.map((v, idx) => (
-                  <VoucherCard
-                    key={v.id}
-                    v={v}
-                    isExpense={isExpense}
-                    entityType={entityType}
-                    pageNum={idx + 1}
-                    totalPages={vouchers.length}
-                    printBy={printBy}
-                  />
-                ))}
-              </div>
+              {vouchers.map((v, idx) => {
+                const canEdit = isExpense || v.source !== 'auto';
+                return (
+                  <div key={v.id} className="vr-card-block">
+                    <div className="vr-card-actions">
+                      {canEdit ? (
+                        <button className="vr-action-btn" onClick={() => handleEdit(v)} title="Edit this voucher">
+                          <Pencil size={13} /> Edit
+                        </button>
+                      ) : (
+                        <span className="vr-action-locked" title="Auto-generated (Day Close) vouchers can't be edited">
+                          Auto — locked
+                        </span>
+                      )}
+                      <button className="vr-action-btn vr-action-btn--print" onClick={() => handlePrintOne(v.id)} title="Print this voucher">
+                        <Printer size={13} /> Print
+                      </button>
+                    </div>
+                    <div ref={(el) => cardRefs.current.set(v.id, el)}>
+                      <VoucherCard
+                        v={v}
+                        isExpense={isExpense}
+                        entityType={entityType}
+                        pageNum={idx + 1}
+                        totalPages={vouchers.length}
+                        printBy={printBy}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </>
           )}
         </div>

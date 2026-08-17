@@ -54,6 +54,7 @@ router.get('/consultant-visits', ctrl.getConsultantVisits);
 router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);
 router.post('/voucher-expense', ctrl.createVoucherExpense);
+router.put('/voucher-expense/:id', ctrl.updateVoucherExpense);
 
 router.get('/income-categories', ctrl.getIncomeCategories);
 router.post('/income-categories', ctrl.createIncomeCategory);
@@ -67,6 +68,7 @@ router.get('/voucher-summary-matrix', ctrl.getVoucherSummaryMatrix);
 
 router.get('/voucher-income', ctrl.getVoucherIncomes);
 router.post('/voucher-income', ctrl.createVoucherIncome);
+router.put('/voucher-income/:id', ctrl.updateVoucherIncome);
 
 router.post('/payee-head-accounts', ctrl.addHeadAccount);
 router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccount);

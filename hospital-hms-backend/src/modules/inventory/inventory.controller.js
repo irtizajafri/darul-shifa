@@ -939,6 +939,24 @@ async function receiveMaintenance(req, res, next) {
   }
 }
 
+async function listMRNs(req, res, next) {
+  try {
+    const data = await service.listMRNs(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createMRN(req, res, next) {
+  try {
+    const data = await service.createMRN(req.body || {});
+    return success(res, data, 'MRN created');
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   ping,
   listCategories,
@@ -1003,6 +1021,8 @@ module.exports = {
   listUnreadGdNotifications,
   markGdNotificationsRead,
   resyncAllItemCurrentStock,
+  listMRNs,
+  createMRN,
 };
 
 async function resyncAllItemCurrentStock(req, res, next) {

@@ -53,6 +53,10 @@ async function getAllPayeeEntries(req, res, next) { try { success(res, await svc
 async function getPayeeEntriesBySubAccount(req, res, next) { try { success(res, await svc.getPayeeEntriesBySubAccount(req.query.subAccountId, et(req))); } catch (e) { next(e); } }
 async function createVoucherExpense(req, res, next) { try { success(res, await svc.createVoucherExpense(req.body), 'created'); } catch (e) { next(e); } }
 async function getVoucherExpenses(req, res, next) { try { success(res, await svc.getVoucherExpenses(et(req))); } catch (e) { next(e); } }
+async function updateVoucherExpense(req, res, next) {
+  try { success(res, await svc.updateVoucherExpense(req.params.id, req.body), 'updated'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
 
 async function getIncomeCategories(req, res, next) { try { success(res, await svc.getIncomeCategories(et(req))); } catch (e) { next(e); } }
 async function createIncomeCategory(req, res, next) { try { success(res, await svc.createIncomeCategory(req.body), 'created'); } catch (e) { next(e); } }
@@ -113,6 +117,10 @@ async function removeInventoryHeadMainAccount(req, res, next) {
 
 async function createVoucherIncome(req, res, next) { try { success(res, await svc.createVoucherIncome(req.body), 'Voucher saved'); } catch (e) { next(e); } }
 async function getVoucherIncomes(req, res, next) { try { success(res, await svc.getVoucherIncomes(et(req))); } catch (e) { next(e); } }
+async function updateVoucherIncome(req, res, next) {
+  try { success(res, await svc.updateVoucherIncome(req.params.id, req.body), 'updated'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
 
 async function getVouchersForReprint(req, res, next) {
   try {
@@ -178,9 +186,9 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
-  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
-  createVoucherIncome, getVoucherIncomes,
+  createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix,
   addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,

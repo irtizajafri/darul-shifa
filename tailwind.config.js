@@ -23,6 +23,17 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
+      keyframes: {
+        fuelFlow: {
+          '0%':   { transform: 'translateX(0)', opacity: '0' },
+          '15%':  { opacity: '1' },
+          '85%':  { opacity: '1' },
+          '100%': { transform: 'translateX(96px)', opacity: '0' },
+        },
+      },
+      animation: {
+        'fuel-flow': 'fuelFlow 1.1s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

@@ -121,10 +121,12 @@ import PurchaseOrder from '../pages/inventory/PurchaseOrder';
 import GoodsReceipt from '../pages/inventory/GoodsReceipt';
 import GoodsIssue from '../pages/inventory/GoodsIssue';
 import GoodsDiscard from '../pages/inventory/GoodsDiscard';
+import GoodsReturn from '../pages/inventory/GoodsReturn';
 import SalesInvoice from '../pages/inventory/SalesInvoice';
 import InventoryReports from '../pages/inventory/InventoryReports';
 import Maintenance from '../pages/inventory/Maintenance';
 import FuelManagement from '../pages/fuel/FuelManagement';
+import UtilitiesBillDashboard from '../pages/utilities/UtilitiesBillDashboard';
 import UserManagement from '../pages/admin/UserManagement';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
@@ -182,9 +184,11 @@ export default function AppRoutes() {
           <Route path="inventory/gin" element={<PermissionGuard module="inventory" subModules={['gd', 'gin']}><GoodsIssue /></PermissionGuard>} />
           <Route path="inventory/sales-invoice" element={<PermissionGuard module="inventory" subModule="sales-invoice"><SalesInvoice /></PermissionGuard>} />
           <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
+          <Route path="inventory/mrn" element={<PermissionGuard module="inventory"><GoodsReturn /></PermissionGuard>} />
           <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
           <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
           <Route path="inventory/fuel" element={<PermissionGuard module="inventory"><FuelManagement /></PermissionGuard>} />
+          <Route path="inventory/utilities-bill" element={<PermissionGuard module="inventory"><UtilitiesBillDashboard /></PermissionGuard>} />
 
           <Route path="accounts-module" element={<PermissionGuard module="accounts"><AccountsModuleDashboard /></PermissionGuard>} />
           <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />

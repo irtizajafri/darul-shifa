@@ -837,6 +837,8 @@ async function createGRN(payload) {
         billDate: payload.billDate ? new Date(payload.billDate) : null,
         paymentType: payload.paymentType === 'installment' ? 'installment' : 'cash',
         paymentNote: payload.paymentNote ? String(payload.paymentNote).trim() : null,
+        manufacturer: payload.manufacturer ? String(payload.manufacturer).trim() : null,
+        model: payload.model ? String(payload.model).trim() : null,
       },
     });
 
@@ -1213,7 +1215,7 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, commen
     if (!Number.isFinite(qty) || qty <= 0) throw new Error('quantityRequested must be positive');
     const item = await prisma.inventoryItem.findUnique({ where: { id: itemId } });
     if (!item) throw new Error(`Item not found: ${itemId}`);
-    validatedItems.push({ itemId, qty });
+    validatedItems.push({ itemId, qty, location: entry.location ? String(entry.location).trim() : null });
   }
 
   const headerCode = await generateDocCode('inventoryGDHeader', 'gdh');
@@ -1229,7 +1231,7 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, commen
   });
 
   const gdItems = [];
-  for (const { itemId, qty } of validatedItems) {
+  for (const { itemId, qty, location } of validatedItems) {
     const code = await generateDocCode('inventoryGD', 'gd');
     const gd = await prisma.inventoryGD.create({
       data: {
@@ -1241,6 +1243,7 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, commen
         quantityRequested: qty,
         requestDate: new Date(),
         status: 'open',
+        location: location || null,
       },
       include: { item: { include: { category: true, subcategory: true } } },
     });
@@ -3597,6 +3600,148 @@ async function resyncAllItemCurrentStock() {
   return { synced: items.length };
 }
 
+// ─── MRN — Material Return Note ───────────────────────────────────────────────
+
+async function listMRNs({ search = '', departmentId = '', ginId = '', dateFrom = '', dateTo = '' } = {}) {
+  const where = {};
+  if (departmentId && Number(departmentId) > 0) where.departmentId = Number(departmentId);
+  if (ginId && Number(ginId) > 0) where.ginId = Number(ginId);
+  if (dateFrom || dateTo) {
+    where.returnDate = {};
+    if (dateFrom) where.returnDate.gte = new Date(dateFrom);
+    if (dateTo) where.returnDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+  if (search) {
+    where.OR = [
+      { code: { contains: search, mode: 'insensitive' } },
+      { receivedBy: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  return prisma.inventoryMRN.findMany({
+    where,
+    orderBy: { returnDate: 'desc' },
+    include: {
+      gin: { select: { id: true, code: true, issueDate: true } },
+      department: { select: { id: true, name: true } },
+      mrnItems: {
+        include: {
+          item: { select: { id: true, code: true, name: true, unit: true } },
+        },
+      },
+    },
+  });
+}
+
+async function createMRN({ ginId, returnDate, receivedBy, notes, items = [] }) {
+  if (!ginId) throw new Error('GIN is required');
+  if (!Array.isArray(items) || items.length === 0) throw new Error('At least one item is required');
+
+  const gin = await prisma.inventoryGIN.findUnique({
+    where: { id: Number(ginId) },
+    include: {
+      ginItems: { include: { item: { select: { id: true, name: true, currentStock: true } } } },
+      department: true,
+    },
+  });
+  if (!gin) throw new Error('GIN not found');
+
+  // Total issued per item in this GIN
+  const issuedMap = {};   // itemId → issued qty
+  const ginItemMap = {};  // itemId → ginItemId (for FK link)
+  for (const gi of gin.ginItems) {
+    issuedMap[gi.itemId] = (issuedMap[gi.itemId] || 0) + Number(gi.issuedQuantity || 0);
+    ginItemMap[gi.itemId] = gi.id;
+  }
+
+  // Already returned for this GIN (from previous MRNs)
+  const prevMRNs = await prisma.inventoryMRN.findMany({
+    where: { ginId: gin.id },
+    include: { mrnItems: { select: { itemId: true, returnedQty: true } } },
+  });
+  const alreadyReturned = {};
+  for (const m of prevMRNs) {
+    for (const mi of m.mrnItems) {
+      alreadyReturned[mi.itemId] = (alreadyReturned[mi.itemId] || 0) + Number(mi.returnedQty || 0);
+    }
+  }
+
+  const mrnCode = await generateDocCode('inventoryMRN', 'mrn');
+
+  return prisma.$transaction(async (tx) => {
+    const mrn = await tx.inventoryMRN.create({
+      data: {
+        code: mrnCode,
+        ginId: gin.id,
+        departmentId: gin.departmentId,
+        returnDate: returnDate ? new Date(returnDate) : new Date(),
+        receivedBy: receivedBy ? String(receivedBy).trim() : null,
+        notes: notes ? String(notes).trim() : null,
+      },
+    });
+
+    for (const entry of items) {
+      const itemId = Number(entry.itemId);
+      const qty = parsePositiveNumber(entry.returnedQty);
+      if (!qty || qty <= 0) continue;
+
+      const maxReturnable = (issuedMap[itemId] || 0) - (alreadyReturned[itemId] || 0);
+      if (qty > maxReturnable + 0.0001) {
+        // find item name for error message
+        const foundGi = gin.ginItems.find((gi) => gi.itemId === itemId);
+        const itemName = foundGi?.item?.name || String(itemId);
+        throw new Error(`"${itemName}": wapas ${qty} nahi ho sakta, sirf ${maxReturnable.toFixed(2)} returnable hai`);
+      }
+
+      await tx.inventoryMRNItem.create({
+        data: {
+          mrnId: mrn.id,
+          itemId,
+          ginItemId: ginItemMap[itemId] || null,
+          returnedQty: qty,
+        },
+      });
+
+      const currentItem = await tx.inventoryItem.findUnique({ where: { id: itemId } });
+      const previousStock = Number(currentItem?.currentStock || 0);
+      const newStock = previousStock + qty;
+
+      await tx.inventoryStockMovement.create({
+        data: {
+          itemId,
+          movementType: 'IN',
+          quantity: qty,
+          previousStock,
+          newStock,
+          referenceType: 'MRN',
+          referenceId: mrn.code,
+          note: notes ? String(notes).trim() : null,
+        },
+      });
+
+      const updatedItem = await tx.inventoryItem.update({
+        where: { id: itemId },
+        data: { currentStock: newStock },
+      });
+
+      await syncReorderAlert(tx, updatedItem);
+    }
+
+    return tx.inventoryMRN.findUnique({
+      where: { id: mrn.id },
+      include: {
+        gin: { select: { id: true, code: true, issueDate: true } },
+        department: { select: { id: true, name: true } },
+        mrnItems: {
+          include: {
+            item: { select: { id: true, code: true, name: true, unit: true } },
+          },
+        },
+      },
+    });
+  });
+}
+
 module.exports = {
   listCategories,
   createCategory,
@@ -3660,6 +3805,8 @@ module.exports = {
   listUnreadGdNotifications,
   markGdNotificationsRead,
   resyncAllItemCurrentStock,
+  listMRNs,
+  createMRN,
 };
 
 async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {
@@ -3689,6 +3836,7 @@ async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId,
     include: {
       item: { include: { category: true, subcategory: true } },
       supplier: true,
+      employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
       assetInstances: { select: { id: true, assetTag: true, condition: true } },
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -3712,7 +3860,7 @@ async function generateMoNumber(date) {
   return `${dateStr}-${String(existing.length + 1).padStart(2, '0')}`;
 }
 
-async function createMaintenance({ itemId, supplierId, natureOfRepair, cost, date, assetInstanceIds }) {
+async function createMaintenance({ itemId, supplierId, employeeId, natureOfRepair, cost, date, assetInstanceIds, printedBy, generatedAt }) {
   const instanceIds = Array.isArray(assetInstanceIds) ? assetInstanceIds.map(Number).filter(Boolean) : [];
   const moNumber = await generateMoNumber(date);
 
@@ -3721,14 +3869,18 @@ async function createMaintenance({ itemId, supplierId, natureOfRepair, cost, dat
       moNumber,
       itemId: Number(itemId),
       supplierId: Number(supplierId),
+      employeeId: employeeId ? Number(employeeId) : null,
       natureOfRepair: String(natureOfRepair).trim(),
       cost: cost != null && cost !== '' ? Number(cost) : null,
       date: new Date(date),
       status: 'in_repair',
+      printedBy: printedBy ? String(printedBy).trim() : null,
+      generatedAt: generatedAt ? new Date(generatedAt) : null,
     },
     include: {
       item: { include: { category: true, subcategory: true } },
       supplier: true,
+      employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
       assetInstances: { select: { id: true, assetTag: true, condition: true } },
       gdns: true,
     },
@@ -3773,6 +3925,7 @@ async function receiveMaintenance({ id, receivedDate, checkedBy, action, scrapVa
       include: {
         item: { include: { category: true, subcategory: true } },
         supplier: true,
+        employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
         assetInstances: { select: { id: true, assetTag: true, condition: true } },
         gdns: true,
       },

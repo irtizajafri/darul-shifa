@@ -4,6 +4,7 @@ export default function FuelBalanceCard({ balance }) {
   const total = balance?.balance ?? 0;
   const totalVehicle = balance?.totalVehicle ?? 0;
   const totalGenerator = balance?.totalGenerator ?? 0;
+  const totalTank = balance?.totalTank ?? 0;
 
   const fmtNum = (n) =>
     Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -17,7 +18,7 @@ export default function FuelBalanceCard({ balance }) {
         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Fuel Balance</p>
         <p className="text-2xl font-bold text-emerald-700 leading-tight">{fmtNum(total)} L</p>
         <p className="text-xs text-emerald-600 mt-0.5">
-          Vans: {fmtNum(totalVehicle)} L &nbsp;|&nbsp; Generator: {fmtNum(totalGenerator)} L
+          Tanks: {fmtNum(totalTank)} L &nbsp;|&nbsp; Generators: {fmtNum(totalGenerator)} L &nbsp;|&nbsp; Vans: {fmtNum(totalVehicle)} L
         </p>
       </div>
     </div>

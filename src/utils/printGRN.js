@@ -7,9 +7,13 @@ export function printGRNDocument({ grnCode, date, supplierName, items = [], prin
   const rows = items.map((item, idx) => {
     const amount = Number(item.amountReceived) || 0;
     grandTotal += amount;
+    const mfr = item.manufacturer ? item.manufacturer.trim() : '';
+    const mdl = item.model ? item.model.trim() : '';
+    const extras = [mfr ? `Mfr: ${mfr}` : '', mdl ? `Model: ${mdl}` : ''].filter(Boolean).join(' | ');
+    const extrasHtml = extras ? `<div class="item-meta">${extras}</div>` : '';
     return `<tr>
       <td>${idx + 1}</td>
-      <td class="desc">${item.itemName || '-'}</td>
+      <td class="desc">${item.itemName || '-'}${extrasHtml}</td>
       <td>${item.orderedQty ?? '-'}</td>
       <td>${item.receivedQty ?? '-'}</td>
       <td>${item.rateEst != null ? Number(item.rateEst).toFixed(2) : '-'}</td>
@@ -54,6 +58,7 @@ export function printGRNDocument({ grnCode, date, supplierName, items = [], prin
     tbody tr td { border: 1px solid #ddd; padding: 4px 3px; text-align: center; font-size: 7.5pt; }
     tbody tr td.desc { text-align: left; padding-left: 5px; }
     tbody tr:nth-child(even) { background: #f9f9f9; }
+    .item-meta { font-size: 6.5pt; color: #555; margin-top: 2px; font-style: italic; }
     .total-section { display: flex; justify-content: flex-end; margin-bottom: 24px; }
     .total-box { display: flex; border: 1px solid #bbb; }
     .total-label { background: #e8e8e8; padding: 5px 16px; font-weight: 600; font-size: 8.5pt; border-right: 1px solid #bbb; }

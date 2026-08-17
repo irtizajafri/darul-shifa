@@ -1,16 +1,24 @@
 import { useState } from 'react';
-import { Fuel, Zap, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Fuel, Zap, ChevronRight, ArrowLeft, Container, CalendarDays } from 'lucide-react';
 import VehicleList from './VehicleList';
 import GeneratorList from './GeneratorList';
+import FuelTankList from './FuelTankList';
+import FuelDailyReport from './FuelDailyReport';
 
 export default function FuelManagement() {
-  const [section, setSection] = useState(null); // null | 'vehicles' | 'generators'
+  const [section, setSection] = useState(null); // null | 'vehicles' | 'generators' | 'tanks' | 'daily-report'
 
   if (section === 'vehicles') {
     return <VehicleList onBack={() => setSection(null)} />;
   }
   if (section === 'generators') {
     return <GeneratorList onBack={() => setSection(null)} />;
+  }
+  if (section === 'tanks') {
+    return <FuelTankList onBack={() => setSection(null)} />;
+  }
+  if (section === 'daily-report') {
+    return <FuelDailyReport onBack={() => setSection(null)} />;
   }
 
   return (
@@ -21,6 +29,22 @@ export default function FuelManagement() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <button
+          onClick={() => setSection('tanks')}
+          className="group flex items-center justify-between p-6 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-emerald-400 hover:shadow-md transition-all text-left"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+              <Container className="w-7 h-7 text-emerald-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">Fuel Tanks</h2>
+              <p className="text-sm text-slate-500 mt-0.5">Stock fuel into a tank, then transfer it to a generator</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-emerald-500 transition-colors" />
+        </button>
+
         <button
           onClick={() => setSection('vehicles')}
           className="group flex items-center justify-between p-6 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-blue-400 hover:shadow-md transition-all text-left"
@@ -51,6 +75,22 @@ export default function FuelManagement() {
             </div>
           </div>
           <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-amber-500 transition-colors" />
+        </button>
+
+        <button
+          onClick={() => setSection('daily-report')}
+          className="group flex items-center justify-between p-6 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-teal-400 hover:shadow-md transition-all text-left"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-xl bg-teal-50 flex items-center justify-center group-hover:bg-teal-100 transition-colors">
+              <CalendarDays className="w-7 h-7 text-teal-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">Daily Report</h2>
+              <p className="text-sm text-slate-500 mt-0.5">Tanks, Vehicles & Generators — din-wise activity</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-teal-500 transition-colors" />
         </button>
       </div>
     </div>

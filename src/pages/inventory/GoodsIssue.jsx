@@ -318,7 +318,11 @@ export default function GoodsIssue() {
       toast.error('Item already added');
       return;
     }
-    setGdSelectedItems((prev) => [...prev, { itemId: item.id, itemName: item.name, itemCode: item.code, quantityRequested: '' }]);
+    setGdSelectedItems((prev) => [...prev, {
+      itemId: item.id, itemName: item.name, itemCode: item.code,
+      quantityRequested: '',
+      locationEnabled: false, location: '',
+    }]);
     setGdItemSearch('');
     setGdItemDropdownOpen(false);
     setTimeout(() => gdQtyRefs.current[item.id]?.focus(), 0);
@@ -328,6 +332,14 @@ export default function GoodsIssue() {
 
   const updateGdItemQty = (itemId, qty) =>
     setGdSelectedItems((prev) => prev.map((i) => i.itemId === itemId ? { ...i, quantityRequested: qty } : i));
+
+  const toggleGdItemLocation = (itemId, checked) =>
+    setGdSelectedItems((prev) => prev.map((i) => i.itemId === itemId
+      ? { ...i, locationEnabled: checked, location: checked ? i.location : '' }
+      : i));
+
+  const updateGdItemLocation = (itemId, val) =>
+    setGdSelectedItems((prev) => prev.map((i) => i.itemId === itemId ? { ...i, location: val } : i));
 
   const handleCreateGD = async (e, andPrint = false) => {
     e.preventDefault();
@@ -340,7 +352,11 @@ export default function GoodsIssue() {
       const result = await createGDBatch({
         departmentId: Number(gdDepartmentId),
         requestDate: new Date(gdRequestDate).toISOString(),
-        items: gdSelectedItems.map((i) => ({ itemId: i.itemId, quantityRequested: Number(i.quantityRequested) })),
+        items: gdSelectedItems.map((i) => ({
+          itemId: i.itemId,
+          quantityRequested: Number(i.quantityRequested),
+          ...(i.locationEnabled && i.location.trim() ? { location: i.location.trim() } : {}),
+        })),
         admissionNumber: gdAdmissionEnabled ? gdAdmissionNumber.trim() : undefined,
         comment: gdCommentEnabled ? gdComment.trim() : undefined,
       });
@@ -941,6 +957,7 @@ export default function GoodsIssue() {
                       <th className="px-4 py-2 text-left font-semibold">Item</th>
                       <th className="px-4 py-2 text-left font-semibold">Code</th>
                       <th className="px-4 py-2 text-left font-semibold">Qty Requested</th>
+                      <th className="px-4 py-2 text-left font-semibold">Location</th>
                       <th className="px-4 py-2 text-left font-semibold"></th>
                     </tr>
                   </thead>
@@ -967,6 +984,27 @@ export default function GoodsIssue() {
                             }}
                             className="px-2 py-1 border border-slate-300 rounded text-sm w-24 focus:outline-none focus:border-blue-500"
                           />
+                        </td>
+                        <td className="px-4 py-2">
+                          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none text-slate-500 whitespace-nowrap">
+                            <input
+                              type="checkbox"
+                              checked={row.locationEnabled}
+                              onChange={(e) => toggleGdItemLocation(row.itemId, e.target.checked)}
+                              className="w-3.5 h-3.5 accent-blue-600"
+                            />
+                            Add Location
+                          </label>
+                          {row.locationEnabled && (
+                            <input
+                              type="text"
+                              placeholder="e.g. Ward A, Room 3"
+                              value={row.location}
+                              onChange={(e) => updateGdItemLocation(row.itemId, e.target.value)}
+                              className="mt-1.5 px-2 py-1 border border-blue-300 rounded text-xs w-36 focus:outline-none focus:border-blue-500"
+                              autoFocus
+                            />
+                          )}
                         </td>
                         <td className="px-4 py-2">
                           <button

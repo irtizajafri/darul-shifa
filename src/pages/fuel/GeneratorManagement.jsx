@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button';
 import { useFuelStore } from '../../store/useFuelStore';
 import FuelEntryForm from './FuelEntryForm';
 import FuelBalanceCard from './FuelBalanceCard';
+import FuelTransferModal from './FuelTransferModal';
 
 const TABS = ['Fuel', 'Oil', 'Daily Sheets'];
 
@@ -29,11 +30,13 @@ export default function GeneratorManagement({ generator, onBack }) {
     generatorEntries, fetchGeneratorEntries, fetchLastGeneratorEntry, createGeneratorEntry, updateGeneratorEntry, deleteGeneratorEntry,
     dailySheets, fetchDailySheets, fetchLastDailySheet, createDailySheet, updateDailySheet, deleteDailySheet,
     fuelBalance, fetchFuelBalance,
+    tanks, fetchTanks, deleteTransfer,
   } = useFuelStore();
   const gid = generator?.id;
 
   const [activeTab, setActiveTab] = useState('Fuel');
   const [showForm, setShowForm] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
   const [lastEntry, setLastEntry] = useState(null);
   const [sheetForm, setSheetForm] = useState(EMPTY_SHEET);
@@ -44,6 +47,7 @@ export default function GeneratorManagement({ generator, onBack }) {
 
   useEffect(() => {
     fetchFuelBalance();
+    fetchTanks().catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -81,6 +85,19 @@ export default function GeneratorManagement({ generator, onBack }) {
       toast.success('Deleted');
       fetchGeneratorEntries({ generatorId: gid, entryType });
       fetchFuelBalance();
+    } catch (err) { toast.error(err.message); }
+  };
+
+  // Fuel-tab entries are created via Transfer — deleting one undoes the whole
+  // transfer (frees the fuel back into the tank) rather than just the entry.
+  const handleDeleteTransfer = async (transferId) => {
+    if (!confirm('Delete this transfer? Fuel will be returned to the tank.')) return;
+    try {
+      await deleteTransfer(transferId);
+      toast.success('Transfer deleted');
+      fetchGeneratorEntries({ generatorId: gid, entryType });
+      fetchFuelBalance();
+      fetchTanks().catch(() => {});
     } catch (err) { toast.error(err.message); }
   };
 
@@ -190,10 +207,12 @@ export default function GeneratorManagement({ generator, onBack }) {
         </div>
         {!showForm && (
           <Button
-            label={activeTab === 'Daily Sheets' ? 'Add Sheet' : `Add ${activeTab}`}
+            label={activeTab === 'Daily Sheets' ? 'Add Sheet' : activeTab === 'Fuel' ? 'Transfer Fuel' : `Add ${activeTab}`}
             icon={Plus} size="sm"
+            disabled={activeTab === 'Fuel' && !tanks.length}
             onClick={() => {
               if (activeTab === 'Daily Sheets') { openAddSheet(); }
+              else if (activeTab === 'Fuel') { setShowTransfer(true); }
               else { setEditingEntry(null); setShowForm(true); }
             }}
           />
@@ -201,6 +220,10 @@ export default function GeneratorManagement({ generator, onBack }) {
       </div>
 
       <FuelBalanceCard balance={fuelBalance} />
+
+      {activeTab === 'Fuel' && !tanks.length && (
+        <p className="text-xs text-amber-600 -mt-3 mb-4">Koi Fuel Tank nahi mila — pehle "Fuel Tanks" section mein ek tank banayein.</p>
+      )}
 
       {/* Tabs */}
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg mb-5 w-fit">
@@ -328,10 +351,19 @@ export default function GeneratorManagement({ generator, onBack }) {
                       {e.avgPerHour != null ? `${fmtNum(e.avgPerHour)} L/hr` : '-'}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex gap-1 justify-end">
-                        <button onClick={() => { setEditingEntry(e); setShowForm(true); }} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDeleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
+                      {activeTab === 'Oil' ? (
+                        <div className="flex gap-1 justify-end">
+                          <button onClick={() => { setEditingEntry(e); setShowForm(true); }} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDeleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      ) : e.transfer ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="text-[11px] text-slate-400">via Transfer</span>
+                          <button onClick={() => handleDeleteTransfer(e.transfer.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600" title="Delete transfer (returns fuel to tank)"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      ) : (
+                        <span className="block text-right text-[11px] text-slate-400">-</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -389,6 +421,21 @@ export default function GeneratorManagement({ generator, onBack }) {
             </table>
           </div>
         </div>
+      )}
+
+      {showTransfer && (
+        <FuelTransferModal
+          tanks={tanks}
+          generators={[generator]}
+          defaultGeneratorId={gid}
+          onClose={() => setShowTransfer(false)}
+          onDone={() => {
+            fetchGeneratorEntries({ generatorId: gid, entryType: 'fuel' });
+            fetchLastGeneratorEntry({ generatorId: gid, entryType: 'fuel' }).then(setLastEntry).catch(() => {});
+            fetchFuelBalance();
+            fetchTanks().catch(() => {});
+          }}
+        />
       )}
     </div>
   );

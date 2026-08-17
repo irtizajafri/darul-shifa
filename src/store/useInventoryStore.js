@@ -37,6 +37,7 @@ export const useInventoryStore = create((set) => ({
   salesInvoices: [],
   salesInvoiceHeaders: [],
   gdns: [],
+  mrns: [],
   maintenanceRecords: [],
   reorderAlerts: [],
   dailySalesReport: {
@@ -476,6 +477,29 @@ export const useInventoryStore = create((set) => ({
   },
 
   createGDN: async (payload) => request('/gdn', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchMRNs: async ({ search = '', departmentId = '', ginId = '', dateFrom = '', dateTo = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (search) qs.set('search', search);
+      if (departmentId) qs.set('departmentId', String(departmentId));
+      if (ginId) qs.set('ginId', String(ginId));
+      if (dateFrom) qs.set('dateFrom', String(dateFrom));
+      if (dateTo) qs.set('dateTo', String(dateTo));
+      const data = await request(`/mrn?${qs.toString()}`);
+      set({ mrns: Array.isArray(data) ? data : [], loading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  createMRN: async (payload) => request('/mrn', {
     method: 'POST',
     body: JSON.stringify(payload),
   }),

@@ -6,6 +6,17 @@ import { useAccountsStore } from '../../../store/useAccountsStore';
 import './ListAttachments.scss';
 
 const API = 'http://localhost:5001/api/accounts';
+const UTIL_API = 'http://localhost:5001/api/utilities';
+
+// Matches a "Utility provider" payee entry's free-text name to the Utilities
+// Bill module's utility bucket, so we know which actual-bill date to show.
+function matchUtility(entryName) {
+  const n = entryName.toLowerCase();
+  if (n.includes('electric') || n.includes('wapda') || n.includes('kesc') || n.includes('lesco')) return 'electricity';
+  if (n.includes('gas') || n.includes('ssgc') || n.includes('sngpl') || n.includes('sui')) return 'gas';
+  if (n.includes('ptcl')) return 'ptcl';
+  return null;
+}
 
 const SOURCE_BADGE = {
   employee:  { label: 'HR Module',        color: '#3b82f6' },
@@ -40,6 +51,15 @@ export default function ListAttachments() {
   const [entryModal, setEntryModal] = useState(null);
   const [entryName, setEntryName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [utilMeterBills, setUtilMeterBills] = useState([]); // [{ meterId, meterNo, utility, lastBill }]
+  const [expandedEntry, setExpandedEntry] = useState(null);
+
+  useEffect(() => {
+    fetch(`${UTIL_API}/last-bill-summary`)
+      .then((r) => r.json())
+      .then((j) => setUtilMeterBills(Array.isArray(j?.data) ? j.data : []))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -54,6 +74,10 @@ export default function ListAttachments() {
 
   const [supplierModal, setSupplierModal] = useState(null);
   const [savingSuppliers, setSavingSuppliers] = useState(false);
+  const [employeeModal, setEmployeeModal] = useState(null);
+  const [savingEmployees, setSavingEmployees] = useState(false);
+  const [doctorModal, setDoctorModal] = useState(null);
+  const [savingDoctors, setSavingDoctors] = useState(false);
 
   // ── Entries expand ────────────────────────────────────────────────────────
   const toggleHead = async (head) => {
@@ -96,6 +120,42 @@ export default function ListAttachments() {
       toast.success('Suppliers saved');
     } catch (err) { toast.error(err.message); }
     finally { setSavingSuppliers(false); }
+  };
+
+  const saveEmployeeSelection = async () => {
+    if (!employeeModal) return;
+    setSavingEmployees(true);
+    try {
+      const r = await fetch(`${API}/payee-entries/bulk-save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payeeHeadId: employeeModal.headId, subAccountId: employeeModal.subAccountId, names: [...employeeModal.checked] }),
+      });
+      const j = await r.json();
+      if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
+      setEmployeeModal(null);
+      toast.success('Employees saved');
+      await fetchPayeeHeads(entityType);
+    } catch (err) { toast.error(err.message); }
+    finally { setSavingEmployees(false); }
+  };
+
+  const saveDoctorSelection = async () => {
+    if (!doctorModal) return;
+    setSavingDoctors(true);
+    try {
+      const r = await fetch(`${API}/payee-entries/bulk-save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payeeHeadId: doctorModal.headId, subAccountId: doctorModal.subAccountId, names: [...doctorModal.checked] }),
+      });
+      const j = await r.json();
+      if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
+      setDoctorModal(null);
+      toast.success('Doctors saved');
+      await fetchPayeeHeads(entityType);
+    } catch (err) { toast.error(err.message); }
+    finally { setSavingDoctors(false); }
   };
 
   // ── Link account cascade ──────────────────────────────────────────────────
@@ -269,12 +329,52 @@ export default function ListAttachments() {
     // manual
     if (expandedHead !== head.id) return null;
     if (payeeEntries.length === 0) return <p className="list-attach__empty">No entries yet. Click + to add.</p>;
-    return payeeEntries.map((e) => (
-      <div key={e.id} className="list-attach__entry-row">
-        <span>{e.name}</span>
-        <button className="btn-icon danger" onClick={() => removeEntry(e.id, head.id)}><Trash2 className="w-3 h-3" /></button>
-      </div>
-    ));
+    const isUtilityHead = head.name.toLowerCase().includes('utility');
+    return payeeEntries.map((e) => {
+      const utilKey = isUtilityHead ? matchUtility(e.name) : null;
+      const meters = utilKey ? utilMeterBills.filter((m) => m.utility === utilKey) : [];
+      const isEntryOpen = expandedEntry === e.id;
+      return (
+        <div key={e.id} className="list-attach__entry-block">
+          <div
+            className="list-attach__entry-row"
+            style={utilKey ? { cursor: 'pointer' } : undefined}
+            onClick={() => { if (utilKey) setExpandedEntry(isEntryOpen ? null : e.id); }}
+          >
+            <span>
+              {e.name}
+              {utilKey && <span className="list-attach__entry-count"> — {meters.length} meter{meters.length === 1 ? '' : 's'}</span>}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {utilKey && (isEntryOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
+              <button className="btn-icon danger" onClick={(ev) => { ev.stopPropagation(); removeEntry(e.id, head.id); }}><Trash2 className="w-3 h-3" /></button>
+            </div>
+          </div>
+
+          {isEntryOpen && utilKey && (
+            <div className="list-attach__meter-list">
+              {meters.length === 0 ? (
+                <p className="list-attach__empty">Utilities Bill module mein is category ka koi meter nahi mila</p>
+              ) : meters.map((m) => (
+                <div key={m.meterId} className="list-attach__meter-row">
+                  <span className="list-attach__meter-no">{m.meterNo}</span>
+                  {m.lastBill ? (
+                    <span
+                      className="list-attach__bill-date"
+                      title={`Rs ${Number(m.lastBill.amount).toLocaleString('en-PK')} — period ${new Date(m.lastBill.fromDate).toLocaleDateString('en-PK', { dateStyle: 'medium' })} to ${new Date(m.lastBill.toDate).toLocaleDateString('en-PK', { dateStyle: 'medium' })}`}
+                    >
+                      Actual posted: {new Date(m.lastBill.postedAt).toLocaleDateString('en-PK', { dateStyle: 'medium' })}
+                    </span>
+                  ) : (
+                    <span className="list-attach__no-link">Koi actual bill post nahi hua</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    });
   };
 
   const handleRemoveInventoryLink = async (headId, mainAccountId) => {
@@ -436,6 +536,18 @@ export default function ListAttachments() {
                   const j = await r.json();
                   const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
                   setSupplierModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allSuppliers: linkedSuppliers, checked: checkedNames });
+                }
+                if (head.sourceType === 'employee' && e.target.value) {
+                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
+                  const j = await r.json();
+                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
+                  setEmployeeModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allEmployees: linkedEmployees, checked: checkedNames });
+                }
+                if (head.sourceType === 'doctor' && e.target.value) {
+                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
+                  const j = await r.json();
+                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
+                  setDoctorModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allDoctors: linkedDoctors, checked: checkedNames });
                 }
               }}
             >
@@ -647,6 +759,119 @@ export default function ListAttachments() {
               <button className="list-attach__link-cancel" onClick={() => setSupplierModal(null)}>Cancel</button>
               <button className="list-attach__link-save" onClick={saveSupplierSelection} disabled={savingSuppliers}>
                 {savingSuppliers ? 'Saving…' : 'Save & Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Modal */}
+      {employeeModal && (
+        <div className="acc-param-page__overlay" onClick={() => setEmployeeModal(null)}>
+          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="list-attach__supplier-modal__header">
+              <div>
+                <div className="list-attach__supplier-modal__title">Select Employees</div>
+                <div className="list-attach__supplier-modal__sub">{employeeModal.headName}</div>
+              </div>
+              <button className="list-attach__supplier-modal__close" onClick={() => setEmployeeModal(null)}>✕</button>
+            </div>
+            <div className="list-attach__supplier-modal__select-all">
+              <label className="list-attach__check-label">
+                <input
+                  type="checkbox"
+                  checked={employeeModal.allEmployees.length > 0 && employeeModal.checked.size === employeeModal.allEmployees.length}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? new Set(employeeModal.allEmployees.map((emp) => `${emp.firstName} ${emp.lastName}`))
+                      : new Set();
+                    setEmployeeModal((m) => ({ ...m, checked: next }));
+                  }}
+                />
+                <span>Select All</span>
+              </label>
+              <span className="list-attach__supplier-modal__count">
+                {employeeModal.checked.size} / {employeeModal.allEmployees.length} selected
+              </span>
+            </div>
+            <div className="list-attach__supplier-modal__list">
+              {employeeModal.allEmployees.map((emp) => {
+                const fullName = `${emp.firstName} ${emp.lastName}`;
+                return (
+                  <label key={emp.id} className={`list-attach__supplier-modal__item ${employeeModal.checked.has(fullName) ? 'checked' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={employeeModal.checked.has(fullName)}
+                      onChange={() => {
+                        const next = new Set(employeeModal.checked);
+                        next.has(fullName) ? next.delete(fullName) : next.add(fullName);
+                        setEmployeeModal((m) => ({ ...m, checked: next }));
+                      }}
+                    />
+                    <span className="list-attach__supplier-modal__name">{fullName}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="list-attach__supplier-modal__footer">
+              <button className="list-attach__link-cancel" onClick={() => setEmployeeModal(null)}>Cancel</button>
+              <button className="list-attach__link-save" onClick={saveEmployeeSelection} disabled={savingEmployees}>
+                {savingEmployees ? 'Saving…' : 'Save & Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Doctor Modal */}
+      {doctorModal && (
+        <div className="acc-param-page__overlay" onClick={() => setDoctorModal(null)}>
+          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="list-attach__supplier-modal__header">
+              <div>
+                <div className="list-attach__supplier-modal__title">Select Doctors / Consultants</div>
+                <div className="list-attach__supplier-modal__sub">{doctorModal.headName}</div>
+              </div>
+              <button className="list-attach__supplier-modal__close" onClick={() => setDoctorModal(null)}>✕</button>
+            </div>
+            <div className="list-attach__supplier-modal__select-all">
+              <label className="list-attach__check-label">
+                <input
+                  type="checkbox"
+                  checked={doctorModal.allDoctors.length > 0 && doctorModal.checked.size === doctorModal.allDoctors.length}
+                  onChange={(e) => {
+                    const next = e.target.checked
+                      ? new Set(doctorModal.allDoctors.map((d) => d.name))
+                      : new Set();
+                    setDoctorModal((m) => ({ ...m, checked: next }));
+                  }}
+                />
+                <span>Select All</span>
+              </label>
+              <span className="list-attach__supplier-modal__count">
+                {doctorModal.checked.size} / {doctorModal.allDoctors.length} selected
+              </span>
+            </div>
+            <div className="list-attach__supplier-modal__list">
+              {doctorModal.allDoctors.map((d) => (
+                <label key={d.id} className={`list-attach__supplier-modal__item ${doctorModal.checked.has(d.name) ? 'checked' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={doctorModal.checked.has(d.name)}
+                    onChange={() => {
+                      const next = new Set(doctorModal.checked);
+                      next.has(d.name) ? next.delete(d.name) : next.add(d.name);
+                      setDoctorModal((m) => ({ ...m, checked: next }));
+                    }}
+                  />
+                  <span className="list-attach__supplier-modal__name">{d.code ? `${d.code} — ` : ''}{d.name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="list-attach__supplier-modal__footer">
+              <button className="list-attach__link-cancel" onClick={() => setDoctorModal(null)}>Cancel</button>
+              <button className="list-attach__link-save" onClick={saveDoctorSelection} disabled={savingDoctors}>
+                {savingDoctors ? 'Saving…' : 'Save & Apply'}
               </button>
             </div>
           </div>

@@ -616,6 +616,7 @@ export default function InventoryReports() {
           Subcategory: gd.item?.subcategory?.name || '-',
           Department: gd.department?.name || '-',
           'Demand Type': gd.demandCategoryType?.name || '-',
+          Location: gd.location || '-',
           'Qty Requested': Number(gd.quantityRequested || 0),
           Status: gd.status || '-',
         }));
@@ -1085,6 +1086,8 @@ export default function InventoryReports() {
       quantity: Number(row.receivedQuantity || 0),
       rate: Number(row.receivedRate || 0),
       amount: Number(row.totalAmount || 0),
+      manufacturer: row.manufacturer || '',
+      model: row.model || '',
     }));
   }, [grns]);
 
@@ -1096,6 +1099,8 @@ export default function InventoryReports() {
       Category: row.category,
       Subcategory: row.subcategory,
       Supplier: row.supplier,
+      Manufacturer: row.manufacturer || '-',
+      Model: row.model || '-',
       Quantity: row.quantity,
       Rate: row.rate,
       Amount: row.amount,
@@ -1206,6 +1211,7 @@ export default function InventoryReports() {
         demandType: gd.demandCategoryType?.name || '-',
         quantityRequested: Number(gd.quantityRequested || 0),
         status: gd.status || '-',
+        location: gd.location || '',
       }));
   }, [gds, gdFilters.itemId]);
 
@@ -1219,6 +1225,7 @@ export default function InventoryReports() {
       Subcategory: row.subcategory,
       Department: row.department,
       'Demand Type': row.demandType,
+      Location: row.location || '-',
       'Qty Requested': row.quantityRequested,
       Status: row.status,
     }));
@@ -1576,6 +1583,7 @@ export default function InventoryReports() {
             Subcategory: gd.item?.subcategory?.name || '-',
             Department: gd.department?.name || '-',
             'Demand Type': gd.demandCategoryType?.name || '-',
+            Location: gd.location || '-',
             'Qty Requested': Number(gd.quantityRequested || 0),
             Status: gd.status || '-',
           }));
@@ -1640,6 +1648,7 @@ export default function InventoryReports() {
             Subcategory: gd.item?.subcategory?.name || '-',
             Department: gd.department?.name || '-',
             'Demand Type': gd.demandCategoryType?.name || '-',
+            Location: gd.location || '-',
             'Qty Requested': Number(gd.quantityRequested || 0),
             Status: gd.status || '-',
           }));
@@ -2407,6 +2416,8 @@ export default function InventoryReports() {
                           <th className="px-4 py-3">Category</th>
                           <th className="px-4 py-3">Subcategory</th>
                           <th className="px-4 py-3">Supplier</th>
+                          <th className="px-4 py-3">Manufacturer</th>
+                          <th className="px-4 py-3">Model</th>
                           <th className="px-4 py-3">Quantity</th>
                           <th className="px-4 py-3">Rate</th>
                           <th className="px-4 py-3">Amount</th>
@@ -2424,6 +2435,8 @@ export default function InventoryReports() {
                               <td className="px-4 py-3">{row.category}</td>
                               <td className="px-4 py-3">{row.subcategory}</td>
                               <td className="px-4 py-3">{row.supplier}</td>
+                              <td className="px-4 py-3 text-slate-500">{row.manufacturer || <span className="text-slate-300">—</span>}</td>
+                              <td className="px-4 py-3 text-slate-500">{row.model || <span className="text-slate-300">—</span>}</td>
                               <td className="px-4 py-3">{row.quantity}</td>
                               <td className="px-4 py-3">{row.rate.toFixed(2)}</td>
                               <td className="px-4 py-3 font-semibold text-slate-800">{row.amount.toFixed(2)}</td>
@@ -2440,6 +2453,8 @@ export default function InventoryReports() {
                                       rateEst: rawGRN.orderedRate,
                                       rateReceived: rawGRN.receivedRate,
                                       amountReceived: rawGRN.totalAmount,
+                                      manufacturer: rawGRN.manufacturer || '',
+                                      model: rawGRN.model || '',
                                     }],
                                     printedBy: getPrintedBy(),
                                     generatedAt: getGeneratedAt(),

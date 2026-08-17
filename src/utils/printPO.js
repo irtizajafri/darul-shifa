@@ -144,9 +144,10 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
     const itemName = gi.item?.name || '-';
     const qty      = gi.quantityRequested ?? '-';
     const status   = gi.status ?? 'open';
+    const location = gi.location ? `<div class="item-location">📍 ${gi.location}</div>` : '';
     return `<tr>
       <td>${idx + 1}</td>
-      <td class="desc">${itemName}</td>
+      <td class="desc">${itemName}${location}</td>
       <td>${qty}</td>
       <td><span class="status-badge status-${String(status).toLowerCase()}">${status}</span></td>
     </tr>`;
@@ -183,6 +184,7 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
     .status-open    { background: #dbeafe; color: #1d4ed8; }
     .status-partial { background: #fef9c3; color: #854d0e; }
     .status-closed  { background: #dcfce7; color: #166534; }
+    .item-location  { font-size: 6.5pt; color: #555; margin-top: 2px; }
     .signatures { display: flex; justify-content: space-between; margin-top: 60px; padding-top: 4px; }
     .sig { font-weight: 700; font-size: 9pt; }
     .sig-line { border-top: 1px solid #555; width: 80px; margin-bottom: 5px; }

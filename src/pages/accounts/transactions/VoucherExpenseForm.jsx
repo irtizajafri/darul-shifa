@@ -1,14 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, ChevronRight, Printer } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ChevronRight, Printer, Pencil } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import toast from 'react-hot-toast';
 import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
+const UTIL_API = 'http://localhost:5001/api/utilities';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+// Matches a "Utility provider" payee entry's free-text name (k-electric,
+// ssgc, ptcl) to the Utilities Bill module's utility bucket — same matching
+// used in Accounts > List Attachments.
+function matchUtility(entryName) {
+  const n = entryName.toLowerCase();
+  if (n.includes('electric') || n.includes('wapda') || n.includes('kesc') || n.includes('lesco')) return 'electricity';
+  if (n.includes('gas') || n.includes('ssgc') || n.includes('sngpl') || n.includes('sui')) return 'gas';
+  if (n.includes('ptcl')) return 'ptcl';
+  return null;
+}
 
 // ── Print helpers ─────────────────────────────────────────────────────────────
 const fmtDate = (d) =>
@@ -161,6 +173,7 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
   `;
 
   const win = window.open('', '_blank');
+  if (!win) throw new Error('Popup blocked');
   win.document.write(
     `<!DOCTYPE html><html><head><title>Expense Voucher</title><style>${VOUCHER_PRINT_CSS}</style></head><body>${html}</body></html>`
   );
@@ -234,16 +247,19 @@ export default function VoucherExpenseForm() {
   const { mainGLs, fetchMainGLs } = useAccountsStore();
   const { user } = useAuthStore();
 
+  const editingVoucher = state?.editVoucher || null;
+  const isEditMode = Boolean(editingVoucher);
+
   const mode   = state?.mode   || 'cash';
   const bankId = state?.bankId || null;
   const isCheque = mode === 'cheque';
   const isBank   = mode !== 'cash';
 
-  const [date, setDate]       = useState(todayStr());
+  const [date, setDate]       = useState(() => editingVoucher ? editingVoucher.voucherDate.slice(0, 10) : todayStr());
   const [entry, setEntry]     = useState(emptyEntry());
-  const [entries, setEntries] = useState([]);
+  const [entries, setEntries] = useState(() => editingVoucher ? editingVoucher.entries.map((e) => ({ ...e, chequeDate: e.chequeDate ? e.chequeDate.slice(0, 10) : todayStr() })) : []);
   const [saving, setSaving]             = useState(false);
-  const [voucherNo, setVoucherNo]       = useState('');
+  const [voucherNo, setVoucherNo]       = useState(editingVoucher?.voucherNo || '');
   const [savedVoucherNo, setSavedVoucherNo] = useState(null);
 
   const [subGLs, setSubGLs]             = useState([]);
@@ -264,10 +280,13 @@ export default function VoucherExpenseForm() {
   const [checkedVisits, setCheckedVisits]       = useState({});
   const [cvDateFrom, setCvDateFrom]             = useState('');
   const [cvDateTo, setCvDateTo]                 = useState('');
+  const [utilBillModal, setUtilBillModal]       = useState(null);
+  const [utilBillLoading, setUtilBillLoading]   = useState(false);
+  const [checkedUtilBills, setCheckedUtilBills] = useState({});
 
   const [bankAccounts, setBankAccounts]   = useState([]);
   const [selectedBankId, setSelectedBankId] = useState(bankId ? String(bankId) : '');
-  const [cashSerial, setCashSerial]       = useState(1);
+  const [cashSerial, setCashSerial]       = useState(editingVoucher ? editingVoucher.entries.length + 1 : 1);
 
   useEffect(() => { fetchMainGLs(entityType); }, [entityType]);
 
@@ -300,7 +319,8 @@ export default function VoucherExpenseForm() {
     } catch { /* ignore */ }
   };
 
-  useEffect(() => { fetchNextVoucherNo(date); }, [date, entityType]);
+  // Editing an existing voucher keeps its original number — never reassign it.
+  useEffect(() => { if (!isEditMode) fetchNextVoucherNo(date); }, [date, entityType]);
 
   const handleBankSelect = (id) => {
     setSelectedBankId(id);
@@ -391,6 +411,44 @@ export default function VoucherExpenseForm() {
       setLinkedPayees(j.data.entries || []);
       setLinkedHeadName(j.data.headName || '');
       setLinkedHeadType(j.data.type || '');
+    }
+  };
+
+  // Entries already added to the table have no inline-edit — this loads one
+  // back into the draft form (and repopulates its GL→SubGL→MainAccount cascade
+  // so the selects show it correctly) and removes it from the list; the user
+  // corrects it and hits Confirm to re-add, same as adding any other entry.
+  const handleEditEntry = async (idx) => {
+    const e = entries[idx];
+    setEntries((es) => es.filter((_, i) => i !== idx));
+    setEntry({ ...e });
+    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
+    setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
+
+    if (e.mainGlId) {
+      const r1 = await fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${e.mainGlId}`);
+      const j1 = await r1.json();
+      setSubGLs(Array.isArray(j1?.data) ? j1.data : []);
+    }
+    if (e.subGlId) {
+      const r2 = await fetch(`${API}/main-account?entityType=${entityType}&subGlId=${e.subGlId}`);
+      const j2 = await r2.json();
+      setMainAccs(Array.isArray(j2?.data) ? j2.data : []);
+    }
+    if (e.mainAccountId) {
+      const invR = await fetch(`${API}/linked/inventory-head-for-main-account?mainAccountId=${e.mainAccountId}`);
+      const invJ = await invR.json();
+      const invHead = invJ?.data;
+      if (invHead?.inventorySubcategoryId) {
+        setIsInventoryAcc(true);
+        const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
+        const iJ = await iR.json();
+        setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
+      } else {
+        const r3 = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${e.mainAccountId}`);
+        const j3 = await r3.json();
+        setSubAccs(Array.isArray(j3?.data) ? j3.data : []);
+      }
     }
   };
 
@@ -486,6 +544,32 @@ export default function VoucherExpenseForm() {
     ? consultantModal.visits.filter((v) => checkedVisits[v.id]).reduce((s, v) => s + Number(v.received || 0), 0)
     : 0;
 
+  // Utility provider payee (k-electric / ssgc / ptcl) — show that category's
+  // meters/lines as a checklist so an unpaid Actual Bill's amount can be
+  // pulled straight into the voucher entry, per meter (803, 804, 805 ...).
+  const openUtilBillModal = async (payee) => {
+    setEntry((f) => ({ ...f, payeeName: payee.name }));
+    setPayeeSearch(payee.name);
+    setCheckedUtilBills({});
+    const utilKey = matchUtility(payee.name);
+    setUtilBillModal({ providerName: payee.name, utility: utilKey, meters: null });
+    setUtilBillLoading(true);
+    try {
+      const r = await fetch(`${UTIL_API}/last-bill-summary`);
+      const j = await r.json();
+      const meters = (Array.isArray(j?.data) ? j.data : []).filter((m) => m.utility === utilKey && m.lastBill);
+      setUtilBillModal((prev) => ({ ...prev, meters }));
+    } catch {
+      setUtilBillModal((prev) => ({ ...prev, meters: [] }));
+    } finally {
+      setUtilBillLoading(false);
+    }
+  };
+
+  const utilBillCheckedTotal = utilBillModal?.meters
+    ? utilBillModal.meters.filter((m) => checkedUtilBills[m.meterId]).reduce((s, m) => s + Number(m.lastBill.amount), 0)
+    : 0;
+
   const upd = (field) => (ev) => setEntry((e) => ({ ...e, [field]: ev.target.value }));
 
   const handleAddEntry = () => {
@@ -530,22 +614,32 @@ export default function VoucherExpenseForm() {
     if (entries.length === 0) { toast.error('Add at least one entry'); return; }
     setSaving(true);
     try {
-      const res = await fetch(`${API}/voucher-expense`, {
-        method: 'POST',
+      const url    = isEditMode ? `${API}/voucher-expense/${editingVoucher.id}` : `${API}/voucher-expense`;
+      const method = isEditMode ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entityType, mode, bankId: selectedBankId ? Number(selectedBankId) : null, voucherDate: date, entries }),
       });
       const json = await res.json();
       if (!res.ok || json?.ok === false) throw new Error(json?.message || 'Failed to save');
-      setSavedVoucherNo(json.data.voucherNo);
-      toast.success(`Voucher ${json.data.voucherNo} saved`);
-      printExpenseVoucher({
-        voucherNo:   json.data.voucherNo,
-        voucherDate: new Date().toISOString(),
-        mode,
-        entries,
-        printBy: user?.name || 'System',
-      });
+      const savedNo = json.data.voucherNo;
+      setSavedVoucherNo(savedNo);
+      toast.success(isEditMode ? `Voucher ${savedNo} updated` : `Voucher ${savedNo} saved`);
+      // Printing is best-effort — a blocked popup must not look like the save
+      // itself failed (the voucher is already saved server-side at this point).
+      try {
+        printExpenseVoucher({
+          voucherNo:   savedNo,
+          voucherDate: new Date().toISOString(),
+          mode,
+          entries,
+          printBy: user?.name || 'System',
+        });
+      } catch {
+        toast.error('Voucher saved, but the print popup was blocked — reprint it from Voucher Reprint.');
+      }
+      if (isEditMode) navigate(-1);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -568,7 +662,7 @@ export default function VoucherExpenseForm() {
         <ChevronRight size={13} className="ve-form__bc-sep" />
         <span>Transaction</span>
         <ChevronRight size={13} className="ve-form__bc-sep" />
-        <span className="ve-form__bc-active">Voucher Entry (Expense)</span>
+        <span className="ve-form__bc-active">{isEditMode ? `Edit Voucher (${editingVoucher.voucherNo})` : 'Voucher Entry (Expense)'}</span>
       </div>
 
       {/* ── Section 1: Voucher Details ── */}
@@ -716,6 +810,7 @@ export default function VoucherExpenseForm() {
                                 if (linkedHeadType === 'employee') openSalaryModal(p);
                                 else if (linkedHeadType === 'vendor') openGrnModal(p);
                                 else if (linkedHeadType === 'doctor') openConsultantModal(p);
+                                else if (linkedHeadType === 'manual' && linkedHeadName.toLowerCase().includes('utility') && matchUtility(p.name)) openUtilBillModal(p);
                                 else { setEntry((f) => ({ ...f, payeeName: p.name })); setPayeeSearch(p.name); }
                               }}
                             >
@@ -805,7 +900,7 @@ export default function VoucherExpenseForm() {
               onClick={handleConfirm}
               disabled={saving || entries.length === 0}
             >
-              {saving ? 'Saving…' : 'Save & Print'}
+              {saving ? 'Saving…' : isEditMode ? 'Update & Print' : 'Save & Print'}
             </button>
             <button className="ve-form__add-btn" onClick={handleAddEntry}>
               <Plus size={15} /> Confirm
@@ -843,6 +938,13 @@ export default function VoucherExpenseForm() {
                   <td style={{ display: 'flex', gap: '0.4rem' }}>
                     <button
                       className="ve-form__del-btn"
+                      title="Edit"
+                      onClick={() => handleEditEntry(i)}
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      className="ve-form__del-btn"
                       title="Print Slip"
                       onClick={() => printEntrySlip({ entry: e, voucherDate: date, printBy: user?.name || 'Accountant' })}
                     >
@@ -850,6 +952,7 @@ export default function VoucherExpenseForm() {
                     </button>
                     <button
                       className="ve-form__del-btn"
+                      title="Remove"
                       onClick={() => setEntries((es) => es.filter((_, idx) => idx !== i))}
                     >
                       <Trash2 size={14} />
@@ -939,6 +1042,89 @@ export default function VoucherExpenseForm() {
                         const ids = (grnModal.grns || []).filter((g) => checkedGrns[g.id]).map((g) => g.id);
                         setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)), grnIds: ids }));
                         setGrnModal(null);
+                      }}
+                    >
+                      Fill Amount
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Utility Bill Modal ── */}
+      {utilBillModal && (
+        <div className="ve-sal-modal__backdrop" onClick={() => setUtilBillModal(null)}>
+          <div className="ve-grn-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ve-sal-modal__header">
+              <div>
+                <div className="ve-sal-modal__title">Actual Bills</div>
+                <div className="ve-sal-modal__sub">{utilBillModal.providerName}</div>
+              </div>
+              <button className="ve-sal-modal__close" onClick={() => setUtilBillModal(null)}>✕</button>
+            </div>
+
+            {utilBillLoading ? (
+              <div className="ve-sal-modal__loading">Loading bills…</div>
+            ) : !utilBillModal.meters?.length ? (
+              <div className="ve-sal-modal__no-data">Utilities Bill module mein koi actual bill posted nahi mila.</div>
+            ) : (
+              <>
+                <div className="ve-grn-modal__table-wrap">
+                  <table className="ve-grn-modal__table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <input
+                            type="checkbox"
+                            onChange={(e) => {
+                              const all = {};
+                              if (e.target.checked) utilBillModal.meters.forEach((m) => { all[m.meterId] = true; });
+                              setCheckedUtilBills(all);
+                            }}
+                            checked={utilBillModal.meters.length > 0 && utilBillModal.meters.every((m) => checkedUtilBills[m.meterId])}
+                          />
+                        </th>
+                        <th>Meter</th>
+                        <th>Period</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {utilBillModal.meters.map((m) => (
+                        <tr
+                          key={m.meterId}
+                          className={checkedUtilBills[m.meterId] ? 've-grn-modal__row--checked' : ''}
+                          onClick={() => setCheckedUtilBills((prev) => ({ ...prev, [m.meterId]: !prev[m.meterId] }))}
+                        >
+                          <td><input type="checkbox" checked={!!checkedUtilBills[m.meterId]} onChange={() => {}} /></td>
+                          <td className="ve-grn-modal__code">{m.meterNo}</td>
+                          <td>
+                            {new Date(m.lastBill.fromDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short' })}
+                            {' – '}
+                            {new Date(m.lastBill.toDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="ve-grn-modal__amount">PKR {Number(m.lastBill.amount).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="ve-grn-modal__footer">
+                  <div className="ve-grn-modal__total">
+                    <span>Selected Total</span>
+                    <span className="ve-grn-modal__total-val">PKR {utilBillCheckedTotal.toLocaleString()}</span>
+                  </div>
+                  <div className="ve-grn-modal__actions">
+                    <button className="ve-sal-modal__cancel" onClick={() => setUtilBillModal(null)}>Cancel</button>
+                    <button
+                      className="ve-sal-modal__verify"
+                      disabled={utilBillCheckedTotal === 0}
+                      onClick={() => {
+                        setEntry((f) => ({ ...f, amount: String(Math.round(utilBillCheckedTotal)) }));
+                        setUtilBillModal(null);
                       }}
                     >
                       Fill Amount

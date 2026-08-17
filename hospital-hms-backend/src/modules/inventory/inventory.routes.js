@@ -66,6 +66,9 @@ router.post('/sales-invoice-headers', controller.createSalesInvoiceWithItems);
 router.get('/gdn', controller.listGDNs);
 router.post('/gdn', controller.createGDN);
 
+router.get('/mrn', controller.listMRNs);
+router.post('/mrn', controller.createMRN);
+
 router.get('/alerts/reorder', controller.listOpenReorderAlerts);
 router.get('/reports/item-ledger', controller.listItemLedgerReport);
 router.get('/reports/daily-sales', controller.listDailySalesReport);

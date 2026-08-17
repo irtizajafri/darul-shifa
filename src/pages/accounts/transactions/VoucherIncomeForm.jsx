@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ChevronRight, Pencil } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import toast from 'react-hot-toast';
 import './VoucherExpenseForm.scss';
@@ -23,15 +23,18 @@ export default function VoucherIncomeForm() {
   const navigate       = useNavigate();
   const { incomeCategories, fetchIncomeCategories } = useAccountsStore();
 
+  const editingVoucher = state?.editVoucher || null;
+  const isEditMode = Boolean(editingVoucher);
+
   const mode   = state?.mode   || 'cash';
   const bankId = state?.bankId || null;
   const isBank = mode === 'bank';
 
-  const [date, setDate]       = useState(todayStr());
+  const [date, setDate]       = useState(() => editingVoucher ? editingVoucher.voucherDate.slice(0, 10) : todayStr());
   const [entry, setEntry]     = useState(emptyEntry());
-  const [entries, setEntries] = useState([]);
+  const [entries, setEntries] = useState(() => editingVoucher ? editingVoucher.entries.map((e) => ({ ...e })) : []);
   const [saving, setSaving]                 = useState(false);
-  const [voucherNo, setVoucherNo]           = useState('');
+  const [voucherNo, setVoucherNo]           = useState(editingVoucher?.voucherNo || '');
   const [savedVoucherNo, setSavedVoucherNo] = useState(null);
 
   useEffect(() => { fetchIncomeCategories(entityType); }, [entityType]);
@@ -44,7 +47,8 @@ export default function VoucherIncomeForm() {
     } catch { /* ignore */ }
   };
 
-  useEffect(() => { fetchNextVoucherNo(date); }, [date, entityType]);
+  // Editing an existing voucher keeps its original number — never reassign it.
+  useEffect(() => { if (!isEditMode) fetchNextVoucherNo(date); }, [date, entityType]);
 
   const upd = (field) => (ev) => setEntry((e) => ({ ...e, [field]: ev.target.value }));
 
@@ -60,21 +64,33 @@ export default function VoucherIncomeForm() {
     setEntry(emptyEntry());
   };
 
+  // Entries already added have no inline-edit — load one back into the draft
+  // form and remove it from the list; the user corrects it and hits Confirm
+  // to re-add, same as adding any other entry.
+  const handleEditEntry = (idx) => {
+    setEntry({ ...entries[idx] });
+    setEntries((es) => es.filter((_, i) => i !== idx));
+  };
+
   const total = entries.reduce((s, e) => s + Number(e.amount), 0);
 
   const handleConfirm = async () => {
     if (entries.length === 0) { toast.error('Add at least one entry'); return; }
     setSaving(true);
     try {
-      const res = await fetch(`${API}/voucher-income`, {
-        method: 'POST',
+      const url    = isEditMode ? `${API}/voucher-income/${editingVoucher.id}` : `${API}/voucher-income`;
+      const method = isEditMode ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entityType, mode, bankId, voucherDate: date, entries }),
       });
       const json = await res.json();
       if (!res.ok || json?.ok === false) throw new Error(json?.message || 'Failed to save');
-      setSavedVoucherNo(json.data?.voucherNo || '');
-      toast.success(`Voucher ${json.data?.voucherNo || ''} saved`);
+      const savedNo = json.data?.voucherNo || '';
+      setSavedVoucherNo(savedNo);
+      toast.success(isEditMode ? `Voucher ${savedNo} updated` : `Voucher ${savedNo} saved`);
+      if (isEditMode) navigate(-1);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -98,7 +114,7 @@ export default function VoucherIncomeForm() {
         <ChevronRight size={13} className="ve-form__bc-sep" />
         <span>Transaction</span>
         <ChevronRight size={13} className="ve-form__bc-sep" />
-        <span className="ve-form__bc-active">Voucher Entry (Income)</span>
+        <span className="ve-form__bc-active">{isEditMode ? `Edit Voucher (${editingVoucher.voucherNo})` : 'Voucher Entry (Income)'}</span>
       </div>
 
       {/* ── Section 1: Voucher Details ── */}
@@ -192,7 +208,7 @@ export default function VoucherIncomeForm() {
               onClick={handleConfirm}
               disabled={saving || entries.length === 0}
             >
-              {saving ? 'Saving…' : 'Save & Print'}
+              {saving ? 'Saving…' : isEditMode ? 'Update' : 'Save & Print'}
             </button>
             <button className="ve-form__add-btn" onClick={handleAddEntry}>
               <Plus size={15} /> Confirm
@@ -221,9 +237,13 @@ export default function VoucherIncomeForm() {
                   <td className="ve-form__td-amount">{Number(e.amount).toLocaleString()}</td>
                   <td>{e.particulars || '—'}</td>
                   <td><span className="ve-form__status-badge">Confirm</span></td>
-                  <td>
+                  <td style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button className="ve-form__del-btn" title="Edit" onClick={() => handleEditEntry(i)}>
+                      <Pencil size={14} />
+                    </button>
                     <button
                       className="ve-form__del-btn"
+                      title="Remove"
                       onClick={() => setEntries((es) => es.filter((_, idx) => idx !== i))}
                     >
                       <Trash2 size={14} />

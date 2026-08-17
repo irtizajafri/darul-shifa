@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react';
 import { useLocation } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
 import useFocusTrap from '../../hooks/useFocusTrap';
@@ -179,6 +179,8 @@ export default function GoodsReceipt() {
       receivedRate: String(po.orderedRate || ''),
       retailPrice: '',
       expiryDate: '',
+      manufacturerEnabled: false, manufacturer: '',
+      modelEnabled: false, model: '',
     })));
   }, [selectedPoCode, purchaseOrders]);
 
@@ -230,6 +232,8 @@ export default function GoodsReceipt() {
           expiryDate: line.expiryDate || undefined,
           paymentType,
           paymentNote: paymentType === 'installment' ? paymentNote : undefined,
+          manufacturer: line.manufacturerEnabled && line.manufacturer.trim() ? line.manufacturer.trim() : undefined,
+          model: line.modelEnabled && line.model.trim() ? line.model.trim() : undefined,
         });
         results.push({ grn, line });
       }
@@ -399,6 +403,8 @@ export default function GoodsReceipt() {
                             rateEst: grn.purchaseOrder?.orderedRate ?? grn.receivedRate,
                             rateReceived: grn.receivedRate,
                             amountReceived: grn.totalAmount,
+                            manufacturer: grn.manufacturer || '',
+                            model: grn.model || '',
                           }],
                           isReprint: true,
                           reprintedBy: user?.name || user?.email || '',
@@ -589,59 +595,105 @@ export default function GoodsReceipt() {
                       <th className="px-4 py-2">Expiry Date</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody>
                     {draftLines.map((line, idx) => (
-                      <tr key={`draft-${idx}`} className="hover:bg-slate-50">
-                        <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
-                        <td className="px-4 py-2 font-medium text-slate-800">
-                          {line.itemName}
-                          <span className="text-slate-400 text-xs ml-1">({line.itemCode})</span>
-                        </td>
-                        <td className="px-4 py-2 text-slate-500">{line.requiredQuantity}</td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            min="0"
-                            value={line.receivedQuantity}
-                            onChange={(e) => updateDraftLine(idx, 'receivedQuantity', e.target.value)}
-                            className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={line.receivedRate}
-                            onChange={(e) => updateDraftLine(idx, 'receivedRate', e.target.value)}
-                            className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder="optional"
-                            value={line.retailPrice}
-                            onChange={(e) => updateDraftLine(idx, 'retailPrice', e.target.value)}
-                            className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          {line.hasExpiry ? (
+                      <Fragment key={idx}>
+                        <tr className="hover:bg-slate-50 border-t border-slate-100">
+                          <td className="px-4 py-2 text-slate-400">{idx + 1}</td>
+                          <td className="px-4 py-2 font-medium text-slate-800">
+                            {line.itemName}
+                            <span className="text-slate-400 text-xs ml-1">({line.itemCode})</span>
+                          </td>
+                          <td className="px-4 py-2 text-slate-500">{line.requiredQuantity}</td>
+                          <td className="px-4 py-2">
                             <input
-                              type="date"
-                              value={line.expiryDate}
-                              onChange={(e) => updateDraftLine(idx, 'expiryDate', e.target.value)}
-                              className="px-2 py-1 border border-slate-300 rounded text-sm"
-                              required
+                              type="number"
+                              min="0"
+                              value={line.receivedQuantity}
+                              onChange={(e) => updateDraftLine(idx, 'receivedQuantity', e.target.value)}
+                              className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
                             />
-                          ) : (
-                            <span className="text-slate-300 text-xs">N/A</span>
-                          )}
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={line.receivedRate}
+                              onChange={(e) => updateDraftLine(idx, 'receivedRate', e.target.value)}
+                              className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder="optional"
+                              value={line.retailPrice}
+                              onChange={(e) => updateDraftLine(idx, 'retailPrice', e.target.value)}
+                              className="w-24 px-2 py-1 border border-slate-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            {line.hasExpiry ? (
+                              <input
+                                type="date"
+                                value={line.expiryDate}
+                                onChange={(e) => updateDraftLine(idx, 'expiryDate', e.target.value)}
+                                className="px-2 py-1 border border-slate-300 rounded text-sm"
+                                required
+                              />
+                            ) : (
+                              <span className="text-slate-300 text-xs">N/A</span>
+                            )}
+                          </td>
+                        </tr>
+                        {/* Manufacturer / Model sub-row */}
+                        <tr className="bg-slate-50/60 border-t border-dashed border-slate-200">
+                          <td colSpan={7} className="px-4 py-1.5">
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                              <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none text-slate-500 whitespace-nowrap">
+                                <input
+                                  type="checkbox"
+                                  checked={line.manufacturerEnabled}
+                                  onChange={(e) => updateDraftLine(idx, 'manufacturerEnabled', e.target.checked)}
+                                  className="w-3.5 h-3.5 accent-indigo-600"
+                                />
+                                Manufacturer
+                              </label>
+                              {line.manufacturerEnabled && (
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Siemens, Philips..."
+                                  value={line.manufacturer}
+                                  onChange={(e) => updateDraftLine(idx, 'manufacturer', e.target.value)}
+                                  className="px-2 py-1 border border-indigo-300 rounded text-xs w-44 focus:outline-none focus:border-indigo-500"
+                                  autoFocus
+                                />
+                              )}
+                              <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none text-slate-500 whitespace-nowrap">
+                                <input
+                                  type="checkbox"
+                                  checked={line.modelEnabled}
+                                  onChange={(e) => updateDraftLine(idx, 'modelEnabled', e.target.checked)}
+                                  className="w-3.5 h-3.5 accent-indigo-600"
+                                />
+                                Model
+                              </label>
+                              {line.modelEnabled && (
+                                <input
+                                  type="text"
+                                  placeholder="e.g. XR-200, Pro-V3..."
+                                  value={line.model}
+                                  onChange={(e) => updateDraftLine(idx, 'model', e.target.value)}
+                                  className="px-2 py-1 border border-indigo-300 rounded text-xs w-44 focus:outline-none focus:border-indigo-500"
+                                />
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>

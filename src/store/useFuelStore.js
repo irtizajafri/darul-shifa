@@ -20,8 +20,48 @@ export const useFuelStore = create((set) => ({
   dailySheets: [],
   fuelStock: [],
   fuelBalance: null,
+  tanks: [],
+  transfers: [],
   loading: false,
   error: null,
+
+  // ── Fuel Tanks ────────────────────────────────────────────────────────────
+  fetchTanks: async () => {
+    const data = await request('/tanks');
+    set({ tanks: Array.isArray(data) ? data : [] });
+  },
+
+  createTank: async (payload) => {
+    const data = await request('/tanks', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ tanks: [...s.tanks, data] }));
+    return data;
+  },
+
+  updateTank: async (id, payload) => {
+    const data = await request(`/tanks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    set((s) => ({ tanks: s.tanks.map((t) => (t.id === id ? data : t)) }));
+    return data;
+  },
+
+  // ── Fuel Transfers (Tank → Generator) ─────────────────────────────────────
+  fetchTransfers: async ({ tankId, generatorId } = {}) => {
+    const qs = new URLSearchParams();
+    if (tankId) qs.set('tankId', tankId);
+    if (generatorId) qs.set('generatorId', generatorId);
+    const data = await request(`/transfers?${qs}`);
+    set({ transfers: Array.isArray(data) ? data : [] });
+  },
+
+  createTransfer: async (payload) => {
+    const data = await request('/transfers', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ transfers: [data, ...s.transfers] }));
+    return data;
+  },
+
+  deleteTransfer: async (id) => {
+    await request(`/transfers/${id}`, { method: 'DELETE' });
+    set((s) => ({ transfers: s.transfers.filter((t) => t.id !== id) }));
+  },
 
   // ── Generators ────────────────────────────────────────────────────────────
   fetchGenerators: async () => {
@@ -134,6 +174,14 @@ export const useFuelStore = create((set) => ({
     set((s) => ({ generatorEntries: s.generatorEntries.filter((e) => e.id !== id) }));
   },
 
+  // ── Daily Report ──────────────────────────────────────────────────────────
+  fetchDailyFuelReport: async ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    return request(`/daily-report?${qs}`);
+  },
+
   // ── Fuel Stock ────────────────────────────────────────────────────────────
   fetchFuelBalance: async () => {
     try {
@@ -143,9 +191,10 @@ export const useFuelStore = create((set) => ({
     } catch (err) { return null; }
   },
 
-  fetchFuelStock: async () => {
+  fetchFuelStock: async (tankId) => {
     try {
-      const data = await request('/stock');
+      const qs = tankId ? `?tankId=${tankId}` : '';
+      const data = await request(`/stock${qs}`);
       set({ fuelStock: Array.isArray(data) ? data : [] });
     } catch (err) { throw err; }
   },

@@ -264,3 +264,132 @@ export const InventoryReportsIllustration = () => (
     </g>
   </svg>
 );
+
+export const MaintenanceIllustration = () => (
+  <svg viewBox="0 0 160 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    {/* Clipboard / MO sheet */}
+    <rect x="6" y="18" width="54" height="72" rx="4" fill="white" stroke="#cbd5e1" strokeWidth="1.5"/>
+    <rect x="6" y="18" width="54" height="16" rx="4" fill="#7c3aed"/>
+    <rect x="6" y="28" width="54" height="6" fill="#7c3aed"/>
+    <rect x="22" y="12" width="22" height="10" rx="3" fill="#6d28d9"/>
+    <rect x="14" y="42" width="38" height="3" rx="1.5" fill="#94a3b8"/>
+    <rect x="14" y="50" width="28" height="3" rx="1.5" fill="#94a3b8"/>
+    <rect x="14" y="58" width="34" height="3" rx="1.5" fill="#94a3b8"/>
+    <rect x="14" y="66" width="22" height="3" rx="1.5" fill="#94a3b8"/>
+    {/* Status badge */}
+    <rect x="14" y="74" width="36" height="10" rx="3" fill="#fef3c7"/>
+    <rect x="17" y="77" width="7" height="4" rx="1" fill="#f59e0b"/>
+    <rect x="27" y="78" width="20" height="2.5" rx="1" fill="#92400e" opacity="0.7"/>
+    {/* Big wrench */}
+    <g transform="translate(122, 68) rotate(-38)">
+      <rect x="-5" y="-44" width="10" height="56" rx="5" fill="#7c3aed"/>
+      <circle cx="0" cy="-44" r="14" fill="none" stroke="#7c3aed" strokeWidth="6"/>
+      <rect x="-14" y="-51" width="28" height="10" rx="3" fill="#7c3aed"/>
+      <circle cx="0" cy="14" r="12" fill="#7c3aed"/>
+      <circle cx="0" cy="14" r="5" fill="white" opacity="0.4"/>
+    </g>
+    {/* Gear */}
+    <g transform="translate(106, 36)">
+      <circle r="20" fill="#ddd6fe" stroke="#6d28d9" strokeWidth="2.5"/>
+      <circle r="11" fill="#a78bfa" stroke="#6d28d9" strokeWidth="2"/>
+      <circle r="5" fill="#6d28d9"/>
+      {[0,45,90,135,180,225,270,315].map((a, i) => (
+        <rect key={i} x="-3.5" y="-23" width="7" height="8" rx="2" fill="#6d28d9" transform={`rotate(${a})`}/>
+      ))}
+    </g>
+    {/* Screwdriver */}
+    <g transform="translate(144, 100) rotate(40)">
+      <rect x="-3" y="-36" width="6" height="44" rx="3" fill="#f97316"/>
+      <rect x="-5" y="-36" width="10" height="14" rx="2" fill="#ea580c"/>
+      <rect x="-2" y="8" width="4" height="12" rx="1" fill="#94a3b8"/>
+    </g>
+    {/* Repair spark */}
+    <path d="M 70 90 L 78 78 L 74 82 L 82 68" stroke="#fbbf24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  </svg>
+);
+
+export const MRNIllustration = () => (
+  <svg viewBox="0 0 160 130" xmlns="http://www.w3.org/2020/svg" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    {/* Store shelf (destination) */}
+    <rect x="4" y="96" width="68" height="6" rx="2" fill="#334155"/>
+    <rect x="4" y="70" width="68" height="6" rx="2" fill="#334155"/>
+    <rect x="4" y="44" width="68" height="6" rx="2" fill="#334155"/>
+    <rect x="4" y="44" width="4" height="58" rx="2" fill="#334155"/>
+    <rect x="68" y="44" width="4" height="58" rx="2" fill="#334155"/>
+    {/* Items on shelf */}
+    <rect x="10" y="78" width="14" height="18" rx="2" fill="#93c5fd"/>
+    <rect x="27" y="80" width="14" height="16" rx="2" fill="#6ee7b7"/>
+    <rect x="44" y="76" width="14" height="20" rx="2" fill="#fcd34d"/>
+    <rect x="10" y="52" width="14" height="18" rx="2" fill="#a5b4fc"/>
+    <rect x="27" y="54" width="14" height="16" rx="2" fill="#93c5fd"/>
+    {/* Return arrow — curved, prominent */}
+    <path d="M 118 38 C 148 38 155 65 140 82 C 128 96 108 98 90 90"
+      stroke="#10b981" strokeWidth="5" fill="none" strokeLinecap="round"/>
+    <path d="M 84 85 L 90 93 L 98 87" stroke="#10b981" strokeWidth="4"
+      strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+    {/* Returning box */}
+    <g transform="translate(124, 65)">
+      <rect x="-18" y="-16" width="36" height="32" rx="3" fill="#d97706"/>
+      <rect x="-18" y="-16" width="36" height="32" rx="3" fill="none" stroke="#92400e" strokeWidth="1.5"/>
+      <path d="M -18 -16 L -26 -28 L 0 -32 L 0 -16 Z" fill="#f59e0b" stroke="#92400e" strokeWidth="1"/>
+      <path d="M 18 -16 L 26 -28 L 0 -32 L 0 -16 Z" fill="#fbbf24" stroke="#92400e" strokeWidth="1"/>
+      <line x1="-18" y1="0" x2="18" y2="0" stroke="#92400e" strokeWidth="1" opacity="0.5"/>
+      <line x1="0" y1="-16" x2="0" y2="16" stroke="#92400e" strokeWidth="1" opacity="0.5"/>
+    </g>
+    {/* MRN tag */}
+    <rect x="88" y="104" width="64" height="20" rx="4" fill="#059669"/>
+    <text x="96" y="118" fontSize="9" fontWeight="bold" fill="white" fontFamily="Arial, sans-serif">MRN</text>
+    <rect x="128" y="108" width="18" height="4" rx="1.5" fill="white" opacity="0.6"/>
+    <rect x="128" y="115" width="12" height="4" rx="1.5" fill="white" opacity="0.4"/>
+    {/* Green check */}
+    <circle cx="26" cy="32" r="13" fill="#059669" opacity="0.15"/>
+    <circle cx="26" cy="32" r="13" fill="none" stroke="#059669" strokeWidth="2.5"/>
+    <path d="M 19 32 L 24 37 L 33 25" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+  </svg>
+);
+
+export const FuelManagementIllustration = () => (
+  <svg viewBox="0 0 160 130" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    {/* Fuel drum / barrel */}
+    <ellipse cx="36" cy="38" rx="26" ry="10" fill="#1e3a5f"/>
+    <rect x="10" y="38" width="52" height="56" fill="#1e4d7b"/>
+    <ellipse cx="36" cy="94" rx="26" ry="10" fill="#1e3a5f"/>
+    {/* Barrel rings */}
+    <ellipse cx="36" cy="54" rx="26" ry="5" fill="none" stroke="#93c5fd" strokeWidth="2.5" opacity="0.5"/>
+    <ellipse cx="36" cy="70" rx="26" ry="5" fill="none" stroke="#93c5fd" strokeWidth="2.5" opacity="0.5"/>
+    <ellipse cx="36" cy="86" rx="26" ry="5" fill="none" stroke="#93c5fd" strokeWidth="2.5" opacity="0.5"/>
+    {/* Fuel level inside barrel (fill indicator) */}
+    <ellipse cx="36" cy="70" rx="23" ry="4" fill="#fbbf24" opacity="0.9"/>
+    <rect x="13" y="70" width="46" height="24" fill="#fbbf24" opacity="0.3"/>
+    <ellipse cx="36" cy="94" rx="23" ry="4" fill="#f59e0b" opacity="0.7"/>
+    {/* Spout on top */}
+    <rect x="32" y="26" width="8" height="14" rx="3" fill="#94a3b8"/>
+    <rect x="28" y="24" width="16" height="6" rx="3" fill="#64748b"/>
+    {/* Generator body */}
+    <rect x="84" y="50" width="70" height="50" rx="6" fill="#374151"/>
+    <rect x="84" y="50" width="70" height="50" rx="6" fill="none" stroke="#1f2937" strokeWidth="2"/>
+    {/* Generator panel */}
+    <rect x="90" y="58" width="28" height="34" rx="3" fill="#1f2937"/>
+    <circle cx="104" cy="68" r="7" fill="none" stroke="#fbbf24" strokeWidth="2.5"/>
+    <circle cx="104" cy="68" r="3" fill="#fbbf24"/>
+    <rect x="92" y="80" width="8" height="5" rx="1.5" fill="#22c55e"/>
+    <rect x="103" y="80" width="8" height="5" rx="1.5" fill="#ef4444"/>
+    <rect x="92" y="88" width="19" height="3" rx="1" fill="#374151"/>
+    {/* Exhaust pipe */}
+    <rect x="148" y="44" width="6" height="22" rx="3" fill="#6b7280"/>
+    <ellipse cx="151" cy="44" rx="3" ry="5" fill="#4b5563"/>
+    {/* Exhaust smoke */}
+    <circle cx="151" cy="34" r="5" fill="#9ca3af" opacity="0.4"/>
+    <circle cx="155" cy="26" r="4" fill="#9ca3af" opacity="0.3"/>
+    <circle cx="150" cy="18" r="3" fill="#9ca3af" opacity="0.2"/>
+    {/* Power bolt */}
+    <path d="M 126 56 L 120 72 L 126 72 L 118 90 L 136 68 L 128 68 Z"
+      fill="#fbbf24" stroke="#d97706" strokeWidth="1"/>
+    {/* Ground line */}
+    <rect x="84" y="100" width="70" height="6" rx="3" fill="#1f2937" opacity="0.5"/>
+    <line x1="84" y1="106" x2="154" y2="106" stroke="#374151" strokeWidth="1"/>
+    {/* Fuel pipe from drum to generator */}
+    <path d="M 62 72 Q 72 72 72 80 Q 72 90 84 90"
+      stroke="#fbbf24" strokeWidth="3" fill="none" strokeLinecap="round" strokeDasharray="5 3"/>
+  </svg>
+);

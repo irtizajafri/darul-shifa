@@ -452,27 +452,36 @@ export function generateSalesInvoicePdf({ inv, mode = 'download' }) {
 }
 
 /**
- * Generates a Maintenance / Repair Bill PDF (Portrait A4)
+ * Generates a Maintenance Note / Gate Pass PDF (Portrait A4)
  * billType: 'sent'     → Bill 1 (item sent for repair)
  * billType: 'received' → Bill 2 (item received back)
  * mode: 'download' | 'print'
  */
-export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = 'download' }) {
+export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = 'download', printedBy = '', generatedAt = '' }) {
   if (!record) return;
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageWidth  = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 40;
 
   // ── HEADING ────────────────────────────────────────────────
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text('Maintenance Note', pageWidth / 2, 48, { align: 'center' });
+  doc.text('Maintenance Note / Gate Pass', pageWidth / 2, 44, { align: 'center' });
+
+  // Bill type subtitle
+  const subtitle = billType === 'sent' ? 'Sent for Repair — Bill 1' : 'Received from Repair — Bill 2';
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text(subtitle, pageWidth / 2, 58, { align: 'center' });
+  doc.setTextColor(0, 0, 0);
 
   // Blue divider
   doc.setLineWidth(1);
   doc.setDrawColor(30, 64, 175);
-  doc.line(margin, 58, pageWidth - margin, 58);
+  doc.line(margin, 66, pageWidth - margin, 66);
 
   // ── META INFO ──────────────────────────────────────────────
   const moNo = record.moNumber || String(record.id);
@@ -482,44 +491,47 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
   const receivedDate = record.receivedDate
     ? new Date(record.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '-';
-
   const assetTags =
     Array.isArray(record.assetInstances) && record.assetInstances.length > 0
       ? record.assetInstances.map((a) => a.assetTag).join(', ')
       : '-';
+  const employeeName = record.employee
+    ? `${record.employee.firstName || ''} ${record.employee.lastName || ''}`.trim()
+    : '-';
 
   doc.setFontSize(10);
   doc.setDrawColor(0, 0, 0);
 
+  let ly = 82; // left column y start
+  const drawMeta = (label, value, y, isLeft = true) => {
+    const lx = isLeft ? margin : pageWidth - margin - 160;
+    const vx = isLeft ? margin + 72 : pageWidth - margin;
+    const valign = isLeft ? 'left' : 'right';
+    doc.setFont('helvetica', 'bold');   doc.text(`${label}:`, lx, y);
+    doc.setFont('helvetica', 'normal'); doc.text(String(value || '-'), isLeft ? vx : vx, y, isLeft ? {} : { align: 'right' });
+  };
+
   // Left column
-  doc.setFont('helvetica', 'bold');   doc.text('MO No:', margin, 76);
-  doc.setFont('helvetica', 'normal'); doc.text(moNo, margin + 48, 76);
-
-  doc.setFont('helvetica', 'bold');   doc.text('Item:', margin, 92);
-  doc.setFont('helvetica', 'normal'); doc.text(record.item?.name || '-', margin + 36, 92);
-
-  doc.setFont('helvetica', 'bold');   doc.text('Asset Tags:', margin, 108);
-  doc.setFont('helvetica', 'normal'); doc.text(assetTags, margin + 64, 108);
-
-  doc.setFont('helvetica', 'bold');   doc.text('Vendor:', margin, 124);
-  doc.setFont('helvetica', 'normal'); doc.text(record.supplier?.name || '-', margin + 48, 124);
+  drawMeta('MO No',      moNo,                     82,  true);
+  drawMeta('Item',       record.item?.name || '-',  98,  true);
+  drawMeta('Asset Tags', assetTags,                 114, true);
+  drawMeta('Vendor',     record.supplier?.name || '-', 130, true);
+  drawMeta('Employee',   employeeName,              146, true);
 
   // Right column
-  doc.setFont('helvetica', 'bold');   doc.text('Date Sent:', pageWidth - margin - 150, 76);
-  doc.setFont('helvetica', 'normal'); doc.text(sentDate, pageWidth - margin - 70, 76);
-
+  drawMeta('Date Sent', sentDate, 82, false);
   if (billType === 'received') {
-    doc.setFont('helvetica', 'bold');   doc.text('Date Received:', pageWidth - margin - 150, 92);
-    doc.setFont('helvetica', 'normal'); doc.text(receivedDate, pageWidth - margin - 70, 92);
-
-    doc.setFont('helvetica', 'bold');   doc.text('Checked By:', pageWidth - margin - 150, 108);
-    doc.setFont('helvetica', 'normal'); doc.text(record.checkedBy || '-', pageWidth - margin - 70, 108);
+    drawMeta('Date Rcvd', receivedDate,          98,  false);
+    drawMeta('Checked By', record.checkedBy || '-', 114, false);
+    if (record.warrantyDays) {
+      drawMeta('Warranty', `${record.warrantyDays} days`, 130, false);
+    }
   }
 
   // Grey divider
   doc.setLineWidth(0.5);
   doc.setDrawColor(180, 180, 180);
-  const divY = billType === 'received' ? 136 : 136;
+  const divY = 162;
   doc.line(margin, divY, pageWidth - margin, divY);
 
   // ── TABLE ──────────────────────────────────────────────────
@@ -531,14 +543,14 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
 
   autoTable(doc, {
     startY: divY + 10,
-    head: [['S.No', 'Nature of Repair', 'Cost']],
+    head: [['S.No', 'Nature of Repair', 'Estimated Cost']],
     body: tableBody,
     styles: { fontSize: 10, cellPadding: 6 },
     headStyles: { fillColor: [152, 152, 152], textColor: 255, fontStyle: 'bold' },
     columnStyles: {
       0: { halign: 'center', cellWidth: 40 },
       1: { halign: 'left' },
-      2: { halign: 'right', cellWidth: 100 },
+      2: { halign: 'right', cellWidth: 120 },
     },
     margin: { left: margin, right: margin },
   });
@@ -558,7 +570,6 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
   doc.setDrawColor(180, 180, 180);
 
   if (billType === 'sent') {
-    // Bill 1 — show estimated cost only
     doc.text('Estimated Cost:', labelX, y);
     doc.text(
       estimatedCost != null ? `PKR ${estimatedCost.toLocaleString()}` : '-',
@@ -587,19 +598,15 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
     if (record.status === 'discarded') {
       const gdnList = Array.isArray(record.gdns) ? record.gdns : [];
       const scrapVal = gdnList.length > 0 ? gdnList[0].scrapValue : null;
-
       if (scrapVal != null) {
         y += 18;
-        doc.setTextColor(0, 0, 0);
         doc.text('Scrap Value:', labelX, y);
         doc.text(`PKR ${Number(scrapVal).toLocaleString()}`, valueX, y, { align: 'right' });
       }
-
       y += 10;
       doc.setLineWidth(0.8);
       doc.setDrawColor(30, 64, 175);
       doc.line(labelX, y, valueX, y);
-
       y += 16;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
@@ -612,7 +619,6 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
       doc.setLineWidth(0.8);
       doc.setDrawColor(30, 64, 175);
       doc.line(labelX, y, valueX, y);
-
       y += 16;
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
@@ -621,6 +627,46 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
       doc.setTextColor(0, 0, 0);
     }
   }
+
+  // ── SIGNATURES ─────────────────────────────────────────────
+  const sigY = Math.max(y + 60, tableEndY + 130);
+  const sigLineW = 90;
+  const sigPositions = [
+    { x: margin,                          label: 'Store Keeper'  },
+    { x: pageWidth / 2 - sigLineW / 2,   label: 'Employee'      },
+    { x: pageWidth - margin - sigLineW,   label: 'C.E.O.'        },
+  ];
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setDrawColor(100, 100, 100);
+  sigPositions.forEach(({ x, label }) => {
+    doc.setLineWidth(0.6);
+    doc.line(x, sigY, x + sigLineW, sigY);
+    doc.text(label, x + sigLineW / 2, sigY + 12, { align: 'center' });
+  });
+
+  // ── GENERATED BY FOOTER ────────────────────────────────────
+  const footerY = pageHeight - 18;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(140, 140, 140);
+  doc.setLineWidth(0.3);
+  doc.setDrawColor(200, 200, 200);
+  doc.line(margin, footerY - 6, pageWidth - margin, footerY - 6);
+
+  const footerParts = [];
+  if (printedBy)   footerParts.push(`Generated by: ${printedBy}`);
+  if (generatedAt) {
+    const dt = new Date(generatedAt);
+    const formatted = dt.toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      + ' ' + dt.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit' });
+    footerParts.push(`Date & Time: ${formatted}`);
+  }
+  if (footerParts.length > 0) {
+    doc.text(footerParts.join('   |   '), margin, footerY);
+  }
+
+  doc.setTextColor(0, 0, 0);
 
   // ── OUTPUT ─────────────────────────────────────────────────
   const fileName = `maintenance-${moNo}-${billType}.pdf`;

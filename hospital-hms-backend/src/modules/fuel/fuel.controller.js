@@ -80,9 +80,23 @@ module.exports = {
     success(res, null, 'Entry deleted');
   }),
 
+  // Fuel tanks
+  listTanks: wrap(async (req, res) => {
+    const data = await service.listTanks();
+    success(res, data);
+  }),
+  createTank: wrap(async (req, res) => {
+    const data = await service.createTank(req.body);
+    success(res, data, 'Tank created');
+  }),
+  updateTank: wrap(async (req, res) => {
+    const data = await service.updateTank(req.params.id, req.body);
+    success(res, data, 'Tank updated');
+  }),
+
   // Fuel stock
   listFuelStock: wrap(async (req, res) => {
-    const data = await service.listFuelStock();
+    const data = await service.listFuelStock(req.query.tankId);
     success(res, data);
   }),
   createFuelStock: wrap(async (req, res) => {
@@ -93,6 +107,21 @@ module.exports = {
     await service.deleteFuelStock(req.params.id);
     success(res, null, 'Deleted');
   }),
+
+  // Fuel transfers (Tank → Generator)
+  listTransfers: wrap(async (req, res) => {
+    const data = await service.listTransfers(req.query);
+    success(res, data);
+  }),
+  createTransfer: wrap(async (req, res) => {
+    const data = await service.createTransfer(req.body);
+    success(res, data, 'Fuel transferred');
+  }),
+  deleteTransfer: wrap(async (req, res) => {
+    await service.deleteTransfer(req.params.id);
+    success(res, null, 'Transfer deleted');
+  }),
+
   getFuelBalance: wrap(async (req, res) => {
     const data = await service.getFuelBalance();
     success(res, data);
@@ -120,5 +149,10 @@ module.exports = {
   deleteDailySheet: wrap(async (req, res) => {
     await service.deleteDailySheet(req.params.id);
     success(res, null, 'Daily sheet deleted');
+  }),
+
+  getDailyReport: wrap(async (req, res) => {
+    const data = await service.getDailyReport(req.query);
+    success(res, data);
   }),
 };

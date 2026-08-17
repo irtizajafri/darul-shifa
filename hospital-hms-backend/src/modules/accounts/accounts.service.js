@@ -253,20 +253,21 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   if (!head) return { type: null, headName: null, headId: null, entries: [], checkedNames: [] };
 
   if (head.sourceType === 'employee') {
-    const now = new Date();
-    const m = now.getMonth();
-    const prevMonth = String(m === 0 ? 12 : m).padStart(2, '0');
-    const prevYear  = String(m === 0 ? now.getFullYear() - 1 : now.getFullYear());
-    const paid = await prisma.employeeSalaryPayment.findMany({
-      where: { salaryMonth: prevMonth, salaryYear: prevYear },
-      select: { empCode: true },
+    const checkedEntries = await prisma.accPayeeEntry.findMany({
+      where: { payeeHeadId: head.id, subAccountId: Number(subAccountId) },
+      select: { name: true },
     });
-    const paidCodes = new Set(paid.map((p) => p.empCode));
+    const checkedNames = checkedEntries.map((e) => e.name);
     const rows = await prisma.employee.findMany({
+      where: { status: 'Active' },
       select: { id: true, firstName: true, lastName: true, empCode: true },
       orderBy: { firstName: 'asc' },
     });
-    return { type: 'employee', headName: head.name, headId: head.id, entries: rows.filter((e) => !paidCodes.has(e.empCode)).map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode })), checkedNames: [] };
+    const allEmps = rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode }));
+    const filteredEntries = checkedNames.length > 0
+      ? allEmps.filter((e) => checkedNames.includes(e.name))
+      : allEmps;
+    return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: allEmps, checkedNames };
   }
 
   if (head.sourceType === 'vendor') {
@@ -287,12 +288,21 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   }
 
   if (head.sourceType === 'doctor') {
+    const checkedEntries = await prisma.accPayeeEntry.findMany({
+      where: { payeeHeadId: head.id, subAccountId: Number(subAccountId) },
+      select: { name: true },
+    });
+    const checkedNames = checkedEntries.map((e) => e.name);
     const rows = await prisma.clinicDoctor.findMany({
       where: { status: 'active' },
       select: { id: true, name: true, code: true },
       orderBy: { name: 'asc' },
     });
-    return { type: 'doctor', headName: head.name, entries: rows };
+    const allDoctors = rows.map((d) => ({ id: d.id, name: d.name, code: d.code }));
+    const filteredEntries = checkedNames.length > 0
+      ? allDoctors.filter((d) => checkedNames.includes(d.name))
+      : allDoctors;
+    return { type: 'doctor', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: allDoctors, checkedNames };
   }
 
   if (head.sourceType === 'inventory') {
@@ -520,6 +530,50 @@ async function getVoucherExpenses(entityType) {
   });
 }
 
+// Voucher # is never reassigned on edit — only the date/mode/bank/entries can
+// change. Entries are replaced wholesale (delete + recreate) since there's no
+// stable per-entry id coming back from the form.
+async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) {
+  const existing = await prisma.accVoucherExpense.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw Object.assign(new Error('At least one entry is required'), { status: 400 });
+  }
+
+  const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
+  const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+
+  await prisma.accVoucherExpenseEntry.deleteMany({ where: { voucherId: Number(id) } });
+
+  return prisma.accVoucherExpense.update({
+    where: { id: Number(id) },
+    data: {
+      voucherType,
+      voucherDate: new Date(voucherDate),
+      mode,
+      bankId: bankId ? Number(bankId) : null,
+      totalAmount,
+      entries: {
+        create: entries.map((e) => ({
+          mainGlId: Number(e.mainGlId),
+          subGlId: Number(e.subGlId),
+          mainAccountId: Number(e.mainAccountId),
+          subAccountId: e.subAccountId ? Number(e.subAccountId) : null,
+          accountCode: e.accountCode,
+          accountName: e.accountName,
+          payeeName: e.payeeName || null,
+          amount: Number(e.amount),
+          chequeNo: e.chequeNo || null,
+          chequeDate: e.chequeDate ? new Date(e.chequeDate) : null,
+          chequeType: e.chequeType || null,
+          particulars: e.particulars || null,
+        })),
+      },
+    },
+    include: { entries: true },
+  });
+}
+
 async function getIncomeCategories(entityType) {
   return prisma.accIncomeCategory.findMany({ where: { entityType }, orderBy: { id: 'asc' } });
 }
@@ -594,6 +648,44 @@ async function getVoucherIncomes(entityType) {
     where: { entityType },
     include: { entries: true },
     orderBy: { createdAt: 'desc' },
+  });
+}
+
+// Auto-generated (Day Close) vouchers are meant to stay frozen — reject the
+// edit outright rather than silently letting one drift from what was booked.
+async function updateVoucherIncome(id, { mode, bankId, voucherDate, entries }) {
+  const existing = await prisma.accVoucherIncome.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
+  if (existing.source === 'auto') {
+    throw Object.assign(new Error('Auto-generated (Day Close) vouchers cannot be edited'), { status: 403 });
+  }
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw Object.assign(new Error('At least one entry is required'), { status: 400 });
+  }
+
+  const voucherType = mode === 'cash' ? 'CASH' : mode === 'card' ? 'CARD' : 'BANK';
+  const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+
+  await prisma.accVoucherIncomeEntry.deleteMany({ where: { voucherId: Number(id) } });
+
+  return prisma.accVoucherIncome.update({
+    where: { id: Number(id) },
+    data: {
+      voucherType,
+      voucherDate: new Date(voucherDate),
+      mode,
+      bankId: bankId ? Number(bankId) : null,
+      totalAmount,
+      entries: {
+        create: entries.map((e) => ({
+          incomeCategoryId:   e.incomeCategoryId ? Number(e.incomeCategoryId) : null,
+          incomeCategoryName: e.incomeCategoryName || null,
+          amount:             Number(e.amount),
+          particulars:        e.particulars || null,
+        })),
+      },
+    },
+    include: { entries: true },
   });
 }
 
@@ -1020,9 +1112,9 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
-  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
-  createVoucherIncome, getVoucherIncomes,
+  createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummaryMatrix,
   createBankDeposit, getBankDeposits, getBankDepositForDate,
