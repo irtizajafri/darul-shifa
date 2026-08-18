@@ -590,6 +590,10 @@ async function deleteIncomeCategory(id) {
   return prisma.accIncomeCategory.delete({ where: { id: Number(id) } });
 }
 
+function normDoctorRateName(s) {
+  return String(s || '').toLowerCase().replace(/[-._]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   // Panel patients are billed to the panel/company, not paid in cash by the
   // patient — the doctor/consultant is not paid out of these visits, so they
@@ -598,10 +602,38 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   const where = { doctor: doctorName, isPaid: false, paymentType: { not: 'Panel' } };
   if (dateFrom) where.visitDate = { ...(where.visitDate || {}), gte: new Date(dateFrom) };
   if (dateTo)   where.visitDate = { ...(where.visitDate || {}), lte: new Date(dateTo) };
-  return prisma.patientVisit.findMany({
-    where,
-    orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
-    select: { id: true, serialNo: true, visitDate: true, visitTime: true, patientName: true, subDepartment: true, paymentType: true, received: true },
+
+  const [visits, rateRows] = await Promise.all([
+    prisma.patientVisit.findMany({
+      where,
+      orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
+      select: { id: true, serialNo: true, visitDate: true, visitTime: true, patientName: true, subDepartment: true, paymentType: true, received: true },
+    }),
+    // Same doctor/sub-department fee-share table the Consultant Wise Report
+    // uses (Clinic → Doctors → Sub-Department Rates) — reused here so the
+    // voucher amount matches that report instead of paying out the full
+    // patient-collected amount.
+    clinicSvc.getDoctorSubDeptRates(),
+  ]);
+
+  const dk = normDoctorRateName(doctorName);
+  const bySubDept = {};
+  let firstRate = null;
+  for (const r of rateRows) {
+    if (normDoctorRateName(r.doctorName) !== dk) continue;
+    const sk = normDoctorRateName(r.subDeptName);
+    if (!bySubDept[sk]) bySubDept[sk] = r;
+    if (!firstRate) firstRate = r;
+  }
+
+  return visits.map((v) => {
+    const received = Number(v.received || 0);
+    const rate = bySubDept[normDoctorRateName(v.subDepartment)] || firstRate;
+    const hasRate = !!(rate && rate.normalFees);
+    const payableAmount = hasRate
+      ? (rate.paymentType === 'percent' ? received * rate.normalFees / 100 : rate.normalFees)
+      : received;
+    return { ...v, received, payableAmount, hasRate, ratePercent: hasRate && rate.paymentType === 'percent' ? rate.normalFees : null };
   });
 }
 

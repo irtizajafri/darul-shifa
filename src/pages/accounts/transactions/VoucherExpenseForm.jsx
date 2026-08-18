@@ -546,7 +546,7 @@ export default function VoucherExpenseForm() {
   };
 
   const cvCheckedTotal = consultantModal?.visits
-    ? consultantModal.visits.filter((v) => checkedVisits[v.id]).reduce((s, v) => s + Number(v.received || 0), 0)
+    ? consultantModal.visits.filter((v) => checkedVisits[v.id]).reduce((s, v) => s + Number(v.payableAmount ?? v.received ?? 0), 0)
     : 0;
 
   // Utility provider payee (k-electric / ssgc / ptcl) — show that category's
@@ -1209,7 +1209,14 @@ export default function VoucherExpenseForm() {
                           <td>{v.patientName}</td>
                           <td>{v.subDepartment || '—'}</td>
                           <td>{v.paymentType || '—'}</td>
-                          <td className="ve-grn-modal__amount">PKR {Number(v.received || 0).toLocaleString()}</td>
+                          <td className="ve-grn-modal__amount">
+                            PKR {Number(v.payableAmount ?? v.received ?? 0).toLocaleString()}
+                            {v.hasRate && Number(v.payableAmount) !== Number(v.received) && (
+                              <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 400 }}>
+                                {v.ratePercent ? `${v.ratePercent}% of ` : 'of '}PKR {Number(v.received || 0).toLocaleString()}
+                              </div>
+                            )}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
