@@ -41,6 +41,7 @@ const menuItems = [
       { label: 'Shift',                path: '/clinic/parameters/shift' },
       { label: 'Credit Card %',        path: '/clinic/parameters/credit-card' },
       { label: 'Death Certificate',    path: '/clinic/parameters/death-certificate' },
+      { label: 'Pharmacy Stores',      path: '/clinic/parameters/pharmacy-stores' },
     ],
   },
   {

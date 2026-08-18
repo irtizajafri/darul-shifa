@@ -461,6 +461,18 @@ async function deleteProvisionalBillItem(req, res, next) {
   }
 }
 
+async function updateProvisionalBillItem(req, res, next) {
+  try {
+    const { roomCategoryId, billHeadId, qty, rate, remarks, patientType } = req.body;
+    const data = await service.updateProvisionalBillItem(req.params.itemId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType });
+    success(res, data, 'Row updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.code === 'P2025') return fail(res, 404, 'Row not found');
+    next(err);
+  }
+}
+
 async function updateProvisionalBillHeader(req, res, next) {
   try {
     const { surgery, surgeryTypeId, dischargeTypeId } = req.body;
@@ -468,6 +480,69 @@ async function updateProvisionalBillHeader(req, res, next) {
     success(res, data, 'Updated');
   } catch (err) {
     if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+// ─── Pharmacy Stores ───────────────────────────────────────────────────────────
+
+async function getPharmacyStores(req, res, next) {
+  try { success(res, await service.getPharmacyStores()); } catch (err) { next(err); }
+}
+
+async function createPharmacyStore(req, res, next) {
+  try {
+    if (!req.body.name?.trim()) return fail(res, 400, 'Store name zaroori hai');
+    success(res, await service.createPharmacyStore(req.body), 'Store added');
+  } catch (err) {
+    if (err.code === 'P2002') return fail(res, 409, 'Ye store naam pehle se maujood hai');
+    next(err);
+  }
+}
+
+async function updatePharmacyStore(req, res, next) {
+  try {
+    success(res, await service.updatePharmacyStore(req.params.id, req.body), 'Store updated');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Store not found');
+    if (err.code === 'P2002') return fail(res, 409, 'Ye store naam pehle se maujood hai');
+    next(err);
+  }
+}
+
+async function deletePharmacyStore(req, res, next) {
+  try {
+    await service.deletePharmacyStore(req.params.id);
+    success(res, null, 'Store deleted');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    if (err.code === 'P2025') return fail(res, 404, 'Store not found');
+    next(err);
+  }
+}
+
+// ─── Provisional Bill > Pharmacy > Outside Hospital Store items ───────────────
+
+async function listProvisionalPharmacyItems(req, res, next) {
+  try { success(res, await service.listProvisionalPharmacyItems(req.params.admissionId)); } catch (err) { next(err); }
+}
+
+async function addProvisionalPharmacyItem(req, res, next) {
+  try {
+    const data = await service.addProvisionalPharmacyItem(req.params.admissionId, req.body);
+    success(res, data, 'Medicine added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deleteProvisionalPharmacyItem(req, res, next) {
+  try {
+    await service.deleteProvisionalPharmacyItem(req.params.itemId);
+    success(res, null, 'Row deleted');
+  } catch (err) {
+    if (err.code === 'P2025') return fail(res, 404, 'Row not found');
     next(err);
   }
 }
@@ -1561,7 +1636,15 @@ module.exports = {
   addProvisionalBillItem,
   addProvisionalBillItemFromVisit,
   deleteProvisionalBillItem,
+  updateProvisionalBillItem,
   updateProvisionalBillHeader,
+  getPharmacyStores,
+  createPharmacyStore,
+  updatePharmacyStore,
+  deletePharmacyStore,
+  listProvisionalPharmacyItems,
+  addProvisionalPharmacyItem,
+  deleteProvisionalPharmacyItem,
   getDischargeBillDetail,
   addDischargeBillItem,
   deleteDischargeBillItem,

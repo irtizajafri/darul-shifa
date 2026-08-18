@@ -199,12 +199,27 @@ function BalanceInfoModal({ detail, onClose }) {
 // ── Print Template ─────────────────────────────────────────────────────────────
 function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
-  const { admission, roomCategory, bed, surgeryType, billItems, diagnosticRows, pharmacyRows, balanceInfo } = detail;
+  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, pharmacyRows, balanceInfo } = detail;
 
   const now = admission.createdAt ? new Date(admission.createdAt) : new Date();
   const dateStr = `${fmtDate(now)} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 
   const groups = {};
+  // Ward History is computed/read-only (not a billItems row) — synthesized
+  // into the same "Amount Distribution" grouping the existing bill format
+  // already uses, exactly like Diagnostic/Pharmacy below, so the printed
+  // layout itself never changes.
+  (wardHistory || []).forEach((seg, idx) => {
+    const label = seg.roomCategory?.name || 'Ward';
+    if (!groups[label]) groups[label] = [];
+    groups[label].push({
+      id: `ward-${idx}`,
+      billHead: { description: `Ward Stay${seg.transferredAt ? '' : ' (Current)'} — ${seg.days} day${seg.days !== 1 ? 's' : ''}` },
+      qty: seg.days,
+      rate: seg.rate,
+      amount: seg.charges,
+    });
+  });
   billItems.forEach((item) => {
     const label = item.roomCategory?.name || 'Other';
     if (!groups[label]) groups[label] = [];
@@ -225,7 +240,7 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
     if (!groups.Pharmacy) groups.Pharmacy = [];
     groups.Pharmacy.push({
       id: `pharm-${row.id}`,
-      billHead: { description: row.medicine },
+      billHead: { description: row.storeName ? `${row.medicine} (${row.storeName})` : row.medicine },
       qty: row.qty,
       rate: row.rate,
       amount: row.amount,
@@ -359,8 +374,12 @@ export default function ProvisionalBill() {
     fetchProvisionalBillDetail,
     addProvisionalBillItem,
     addProvisionalBillItemFromVisit,
+    updateProvisionalBillItem,
     deleteProvisionalBillItem,
     updateProvisionalBillHeader,
+    pharmacyStores, fetchPharmacyStores,
+    addProvisionalPharmacyItem,
+    deleteProvisionalPharmacyItem,
   } = useClinicStore();
 
   const [admissionId, setAdmissionId] = useState(null);
@@ -380,14 +399,19 @@ export default function ProvisionalBill() {
 
   const [row, setRow] = useState({ roomCategoryId: '', patientType: 'In House', billHeadId: '', qty: '1', rate: '', remarks: '' });
   const [addingRow, setAddingRow] = useState(false);
-  const [pharmRow, setPharmRow] = useState({ medDate: '', store: '', medicine: '', dose: '', qty: '', rate: '' });
+  const [editingItemId, setEditingItemId] = useState(null);
+
+  const emptyPharmRow = { storeId: '', medDate: '', medicine: '', dosage: '', qty: '', unit: '', rate: '', remarks: '' };
+  const [pharmRow, setPharmRow] = useState(emptyPharmRow);
+  const [addingPharmRow, setAddingPharmRow] = useState(false);
 
   useEffect(() => {
     fetchRoomCategories();
     fetchBillHeads();
     fetchSurgeryTypes();
     fetchDischargeTypes();
-  }, [fetchRoomCategories, fetchBillHeads, fetchSurgeryTypes, fetchDischargeTypes]);
+    fetchPharmacyStores();
+  }, [fetchRoomCategories, fetchBillHeads, fetchSurgeryTypes, fetchDischargeTypes, fetchPharmacyStores]);
 
   const loadDetail = useCallback(async (id, isFreshSelect) => {
     setLoading(true);
@@ -415,6 +439,21 @@ export default function ProvisionalBill() {
 
   async function handleSelect(rowSel) {
     setShowLookup(false);
+    // Picking a (possibly different) admission is the one funnel every
+    // "switch patient" path goes through (initial lookup, the inline search
+    // icon, "Select Another Admission") — reset per-session state here so it
+    // never leaks from whichever patient was open before:
+    // - isDuplicate: otherwise this patient's very first print would
+    //   wrongly carry the "Duplicate" watermark left over from printing the
+    //   previous patient's bill.
+    // - the Provisional Bill draft row: Ward/PatientType are already reset
+    //   by loadDetail's isFreshSelect branch, but Head/Qty/Rate/Remarks
+    //   aren't — leaving them would let a stale line item slip into the new
+    //   patient's bill if "Add" is clicked before touching those fields.
+    setIsDuplicate(false);
+    setRow(r => ({ ...r, billHeadId: '', qty: '1', rate: '', remarks: '' }));
+    setEditingItemId(null);
+    setPharmRow(emptyPharmRow);
     await loadDetail(rowSel.id, true);
   }
 
@@ -480,14 +519,40 @@ export default function ProvisionalBill() {
     if (!row.billHeadId) return toast.error('Heads select karo');
     setAddingRow(true);
     try {
-      await addProvisionalBillItem(admissionId, row);
+      if (editingItemId) {
+        await updateProvisionalBillItem(editingItemId, row);
+        toast.success('Row updated');
+        setEditingItemId(null);
+      } else {
+        await addProvisionalBillItem(admissionId, row);
+      }
       setRow({ roomCategoryId: row.roomCategoryId, patientType: row.patientType, billHeadId: '', qty: '1', rate: '', remarks: '' });
       await loadDetail(admissionId);
     } catch (e) {
-      toast.error(e.message || 'Row add nahi hui');
+      toast.error(e.message || (editingItemId ? 'Row update nahi hui' : 'Row add nahi hui'));
     } finally {
       setAddingRow(false);
     }
+  }
+
+  // Reuses the same add-form (mirrors VoucherIncomeForm's edit-by-reload-
+  // into-draft pattern) — clicking Edit loads the row's values back in and
+  // "Add" switches to "Update" mode until saved or cancelled.
+  function handleEditRow(item) {
+    setEditingItemId(item.id);
+    setRow({
+      roomCategoryId: item.roomCategoryId != null ? String(item.roomCategoryId) : '',
+      patientType: item.patientType || 'In House',
+      billHeadId: item.billHeadId != null ? String(item.billHeadId) : '',
+      qty: String(item.qty),
+      rate: String(item.rate),
+      remarks: item.remarks || '',
+    });
+  }
+
+  function handleCancelEdit() {
+    setEditingItemId(null);
+    setRow(r => ({ ...r, billHeadId: '', qty: '1', rate: '', remarks: '' }));
   }
 
   async function handleAddPendingSlip(visitId) {
@@ -509,9 +574,36 @@ export default function ProvisionalBill() {
     }
   }
 
+  async function handleAddPharmacyItem() {
+    if (!pharmRow.medicine.trim()) return toast.error('Medicine naam zaroori hai');
+    if (!pharmRow.medDate) return toast.error('Date select karo');
+    setAddingPharmRow(true);
+    try {
+      await addProvisionalPharmacyItem(admissionId, pharmRow);
+      setPharmRow(emptyPharmRow);
+      await loadDetail(admissionId);
+    } catch (e) {
+      toast.error(e.message || 'Medicine add nahi hui');
+    } finally {
+      setAddingPharmRow(false);
+    }
+  }
+
+  async function handleDeletePharmacyItem(itemId) {
+    try {
+      await deleteProvisionalPharmacyItem(itemId);
+      await loadDetail(admissionId);
+    } catch (e) {
+      toast.error(e.message || 'Row delete nahi hui');
+    }
+  }
+
   const provisionalHeads = billHeads.filter(h => h.type === 'provisional' || h.type === 'both');
   const qty = Number(row.qty) || 1;
   const rate = Number(row.rate) || 0;
+  const pharmQty = Number(pharmRow.qty) || 0;
+  const pharmRate = Number(pharmRow.rate) || 0;
+  const activePharmacyStores = pharmacyStores.filter(s => s.status === 'active');
 
   return (
     <>
@@ -557,6 +649,17 @@ export default function ProvisionalBill() {
                 </button>
                 <span className="pb-inline-patient">{detail.admission.patientTitle} {detail.admission.patientName}</span>
                 <div className="pb-hdr-date">{fmtDate(detail.admission.createdAt)}</div>
+              </div>
+
+              <div className="pb-hdr-row">
+                <label className="pb-hdr-lbl">Patient ID</label>
+                <div className="pb-hdr-value">{detail.admission.mrNo != null ? String(detail.admission.mrNo).padStart(3, '0') : '—'}</div>
+                <label className="pb-hdr-lbl">Consultant</label>
+                <div className="pb-hdr-value">{detail.consultant?.name || '—'}</div>
+                <label className="pb-hdr-lbl">Status</label>
+                <span className={`pb-status-badge pb-status-badge--${detail.admission.status}`}>
+                  {{ active: 'Admit', discharge: 'Discharge', closed: 'Closed', wipeout: 'Wipeout' }[detail.admission.status] || detail.admission.status}
+                </span>
               </div>
 
               <div className="pb-hdr-row pb-hdr-row--surgery">
@@ -667,18 +770,49 @@ export default function ProvisionalBill() {
                         <input value={row.remarks} onChange={e => setRow(r => ({ ...r, remarks: e.target.value }))} />
                       </div>
                       <button className="pb-add-btn" onClick={handleAddRow} disabled={addingRow}>
-                        <Plus size={14} /> Add
+                        <Plus size={14} /> {editingItemId ? 'Update' : 'Add'}
                       </button>
+                      {editingItemId && (
+                        <button className="pb-cancel-btn" onClick={handleCancelEdit} type="button">Cancel</button>
+                      )}
                     </div>
                   </div>
 
+                  {detail.wardHistory?.length > 0 && (
+                    <>
+                      <div className="pb-subsection-title">Ward History</div>
+                      <table className="pb-table pb-table--readonly">
+                        <thead>
+                          <tr><th>Ward</th><th>Bed</th><th>Entered</th><th>Transferred</th><th className="r">Days</th><th className="r">Rate</th><th className="r">Charges</th></tr>
+                        </thead>
+                        <tbody>
+                          {detail.wardHistory.map((seg, i) => (
+                            <tr key={i}>
+                              <td>{seg.roomCategory?.name || '—'}</td>
+                              <td>{seg.bed?.name || '—'}</td>
+                              <td>{fmtDateTime(seg.enteredAt)}</td>
+                              <td>{seg.transferredAt ? fmtDateTime(seg.transferredAt) : <em>Current</em>}</td>
+                              <td className="r">{seg.days}</td>
+                              <td className="r">{fmt2(seg.rate)}</td>
+                              <td className="r">{fmt2(seg.charges)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr><td colSpan={6} className="pb-tf-label">Ward Total</td><td className="r">{fmt2(detail.wardAmount)}</td></tr>
+                        </tfoot>
+                      </table>
+                    </>
+                  )}
+
+                  <div className="pb-subsection-title">Bill Heads</div>
                   <table className="pb-table">
                     <thead>
                       <tr><th>Ward Name</th><th>Heads</th><th className="r">Qty.</th><th className="r">Rate</th><th className="r">Amount</th><th>Remarks</th><th>PatType</th><th></th></tr>
                     </thead>
                     <tbody>
                       {detail.billItems.map(i => (
-                        <tr key={i.id}>
+                        <tr key={i.id} className={editingItemId === i.id ? 'pb-row--editing' : ''}>
                           <td>{i.roomCategory?.name || '—'}</td>
                           <td>{i.billHead?.description || i.billHead?.headCode || '—'}</td>
                           <td className="r">{i.qty}</td>
@@ -686,7 +820,10 @@ export default function ProvisionalBill() {
                           <td className="r">{fmt2(i.amount)}</td>
                           <td>{i.remarks || ''}</td>
                           <td>{i.patientType || ''}</td>
-                          <td><button className="pb-del" onClick={() => handleDeleteRow(i.id)}>✕</button></td>
+                          <td className="pb-row-actions">
+                            <button className="pb-edit" onClick={() => handleEditRow(i)} title="Edit">✎</button>
+                            <button className="pb-del" onClick={() => handleDeleteRow(i.id)} title="Delete">✕</button>
+                          </td>
                         </tr>
                       ))}
                       {!detail.billItems.length && (
@@ -698,36 +835,57 @@ export default function ProvisionalBill() {
               )}
 
               {tab === 'Diagnostic Bill' && (
-                <table className="pb-table">
-                  <thead>
-                    <tr><th>Date</th><th>ConCode</th><th>Lab/USound/XRay</th><th>Particulars</th><th className="r">Amount</th></tr>
-                  </thead>
-                  <tbody>
-                    {detail.diagnosticRows.map(r => (
-                      <tr key={r.id}>
-                        <td>{fmtDate(r.date)}</td>
-                        <td>{r.conCode || '—'}</td>
-                        <td>{r.department}</td>
-                        <td>{r.particulars || '—'}</td>
-                        <td className="r">{fmt2(r.amount)}</td>
-                      </tr>
-                    ))}
-                    {!detail.diagnosticRows.length && (
-                      <tr><td colSpan={5} className="pb-empty">Koi diagnostic test admit no se link nahi hua</td></tr>
-                    )}
-                  </tbody>
-                </table>
+                <>
+                  {detail.pendingDiagnosticSlips?.length > 0 && (
+                    <div className="pb-pending-box">
+                      <div className="pb-pending-title">Pending Diagnostic Slips — Radiology/Ultrasound/Echo/Doppler (double-click to add)</div>
+                      <table className="pb-pending-tbl">
+                        <thead>
+                          <tr><th>Department</th><th>Date</th><th className="r">Amount</th></tr>
+                        </thead>
+                        <tbody>
+                          {detail.pendingDiagnosticSlips.map(s => (
+                            <tr key={s.id} onDoubleClick={() => handleAddPendingSlip(s.id)} title="Double-click to add">
+                              <td>{s.department}</td>
+                              <td>{fmtDate(s.date)}</td>
+                              <td className="r">{fmt2(s.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <table className="pb-table">
+                    <thead>
+                      <tr><th>Date</th><th>ConCode</th><th>Lab/USound/XRay</th><th>Particulars</th><th className="r">Amount</th></tr>
+                    </thead>
+                    <tbody>
+                      {detail.diagnosticRows.map(r => (
+                        <tr key={r.id}>
+                          <td>{fmtDate(r.date)}</td>
+                          <td>{r.conCode || '—'}</td>
+                          <td>{r.department}</td>
+                          <td>{r.particulars || '—'}</td>
+                          <td className="r">{fmt2(r.amount)}</td>
+                        </tr>
+                      ))}
+                      {!detail.diagnosticRows.length && (
+                        <tr><td colSpan={5} className="pb-empty">Koi diagnostic test admit no se link nahi hua</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </>
               )}
 
               {tab === 'Pharmacy Bill' && (
                 <>
-                  <div className="pb-pharmacy-auto-title">From Sales Invoice (Inventory)</div>
+                  <div className="pb-pharmacy-auto-title">Hospital / In-House Store</div>
                   <table className="pb-table">
                     <thead>
                       <tr><th>Date</th><th>Medicine</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr>
                     </thead>
                     <tbody>
-                      {detail.pharmacyRows.map(r => (
+                      {detail.pharmacyRows.filter(r => r.source === 'hospital').map(r => (
                         <tr key={r.id}>
                           <td>{fmtDate(r.date)}</td>
                           <td>{r.medicine}</td>
@@ -736,13 +894,13 @@ export default function ProvisionalBill() {
                           <td className="r">{fmt2(r.amount)}</td>
                         </tr>
                       ))}
-                      {!detail.pharmacyRows.length && (
+                      {!detail.pharmacyRows.some(r => r.source === 'hospital') && (
                         <tr><td colSpan={5} className="pb-empty">Is admission # ke against koi Sales Invoice nahi mili</td></tr>
                       )}
                     </tbody>
                   </table>
 
-                  <div className="pb-pharmacy-manual-title">Manual Entry</div>
+                  <div className="pb-pharmacy-manual-title">Outside Hospital Store</div>
                   <div className="pb-add-form">
                     <div className="pb-form-row">
                       <div className="pb-fg">
@@ -750,8 +908,11 @@ export default function ProvisionalBill() {
                         <input type="date" value={pharmRow.medDate} onChange={e => setPharmRow(r => ({ ...r, medDate: e.target.value }))} />
                       </div>
                       <div className="pb-fg pb-fg--right">
-                        <label>Medical Store</label>
-                        <input value={pharmRow.store} onChange={e => setPharmRow(r => ({ ...r, store: e.target.value }))} placeholder="e.g. 0000 — Saboor Medical Store" />
+                        <label>Store</label>
+                        <select value={pharmRow.storeId} onChange={e => setPharmRow(r => ({ ...r, storeId: e.target.value }))}>
+                          <option value="">— Select Store —</option>
+                          {activePharmacyStores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
                       </div>
                     </div>
 
@@ -764,12 +925,16 @@ export default function ProvisionalBill() {
 
                     <div className="pb-form-row">
                       <div className="pb-fg">
-                        <label>Dose</label>
-                        <input value={pharmRow.dose} onChange={e => setPharmRow(r => ({ ...r, dose: e.target.value }))} />
+                        <label>Dosage</label>
+                        <input value={pharmRow.dosage} onChange={e => setPharmRow(r => ({ ...r, dosage: e.target.value }))} />
                       </div>
                       <div className="pb-fg pb-fg--sm">
                         <label>Quantity</label>
                         <input value={pharmRow.qty} onChange={e => setPharmRow(r => ({ ...r, qty: e.target.value }))} />
+                      </div>
+                      <div className="pb-fg pb-fg--sm">
+                        <label>Unit</label>
+                        <input value={pharmRow.unit} onChange={e => setPharmRow(r => ({ ...r, unit: e.target.value }))} placeholder="e.g. strip" />
                       </div>
                     </div>
 
@@ -778,7 +943,15 @@ export default function ProvisionalBill() {
                         <label>Rate</label>
                         <input value={pharmRow.rate} onChange={e => setPharmRow(r => ({ ...r, rate: e.target.value }))} />
                       </div>
-                      <button className="pb-add-btn" onClick={() => toast('Pharmacy Bill abhi available nahi hai — jald add hoga')}>
+                      <div className="pb-fg pb-fg--sm">
+                        <label>Amount</label>
+                        <input value={fmt2(pharmQty * pharmRate)} readOnly />
+                      </div>
+                      <div className="pb-fg pb-fg--full">
+                        <label>Remarks</label>
+                        <input value={pharmRow.remarks} onChange={e => setPharmRow(r => ({ ...r, remarks: e.target.value }))} />
+                      </div>
+                      <button className="pb-add-btn" onClick={handleAddPharmacyItem} disabled={addingPharmRow}>
                         <Plus size={14} /> Add
                       </button>
                     </div>
@@ -786,10 +959,24 @@ export default function ProvisionalBill() {
 
                   <table className="pb-table">
                     <thead>
-                      <tr><th>Date</th><th>Medicine</th><th>Dose</th><th className="r">Quantity</th><th className="r">Rate</th><th className="r">Amount</th></tr>
+                      <tr><th>Date</th><th>Store</th><th>Medicine</th><th>Dosage</th><th className="r">Quantity</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
                     </thead>
                     <tbody>
-                      <tr><td colSpan={6} className="pb-empty">Pharmacy Bill abhi available nahi hai</td></tr>
+                      {detail.pharmacyRows.filter(r => r.source === 'outside').map(r => (
+                        <tr key={r.id}>
+                          <td>{fmtDate(r.date)}</td>
+                          <td>{r.storeName || '—'}</td>
+                          <td>{r.medicine}</td>
+                          <td>{r.dosage || ''}</td>
+                          <td className="r">{r.qty}{r.unit ? ` ${r.unit}` : ''}</td>
+                          <td className="r">{fmt2(r.rate)}</td>
+                          <td className="r">{fmt2(r.amount)}</td>
+                          <td><button className="pb-del" onClick={() => handleDeletePharmacyItem(r.itemId)}>✕</button></td>
+                        </tr>
+                      ))}
+                      {!detail.pharmacyRows.some(r => r.source === 'outside') && (
+                        <tr><td colSpan={8} className="pb-empty">Koi outside-store medicine add nahi hui</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </>

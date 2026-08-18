@@ -115,6 +115,18 @@ async function removeInventoryHeadMainAccount(req, res, next) {
   } catch (e) { next(e); }
 }
 
+async function saveDraftExpenseEntry(req, res, next) { try { success(res, await svc.saveDraftExpenseEntry({ ...req.body, entityType: et(req) }), 'Draft saved'); } catch (e) { next(e); } }
+async function getDraftExpenses(req, res, next) { try { success(res, await svc.getDraftExpenses(et(req))); } catch (e) { next(e); } }
+async function deleteDraftExpense(req, res, next) { try { await svc.deleteDraftExpense(req.params.id); success(res, null, 'Draft deleted'); } catch (e) { next(e); } }
+async function flashDraftsNow(req, res, next) {
+  try {
+    const { date } = req.query; // optional — default today's business date
+    const d = date || (() => { const n = new Date(); if (n.getHours() < 8) n.setDate(n.getDate() - 1); return n.toISOString().slice(0, 10); })();
+    const vouchers = await svc.flashDraftsToVouchers(d, et(req));
+    success(res, { date: d, vouchersCreated: vouchers.length, vouchers }, vouchers.length ? `${vouchers.length} voucher(s) created` : 'No pending drafts');
+  } catch (e) { next(e); }
+}
+
 async function createVoucherIncome(req, res, next) { try { success(res, await svc.createVoucherIncome(req.body), 'Voucher saved'); } catch (e) { next(e); } }
 async function getVoucherIncomes(req, res, next) { try { success(res, await svc.getVoucherIncomes(et(req))); } catch (e) { next(e); } }
 async function updateVoucherIncome(req, res, next) {
@@ -191,6 +203,7 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix,
+  saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsNow,
   addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   createBankDeposit, getBankDeposits, getBankDepositForDate,
   createBankDepositAdj, getBankDepositAdjs,

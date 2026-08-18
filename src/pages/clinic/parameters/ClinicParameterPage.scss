@@ -147,6 +147,9 @@
     border: none;
     cursor: pointer;
     transition: background 0.12s;
+    background: #f1f5f9;
+    color: #64748b;
+    &:hover { background: #e2e8f0; }
 
     &.cpp-edit {
       background: #eff6ff;
@@ -158,6 +161,23 @@
       background: #fff1f2;
       color: #e11d48;
       &:hover { background: #ffe4e6; }
+    }
+  }
+
+  .cpp-status-badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+
+    &--active {
+      background: #dcfce7;
+      color: #16a34a;
+    }
+    &--inactive {
+      background: #f1f5f9;
+      color: #94a3b8;
     }
   }
 

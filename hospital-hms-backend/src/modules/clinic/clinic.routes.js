@@ -74,8 +74,18 @@ router.put('/cc-config', controller.updateCcConfig);
 router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
 router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);
 router.post('/provisional-bill/:admissionId/add-from-visit', controller.addProvisionalBillItemFromVisit);
+router.patch('/provisional-bill/items/:itemId', controller.updateProvisionalBillItem);
 router.delete('/provisional-bill/items/:itemId', controller.deleteProvisionalBillItem);
 router.put('/provisional-bill/:admissionId/header', controller.updateProvisionalBillHeader);
+
+// Pharmacy Stores (Provisional Bill > Pharmacy > Outside Hospital Store)
+router.get('/pharmacy-stores', controller.getPharmacyStores);
+router.post('/pharmacy-stores', controller.createPharmacyStore);
+router.patch('/pharmacy-stores/:id', controller.updatePharmacyStore);
+router.delete('/pharmacy-stores/:id', controller.deletePharmacyStore);
+router.get('/provisional-bill/:admissionId/pharmacy-items', controller.listProvisionalPharmacyItems);
+router.post('/provisional-bill/:admissionId/pharmacy-items', controller.addProvisionalPharmacyItem);
+router.delete('/provisional-bill/pharmacy-items/:itemId', controller.deleteProvisionalPharmacyItem);
 
 // Discharge and Refund
 router.get('/discharge-bill/:admissionId', controller.getDischargeBillDetail);

@@ -344,6 +344,29 @@
     &:hover { background: #1d4ed8; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35); }
   }
 
+  &__draft-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 1.2rem;
+    font-size: 0.83rem;
+    font-weight: 700;
+    background: #f8fafc;
+    color: #475569;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    &:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; color: #334155; }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+    &--print {
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-color: #bfdbfe;
+      &:hover:not(:disabled) { background: #dbeafe; border-color: #93c5fd; color: #1e40af; }
+    }
+  }
+
   &__submit-btn {
     padding: 0.55rem 1.8rem;
     font-size: 0.83rem;

@@ -771,6 +771,41 @@ model ClinicProvisionalBillItem {
   @@index([admissionId])
 }
 
+// ─── Provisional Bill > Pharmacy — Outside Hospital Store ────────────────────
+// A small, hospital-managed list of external pharmacy names (distinct from the
+// in-house store, which is derived live from Inventory Sales Invoices — no
+// table needed for that side). Medicines bought from outside the hospital are
+// entered manually against one of these stores.
+model ClinicPharmacyStore {
+  id        Int      @id @default(autoincrement())
+  name      String
+  status    String   @default("active") // active | inactive
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items ClinicProvisionalPharmacyItem[]
+}
+
+model ClinicProvisionalPharmacyItem {
+  id          Int                  @id @default(autoincrement())
+  admissionId Int
+  admission   ClinicAdmission      @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  storeId     Int?
+  store       ClinicPharmacyStore? @relation(fields: [storeId], references: [id])
+  medicine    String
+  dosage      String?
+  qty         Float                @default(1)
+  unit        String?
+  rate        Float                @default(0)
+  amount      Float                @default(0)
+  medDate     DateTime
+  remarks     String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@index([admissionId])
+}
+
 // ─── Upload Patient Document ──────────────────────────────────────────────────
 model ClinicPatientDocument {
   id             Int              @id @default(autoincrement())
@@ -1011,6 +1046,7 @@ model ClinicAdmission {
   payments           ClinicAdmissionPayment[]
   documents          ClinicPatientDocument[]
   provisionalBillItems ClinicProvisionalBillItem[]
+  provisionalPharmacyItems ClinicProvisionalPharmacyItem[]
   dischargeBillItems ClinicDischargeBillItem[]
   discountRefunds    ClinicAdmissionDiscountRefund[]
   otRegisters        ClinicOtRegister[]
@@ -1577,8 +1613,44 @@ model AccVoucherExpense {
   bankId      Int?
   entityType  String
   totalAmount Decimal                  @db.Decimal(12, 2) @default(0)
+  source      String                   @default("manual") // 'manual' | 'draft-auto'
   createdAt   DateTime                 @default(now())
   entries     AccVoucherExpenseEntry[]
+  draftItems  AccVoucherExpenseDraft[]
+}
+
+// ─── Expense Draft — individual clinic/reception payments saved throughout the
+// business day; at 08:00 AM day-close these are grouped by Main GL and each
+// group becomes one AccVoucherExpense (source='draft-auto'). ─────────────────
+model AccVoucherExpenseDraft {
+  id             Int               @id @default(autoincrement())
+  businessDate   String            // "YYYY-MM-DD" — which business day this belongs to
+  entityType     String            @default("non-corporate")
+  mode           String            @default("cash")
+  bankId         Int?
+  mainGlId       Int
+  mainGlName     String            @default("")
+  subGlId        Int
+  subGlName      String            @default("")
+  mainAccountId  Int
+  accountCode    String            @default("")
+  accountName    String            @default("")
+  subAccountId   Int?
+  subAccountName String?
+  payeeName      String?
+  amount         Decimal           @db.Decimal(12, 2)
+  chequeNo       String?
+  chequeDate     DateTime?
+  chequeType     String?
+  particulars    String?
+  status         String            @default("pending") // 'pending' | 'posted'
+  postedVoucherId Int?
+  postedVoucher  AccVoucherExpense? @relation(fields: [postedVoucherId], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([businessDate, entityType, status])
+  @@index([status])
 }
 
 model AccVoucherExpenseEntry {

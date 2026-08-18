@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal, FileText } from 'lucide-react';
 import './AccountsTransactions.scss';
 
 const ITEMS = [
@@ -14,6 +14,12 @@ const ITEMS = [
     label: 'Voucher Entry — Expense',
     icon: TrendingDown,
     desc: 'Record expense payments against accounts and payee heads',
+  },
+  {
+    key: 'expense-drafts',
+    label: 'Pending Drafts',
+    icon: FileText,
+    desc: 'View today\'s pending expense drafts — auto-post at 8:00 AM by Main GL',
   },
   {
     key: 'cheque-printing',

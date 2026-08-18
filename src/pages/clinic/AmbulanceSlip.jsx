@@ -6,6 +6,7 @@ import { buildReceiptHtml } from './receiptUtils';
 import { printThermalReceipt, ThermalReceiptPrintTemplate } from './ThermalReceiptPrintTemplate';
 import { validatePhoneNo, validateAge } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
+import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
@@ -323,6 +324,14 @@ export default function AmbulanceSlip() {
   const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
   const fieldsDisabled = !form.hospitalPatient;
 
+  // Escape (advanced keyboard mode) — back out of whichever lookup/confirm
+  // popup happens to be open, without the user needing to know which one.
+  function closeAllPopups() {
+    setShowEmpModal(false);
+    setShowPanelModal(false);
+    setShowAdmitModal(false);
+  }
+
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
@@ -393,7 +402,7 @@ export default function AmbulanceSlip() {
         />
       )}
 
-      <div className="gopd">
+      <div className="gopd" onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
         {/* ── Header ── */}
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
@@ -566,7 +575,10 @@ export default function AmbulanceSlip() {
                   ) : totalAmount}
                 </div>
                 <div className="gopd-action-btns">
-                  <button className="gopd-print-btn" onClick={handleSaveAndPrint} disabled={busy}>
+                  <button
+                    className="gopd-print-btn" data-enter-submit onClick={handleSaveAndPrint} disabled={busy}
+                    title="Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
+                  >
                     <Printer size={16} />
                     {busy ? 'Please wait...' : 'Print Slip'}
                   </button>

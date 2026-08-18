@@ -79,6 +79,21 @@ $border: #bbb;
   color: #222;
 }
 
+.pb-status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+
+  &--active     { background: #dcfce7; color: #16a34a; }
+  &--discharge  { background: #fef3c7; color: #b45309; }
+  &--closed     { background: #e2e8f0; color: #475569; }
+  &--wipeout    { background: #fee2e2; color: #dc2626; }
+}
+
 .pb-surgery-date-box {
   margin-left: auto;
   display: flex;
@@ -305,13 +320,57 @@ $border: #bbb;
   tbody tr:nth-child(even) { background: #f9f9f9; }
 }
 
-.pb-del {
+.pb-del, .pb-edit {
   background: none;
   border: none;
-  color: $red;
   cursor: pointer;
   font-size: 12px;
   &:hover { text-decoration: underline; }
+}
+.pb-del { color: $red; }
+.pb-edit { color: $blue; margin-right: 6px; }
+
+.pb-row-actions { white-space: nowrap; }
+.pb-row--editing { background: #fff7e0 !important; }
+
+.pb-cancel-btn {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid $border;
+  border-radius: 4px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 6px;
+  &:hover { background: #e2e8f0; }
+}
+
+.pb-subsection-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: $blue;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin: 14px 0 2px;
+}
+
+.pb-table--readonly {
+  tbody tr:hover { background: inherit; }
+  em { color: $green; font-style: normal; font-weight: 700; }
+}
+
+.pb-tf-label {
+  text-align: right;
+  font-weight: 700;
+  color: $blue;
+  padding-right: 10px !important;
+}
+.pb-table tfoot td {
+  border-top: 2px solid #b0c0dc;
+  border-bottom: none;
+  font-weight: 700;
+  background: #f2f5fa;
 }
 
 .pb-empty {

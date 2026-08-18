@@ -10,6 +10,7 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
 import { validatePhoneNo, validateAge } from './opdValidation';
+import { handleSlipKeys } from '../../utils/keyboardNav';
 import './Admission.scss';
 import './Antenatal.scss';
 
@@ -831,6 +832,14 @@ export default function Admission() {
     }
   }
 
+  // Escape (advanced keyboard mode) — back out of whichever lookup/confirm
+  // popup happens to be open, without the user needing to know which one.
+  function closeAllPopups() {
+    setShowEmpModal(false);
+    setShowPanelModal(false);
+    setShowArrivedSlipModal(false);
+  }
+
   async function handleSave() {
     if (!form.admissionNo.trim()) return toast.error('Admission # is required');
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
@@ -919,7 +928,7 @@ export default function Admission() {
         />
       )}
 
-      <div className="adm-page">
+      <div className="adm-page" onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
         <ClinicMenuBar />
 
         <div className="adm-body">
@@ -1247,7 +1256,10 @@ export default function Admission() {
 
             {/* Actions */}
             <div className="adm-actions">
-              <button className="adm-btn adm-btn--save-print" onClick={handleSaveAndPrint} disabled={saving}>
+              <button
+                className="adm-btn adm-btn--save-print" data-enter-submit onClick={handleSaveAndPrint} disabled={saving}
+                title="Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
+              >
                 <Printer size={16} />
                 {saving ? 'Saving...' : 'Save & Print'}
               </button>

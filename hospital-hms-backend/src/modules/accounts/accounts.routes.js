@@ -72,6 +72,11 @@ router.put('/voucher-income/:id', ctrl.updateVoucherIncome);
 
 router.post('/payee-head-accounts', ctrl.addHeadAccount);
 router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccount);
+router.get('/expense-drafts', ctrl.getDraftExpenses);
+router.post('/expense-drafts', ctrl.saveDraftExpenseEntry);
+router.delete('/expense-drafts/:id', ctrl.deleteDraftExpense);
+router.post('/expense-drafts/flash-now', ctrl.flashDraftsNow);
+
 router.post('/payee-head-main-accounts', ctrl.addInventoryHeadMainAccount);
 router.delete('/payee-head-main-accounts/:headId/:mainAccountId', ctrl.removeInventoryHeadMainAccount);
 

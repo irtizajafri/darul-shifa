@@ -6,6 +6,7 @@ import JsBarcode from 'jsbarcode';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
+import { handleSlipKeys } from '../../utils/keyboardNav';
 import './ReceivingAgainstAdmission.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -156,6 +157,11 @@ export default function ReceivingAgainstAdmission() {
     return json.data;
   }
 
+  // Escape (advanced keyboard mode) — close the admission lookup popup.
+  function closeAllPopups() {
+    setShowLookup(false);
+  }
+
   async function handleAdd() {
     setSaving(true);
     try {
@@ -198,7 +204,7 @@ export default function ReceivingAgainstAdmission() {
   }
 
   return (
-    <div className="raa-page">
+    <div className="raa-page" onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
       <ClinicMenuBar />
 
       <div className="raa-title-bar">
@@ -284,7 +290,10 @@ export default function ReceivingAgainstAdmission() {
         </div>
 
         <div className="raa-footer">
-          <button className="raa-add-btn" onClick={handleAdd} disabled={saving || !admission}>Add</button>
+          <button
+            className="raa-add-btn" data-enter-submit onClick={handleAdd} disabled={saving || !admission}
+            title="Ctrl+Enter = Add from anywhere · Esc = close popup"
+          >Add</button>
           <button className="raa-print-btn" onClick={handlePrintSlip} disabled={saving || !admission}>Print Slip</button>
         </div>
       </div>

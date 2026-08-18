@@ -11,15 +11,31 @@ function businessDayToClose() {
 
 async function runDayClose() {
   const date = businessDayToClose();
+
+  // ── Income: Auto-book clinic revenue ─────────────────────────────────────
   try {
     const voucher = await accountsSvc.generateAutoIncomeVoucherForDate(date, 'non-corporate');
     if (voucher) {
       console.log(`✅ Day close: auto Income Voucher ${voucher.voucherNo} booked for ${date} (₹${voucher.totalAmount})`);
     } else {
-      console.log(`ℹ️  Day close: nothing to book for ${date} (no revenue, or already closed)`);
+      console.log(`ℹ️  Day close [income]: nothing to book for ${date}`);
     }
   } catch (err) {
-    console.error(`❌ Day close failed for ${date}:`, err);
+    console.error(`❌ Day close [income] failed for ${date}:`, err);
+  }
+
+  // ── Expense: Flash pending drafts → grouped vouchers by Main GL ───────────
+  try {
+    const vouchers = await accountsSvc.flashDraftsToVouchers(date, 'non-corporate');
+    if (vouchers.length) {
+      vouchers.forEach((v) =>
+        console.log(`✅ Day close: Expense Draft Voucher ${v.voucherNo} (${v.mainGlName}) — ${v.entriesCount} entries, ₹${v.totalAmount}`)
+      );
+    } else {
+      console.log(`ℹ️  Day close [expense drafts]: no pending drafts for ${date}`);
+    }
+  } catch (err) {
+    console.error(`❌ Day close [expense drafts] failed for ${date}:`, err);
   }
 }
 

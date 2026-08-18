@@ -712,12 +712,58 @@ export const useClinicStore = create((set) => ({
     return request(`/provisional-bill/${admissionId}/add-from-visit`, { method: 'POST', body: JSON.stringify({ opdVisitId }) });
   },
 
+  updateProvisionalBillItem: async (itemId, payload) => {
+    return request(`/provisional-bill/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
   deleteProvisionalBillItem: async (itemId) => {
     return request(`/provisional-bill/items/${itemId}`, { method: 'DELETE' });
   },
 
   updateProvisionalBillHeader: async (admissionId, payload) => {
     return request(`/provisional-bill/${admissionId}/header`, { method: 'PUT', body: JSON.stringify(payload) });
+  },
+
+  // ── Pharmacy Stores (Provisional Bill > Pharmacy > Outside Hospital Store) ──
+  pharmacyStores: [],
+
+  fetchPharmacyStores: async () => {
+    set({ loading: true, error: null });
+    try {
+      const pharmacyStores = await request('/pharmacy-stores');
+      set({ pharmacyStores, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createPharmacyStore: async (payload) => {
+    const data = await request('/pharmacy-stores', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ pharmacyStores: [...s.pharmacyStores, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updatePharmacyStore: async (id, payload) => {
+    const data = await request(`/pharmacy-stores/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+    set((s) => ({ pharmacyStores: s.pharmacyStores.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deletePharmacyStore: async (id) => {
+    await request(`/pharmacy-stores/${id}`, { method: 'DELETE' });
+    set((s) => ({ pharmacyStores: s.pharmacyStores.filter((c) => c.id !== id) }));
+  },
+
+  fetchProvisionalPharmacyItems: async (admissionId) => {
+    return request(`/provisional-bill/${admissionId}/pharmacy-items`);
+  },
+
+  addProvisionalPharmacyItem: async (admissionId, payload) => {
+    return request(`/provisional-bill/${admissionId}/pharmacy-items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  deleteProvisionalPharmacyItem: async (itemId) => {
+    return request(`/provisional-bill/pharmacy-items/${itemId}`, { method: 'DELETE' });
   },
 
   // ── Discharge and Refund ─────────────────────────────────────────────────────

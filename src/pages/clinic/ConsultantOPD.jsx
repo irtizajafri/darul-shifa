@@ -7,6 +7,7 @@ import { buildConsultantReceiptHtml } from './consultantReceiptUtils';
 import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
 import { validatePhoneNo, validateAge } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
+import { handleSlipKeys } from '../../utils/keyboardNav';
 import './ConsultantOPD.scss';
 
 const departmentName = 'Consultant OPD';
@@ -625,6 +626,16 @@ export default function ConsultantOPD() {
     }
   }
 
+  // Escape (advanced keyboard mode) — back out of whichever lookup/confirm
+  // popup happens to be open, without the user needing to know which one.
+  function closeAllPopups() {
+    setShowEmpModal(false);
+    setShowPanelModal(false);
+    setShowAdmitModal(false);
+    setShowPhoneModal(false);
+    setMrConfirm(null);
+  }
+
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
@@ -810,7 +821,7 @@ export default function ConsultantOPD() {
         </div>
       )}
 
-      <div className="gopd">
+      <div className="gopd" onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
@@ -1202,7 +1213,10 @@ export default function ConsultantOPD() {
                   )}
                 </div>
                 <div className="gopd-action-btns">
-                  <button className="gopd-print-btn" onClick={handleSaveAndPrint} disabled={busy}>
+                  <button
+                    className="gopd-print-btn" data-enter-submit onClick={handleSaveAndPrint} disabled={busy}
+                    title="Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
+                  >
                     <Printer size={16} />
                     {busy ? 'Please wait...' : 'Save & Print'}
                   </button>

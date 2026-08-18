@@ -25,6 +25,7 @@ import VoucherExpense from '../pages/accounts/transactions/VoucherExpense';
 import VoucherExpenseForm from '../pages/accounts/transactions/VoucherExpenseForm';
 import VoucherIncome from '../pages/accounts/transactions/VoucherIncome';
 import VoucherIncomeForm from '../pages/accounts/transactions/VoucherIncomeForm';
+import DraftExpenses from '../pages/accounts/transactions/DraftExpenses';
 import BankDeposit from '../pages/accounts/transactions/BankDeposit';
 import BankDepositAdj from '../pages/accounts/transactions/BankDepositAdj';
 import AccountsReports from '../pages/accounts/reports/AccountsReports';
@@ -40,6 +41,7 @@ import Antenatal from '../pages/clinic/Antenatal';
 import ClinicDepartmentPage from '../pages/clinic/parameters/ClinicDepartmentPage';
 import ClinicSubDepartmentPage from '../pages/clinic/parameters/ClinicSubDepartmentPage';
 import ClinicStaffCategoryPage from '../pages/clinic/parameters/ClinicStaffCategoryPage';
+import ClinicPharmacyStorePage from '../pages/clinic/parameters/ClinicPharmacyStorePage';
 import ClinicDoctorPage from '../pages/clinic/parameters/ClinicDoctorPage';
 import ClinicSurgeryTypePage from '../pages/clinic/parameters/ClinicSurgeryTypePage';
 import ClinicSymptomPage from '../pages/clinic/parameters/ClinicSymptomPage';
@@ -204,6 +206,7 @@ export default function AppRoutes() {
           <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts"><AccountsTransactions /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts"><VoucherExpense /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<PermissionGuard module="accounts"><VoucherExpenseForm /></PermissionGuard>} />
+          <Route path="accounts/:entityType/transactions/expense-drafts" element={<PermissionGuard module="accounts"><DraftExpenses /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/voucher-income" element={<PermissionGuard module="accounts"><VoucherIncome /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts"><VoucherIncomeForm /></PermissionGuard>} />
           <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts"><BankDeposit /></PermissionGuard>} />
@@ -232,6 +235,7 @@ export default function AppRoutes() {
           <Route path="clinic/parameters/department" element={<PermissionGuard module="clinic" subModule="department"><ClinicDepartmentPage /></PermissionGuard>} />
           <Route path="clinic/parameters/sub-department" element={<PermissionGuard module="clinic" subModule="sub-department"><ClinicSubDepartmentPage /></PermissionGuard>} />
           <Route path="clinic/parameters/staff-category" element={<PermissionGuard module="clinic" subModule="staff-category"><ClinicStaffCategoryPage /></PermissionGuard>} />
+          <Route path="clinic/parameters/pharmacy-stores" element={<PermissionGuard module="clinic" subModule="staff-category"><ClinicPharmacyStorePage /></PermissionGuard>} />
           <Route path="clinic/parameters/doctors" element={<PermissionGuard module="clinic" subModule="doctors"><ClinicDoctorPage /></PermissionGuard>} />
           <Route path="clinic/parameters/surgery-types" element={<PermissionGuard module="clinic" subModule="surgery-types"><ClinicSurgeryTypePage /></PermissionGuard>} />
           <Route path="clinic/parameters/symptoms" element={<PermissionGuard module="clinic" subModule="symptoms"><ClinicSymptomPage /></PermissionGuard>} />

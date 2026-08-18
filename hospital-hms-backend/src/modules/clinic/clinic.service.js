@@ -2420,57 +2420,165 @@ async function getPatientDocumentsReport({ dateFrom, dateTo, q, documentTypeId }
 // admissionNo (set via the "Admit Patient" lookup added to General/Consultant/
 // Emergency OPD), one row per doctor/sub-department entry on each such visit.
 
+// Departments that count as "Diagnostic" for the Diagnostic Bill tab, besides
+// Laboratory (which stays auto-included exactly as before — unchanged).
+// These instead show up as double-click-to-add "Pending Diagnostic Slips",
+// same mechanic as the Provisional tab's Pending Slips.
+const DIAGNOSTIC_DEPTS = ['Radiology', 'Ultra Sound, Echo & Color Doppler'];
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Ward History is derived, not stored — it's rebuilt from ClinicBedShiftHistory
+// (fromBedId/toBedId/shiftedAt, already recorded by the Bed Shifting screen)
+// plus the admission's own starting ward/bed/createdAt as segment 1. Each
+// segment bills at the room category's *current* rate (this codebase has no
+// date-effective rate history anywhere else either, so this stays consistent)
+// for the number of days it was occupied — any part of a day counts as a full
+// day (standard hospital room-billing convention), and the still-open segment
+// (transferredAt = null) keeps accruing days up to "now" on every view.
+function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesById }) {
+  const segments = [];
+  const sorted = [...shiftHistory].sort((a, b) => new Date(a.shiftedAt) - new Date(b.shiftedAt));
+
+  let curRoomCategoryId = admission.roomCategoryId || null;
+  let curBedId = admission.bedId || null;
+  let curEnteredAt = admission.createdAt;
+
+  const pushSegment = (roomCategoryId, bedId, enteredAt, transferredAt) => {
+    const roomCategory = roomCategoryId ? roomCategoriesById[roomCategoryId] || null : null;
+    const bed = bedId ? bedsById[bedId] || null : null;
+    const startMs = new Date(enteredAt).getTime();
+    const endMs = (transferredAt ? new Date(transferredAt) : new Date()).getTime();
+    const days = Math.max(1, Math.ceil((endMs - startMs) / MS_PER_DAY));
+    const rate = Number(roomCategory?.rate) || 0;
+    segments.push({
+      roomCategoryId, roomCategory, bedId, bed,
+      enteredAt, transferredAt: transferredAt || null,
+      days, rate, charges: days * rate,
+    });
+  };
+
+  for (const shift of sorted) {
+    pushSegment(curRoomCategoryId, curBedId, curEnteredAt, shift.shiftedAt);
+    curBedId = shift.toBedId;
+    curRoomCategoryId = bedsById[shift.toBedId]?.roomCategoryId || null;
+    curEnteredAt = shift.shiftedAt;
+  }
+  // Final (still current, or only) segment — open-ended.
+  pushSegment(curRoomCategoryId, curBedId, curEnteredAt, null);
+
+  return segments;
+}
+
 async function getProvisionalBillDetail(admissionId) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
-  const [roomCategory, bed, surgeryType, dischargeType, billItems, labVisits, otherVisits, payments, salesInvoiceItems] = await Promise.all([
+  const [
+    roomCategory, bed, surgeryType, dischargeType, consultant,
+    billItems, labVisits, diagnosticOtherVisits, otherVisits,
+    payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory,
+  ] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
     admission.surgeryTypeId ? prisma.clinicSurgeryType.findUnique({ where: { id: admission.surgeryTypeId } }) : null,
     admission.dischargeTypeId ? prisma.clinicDischargeType.findUnique({ where: { id: admission.dischargeTypeId } }) : null,
+    admission.consultantId ? prisma.clinicDoctor.findUnique({ where: { id: admission.consultantId }, select: { id: true, name: true } }) : null,
     prisma.clinicProvisionalBillItem.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
-    // Diagnostic Bill tab — only Laboratory counts toward this admission's
-    // bill, auto-shown. Only visits with "Adjust Payment" checked count — an
-    // admitNo-linked visit whose OPD slip was already paid for separately
-    // (Adjust Payment left unchecked) must not be billed twice.
+    // Diagnostic Bill tab — Laboratory counts toward this admission's bill
+    // auto-shown (unchanged). Only visits with "Adjust Payment" checked count
+    // — an admitNo-linked visit whose OPD slip was already paid for
+    // separately (Adjust Payment left unchecked) must not be billed twice.
     prisma.clinicOpdVisit.findMany({
       where: { admitNo: admission.admissionNo, adjustPayment: true, department: 'Laboratory' },
       include: { doctors: { include: { doctor: true, subDept: true } } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    // Diagnostic-but-not-Lab (Radiology / Ultrasound-Echo-Doppler) — shown as
+    // double-click-to-add "Pending Diagnostic Slips" in the Diagnostic tab.
+    prisma.clinicOpdVisit.findMany({
+      where: { admitNo: admission.admissionNo, adjustPayment: true, department: { in: DIAGNOSTIC_DEPTS } },
       orderBy: { createdAt: 'asc' },
     }),
     // Everything else (Consultant OPD, Emergency, Ambulance, etc.) shows as a
     // "pending slip" the user must double-click to add to the Provisional
     // Bill tab — never auto-counted into billAmount.
     prisma.clinicOpdVisit.findMany({
-      where: { admitNo: admission.admissionNo, adjustPayment: true, department: { not: 'Laboratory' } },
+      where: { admitNo: admission.admissionNo, adjustPayment: true, department: { notIn: ['Laboratory', ...DIAGNOSTIC_DEPTS] } },
       orderBy: { createdAt: 'asc' },
     }),
     prisma.clinicAdmissionPayment.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
-    // Pharmacy Bill — Inventory Sales Invoices billed against this admission
-    // (Search by Admission Number → Save Invoice flow); Clinic and Inventory
-    // share one Prisma client/DB so this is a direct query, no HTTP call.
+    // Pharmacy Bill (Hospital / In-House Store) — Inventory Sales Invoices
+    // billed against this admission (Search by Admission Number → Save
+    // Invoice flow); Clinic and Inventory share one Prisma client/DB so this
+    // is a direct query, no HTTP call.
     prisma.inventorySalesInvoice.findMany({
       where: { customerType: 'admission', customerName: admission.admissionNo },
       include: { item: true },
       orderBy: { invoiceDate: 'asc' },
     }),
+    // Pharmacy Bill (Outside Hospital Store) — manually entered.
+    prisma.clinicProvisionalPharmacyItem.findMany({
+      where: { admissionId: Number(admissionId) },
+      include: { store: { select: { id: true, name: true } } },
+      orderBy: { id: 'asc' },
+    }),
+    prisma.clinicBedShiftHistory.findMany({ where: { admissionId: Number(admissionId) } }),
   ]);
 
   const roomCategoryIds = [...new Set(billItems.map((i) => i.roomCategoryId).filter(Boolean))];
   const billHeadIds = [...new Set(billItems.map((i) => i.billHeadId).filter(Boolean))];
-  const [wardRows, headRows] = await Promise.all([
+  // Already-added items sourced from a diagnostic (non-Lab) OPD visit belong
+  // in the Diagnostic tab, not the Provisional tab — need each such item's
+  // source visit's department to tell them apart.
+  const sourceVisitIds = [...new Set(billItems.map((i) => i.sourceOpdVisitId).filter(Boolean))];
+  // Ward History needs every bed/room-category ever touched by this
+  // admission — the admission's current ones plus everything in its shift
+  // history (from and to).
+  const bedIds = [...new Set([
+    admission.bedId,
+    ...shiftHistory.map((s) => s.fromBedId),
+    ...shiftHistory.map((s) => s.toBedId),
+  ].filter(Boolean))];
+
+  const [wardRows, headRows, sourceVisits, historyBeds] = await Promise.all([
     roomCategoryIds.length ? prisma.clinicRoomCategory.findMany({ where: { id: { in: roomCategoryIds } } }) : [],
     billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } } }) : [],
+    sourceVisitIds.length ? prisma.clinicOpdVisit.findMany({ where: { id: { in: sourceVisitIds } }, select: { id: true, department: true } }) : [],
+    bedIds.length ? prisma.clinicBed.findMany({ where: { id: { in: bedIds } } }) : [],
   ]);
   const wardById = {}; wardRows.forEach((w) => { wardById[w.id] = w; });
   const headById = {}; headRows.forEach((h) => { headById[h.id] = h; });
+  const sourceVisitDeptById = {}; sourceVisits.forEach((v) => { sourceVisitDeptById[v.id] = v.department; });
+  const bedsById = {}; historyBeds.forEach((b) => { bedsById[b.id] = b; });
+  if (admission.bedId && !bedsById[admission.bedId] && bed) bedsById[admission.bedId] = bed;
 
-  const resolvedBillItems = billItems.map((item) => ({
+  // Ward History rate lookup needs every room-category touched by the shift
+  // history's beds too (not just billItems' own wards).
+  const wardRoomCategoryIds = [...new Set([
+    admission.roomCategoryId,
+    ...historyBeds.map((b) => b.roomCategoryId),
+  ].filter(Boolean))];
+  const missingWardIds = wardRoomCategoryIds.filter((id) => !wardById[id]);
+  if (missingWardIds.length) {
+    const extra = await prisma.clinicRoomCategory.findMany({ where: { id: { in: missingWardIds } } });
+    extra.forEach((w) => { wardById[w.id] = w; });
+  }
+
+  const wardHistory = computeWardHistory({
+    admission, shiftHistory, bedsById, roomCategoriesById: wardById,
+  });
+  const wardAmount = wardHistory.reduce((s, seg) => s + seg.charges, 0);
+
+  const resolvedBillItemsAll = billItems.map((item) => ({
     ...item,
     roomCategory: item.roomCategoryId ? wardById[item.roomCategoryId] || null : null,
     billHead: item.billHeadId ? headById[item.billHeadId] || null : null,
+    sourceDepartment: item.sourceOpdVisitId ? sourceVisitDeptById[item.sourceOpdVisitId] || null : null,
   }));
+  const isAddedDiagnostic = (item) => item.sourceDepartment && DIAGNOSTIC_DEPTS.includes(item.sourceDepartment);
+  const resolvedBillItems = resolvedBillItemsAll.filter((i) => !isAddedDiagnostic(i));
+  const addedDiagnosticItems = resolvedBillItemsAll.filter(isAddedDiagnostic);
 
   const diagnosticRows = [];
   labVisits.forEach((v) => {
@@ -2495,8 +2603,18 @@ async function getProvisionalBillDetail(admissionId) {
       });
     }
   });
+  addedDiagnosticItems.forEach((item) => {
+    diagnosticRows.push({
+      id: `item-${item.id}`,
+      date: item.createdAt,
+      conCode: null,
+      department: item.sourceDepartment,
+      particulars: item.billHead?.description || item.remarks || null,
+      amount: item.amount || 0,
+    });
+  });
 
-  const addedVisitIds = new Set(resolvedBillItems.map((i) => i.sourceOpdVisitId).filter(Boolean));
+  const addedVisitIds = new Set(resolvedBillItemsAll.map((i) => i.sourceOpdVisitId).filter(Boolean));
   const pendingSlips = otherVisits
     .filter((v) => !addedVisitIds.has(v.id))
     .map((v) => ({
@@ -2506,20 +2624,47 @@ async function getProvisionalBillDetail(admissionId) {
       patientName: v.patientName,
       amount: v.totalAmount || 0,
     }));
+  const pendingDiagnosticSlips = diagnosticOtherVisits
+    .filter((v) => !addedVisitIds.has(v.id))
+    .map((v) => ({
+      id: v.id,
+      date: v.createdAt,
+      department: v.department,
+      patientName: v.patientName,
+      amount: v.totalAmount || 0,
+    }));
 
-  const pharmacyRows = salesInvoiceItems.map((si) => ({
-    id: si.id,
-    date: si.invoiceDate,
-    medicine: si.item?.name || '—',
-    qty: si.quantity,
-    rate: si.saleRate,
-    amount: si.totalAmount,
-  }));
+  const pharmacyRows = [
+    ...salesInvoiceItems.map((si) => ({
+      id: `inv-${si.id}`,
+      source: 'hospital',
+      storeName: null,
+      date: si.invoiceDate,
+      medicine: si.item?.name || '—',
+      qty: si.quantity,
+      rate: si.saleRate,
+      amount: si.totalAmount,
+    })),
+    ...outsidePharmacyItems.map((pi) => ({
+      id: `out-${pi.id}`,
+      itemId: pi.id,
+      source: 'outside',
+      storeName: pi.store?.name || null,
+      date: pi.medDate,
+      medicine: pi.medicine,
+      dosage: pi.dosage,
+      qty: pi.qty,
+      unit: pi.unit,
+      rate: pi.rate,
+      amount: pi.amount,
+      remarks: pi.remarks,
+    })),
+  ];
 
   const provisionalAmount = resolvedBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
   const diagnosticAmount  = diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
   const pharmacyAmount    = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  const billAmount = provisionalAmount + diagnosticAmount + pharmacyAmount;
+  const billAmount = provisionalAmount + wardAmount + diagnosticAmount + pharmacyAmount;
 
   const paymentHistory = [];
   if (Number(admission.advancePayment) > 0) {
@@ -2534,9 +2679,13 @@ async function getProvisionalBillDetail(admissionId) {
     bed,
     surgeryType,
     dischargeType,
+    consultant,
     billItems: resolvedBillItems,
+    wardHistory,
+    wardAmount,
     diagnosticRows,
     pendingSlips,
+    pendingDiagnosticSlips,
     pharmacyRows,
     patientInfo: { paymentHistory, amountReceived },
     balanceInfo: {
@@ -2619,6 +2768,25 @@ async function deleteProvisionalBillItem(itemId) {
   return prisma.clinicProvisionalBillItem.delete({ where: { id: Number(itemId) } });
 }
 
+async function updateProvisionalBillItem(itemId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType }) {
+  const existing = await prisma.clinicProvisionalBillItem.findUnique({ where: { id: Number(itemId) } });
+  if (!existing) throw Object.assign(new Error('Bill item not found'), { status: 404 });
+  const q = Number(qty) || 1;
+  const r = Number(rate) || 0;
+  return prisma.clinicProvisionalBillItem.update({
+    where: { id: Number(itemId) },
+    data: {
+      roomCategoryId: roomCategoryId ? Number(roomCategoryId) : null,
+      billHeadId: billHeadId ? Number(billHeadId) : null,
+      qty: q,
+      rate: r,
+      amount: q * r,
+      remarks: remarks?.trim() || null,
+      patientType: patientType || null,
+    },
+  });
+}
+
 async function updateProvisionalBillHeader(admissionId, { surgery, surgeryTypeId, dischargeTypeId }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
@@ -2630,6 +2798,72 @@ async function updateProvisionalBillHeader(admissionId, { surgery, surgeryTypeId
       dischargeTypeId: dischargeTypeId ? Number(dischargeTypeId) : null,
     },
   });
+}
+
+// ─── Pharmacy Stores (Provisional Bill > Pharmacy > Outside Hospital Store) ───
+// A small hospital-managed list of external pharmacy names. The "Hospital /
+// In-House Store" side needs no such list — it's derived live from Inventory
+// Sales Invoices (see getProvisionalBillDetail's salesInvoiceItems query).
+
+async function getPharmacyStores() {
+  return prisma.clinicPharmacyStore.findMany({ orderBy: { name: 'asc' } });
+}
+
+async function createPharmacyStore({ name }) {
+  return prisma.clinicPharmacyStore.create({ data: { name: name.trim() } });
+}
+
+async function updatePharmacyStore(id, { name, status }) {
+  const data = {};
+  if (name != null) data.name = name.trim();
+  if (status != null) data.status = status;
+  return prisma.clinicPharmacyStore.update({ where: { id: Number(id) }, data });
+}
+
+async function deletePharmacyStore(id) {
+  const inUse = await prisma.clinicProvisionalPharmacyItem.findFirst({ where: { storeId: Number(id) } });
+  if (inUse) {
+    throw Object.assign(new Error('Ye store kisi outside-pharmacy entry se linked hai — pehle "Disable" karein, delete nahi ho sakti'), { status: 400 });
+  }
+  return prisma.clinicPharmacyStore.delete({ where: { id: Number(id) } });
+}
+
+// ─── Provisional Bill > Pharmacy > Outside Hospital Store items ───────────────
+
+async function listProvisionalPharmacyItems(admissionId) {
+  return prisma.clinicProvisionalPharmacyItem.findMany({
+    where: { admissionId: Number(admissionId) },
+    include: { store: { select: { id: true, name: true } } },
+    orderBy: { id: 'asc' },
+  });
+}
+
+async function addProvisionalPharmacyItem(admissionId, { storeId, medicine, dosage, qty, unit, rate, medDate, remarks }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (!medicine?.trim()) throw Object.assign(new Error('Medicine naam zaroori hai'), { status: 400 });
+  if (!medDate) throw Object.assign(new Error('Date zaroori hai'), { status: 400 });
+  const q = Number(qty) || 1;
+  const r = Number(rate) || 0;
+  return prisma.clinicProvisionalPharmacyItem.create({
+    data: {
+      admissionId: Number(admissionId),
+      storeId: storeId ? Number(storeId) : null,
+      medicine: medicine.trim(),
+      dosage: dosage?.trim() || null,
+      qty: q,
+      unit: unit?.trim() || null,
+      rate: r,
+      amount: q * r,
+      medDate: new Date(medDate),
+      remarks: remarks?.trim() || null,
+    },
+    include: { store: { select: { id: true, name: true } } },
+  });
+}
+
+async function deleteProvisionalPharmacyItem(itemId) {
+  return prisma.clinicProvisionalPharmacyItem.delete({ where: { id: Number(itemId) } });
 }
 
 // ─── Transactions > Discharge and Refund ─────────────────────────────────────
@@ -4255,7 +4489,15 @@ module.exports = {
   addProvisionalBillItem,
   addProvisionalBillItemFromVisit,
   deleteProvisionalBillItem,
+  updateProvisionalBillItem,
   updateProvisionalBillHeader,
+  getPharmacyStores,
+  createPharmacyStore,
+  updatePharmacyStore,
+  deletePharmacyStore,
+  listProvisionalPharmacyItems,
+  addProvisionalPharmacyItem,
+  deleteProvisionalPharmacyItem,
   getDischargeBillDetail,
   addDischargeBillItem,
   deleteDischargeBillItem,

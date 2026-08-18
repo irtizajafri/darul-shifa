@@ -459,6 +459,96 @@ async function getAllPayeeEntries(entityType) {
   });
 }
 
+// ─── Business Date Helper ─────────────────────────────────────────────────────
+// Hospital day runs 8 AM → 7:59:59 AM next day. Entries made before 8 AM
+// still belong to the previous business day.
+function getBusinessDate() {
+  const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// ─── Expense Draft ────────────────────────────────────────────────────────────
+
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars }) {
+  const businessDate = getBusinessDate();
+  return prisma.accVoucherExpenseDraft.create({
+    data: {
+      businessDate, entityType, mode: mode || 'cash',
+      bankId: bankId ? Number(bankId) : null,
+      mainGlId: Number(mainGlId), mainGlName: mainGlName || '',
+      subGlId: Number(subGlId),   subGlName:  subGlName  || '',
+      mainAccountId: Number(mainAccountId), accountCode: accountCode || '', accountName: accountName || '',
+      subAccountId:  subAccountId ? Number(subAccountId) : null, subAccountName: subAccountName || null,
+      payeeName: payeeName || null,
+      amount: Number(amount),
+      chequeNo: chequeNo || null, chequeDate: chequeDate ? new Date(chequeDate) : null, chequeType: chequeType || null,
+      particulars: particulars || null,
+    },
+  });
+}
+
+async function getDraftExpenses(entityType) {
+  const businessDate = getBusinessDate();
+  return prisma.accVoucherExpenseDraft.findMany({
+    where: { entityType, businessDate, status: 'pending' },
+    orderBy: [{ mainGlName: 'asc' }, { createdAt: 'asc' }],
+  });
+}
+
+async function deleteDraftExpense(id) {
+  const draft = await prisma.accVoucherExpenseDraft.findUnique({ where: { id: Number(id) } });
+  if (!draft) throw Object.assign(new Error('Draft not found'), { status: 404 });
+  if (draft.status === 'posted') throw Object.assign(new Error('Posted draft cannot be deleted'), { status: 400 });
+  return prisma.accVoucherExpenseDraft.delete({ where: { id: Number(id) } });
+}
+
+// Called by day-close job: groups pending drafts by Main GL → one voucher each.
+async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
+  const drafts = await prisma.accVoucherExpenseDraft.findMany({
+    where: { entityType, businessDate: date, status: 'pending' },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!drafts.length) return [];
+
+  // Group by mainGlId
+  const groups = {};
+  for (const d of drafts) {
+    const key = String(d.mainGlId);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(d);
+  }
+
+  const vouchers = [];
+  for (const entries of Object.values(groups)) {
+    const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+    const voucherNo   = await generateVoucherNo(entityType, date);
+    const voucher = await prisma.accVoucherExpense.create({
+      data: {
+        voucherNo, voucherType: 'CASH', voucherDate: new Date(date),
+        mode: 'cash', entityType, totalAmount, source: 'draft-auto',
+        entries: {
+          create: entries.map((e) => ({
+            mainGlId:     e.mainGlId,     subGlId:      e.subGlId,
+            mainAccountId: e.mainAccountId, subAccountId: e.subAccountId,
+            accountCode:  e.accountCode,  accountName:  e.accountName,
+            payeeName:    e.payeeName,    amount:       Number(e.amount),
+            chequeNo:     e.chequeNo,     chequeDate:   e.chequeDate,
+            chequeType:   e.chequeType,   particulars:  e.particulars,
+          })),
+        },
+      },
+    });
+    // Mark all group's drafts as posted
+    await prisma.accVoucherExpenseDraft.updateMany({
+      where: { id: { in: entries.map((e) => e.id) } },
+      data:  { status: 'posted', postedVoucherId: voucher.id },
+    });
+    vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: entries[0].mainGlName, entriesCount: entries.length, totalAmount });
+  }
+  return vouchers;
+}
+
 async function generateVoucherNo(entityType, voucherDate) {
   const d = new Date(voucherDate);
   const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
@@ -740,7 +830,7 @@ async function getVouchersForReprint({ type, entityType, voucherFrom, voucherTo,
 
   if (type === 'expense') {
     const vouchers = await prisma.accVoucherExpense.findMany({
-      where, include: { entries: true }, orderBy: { voucherNo: 'asc' },
+      where, include: { entries: true }, orderBy: { voucherNo: 'desc' },
     });
 
     const allEntries = vouchers.flatMap((v) => v.entries);
@@ -773,7 +863,7 @@ async function getVouchersForReprint({ type, entityType, voucherFrom, voucherTo,
     }));
   }
 
-  return prisma.accVoucherIncome.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'asc' } });
+  return prisma.accVoucherIncome.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'desc' } });
 }
 
 async function getNextVoucherNo(type, entityType, voucherDate) {
@@ -1149,6 +1239,7 @@ module.exports = {
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
+  saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,

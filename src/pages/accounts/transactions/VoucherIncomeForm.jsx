@@ -3,6 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ChevronRight, Pencil } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import toast from 'react-hot-toast';
+import { handleEnterAsTab } from '../../../utils/keyboardNav';
 import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -102,7 +103,7 @@ export default function VoucherIncomeForm() {
   const voucherType = isBank ? 'BANK' : mode === 'card' ? 'CARD' : 'CASH';
 
   return (
-    <div className="ve-form">
+    <div className="ve-form" onKeyDown={handleEnterAsTab}>
 
       {/* ── Breadcrumb ── */}
       <div className="ve-form__breadcrumb">
@@ -210,7 +211,7 @@ export default function VoucherIncomeForm() {
             >
               {saving ? 'Saving…' : isEditMode ? 'Update' : 'Save & Print'}
             </button>
-            <button className="ve-form__add-btn" onClick={handleAddEntry}>
+            <button className="ve-form__add-btn" data-enter-submit onClick={handleAddEntry}>
               <Plus size={15} /> Confirm
             </button>
           </>
