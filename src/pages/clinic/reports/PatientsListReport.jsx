@@ -20,17 +20,45 @@ function excelFractionToTime(serial) {
   return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
 }
 
-function detectFormat(raw) {
-  // Find header row — look for row containing 'S.No.'
+// Header text can vary in wording/casing/extra spaces/extra blank spacer columns
+// between exports — so columns are located by matching the actual header row
+// text instead of assuming fixed positions (a fixed-offset guess broke silently
+// whenever the sheet had one extra/missing column).
+function normalizeHeader(s) {
+  return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function findHeaderRow(raw) {
   for (let i = 0; i < Math.min(raw.length, 15); i++) {
-    const row = raw[i];
-    if (String(row[0] || '').trim() === 'S.No.') {
-      // Check if SUB Department column exists (new format)
-      const hasSubDept = row.some(c => String(c || '').trim() === 'SUB Department');
-      return { headerRow: i, newFormat: hasSubDept };
-    }
+    if (/^S\.?\s*NO\.?$/.test(normalizeHeader(raw[i][0]))) return raw[i];
   }
-  return { headerRow: 6, newFormat: true };
+  return null;
+}
+
+// Best-effort fallback if no recognizable header row is found at all.
+const DEFAULT_COL = { dept: 5, subDept: 6, doctor: 7, type: 8, received: 9, bal: 10, dis: 11 };
+
+function buildColumnMap(headerRow) {
+  const COL = { subDept: null };
+  headerRow.forEach((cell, idx) => {
+    const h = normalizeHeader(cell);
+    if (!h) return;
+    if (h === 'DEPARTMENT') COL.dept = idx;
+    else if (h.startsWith('SUB DEPARTMENT') || h === 'SUB DEPT' || h === 'SUB DEPT.') COL.subDept = idx;
+    else if (h.startsWith('DOCTOR')) COL.doctor = idx;
+    // 'Type' is deliberately NOT read from its own header label: some exports
+    // insert a stray blank header cell right after "Doctor/Consultant" that
+    // shifts the "Type" label one column right of where the Type data
+    // actually lives — the data always sits immediately after Doctor, so
+    // it's derived positionally below instead of trusting this header cell.
+    else if (h.startsWith('RECEIVED')) COL.received = idx;
+    else if (h.startsWith('BAL')) COL.bal = idx;
+    else if (h.startsWith('DIS')) COL.dis = idx;
+  });
+  // subDept genuinely absent in some legacy exports — leave null (not a mis-detection).
+  for (const k of Object.keys(DEFAULT_COL)) if (k !== 'subDept' && COL[k] == null) COL[k] = DEFAULT_COL[k];
+  COL.type = COL.doctor + 1;
+  return COL;
 }
 
 function parseExcelFile(file) {
@@ -42,14 +70,8 @@ function parseExcelFile(file) {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-        const { newFormat } = detectFormat(raw);
-
-        // Column positions
-        // Old: [0]S.No [1]AdmitNo [2]Date [3]Time [4]Name [5]Dept [6]Doctor [7]Type [8]empty [9]Received [10]Bal [11]Dis
-        // New: [0]S.No [1]AdmitNo [2]Date [3]Time [4]Name [5]Dept [6]SubDept [7]Doctor [8]Type  [9]Received [10]Bal [11]Dis
-        const COL = newFormat
-          ? { dept:5, subDept:6, doctor:7, type:8, received:9, bal:10, dis:11 }
-          : { dept:5, subDept:null, doctor:6, type:7, received:9, bal:10, dis:11 };
+        const headerRow = findHeaderRow(raw);
+        const COL = headerRow ? buildColumnMap(headerRow) : { ...DEFAULT_COL, subDept: null };
 
         const rows = [];
         for (const row of raw) {

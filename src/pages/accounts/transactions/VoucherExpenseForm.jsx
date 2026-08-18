@@ -360,22 +360,27 @@ export default function VoucherExpenseForm() {
     setEntry((e) => ({ ...e, mainAccountId: v, subAccountId: '', accountCode: acc?.code || '', accountName: acc?.name || '', payeeName: '' }));
 
     // Check if this main account has an inventory head linked
-    const invR = await fetch(`${API}/linked/inventory-head-for-main-account?mainAccountId=${v}`);
-    const invJ = await invR.json();
-    const invHead = invJ?.data;
+    try {
+      const invR = await fetch(`${API}/linked/inventory-head-for-main-account?mainAccountId=${v}`);
+      const invJ = await invR.json();
+      const invHead = invJ?.data;
 
-    if (invHead?.inventorySubcategoryId) {
-      // Load inventory items as sub account options
-      setIsInventoryAcc(true);
-      const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
-      const iJ = await iR.json();
-      setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
-    } else {
-      // Load regular sub accounts
+      if (invHead?.inventorySubcategoryId) {
+        // Load inventory items as sub account options
+        setIsInventoryAcc(true);
+        const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
+        const iJ = await iR.json();
+        setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
+        return;
+      }
+    } catch { /* inventory check failed — fall through to regular sub accounts */ }
+
+    // Load regular sub accounts
+    try {
       const r = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${v}`);
       const j = await r.json();
       setSubAccs(Array.isArray(j?.data) ? j.data : []);
-    }
+    } catch { setSubAccs([]); }
   };
 
   const handleSubAccChange = async (v) => {
@@ -738,7 +743,7 @@ export default function VoucherExpenseForm() {
               className="ve-form__alloc-input"
               value={entry.subAccountId}
               onChange={(e) => handleSubAccChange(e.target.value)}
-              disabled={!entry.mainAccountId || subAccs.length === 0}
+              disabled={!entry.mainAccountId}
             >
               <option value="">None</option>
               {subAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}

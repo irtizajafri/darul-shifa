@@ -591,7 +591,11 @@ async function deleteIncomeCategory(id) {
 }
 
 async function getConsultantVisits(doctorName, dateFrom, dateTo) {
-  const where = { doctor: doctorName, isPaid: false };
+  // Panel patients are billed to the panel/company, not paid in cash by the
+  // patient — the doctor/consultant is not paid out of these visits, so they
+  // must never show up (or count toward the amount) in the voucher expense
+  // payment list.
+  const where = { doctor: doctorName, isPaid: false, paymentType: { not: 'Panel' } };
   if (dateFrom) where.visitDate = { ...(where.visitDate || {}), gte: new Date(dateFrom) };
   if (dateTo)   where.visitDate = { ...(where.visitDate || {}), lte: new Date(dateTo) };
   return prisma.patientVisit.findMany({
