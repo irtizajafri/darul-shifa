@@ -708,8 +708,10 @@ export const useClinicStore = create((set) => ({
     return request(`/provisional-bill/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
   },
 
-  addProvisionalBillItemFromVisit: async (admissionId, opdVisitId) => {
-    return request(`/provisional-bill/${admissionId}/add-from-visit`, { method: 'POST', body: JSON.stringify({ opdVisitId }) });
+  addProvisionalBillItemFromVisit: async (admissionId, opdVisitId, amount) => {
+    const body = { opdVisitId };
+    if (amount != null) body.amount = amount;
+    return request(`/provisional-bill/${admissionId}/add-from-visit`, { method: 'POST', body: JSON.stringify(body) });
   },
 
   updateProvisionalBillItem: async (itemId, payload) => {

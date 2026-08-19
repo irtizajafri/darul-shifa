@@ -383,7 +383,29 @@ async function createSubcategory(payload) {
   if (duplicate) throw new Error('Subcategory with this name already exists in the selected category');
 
   const status = normalizeStatus(payload.status);
-  const code = payload.code ? String(payload.code).trim() : await generateSubcategoryCode(catId);
+
+  // Never use a user-supplied code for subcategories — always auto-generate
+  let code = await generateSubcategoryCode(catId);
+
+  // Safety: if generated code already exists globally, keep incrementing
+  let attempt = 0;
+  while (attempt < 10) {
+    const codeExists = await prisma.inventorySubcategory.findFirst({ where: { code }, select: { id: true } });
+    if (!codeExists) break;
+    attempt++;
+    const category = await prisma.inventoryCategory.findUnique({ where: { id: catId }, select: { code: true } });
+    const catCode = String(category?.code || '');
+    const existing = await prisma.inventorySubcategory.findMany({ where: { categoryId: catId }, select: { code: true } });
+    let maxSeq = 0;
+    existing.forEach((row) => {
+      const c = String(row.code || '');
+      if (c.startsWith(catCode) && c.length === catCode.length + 2) {
+        const seq = Number(c.slice(catCode.length));
+        if (Number.isFinite(seq) && seq > 0) maxSeq = Math.max(maxSeq, seq);
+      }
+    });
+    code = `${catCode}${String(maxSeq + 1 + attempt).padStart(2, '0')}`;
+  }
 
   return prisma.inventorySubcategory.create({
     data: {

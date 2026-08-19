@@ -392,6 +392,11 @@ export default function ProvisionalBill() {
   const [reprintReady, setReprintReady] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
 
+  // ── Pending Slip Modal ────────────────────────────────────────────────────────
+  const [slipModal, setSlipModal]       = useState(null); // { id, department, patientName, date, amount }
+  const [slipAmount, setSlipAmount]     = useState('');
+  const [addingSlip, setAddingSlip]     = useState(false);
+
   const [surgery, setSurgery] = useState(false);
   const [surgeryTypeId, setSurgeryTypeId] = useState('');
   const [dischargeTypeId, setDischargeTypeId] = useState('');
@@ -555,13 +560,25 @@ export default function ProvisionalBill() {
     setRow(r => ({ ...r, billHeadId: '', qty: '1', rate: '', remarks: '' }));
   }
 
-  async function handleAddPendingSlip(visitId) {
+  function openSlipModal(slip) {
+    setSlipModal(slip);
+    setSlipAmount(String(slip.amount || ''));
+  }
+
+  async function handleAddFromModal() {
+    if (!slipModal) return;
+    const amt = parseFloat(slipAmount);
+    if (isNaN(amt) || amt < 0) { toast.error('Valid amount enter karo'); return; }
+    setAddingSlip(true);
     try {
-      await addProvisionalBillItemFromVisit(admissionId, visitId);
+      await addProvisionalBillItemFromVisit(admissionId, slipModal.id, amt);
       toast.success('Slip Provisional Bill mein add ho gayi');
+      setSlipModal(null);
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Add nahi ho saka');
+    } finally {
+      setAddingSlip(false);
     }
   }
 
@@ -703,7 +720,7 @@ export default function ProvisionalBill() {
                     </thead>
                     <tbody>
                       {detail.pendingSlips.map(s => (
-                        <tr key={s.id} onDoubleClick={() => handleAddPendingSlip(s.id)} title="Double-click to add">
+                        <tr key={s.id} onDoubleClick={() => openSlipModal(s)} title="Double-click to add">
                           <td>{s.department}</td>
                           <td>{fmtDate(s.date)}</td>
                           <td className="r">{fmt2(s.amount)}</td>
@@ -845,7 +862,7 @@ export default function ProvisionalBill() {
                         </thead>
                         <tbody>
                           {detail.pendingDiagnosticSlips.map(s => (
-                            <tr key={s.id} onDoubleClick={() => handleAddPendingSlip(s.id)} title="Double-click to add">
+                            <tr key={s.id} onDoubleClick={() => openSlipModal(s)} title="Double-click to add">
                               <td>{s.department}</td>
                               <td>{fmtDate(s.date)}</td>
                               <td className="r">{fmt2(s.amount)}</td>
@@ -982,6 +999,49 @@ export default function ProvisionalBill() {
                 </>
               )}
             </div>
+
+            {/* ── Pending Slip Modal ── */}
+            {slipModal && (
+              <div className="pb-slip-modal-backdrop" onClick={() => !addingSlip && setSlipModal(null)}>
+                <div className="pb-slip-modal" onClick={e => e.stopPropagation()}>
+                  <div className="pb-slip-modal__header">
+                    <span className="pb-slip-modal__dept">{slipModal.department}</span>
+                    <button className="pb-slip-modal__close" onClick={() => setSlipModal(null)} disabled={addingSlip}>✕</button>
+                  </div>
+                  <div className="pb-slip-modal__body">
+                    <div className="pb-slip-modal__row">
+                      <span className="pb-slip-modal__lbl">Patient</span>
+                      <span className="pb-slip-modal__val">{slipModal.patientName || detail?.admission?.patientName || '—'}</span>
+                    </div>
+                    <div className="pb-slip-modal__row">
+                      <span className="pb-slip-modal__lbl">Date</span>
+                      <span className="pb-slip-modal__val">{fmtDate(slipModal.date)}</span>
+                    </div>
+                    <div className="pb-slip-modal__row pb-slip-modal__row--amt">
+                      <label className="pb-slip-modal__lbl" htmlFor="slip-amt">Amount (PKR)</label>
+                      <input
+                        id="slip-amt"
+                        className="pb-slip-modal__amt-input"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={slipAmount}
+                        onChange={e => setSlipAmount(e.target.value)}
+                        onFocus={e => e.target.select()}
+                        autoFocus
+                        disabled={addingSlip}
+                      />
+                    </div>
+                  </div>
+                  <div className="pb-slip-modal__footer">
+                    <button className="pb-slip-modal__cancel" onClick={() => setSlipModal(null)} disabled={addingSlip}>Cancel</button>
+                    <button className="pb-slip-modal__add" onClick={handleAddFromModal} disabled={addingSlip}>
+                      {addingSlip ? 'Adding…' : 'Add to Bill'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="pb-footer">
               <div className="pb-footer-amt">Bill Amount <span>{fmt2(detail.balanceInfo.billAmount)}</span></div>

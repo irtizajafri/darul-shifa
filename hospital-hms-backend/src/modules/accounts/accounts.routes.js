@@ -37,6 +37,10 @@ router.get('/linked/doctors', ctrl.getDoctorList);
 router.get('/linked/inventory-subcategories', ctrl.getInventorySubcategories);
 router.get('/linked/inventory-items', ctrl.getInventoryItemsBySubcategory);
 router.get('/linked/inventory-head-for-main-account', ctrl.getInventoryHeadForMainAccount);
+router.get('/linked/surgery-head-for-main-account', ctrl.getSurgeryHeadForMainAccount);
+router.get('/linked/surgery-payees', ctrl.getSurgeryPayeesForHead);
+router.post('/payee-head-staff-categories', ctrl.addPayeeHeadStaffCategory);
+router.delete('/payee-head-staff-categories/:headId/:staffCategoryId', ctrl.removePayeeHeadStaffCategory);
 
 router.get('/bank-accounts', ctrl.getBankAccounts);
 router.post('/bank-accounts', ctrl.createBankAccount);
@@ -45,6 +49,7 @@ router.delete('/bank-accounts/:id', ctrl.deleteBankAccount);
 
 router.get('/cheque-serials', ctrl.getChequeSerials);
 router.get('/cheque-serials/next', ctrl.getNextChequeSerial);
+router.get('/cash-serial/next', ctrl.getNextCashSerial);
 router.post('/cheque-serials', ctrl.createChequeSerial);
 router.delete('/cheque-serials/:id', ctrl.deleteChequeSerial);
 

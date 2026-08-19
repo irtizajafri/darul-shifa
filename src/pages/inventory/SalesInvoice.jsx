@@ -329,7 +329,10 @@ export default function SalesInvoice() {
         }
       }
     }
-    return Object.values(map);
+    // Zero (or negative) aggregated quantity shouldn't reach the invoice at
+    // all — it isn't a valid billable line, and previously letting it through
+    // caused the whole save to fail with "quantity must be a positive number".
+    return Object.values(map).filter((r) => Number(r.qty) > 0);
   }, [admGINs]);
 
   const admGrandTotal = useMemo(() =>

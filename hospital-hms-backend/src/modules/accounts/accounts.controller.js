@@ -48,6 +48,7 @@ async function getChequeSerials(req, res, next) { try { success(res, await svc.g
 async function createChequeSerial(req, res, next) { try { success(res, await svc.createChequeSerial(req.body), 'created'); } catch (e) { next(e); } }
 async function deleteChequeSerial(req, res, next) { try { await svc.deleteChequeSerial(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 async function getNextChequeSerial(req, res, next) { try { success(res, { nextSerial: await svc.getNextChequeSerial(req.query.bankAccountId) }); } catch (e) { next(e); } }
+async function getNextCashSerial(req, res, next) { try { success(res, { nextSerial: await svc.getNextCashSerial(et(req)) }); } catch (e) { next(e); } }
 
 async function getAllPayeeEntries(req, res, next) { try { success(res, await svc.getAllPayeeEntries(et(req))); } catch (e) { next(e); } }
 async function getPayeeEntriesBySubAccount(req, res, next) { try { success(res, await svc.getPayeeEntriesBySubAccount(req.query.subAccountId, et(req))); } catch (e) { next(e); } }
@@ -111,6 +112,22 @@ async function removeInventoryHeadMainAccount(req, res, next) {
   try {
     const { headId, mainAccountId } = req.params;
     await svc.removeInventoryHeadMainAccount(headId, mainAccountId);
+    success(res, null, 'unlinked');
+  } catch (e) { next(e); }
+}
+
+async function getSurgeryHeadForMainAccount(req, res, next) { try { success(res, await svc.getSurgeryHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
+async function getSurgeryPayeesForHead(req, res, next) { try { success(res, await svc.getSurgeryPayeesForHead(req.query.headId)); } catch (e) { next(e); } }
+async function addPayeeHeadStaffCategory(req, res, next) {
+  try {
+    const { headId, staffCategoryId } = req.body;
+    success(res, await svc.addPayeeHeadStaffCategory(headId, staffCategoryId), 'linked');
+  } catch (e) { next(e); }
+}
+async function removePayeeHeadStaffCategory(req, res, next) {
+  try {
+    const { headId, staffCategoryId } = req.params;
+    await svc.removePayeeHeadStaffCategory(headId, staffCategoryId);
     success(res, null, 'unlinked');
   } catch (e) { next(e); }
 }
@@ -195,8 +212,9 @@ module.exports = {
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
+  getSurgeryHeadForMainAccount, getSurgeryPayeesForHead, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
-  getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
+  getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,

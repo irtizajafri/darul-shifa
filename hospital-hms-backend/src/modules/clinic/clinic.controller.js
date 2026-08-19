@@ -443,7 +443,8 @@ async function addProvisionalBillItem(req, res, next) {
 
 async function addProvisionalBillItemFromVisit(req, res, next) {
   try {
-    const data = await service.addProvisionalBillItemFromVisit(req.params.admissionId, req.body.opdVisitId);
+    const { opdVisitId, amount } = req.body;
+    const data = await service.addProvisionalBillItemFromVisit(req.params.admissionId, opdVisitId, amount);
     success(res, data, 'Slip Provisional Bill mein add ho gayi');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);

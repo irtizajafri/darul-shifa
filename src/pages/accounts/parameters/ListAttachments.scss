@@ -158,6 +158,46 @@
     margin: 0;
   }
 
+  &__surgery-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  &__surgery-cats {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__surgery-cats-label {
+    font-size: 0.78rem;
+    color: $text-muted;
+    margin-right: 0.2rem;
+  }
+
+  &__cat-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid $border;
+    background: white;
+    font-size: 0.78rem;
+    color: $text-main;
+    cursor: pointer;
+
+    &.checked {
+      background: #fdf2f8;
+      border-color: #ec4899;
+      color: #be185d;
+    }
+
+    input { margin: 0; }
+  }
+
   &__head-top {
     display: flex;
     align-items: center;

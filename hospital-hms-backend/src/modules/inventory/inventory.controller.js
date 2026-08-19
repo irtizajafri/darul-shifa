@@ -79,8 +79,9 @@ async function createSubcategory(req, res, next) {
     const data = await service.createSubcategory(req.body || {});
     return success(res, data, 'subcategory created');
   } catch (err) {
-    if (String(err.message).toLowerCase().includes('unique')) {
-      return fail(res, 409, 'Subcategory code/name must be unique for category');
+    const msg = String(err.message || '');
+    if (msg.includes('already exists') || msg.toLowerCase().includes('unique')) {
+      return fail(res, 409, msg.includes('already exists') ? msg : 'A subcategory with this name already exists in the selected category');
     }
     next(err);
   }

@@ -159,6 +159,10 @@ const LINKED_ACCOUNTS_INCLUDE = {
     orderBy: { id: 'asc' },
     include: { mainAccount: { select: { id: true, code: true, name: true } } },
   },
+  staffCategoryLinks: {
+    orderBy: { id: 'asc' },
+    include: { staffCategory: { select: { id: true, name: true } } },
+  },
 };
 
 async function getPayeeHeads(entityType) {
@@ -184,6 +188,59 @@ async function getInventoryHeadForMainAccount(mainAccountId) {
   });
   if (!link?.payeeHead || link.payeeHead.sourceType !== 'inventory') return null;
   return link.payeeHead;
+}
+
+// ── Surgery/Anesthesia payee head (sourceType='surgery') ───────────────────
+// Same shape as the Inventory head above, but the "catalog" is Clinic staff
+// categories (Surgeon, Anaesthetic, …) instead of an inventory subcategory —
+// reuses the exact same AccPayeeHeadMainAccount link, so no new link route
+// was needed for it.
+
+async function getSurgeryHeadForMainAccount(mainAccountId) {
+  const link = await prisma.accPayeeHeadMainAccount.findFirst({
+    where: { mainAccountId: Number(mainAccountId) },
+    include: {
+      payeeHead: {
+        select: {
+          id: true, name: true, sourceType: true,
+          staffCategoryLinks: { include: { staffCategory: { select: { id: true, name: true } } } },
+        },
+      },
+    },
+  });
+  if (!link?.payeeHead || link.payeeHead.sourceType !== 'surgery') return null;
+  return link.payeeHead;
+}
+
+async function addPayeeHeadStaffCategory(headId, staffCategoryId) {
+  return prisma.accPayeeHeadStaffCategory.create({
+    data: { payeeHeadId: Number(headId), staffCategoryId: Number(staffCategoryId) },
+    include: { staffCategory: { select: { id: true, name: true } } },
+  });
+}
+
+async function removePayeeHeadStaffCategory(headId, staffCategoryId) {
+  return prisma.accPayeeHeadStaffCategory.deleteMany({
+    where: { payeeHeadId: Number(headId), staffCategoryId: Number(staffCategoryId) },
+  });
+}
+
+// Payee list for a surgery/anesthesia head — doctors whose staff category is
+// one of the ones linked to this head, tagged with that category's name so
+// the picker can show e.g. "Dr X (Surgeon)".
+async function getSurgeryPayeesForHead(headId) {
+  const links = await prisma.accPayeeHeadStaffCategory.findMany({
+    where: { payeeHeadId: Number(headId) },
+    select: { staffCategoryId: true },
+  });
+  const categoryIds = links.map((l) => l.staffCategoryId);
+  if (categoryIds.length === 0) return [];
+  const rows = await prisma.clinicDoctor.findMany({
+    where: { status: 'active', staffCategoryId: { in: categoryIds } },
+    select: { id: true, name: true, code: true, staffCategory: { select: { name: true } } },
+    orderBy: { name: 'asc' },
+  });
+  return rows.map((d) => ({ id: d.id, name: d.name, code: d.code, categoryName: d.staffCategory?.name || null }));
 }
 
 async function getInventorySubcategories() {
@@ -244,6 +301,17 @@ async function removeHeadAccount(headId, subAccountId) {
   });
 }
 
+// Mirrors the frontend's prevMonthInfo() (VoucherExpenseForm.jsx) — the
+// Salary modal always pays out *last* calendar month's payslip, so "already
+// paid" has to be checked against that same month/year.
+function getPrevMonthYear() {
+  const now = new Date();
+  const m = now.getMonth(); // 0-11
+  const month = String(m === 0 ? 12 : m).padStart(2, '0');
+  const year = String(m === 0 ? now.getFullYear() - 1 : now.getFullYear());
+  return { month, year };
+}
+
 async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   const link = await prisma.accPayeeHeadAccount.findFirst({
     where: { subAccountId: Number(subAccountId), payeeHead: { entityType } },
@@ -264,10 +332,20 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       orderBy: { firstName: 'asc' },
     });
     const allEmps = rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode }));
+    // Once an employee's previous-month salary voucher has been paid, drop
+    // them from the pay-list — they only reappear once a new (unpaid) month
+    // rolls around, same idea as the isPaid gates below for vendor/doctor.
+    const { month: prevMonth, year: prevYear } = getPrevMonthYear();
+    const paidRows = await prisma.employeeSalaryPayment.findMany({
+      where: { salaryMonth: prevMonth, salaryYear: prevYear },
+      select: { empCode: true },
+    });
+    const paidCodes = new Set(paidRows.map((r) => r.empCode));
+    const dueEmps = allEmps.filter((e) => !paidCodes.has(e.code));
     const filteredEntries = checkedNames.length > 0
-      ? allEmps.filter((e) => checkedNames.includes(e.name))
-      : allEmps;
-    return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: allEmps, checkedNames };
+      ? dueEmps.filter((e) => checkedNames.includes(e.name))
+      : dueEmps;
+    return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueEmps, checkedNames };
   }
 
   if (head.sourceType === 'vendor') {
@@ -281,10 +359,20 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       select: { id: true, name: true, code: true },
       orderBy: { name: 'asc' },
     });
+    // Only suppliers with at least one unpaid GRN belong in the pay-list —
+    // once every GRN is paid off, the supplier drops out until a new GRN
+    // comes in.
+    const dueSupplierRows = await prisma.inventoryGRN.findMany({
+      where: { isPaid: false },
+      select: { supplierId: true },
+      distinct: ['supplierId'],
+    });
+    const dueSupplierIds = new Set(dueSupplierRows.map((r) => r.supplierId));
+    const dueSuppliers = allSuppliers.filter((s) => dueSupplierIds.has(s.id));
     const filteredEntries = checkedNames.length > 0
-      ? allSuppliers.filter((s) => checkedNames.includes(s.name))
-      : allSuppliers;
-    return { type: 'vendor', headName: head.name, headId: head.id, entries: filteredEntries, allSuppliers, checkedNames };
+      ? dueSuppliers.filter((s) => checkedNames.includes(s.name))
+      : dueSuppliers;
+    return { type: 'vendor', headName: head.name, headId: head.id, entries: filteredEntries, allSuppliers: dueSuppliers, checkedNames };
   }
 
   if (head.sourceType === 'doctor') {
@@ -299,10 +387,21 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       orderBy: { name: 'asc' },
     });
     const allDoctors = rows.map((d) => ({ id: d.id, name: d.name, code: d.code }));
+    // Same idea as vendor above — a doctor only belongs in the pay-list while
+    // they have at least one unpaid, non-Panel visit (mirrors the exact
+    // filter getConsultantVisits uses, so "shows in list" always means
+    // "clicking it shows something to pay").
+    const dueDoctorRows = await prisma.patientVisit.findMany({
+      where: { isPaid: false, paymentType: { not: 'Panel' }, doctor: { not: null } },
+      select: { doctor: true },
+      distinct: ['doctor'],
+    });
+    const dueDoctorNames = new Set(dueDoctorRows.map((r) => r.doctor));
+    const dueDoctors = allDoctors.filter((d) => dueDoctorNames.has(d.name));
     const filteredEntries = checkedNames.length > 0
-      ? allDoctors.filter((d) => checkedNames.includes(d.name))
-      : allDoctors;
-    return { type: 'doctor', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: allDoctors, checkedNames };
+      ? dueDoctors.filter((d) => checkedNames.includes(d.name))
+      : dueDoctors;
+    return { type: 'doctor', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueDoctors, checkedNames };
   }
 
   if (head.sourceType === 'inventory') {
@@ -451,6 +550,16 @@ async function getNextChequeSerial(bankAccountId) {
 
 // ── Voucher Expense ───────────────────────────────────────────────────────────
 
+async function getNextCashSerial(entityType) {
+  const lastEntry = await prisma.accVoucherExpenseEntry.findFirst({
+    where: { voucher: { mode: 'cash', entityType } },
+    orderBy: { id: 'desc' },
+    select: { chequeNo: true },
+  });
+  const last = lastEntry?.chequeNo ? parseInt(lastEntry.chequeNo, 10) : 0;
+  return isNaN(last) ? 1 : last + 1;
+}
+
 async function getAllPayeeEntries(entityType) {
   return prisma.accPayeeEntry.findMany({
     where: { payeeHead: { entityType } },
@@ -583,6 +692,7 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
           chequeDate: e.chequeDate ? new Date(e.chequeDate) : null,
           chequeType: e.chequeType || null,
           particulars: e.particulars || null,
+          admissionNo: e.admissionNo || null,
         })),
       },
     },
@@ -657,6 +767,7 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
           chequeDate: e.chequeDate ? new Date(e.chequeDate) : null,
           chequeType: e.chequeType || null,
           particulars: e.particulars || null,
+          admissionNo: e.admissionNo || null,
         })),
       },
     },
@@ -1234,9 +1345,10 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
+  getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
-  getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial,
+  getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,

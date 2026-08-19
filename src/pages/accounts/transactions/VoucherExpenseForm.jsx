@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ChevronRight, Printer, Pencil } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
@@ -9,6 +9,7 @@ import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
 const UTIL_API = 'http://localhost:5001/api/utilities';
+const CLINIC_API = 'http://localhost:5001/api/clinic';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -329,6 +330,7 @@ const emptyEntry = () => ({
   visitIds: [],
   grnIds: [],
   salaryEmpCode: '', salaryMonth: '', salaryYear: '',
+  admissionNo: '',
 });
 
 export default function VoucherExpenseForm() {
@@ -358,6 +360,11 @@ export default function VoucherExpenseForm() {
   const [mainAccs, setMainAccs]         = useState([]);
   const [subAccs, setSubAccs]           = useState([]);
   const [isInventoryAcc, setIsInventoryAcc] = useState(false);
+  const [isSurgeryAcc, setIsSurgeryAcc] = useState(false);
+  const [admissionQuery, setAdmissionQuery] = useState('');
+  const [admissionResults, setAdmissionResults] = useState([]);
+  const [admissionSearchOpen, setAdmissionSearchOpen] = useState(false);
+  const admissionSearchTimer = useRef(null);
   const [linkedPayees, setLinkedPayees] = useState([]);
   const [linkedHeadName, setLinkedHeadName] = useState('');
   const [linkedHeadType, setLinkedHeadType] = useState('');
@@ -378,9 +385,18 @@ export default function VoucherExpenseForm() {
 
   const [bankAccounts, setBankAccounts]   = useState([]);
   const [selectedBankId, setSelectedBankId] = useState(bankId ? String(bankId) : '');
-  const cashSerial = entries.length + 1; // always correct — no state needed
+  const [cashSerial, setCashSerial] = useState(1); // fetched from backend on mount
 
   useEffect(() => { fetchMainGLs(entityType); }, [entityType]);
+
+  // Fetch global next cash serial from backend on mount (cash mode only)
+  useEffect(() => {
+    if (mode !== 'cash' || isEditMode) return;
+    fetch(`${API}/cash-serial/next?entityType=${entityType}`)
+      .then((r) => r.json())
+      .then((j) => { if (j?.data?.nextSerial) setCashSerial(j.data.nextSerial); })
+      .catch(() => {}); // silent — fallback to 1
+  }, [entityType, mode, isEditMode]);
 
   // ── Auto Narration ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -390,11 +406,13 @@ export default function VoucherExpenseForm() {
     const mainAcc = mainAccs.find((a) => String(a.id) === String(entry.mainAccountId));
     const subAcc  = subAccs.find((a)  => String(a.id) === String(entry.subAccountId));
     if (!mainGl || !subGl || !mainAcc) return;
-    const narration = subAcc
-      ? `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${subAcc.name} ${entry.payeeName}`
-      : `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${entry.payeeName}`;
+    const narration = entry.admissionNo
+      ? `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for Admission #${entry.admissionNo}`
+      : subAcc
+        ? `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${subAcc.name} ${entry.payeeName}`
+        : `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${entry.payeeName}`;
     setEntry((e) => ({ ...e, particulars: narration.trim() }));
-  }, [entry.mainGlId, entry.subGlId, entry.mainAccountId, entry.subAccountId, entry.payeeName]);
+  }, [entry.mainGlId, entry.subGlId, entry.mainAccountId, entry.subAccountId, entry.payeeName, entry.admissionNo]);
 
   useEffect(() => {
     if (!isBank) return;
@@ -427,8 +445,9 @@ export default function VoucherExpenseForm() {
   }, [selectedBankId]);
 
   const handleMainGlChange = async (v) => {
-    setEntry((e) => ({ ...e, mainGlId: v, subGlId: '', mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '' }));
-    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
+    setEntry((e) => ({ ...e, mainGlId: v, subGlId: '', mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '', admissionNo: '' }));
+    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false); setIsSurgeryAcc(false);
+    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
     if (!v) return;
     const r = await fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${v}`);
     const j = await r.json();
@@ -436,8 +455,9 @@ export default function VoucherExpenseForm() {
   };
 
   const handleSubGlChange = async (v) => {
-    setEntry((e) => ({ ...e, subGlId: v, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '' }));
-    setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
+    setEntry((e) => ({ ...e, subGlId: v, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '', admissionNo: '' }));
+    setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false); setIsSurgeryAcc(false);
+    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
     if (!v) return;
     const r = await fetch(`${API}/main-account?entityType=${entityType}&subGlId=${v}`);
     const j = await r.json();
@@ -447,9 +467,11 @@ export default function VoucherExpenseForm() {
   const handleMainAccChange = async (v) => {
     setSubAccs([]);
     setIsInventoryAcc(false);
-    if (!v) { setEntry((e) => ({ ...e, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '' })); return; }
+    setIsSurgeryAcc(false);
+    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    if (!v) { setEntry((e) => ({ ...e, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '', admissionNo: '' })); return; }
     const acc = mainAccs.find((a) => String(a.id) === v);
-    setEntry((e) => ({ ...e, mainAccountId: v, subAccountId: '', accountCode: acc?.code || '', accountName: acc?.name || '', payeeName: '' }));
+    setEntry((e) => ({ ...e, mainAccountId: v, subAccountId: '', accountCode: acc?.code || '', accountName: acc?.name || '', payeeName: '', admissionNo: '' }));
 
     // Check if this main account has an inventory head linked
     try {
@@ -467,12 +489,55 @@ export default function VoucherExpenseForm() {
       }
     } catch { /* inventory check failed — fall through to regular sub accounts */ }
 
+    // Check if this main account has a Surgery/Anesthesia head linked — Sub
+    // Account becomes an admission-number picker and the payee list is
+    // Clinic doctors filtered by the head's linked staff categories.
+    try {
+      const surgR = await fetch(`${API}/linked/surgery-head-for-main-account?mainAccountId=${v}`);
+      const surgJ = await surgR.json();
+      const surgHead = surgJ?.data;
+
+      if (surgHead?.id) {
+        setIsSurgeryAcc(true);
+        setLinkedHeadName(surgHead.name);
+        setLinkedHeadType('surgery');
+        const pR = await fetch(`${API}/linked/surgery-payees?headId=${surgHead.id}`);
+        const pJ = await pR.json();
+        setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        // Show recent admissions immediately so the picker isn't empty
+        fetch(`${CLINIC_API}/admission/adjustment/search?q=`)
+          .then((r) => r.json())
+          .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
+          .catch(() => {});
+        return;
+      }
+    } catch { /* surgery check failed — fall through to regular sub accounts */ }
+
     // Load regular sub accounts
     try {
       const r = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${v}`);
       const j = await r.json();
       setSubAccs(Array.isArray(j?.data) ? j.data : []);
     } catch { setSubAccs([]); }
+  };
+
+  const handleAdmissionQueryChange = (val) => {
+    setAdmissionQuery(val);
+    setAdmissionSearchOpen(true);
+    clearTimeout(admissionSearchTimer.current);
+    admissionSearchTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}`);
+        const j = await r.json();
+        setAdmissionResults(Array.isArray(j?.data) ? j.data : []);
+      } catch { setAdmissionResults([]); }
+    }, 300);
+  };
+
+  const handleAdmissionSelect = (row) => {
+    setEntry((e) => ({ ...e, admissionNo: row.admissionNo, accountName: mainAccs.find((a) => String(a.id) === String(e.mainAccountId))?.name || e.accountName }));
+    setAdmissionQuery(`${row.admissionNo} — ${row.patientName}`);
+    setAdmissionSearchOpen(false);
   };
 
   const handleSubAccChange = async (v) => {
@@ -520,6 +585,8 @@ export default function VoucherExpenseForm() {
     setEntries((es) => es.filter((_, i) => i !== idx));
     setEntry({ ...e });
     setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
+    setIsSurgeryAcc(false); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    setAdmissionQuery(e.admissionNo || '');
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
 
     if (e.mainGlId) {
@@ -541,11 +608,25 @@ export default function VoucherExpenseForm() {
         const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
         const iJ = await iR.json();
         setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
-      } else {
-        const r3 = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${e.mainAccountId}`);
-        const j3 = await r3.json();
-        setSubAccs(Array.isArray(j3?.data) ? j3.data : []);
+        return;
       }
+
+      const surgR = await fetch(`${API}/linked/surgery-head-for-main-account?mainAccountId=${e.mainAccountId}`);
+      const surgJ = await surgR.json();
+      const surgHead = surgJ?.data;
+      if (surgHead?.id) {
+        setIsSurgeryAcc(true);
+        setLinkedHeadName(surgHead.name);
+        setLinkedHeadType('surgery');
+        const pR = await fetch(`${API}/linked/surgery-payees?headId=${surgHead.id}`);
+        const pJ = await pR.json();
+        setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        return;
+      }
+
+      const r3 = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${e.mainAccountId}`);
+      const j3 = await r3.json();
+      setSubAccs(Array.isArray(j3?.data) ? j3.data : []);
     }
   };
 
@@ -722,6 +803,7 @@ export default function VoucherExpenseForm() {
     if (!entry.mainGlId)      { toast.error('Select Main GL'); return; }
     if (!entry.subGlId)       { toast.error('Select Sub GL'); return; }
     if (!entry.mainAccountId) { toast.error('Select Main Account'); return; }
+    if (isSurgeryAcc && !entry.admissionNo) { toast.error('Select an Admission'); return; }
     if (!entry.amount || Number(entry.amount) <= 0) { toast.error('Enter a valid amount'); return; }
     if (isCheque && !entry.chequeNo.trim()) { toast.error('Enter cheque number'); return; }
 
@@ -740,9 +822,9 @@ export default function VoucherExpenseForm() {
       mainGlName:      mainGl?.name  || '',
       subGlName:       subGl?.name   || '',
       mainAccountName: mainAcc?.name || entry.accountName || '',
-      subAccountName:  subAcc?.name  || entry.payeeName   || '',
+      subAccountName:  subAcc?.name || (entry.admissionNo ? `Admission #${entry.admissionNo}` : '') || entry.payeeName || '',
     }]);
-    // cashSerial is derived from entries.length — no manual increment needed
+    if (mode === 'cash') setCashSerial((s) => s + 1);
 
     setEntry(emptyEntry());
     if (isBank && selectedBankId) {
@@ -750,7 +832,8 @@ export default function VoucherExpenseForm() {
         .then((r) => r.json())
         .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
     }
-    setSubGLs([]); setMainAccs([]); setSubAccs([]);
+    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
+    setIsSurgeryAcc(false); setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
   };
 
@@ -880,15 +963,40 @@ export default function VoucherExpenseForm() {
           <div className="ve-form__alloc-row">
             <span className="ve-form__alloc-label">SUB Account</span>
             <span className="ve-form__alloc-sep">:</span>
-            <select
-              className="ve-form__alloc-input"
-              value={entry.subAccountId}
-              onChange={(e) => handleSubAccChange(e.target.value)}
-              disabled={!entry.mainAccountId}
-            >
-              <option value="">None</option>
-              {subAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-            </select>
+            {isSurgeryAcc ? (
+              <div className="ve-form__payee-picker" style={{ flex: 1 }}>
+                <input
+                  className="ve-form__alloc-input"
+                  placeholder="Search Admission # or Patient Name… (recent first)"
+                  value={admissionQuery}
+                  onChange={(e) => handleAdmissionQueryChange(e.target.value)}
+                  onFocus={() => setAdmissionSearchOpen(true)}
+                  onBlur={() => setTimeout(() => setAdmissionSearchOpen(false), 150)}
+                />
+                {admissionSearchOpen && (
+                  <div className="ve-form__payee-list">
+                    {admissionResults.length === 0 ? (
+                      <div className="ve-form__payee-item" style={{ cursor: 'default', color: '#94a3b8' }}>No admissions found</div>
+                    ) : admissionResults.slice(0, 8).map((r) => (
+                      <div key={r.id} className="ve-form__payee-item" onMouseDown={() => handleAdmissionSelect(r)}>
+                        <span className="ve-form__payee-code">{r.admissionNo}</span>
+                        <span>{r.patientName}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <select
+                className="ve-form__alloc-input"
+                value={entry.subAccountId}
+                onChange={(e) => handleSubAccChange(e.target.value)}
+                disabled={!entry.mainAccountId}
+              >
+                <option value="">None</option>
+                {subAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+              </select>
+            )}
           </div>
         </div>
       </div>
@@ -928,7 +1036,7 @@ export default function VoucherExpenseForm() {
                 <label>
                   Payee
                   {linkedHeadName && <span className="ve-form__head-tag">{linkedHeadName}</span>}
-                  {!entry.subAccountId && subAccs.length > 0 && (
+                  {!isSurgeryAcc && !entry.subAccountId && subAccs.length > 0 && (
                     <span className="ve-form__optional"> (select Sub Account first)</span>
                   )}
                 </label>
@@ -961,7 +1069,7 @@ export default function VoucherExpenseForm() {
                               }}
                             >
                               {p.code && <span className="ve-form__payee-code">{p.code}</span>}
-                              <span>{p.name}</span>
+                              <span>{p.name}{p.categoryName ? ` (${p.categoryName})` : ''}</span>
                             </div>
                           ))}
                       </div>

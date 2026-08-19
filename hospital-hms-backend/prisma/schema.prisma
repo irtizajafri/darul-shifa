@@ -828,8 +828,9 @@ model ClinicStaffCategory {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
 
-  doctors       ClinicDoctor[]
-  billHeadCats  ClinicBillHeadStaffCat[]
+  doctors        ClinicDoctor[]
+  billHeadCats   ClinicBillHeadStaffCat[]
+  payeeHeadLinks AccPayeeHeadStaffCategory[]
 }
 
 model ClinicDoctor {
@@ -1502,16 +1503,21 @@ model AccSubAccount {
 }
 
 model AccPayeeHead {
-  id                     Int                       @id @default(autoincrement())
+  id                     Int                          @id @default(autoincrement())
   name                   String
-  sourceType             String                    @default("manual")
-  entityType             String                    @default("non-corporate")
+  sourceType             String                       @default("manual")
+  entityType             String                       @default("non-corporate")
   inventorySubcategoryId Int?
-  createdAt              DateTime                  @default(now())
+  createdAt              DateTime                     @default(now())
   entries                AccPayeeEntry[]
   linkedAccounts         AccPayeeHeadAccount[]
   linkedMainAccounts     AccPayeeHeadMainAccount[]
-  inventorySubcategory   InventorySubcategory?     @relation(fields: [inventorySubcategoryId], references: [id])
+  inventorySubcategory   InventorySubcategory?        @relation(fields: [inventorySubcategoryId], references: [id])
+  // sourceType='surgery': Sub Account is replaced by an admission-number
+  // picker and the payee list is Clinic doctors whose staff category matches
+  // one of these links (e.g. Surgeon + Anaesthetic under one "Anesthesia and
+  // Surgery" Sub GL) — see AccPayeeHeadStaffCategory below.
+  staffCategoryLinks     AccPayeeHeadStaffCategory[]
 }
 
 model AccPayeeHeadMainAccount {
@@ -1523,6 +1529,17 @@ model AccPayeeHeadMainAccount {
   mainAccount   AccMainAccount @relation(fields: [mainAccountId], references: [id], onDelete: Cascade)
 
   @@unique([payeeHeadId, mainAccountId])
+}
+
+model AccPayeeHeadStaffCategory {
+  id              Int                 @id @default(autoincrement())
+  payeeHeadId     Int
+  staffCategoryId Int
+  createdAt       DateTime            @default(now())
+  payeeHead       AccPayeeHead        @relation(fields: [payeeHeadId], references: [id], onDelete: Cascade)
+  staffCategory   ClinicStaffCategory @relation(fields: [staffCategoryId], references: [id], onDelete: Cascade)
+
+  @@unique([payeeHeadId, staffCategoryId])
 }
 
 model AccPayeeHeadAccount {
@@ -1669,6 +1686,10 @@ model AccVoucherExpenseEntry {
   chequeDate    DateTime?
   chequeType    String?
   particulars   String?
+  // Surgery/Anesthesia-type payee heads (see AccPayeeHeadStaffCategory) pick
+  // an admission instead of a normal Sub Account — the admission number is
+  // kept here so reprints/reports can show which patient this payment was for.
+  admissionNo   String?
   createdAt     DateTime          @default(now())
 }
 

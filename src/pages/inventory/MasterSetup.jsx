@@ -822,12 +822,14 @@ export default function MasterSetup() {
 
             <form onSubmit={addRow} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  placeholder="Code (optional - auto generated if empty)"
-                  value={formData.code}
-                  onChange={(e) => onFormChange('code', e.target.value)}
-                  className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                />
+                {effectiveTab !== 'Subcategories' && (
+                  <input
+                    placeholder="Code (optional - auto generated if empty)"
+                    value={formData.code}
+                    onChange={(e) => onFormChange('code', e.target.value)}
+                    className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                  />
+                )}
 
                 <select
                   value={formData.status}

@@ -2729,7 +2729,7 @@ function firstWordKey(s) {
   return String(s || '').trim().split(/\s+/)[0]?.toLowerCase().slice(0, 4) || '';
 }
 
-async function addProvisionalBillItemFromVisit(admissionId, opdVisitId) {
+async function addProvisionalBillItemFromVisit(admissionId, opdVisitId, overrideAmount) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
@@ -2749,7 +2749,7 @@ async function addProvisionalBillItemFromVisit(admissionId, opdVisitId) {
   const deptKey = firstWordKey(visit.department);
   const matchedHead = heads.find((h) => firstWordKey(h.description) === deptKey) || null;
 
-  const amount = Number(visit.totalAmount) || 0;
+  const amount = overrideAmount != null ? Number(overrideAmount) : (Number(visit.totalAmount) || 0);
   return prisma.clinicProvisionalBillItem.create({
     data: {
       admissionId: Number(admissionId),

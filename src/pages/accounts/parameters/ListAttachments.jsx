@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2, Link2, CheckCircle2, X } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { useClinicStore } from '../../../store/useClinicStore';
 import './ListAttachments.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -23,6 +24,7 @@ const SOURCE_BADGE = {
   vendor:    { label: 'Inventory Module', color: '#f59e0b' },
   doctor:    { label: 'Clinic Module',    color: '#10b981' },
   inventory: { label: 'Inventory Items',  color: '#0ea5e9' },
+  surgery:   { label: 'Surgery/Anesthesia', color: '#ec4899' },
   manual:    { label: 'Custom',           color: '#8b5cf6' },
 };
 
@@ -38,12 +40,14 @@ export default function ListAttachments() {
     createPayeeEntry, deletePayeeEntry,
     addHeadAccount, removeHeadAccount,
   } = useAccountsStore();
+  const { staffCategories, fetchStaffCategories } = useClinicStore();
 
   const [loading, setLoading] = useState(true);
   const [expandedHead, setExpandedHead] = useState(null);
   const [expandedLink, setExpandedLink] = useState(null);
   const [linkState, setLinkState] = useState({});
   const [inventoryItems, setInventoryItems] = useState({});
+  const [surgeryPayees, setSurgeryPayees] = useState({});
 
   const [headModal, setHeadModal] = useState(null);
   const [headName, setHeadName] = useState('');
@@ -69,6 +73,7 @@ export default function ListAttachments() {
       fetchLinkedSuppliers(),
       fetchLinkedDoctors(),
       fetchInventorySubcategories(),
+      fetchStaffCategories(),
     ]).finally(() => setLoading(false));
   }, [entityType]);
 
@@ -102,6 +107,11 @@ export default function ListAttachments() {
       const r = await fetch(`${API}/linked/inventory-items?subcategoryId=${head.inventorySubcategoryId}`);
       const j = await r.json();
       setInventoryItems((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
+    }
+    if (head.sourceType === 'surgery') {
+      const r = await fetch(`${API}/linked/surgery-payees?headId=${head.id}`);
+      const j = await r.json();
+      setSurgeryPayees((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
     }
   };
 
@@ -265,6 +275,56 @@ export default function ListAttachments() {
     finally { setSaving(false); }
   };
 
+  // ── Surgery/Anesthesia head modal ────────────────────────────────────────
+  // Sub Account here is replaced by an admission-number picker (handled in
+  // Voucher Expense) and the payee list is Clinic doctors whose staff
+  // category matches one of the ones checked below — e.g. checking both
+  // "Surgeon" and "Anaesthetic" lets one Sub GL pay either role.
+  const [surgModal, setSurgModal] = useState(false);
+  const [surgCategoryIds, setSurgCategoryIds] = useState(new Set());
+  const openAddSurgeryHead = () => { setHeadName(''); setSurgCategoryIds(new Set()); setSurgModal(true); };
+  const closeSurgModal = () => setSurgModal(false);
+
+  const saveSurgeryHead = async () => {
+    if (!headName.trim()) return toast.error('Head name is required');
+    if (surgCategoryIds.size === 0) return toast.error('Select at least one Staff Category');
+    setSaving(true);
+    try {
+      const head = await createPayeeHead({ name: headName, sourceType: 'surgery', entityType });
+      for (const catId of surgCategoryIds) {
+        await fetch(`${API}/payee-head-staff-categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ headId: head.id, staffCategoryId: catId }),
+        });
+      }
+      await fetchPayeeHeads(entityType);
+      toast.success('Surgery/Anesthesia head created');
+      closeSurgModal();
+    } catch (err) { toast.error(err.message); }
+    finally { setSaving(false); }
+  };
+
+  const toggleSurgeryCategory = async (head, categoryId) => {
+    const already = (head.staffCategoryLinks || []).some((l) => l.staffCategoryId === categoryId);
+    try {
+      if (already) {
+        await fetch(`${API}/payee-head-staff-categories/${head.id}/${categoryId}`, { method: 'DELETE' });
+      } else {
+        await fetch(`${API}/payee-head-staff-categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ headId: head.id, staffCategoryId: categoryId }),
+        });
+      }
+      await fetchPayeeHeads(entityType);
+      // Refresh the doctor list too since it depends on the category links
+      const r = await fetch(`${API}/linked/surgery-payees?headId=${head.id}`);
+      const j = await r.json();
+      setSurgeryPayees((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
+    } catch { toast.error('Failed to update staff category link'); }
+  };
+
   const removeHead = async (id) => {
     if (!confirm('Delete this head and all its entries?')) return;
     try {
@@ -325,6 +385,32 @@ export default function ListAttachments() {
           <span>{item.code} — {item.name}</span>
         </div>
       ));
+    }
+    if (head.sourceType === 'surgery') {
+      const linkedCatIds = new Set((head.staffCategoryLinks || []).map((l) => l.staffCategoryId));
+      const payees = surgeryPayees[head.id];
+      return (
+        <div className="list-attach__surgery-block">
+          <div className="list-attach__surgery-cats">
+            <span className="list-attach__surgery-cats-label">Staff Categories feeding this list:</span>
+            {staffCategories.map((c) => (
+              <label key={c.id} className={`list-attach__cat-chip ${linkedCatIds.has(c.id) ? 'checked' : ''}`}>
+                <input type="checkbox" checked={linkedCatIds.has(c.id)} onChange={() => toggleSurgeryCategory(head, c.id)} />
+                <span>{c.name}</span>
+              </label>
+            ))}
+          </div>
+          {!payees ? (
+            <p className="list-attach__empty">Loading…</p>
+          ) : payees.length === 0 ? (
+            <p className="list-attach__empty">Is category ke koi active doctor nahi mile (Clinic → Doctors me Staff Category assign karein)</p>
+          ) : payees.map((d) => (
+            <div key={d.id} className="list-attach__entry-row">
+              <span>{d.code ? `${d.code} — ` : ''}{d.name} <em style={{ opacity: 0.6 }}>({d.categoryName})</em></span>
+            </div>
+          ))}
+        </div>
+      );
     }
     // manual
     if (expandedHead !== head.id) return null;
@@ -387,8 +473,8 @@ export default function ListAttachments() {
   };
 
   const renderLinkedAccounts = (head) => {
-    // Inventory heads link to multiple Main Accounts
-    if (head.sourceType === 'inventory') {
+    // Inventory / Surgery heads link to multiple Main Accounts (not Sub Accounts)
+    if (head.sourceType === 'inventory' || head.sourceType === 'surgery') {
       const links = head.linkedMainAccounts || [];
       if (links.length === 0) return <span className="list-attach__no-link">No Main Account linked</span>;
       return (
@@ -431,6 +517,9 @@ export default function ListAttachments() {
     );
   };
 
+  // Generic Main-Account-only link save — used by both Inventory and Surgery
+  // heads (both link at Main Account level via the same AccPayeeHeadMainAccount
+  // table, just with different downstream "sub account" behaviour).
   const saveInventoryLink = async (headId) => {
     const ls = linkState[headId];
     if (!ls?.mainAccountId) { toast.error('Select a Main Account to link'); return; }
@@ -460,8 +549,8 @@ export default function ListAttachments() {
   const renderLinkSection = (head) => {
     const ls = linkState[head.id] || emptyLink();
 
-    // Inventory heads: link only up to Main Account
-    if (head.sourceType === 'inventory') {
+    // Inventory / Surgery heads: link only up to Main Account
+    if (head.sourceType === 'inventory' || head.sourceType === 'surgery') {
       return (
         <div className="list-attach__link-form">
           <div className="list-attach__link-title">Link to Main Account</div>
@@ -570,6 +659,7 @@ export default function ListAttachments() {
     const badge = SOURCE_BADGE[head.sourceType] || SOURCE_BADGE.manual;
     const isManual = head.sourceType === 'manual';
     const isInventory = head.sourceType === 'inventory';
+    const isSurgery = head.sourceType === 'surgery';
     const isLinkOpen = expandedLink === head.id;
     const isExpanded = expandedHead === head.id;
 
@@ -598,7 +688,7 @@ export default function ListAttachments() {
                 <button className="btn-icon" title="Add Entry" onClick={() => openAddEntry(head.id)}><Plus className="w-3.5 h-3.5" /></button>
               </>
             )}
-            {isInventory && (
+            {(isInventory || isSurgery) && (
               <button className="btn-icon danger" title="Delete" onClick={() => removeHead(head.id)}><Trash2 className="w-3.5 h-3.5" /></button>
             )}
             <button
@@ -630,12 +720,15 @@ export default function ListAttachments() {
           </button>
           <div>
             <h2>List Attachments</h2>
-            <p>Payee heads — Employee/Vendor/Doctor link to Sub Account · Inventory links to Main Account</p>
+            <p>Payee heads — Employee/Vendor/Doctor link to Sub Account · Inventory/Surgery link to Main Account</p>
           </div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#0ea5e9' }} onClick={openAddInventoryHead}>
             <Plus className="w-4 h-4" /> Add Inventory Head
+          </button>
+          <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#ec4899' }} onClick={openAddSurgeryHead}>
+            <Plus className="w-4 h-4" /> Add Surgery/Anesthesia Head
           </button>
           <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={openAddHead}>
             <Plus className="w-4 h-4" /> Add Custom Head
@@ -699,6 +792,48 @@ export default function ListAttachments() {
             <div className="acc-param-page__modal-actions">
               <button className="acc-param-page__btn-cancel" onClick={closeInvModal}>Cancel</button>
               <button className="acc-param-page__btn-save" onClick={saveInventoryHead} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Surgery/Anesthesia Head Modal */}
+      {surgModal && (
+        <div className="acc-param-page__overlay" onClick={closeSurgModal}>
+          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Add Surgery/Anesthesia Head</h3>
+            <div className="acc-param-page__field">
+              <label>Head Name</label>
+              <input value={headName} onChange={(e) => setHeadName(e.target.value)} placeholder="e.g. Anesthesia and Surgery" autoFocus />
+            </div>
+            <div className="acc-param-page__field">
+              <label>Staff Categories (payee doctors will be pulled from these)</label>
+              {staffCategories.length === 0 ? (
+                <p className="list-attach__empty">Clinic → Parameters → Staff Category mein pehle category banayein</p>
+              ) : (
+                <div className="list-attach__surgery-cats">
+                  {staffCategories.map((c) => (
+                    <label key={c.id} className={`list-attach__cat-chip ${surgCategoryIds.has(c.id) ? 'checked' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={surgCategoryIds.has(c.id)}
+                        onChange={() => {
+                          setSurgCategoryIds((prev) => {
+                            const next = new Set(prev);
+                            next.has(c.id) ? next.delete(c.id) : next.add(c.id);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span>{c.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="acc-param-page__modal-actions">
+              <button className="acc-param-page__btn-cancel" onClick={closeSurgModal}>Cancel</button>
+              <button className="acc-param-page__btn-save" onClick={saveSurgeryHead} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>

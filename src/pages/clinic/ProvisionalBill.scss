@@ -661,3 +661,114 @@ $border: #bbb;
   font-size: 8.5pt;
   color: #444;
 }
+
+/* ── Pending Slip Modal ─────────────────────────────────────────────────────── */
+.pb-slip-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pb-slip-modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 340px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  overflow: hidden;
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1rem 0.75rem;
+    background: #1e3a5f;
+    color: #fff;
+  }
+  &__dept {
+    font-size: 0.9rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+  &__close {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 1;
+    opacity: 0.75;
+    &:hover { opacity: 1; }
+    &:disabled { opacity: 0.3; cursor: not-allowed; }
+  }
+
+  &__body {
+    padding: 1rem 1.1rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    &--amt { margin-top: 0.35rem; }
+  }
+  &__lbl {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #64748b;
+    min-width: 64px;
+  }
+  &__val {
+    font-size: 0.84rem;
+    color: #1e293b;
+  }
+  &__amt-input {
+    flex: 1;
+    padding: 0.42rem 0.65rem;
+    border: 1.5px solid #94a3b8;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+    text-align: right;
+    outline: none;
+    &:focus { border-color: #1e3a5f; box-shadow: 0 0 0 2px rgba(30,58,95,0.12); }
+    &:disabled { background: #f1f5f9; }
+  }
+
+  &__footer {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.75rem 1.1rem 1rem;
+    justify-content: flex-end;
+  }
+  &__cancel {
+    padding: 0.42rem 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    &:hover { background: #f1f5f9; }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
+  &__add {
+    padding: 0.42rem 1.2rem;
+    border: none;
+    border-radius: 6px;
+    background: #1e3a5f;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    &:hover:not(:disabled) { background: #15304f; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+  }
+}
