@@ -378,7 +378,7 @@ export default function VoucherExpenseForm() {
 
   const [bankAccounts, setBankAccounts]   = useState([]);
   const [selectedBankId, setSelectedBankId] = useState(bankId ? String(bankId) : '');
-  const [cashSerial, setCashSerial]       = useState(editingVoucher ? editingVoucher.entries.length + 1 : 1);
+  const cashSerial = entries.length + 1; // always correct — no state needed
 
   useEffect(() => { fetchMainGLs(entityType); }, [entityType]);
 
@@ -742,7 +742,7 @@ export default function VoucherExpenseForm() {
       mainAccountName: mainAcc?.name || entry.accountName || '',
       subAccountName:  subAcc?.name  || entry.payeeName   || '',
     }]);
-    if (mode === 'cash') setCashSerial((s) => s + 1);
+    // cashSerial is derived from entries.length — no manual increment needed
 
     setEntry(emptyEntry());
     if (isBank && selectedBankId) {

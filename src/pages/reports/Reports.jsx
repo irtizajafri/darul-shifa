@@ -1212,12 +1212,16 @@ export default function Reports() {
   const basePerDayRate = effectiveBaseTotalSal > 0 ? (effectiveBaseTotalSal / daysInSelectedMonth) : 0;
   const perDayRate = isAlternativeShift ? (basePerDayRate * 2) : basePerDayRate;
 
-  const absentDeduction   = totalAbsents * (perDayRate * 2);
-  const missedOutDeduction = totalMissedOut * perDayRate; // 1x deduction for missed punch
+  // Fixed salary employee ko koi attendance deduction nahi lagti
+  const isFixed = String(emp?.workingDays || '').toLowerCase() === 'fixed';
+
+  const absentDeduction   = isFixed ? 0 : totalAbsents * (perDayRate * 2);
+  const missedOutDeduction = isFixed ? 0 : totalMissedOut * perDayRate; // 1x deduction for missed punch
   const leaveDeduction    = 0;
 
-  const lateDeduction = isLateDeductionEnabled
-    ? effectiveAttendanceWithOverrides.reduce((sum, r) => {
+  const lateDeduction = (isFixed || !isLateDeductionEnabled)
+    ? 0
+    : effectiveAttendanceWithOverrides.reduce((sum, r) => {
       if (shouldSkipAutoDeduction(r)) return sum;
       const scheduledMinutes = getScheduledMinutes(r);
       if (scheduledMinutes <= 0) return sum;
@@ -1227,8 +1231,7 @@ export default function Reports() {
 
       const perMinuteRate = perDayRate / scheduledMinutes;
       return sum + Math.round(timingPenaltyMinutes * perMinuteRate);
-    }, 0)
-    : 0;
+    }, 0);
 
   const manualDeductionTotal = effectiveAttendanceWithOverrides.reduce((sum, r) => {
     if (normalizeWaiveDeductionFlag(r?.waiveDeduction)) return sum;
