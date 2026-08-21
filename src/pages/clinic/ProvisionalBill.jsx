@@ -205,7 +205,7 @@ function BalanceInfoModal({ detail, onClose }) {
 // ── Print Template ─────────────────────────────────────────────────────────────
 function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
-  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, pharmacyRows, balanceInfo } = detail;
+  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, balanceInfo } = detail;
 
   const now = admission.createdAt ? new Date(admission.createdAt) : new Date();
   const dateStr = `${fmtDate(now)} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
@@ -253,18 +253,9 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
       amount: total,
     });
   });
-  // Same for Pharmacy — one summed "Pharmacy" line, no medicine-by-medicine detail.
-  if (pharmacyRows.length) {
-    const pharmTotal = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-    if (!groups.Other) groups.Other = [];
-    groups.Other.push({
-      id: 'pharm-total',
-      billHead: { description: 'Pharmacy' },
-      qty: 1,
-      rate: pharmTotal,
-      amount: pharmTotal,
-    });
-  }
+  // Pharmacy is intentionally excluded from the printed bill entirely (not
+  // even a summed line) and from Bill Amount / Balance — it's tracked only
+  // in-app on the Pharmacy tab, per explicit instruction.
 
   const categoryLabel = { private: 'Private Patient', staff: 'Staff Patient', panel: 'Panel Patient', cc: 'CC Patient', complementary: 'Complementary Patient' }[admission.patientCategory] || 'Private Patient';
   const balanceWords = balanceInfo.balance > 0 ? numToWords(Math.floor(balanceInfo.balance)) : (balanceInfo.refund > 0 ? numToWords(Math.floor(balanceInfo.refund)) : 'zero');

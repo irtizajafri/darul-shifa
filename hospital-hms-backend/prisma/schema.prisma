@@ -1050,6 +1050,7 @@ model ClinicAdmission {
   provisionalPharmacyItems ClinicProvisionalPharmacyItem[]
   dischargeBillItems ClinicDischargeBillItem[]
   discountRefunds    ClinicAdmissionDiscountRefund[]
+  dischargeCertificate ClinicDischargeCertificate?
   otRegisters        ClinicOtRegister[]
   birthCertificates  ClinicBirthCertificate[]
 }
@@ -1170,6 +1171,28 @@ model ClinicAdmissionDiscountRefund {
   createdAt       DateTime        @default(now())
 
   @@index([admissionId])
+}
+
+// ─── Discharge Certificate ────────────────────────────────────────────────────
+// One per admission — surfaced on Discount & Refund Against Admission once its
+// balance hits zero. Upserted (not append-only like DiscountRefund above) so
+// the same certificate can be edited/reprinted rather than piling up rows.
+model ClinicDischargeCertificate {
+  id                     Int             @id @default(autoincrement())
+  admissionId            Int             @unique
+  admission              ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  diagnosis              String?
+  reasonOfDischarge      String          // treated | transfer | lama | expired | discharge_on_request
+  furtherTreatmentNeeded String?         // yes | no
+  medicinePrescribed     String?         // yes | no
+  dischargeMedicine      String?
+  followUp               String?
+  medicalOfficer         String?
+  dischargeDate          DateTime        @default(now())
+  createdByUserId        String?
+  createdByName          String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 }
 
 // ─── Discharge and Refund (final bill at time of discharge) ──────────────────

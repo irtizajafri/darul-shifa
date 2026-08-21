@@ -41,7 +41,7 @@ const subModules = [
   { title: 'Master Setup',                icon: Settings,      desc: 'Categories, Items, Vendors, Shelves',                              stat: 'Manage master data',           path: '/inventory/master-setup',   subModule: 'master-setup',       Illustration: MasterSetupIllustration },
   { title: 'Purchase Orders (PO)',         icon: ShoppingCart,  desc: 'Generate & manage supplier POs',                                   stat: 'Create and track orders',      path: '/inventory/po',             subModule: 'po',                 state: { openCreate: true }, Illustration: PurchaseOrderIllustration },
   { title: 'Receiving (GRN)',              icon: Truck,         desc: 'Goods Receiving Note & inward stock',                              stat: 'Receive stock entries',        path: '/inventory/grn',            subModule: 'grn',                state: { openCreate: true }, Illustration: ReceivingGRNIllustration },
-  { title: 'Good Demands & Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments',                                      stat: 'Manage outward stock',         path: '/inventory/gin',            subModule: 'gin',                Illustration: IssuanceGINIllustration },
+  { title: 'Good Demands & Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments',                                      stat: 'Manage outward stock',         path: '/inventory/gin',            subModule: 'gin',  altSubModule: 'gd', Illustration: IssuanceGINIllustration },
   { title: 'Sales Invoice',               icon: FileText,      desc: 'Fair Price Shop customer billing',                                  stat: 'Generate invoice & PDF',       path: '/inventory/sales-invoice',  subModule: 'sales-invoice',      Illustration: SalesInvoiceIllustration },
   { title: 'Discard/Return (GDN)',        icon: ArrowDownRight, desc: 'Discard expired/damaged stock',                                   stat: 'Track wastage and return',     path: '/inventory/gdn',            subModule: 'gdn',                Illustration: DiscardGDNIllustration },
   { title: 'Material Return (MRN)',       icon: RotateCcw,     desc: 'Department se maal wapas lena',                                    stat: 'Stock wapas restore hoga',     path: '/inventory/mrn',            subModule: 'mrn',                Illustration: MRNIllustration },
@@ -57,7 +57,10 @@ export default function InventoryModuleDashboard() {
   const canSeeFAAlerts  = hasPermission(user, 'inventory', 'fixed-asset-alerts');
   const visibleSubModules = user?.isSuperAdmin
     ? subModules
-    : subModules.filter((sm) => hasPermission(user, 'inventory', sm.subModule));
+    : subModules.filter((sm) =>
+        hasPermission(user, 'inventory', sm.subModule) ||
+        (sm.altSubModule && hasPermission(user, 'inventory', sm.altSubModule))
+      );
 
   const [loading, setLoading] = useState(true);
   const [showLowStockPopup, setShowLowStockPopup] = useState(false);

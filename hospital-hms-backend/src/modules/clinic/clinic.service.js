@@ -1581,6 +1581,111 @@ async function addAdmissionDiscountRefund(admissionId, {
   });
 }
 
+const DISCHARGE_REASONS = ['treated', 'transfer', 'lama', 'expired', 'discharge_on_request'];
+
+// ─── Discharge Certificate (from Discount & Refund Against Admission, once
+// balance hits zero) ───────────────────────────────────────────────────────────
+async function getDischargeCertificate(admissionId) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  const [roomCategory, bed, consultant, certificate] = await Promise.all([
+    admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
+    admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
+    admission.consultantId ? prisma.clinicDoctor.findUnique({ where: { id: admission.consultantId }, select: { id: true, name: true } }) : null,
+    prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: Number(admissionId) } }),
+  ]);
+
+  return { admission, roomCategory, bed, consultant, certificate };
+}
+
+async function saveDischargeCertificate(admissionId, {
+  diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
+  dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
+}) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (!DISCHARGE_REASONS.includes(reasonOfDischarge)) {
+    throw Object.assign(new Error('Reason of Discharge zaroori hai'), { status: 400 });
+  }
+
+  const data = {
+    diagnosis: diagnosis?.trim() || null,
+    reasonOfDischarge,
+    furtherTreatmentNeeded: furtherTreatmentNeeded === 'yes' || furtherTreatmentNeeded === 'no' ? furtherTreatmentNeeded : null,
+    medicinePrescribed: medicinePrescribed === 'yes' || medicinePrescribed === 'no' ? medicinePrescribed : null,
+    dischargeMedicine: dischargeMedicine?.trim() || null,
+    followUp: followUp?.trim() || null,
+    medicalOfficer: medicalOfficer?.trim() || null,
+  };
+
+  return prisma.clinicDischargeCertificate.upsert({
+    where: { admissionId: Number(admissionId) },
+    update: data,
+    create: {
+      admissionId: Number(admissionId),
+      ...data,
+      dischargeDate: new Date(),
+      createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
+      createdByName: createdByName || null,
+    },
+  });
+}
+
+// ─── Report > Discharge Certificate ────────────────────────────────────────────
+async function getDischargeCertificateReport({ fromDate, toDate }) {
+  const where = {};
+  if (fromDate || toDate) {
+    where.dischargeDate = {};
+    if (fromDate) where.dischargeDate.gte = new Date(`${fromDate}T00:00:00`);
+    if (toDate) where.dischargeDate.lte = new Date(`${toDate}T23:59:59`);
+  }
+  const certs = await prisma.clinicDischargeCertificate.findMany({ where, orderBy: { dischargeDate: 'desc' } });
+  if (!certs.length) return [];
+
+  const admissionIds = [...new Set(certs.map((c) => c.admissionId))];
+  const admissions = await prisma.clinicAdmission.findMany({ where: { id: { in: admissionIds } } });
+  const admById = {}; admissions.forEach((a) => { admById[a.id] = a; });
+
+  const roomCategoryIds = [...new Set(admissions.map((a) => a.roomCategoryId).filter(Boolean))];
+  const bedIds = [...new Set(admissions.map((a) => a.bedId).filter(Boolean))];
+  const consultantIds = [...new Set(admissions.map((a) => a.consultantId).filter(Boolean))];
+  const [roomCategories, beds, consultants] = await Promise.all([
+    roomCategoryIds.length ? prisma.clinicRoomCategory.findMany({ where: { id: { in: roomCategoryIds } } }) : [],
+    bedIds.length ? prisma.clinicBed.findMany({ where: { id: { in: bedIds } } }) : [],
+    consultantIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: consultantIds } }, select: { id: true, name: true } }) : [],
+  ]);
+  const rcById = {}; roomCategories.forEach((r) => { rcById[r.id] = r; });
+  const bedById = {}; beds.forEach((b) => { bedById[b.id] = b; });
+  const consultantById = {}; consultants.forEach((c) => { consultantById[c.id] = c; });
+
+  return certs.map((c) => {
+    const admission = admById[c.admissionId] || null;
+    return {
+      id: c.id,
+      admissionId: c.admissionId,
+      admissionNo: admission?.admissionNo || '',
+      patientTitle: admission?.patientTitle || '',
+      patientName: admission?.patientName || '',
+      ageYears: admission?.ageYears || 0,
+      ageMonths: admission?.ageMonths || 0,
+      ageDays: admission?.ageDays || 0,
+      gender: admission?.gender || '',
+      status: admission?.status || '',
+      roomCategory: admission?.roomCategoryId ? rcById[admission.roomCategoryId]?.name || null : null,
+      bed: admission?.bedId ? bedById[admission.bedId]?.name || null : null,
+      consultant: admission?.consultantId ? consultantById[admission.consultantId]?.name || null : null,
+      reasonOfDischarge: c.reasonOfDischarge,
+      diagnosis: c.diagnosis,
+      furtherTreatmentNeeded: c.furtherTreatmentNeeded,
+      medicinePrescribed: c.medicinePrescribed,
+      followUp: c.followUp,
+      medicalOfficer: c.medicalOfficer,
+      dischargeDate: c.dischargeDate,
+    };
+  });
+}
+
 // ─── Transactions > OT Register ───────────────────────────────────────────────
 async function getOtRegisterForAdmission(admissionNo) {
   const admission = await prisma.clinicAdmission.findFirst({
@@ -2670,8 +2775,9 @@ async function getProvisionalBillDetail(admissionId) {
 
   const provisionalAmount = resolvedBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
   const diagnosticAmount  = diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  const pharmacyAmount    = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  const billAmount = provisionalAmount + wardAmount + diagnosticAmount + pharmacyAmount;
+  // Pharmacy is tracked only on its own tab (in-app) — excluded from Bill
+  // Amount / Balance entirely, per explicit instruction.
+  const billAmount = provisionalAmount + wardAmount + diagnosticAmount;
   const discountAmount = Number(latestDiscountRefund?.discountAmount) || 0;
   const netBillAmount = Math.max(0, billAmount - discountAmount);
 
@@ -4582,6 +4688,9 @@ module.exports = {
   getAdmissionPaymentForPrint,
   getAdmissionForDiscountRefund,
   addAdmissionDiscountRefund,
+  getDischargeCertificate,
+  saveDischargeCertificate,
+  getDischargeCertificateReport,
   getOtRegisterForAdmission,
   saveOtRegister,
   getOtRegisterReport,

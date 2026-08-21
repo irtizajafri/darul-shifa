@@ -1114,6 +1114,44 @@ async function addAdmissionDiscountRefund(req, res, next) {
   }
 }
 
+async function getDischargeCertificate(req, res, next) {
+  try {
+    const data = await service.getDischargeCertificate(req.params.admissionId);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function saveDischargeCertificate(req, res, next) {
+  try {
+    const {
+      diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
+      dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
+    } = req.body;
+    const data = await service.saveDischargeCertificate(req.params.admissionId, {
+      diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
+      dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
+    });
+    success(res, data, 'Discharge Certificate save ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getDischargeCertificateReport(req, res, next) {
+  try {
+    const { fromDate, toDate } = req.query;
+    const data = await service.getDischargeCertificateReport({ fromDate, toDate });
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function getOtRegisterForAdmission(req, res, next) {
   try {
     const data = await service.getOtRegisterForAdmission(req.params.admissionNo);
@@ -1716,6 +1754,9 @@ module.exports = {
   getAdmissionPaymentForPrint,
   getAdmissionForDiscountRefund,
   addAdmissionDiscountRefund,
+  getDischargeCertificate,
+  saveDischargeCertificate,
+  getDischargeCertificateReport,
   getOtRegisterForAdmission,
   saveOtRegister,
   getOtRegisterReport,

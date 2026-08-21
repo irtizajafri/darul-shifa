@@ -36,7 +36,7 @@ const inventoryNavItems = [
   { path: '/inventory/master-setup', label: 'Master Setup',       Icon: Settings,       subModule: 'master-setup' },
   { path: '/inventory/po',           label: 'Purchase Orders',    Icon: ShoppingCart,   subModule: 'po',               state: { openCreate: true } },
   { path: '/inventory/grn',          label: 'Receiving (GRN)',    Icon: Truck,          subModule: 'grn',              state: { openCreate: true } },
-  { path: '/inventory/gin',          label: 'Issuance (GIN)',     Icon: ArrowUpRight,   subModule: 'gin' },
+  { path: '/inventory/gin',          label: 'Issuance (GIN)',     Icon: ArrowUpRight,   subModule: 'gin',  altSubModule: 'gd' },
   { path: '/inventory/sales-invoice', label: 'Sales Invoice',     Icon: FileText,       subModule: 'sales-invoice' },
   { path: '/inventory/gdn',          label: 'Discard (GDN)',      Icon: ArrowDownRight, subModule: 'gdn' },
   { path: '/inventory/mrn',          label: 'Material Return (MRN)', Icon: ArrowUpRight, subModule: 'mrn' },
@@ -183,7 +183,12 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
 
   if (activeModule === 'inventory') {
     const visibleInvItems = inventoryNavItems.filter(
-      (item) => item.toDashboard || !item.subModule || user?.isSuperAdmin || hasPermission(user, 'inventory', item.subModule)
+      (item) =>
+        item.toDashboard ||
+        !item.subModule ||
+        user?.isSuperAdmin ||
+        hasPermission(user, 'inventory', item.subModule) ||
+        (item.altSubModule && hasPermission(user, 'inventory', item.altSubModule))
     );
     return (
       <aside className={sidebarClass}>

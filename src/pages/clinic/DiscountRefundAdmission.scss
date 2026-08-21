@@ -334,3 +334,263 @@ $bg:      #dde3ea;
 }
 
 .dra-td-empty { text-align: center; color: #999; padding: 20px !important; }
+
+// ─── Discharge Certificate trigger + form modal ────────────────────────────────
+$amber: #b8730b;
+
+.dc-trigger-row {
+  padding: 8px 0 4px;
+}
+
+.dc-trigger-btn {
+  background: $amber;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 20px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover { background: #9c5f08; }
+}
+
+.dc-modal {
+  width: 560px;
+  max-height: 88vh;
+}
+
+.dc-modal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dc-modal-info {
+  font-size: 12px;
+  font-weight: 600;
+  color: $blue;
+  background: #eef3fa;
+  border: 1px solid #dbe4f0;
+  border-radius: 4px;
+  padding: 6px 10px;
+}
+
+.dc-modal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #444;
+  }
+
+  input, select, textarea {
+    font-family: inherit;
+    font-size: 12px;
+    border: 1px solid $border;
+    border-radius: 3px;
+    padding: 5px 8px;
+    background: #f9f9f9;
+    color: #111;
+    &:focus { outline: none; border-color: $blue; }
+  }
+
+  textarea { resize: vertical; }
+
+  &--split {
+    flex-direction: row;
+    gap: 16px;
+
+    .dc-modal-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+  }
+}
+
+.dc-modal-yn {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: 500;
+    color: #222;
+    cursor: pointer;
+  }
+}
+
+.dc-modal-footer {
+  padding: 10px 18px;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+}
+
+// ─── Discharge Certificate print ────────────────────────────────────────────────
+.dc-print-area { display: none; }
+
+@media print {
+  @page { size: A5 portrait; margin: 40mm 9mm 8mm 9mm; }
+
+  body * { visibility: hidden; }
+  .dc-print-area,
+  .dc-print-area * { visibility: visible !important; }
+
+  .dc-print-area {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    background: #fff;
+  }
+}
+
+.dc-print {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 8.5pt;
+  color: #000;
+  background: #fff;
+}
+
+.dc-print-title {
+  text-align: center;
+  font-weight: 900;
+  font-size: 13pt;
+  text-decoration: underline;
+  margin-bottom: 10px;
+}
+
+.dc-print-row {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+
+.dc-print-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 1;
+  min-width: 0; // let a long value shrink/ellipsize instead of forcing the row to wrap
+
+  label { font-weight: 700; white-space: nowrap; }
+
+  &--full { flex: 1 1 100%; }
+  // Printed by / Consultant hold full doctor names — give them roughly
+  // double the room of their short neighbours (Status/File#, Ad/Di Date) so
+  // the name stays on one line instead of wrapping under its own label.
+  &--wide { flex: 2.2; }
+}
+
+.dc-print-line {
+  flex: 1;
+  border-bottom: 1px solid #000;
+  min-width: 30px;
+  padding: 0 3px 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dc-print-reason {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 8px 0 5px;
+  font-size: 8.5pt;
+
+  label { font-weight: 700; }
+}
+
+.dc-print-reason-val {
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.dc-print-yn-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+  font-size: 8pt;
+
+  label { font-weight: 700; min-width: 150px; }
+}
+
+.dc-print-yn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dc-print-box {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border: 1.2px solid #000;
+  font-style: normal;
+
+  &.checked {
+    background:
+      linear-gradient(45deg, transparent 40%, #000 40%, #000 60%, transparent 60%),
+      linear-gradient(-45deg, transparent 40%, #000 40%, #000 60%, transparent 60%);
+  }
+}
+
+.dc-print-med-block {
+  margin: 8px 0;
+}
+
+.dc-print-med-hdr {
+  font-weight: 700;
+  text-decoration: underline;
+  font-size: 8.5pt;
+  margin-bottom: 3px;
+}
+
+// A ruled writing box — the doctor fills this by hand on the printed copy, so
+// it carries no data, just horizontal guide lines like ruled paper. Real
+// bordered line elements (not a CSS background pattern) — borders always
+// print, a background-image needs "Background graphics" on in the print
+// dialog or it silently vanishes.
+.dc-print-med-body {
+  height: 210px;
+  border: 1px solid #000;
+  padding: 0 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dc-print-med-line {
+  flex: 1;
+  border-bottom: 1px solid #999;
+
+  &:last-child { border-bottom: none; }
+}
+
+.dc-print-sig {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 22px;
+  font-weight: 700;
+}
+
+.dc-print-sig-line {
+  border-bottom: 1px solid #000;
+  min-width: 140px;
+  padding-bottom: 1px;
+}

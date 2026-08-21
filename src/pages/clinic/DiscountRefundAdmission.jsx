@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useClinicStore } from '../../store/useClinicStore';
 import './DiscountRefundAdmission.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -18,6 +20,45 @@ function fmtDateTime(d) {
 }
 
 function fmt2(n) { return Number(n || 0).toFixed(2); }
+
+function fmtDate(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${String(dt.getDate()).padStart(2, '0')}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()}`;
+}
+
+const REASON_OPTIONS = [
+  { value: 'treated', label: 'Patient Treated' },
+  { value: 'transfer', label: 'Patient Transfer' },
+  { value: 'lama', label: 'LAMA' },
+  { value: 'expired', label: 'Patient Expired' },
+  { value: 'discharge_on_request', label: 'Discharge on Request' },
+];
+const REASON_LABELS = Object.fromEntries(REASON_OPTIONS.map(r => [r.value, r.label]));
+const DISCHARGE_MED_LINES = Array.from({ length: 8 });
+
+// `@page` is a document-level rule shared across the whole bundled app — inject
+// an override right before printing so this page's print isn't silently
+// overridden by whichever other page's `@page` rule happens to load last.
+function printDischargeCertificate() {
+  const styleId = 'dc-page-size-override';
+  let style = document.getElementById(styleId);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = styleId;
+    document.head.appendChild(style);
+  }
+  // Prints on pre-printed hospital letterhead — top margin left generous on
+  // purpose so the certificate content starts below the letterhead artwork
+  // instead of overlapping it.
+  style.textContent = '@page { size: A5 portrait !important; margin: 40mm 9mm 8mm 9mm !important; }';
+
+  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(cleanup, 5000);
+
+  window.print();
+}
 
 // ── Admission Lookup Modal ─────────────────────────────────────────────────────
 function AdmissionLookupModal({ onSelect, onClose }) {
@@ -88,9 +129,179 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   );
 }
 
+// ── Discharge Certificate Modal ─────────────────────────────────────────────────
+function DischargeCertificateModal({ header, form, onChange, onClose, onSave, saving, diagnosisOptions }) {
+  const { admission, roomCategory, bed, consultant } = header;
+  return (
+    <div className="dra-overlay">
+      <div className="dra-modal dc-modal">
+        <div className="dra-modal-hdr">
+          <span>Discharge Certificate — {admission.admissionNo}</span>
+          <button className="dra-modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="dc-modal-body">
+          <div className="dc-modal-info">
+            {admission.patientTitle} {admission.patientName} · {roomCategory?.name || '—'} / {bed?.name || '—'} · Consultant: {consultant?.name || '—'}
+          </div>
+
+          <div className="dc-modal-row">
+            <label>Reason of Discharge *</label>
+            <select value={form.reasonOfDischarge} onChange={e => onChange('reasonOfDischarge', e.target.value)}>
+              <option value="">Select…</option>
+              {REASON_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </div>
+
+          <div className="dc-modal-row">
+            <label>Diagnosis</label>
+            <select value={form.diagnosis} onChange={e => onChange('diagnosis', e.target.value)}>
+              <option value="">Select…</option>
+              {diagnosisOptions.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </div>
+
+          <div className="dc-modal-row dc-modal-row--split">
+            <div className="dc-modal-col">
+              <label>Further Treatment Needed</label>
+              <div className="dc-modal-yn">
+                <label><input type="radio" name="dc-ftn" checked={form.furtherTreatmentNeeded === 'yes'} onChange={() => onChange('furtherTreatmentNeeded', 'yes')} /> Yes</label>
+                <label><input type="radio" name="dc-ftn" checked={form.furtherTreatmentNeeded === 'no'} onChange={() => onChange('furtherTreatmentNeeded', 'no')} /> No</label>
+              </div>
+            </div>
+            <div className="dc-modal-col">
+              <label>Medicine Prescribed</label>
+              <div className="dc-modal-yn">
+                <label><input type="radio" name="dc-mp" checked={form.medicinePrescribed === 'yes'} onChange={() => onChange('medicinePrescribed', 'yes')} /> Yes</label>
+                <label><input type="radio" name="dc-mp" checked={form.medicinePrescribed === 'no'} onChange={() => onChange('medicinePrescribed', 'no')} /> No</label>
+              </div>
+            </div>
+          </div>
+
+          <div className="dc-modal-row dc-modal-row--split">
+            <div className="dc-modal-col">
+              <label>Follow Up</label>
+              <input value={form.followUp} onChange={e => onChange('followUp', e.target.value)} />
+            </div>
+            <div className="dc-modal-col">
+              <label>Medical Officer</label>
+              <input value={form.medicalOfficer} onChange={e => onChange('medicalOfficer', e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <div className="dc-modal-footer">
+          <button className="dra-add-btn" onClick={onSave} disabled={saving}>Save &amp; Print</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Discharge Certificate Print Template ────────────────────────────────────────
+// Sample hand-written duplicate bill used bordered boxes for every field; this
+// print instead fills each label with an underline — data is already
+// system-typed, so a "write here" box no longer serves a purpose.
+function DischargeCertificatePrintTemplate({ data }) {
+  if (!data) return null;
+  const { admission, roomCategory, bed, consultant, certificate, printedBy } = data;
+  const ageStr = [
+    admission.ageYears ? `${admission.ageYears}y` : null,
+    admission.ageMonths ? `${admission.ageMonths}m` : null,
+    admission.ageDays ? `${admission.ageDays}d` : null,
+  ].filter(Boolean).join(' ') || '—';
+
+  return (
+    <div className="dc-print">
+      <div className="dc-print-title">DISCHARGE CERTIFICATE</div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field dc-print-field--wide"><label>Printed by:</label><span className="dc-print-line">{printedBy}</span></span>
+        <span className="dc-print-field"><label>Status:</label><span className="dc-print-line">{admission.status}</span></span>
+        <span className="dc-print-field"><label>File #</label><span className="dc-print-line">{admission.admissionNo}</span></span>
+      </div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field dc-print-field--full"><label>Pat. Name:</label><span className="dc-print-line">{admission.patientTitle} {admission.patientName}</span></span>
+      </div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field"><label>Age:</label><span className="dc-print-line">{ageStr}</span></span>
+        <span className="dc-print-field"><label>Gender:</label><span className="dc-print-line">{admission.gender}</span></span>
+      </div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field"><label>Room:</label><span className="dc-print-line">{roomCategory?.name || '—'}</span></span>
+        <span className="dc-print-field"><label>Bed:</label><span className="dc-print-line">{bed?.name || '—'}</span></span>
+      </div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field dc-print-field--wide"><label>Consultant:</label><span className="dc-print-line">{consultant?.name || '—'}</span></span>
+        <span className="dc-print-field"><label>Ad Date:</label><span className="dc-print-line">{fmtDate(admission.createdAt)}</span></span>
+        <span className="dc-print-field"><label>Di Date:</label><span className="dc-print-line">{fmtDate(certificate?.dischargeDate)}</span></span>
+      </div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field dc-print-field--full"><label>Diagnosis:</label><span className="dc-print-line">{certificate?.diagnosis || ''}</span></span>
+      </div>
+
+      <div className="dc-print-reason">
+        <label>Reason of Discharge:</label>
+        <span className="dc-print-reason-val">{REASON_LABELS[certificate?.reasonOfDischarge] || '—'}</span>
+      </div>
+
+      <div className="dc-print-yn-row">
+        <label>Further Treatment Needed:</label>
+        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.furtherTreatmentNeeded === 'yes' ? ' checked' : ''}`} />Yes</span>
+        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.furtherTreatmentNeeded === 'no' ? ' checked' : ''}`} />No</span>
+      </div>
+      <div className="dc-print-yn-row">
+        <label>Medicine prescribed:</label>
+        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.medicinePrescribed === 'yes' ? ' checked' : ''}`} />Yes</span>
+        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.medicinePrescribed === 'no' ? ' checked' : ''}`} />No</span>
+      </div>
+
+      <div className="dc-print-med-block">
+        <div className="dc-print-med-hdr">Discharge Medicine</div>
+        {/* Left blank on purpose — the doctor fills this in by hand on the
+            printed copy, so it's just a ruled box, no data-bound text. Real
+            bordered line elements instead of a CSS background pattern — a
+            background-image silently disappears unless the browser's print
+            dialog has "Background graphics" checked, borders always print. */}
+        <div className="dc-print-med-body">
+          {DISCHARGE_MED_LINES.map((_, i) => <div key={i} className="dc-print-med-line" />)}
+        </div>
+      </div>
+
+      <div className="dc-print-row">
+        <span className="dc-print-field dc-print-field--full"><label>Follow Up:</label><span className="dc-print-line">{certificate?.followUp || ''}</span></span>
+      </div>
+
+      <div className="dc-print-sig">
+        <span>Medical Officer:</span>
+        <span className="dc-print-sig-line">{certificate?.medicalOfficer || ''}</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DiscountRefundAdmission() {
   const { user } = useAuthStore();
+  const [searchParams] = useSearchParams();
+  const { diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+
+  useEffect(() => {
+    fetchDiseases();
+    fetchSurgeryTypes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Diagnosis dropdown mixes both parameter lists (Diseases + Surgery Types)
+  // into one flat, de-duplicated, alphabetical list — per the user's request
+  // these open "mixed together", not grouped by source.
+  const diagnosisOptions = useMemo(() => {
+    const names = new Set([...diseases.map(d => d.name), ...surgeryTypes.map(s => s.name)]);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [diseases, surgeryTypes]);
 
   const [showLookup, setShowLookup] = useState(false);
   const [admission, setAdmission] = useState(null);
@@ -103,6 +314,12 @@ export default function DiscountRefundAdmission() {
   const [permissionBy, setPermissionBy] = useState('');
   const [refundOverride, setRefundOverride] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const [dcOpen, setDcOpen] = useState(false);
+  const [dcHeader, setDcHeader] = useState(null);
+  const [dcForm, setDcForm] = useState(null);
+  const [dcSaving, setDcSaving] = useState(false);
+  const [dcPrintData, setDcPrintData] = useState(null);
 
   const discountAmt = discountType === 'percent'
     ? Math.round((billAmount * (Number(discount) || 0)) / 100)
@@ -135,6 +352,8 @@ export default function DiscountRefundAdmission() {
       setDiscountType('amount');
       setPermissionBy('');
       setRefundOverride('');
+      setDcHeader(null);
+      setDcForm(null);
     } catch (e) {
       toast.error(e.message || 'Admission load nahi hui');
     }
@@ -149,6 +368,8 @@ export default function DiscountRefundAdmission() {
     setDiscountType('amount');
     setPermissionBy('');
     setRefundOverride('');
+    setDcHeader(null);
+    setDcForm(null);
   }
 
   async function handleAdd() {
@@ -179,6 +400,104 @@ export default function DiscountRefundAdmission() {
       toast.error(e.message || 'Error saving');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function openDischargeCertificate() {
+    if (!admission) return;
+    try {
+      const res = await fetch(`${API}/admission/discharge-certificate/${admission.id}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Load failed');
+      const { certificate, ...header } = json.data;
+      setDcHeader(header);
+      setDcForm({
+        reasonOfDischarge: certificate?.reasonOfDischarge || '',
+        diagnosis: certificate?.diagnosis || '',
+        furtherTreatmentNeeded: certificate?.furtherTreatmentNeeded || '',
+        medicinePrescribed: certificate?.medicinePrescribed || '',
+        followUp: certificate?.followUp || '',
+        medicalOfficer: certificate?.medicalOfficer || '',
+      });
+      setDcOpen(true);
+    } catch (e) {
+      toast.error(e.message || 'Discharge Certificate load nahi hui');
+    }
+  }
+
+  function updateDcForm(field, value) {
+    setDcForm(f => ({ ...f, [field]: value }));
+  }
+
+  // Reports > Reprint > Discharge Certificate lands here with
+  // ?admissionNo=X&autoprint=1 — load that admission the same way Search does,
+  // then print the already-saved certificate straight away. If none was ever
+  // saved for this admission, fall back to the normal create form instead of
+  // printing a blank page.
+  async function handleReprintCertificate(no) {
+    try {
+      const res = await fetch(`${API}/admission/discount-refund/by-number/${encodeURIComponent(no)}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Load failed');
+      setAdmission(json.data.admission);
+      setBillAmount(json.data.billAmount || 0);
+      setReceivedAmount(json.data.receivedAmount || 0);
+      setHistory(json.data.history || []);
+
+      const certRes = await fetch(`${API}/admission/discharge-certificate/${json.data.admission.id}`);
+      const certJson = await certRes.json();
+      if (!certRes.ok) throw new Error(certJson.message || 'Load failed');
+      const { certificate, ...header } = certJson.data;
+      setDcHeader(header);
+
+      if (certificate) {
+        const printedBy = user?.name || user?.username || user?.email || '';
+        setDcPrintData({ ...header, certificate, printedBy });
+        setTimeout(() => printDischargeCertificate(), 300);
+      } else {
+        toast.error('Is admission ka Discharge Certificate abhi tak nahi bana — pehle bana lein');
+        setDcForm({
+          reasonOfDischarge: '', diagnosis: '', furtherTreatmentNeeded: '',
+          medicinePrescribed: '', followUp: '', medicalOfficer: '',
+        });
+        setDcOpen(true);
+      }
+    } catch (e) {
+      toast.error(e.message || 'Admission load nahi hui');
+    }
+  }
+
+  useEffect(() => {
+    const no = searchParams.get('admissionNo');
+    const autoprint = searchParams.get('autoprint');
+    if (no && autoprint) handleReprintCertificate(no);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleDcSaveAndPrint() {
+    if (!dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
+    setDcSaving(true);
+    try {
+      const printedBy = user?.name || user?.username || user?.email || '';
+      const res = await fetch(`${API}/admission/discharge-certificate/${admission.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...dcForm,
+          createdByUserId: user?.id != null ? String(user.id) : null,
+          createdByName: printedBy || null,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Save nahi hui');
+      toast.success('Discharge Certificate save ho gaya');
+      setDcOpen(false);
+      setDcPrintData({ ...dcHeader, certificate: json.data, printedBy });
+      setTimeout(() => printDischargeCertificate(), 200);
+    } catch (e) {
+      toast.error(e.message || 'Error saving');
+    } finally {
+      setDcSaving(false);
     }
   }
 
@@ -278,6 +597,14 @@ export default function DiscountRefundAdmission() {
                 )}
               </div>
 
+              {netBalance === 0 && (
+                <div className="dc-trigger-row">
+                  <button className="dc-trigger-btn" onClick={openDischargeCertificate}>
+                    Discharge Certificate
+                  </button>
+                </div>
+              )}
+
               {history.length > 0 && (
                 <>
                   <div className="dra-separator" />
@@ -318,6 +645,22 @@ export default function DiscountRefundAdmission() {
       {showLookup && (
         <AdmissionLookupModal onSelect={handleSelect} onClose={() => setShowLookup(false)} />
       )}
+
+      {dcOpen && dcHeader && dcForm && (
+        <DischargeCertificateModal
+          header={dcHeader}
+          form={dcForm}
+          onChange={updateDcForm}
+          onClose={() => setDcOpen(false)}
+          onSave={handleDcSaveAndPrint}
+          saving={dcSaving}
+          diagnosisOptions={diagnosisOptions}
+        />
+      )}
+
+      <div className="dc-print-area">
+        <DischargeCertificatePrintTemplate data={dcPrintData} />
+      </div>
     </div>
   );
 }

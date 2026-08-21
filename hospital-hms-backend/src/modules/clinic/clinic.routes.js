@@ -185,6 +185,9 @@ router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaym
 
 router.get('/admission/discount-refund/by-number/:admissionNo', controller.getAdmissionForDiscountRefund);
 router.post('/admission/discount-refund/:admissionId/add', controller.addAdmissionDiscountRefund);
+router.get('/admission/discharge-certificate/:admissionId', controller.getDischargeCertificate);
+router.post('/admission/discharge-certificate/:admissionId', controller.saveDischargeCertificate);
+router.get('/reports/discharge-certificate', controller.getDischargeCertificateReport);
 
 router.get('/admission/ot-register/by-number/:admissionNo', controller.getOtRegisterForAdmission);
 router.post('/admission/ot-register/:admissionId/save', controller.saveOtRegister);

@@ -63,6 +63,8 @@ import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
 import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
 import DeathCertificateFilter from '../pages/clinic/reports/DeathCertificateFilter';
 import DeathCertificateReport from '../pages/clinic/reports/DeathCertificateReport';
+import DischargeCertificateFilter from '../pages/clinic/reports/DischargeCertificateFilter';
+import DischargeCertificateReport from '../pages/clinic/reports/DischargeCertificateReport';
 import ReprintFilter from '../pages/clinic/reports/ReprintFilter';
 import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
 import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
@@ -261,6 +263,8 @@ export default function AppRoutes() {
           <Route path="clinic/reports/death-certificate"      element={<PermissionGuard module="clinic"><DeathCertificateFilter /></PermissionGuard>} />
           <Route path="clinic/reports/reprint"                element={<PermissionGuard module="clinic"><ReprintFilter /></PermissionGuard>} />
           <Route path="clinic/reports/death-certificate/view" element={<PermissionGuard module="clinic"><DeathCertificateReport /></PermissionGuard>} />
+          <Route path="clinic/reports/discharge-certificate"      element={<PermissionGuard module="clinic"><DischargeCertificateFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/discharge-certificate/view" element={<PermissionGuard module="clinic"><DischargeCertificateReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-wise/view" element={<PermissionGuard module="clinic"><ConsultantWiseReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-rates"      element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement"      element={<PermissionGuard module="clinic"><ConsultantStatementFilter /></PermissionGuard>} />
