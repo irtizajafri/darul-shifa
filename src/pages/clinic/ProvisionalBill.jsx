@@ -54,7 +54,7 @@ function printProvisionalBill() {
     style.id = styleId;
     document.head.appendChild(style);
   }
-  style.textContent = '@page { size: A4 portrait !important; margin: 30mm 10mm !important; }';
+  style.textContent = '@page { size: A5 portrait !important; margin: 8mm 7mm !important; }';
 
   const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
@@ -187,6 +187,12 @@ function BalanceInfoModal({ detail, onClose }) {
         </div>
         <div className="pb-info-body">
           <div className="pb-balance-row"><label>Bill Amount</label><span>{fmt2(balanceInfo.billAmount)}</span></div>
+          {balanceInfo.discount > 0 && (
+            <div className="pb-balance-row pb-balance-row--discount">
+              <label>Discount{balanceInfo.discountPermissionBy ? ` (by ${balanceInfo.discountPermissionBy})` : ''}</label>
+              <span>-{fmt2(balanceInfo.discount)}</span>
+            </div>
+          )}
           <div className="pb-balance-row"><label>Amount Received</label><span>{fmt2(balanceInfo.amountReceived)}</span></div>
           <div className="pb-balance-row pb-balance-row--em"><label>Balance</label><span>{fmt2(balanceInfo.balance)}</span></div>
           <div className="pb-balance-row pb-balance-row--em"><label>Refund</label><span>{fmt2(balanceInfo.refund)}</span></div>
@@ -225,27 +231,40 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
     if (!groups[label]) groups[label] = [];
     groups[label].push(item);
   });
+  // Print keeps only one summed line per diagnostic department (e.g. a single
+  // "Laboratory" row for 4785) — the individual test/particular breakdown is
+  // intentionally not shown on the printed bill, only in-app. These land in
+  // the "Other" bucket (same as room-category-less bill items, e.g. NG TUBE)
+  // rather than each getting its own box — a Laboratory-only box would repeat
+  // "Laboratory" as both the box title and its single row's head, which reads
+  // as a duplicate.
+  const diagTotalsByDept = {};
   diagnosticRows.forEach((row) => {
-    const label = row.department || 'Diagnostic';
-    if (!groups[label]) groups[label] = [];
-    groups[label].push({
-      id: `diag-${row.id}`,
-      billHead: { description: row.particulars || row.department },
+    const dept = row.department || 'Diagnostic';
+    diagTotalsByDept[dept] = (diagTotalsByDept[dept] || 0) + Number(row.amount || 0);
+  });
+  Object.entries(diagTotalsByDept).forEach(([dept, total]) => {
+    if (!groups.Other) groups.Other = [];
+    groups.Other.push({
+      id: `diag-${dept}`,
+      billHead: { description: dept },
       qty: 1,
-      rate: row.amount,
-      amount: row.amount,
+      rate: total,
+      amount: total,
     });
   });
-  pharmacyRows.forEach((row) => {
-    if (!groups.Pharmacy) groups.Pharmacy = [];
-    groups.Pharmacy.push({
-      id: `pharm-${row.id}`,
-      billHead: { description: row.storeName ? `${row.medicine} (${row.storeName})` : row.medicine },
-      qty: row.qty,
-      rate: row.rate,
-      amount: row.amount,
+  // Same for Pharmacy — one summed "Pharmacy" line, no medicine-by-medicine detail.
+  if (pharmacyRows.length) {
+    const pharmTotal = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+    if (!groups.Other) groups.Other = [];
+    groups.Other.push({
+      id: 'pharm-total',
+      billHead: { description: 'Pharmacy' },
+      qty: 1,
+      rate: pharmTotal,
+      amount: pharmTotal,
     });
-  });
+  }
 
   const categoryLabel = { private: 'Private Patient', staff: 'Staff Patient', panel: 'Panel Patient', cc: 'CC Patient', complementary: 'Complementary Patient' }[admission.patientCategory] || 'Private Patient';
   const balanceWords = balanceInfo.balance > 0 ? numToWords(Math.floor(balanceInfo.balance)) : (balanceInfo.refund > 0 ? numToWords(Math.floor(balanceInfo.refund)) : 'zero');
@@ -257,7 +276,7 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
       </div>
 
       <div className="pb-print-title-row">
-        <span className="pb-print-title">PROVISIONAL MEDICAL BILL</span>
+        <span className="pb-print-title">MEDICAL BILL</span>
         {isDuplicate && <span className="pb-print-duplicate">Duplicate</span>}
       </div>
 
@@ -286,63 +305,74 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
         </tbody>
       </table>
 
-      <div className="pb-print-section-hdr">Payment History</div>
-      <table className="pb-print-pay-tbl">
-        <thead><tr><th>Date &amp; Time</th><th>Slip#</th><th className="r">Amount</th></tr></thead>
-        <tbody>
-          {detail.patientInfo.paymentHistory.map((p, i) => (
-            <tr key={i}><td>{fmtDateTime(p.date)}</td><td>{p.slipNo}</td><td className="r">{fmt2(p.amount)}</td></tr>
-          ))}
-          <tr className="pb-print-grand"><td colSpan={2}>Grand Total:</td><td className="r">{fmt2(detail.patientInfo.amountReceived)}</td></tr>
-        </tbody>
-      </table>
+      <div className="pb-print-box">
+        <div className="pb-print-box-hdr">Payment History</div>
+        <table className="pb-print-pay-tbl">
+          <thead><tr><th>Date &amp; Time</th><th>Slip#</th><th className="r">Amount</th></tr></thead>
+          <tbody>
+            {detail.patientInfo.paymentHistory.map((p, i) => (
+              <tr key={i}><td>{fmtDateTime(p.date)}</td><td>{p.slipNo}</td><td className="r">{fmt2(p.amount)}</td></tr>
+            ))}
+            <tr className="pb-print-grand"><td colSpan={2}>Grand Total:</td><td className="r">{fmt2(detail.patientInfo.amountReceived)}</td></tr>
+          </tbody>
+        </table>
+      </div>
 
-      <div className="pb-print-section-hdr">Amount Distribution</div>
-      {Object.entries(groups).map(([label, items]) => {
-        const subtotal = items.reduce((s, i) => s + Number(i.amount || 0), 0);
-        return (
-          <div key={label} className="pb-print-ward-block">
-            <div className="pb-print-ward-name">{label}</div>
-            <table className="pb-print-items-tbl">
-              <thead><tr><th>Head</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr></thead>
-              <tbody>
-                {items.map((i) => (
-                  <tr key={i.id}>
-                    <td>{(i.billHead?.description || i.billHead?.headCode || '—').toString().toUpperCase()}</td>
-                    <td className="r">{i.qty}</td>
-                    <td className="r">{fmt2(i.rate)}</td>
-                    <td className="r">{fmt2(i.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="pb-print-subtotal"><td colSpan={3}>Total for This Ward:</td><td className="r">{fmt2(subtotal)}</td></tr>
-              </tfoot>
-            </table>
-          </div>
-        );
-      })}
-      {!Object.keys(groups).length && <div className="pb-print-no-items">Koi bill item nahi hai</div>}
+      <div className="pb-print-box">
+        <div className="pb-print-box-hdr">Amount Distribution</div>
+        {Object.entries(groups).map(([label, items]) => {
+          const subtotal = items.reduce((s, i) => s + Number(i.amount || 0), 0);
+          return (
+            <div key={label} className="pb-print-ward-block">
+              <div className="pb-print-ward-name">{label}</div>
+              <table className="pb-print-items-tbl">
+                <thead><tr><th>Head</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr></thead>
+                <tbody>
+                  {items.map((i) => (
+                    <tr key={i.id}>
+                      <td>{(i.billHead?.description || i.billHead?.headCode || '—').toString().toUpperCase()}</td>
+                      <td className="r">{i.qty}</td>
+                      <td className="r">{fmt2(i.rate)}</td>
+                      <td className="r">{fmt2(i.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="pb-print-subtotal"><td colSpan={3}>Total for This Ward:</td><td className="r">{fmt2(subtotal)}</td></tr>
+                </tfoot>
+              </table>
+            </div>
+          );
+        })}
+        {!Object.keys(groups).length && <div className="pb-print-no-items">Koi bill item nahi hai</div>}
 
-      <table className="pb-print-summary-tbl">
-        <tbody>
-          <tr>
-            <td className="l">{categoryLabel}</td>
-            <td className="l">Bill Amount:</td>
-            <td className="r">{fmt2(balanceInfo.billAmount)}</td>
-          </tr>
-          <tr>
-            <td></td>
-            <td className="l">Received Amount:</td>
-            <td className="r">{fmt2(balanceInfo.amountReceived)}</td>
-          </tr>
-          <tr className="pb-print-balance-row">
-            <td className="l"><strong>Admitted</strong></td>
-            <td className="l"><strong>Balance Amount:</strong></td>
-            <td className="r"><strong>{fmt2(balanceInfo.balance > 0 ? balanceInfo.balance : balanceInfo.refund)}</strong></td>
-          </tr>
-        </tbody>
-      </table>
+        <table className="pb-print-summary-tbl">
+          <tbody>
+            <tr>
+              <td className="l">{categoryLabel}</td>
+              <td className="l">Bill Amount:</td>
+              <td className="r">{fmt2(balanceInfo.billAmount)}</td>
+            </tr>
+            {balanceInfo.discount > 0 && (
+              <tr>
+                <td></td>
+                <td className="l">Discount{balanceInfo.discountPermissionBy ? ` (${balanceInfo.discountPermissionBy})` : ''}:</td>
+                <td className="r">-{fmt2(balanceInfo.discount)}</td>
+              </tr>
+            )}
+            <tr>
+              <td></td>
+              <td className="l">Received Amount:</td>
+              <td className="r">{fmt2(balanceInfo.amountReceived)}</td>
+            </tr>
+            <tr className="pb-print-balance-row">
+              <td className="l"><strong>Admitted</strong></td>
+              <td className="l"><strong>{balanceInfo.balance > 0 ? 'Balance Amount:' : 'Refund Amount:'}</strong></td>
+              <td className="r"><strong>{fmt2(balanceInfo.balance > 0 ? balanceInfo.balance : balanceInfo.refund)}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div className="pb-print-words">
         {balanceInfo.balance > 0 ? 'Balance' : 'Refund'} Amount: RS. {balanceWords.toUpperCase()} ONLY.
@@ -1045,6 +1075,9 @@ export default function ProvisionalBill() {
 
             <div className="pb-footer">
               <div className="pb-footer-amt">Bill Amount <span>{fmt2(detail.balanceInfo.billAmount)}</span></div>
+              {detail.balanceInfo.discount > 0 && (
+                <div className="pb-footer-amt pb-footer-amt--discount">Discount <span>-{fmt2(detail.balanceInfo.discount)}</span></div>
+              )}
               {detail.balanceInfo.refund > 0
                 ? <div className="pb-footer-amt pb-footer-amt--refund">Refund <span>{fmt2(detail.balanceInfo.refund)}</span></div>
                 : <div className="pb-footer-amt pb-footer-amt--balance">Balance <span>{fmt2(detail.balanceInfo.balance)}</span></div>}

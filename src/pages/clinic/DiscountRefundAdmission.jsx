@@ -101,13 +101,25 @@ export default function DiscountRefundAdmission() {
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('amount');
   const [permissionBy, setPermissionBy] = useState('');
+  const [refundOverride, setRefundOverride] = useState('');
   const [saving, setSaving] = useState(false);
 
   const discountAmt = discountType === 'percent'
     ? Math.round((billAmount * (Number(discount) || 0)) / 100)
     : (Number(discount) || 0);
-  const netBalance = Math.max(0, billAmount - discountAmt);
-  const refundAmt = Math.max(0, receivedAmount - netBalance);
+  // What the patient still owes after discount, ignoring payments — this is
+  // what "refund due" is measured against below, not what's shown as the
+  // Net Balance figure (that also has to account for what's already received).
+  const netBillAmount = Math.max(0, billAmount - discountAmt);
+  // Net Balance shown to the user must reflect payments already received too
+  // — Bill Amount minus Discount minus Received Amount — not just Bill minus
+  // Discount, which previously ignored Received Amount entirely.
+  const netBalance = Math.max(0, netBillAmount - receivedAmount);
+  const autoRefundAmt = Math.max(0, receivedAmount - netBillAmount);
+  // Refund can be auto-computed (received exceeds what's owed) or manually
+  // typed by staff (e.g. refunding part/all of Received Amount for reasons
+  // unrelated to the discount math) — manual entry wins when present.
+  const refundAmt = refundOverride !== '' ? (Number(refundOverride) || 0) : autoRefundAmt;
 
   async function handleSelect(row) {
     setShowLookup(false);
@@ -122,6 +134,7 @@ export default function DiscountRefundAdmission() {
       setDiscount('');
       setDiscountType('amount');
       setPermissionBy('');
+      setRefundOverride('');
     } catch (e) {
       toast.error(e.message || 'Admission load nahi hui');
     }
@@ -135,6 +148,7 @@ export default function DiscountRefundAdmission() {
     setDiscount('');
     setDiscountType('amount');
     setPermissionBy('');
+    setRefundOverride('');
   }
 
   async function handleAdd() {
@@ -249,8 +263,19 @@ export default function DiscountRefundAdmission() {
                   onChange={e => setPermissionBy(e.target.value)}
                   placeholder="Authorized by…"
                 />
-                <label className="dra-label dra-label--right">To be Refund</label>
-                <span className="dra-value dra-value--red">{fmt2(refundAmt)}</span>
+                <label className="dra-label dra-label--right">Refund Amount</label>
+                <input
+                  className="dra-input dra-input--amount dra-input--refund"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={refundOverride}
+                  onChange={e => setRefundOverride(e.target.value)}
+                  placeholder={fmt2(autoRefundAmt)}
+                />
+                {refundOverride !== '' && Number(refundOverride) !== autoRefundAmt && (
+                  <span className="dra-disc-calc">(auto: {fmt2(autoRefundAmt)})</span>
+                )}
               </div>
 
               {history.length > 0 && (

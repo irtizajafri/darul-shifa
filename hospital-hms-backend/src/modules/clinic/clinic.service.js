@@ -2477,7 +2477,7 @@ async function getProvisionalBillDetail(admissionId) {
   const [
     roomCategory, bed, surgeryType, dischargeType, consultant,
     billItems, labVisits, diagnosticOtherVisits, otherVisits,
-    payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory,
+    payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory, latestDiscountRefund,
   ] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
@@ -2524,6 +2524,13 @@ async function getProvisionalBillDetail(admissionId) {
       orderBy: { id: 'asc' },
     }),
     prisma.clinicBedShiftHistory.findMany({ where: { admissionId: Number(admissionId) } }),
+    // Discount & Refund Against Admission — each entry is computed fresh
+    // against the (unchanged) gross bill amount, so only the latest one is
+    // the currently-active discount, not a sum of every entry ever made.
+    prisma.clinicAdmissionDiscountRefund.findFirst({
+      where: { admissionId: Number(admissionId) },
+      orderBy: { id: 'desc' },
+    }),
   ]);
 
   const roomCategoryIds = [...new Set(billItems.map((i) => i.roomCategoryId).filter(Boolean))];
@@ -2665,6 +2672,8 @@ async function getProvisionalBillDetail(admissionId) {
   const diagnosticAmount  = diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
   const pharmacyAmount    = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
   const billAmount = provisionalAmount + wardAmount + diagnosticAmount + pharmacyAmount;
+  const discountAmount = Number(latestDiscountRefund?.discountAmount) || 0;
+  const netBillAmount = Math.max(0, billAmount - discountAmount);
 
   const paymentHistory = [];
   if (Number(admission.advancePayment) > 0) {
@@ -2690,9 +2699,12 @@ async function getProvisionalBillDetail(admissionId) {
     patientInfo: { paymentHistory, amountReceived },
     balanceInfo: {
       billAmount,
+      discount: discountAmount,
+      discountPermissionBy: latestDiscountRefund?.permissionBy || null,
+      netBillAmount,
       amountReceived,
-      balance: Math.max(0, billAmount - amountReceived),
-      refund: Math.max(0, amountReceived - billAmount),
+      balance: Math.max(0, netBillAmount - amountReceived),
+      refund: Math.max(0, amountReceived - netBillAmount),
     },
   };
 }

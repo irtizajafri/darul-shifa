@@ -82,6 +82,7 @@ $bg:      #dde3ea;
   &--serial  { width: 130px; font-weight: 600; }
   &--amount  { width: 120px; font-weight: 700; color: $green; }
   &--wide    { width: 200px; }
+  &--refund  { color: $red; }
 }
 
 .dra-lookup-btn {
