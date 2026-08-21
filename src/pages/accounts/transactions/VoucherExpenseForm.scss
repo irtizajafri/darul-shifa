@@ -226,6 +226,35 @@
     letter-spacing: 0;
   }
 
+  // ── Surgery/Anesthesia role selector ──────────────────────────────────────
+  &__surg-type {
+    display: flex;
+    gap: 0.5rem;
+    margin: 0.35rem 0 0.5rem;
+  }
+
+  &__surg-type-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: $text-main;
+    cursor: pointer;
+
+    &.active {
+      background: #fdf2f8;
+      border-color: #ec4899;
+      color: #be185d;
+    }
+
+    input { margin: 0; }
+  }
+
   // ── Payee picker ────────────────────────────────────────────────────────────
   &__payee-picker { position: relative; }
 

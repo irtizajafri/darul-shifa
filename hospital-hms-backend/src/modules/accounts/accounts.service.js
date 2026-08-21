@@ -227,13 +227,19 @@ async function removePayeeHeadStaffCategory(headId, staffCategoryId) {
 
 // Payee list for a surgery/anesthesia head — doctors whose staff category is
 // one of the ones linked to this head, tagged with that category's name so
-// the picker can show e.g. "Dr X (Surgeon)".
-async function getSurgeryPayeesForHead(headId) {
+// the picker can show e.g. "Dr X (Surgeon)". Pass staffCategoryId to narrow
+// it down to just that one role (e.g. the user picked "Surgery" vs
+// "Anesthesia" for this particular payment) — must still be one of the
+// categories actually linked to this head.
+async function getSurgeryPayeesForHead(headId, staffCategoryId) {
   const links = await prisma.accPayeeHeadStaffCategory.findMany({
     where: { payeeHeadId: Number(headId) },
     select: { staffCategoryId: true },
   });
-  const categoryIds = links.map((l) => l.staffCategoryId);
+  let categoryIds = links.map((l) => l.staffCategoryId);
+  if (staffCategoryId && categoryIds.includes(Number(staffCategoryId))) {
+    categoryIds = [Number(staffCategoryId)];
+  }
   if (categoryIds.length === 0) return [];
   const rows = await prisma.clinicDoctor.findMany({
     where: { status: 'active', staffCategoryId: { in: categoryIds } },

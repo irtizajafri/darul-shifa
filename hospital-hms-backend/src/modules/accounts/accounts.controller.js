@@ -117,7 +117,7 @@ async function removeInventoryHeadMainAccount(req, res, next) {
 }
 
 async function getSurgeryHeadForMainAccount(req, res, next) { try { success(res, await svc.getSurgeryHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
-async function getSurgeryPayeesForHead(req, res, next) { try { success(res, await svc.getSurgeryPayeesForHead(req.query.headId)); } catch (e) { next(e); } }
+async function getSurgeryPayeesForHead(req, res, next) { try { success(res, await svc.getSurgeryPayeesForHead(req.query.headId, req.query.staffCategoryId)); } catch (e) { next(e); } }
 async function addPayeeHeadStaffCategory(req, res, next) {
   try {
     const { headId, staffCategoryId } = req.body;

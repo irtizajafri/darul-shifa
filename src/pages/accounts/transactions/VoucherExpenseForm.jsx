@@ -361,6 +361,9 @@ export default function VoucherExpenseForm() {
   const [subAccs, setSubAccs]           = useState([]);
   const [isInventoryAcc, setIsInventoryAcc] = useState(false);
   const [isSurgeryAcc, setIsSurgeryAcc] = useState(false);
+  const [surgeryCategories, setSurgeryCategories] = useState([]); // [{id, name}] linked to the head
+  const [surgeryCategoryId, setSurgeryCategoryId] = useState('');
+  const [surgeryHeadIdForFetch, setSurgeryHeadIdForFetch] = useState(null);
   const [admissionQuery, setAdmissionQuery] = useState('');
   const [admissionResults, setAdmissionResults] = useState([]);
   const [admissionSearchOpen, setAdmissionSearchOpen] = useState(false);
@@ -444,10 +447,15 @@ export default function VoucherExpenseForm() {
       .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
   }, [selectedBankId]);
 
+  const resetSurgeryState = () => {
+    setIsSurgeryAcc(false);
+    setSurgeryCategories([]); setSurgeryCategoryId(''); setSurgeryHeadIdForFetch(null);
+    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+  };
+
   const handleMainGlChange = async (v) => {
     setEntry((e) => ({ ...e, mainGlId: v, subGlId: '', mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '', admissionNo: '' }));
-    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false); setIsSurgeryAcc(false);
-    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false); resetSurgeryState();
     if (!v) return;
     const r = await fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${v}`);
     const j = await r.json();
@@ -456,8 +464,7 @@ export default function VoucherExpenseForm() {
 
   const handleSubGlChange = async (v) => {
     setEntry((e) => ({ ...e, subGlId: v, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '', admissionNo: '' }));
-    setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false); setIsSurgeryAcc(false);
-    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false); resetSurgeryState();
     if (!v) return;
     const r = await fetch(`${API}/main-account?entityType=${entityType}&subGlId=${v}`);
     const j = await r.json();
@@ -467,8 +474,7 @@ export default function VoucherExpenseForm() {
   const handleMainAccChange = async (v) => {
     setSubAccs([]);
     setIsInventoryAcc(false);
-    setIsSurgeryAcc(false);
-    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    resetSurgeryState();
     if (!v) { setEntry((e) => ({ ...e, mainAccountId: '', subAccountId: '', accountCode: '', accountName: '', payeeName: '', admissionNo: '' })); return; }
     const acc = mainAccs.find((a) => String(a.id) === v);
     setEntry((e) => ({ ...e, mainAccountId: v, subAccountId: '', accountCode: acc?.code || '', accountName: acc?.name || '', payeeName: '', admissionNo: '' }));
@@ -490,8 +496,10 @@ export default function VoucherExpenseForm() {
     } catch { /* inventory check failed — fall through to regular sub accounts */ }
 
     // Check if this main account has a Surgery/Anesthesia head linked — Sub
-    // Account becomes an admission-number picker and the payee list is
-    // Clinic doctors filtered by the head's linked staff categories.
+    // Account becomes an admission-number picker; the payee list only loads
+    // once the user picks WHICH role (Surgeon/Anaesthetic/etc) this specific
+    // payment is for, so Surgery payments never show Anesthesia doctors and
+    // vice versa even though both roles share the same head/Sub GL.
     try {
       const surgR = await fetch(`${API}/linked/surgery-head-for-main-account?mainAccountId=${v}`);
       const surgJ = await surgR.json();
@@ -499,16 +507,23 @@ export default function VoucherExpenseForm() {
 
       if (surgHead?.id) {
         setIsSurgeryAcc(true);
+        setSurgeryHeadIdForFetch(surgHead.id);
         setLinkedHeadName(surgHead.name);
         setLinkedHeadType('surgery');
-        const pR = await fetch(`${API}/linked/surgery-payees?headId=${surgHead.id}`);
-        const pJ = await pR.json();
-        setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        const cats = (surgHead.staffCategoryLinks || []).map((l) => l.staffCategory);
+        setSurgeryCategories(cats);
         // Show recent admissions immediately so the picker isn't empty
         fetch(`${CLINIC_API}/admission/adjustment/search?q=`)
           .then((r) => r.json())
           .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
           .catch(() => {});
+        // Only one role linked — no need to make the user pick, load it directly
+        if (cats.length === 1) {
+          setSurgeryCategoryId(String(cats[0].id));
+          const pR = await fetch(`${API}/linked/surgery-payees?headId=${surgHead.id}&staffCategoryId=${cats[0].id}`);
+          const pJ = await pR.json();
+          setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        }
         return;
       }
     } catch { /* surgery check failed — fall through to regular sub accounts */ }
@@ -519,6 +534,16 @@ export default function VoucherExpenseForm() {
       const j = await r.json();
       setSubAccs(Array.isArray(j?.data) ? j.data : []);
     } catch { setSubAccs([]); }
+  };
+
+  const handleSurgeryCategorySelect = async (catId) => {
+    setSurgeryCategoryId(String(catId));
+    setEntry((f) => ({ ...f, payeeName: '' }));
+    setPayeeSearch('');
+    if (!surgeryHeadIdForFetch) return;
+    const pR = await fetch(`${API}/linked/surgery-payees?headId=${surgeryHeadIdForFetch}&staffCategoryId=${catId}`);
+    const pJ = await pR.json();
+    setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
   };
 
   const handleAdmissionQueryChange = (val) => {
@@ -585,7 +610,7 @@ export default function VoucherExpenseForm() {
     setEntries((es) => es.filter((_, i) => i !== idx));
     setEntry({ ...e });
     setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
-    setIsSurgeryAcc(false); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    resetSurgeryState();
     setAdmissionQuery(e.admissionNo || '');
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
 
@@ -616,11 +641,25 @@ export default function VoucherExpenseForm() {
       const surgHead = surgJ?.data;
       if (surgHead?.id) {
         setIsSurgeryAcc(true);
+        setSurgeryHeadIdForFetch(surgHead.id);
         setLinkedHeadName(surgHead.name);
         setLinkedHeadType('surgery');
-        const pR = await fetch(`${API}/linked/surgery-payees?headId=${surgHead.id}`);
-        const pJ = await pR.json();
-        setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        const cats = (surgHead.staffCategoryLinks || []).map((l) => l.staffCategory);
+        setSurgeryCategories(cats);
+        // Figure out which role this saved payee belongs to so the category
+        // selector re-opens already on the right choice instead of blank.
+        const pAllR = await fetch(`${API}/linked/surgery-payees?headId=${surgHead.id}`);
+        const pAllJ = await pAllR.json();
+        const allPayees = Array.isArray(pAllJ?.data) ? pAllJ.data : [];
+        const matched = allPayees.find((p) => p.name === e.payeeName);
+        const matchedCat = matched ? cats.find((c) => c.name === matched.categoryName) : null;
+        if (matchedCat) {
+          setSurgeryCategoryId(String(matchedCat.id));
+          setLinkedPayees(allPayees.filter((p) => p.categoryName === matchedCat.name));
+        } else if (cats.length === 1) {
+          setSurgeryCategoryId(String(cats[0].id));
+          setLinkedPayees(allPayees);
+        }
         return;
       }
 
@@ -833,7 +872,7 @@ export default function VoucherExpenseForm() {
         .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
     }
     setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
-    setIsSurgeryAcc(false); setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    resetSurgeryState();
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
   };
 
@@ -1040,7 +1079,24 @@ export default function VoucherExpenseForm() {
                     <span className="ve-form__optional"> (select Sub Account first)</span>
                   )}
                 </label>
-                {linkedPayees.length > 0 ? (
+                {isSurgeryAcc && surgeryCategories.length > 1 && (
+                  <div className="ve-form__surg-type">
+                    {surgeryCategories.map((c) => (
+                      <label key={c.id} className={`ve-form__surg-type-opt ${String(surgeryCategoryId) === String(c.id) ? 'active' : ''}`}>
+                        <input
+                          type="radio"
+                          name="surgery-type"
+                          checked={String(surgeryCategoryId) === String(c.id)}
+                          onChange={() => handleSurgeryCategorySelect(c.id)}
+                        />
+                        {c.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {isSurgeryAcc && !surgeryCategoryId ? (
+                  <p className="ve-form__optional">Payee dekhne ke liye upar role (Surgeon/Anaesthetic) select karein</p>
+                ) : linkedPayees.length > 0 ? (
                   <div className="ve-form__payee-picker">
                     <input
                       className="ve-form__payee-search"
