@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Stethoscope, Package, FlaskConical, Wallet } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import PageLoader from '../../components/ui/PageLoader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
@@ -36,10 +38,13 @@ const ALL_MODULES = [
 export default function MainDashboard() {
   const [loading, setLoading] = useState(true);
   const { clearModule, setModule } = useModuleStore();
+  const { user } = useAuthStore();
   const navigate = useNavigate();
 
-  // All modules are always visible — permission check happens when opened
-  const modules = ALL_MODULES;
+  // Sirf wahi modules dikho jis ki permission hai
+  const modules = user?.isSuperAdmin
+    ? ALL_MODULES
+    : ALL_MODULES.filter((m) => !m.permModule || hasPermission(user, m.permModule));
 
   useEffect(() => {
     clearModule();

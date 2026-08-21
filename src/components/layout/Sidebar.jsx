@@ -28,18 +28,22 @@ import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTabStore } from '../../store/useTabStore';
+import { hasPermission } from '../../utils/permissions';
 
 const inventoryNavItems = [
-  { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
-  { path: '/inventory-module', label: 'Inventory Dashboard', Icon: LayoutDashboard },
-  { path: '/inventory/master-setup', label: 'Master Setup', Icon: Settings },
-  { path: '/inventory/po', label: 'Purchase Orders', Icon: ShoppingCart, state: { openCreate: true } },
-  { path: '/inventory/grn', label: 'Receiving (GRN)', Icon: Truck, state: { openCreate: true } },
-  { path: '/inventory/gin', label: 'Issuance (GIN)', Icon: ArrowUpRight },
-  { path: '/inventory/sales-invoice', label: 'Sales Invoice', Icon: FileText },
-  { path: '/inventory/gdn', label: 'Discard (GDN)', Icon: ArrowDownRight },
-  { path: '/inventory/maintenance', label: 'Maintenance', Icon: Wrench },
-  { path: '/inventory/reports', label: 'Reports', Icon: BarChart3 },
+  { path: '/dashboard',              label: 'Main Dashboard',     Icon: ArrowLeft,      toDashboard: true },
+  { path: '/inventory-module',       label: 'Inventory Dashboard', Icon: LayoutDashboard },
+  { path: '/inventory/master-setup', label: 'Master Setup',       Icon: Settings,       subModule: 'master-setup' },
+  { path: '/inventory/po',           label: 'Purchase Orders',    Icon: ShoppingCart,   subModule: 'po',               state: { openCreate: true } },
+  { path: '/inventory/grn',          label: 'Receiving (GRN)',    Icon: Truck,          subModule: 'grn',              state: { openCreate: true } },
+  { path: '/inventory/gin',          label: 'Issuance (GIN)',     Icon: ArrowUpRight,   subModule: 'gin' },
+  { path: '/inventory/sales-invoice', label: 'Sales Invoice',     Icon: FileText,       subModule: 'sales-invoice' },
+  { path: '/inventory/gdn',          label: 'Discard (GDN)',      Icon: ArrowDownRight, subModule: 'gdn' },
+  { path: '/inventory/mrn',          label: 'Material Return (MRN)', Icon: ArrowUpRight, subModule: 'mrn' },
+  { path: '/inventory/maintenance',  label: 'Maintenance',        Icon: Wrench,         subModule: 'maintenance' },
+  { path: '/inventory/fuel',         label: 'Fuel Management',    Icon: BarChart3,      subModule: 'fuel' },
+  { path: '/inventory/utilities-bill', label: 'Utilities Bill',   Icon: BarChart3,      subModule: 'utilities-bill' },
+  { path: '/inventory/reports',      label: 'Reports',            Icon: BarChart3,      subModule: 'inventory-reports' },
 ];
 
 const accountsNavItems = [
@@ -58,15 +62,15 @@ const clinicNavItems = [
 ];
 
 const employeeNavItems = [
-  { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
-  { path: '/employee-module', label: 'HR Dashboard', Icon: LayoutDashboard },
-  { path: '/employees', label: 'Employee Database', Icon: Users },
-  { path: '/attendance', label: 'Attendance', Icon: Clock },
-  { path: '/test-attendance', label: 'Test Attendance', Icon: Clock },
-  { path: '/gatepass', label: 'Gate Pass', Icon: DoorOpen },
-  { path: '/shortleave', label: 'Short Leave', Icon: Timer },
-  { path: '/advance', label: 'Advance & Loan', Icon: CreditCard },
-  { path: '/reports', label: 'Reports', Icon: BarChart3 },
+  { path: '/dashboard',        label: 'Main Dashboard',    Icon: ArrowLeft,      toDashboard: true },
+  { path: '/employee-module',  label: 'HR Dashboard',      Icon: LayoutDashboard },
+  { path: '/employees',        label: 'Employee Database', Icon: Users,          subModule: 'employee-database' },
+  { path: '/attendance',       label: 'Attendance',        Icon: Clock,          subModule: 'attendance' },
+  { path: '/gatepass',         label: 'Gate Pass',         Icon: DoorOpen,       subModule: 'gatepass' },
+  { path: '/shortleave',       label: 'Short Leave',       Icon: Timer,          subModule: 'shortleave' },
+  { path: '/advance',          label: 'Advance & Loan',    Icon: CreditCard,     subModule: 'advance' },
+  { path: '/reports',          label: 'Reports',           Icon: BarChart3,      subModule: 'reports' },
+  { path: '/leave-encashment', label: 'Leave Encashment',  Icon: CreditCard,     subModule: 'leave-encashment' },
 ];
 
 function NewTabButton({ onClick }) {
@@ -131,6 +135,9 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   );
 
   if (activeModule === 'employee') {
+    const visibleEmpItems = employeeNavItems.filter(
+      (item) => item.toDashboard || !item.subModule || user?.isSuperAdmin || hasPermission(user, 'employee', item.subModule)
+    );
     return (
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
@@ -138,7 +145,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {employeeNavItems.map((item) => (
+          {visibleEmpItems.map((item) => (
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
@@ -175,6 +182,9 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   }
 
   if (activeModule === 'inventory') {
+    const visibleInvItems = inventoryNavItems.filter(
+      (item) => item.toDashboard || !item.subModule || user?.isSuperAdmin || hasPermission(user, 'inventory', item.subModule)
+    );
     return (
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
@@ -182,7 +192,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {inventoryNavItems.map((item) => (
+          {visibleInvItems.map((item) => (
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
@@ -268,7 +278,9 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
         <NewTabButton onClick={handleNewTab} />
       </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {mainItems.map((item) => (
+        {mainItems
+          .filter((item) => !item.module || user?.isSuperAdmin || hasPermission(user, item.module))
+          .map((item) => (
           <div
             key={item.path + item.label}
             className={navClass(item.path)}

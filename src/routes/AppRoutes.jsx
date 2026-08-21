@@ -186,11 +186,11 @@ export default function AppRoutes() {
           <Route path="inventory/gin" element={<PermissionGuard module="inventory" subModules={['gd', 'gin']}><GoodsIssue /></PermissionGuard>} />
           <Route path="inventory/sales-invoice" element={<PermissionGuard module="inventory" subModule="sales-invoice"><SalesInvoice /></PermissionGuard>} />
           <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
-          <Route path="inventory/mrn" element={<PermissionGuard module="inventory"><GoodsReturn /></PermissionGuard>} />
+          <Route path="inventory/mrn" element={<PermissionGuard module="inventory" subModule="mrn"><GoodsReturn /></PermissionGuard>} />
           <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
           <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
-          <Route path="inventory/fuel" element={<PermissionGuard module="inventory"><FuelManagement /></PermissionGuard>} />
-          <Route path="inventory/utilities-bill" element={<PermissionGuard module="inventory"><UtilitiesBillDashboard /></PermissionGuard>} />
+          <Route path="inventory/fuel" element={<PermissionGuard module="inventory" subModule="fuel"><FuelManagement /></PermissionGuard>} />
+          <Route path="inventory/utilities-bill" element={<PermissionGuard module="inventory" subModule="utilities-bill"><UtilitiesBillDashboard /></PermissionGuard>} />
 
           <Route path="accounts-module" element={<PermissionGuard module="accounts"><AccountsModuleDashboard /></PermissionGuard>} />
           <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />

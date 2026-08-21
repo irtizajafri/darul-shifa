@@ -38,23 +38,26 @@ import { hasPermission } from '../../utils/permissions';
 import './InventoryModuleDashboard.scss';
 
 const subModules = [
-  { title: 'Master Setup', icon: Settings, desc: 'Categories, Items, Vendors, Shelves', stat: 'Manage master data', path: '/inventory/master-setup', Illustration: MasterSetupIllustration },
-  { title: 'Purchase Orders (PO)', icon: ShoppingCart, desc: 'Generate & manage supplier POs', stat: 'Create and track orders', path: '/inventory/po', state: { openCreate: true }, Illustration: PurchaseOrderIllustration },
-  { title: 'Receiving (GRN)', icon: Truck, desc: 'Goods Receiving Note & inward stock', stat: 'Receive stock entries', path: '/inventory/grn', state: { openCreate: true }, Illustration: ReceivingGRNIllustration },
-  { title: 'Good Demands & Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments', stat: 'Manage outward stock', path: '/inventory/gin', Illustration: IssuanceGINIllustration },
-  { title: 'Sales Invoice', icon: FileText, desc: 'Fair Price Shop customer billing', stat: 'Generate invoice & PDF', path: '/inventory/sales-invoice', Illustration: SalesInvoiceIllustration },
-  { title: 'Discard/Return (GDN)', icon: ArrowDownRight, desc: 'Discard expired/damaged stock', stat: 'Track wastage and return', path: '/inventory/gdn', Illustration: DiscardGDNIllustration },
-  { title: 'Material Return (MRN)', icon: RotateCcw, desc: 'Department se maal wapas lena', stat: 'Stock wapas restore hoga', path: '/inventory/mrn', Illustration: MRNIllustration },
-  { title: 'Maintenance (MO)', icon: Wrench, desc: 'Asset repair & maintenance orders', stat: 'Track repair & GDN on discard', path: '/inventory/maintenance', Illustration: MaintenanceIllustration },
-  { title: 'Inventory Reports', icon: BarChart3, desc: 'Ledgers, stock positions, short expiry', stat: 'View stock reports', path: '/inventory/reports', Illustration: InventoryReportsIllustration },
-  { title: 'Fuel Management', icon: Fuel, desc: 'Vehicles & Generator — Fuel, Oil, Daily Sheets', stat: 'Track fuel & oil usage', path: '/inventory/fuel', Illustration: FuelManagementIllustration },
-  { title: 'Utilities Bill', icon: PlugZap, desc: 'Electricity meters — daily readings, expected & actual bill', stat: 'Track billing & department meters', path: '/inventory/utilities-bill' },
+  { title: 'Master Setup',                icon: Settings,      desc: 'Categories, Items, Vendors, Shelves',                              stat: 'Manage master data',           path: '/inventory/master-setup',   subModule: 'master-setup',       Illustration: MasterSetupIllustration },
+  { title: 'Purchase Orders (PO)',         icon: ShoppingCart,  desc: 'Generate & manage supplier POs',                                   stat: 'Create and track orders',      path: '/inventory/po',             subModule: 'po',                 state: { openCreate: true }, Illustration: PurchaseOrderIllustration },
+  { title: 'Receiving (GRN)',              icon: Truck,         desc: 'Goods Receiving Note & inward stock',                              stat: 'Receive stock entries',        path: '/inventory/grn',            subModule: 'grn',                state: { openCreate: true }, Illustration: ReceivingGRNIllustration },
+  { title: 'Good Demands & Issuance (GIN)', icon: ArrowUpRight, desc: 'Issue goods to departments',                                      stat: 'Manage outward stock',         path: '/inventory/gin',            subModule: 'gin',                Illustration: IssuanceGINIllustration },
+  { title: 'Sales Invoice',               icon: FileText,      desc: 'Fair Price Shop customer billing',                                  stat: 'Generate invoice & PDF',       path: '/inventory/sales-invoice',  subModule: 'sales-invoice',      Illustration: SalesInvoiceIllustration },
+  { title: 'Discard/Return (GDN)',        icon: ArrowDownRight, desc: 'Discard expired/damaged stock',                                   stat: 'Track wastage and return',     path: '/inventory/gdn',            subModule: 'gdn',                Illustration: DiscardGDNIllustration },
+  { title: 'Material Return (MRN)',       icon: RotateCcw,     desc: 'Department se maal wapas lena',                                    stat: 'Stock wapas restore hoga',     path: '/inventory/mrn',            subModule: 'mrn',                Illustration: MRNIllustration },
+  { title: 'Maintenance (MO)',            icon: Wrench,        desc: 'Asset repair & maintenance orders',                                stat: 'Track repair & GDN on discard', path: '/inventory/maintenance',   subModule: 'maintenance',        Illustration: MaintenanceIllustration },
+  { title: 'Inventory Reports',           icon: BarChart3,     desc: 'Ledgers, stock positions, short expiry',                           stat: 'View stock reports',           path: '/inventory/reports',        subModule: 'inventory-reports',  Illustration: InventoryReportsIllustration },
+  { title: 'Fuel Management',             icon: Fuel,          desc: 'Vehicles & Generator — Fuel, Oil, Daily Sheets',                   stat: 'Track fuel & oil usage',       path: '/inventory/fuel',           subModule: 'fuel',               Illustration: FuelManagementIllustration },
+  { title: 'Utilities Bill',              icon: PlugZap,       desc: 'Electricity meters — daily readings, expected & actual bill',       stat: 'Track billing & department meters', path: '/inventory/utilities-bill', subModule: 'utilities-bill' },
 ];
 
 export default function InventoryModuleDashboard() {
   const { user } = useAuthStore();
   const canSeeInvAlerts = hasPermission(user, 'inventory', 'low-stock-alerts');
   const canSeeFAAlerts  = hasPermission(user, 'inventory', 'fixed-asset-alerts');
+  const visibleSubModules = user?.isSuperAdmin
+    ? subModules
+    : subModules.filter((sm) => hasPermission(user, 'inventory', sm.subModule));
 
   const [loading, setLoading] = useState(true);
   const [showLowStockPopup, setShowLowStockPopup] = useState(false);
@@ -123,7 +126,7 @@ export default function InventoryModuleDashboard() {
       </div>
 
       <div className="submodule-grid">
-        {subModules.map((sm) => (
+        {visibleSubModules.map((sm) => (
           <div
             key={sm.title}
             className="submodule-card"

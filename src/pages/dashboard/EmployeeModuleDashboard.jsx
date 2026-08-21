@@ -14,19 +14,21 @@ import {
 } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import PageLoader from '../../components/ui/PageLoader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import './EmployeeModuleDashboard.scss';
 
 const subModules = [
-  { title: 'Employee Database', icon: Users, desc: 'Add, edit & manage all employee records', stat: '247 employees registered', path: '/employees' },
-  { title: 'Attendance', icon: Clock, desc: 'Machine & editable attendance', path: '/attendance' },
-  { title: 'Gate Pass', icon: DoorOpen, desc: 'Manage in/out permissions & nature of visit', path: '/gatepass' },
-  { title: 'Short Leave', icon: Timer, desc: 'Track short leaves & permissions', path: '/shortleave' },
-  { title: 'Advance & Loan', icon: CreditCard, desc: 'Employee loans & advances with auto deduction', path: '/advance' },
-  { title: 'Reports', icon: BarChart3, desc: 'Payslips, payroll, attendance & CR reports', path: '/reports' },
-  { title: 'Leave Encashment', icon: Banknote, desc: 'Monthly leave encashment records & payments', path: '/leave-encashment' },
+  { title: 'Employee Database', icon: Users,     desc: 'Add, edit & manage all employee records',          path: '/employees',        subModule: 'employee-database' },
+  { title: 'Attendance',        icon: Clock,     desc: 'Machine & editable attendance',                    path: '/attendance',       subModule: 'attendance' },
+  { title: 'Gate Pass',         icon: DoorOpen,  desc: 'Manage in/out permissions & nature of visit',      path: '/gatepass',         subModule: 'gatepass' },
+  { title: 'Short Leave',       icon: Timer,     desc: 'Track short leaves & permissions',                  path: '/shortleave',       subModule: 'shortleave' },
+  { title: 'Advance & Loan',    icon: CreditCard, desc: 'Employee loans & advances with auto deduction',   path: '/advance',          subModule: 'advance' },
+  { title: 'Reports',           icon: BarChart3, desc: 'Payslips, payroll, attendance & CR reports',       path: '/reports',          subModule: 'reports' },
+  { title: 'Leave Encashment',  icon: Banknote,  desc: 'Monthly leave encashment records & payments',      path: '/leave-encashment', subModule: 'leave-encashment' },
 ];
 
 export default function EmployeeModuleDashboard() {
@@ -34,6 +36,10 @@ export default function EmployeeModuleDashboard() {
   const [apiRowsMonth, setApiRowsMonth] = useState([]);
   const [apiRowsToday, setApiRowsToday] = useState([]);
   const { setModule } = useModuleStore();
+  const { user } = useAuthStore();
+  const visibleSubModules = user?.isSuperAdmin
+    ? subModules
+    : subModules.filter((sm) => hasPermission(user, 'employee', sm.subModule));
   const { employees, fetchEmployees } = useEmployeeStore();
   const navigate = useNavigate();
 
@@ -176,7 +182,7 @@ export default function EmployeeModuleDashboard() {
         <p>HR Module — Phase 1</p>
       </div>
       <div className="submodule-grid">
-        {subModules.map((sm) => (
+        {visibleSubModules.map((sm) => (
           <Card key={sm.title} className="submodule-card" onClick={() => navigate(sm.path)}>
             <div className="submodule-icon">
               <sm.icon className="w-5 h-5" />
