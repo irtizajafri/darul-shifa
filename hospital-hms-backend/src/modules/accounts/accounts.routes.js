@@ -39,6 +39,8 @@ router.get('/linked/inventory-items', ctrl.getInventoryItemsBySubcategory);
 router.get('/linked/inventory-head-for-main-account', ctrl.getInventoryHeadForMainAccount);
 router.get('/linked/surgery-head-for-main-account', ctrl.getSurgeryHeadForMainAccount);
 router.get('/linked/surgery-payees', ctrl.getSurgeryPayeesForHead);
+router.get('/linked/ipd-consultant-head-for-main-account', ctrl.getIpdConsultantHeadForMainAccount);
+router.get('/linked/pending-consultant-fees', ctrl.getPendingConsultantFees);
 router.post('/payee-head-staff-categories', ctrl.addPayeeHeadStaffCategory);
 router.delete('/payee-head-staff-categories/:headId/:staffCategoryId', ctrl.removePayeeHeadStaffCategory);
 

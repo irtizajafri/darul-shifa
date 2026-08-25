@@ -249,6 +249,58 @@ async function getSurgeryPayeesForHead(headId, staffCategoryId) {
   return rows.map((d) => ({ id: d.id, name: d.name, code: d.code, categoryName: d.staffCategory?.name || null }));
 }
 
+// ── IPD Consultant Fee payee head (sourceType='ipd-consultant') ────────────
+// Same Main-Account link + staff-category filter as Surgery/Anesthesia above
+// (reuses getSurgeryPayeesForHead as-is — it only cares about linked staff
+// categories, not sourceType). What's different is where the Amount comes
+// from: not typed by hand, but summed from that consultant's own unpaid
+// Const Fee doctorFee rows already sitting in admissions' Final Bills.
+async function getIpdConsultantHeadForMainAccount(mainAccountId) {
+  const link = await prisma.accPayeeHeadMainAccount.findFirst({
+    where: { mainAccountId: Number(mainAccountId) },
+    include: {
+      payeeHead: {
+        select: {
+          id: true, name: true, sourceType: true,
+          staffCategoryLinks: { include: { staffCategory: { select: { id: true, name: true } } } },
+        },
+      },
+    },
+  });
+  if (!link?.payeeHead || link.payeeHead.sourceType !== 'ipd-consultant') return null;
+  return link.payeeHead;
+}
+
+// Unpaid Const Fee rows for one doctor, optionally narrowed to a date range
+// (matched against when that row was added to the Final Bill) — each is a
+// single admission's Doctor Fee share, already split, ready to pick into a
+// payment.
+async function getPendingConsultantFees(doctorId, fromDate, toDate) {
+  const where = {
+    doctorId: Number(doctorId),
+    isPaid: false,
+    doctorFee: { not: null },
+  };
+  if (fromDate || toDate) {
+    where.createdAt = {};
+    if (fromDate) where.createdAt.gte = new Date(`${fromDate}T00:00:00`);
+    if (toDate) where.createdAt.lte = new Date(`${toDate}T23:59:59`);
+  }
+  const rows = await prisma.clinicDischargeBillItem.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    include: { admission: { select: { id: true, admissionNo: true, patientTitle: true, patientName: true } } },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    admissionId: r.admission?.id,
+    admissionNo: r.admission?.admissionNo || '',
+    patientName: r.admission ? `${r.admission.patientTitle || ''} ${r.admission.patientName}`.trim() : '',
+    date: r.createdAt,
+    amount: Number(r.doctorFee) || 0,
+  }));
+}
+
 async function getInventorySubcategories() {
   return prisma.inventorySubcategory.findMany({
     where: { status: 'active' },
@@ -725,7 +777,33 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
     }
   }
 
+  await linkConsultantFeeItems(entries, voucher.entries);
+
   return voucher;
+}
+
+// IPD Consultant Fee payee type — an entry can carry which Final Bill Const
+// Fee rows (ClinicDischargeBillItem) its Amount was summed from (multiple
+// admissions picked into one payment); record that link and flip each one
+// isPaid so it stops showing as still-owed. `createdEntries` must be in the
+// same order as `entries` — true for a fresh nested `create`, which always
+// preserves input order.
+async function linkConsultantFeeItems(entries, createdEntries) {
+  for (let i = 0; i < entries.length; i++) {
+    const itemIds = Array.isArray(entries[i].consultantFeeItemIds)
+      ? entries[i].consultantFeeItemIds.map(Number).filter(Boolean)
+      : [];
+    if (!itemIds.length) continue;
+    const items = await prisma.clinicDischargeBillItem.findMany({ where: { id: { in: itemIds } } });
+    await prisma.accVoucherExpenseEntryConsultantFee.createMany({
+      data: items.map((it) => ({
+        voucherExpenseEntryId: createdEntries[i].id,
+        dischargeBillItemId: it.id,
+        amount: Number(it.doctorFee) || 0,
+      })),
+    });
+    await prisma.clinicDischargeBillItem.updateMany({ where: { id: { in: itemIds } }, data: { isPaid: true } });
+  }
 }
 
 async function getVoucherExpenses(entityType) {
@@ -749,9 +827,23 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
   const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
 
+  // Entries get wholesale deleted/recreated below — any Const Fee rows this
+  // voucher had previously marked isPaid must go back to unpaid first, or
+  // they'd be stuck "paid" forever even if this edit drops them from the form.
+  const oldLinks = await prisma.accVoucherExpenseEntryConsultantFee.findMany({
+    where: { voucherExpenseEntry: { voucherId: Number(id) } },
+    select: { dischargeBillItemId: true },
+  });
+  if (oldLinks.length) {
+    await prisma.clinicDischargeBillItem.updateMany({
+      where: { id: { in: oldLinks.map((l) => l.dischargeBillItemId) } },
+      data: { isPaid: false },
+    });
+  }
+
   await prisma.accVoucherExpenseEntry.deleteMany({ where: { voucherId: Number(id) } });
 
-  return prisma.accVoucherExpense.update({
+  const voucher = await prisma.accVoucherExpense.update({
     where: { id: Number(id) },
     data: {
       voucherType,
@@ -779,6 +871,10 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
     },
     include: { entries: true },
   });
+
+  await linkConsultantFeeItems(entries, voucher.entries);
+
+  return voucher;
 }
 
 async function getIncomeCategories(entityType) {
@@ -1352,6 +1448,7 @@ module.exports = {
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
+  getIpdConsultantHeadForMainAccount, getPendingConsultantFees,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,

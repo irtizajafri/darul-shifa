@@ -360,6 +360,24 @@ $border: #bbb;
   em { color: $green; font-style: normal; font-weight: 700; }
 }
 
+.pb-ward-rate-cell { padding: 4px 8px !important; }
+
+.pb-ward-rate-display {
+  cursor: pointer;
+  border-bottom: 1px dashed $blue;
+  &:hover { color: $blue; }
+}
+
+.pb-ward-rate-input {
+  width: 80px;
+  text-align: right;
+  font: inherit;
+  border: 1px solid $blue;
+  border-radius: 3px;
+  padding: 2px 5px;
+  &:focus { outline: none; }
+}
+
 .pb-tf-label {
   text-align: right;
   font-weight: 700;

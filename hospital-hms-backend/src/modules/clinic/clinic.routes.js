@@ -72,6 +72,7 @@ router.put('/cc-config', controller.updateCcConfig);
 
 // Provisional Bill
 router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
+router.put('/provisional-bill/:admissionId/ward-history-rate', controller.updateWardHistoryRate);
 router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);
 router.post('/provisional-bill/:admissionId/add-from-visit', controller.addProvisionalBillItemFromVisit);
 router.patch('/provisional-bill/items/:itemId', controller.updateProvisionalBillItem);
@@ -88,8 +89,11 @@ router.post('/provisional-bill/:admissionId/pharmacy-items', controller.addProvi
 router.delete('/provisional-bill/pharmacy-items/:itemId', controller.deleteProvisionalPharmacyItem);
 
 // Discharge and Refund
+router.get('/discharge-bill/search', controller.searchAdmissionsForDischargeRefund);
+router.get('/discharge-bill/doctor-sub-depts', controller.getDoctorSubDeptsForDepartment);
 router.get('/discharge-bill/:admissionId', controller.getDischargeBillDetail);
 router.post('/discharge-bill/:admissionId/items', controller.addDischargeBillItem);
+router.patch('/discharge-bill/items/:itemId', controller.updateDischargeBillItem);
 router.delete('/discharge-bill/items/:itemId', controller.deleteDischargeBillItem);
 router.put('/discharge-bill/:admissionId/finalize', controller.finalizeDischarge);
 

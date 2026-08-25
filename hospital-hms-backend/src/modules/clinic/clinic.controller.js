@@ -430,6 +430,17 @@ async function getProvisionalBillDetail(req, res, next) {
   }
 }
 
+async function updateWardHistoryRate(req, res, next) {
+  try {
+    const { enteredAt, rate } = req.body;
+    const data = await service.updateWardHistoryRate(req.params.admissionId, enteredAt, rate);
+    success(res, data, 'Ward rate updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function addProvisionalBillItem(req, res, next) {
   try {
     const { roomCategoryId, billHeadId, qty, rate, remarks, patientType } = req.body;
@@ -550,6 +561,14 @@ async function deleteProvisionalPharmacyItem(req, res, next) {
 
 // ─── Discharge and Refund ────────────────────────────────────────────────────
 
+async function searchAdmissionsForDischargeRefund(req, res, next) {
+  try {
+    success(res, await service.searchAdmissionsForDischargeRefund(req.query.q));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getDischargeBillDetail(req, res, next) {
   try {
     success(res, await service.getDischargeBillDetail(req.params.admissionId));
@@ -559,13 +578,33 @@ async function getDischargeBillDetail(req, res, next) {
   }
 }
 
+async function getDoctorSubDeptsForDepartment(req, res, next) {
+  try {
+    const { doctorId, departmentId } = req.query;
+    success(res, await service.getDoctorSubDeptsForDepartment(doctorId, departmentId));
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function addDischargeBillItem(req, res, next) {
   try {
-    const { billHeadId, doctorId, amount } = req.body;
-    const data = await service.addDischargeBillItem(req.params.admissionId, { billHeadId, doctorId, amount });
+    const { billHeadId, doctorId, subDeptId, amount } = req.body;
+    const data = await service.addDischargeBillItem(req.params.admissionId, { billHeadId, doctorId, subDeptId, amount });
     success(res, data, 'Row added');
   } catch (err) {
-    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updateDischargeBillItem(req, res, next) {
+  try {
+    const { amount } = req.body;
+    const data = await service.updateDischargeBillItem(req.params.itemId, { amount });
+    success(res, data, 'Row updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }
@@ -582,9 +621,9 @@ async function deleteDischargeBillItem(req, res, next) {
 
 async function finalizeDischarge(req, res, next) {
   try {
-    const { discountAmount, closedFiles, changedBy } = req.body;
-    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, closedFiles, changedBy });
-    success(res, data, closedFiles ? 'File closed' : 'Patient discharged');
+    const { discountAmount, changedBy } = req.body;
+    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, changedBy });
+    success(res, data, 'File closed');
   } catch (err) {
     if (err.status === 404) return fail(res, 404, err.message);
     if (err.status === 400) return fail(res, 400, err.message);
@@ -1672,6 +1711,7 @@ module.exports = {
   uploadPatientDocument,
   getPatientDocumentsReport,
   getProvisionalBillDetail,
+  updateWardHistoryRate,
   addProvisionalBillItem,
   addProvisionalBillItemFromVisit,
   deleteProvisionalBillItem,
@@ -1684,8 +1724,11 @@ module.exports = {
   listProvisionalPharmacyItems,
   addProvisionalPharmacyItem,
   deleteProvisionalPharmacyItem,
+  searchAdmissionsForDischargeRefund,
   getDischargeBillDetail,
+  getDoctorSubDeptsForDepartment,
   addDischargeBillItem,
+  updateDischargeBillItem,
   deleteDischargeBillItem,
   finalizeDischarge,
   getStaffCategories,

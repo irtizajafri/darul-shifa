@@ -1619,7 +1619,7 @@ async function saveDischargeCertificate(admissionId, {
     medicalOfficer: medicalOfficer?.trim() || null,
   };
 
-  return prisma.clinicDischargeCertificate.upsert({
+  const saved = await prisma.clinicDischargeCertificate.upsert({
     where: { admissionId: Number(admissionId) },
     update: data,
     create: {
@@ -1630,6 +1630,18 @@ async function saveDischargeCertificate(admissionId, {
       createdByName: createdByName || null,
     },
   });
+
+  // Saving the Discharge Certificate IS the discharge action now — it flips
+  // the admission to 'discharge' and frees its bed (updateAdmissionStatus
+  // already does both). "Discharge and Refund" no longer triggers this; it
+  // only closes files that are already in 'discharge' status. Skip the flip
+  // if the file was already closed — editing the certificate afterwards
+  // (e.g. fixing a typo) shouldn't silently re-open a closed file.
+  if (admission.status !== 'closed') {
+    await updateAdmissionStatus(admissionId, { status: 'discharge', changedBy: createdByName || null });
+  }
+
+  return saved;
 }
 
 // ─── Report > Discharge Certificate ────────────────────────────────────────────
@@ -2541,7 +2553,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // for the number of days it was occupied — any part of a day counts as a full
 // day (standard hospital room-billing convention), and the still-open segment
 // (transferredAt = null) keeps accruing days up to "now" on every view.
-function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesById }) {
+function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesById, rateOverridesByEnteredAt }) {
   const segments = [];
   const sorted = [...shiftHistory].sort((a, b) => new Date(a.shiftedAt) - new Date(b.shiftedAt));
 
@@ -2555,7 +2567,11 @@ function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesB
     const startMs = new Date(enteredAt).getTime();
     const endMs = (transferredAt ? new Date(transferredAt) : new Date()).getTime();
     const days = Math.max(1, Math.ceil((endMs - startMs) / MS_PER_DAY));
-    const rate = Number(roomCategory?.rate) || 0;
+    // A segment is uniquely identified by its enteredAt timestamp within this
+    // admission — manual overrides (see updateWardHistoryRate) key off it,
+    // falling back to the room category's live rate when none was set.
+    const override = rateOverridesByEnteredAt?.get(new Date(enteredAt).getTime());
+    const rate = override != null ? override : (Number(roomCategory?.rate) || 0);
     segments.push({
       roomCategoryId, roomCategory, bedId, bed,
       enteredAt, transferredAt: transferredAt || null,
@@ -2582,7 +2598,7 @@ async function getProvisionalBillDetail(admissionId) {
   const [
     roomCategory, bed, surgeryType, dischargeType, consultant,
     billItems, labVisits, diagnosticOtherVisits, otherVisits,
-    payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory, latestDiscountRefund,
+    payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory, rateOverrideRows, latestDiscountRefund,
   ] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
@@ -2629,6 +2645,7 @@ async function getProvisionalBillDetail(admissionId) {
       orderBy: { id: 'asc' },
     }),
     prisma.clinicBedShiftHistory.findMany({ where: { admissionId: Number(admissionId) } }),
+    prisma.clinicWardHistoryRateOverride.findMany({ where: { admissionId: Number(admissionId) } }),
     // Discount & Refund Against Admission — each entry is computed fresh
     // against the (unchanged) gross bill amount, so only the latest one is
     // the currently-active discount, not a sum of every entry ever made.
@@ -2677,8 +2694,11 @@ async function getProvisionalBillDetail(admissionId) {
     extra.forEach((w) => { wardById[w.id] = w; });
   }
 
+  const rateOverridesByEnteredAt = new Map(
+    rateOverrideRows.map((r) => [new Date(r.enteredAt).getTime(), r.rate])
+  );
   const wardHistory = computeWardHistory({
-    admission, shiftHistory, bedsById, roomCategoriesById: wardById,
+    admission, shiftHistory, bedsById, roomCategoriesById: wardById, rateOverridesByEnteredAt,
   });
   const wardAmount = wardHistory.reduce((s, seg) => s + seg.charges, 0);
 
@@ -2813,6 +2833,24 @@ async function getProvisionalBillDetail(admissionId) {
       refund: Math.max(0, amountReceived - netBillAmount),
     },
   };
+}
+
+// Ward History rate is otherwise fully derived (see computeWardHistory) — this
+// is the one write path, keyed by the segment's own enteredAt timestamp so it
+// survives re-fetches without needing a stored segment id.
+async function updateWardHistoryRate(admissionId, enteredAt, rate) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  const r = Number(rate);
+  if (!Number.isFinite(r) || r < 0) throw Object.assign(new Error('Rate valid number honi chahiye'), { status: 400 });
+  const enteredAtDate = new Date(enteredAt);
+  if (Number.isNaN(enteredAtDate.getTime())) throw Object.assign(new Error('enteredAt invalid hai'), { status: 400 });
+
+  return prisma.clinicWardHistoryRateOverride.upsert({
+    where: { admissionId_enteredAt: { admissionId: Number(admissionId), enteredAt: enteredAtDate } },
+    update: { rate: r },
+    create: { admissionId: Number(admissionId), enteredAt: enteredAtDate, rate: r },
+  });
 }
 
 async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType }) {
@@ -2985,34 +3023,191 @@ async function deleteProvisionalPharmacyItem(itemId) {
 }
 
 // ─── Transactions > Discharge and Refund ─────────────────────────────────────
-// A separate, standalone final bill (not the running Provisional Bill) — when
-// finalized it discharges (or, if Closed Files is checked, closes) the file.
+// A separate, standalone final bill (not the running Provisional Bill).
+// Discharging a patient no longer happens here — that's the Discharge
+// Certificate's job (Discount & Refund Against Admission), which flips the
+// admission to 'discharge' and frees its bed. This page only ever operates
+// on admissions already in 'discharge' status, and its one action is to
+// finalize/close that file once billing here is done.
+async function searchAdmissionsForDischargeRefund(q) {
+  const term = String(q || '').trim();
+  const where = {
+    status: 'discharge',
+    ...(term
+      ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+      : {}),
+  };
+  const rows = await prisma.clinicAdmission.findMany({ where, orderBy: { id: 'desc' }, take: 100 });
+  return rows.map((a) => ({
+    id: a.id,
+    admissionNo: a.admissionNo,
+    patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    createdAt: a.createdAt,
+  }));
+}
+
+// One-time snapshot of that admission's Provisional Bill (Bill Heads + Ward
+// History + Diagnostic, collapsed per department like the printed bill +
+// summed Pharmacy) into this page's own ClinicDischargeBillItem rows —
+// reuses getProvisionalBillDetail entirely rather than re-deriving any of
+// it. Only runs once per admission (guarded by the caller checking for any
+// non-manual row already existing) so re-opening this page later doesn't
+// duplicate rows on top of whatever staff already edited/deleted here.
+async function importProvisionalDataIntoDischargeBill(admissionId) {
+  const detail = await getProvisionalBillDetail(admissionId);
+  const rows = [];
+
+  detail.billItems.forEach((item) => {
+    rows.push({
+      admissionId: Number(admissionId),
+      billHeadId: item.billHeadId || null,
+      doctorId: null,
+      description: item.billHead?.description || item.billHead?.headCode || null,
+      qty: Number(item.qty) || 1,
+      rate: Number(item.rate) || 0,
+      amount: Number(item.amount) || 0,
+      source: 'provisional',
+    });
+  });
+
+  (detail.wardHistory || []).forEach((seg) => {
+    const label = seg.roomCategory?.name || 'Ward';
+    rows.push({
+      admissionId: Number(admissionId),
+      billHeadId: null,
+      doctorId: null,
+      description: `${label} — ${seg.days} day${seg.days !== 1 ? 's' : ''}`,
+      qty: seg.days,
+      rate: seg.rate,
+      amount: seg.charges,
+      source: 'ward',
+    });
+  });
+
+  // Same department-level collapse as the Provisional Bill print — one row
+  // per department, not a test-by-test breakdown.
+  const diagTotalsByDept = {};
+  (detail.diagnosticRows || []).forEach((row) => {
+    const dept = row.department || 'Diagnostic';
+    diagTotalsByDept[dept] = (diagTotalsByDept[dept] || 0) + Number(row.amount || 0);
+  });
+  Object.entries(diagTotalsByDept).forEach(([dept, total]) => {
+    rows.push({
+      admissionId: Number(admissionId),
+      billHeadId: null,
+      doctorId: null,
+      description: dept,
+      qty: 1,
+      rate: total,
+      amount: total,
+      source: 'diagnostic',
+    });
+  });
+
+  const pharmacyTotal = (detail.pharmacyRows || []).reduce((s, r) => s + Number(r.amount || 0), 0);
+  if (pharmacyTotal > 0) {
+    rows.push({
+      admissionId: Number(admissionId),
+      billHeadId: null,
+      doctorId: null,
+      description: 'Pharmacy',
+      qty: 1,
+      rate: pharmacyTotal,
+      amount: pharmacyTotal,
+      source: 'pharmacy',
+    });
+  }
+
+  if (rows.length) {
+    await prisma.clinicDischargeBillItem.createMany({ data: rows });
+  }
+}
 
 async function getDischargeBillDetail(admissionId) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
-  const [roomCategory, bed, billItems, payments] = await Promise.all([
+  const alreadyImported = await prisma.clinicDischargeBillItem.count({
+    where: { admissionId: Number(admissionId), source: { not: 'manual' } },
+  });
+  if (!alreadyImported) {
+    await importProvisionalDataIntoDischargeBill(admissionId);
+  }
+
+  const [roomCategory, bed, billItems, payments, surgeryExpenseEntries] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
     prisma.clinicDischargeBillItem.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
     prisma.clinicAdmissionPayment.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
+    // Surgeon/Anaesthetic fees paid via Voucher Expense (Surgery/Anesthesia
+    // payee heads) — admissionNo only ever gets set by that one feature, so
+    // any entry with it is by definition one of these. Queried live on every
+    // fetch (not snapshot-imported like Ward/Diagnostic/Pharmacy/Bill Heads
+    // above) so a payment made after Final Bill was first opened still shows
+    // up immediately, and it's read-only here — the voucher entry is the
+    // source of truth, corrections happen in Voucher Expense, not here.
+    admission.admissionNo
+      ? prisma.accVoucherExpenseEntry.findMany({ where: { admissionNo: admission.admissionNo }, orderBy: { id: 'asc' } })
+      : [],
   ]);
 
   const billHeadIds = [...new Set(billItems.map((i) => i.billHeadId).filter(Boolean))];
   const doctorIds = [...new Set(billItems.map((i) => i.doctorId).filter(Boolean))];
-  const [headRows, doctorRows] = await Promise.all([
+  const subDeptIds = [...new Set(billItems.map((i) => i.subDeptId).filter(Boolean))];
+  const [headRows, doctorRows, subDeptRows] = await Promise.all([
     billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } } }) : [],
     doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } } }) : [],
+    subDeptIds.length ? prisma.clinicSubDepartment.findMany({ where: { id: { in: subDeptIds } } }) : [],
   ]);
   const headById = {}; headRows.forEach((h) => { headById[h.id] = h; });
   const doctorById = {}; doctorRows.forEach((d) => { doctorById[d.id] = d; });
+  const subDeptById = {}; subDeptRows.forEach((s) => { subDeptById[s.id] = s; });
 
   const resolvedBillItems = billItems.map((item) => ({
     ...item,
     billHead: item.billHeadId ? headById[item.billHeadId] || null : null,
     doctor: item.doctorId ? doctorById[item.doctorId] || null : null,
+    subDept: item.subDeptId ? subDeptById[item.subDeptId] || null : null,
   }));
+
+  const liveSurgeryRows = surgeryExpenseEntries.map((e) => ({
+    id: `surgery-${e.id}`,
+    billHeadId: null,
+    doctorId: null,
+    billHead: null,
+    doctor: null,
+    description: e.payeeName ? `${e.accountName} — ${e.payeeName}` : e.accountName,
+    qty: 1,
+    rate: Number(e.amount),
+    amount: Number(e.amount),
+    source: 'surgery-expense',
+    readOnly: true,
+    createdAt: e.createdAt,
+  }));
+
+  // Every split row (Const Fee/Laboratory/Ultrasound/X-Ray) only carries its
+  // own doctorFee as its Amount — their combined hospitalShare instead shows
+  // as ONE single "Hospital Share" line, recomputed live from all of them
+  // every fetch rather than stored/synced as its own row. Adding a new split
+  // row, editing one, or deleting one all just change this total automatically.
+  const hospitalShareTotal = resolvedBillItems.reduce((s, i) => s + (Number(i.hospitalShare) || 0), 0);
+  const hospitalShareRow = hospitalShareTotal > 0 ? [{
+    id: 'hospital-share',
+    billHeadId: null,
+    doctorId: null,
+    subDeptId: null,
+    billHead: null,
+    doctor: null,
+    subDept: null,
+    description: 'Hospital Share',
+    qty: 1,
+    rate: hospitalShareTotal,
+    amount: hospitalShareTotal,
+    source: 'hospital-share',
+    readOnly: true,
+  }] : [];
+
+  const allBillItems = [...resolvedBillItems, ...liveSurgeryRows, ...hospitalShareRow];
 
   const paymentHistory = [];
   if (Number(admission.advancePayment) > 0) {
@@ -3021,7 +3216,7 @@ async function getDischargeBillDetail(admissionId) {
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
   const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
 
-  const billAmount = resolvedBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const billAmount = allBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
   const discountAmount = Number(admission.dischargeDiscount) || 0;
   const netAmount = Math.max(0, billAmount - discountAmount);
 
@@ -3029,7 +3224,7 @@ async function getDischargeBillDetail(admissionId) {
     admission,
     roomCategory,
     bed,
-    billItems: resolvedBillItems,
+    billItems: allBillItems,
     paymentHistory,
     amountReceived,
     billAmount,
@@ -3039,36 +3234,116 @@ async function getDischargeBillDetail(admissionId) {
   };
 }
 
-async function addDischargeBillItem(admissionId, { billHeadId, doctorId, amount }) {
+// A Bill Head with a refDepartmentId (Const Fee/Laboratory/Ultrasound/X-Ray)
+// means the fee is split between doctor and hospital — Doctor + Sub-Department
+// (that doctor's own list within that department) become mandatory so the
+// right ClinicDoctorSubDept row (Normal Fees + amount/percent) can price the
+// split. Any other Bill Head keeps working exactly as before (doctor optional,
+// no split).
+async function getDoctorSubDeptsForDepartment(doctorId, departmentId) {
+  const rows = await prisma.clinicDoctorSubDept.findMany({
+    where: { doctorId: Number(doctorId), subDept: { departmentId: Number(departmentId) } },
+    include: { subDept: { select: { id: true, code: true, name: true } } },
+    orderBy: { id: 'asc' },
+  });
+  return rows.map((r) => ({
+    subDeptId: r.subDeptId,
+    subDeptName: r.subDept?.name || '',
+    subDeptCode: r.subDept?.code || '',
+    paymentType: r.paymentType,
+    normalFees: r.normalFees,
+  }));
+}
+
+function calcFeeSplit(amount, paymentType, normalFees) {
+  const fee = paymentType === 'percent' ? (amount * (Number(normalFees) || 0)) / 100 : (Number(normalFees) || 0);
+  return { doctorFee: fee, hospitalShare: amount - fee };
+}
+
+async function addDischargeBillItem(admissionId, { billHeadId, doctorId, subDeptId, amount }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  const amt = Number(amount) || 0;
+
+  const billHead = billHeadId ? await prisma.clinicBillHead.findUnique({ where: { id: Number(billHeadId) } }) : null;
+
+  let doctorFee = null;
+  let hospitalShare = null;
+  let rowAmount = amt;
+  if (billHead?.refDepartmentId) {
+    if (!doctorId || !subDeptId) {
+      throw Object.assign(new Error(`${billHead.description || 'Ye head'} ke liye Doctor aur Sub-Department dono select karna zaroori hai`), { status: 400 });
+    }
+    const link = await prisma.clinicDoctorSubDept.findFirst({
+      where: { doctorId: Number(doctorId), subDeptId: Number(subDeptId) },
+    });
+    if (!link) throw Object.assign(new Error('Is doctor ki is Sub-Department ke liye fees set nahi hai'), { status: 400 });
+    const split = calcFeeSplit(amt, link.paymentType, link.normalFees);
+    doctorFee = split.doctorFee;
+    hospitalShare = split.hospitalShare;
+    // The row itself only carries the doctor's cut from here on — every
+    // split row's Hospital Share instead gets pulled together into one
+    // combined "Hospital Share" line (computed live in getDischargeBillDetail
+    // from every row's stored hospitalShare), not duplicated per-row.
+    rowAmount = doctorFee;
+  }
+
   return prisma.clinicDischargeBillItem.create({
     data: {
       admissionId: Number(admissionId),
       billHeadId: billHeadId ? Number(billHeadId) : null,
       doctorId: doctorId ? Number(doctorId) : null,
-      amount: Number(amount) || 0,
+      subDeptId: subDeptId ? Number(subDeptId) : null,
+      doctorFee,
+      hospitalShare,
+      qty: 1,
+      rate: rowAmount,
+      amount: rowAmount,
+      source: 'manual',
     },
   });
+}
+
+// Inline amount edit (screen + Ward-History-rate use the same pattern) —
+// works on any row regardless of source (manual or snapshot-imported). For a
+// split row Amount IS the doctor's fee (Hospital Share lives separately, see
+// above) so an edit just keeps doctorFee in sync — Hospital Share stays
+// frozen at whatever it was originally split as, since the row no longer
+// stores a "total" to re-derive it from.
+async function updateDischargeBillItem(itemId, { amount }) {
+  const item = await prisma.clinicDischargeBillItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Row not found'), { status: 404 });
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt < 0) throw Object.assign(new Error('Amount valid number honi chahiye'), { status: 400 });
+  const qty = Number(item.qty) || 1;
+  const data = { amount: amt, rate: qty ? amt / qty : amt };
+
+  if (item.hospitalShare != null) {
+    data.doctorFee = amt;
+  }
+
+  return prisma.clinicDischargeBillItem.update({ where: { id: Number(itemId) }, data });
 }
 
 async function deleteDischargeBillItem(itemId) {
   return prisma.clinicDischargeBillItem.delete({ where: { id: Number(itemId) } });
 }
 
-async function finalizeDischarge(admissionId, { discountAmount, closedFiles, changedBy }) {
+async function finalizeDischarge(admissionId, { discountAmount, changedBy }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  // This page never discharges anymore (Discharge Certificate does) — it
+  // only finalizes/closes a file that's already in 'discharge' status.
+  if (admission.status !== 'discharge') {
+    throw Object.assign(new Error('Sirf discharge ho chuke patients ki file yahan se close ho sakti hai'), { status: 400 });
+  }
 
   await prisma.clinicAdmission.update({
     where: { id: Number(admissionId) },
     data: { dischargeDiscount: discountAmount != null ? Number(discountAmount) : null },
   });
 
-  return updateAdmissionStatus(admissionId, {
-    status: closedFiles ? 'closed' : 'discharge',
-    changedBy,
-  });
+  return updateAdmissionStatus(admissionId, { status: 'closed', changedBy });
 }
 
 // ─── Patient Visits ───────────────────────────────────────────────────────────
@@ -4616,8 +4891,11 @@ module.exports = {
   listProvisionalPharmacyItems,
   addProvisionalPharmacyItem,
   deleteProvisionalPharmacyItem,
+  searchAdmissionsForDischargeRefund,
   getDischargeBillDetail,
+  getDoctorSubDeptsForDepartment,
   addDischargeBillItem,
+  updateDischargeBillItem,
   deleteDischargeBillItem,
   finalizeDischarge,
   getPatientDocumentsReport,
@@ -4691,6 +4969,7 @@ module.exports = {
   getDischargeCertificate,
   saveDischargeCertificate,
   getDischargeCertificateReport,
+  updateWardHistoryRate,
   getOtRegisterForAdmission,
   saveOtRegister,
   getOtRegisterReport,

@@ -118,6 +118,11 @@ async function removeInventoryHeadMainAccount(req, res, next) {
 
 async function getSurgeryHeadForMainAccount(req, res, next) { try { success(res, await svc.getSurgeryHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
 async function getSurgeryPayeesForHead(req, res, next) { try { success(res, await svc.getSurgeryPayeesForHead(req.query.headId, req.query.staffCategoryId)); } catch (e) { next(e); } }
+async function getIpdConsultantHeadForMainAccount(req, res, next) { try { success(res, await svc.getIpdConsultantHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
+async function getPendingConsultantFees(req, res, next) {
+  try { success(res, await svc.getPendingConsultantFees(req.query.doctorId, req.query.fromDate, req.query.toDate)); }
+  catch (e) { next(e); }
+}
 async function addPayeeHeadStaffCategory(req, res, next) {
   try {
     const { headId, staffCategoryId } = req.body;
@@ -213,6 +218,7 @@ module.exports = {
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
   getSurgeryHeadForMainAccount, getSurgeryPayeesForHead, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory,
+  getIpdConsultantHeadForMainAccount, getPendingConsultantFees,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,

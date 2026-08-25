@@ -25,8 +25,17 @@ const SOURCE_BADGE = {
   doctor:    { label: 'Clinic Module',    color: '#10b981' },
   inventory: { label: 'Inventory Items',  color: '#0ea5e9' },
   surgery:   { label: 'Surgery/Anesthesia', color: '#ec4899' },
+  'ipd-consultant': { label: 'IPD Consultant', color: '#d946ef' },
   manual:    { label: 'Custom',           color: '#8b5cf6' },
 };
+
+// Both link at Main Account level (not Sub Account) via the same generic
+// AccPayeeHeadMainAccount join, and both filter their payee list by linked
+// Clinic staff categories via the same AccPayeeHeadStaffCategory join —
+// Surgery/Anesthesia picks an admission for its Sub Account and a manual
+// Amount; IPD Consultant instead picks from that doctor's own pending Const
+// Fee rows (see Voucher Expense).
+const STAFF_CATEGORY_SOURCE_TYPES = ['surgery', 'ipd-consultant'];
 
 const emptyLink = () => ({ mainGlId: '', subGlId: '', mainAccountId: '', subAccountId: '', subGLs: [], mainAccs: [], subAccs: [], saving: false });
 
@@ -108,7 +117,7 @@ export default function ListAttachments() {
       const j = await r.json();
       setInventoryItems((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
     }
-    if (head.sourceType === 'surgery') {
+    if (STAFF_CATEGORY_SOURCE_TYPES.includes(head.sourceType)) {
       const r = await fetch(`${API}/linked/surgery-payees?headId=${head.id}`);
       const j = await r.json();
       setSurgeryPayees((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
@@ -275,22 +284,26 @@ export default function ListAttachments() {
     finally { setSaving(false); }
   };
 
-  // ── Surgery/Anesthesia head modal ────────────────────────────────────────
-  // Sub Account here is replaced by an admission-number picker (handled in
-  // Voucher Expense) and the payee list is Clinic doctors whose staff
-  // category matches one of the ones checked below — e.g. checking both
-  // "Surgeon" and "Anaesthetic" lets one Sub GL pay either role.
+  // ── Surgery/Anesthesia / IPD Consultant head modal ───────────────────────
+  // Sub Account here is replaced by an admission-number picker (Surgery/
+  // Anesthesia) or a date-filtered pending-fees picker (IPD Consultant) —
+  // both handled in Voucher Expense — and the payee list is Clinic doctors
+  // whose staff category matches one of the ones checked below — e.g.
+  // checking both "Surgeon" and "Anaesthetic" lets one Sub GL pay either role.
   const [surgModal, setSurgModal] = useState(false);
+  const [surgModalSourceType, setSurgModalSourceType] = useState('surgery');
   const [surgCategoryIds, setSurgCategoryIds] = useState(new Set());
-  const openAddSurgeryHead = () => { setHeadName(''); setSurgCategoryIds(new Set()); setSurgModal(true); };
+  const openAddSurgeryHead = () => { setHeadName(''); setSurgCategoryIds(new Set()); setSurgModalSourceType('surgery'); setSurgModal(true); };
+  const openAddIpdConsultantHead = () => { setHeadName(''); setSurgCategoryIds(new Set()); setSurgModalSourceType('ipd-consultant'); setSurgModal(true); };
   const closeSurgModal = () => setSurgModal(false);
+  const SURG_MODAL_LABEL = surgModalSourceType === 'ipd-consultant' ? 'IPD Consultant' : 'Surgery/Anesthesia';
 
   const saveSurgeryHead = async () => {
     if (!headName.trim()) return toast.error('Head name is required');
     if (surgCategoryIds.size === 0) return toast.error('Select at least one Staff Category');
     setSaving(true);
     try {
-      const head = await createPayeeHead({ name: headName, sourceType: 'surgery', entityType });
+      const head = await createPayeeHead({ name: headName, sourceType: surgModalSourceType, entityType });
       for (const catId of surgCategoryIds) {
         await fetch(`${API}/payee-head-staff-categories`, {
           method: 'POST',
@@ -299,7 +312,7 @@ export default function ListAttachments() {
         });
       }
       await fetchPayeeHeads(entityType);
-      toast.success('Surgery/Anesthesia head created');
+      toast.success(`${SURG_MODAL_LABEL} head created`);
       closeSurgModal();
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
@@ -386,7 +399,7 @@ export default function ListAttachments() {
         </div>
       ));
     }
-    if (head.sourceType === 'surgery') {
+    if (STAFF_CATEGORY_SOURCE_TYPES.includes(head.sourceType)) {
       const linkedCatIds = new Set((head.staffCategoryLinks || []).map((l) => l.staffCategoryId));
       const payees = surgeryPayees[head.id];
       return (
@@ -473,8 +486,8 @@ export default function ListAttachments() {
   };
 
   const renderLinkedAccounts = (head) => {
-    // Inventory / Surgery heads link to multiple Main Accounts (not Sub Accounts)
-    if (head.sourceType === 'inventory' || head.sourceType === 'surgery') {
+    // Inventory / Surgery / IPD Consultant heads link to multiple Main Accounts (not Sub Accounts)
+    if (head.sourceType === 'inventory' || STAFF_CATEGORY_SOURCE_TYPES.includes(head.sourceType)) {
       const links = head.linkedMainAccounts || [];
       if (links.length === 0) return <span className="list-attach__no-link">No Main Account linked</span>;
       return (
@@ -549,8 +562,8 @@ export default function ListAttachments() {
   const renderLinkSection = (head) => {
     const ls = linkState[head.id] || emptyLink();
 
-    // Inventory / Surgery heads: link only up to Main Account
-    if (head.sourceType === 'inventory' || head.sourceType === 'surgery') {
+    // Inventory / Surgery / IPD Consultant heads: link only up to Main Account
+    if (head.sourceType === 'inventory' || STAFF_CATEGORY_SOURCE_TYPES.includes(head.sourceType)) {
       return (
         <div className="list-attach__link-form">
           <div className="list-attach__link-title">Link to Main Account</div>
@@ -659,7 +672,7 @@ export default function ListAttachments() {
     const badge = SOURCE_BADGE[head.sourceType] || SOURCE_BADGE.manual;
     const isManual = head.sourceType === 'manual';
     const isInventory = head.sourceType === 'inventory';
-    const isSurgery = head.sourceType === 'surgery';
+    const isSurgery = STAFF_CATEGORY_SOURCE_TYPES.includes(head.sourceType);
     const isLinkOpen = expandedLink === head.id;
     const isExpanded = expandedHead === head.id;
 
@@ -730,6 +743,9 @@ export default function ListAttachments() {
           <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#ec4899' }} onClick={openAddSurgeryHead}>
             <Plus className="w-4 h-4" /> Add Surgery/Anesthesia Head
           </button>
+          <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#d946ef' }} onClick={openAddIpdConsultantHead}>
+            <Plus className="w-4 h-4" /> Add IPD Consultant Head
+          </button>
           <button className="acc-param-page__btn-save" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }} onClick={openAddHead}>
             <Plus className="w-4 h-4" /> Add Custom Head
           </button>
@@ -797,14 +813,19 @@ export default function ListAttachments() {
         </div>
       )}
 
-      {/* Surgery/Anesthesia Head Modal */}
+      {/* Surgery/Anesthesia / IPD Consultant Head Modal */}
       {surgModal && (
         <div className="acc-param-page__overlay" onClick={closeSurgModal}>
           <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Add Surgery/Anesthesia Head</h3>
+            <h3>Add {SURG_MODAL_LABEL} Head</h3>
             <div className="acc-param-page__field">
               <label>Head Name</label>
-              <input value={headName} onChange={(e) => setHeadName(e.target.value)} placeholder="e.g. Anesthesia and Surgery" autoFocus />
+              <input
+                value={headName}
+                onChange={(e) => setHeadName(e.target.value)}
+                placeholder={surgModalSourceType === 'ipd-consultant' ? 'e.g. IPD Consultant Fee' : 'e.g. Anesthesia and Surgery'}
+                autoFocus
+              />
             </div>
             <div className="acc-param-page__field">
               <label>Staff Categories (payee doctors will be pulled from these)</label>

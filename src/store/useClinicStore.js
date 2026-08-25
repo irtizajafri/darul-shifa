@@ -704,6 +704,13 @@ export const useClinicStore = create((set) => ({
     return request(`/provisional-bill/${admissionId}`);
   },
 
+  updateWardHistoryRate: async (admissionId, enteredAt, rate) => {
+    return request(`/provisional-bill/${admissionId}/ward-history-rate`, {
+      method: 'PUT',
+      body: JSON.stringify({ enteredAt, rate }),
+    });
+  },
+
   addProvisionalBillItem: async (admissionId, payload) => {
     return request(`/provisional-bill/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
   },
@@ -769,12 +776,29 @@ export const useClinicStore = create((set) => ({
   },
 
   // ── Discharge and Refund ─────────────────────────────────────────────────────
+  // Only ever operates on admissions already in 'discharge' status — the
+  // patient is discharged by saving the Discharge Certificate, not here.
+  searchAdmissionsForDischargeRefund: async (q) => {
+    return request(`/discharge-bill/search?q=${encodeURIComponent(q || '')}`);
+  },
+
   fetchDischargeBillDetail: async (admissionId) => {
     return request(`/discharge-bill/${admissionId}`);
   },
 
+  // Const Fee/Laboratory/Ultrasound/X-Ray heads split Amount between doctor
+  // and hospital — this doctor's own sub-departments within that head's
+  // linked department decide the split rate (see ClinicDoctorSubDept).
+  fetchDoctorSubDeptsForDepartment: async (doctorId, departmentId) => {
+    return request(`/discharge-bill/doctor-sub-depts?doctorId=${doctorId}&departmentId=${departmentId}`);
+  },
+
   addDischargeBillItem: async (admissionId, payload) => {
     return request(`/discharge-bill/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  updateDischargeBillItem: async (itemId, payload) => {
+    return request(`/discharge-bill/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) });
   },
 
   deleteDischargeBillItem: async (itemId) => {

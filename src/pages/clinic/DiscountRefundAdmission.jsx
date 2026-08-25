@@ -490,7 +490,9 @@ export default function DiscountRefundAdmission() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
-      toast.success('Discharge Certificate save ho gaya');
+      // Saving the certificate is the discharge action itself — backend also
+      // flips admission status to 'discharge' and frees the bed.
+      toast.success('Discharge Certificate save ho gaya — patient discharge ho gaya, bed free ho gaya');
       setDcOpen(false);
       setDcPrintData({ ...dcHeader, certificate: json.data, printedBy });
       setTimeout(() => printDischargeCertificate(), 200);

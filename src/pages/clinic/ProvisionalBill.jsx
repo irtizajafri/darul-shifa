@@ -393,6 +393,7 @@ export default function ProvisionalBill() {
     dischargeTypes, fetchDischargeTypes,
     searchAdmissionsForAdjustment,
     fetchProvisionalBillDetail,
+    updateWardHistoryRate,
     addProvisionalBillItem,
     addProvisionalBillItemFromVisit,
     updateProvisionalBillItem,
@@ -426,6 +427,11 @@ export default function ProvisionalBill() {
   const [row, setRow] = useState({ roomCategoryId: '', patientType: 'In House', billHeadId: '', qty: '1', rate: '', remarks: '' });
   const [addingRow, setAddingRow] = useState(false);
   const [editingItemId, setEditingItemId] = useState(null);
+
+  // Ward History rate — click-to-edit inline, keyed by the segment's own
+  // enteredAt (its stable identity, see updateWardHistoryRate on the backend).
+  const [wardRateEdit, setWardRateEdit] = useState(null); // { enteredAt, value } | null
+  const [savingWardRate, setSavingWardRate] = useState(false);
 
   const emptyPharmRow = { storeId: '', medDate: '', medicine: '', dosage: '', qty: '', unit: '', rate: '', remarks: '' };
   const [pharmRow, setPharmRow] = useState(emptyPharmRow);
@@ -462,6 +468,22 @@ export default function ProvisionalBill() {
       setLoading(false);
     }
   }, [fetchProvisionalBillDetail]);
+
+  async function handleSaveWardRate() {
+    if (!wardRateEdit || !admissionId) return;
+    const r = Number(wardRateEdit.value);
+    if (!Number.isFinite(r) || r < 0) { toast.error('Rate valid number honi chahiye'); return; }
+    setSavingWardRate(true);
+    try {
+      await updateWardHistoryRate(admissionId, wardRateEdit.enteredAt, r);
+      setWardRateEdit(null);
+      await loadDetail(admissionId, false);
+    } catch (e) {
+      toast.error(e.message || 'Rate save nahi hui');
+    } finally {
+      setSavingWardRate(false);
+    }
+  }
 
   async function handleSelect(rowSel) {
     setShowLookup(false);
@@ -824,17 +846,46 @@ export default function ProvisionalBill() {
                           <tr><th>Ward</th><th>Bed</th><th>Entered</th><th>Transferred</th><th className="r">Days</th><th className="r">Rate</th><th className="r">Charges</th></tr>
                         </thead>
                         <tbody>
-                          {detail.wardHistory.map((seg, i) => (
-                            <tr key={i}>
-                              <td>{seg.roomCategory?.name || '—'}</td>
-                              <td>{seg.bed?.name || '—'}</td>
-                              <td>{fmtDateTime(seg.enteredAt)}</td>
-                              <td>{seg.transferredAt ? fmtDateTime(seg.transferredAt) : <em>Current</em>}</td>
-                              <td className="r">{seg.days}</td>
-                              <td className="r">{fmt2(seg.rate)}</td>
-                              <td className="r">{fmt2(seg.charges)}</td>
-                            </tr>
-                          ))}
+                          {detail.wardHistory.map((seg, i) => {
+                            const isEditing = wardRateEdit?.enteredAt === seg.enteredAt;
+                            return (
+                              <tr key={i}>
+                                <td>{seg.roomCategory?.name || '—'}</td>
+                                <td>{seg.bed?.name || '—'}</td>
+                                <td>{fmtDateTime(seg.enteredAt)}</td>
+                                <td>{seg.transferredAt ? fmtDateTime(seg.transferredAt) : <em>Current</em>}</td>
+                                <td className="r">{seg.days}</td>
+                                <td className="r pb-ward-rate-cell">
+                                  {isEditing ? (
+                                    <input
+                                      autoFocus
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      className="pb-ward-rate-input"
+                                      value={wardRateEdit.value}
+                                      disabled={savingWardRate}
+                                      onChange={(e) => setWardRateEdit((s) => ({ ...s, value: e.target.value }))}
+                                      onBlur={handleSaveWardRate}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') { e.preventDefault(); handleSaveWardRate(); }
+                                        if (e.key === 'Escape') setWardRateEdit(null);
+                                      }}
+                                    />
+                                  ) : (
+                                    <span
+                                      className="pb-ward-rate-display"
+                                      title="Click to edit rate"
+                                      onClick={() => setWardRateEdit({ enteredAt: seg.enteredAt, value: String(seg.rate) })}
+                                    >
+                                      {fmt2(seg.rate)}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="r">{fmt2(seg.charges)}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
                           <tr><td colSpan={6} className="pb-tf-label">Ward Total</td><td className="r">{fmt2(detail.wardAmount)}</td></tr>

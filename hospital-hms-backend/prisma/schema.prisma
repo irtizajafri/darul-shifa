@@ -1051,6 +1051,7 @@ model ClinicAdmission {
   dischargeBillItems ClinicDischargeBillItem[]
   discountRefunds    ClinicAdmissionDiscountRefund[]
   dischargeCertificate ClinicDischargeCertificate?
+  wardHistoryRateOverrides ClinicWardHistoryRateOverride[]
   otRegisters        ClinicOtRegister[]
   birthCertificates  ClinicBirthCertificate[]
 }
@@ -1195,15 +1196,58 @@ model ClinicDischargeCertificate {
   updatedAt              DateTime        @updatedAt
 }
 
+// ─── Ward History rate override (Provisional Bill) ────────────────────────────
+// Ward History itself has no table — it's derived on read from
+// ClinicBedShiftHistory + ClinicAdmission + ClinicRoomCategory.rate (see
+// computeWardHistory). A segment is uniquely identified by (admissionId,
+// enteredAt) since two segments on the same admission can never start at the
+// exact same instant — this table only overrides that one segment's rate
+// when staff edits it manually, everything else about the segment stays derived.
+model ClinicWardHistoryRateOverride {
+  id          Int             @id @default(autoincrement())
+  admissionId Int
+  admission   ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  enteredAt   DateTime
+  rate        Float
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([admissionId, enteredAt])
+}
+
 // ─── Discharge and Refund (final bill at time of discharge) ──────────────────
+// A row here is either added manually on this page (source="manual"), or
+// snapshot-copied in once from that admission's Provisional Bill the first
+// time this page opens it (source="provisional"/"ward"/"diagnostic"/
+// "pharmacy" — matching Provisional Bill's own Bill Heads / Ward History /
+// collapsed Diagnostic-per-department / summed Pharmacy). It's a one-time
+// copy, not a live link — editing/deleting here never touches the
+// Provisional Bill's own records.
 model ClinicDischargeBillItem {
   id             Int             @id @default(autoincrement())
   admissionId    Int
   admission      ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
   billHeadId     Int?
   doctorId       Int?
+  // Only set for a Bill Head that has a refDepartmentId (Const Fee/
+  // Laboratory/Ultrasound/X-Ray) — identifies which of that doctor's
+  // ClinicDoctorSubDept rows priced this row, so Doctor Fee / Hospital Share
+  // can be split from Amount using that pairing's Normal Fees.
+  subDeptId      Int?
+  doctorFee      Float?
+  hospitalShare  Float?
+  // A Const Fee row's doctorFee gets paid out to the consultant via Voucher
+  // Expense (IPD Consultant Fee payee type) — once picked into a payment
+  // there, this flips true so it stops showing up as still-owed.
+  isPaid         Boolean         @default(false)
+  description    String?
+  qty            Float           @default(1)
+  rate           Float           @default(0)
   amount         Float           @default(0)
+  source         String          @default("manual") // manual | provisional | ward | diagnostic | pharmacy
   createdAt      DateTime        @default(now())
+
+  consultantFeePayments AccVoucherExpenseEntryConsultantFee[]
 
   @@index([admissionId])
 }
@@ -1714,6 +1758,26 @@ model AccVoucherExpenseEntry {
   // kept here so reprints/reports can show which patient this payment was for.
   admissionNo   String?
   createdAt     DateTime          @default(now())
+
+  consultantFeeItems AccVoucherExpenseEntryConsultantFee[]
+}
+
+// IPD Consultant Fee payee type (see AccPayeeHead.sourceType='ipd-consultant')
+// pays out one or more Final Bill Const Fee doctorFee amounts in a single
+// voucher entry — this records exactly which ClinicDischargeBillItem rows
+// that entry's Amount was summed from, so they can be flipped isPaid=true
+// and never show up as still-owed again.
+model AccVoucherExpenseEntryConsultantFee {
+  id                    Int                    @id @default(autoincrement())
+  voucherExpenseEntryId Int
+  voucherExpenseEntry   AccVoucherExpenseEntry @relation(fields: [voucherExpenseEntryId], references: [id], onDelete: Cascade)
+  dischargeBillItemId   Int
+  dischargeBillItem     ClinicDischargeBillItem @relation(fields: [dischargeBillItemId], references: [id])
+  amount                Float
+  createdAt             DateTime               @default(now())
+
+  @@index([voucherExpenseEntryId])
+  @@index([dischargeBillItemId])
 }
 
 model AccVoucherIncome {

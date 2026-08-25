@@ -329,6 +329,7 @@ const emptyEntry = () => ({
   particulars: '',
   visitIds: [],
   grnIds: [],
+  consultantFeeItemIds: [],
   salaryEmpCode: '', salaryMonth: '', salaryYear: '',
   admissionNo: '',
 });
@@ -368,6 +369,17 @@ export default function VoucherExpenseForm() {
   const [admissionResults, setAdmissionResults] = useState([]);
   const [admissionSearchOpen, setAdmissionSearchOpen] = useState(false);
   const admissionSearchTimer = useRef(null);
+  // IPD Consultant Fee — payee list loads straight off the Main Account (no
+  // Sub Account, no admission picker); the admission(s) instead get picked
+  // per-payee from that doctor's own pending Final Bill Const Fee rows via
+  // the modal below, same date-filtered-checklist UX as the existing
+  // Patient-Visits "Consultant" modal, just sourced from Final Bill instead.
+  const [isIpdConsultantAcc, setIsIpdConsultantAcc] = useState(false);
+  const [pendingFeesModal, setPendingFeesModal] = useState(null); // { doctorName, doctorId, fees: [...] | null }
+  const [pendingFeesLoading, setPendingFeesLoading] = useState(false);
+  const [checkedFees, setCheckedFees] = useState({});
+  const [pfDateFrom, setPfDateFrom] = useState('');
+  const [pfDateTo, setPfDateTo] = useState('');
   const [linkedPayees, setLinkedPayees] = useState([]);
   const [linkedHeadName, setLinkedHeadName] = useState('');
   const [linkedHeadType, setLinkedHeadType] = useState('');
@@ -451,6 +463,7 @@ export default function VoucherExpenseForm() {
     setIsSurgeryAcc(false);
     setSurgeryCategories([]); setSurgeryCategoryId(''); setSurgeryHeadIdForFetch(null);
     setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    setIsIpdConsultantAcc(false);
   };
 
   const handleMainGlChange = async (v) => {
@@ -527,6 +540,23 @@ export default function VoucherExpenseForm() {
         return;
       }
     } catch { /* surgery check failed — fall through to regular sub accounts */ }
+
+    // Check if this main account has an IPD Consultant Fee head linked
+    try {
+      const ipdR = await fetch(`${API}/linked/ipd-consultant-head-for-main-account?mainAccountId=${v}`);
+      const ipdJ = await ipdR.json();
+      const ipdHead = ipdJ?.data;
+
+      if (ipdHead?.id) {
+        setIsIpdConsultantAcc(true);
+        setLinkedHeadName(ipdHead.name);
+        setLinkedHeadType('ipd-consultant');
+        const pR = await fetch(`${API}/linked/surgery-payees?headId=${ipdHead.id}`);
+        const pJ = await pR.json();
+        setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        return;
+      }
+    } catch { /* ipd-consultant check failed — fall through to regular sub accounts */ }
 
     // Load regular sub accounts
     try {
@@ -663,6 +693,19 @@ export default function VoucherExpenseForm() {
         return;
       }
 
+      const ipdR = await fetch(`${API}/linked/ipd-consultant-head-for-main-account?mainAccountId=${e.mainAccountId}`);
+      const ipdJ = await ipdR.json();
+      const ipdHead = ipdJ?.data;
+      if (ipdHead?.id) {
+        setIsIpdConsultantAcc(true);
+        setLinkedHeadName(ipdHead.name);
+        setLinkedHeadType('ipd-consultant');
+        const pR = await fetch(`${API}/linked/surgery-payees?headId=${ipdHead.id}`);
+        const pJ = await pR.json();
+        setLinkedPayees(Array.isArray(pJ?.data) ? pJ.data : []);
+        return;
+      }
+
       const r3 = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${e.mainAccountId}`);
       const j3 = await r3.json();
       setSubAccs(Array.isArray(j3?.data) ? j3.data : []);
@@ -759,6 +802,51 @@ export default function VoucherExpenseForm() {
 
   const cvCheckedTotal = consultantModal?.visits
     ? consultantModal.visits.filter((v) => checkedVisits[v.id]).reduce((s, v) => s + Number(v.payableAmount ?? v.received ?? 0), 0)
+    : 0;
+
+  // IPD Consultant Fee — same date-filtered-checklist UX as the Patient
+  // Visits consultant modal above, sourced from that doctor's own unpaid
+  // Final Bill Const Fee rows instead (see getPendingConsultantFees).
+  const openPendingFeesModal = async (payee) => {
+    setEntry((f) => ({ ...f, payeeName: payee.name }));
+    setPayeeSearch(payee.name);
+    setCheckedFees({});
+    setPendingFeesModal({ doctorName: payee.name, doctorId: payee.id, fees: null });
+    setPendingFeesLoading(true);
+    try {
+      const q = new URLSearchParams({ doctorId: payee.id });
+      if (pfDateFrom) q.set('fromDate', pfDateFrom);
+      if (pfDateTo)   q.set('toDate', pfDateTo);
+      const r = await fetch(`${API}/linked/pending-consultant-fees?${q}`);
+      const j = await r.json();
+      setPendingFeesModal((prev) => ({ ...prev, fees: j?.data || [] }));
+    } catch {
+      setPendingFeesModal((prev) => ({ ...prev, fees: [] }));
+    } finally {
+      setPendingFeesLoading(false);
+    }
+  };
+
+  const fetchPendingFees = async () => {
+    if (!pendingFeesModal) return;
+    setPendingFeesLoading(true);
+    try {
+      const q = new URLSearchParams({ doctorId: pendingFeesModal.doctorId });
+      if (pfDateFrom) q.set('fromDate', pfDateFrom);
+      if (pfDateTo)   q.set('toDate', pfDateTo);
+      const r = await fetch(`${API}/linked/pending-consultant-fees?${q}`);
+      const j = await r.json();
+      setPendingFeesModal((prev) => ({ ...prev, fees: j?.data || [] }));
+      setCheckedFees({});
+    } catch {
+      setPendingFeesModal((prev) => ({ ...prev, fees: [] }));
+    } finally {
+      setPendingFeesLoading(false);
+    }
+  };
+
+  const pfCheckedTotal = pendingFeesModal?.fees
+    ? pendingFeesModal.fees.filter((f) => checkedFees[f.id]).reduce((s, f) => s + Number(f.amount || 0), 0)
     : 0;
 
   // Utility provider payee (k-electric / ssgc / ptcl) — show that category's
@@ -1002,7 +1090,9 @@ export default function VoucherExpenseForm() {
           <div className="ve-form__alloc-row">
             <span className="ve-form__alloc-label">SUB Account</span>
             <span className="ve-form__alloc-sep">:</span>
-            {isSurgeryAcc ? (
+            {isIpdConsultantAcc ? (
+              <input className="ve-form__alloc-input" value="— Payee mein consultant select karein, admission wahin se milega —" readOnly disabled />
+            ) : isSurgeryAcc ? (
               <div className="ve-form__payee-picker" style={{ flex: 1 }}>
                 <input
                   className="ve-form__alloc-input"
@@ -1120,6 +1210,7 @@ export default function VoucherExpenseForm() {
                                 if (linkedHeadType === 'employee') openSalaryModal(p);
                                 else if (linkedHeadType === 'vendor') openGrnModal(p);
                                 else if (linkedHeadType === 'doctor') openConsultantModal(p);
+                                else if (linkedHeadType === 'ipd-consultant') openPendingFeesModal(p);
                                 else if (linkedHeadType === 'manual' && linkedHeadName.toLowerCase().includes('utility') && matchUtility(p.name)) openUtilBillModal(p);
                                 else { setEntry((f) => ({ ...f, payeeName: p.name })); setPayeeSearch(p.name); }
                               }}
@@ -1548,6 +1639,101 @@ export default function VoucherExpenseForm() {
                         const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map(Number);
                         setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)), visitIds: ids }));
                         setConsultantModal(null);
+                      }}
+                    >
+                      Fill Amount
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── IPD Consultant Fee Modal — pending Final Bill Const Fee rows,
+          date-filterable, multi-select summed into Amount ── */}
+      {pendingFeesModal && (
+        <div className="ve-sal-modal__backdrop" onClick={() => setPendingFeesModal(null)}>
+          <div className="ve-grn-modal" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+            <div className="ve-sal-modal__header">
+              <div>
+                <div className="ve-sal-modal__title">Pending Consultant Fees</div>
+                <div className="ve-sal-modal__sub">{pendingFeesModal.doctorName}</div>
+              </div>
+              <button className="ve-sal-modal__close" onClick={() => setPendingFeesModal(null)}>✕</button>
+            </div>
+
+            {/* Date filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.6rem 1rem', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <span style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600 }}>Date</span>
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>From</span>
+              <input type="date" value={pfDateFrom} onChange={(e) => setPfDateFrom(e.target.value)}
+                style={{ padding: '0.28rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem' }} />
+              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>To</span>
+              <input type="date" value={pfDateTo} onChange={(e) => setPfDateTo(e.target.value)}
+                style={{ padding: '0.28rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: '0.78rem' }} />
+              <button onClick={fetchPendingFees} disabled={pendingFeesLoading}
+                style={{ padding: '0.28rem 0.75rem', background: '#334155', color: '#fff', border: 'none', borderRadius: 4, fontSize: '0.75rem', cursor: 'pointer' }}>
+                {pendingFeesLoading ? 'Loading…' : 'Search'}
+              </button>
+            </div>
+
+            {pendingFeesLoading ? (
+              <div className="ve-sal-modal__loading">Loading fees…</div>
+            ) : !pendingFeesModal.fees?.length ? (
+              <div className="ve-sal-modal__no-data">Is doctor ki koi pending Consultant Fee nahi mili.</div>
+            ) : (
+              <>
+                <div className="ve-grn-modal__table-wrap">
+                  <table className="ve-grn-modal__table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <input type="checkbox"
+                            onChange={(e) => {
+                              const all = {};
+                              if (e.target.checked) pendingFeesModal.fees.forEach((f) => { all[f.id] = true; });
+                              setCheckedFees(all);
+                            }}
+                            checked={pendingFeesModal.fees.length > 0 && pendingFeesModal.fees.every((f) => checkedFees[f.id])}
+                          />
+                        </th>
+                        <th>Admission #</th>
+                        <th>Date</th>
+                        <th>Patient Name</th>
+                        <th>Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingFeesModal.fees.map((f) => (
+                        <tr key={f.id}
+                          className={checkedFees[f.id] ? 've-grn-modal__row--checked' : ''}
+                          onClick={() => setCheckedFees((prev) => ({ ...prev, [f.id]: !prev[f.id] }))}
+                        >
+                          <td><input type="checkbox" checked={!!checkedFees[f.id]} onChange={() => {}} /></td>
+                          <td className="ve-grn-modal__code">{f.admissionNo || '—'}</td>
+                          <td>{f.date ? new Date(f.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                          <td>{f.patientName}</td>
+                          <td className="ve-grn-modal__amount">PKR {Number(f.amount || 0).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="ve-grn-modal__footer">
+                  <div className="ve-grn-modal__total">
+                    <span>Selected Total</span>
+                    <span className="ve-grn-modal__total-val">PKR {pfCheckedTotal.toLocaleString()}</span>
+                  </div>
+                  <div className="ve-grn-modal__actions">
+                    <button className="ve-sal-modal__cancel" onClick={() => setPendingFeesModal(null)}>Cancel</button>
+                    <button className="ve-sal-modal__verify"
+                      disabled={pfCheckedTotal === 0}
+                      onClick={() => {
+                        const ids = Object.keys(checkedFees).filter((k) => checkedFees[k]).map(Number);
+                        setEntry((f) => ({ ...f, amount: String(pfCheckedTotal), consultantFeeItemIds: ids }));
+                        setPendingFeesModal(null);
                       }}
                     >
                       Fill Amount
