@@ -1492,6 +1492,7 @@ async function searchAdmissionsForReceiving(q) {
     patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
     createdAt: a.createdAt,
     paidSoFar: admPaidSoFar(a),
+    status: a.status,
   }));
 }
 
@@ -2845,7 +2846,15 @@ async function getProvisionalBillDetail(admissionId) {
     paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
+  // Raw payment ledger total — patientInfo keeps this as-is (a true record of
+  // what was actually receipted), separate from the "effective" figure below.
   const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
+  // Money already refunded (per the latest Discount & Refund entry) has
+  // physically left the till, so it must reduce what's still "received"
+  // against this bill — otherwise Balance/Refund keep recalculating as if
+  // that refund was never actually paid out.
+  const refundGiven = Number(latestDiscountRefund?.refundAmount) || 0;
+  const netAmountReceived = Math.max(0, amountReceived - refundGiven);
 
   return {
     admission,
@@ -2867,9 +2876,9 @@ async function getProvisionalBillDetail(admissionId) {
       discount: discountAmount,
       discountPermissionBy: latestDiscountRefund?.permissionBy || null,
       netBillAmount,
-      amountReceived,
-      balance: Math.max(0, netBillAmount - amountReceived),
-      refund: Math.max(0, amountReceived - netBillAmount),
+      amountReceived: netAmountReceived,
+      balance: Math.max(0, netBillAmount - netAmountReceived),
+      refund: Math.max(0, netAmountReceived - netBillAmount),
     },
   };
 }
@@ -3261,6 +3270,15 @@ async function getDischargeBillDetail(admissionId) {
 
   const billAmount = allBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
   const discountAmount = Number(admission.dischargeDiscount) || 0;
+  // A refund already given out (via Discount & Refund Against Admission)
+  // has physically left the till, same as on Provisional Bill — it must
+  // reduce what's still counted as "received" here too.
+  const latestDischargeRefund = await prisma.clinicAdmissionDiscountRefund.findFirst({
+    where: { admissionId: Number(admissionId) },
+    orderBy: { id: 'desc' },
+  });
+  const refundGiven = Number(latestDischargeRefund?.refundAmount) || 0;
+  const netAmountReceived = Math.max(0, amountReceived - refundGiven);
   const netAmount = Math.max(0, billAmount - discountAmount);
 
   return {
@@ -3269,11 +3287,11 @@ async function getDischargeBillDetail(admissionId) {
     bed,
     billItems: allBillItems,
     paymentHistory,
-    amountReceived,
+    amountReceived: netAmountReceived,
     billAmount,
     discountAmount,
-    balance: Math.max(0, netAmount - amountReceived),
-    refund: Math.max(0, amountReceived - netAmount),
+    balance: Math.max(0, netAmount - netAmountReceived),
+    refund: Math.max(0, netAmountReceived - netAmount),
   };
 }
 
@@ -3379,6 +3397,21 @@ async function finalizeDischarge(admissionId, { discountAmount, changedBy }) {
   // only finalizes/closes a file that's already in 'discharge' status.
   if (admission.status !== 'discharge') {
     throw Object.assign(new Error('Sirf discharge ho chuke patients ki file yahan se close ho sakti hai'), { status: 400 });
+  }
+
+  // File can only be closed once Balance Amount is fully cleared (Refund
+  // owed to the patient, i.e. balance already at 0, doesn't block this —
+  // only a positive outstanding balance does). Recomputed fresh here against
+  // the discount actually being submitted, not the stale admission.dischargeDiscount
+  // (which only gets set by this same call, further down).
+  const detail = await getDischargeBillDetail(admissionId);
+  const netAmount = Math.max(0, detail.billAmount - (Number(discountAmount) || 0));
+  const balance = Math.max(0, netAmount - detail.amountReceived);
+  if (balance > 0) {
+    throw Object.assign(
+      new Error(`File close nahi ho sakti — Balance Amount abhi bhi Rs. ${balance.toFixed(2)} baaki hai`),
+      { status: 400 }
+    );
   }
 
   await prisma.clinicAdmission.update({

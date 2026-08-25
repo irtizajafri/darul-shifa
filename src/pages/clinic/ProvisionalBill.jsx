@@ -187,12 +187,10 @@ function BalanceInfoModal({ detail, onClose }) {
         </div>
         <div className="pb-info-body">
           <div className="pb-balance-row"><label>Bill Amount</label><span>{fmt2(balanceInfo.billAmount)}</span></div>
-          {balanceInfo.discount > 0 && (
-            <div className="pb-balance-row pb-balance-row--discount">
-              <label>Discount{balanceInfo.discountPermissionBy ? ` (by ${balanceInfo.discountPermissionBy})` : ''}</label>
-              <span>-{fmt2(balanceInfo.discount)}</span>
-            </div>
-          )}
+          <div className="pb-balance-row pb-balance-row--discount">
+            <label>Discount{balanceInfo.discountPermissionBy ? ` (by ${balanceInfo.discountPermissionBy})` : ''}</label>
+            <span>-{fmt2(balanceInfo.discount)}</span>
+          </div>
           <div className="pb-balance-row"><label>Amount Received</label><span>{fmt2(balanceInfo.amountReceived)}</span></div>
           <div className="pb-balance-row pb-balance-row--em"><label>Balance</label><span>{fmt2(balanceInfo.balance)}</span></div>
           <div className="pb-balance-row pb-balance-row--em"><label>Refund</label><span>{fmt2(balanceInfo.refund)}</span></div>
@@ -344,22 +342,25 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
               <td className="l">Bill Amount:</td>
               <td className="r">{fmt2(balanceInfo.billAmount)}</td>
             </tr>
-            {balanceInfo.discount > 0 && (
-              <tr>
-                <td></td>
-                <td className="l">Discount{balanceInfo.discountPermissionBy ? ` (${balanceInfo.discountPermissionBy})` : ''}:</td>
-                <td className="r">-{fmt2(balanceInfo.discount)}</td>
-              </tr>
-            )}
+            <tr>
+              <td></td>
+              <td className="l">Discount{balanceInfo.discountPermissionBy ? ` (${balanceInfo.discountPermissionBy})` : ''}:</td>
+              <td className="r">-{fmt2(balanceInfo.discount)}</td>
+            </tr>
             <tr>
               <td></td>
               <td className="l">Received Amount:</td>
               <td className="r">{fmt2(balanceInfo.amountReceived)}</td>
             </tr>
-            <tr className="pb-print-balance-row">
+            <tr>
               <td className="l"><strong>Admitted</strong></td>
-              <td className="l"><strong>{balanceInfo.balance > 0 ? 'Balance Amount:' : 'Refund Amount:'}</strong></td>
-              <td className="r"><strong>{fmt2(balanceInfo.balance > 0 ? balanceInfo.balance : balanceInfo.refund)}</strong></td>
+              <td className="l">Refund Amount:</td>
+              <td className="r">{fmt2(balanceInfo.refund)}</td>
+            </tr>
+            <tr className="pb-print-balance-row">
+              <td></td>
+              <td className="l"><strong>Balance Amount:</strong></td>
+              <td className="r"><strong>{fmt2(balanceInfo.balance)}</strong></td>
             </tr>
           </tbody>
         </table>
@@ -1117,12 +1118,9 @@ export default function ProvisionalBill() {
 
             <div className="pb-footer">
               <div className="pb-footer-amt">Bill Amount <span>{fmt2(detail.balanceInfo.billAmount)}</span></div>
-              {detail.balanceInfo.discount > 0 && (
-                <div className="pb-footer-amt pb-footer-amt--discount">Discount <span>-{fmt2(detail.balanceInfo.discount)}</span></div>
-              )}
-              {detail.balanceInfo.refund > 0
-                ? <div className="pb-footer-amt pb-footer-amt--refund">Refund <span>{fmt2(detail.balanceInfo.refund)}</span></div>
-                : <div className="pb-footer-amt pb-footer-amt--balance">Balance <span>{fmt2(detail.balanceInfo.balance)}</span></div>}
+              <div className="pb-footer-amt pb-footer-amt--discount">Discount <span>-{fmt2(detail.balanceInfo.discount)}</span></div>
+              <div className="pb-footer-amt pb-footer-amt--refund">Refund <span>{fmt2(detail.balanceInfo.refund)}</span></div>
+              <div className="pb-footer-amt pb-footer-amt--balance">Balance <span>{fmt2(detail.balanceInfo.balance)}</span></div>
               <button className="pb-close-btn" onClick={resetToLookup}>Select Another Admission</button>
             </div>
           </div>

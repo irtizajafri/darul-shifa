@@ -61,7 +61,7 @@ function printDischargeCertificate() {
 }
 
 // ── Admission Lookup Modal ─────────────────────────────────────────────────────
-function AdmissionLookupModal({ onSelect, onClose }) {
+function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -74,7 +74,10 @@ function AdmissionLookupModal({ onSelect, onClose }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = rows.filter(r =>
+  const statusFiltered = rows.filter(r =>
+    closedFilesOnly ? (r.status === 'discharge' || r.status === 'closed') : r.status === 'active'
+  );
+  const filtered = statusFiltered.filter(r =>
     !q.trim() ||
     r.admissionNo?.toLowerCase().includes(q.trim().toLowerCase()) ||
     r.patientName?.toLowerCase().includes(q.trim().toLowerCase())
@@ -84,7 +87,7 @@ function AdmissionLookupModal({ onSelect, onClose }) {
     <div className="dra-overlay">
       <div className="dra-modal">
         <div className="dra-modal-hdr">
-          <span>Select Admission</span>
+          <span>{closedFilesOnly ? 'Select Discharged / Closed File' : 'Select Admission'}</span>
           <button className="dra-modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="dra-modal-search">
@@ -118,7 +121,7 @@ function AdmissionLookupModal({ onSelect, onClose }) {
                   </tr>
                 ))}
                 {!filtered.length && (
-                  <tr><td colSpan={3} className="dra-td-empty">Koi admission nahi mila</td></tr>
+                  <tr><td colSpan={3} className="dra-td-empty">{closedFilesOnly ? 'Koi discharged/closed file nahi mili' : 'Koi admission nahi mila'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -304,6 +307,11 @@ export default function DiscountRefundAdmission() {
   }, [diseases, surgeryTypes]);
 
   const [showLookup, setShowLookup] = useState(false);
+  // Default lookup only shows active (not-yet-discharged) admissions — for
+  // creating a fresh Discharge Certificate. Checking "Closed Files" switches
+  // the lookup to already-processed admissions (discharge or closed status)
+  // instead, e.g. to review/reprint an existing certificate.
+  const [closedFilesOnly, setClosedFilesOnly] = useState(false);
   const [admission, setAdmission] = useState(null);
   const [billAmount, setBillAmount] = useState(0);
   const [receivedAmount, setReceivedAmount] = useState(0);
@@ -338,38 +346,40 @@ export default function DiscountRefundAdmission() {
   // unrelated to the discount math) — manual entry wins when present.
   const refundAmt = refundOverride !== '' ? (Number(refundOverride) || 0) : autoRefundAmt;
 
-  async function handleSelect(row) {
-    setShowLookup(false);
-    try {
-      const res = await fetch(`${API}/admission/discount-refund/by-number/${encodeURIComponent(row.admissionNo)}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Load failed');
-      setAdmission(json.data.admission);
-      setBillAmount(json.data.billAmount || 0);
-      setReceivedAmount(json.data.receivedAmount || 0);
-      setHistory(json.data.history || []);
-      setDiscount('');
-      setDiscountType('amount');
-      setPermissionBy('');
-      setRefundOverride('');
-      setDcHeader(null);
-      setDcForm(null);
-    } catch (e) {
-      toast.error(e.message || 'Admission load nahi hui');
-    }
-  }
-
-  function resetForm() {
-    setAdmission(null);
-    setBillAmount(0);
-    setReceivedAmount(0);
-    setHistory([]);
-    setDiscount('');
+  // Discount/Refund history is saved as independent entries, but only the
+  // LATEST one is ever the currently-active discount (see addAdmissionDiscountRefund
+  // comment) — so whenever an admission is (re)loaded, the Discount field must be
+  // pre-filled from that latest entry. Otherwise it always starts blank, Net
+  // Balance recomputes as if no discount had ever been given, and a discount
+  // that was genuinely saved earlier looks like it "didn't apply" on reload.
+  async function loadAdmissionByNo(admissionNo) {
+    const res = await fetch(`${API}/admission/discount-refund/by-number/${encodeURIComponent(admissionNo)}`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Load failed');
+    const latest = (json.data.history || [])[0] || null;
+    setAdmission(json.data.admission);
+    setBillAmount(json.data.billAmount || 0);
+    setReceivedAmount(json.data.receivedAmount || 0);
+    setHistory(json.data.history || []);
+    // discountAmount is always stored as the already-resolved rupee value
+    // (percent entries get converted before saving), so it's always safe to
+    // pre-fill back in as a plain "amount" regardless of how it was entered.
+    setDiscount(latest ? String(latest.discountAmount || '') : '');
     setDiscountType('amount');
     setPermissionBy('');
     setRefundOverride('');
     setDcHeader(null);
     setDcForm(null);
+    return json.data;
+  }
+
+  async function handleSelect(row) {
+    setShowLookup(false);
+    try {
+      await loadAdmissionByNo(row.admissionNo);
+    } catch (e) {
+      toast.error(e.message || 'Admission load nahi hui');
+    }
   }
 
   async function handleAdd() {
@@ -395,7 +405,9 @@ export default function DiscountRefundAdmission() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
       toast.success('Discount/Refund save ho gaya');
-      resetForm();
+      // Reload the same admission (not resetForm/blank) so Net Balance and
+      // history immediately reflect the discount that was just saved.
+      await loadAdmissionByNo(admission.admissionNo);
     } catch (e) {
       toast.error(e.message || 'Error saving');
     } finally {
@@ -436,15 +448,9 @@ export default function DiscountRefundAdmission() {
   // printing a blank page.
   async function handleReprintCertificate(no) {
     try {
-      const res = await fetch(`${API}/admission/discount-refund/by-number/${encodeURIComponent(no)}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Load failed');
-      setAdmission(json.data.admission);
-      setBillAmount(json.data.billAmount || 0);
-      setReceivedAmount(json.data.receivedAmount || 0);
-      setHistory(json.data.history || []);
+      const data = await loadAdmissionByNo(no);
 
-      const certRes = await fetch(`${API}/admission/discharge-certificate/${json.data.admission.id}`);
+      const certRes = await fetch(`${API}/admission/discharge-certificate/${data.admission.id}`);
       const certJson = await certRes.json();
       if (!certRes.ok) throw new Error(certJson.message || 'Load failed');
       const { certificate, ...header } = certJson.data;
@@ -531,7 +537,11 @@ export default function DiscountRefundAdmission() {
               </span>
             )}
             <label className="dra-check-label dra-check-label--closed">
-              <input type="checkbox" disabled />
+              <input
+                type="checkbox"
+                checked={closedFilesOnly}
+                onChange={e => setClosedFilesOnly(e.target.checked)}
+              />
               Closed Files
             </label>
           </div>
@@ -645,7 +655,7 @@ export default function DiscountRefundAdmission() {
       </div>
 
       {showLookup && (
-        <AdmissionLookupModal onSelect={handleSelect} onClose={() => setShowLookup(false)} />
+        <AdmissionLookupModal onSelect={handleSelect} onClose={() => setShowLookup(false)} closedFilesOnly={closedFilesOnly} />
       )}
 
       {dcOpen && dcHeader && dcForm && (

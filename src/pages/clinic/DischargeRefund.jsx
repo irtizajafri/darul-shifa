@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
@@ -238,11 +239,12 @@ function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
       <table className="dr-print-summary-tbl">
         <tbody>
           <tr><td className="l">Bill Amount:</td><td className="r">{fmt2(billAmount)}</td></tr>
-          {discountAmount > 0 && <tr><td className="l">Discount:</td><td className="r">{fmt2(discountAmount)}</td></tr>}
+          <tr><td className="l">Discount:</td><td className="r">{fmt2(discountAmount)}</td></tr>
           <tr><td className="l">Received Amount:</td><td className="r">{fmt2(amountReceived)}</td></tr>
+          <tr><td className="l">Refund Amount:</td><td className="r">{fmt2(refund)}</td></tr>
           <tr className="dr-print-balance-row">
-            <td className="l"><strong>{balance > 0 ? 'Balance Amount:' : 'Refund Amount:'}</strong></td>
-            <td className="r"><strong>{fmt2(balance > 0 ? balance : refund)}</strong></td>
+            <td className="l"><strong>Balance Amount:</strong></td>
+            <td className="r"><strong>{fmt2(balance)}</strong></td>
           </tr>
         </tbody>
       </table>
@@ -412,6 +414,13 @@ export default function DischargeRefund() {
   }
 
   async function handleFinalize() {
+    // Balance must be fully cleared before the file can be closed (backend
+    // also re-checks this — this is just so staff get an immediate, specific
+    // message instead of clicking a plain-disabled button).
+    if (liveBalance > 0) {
+      toast.error(`Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo`);
+      return;
+    }
     setSaving(true);
     try {
       await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, changedBy: printedBy });
@@ -495,9 +504,10 @@ export default function DischargeRefund() {
               </table>
 
               <div className="dr-summary-row">
-                <span>{liveBalance > 0 ? 'Balance' : 'Refund'} <b>{fmt2(liveBalance > 0 ? liveBalance : liveRefund)}</b></span>
                 <span>Discount <input className="dr-discount-input" value={discount} onChange={e => setDiscount(e.target.value)} /></span>
                 <span>Amount Received <b>{fmt2(detail.amountReceived)}</b></span>
+                <span>Refund <b>{fmt2(liveRefund)}</b></span>
+                <span>Balance <b>{fmt2(liveBalance)}</b></span>
               </div>
 
               <div className="dr-separator" />
@@ -508,10 +518,14 @@ export default function DischargeRefund() {
                 <div className="dr-form-row">
                   <div className="dr-fg dr-fg--full">
                     <label>Heads</label>
-                    <select value={row.billHeadId} onChange={e => setRow(r => ({ ...r, billHeadId: e.target.value }))}>
-                      <option value="">— Select —</option>
-                      {finalHeads.map(h => <option key={h.id} value={h.id}>{h.headCode} — {h.description}</option>)}
-                    </select>
+                    <SearchableSelect
+                      options={finalHeads}
+                      value={row.billHeadId}
+                      onChange={val => setRow(r => ({ ...r, billHeadId: val }))}
+                      placeholder="— Select —"
+                      getLabel={h => `${h.headCode} — ${h.description}`}
+                      getKey={h => h.id}
+                    />
                   </div>
                   <div className="dr-fg dr-fg--sm">
                     <label>Amount</label>
@@ -524,10 +538,14 @@ export default function DischargeRefund() {
                 <div className="dr-form-row">
                   <div className="dr-fg dr-fg--full">
                     <label>Dr./Staff{isSplitHead ? ' *' : ''}</label>
-                    <select value={row.doctorId} onChange={e => setRow(r => ({ ...r, doctorId: e.target.value }))}>
-                      <option value="">— Select —</option>
-                      {doctors.filter(d => d.status === 'active').map(d => <option key={d.id} value={d.id}>{d.code} — {d.name}</option>)}
-                    </select>
+                    <SearchableSelect
+                      options={doctors.filter(d => d.status === 'active')}
+                      value={row.doctorId}
+                      onChange={val => setRow(r => ({ ...r, doctorId: val }))}
+                      placeholder="— Select —"
+                      getLabel={d => `${d.code} — ${d.name}`}
+                      getKey={d => d.id}
+                    />
                   </div>
                   {/* Laboratory/Ultrasound/X-Ray never show a picker at all — the
                       doctor's rate is the same across every test there, so it
@@ -655,7 +673,12 @@ export default function DischargeRefund() {
             </div>
 
             <div className="dr-footer">
-              <button className="dr-finalize-btn" onClick={handleFinalize} disabled={saving}>
+              <button
+                className="dr-finalize-btn"
+                onClick={handleFinalize}
+                disabled={saving || liveBalance > 0}
+                title={liveBalance > 0 ? `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai` : ''}
+              >
                 {saving ? 'Saving…' : 'Close File'}
               </button>
               <button className="dr-close-btn" onClick={resetToLookup} disabled={saving}>Select Another Admission</button>
@@ -665,7 +688,15 @@ export default function DischargeRefund() {
       </div>
 
       <div className="dr-print-area">
-        <DischargeBillPrintTemplate detail={detail} isDuplicate={isDuplicate} printedBy={printedBy} />
+        {/* discountAmount/balance/refund overridden with the live (currently
+            typed, not-yet-saved) figures — detail's own values only get
+            updated once Close File actually runs, so printing beforehand
+            must not show stale/zeroed-out numbers. */}
+        <DischargeBillPrintTemplate
+          detail={detail ? { ...detail, discountAmount: Number(discount) || 0, balance: liveBalance, refund: liveRefund } : detail}
+          isDuplicate={isDuplicate}
+          printedBy={printedBy}
+        />
       </div>
     </>
   );
