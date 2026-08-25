@@ -71,6 +71,7 @@ router.get('/cc-config', controller.getCcConfig);
 router.put('/cc-config', controller.updateCcConfig);
 
 // Provisional Bill
+router.get('/provisional-bill/search', controller.searchAdmissionsForProvisionalBill);
 router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
 router.put('/provisional-bill/:admissionId/ward-history-rate', controller.updateWardHistoryRate);
 router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);

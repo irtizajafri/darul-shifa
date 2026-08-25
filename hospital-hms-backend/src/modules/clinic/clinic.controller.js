@@ -1328,6 +1328,12 @@ async function searchAdmissionsForAdjustment(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function searchAdmissionsForProvisionalBill(req, res, next) {
+  try {
+    success(res, await service.searchAdmissionsForProvisionalBill(req.query.q));
+  } catch (err) { next(err); }
+}
+
 async function getAdmissionForAdjustment(req, res, next) {
   try {
     success(res, await service.getAdmissionForAdjustment(req.params.id));
@@ -1815,6 +1821,7 @@ module.exports = {
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,
+  searchAdmissionsForProvisionalBill,
   getAdmissionForAdjustment,
   updateAdmissionAdjustment,
   updateAdmissionStatus,

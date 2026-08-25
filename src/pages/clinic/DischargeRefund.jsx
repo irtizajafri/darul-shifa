@@ -16,7 +16,11 @@ import './DischargeRefund.scss';
 // not a meaningful choice, so showing it would just be confusing). Const Fee
 // keeps its Sub-Department visible since which consultant/specialty it was
 // genuinely matters there.
-const NO_SUBDEPT_PICKER_DEPT_IDS = [480, 483, 484];
+// Matched by department NAME, not id — the numeric ClinicDepartment id is
+// per-database (auto-increment order differs across dev/server installs), so
+// hardcoding ids here would silently break on any other deployment.
+const NO_SUBDEPT_PICKER_DEPT_NAMES = ['LABORATORY', 'RADIOLOGY', 'ULTRA SOUND, ECHO & COLOR DOPPLER'];
+const isNoPickerDept = (name) => !!name && NO_SUBDEPT_PICKER_DEPT_NAMES.includes(String(name).trim().toUpperCase());
 
 // Rows snapshot-imported from that admission's Provisional Bill (once, the
 // first time this page opens it) are tagged so the table can show where each
@@ -335,7 +339,7 @@ export default function DischargeRefund() {
   const finalHeads = billHeads.filter(h => h.type === 'final' || h.type === 'both');
   const selectedHead = finalHeads.find(h => String(h.id) === String(row.billHeadId));
   const isSplitHead = !!selectedHead?.refDepartmentId;
-  const skipSubDeptPicker = isSplitHead && NO_SUBDEPT_PICKER_DEPT_IDS.includes(Number(selectedHead.refDepartmentId));
+  const skipSubDeptPicker = isSplitHead && isNoPickerDept(selectedHead.refDepartment?.name);
   const selectedSubDept = subDeptOptions.find(s => String(s.subDeptId) === String(row.subDeptId));
   const previewSplit = selectedSubDept
     ? calcFeeSplitPreview(Number(row.amount) || 0, selectedSubDept.paymentType, selectedSubDept.normalFees)
@@ -598,7 +602,7 @@ export default function DischargeRefund() {
                           {/* Lab/X-Ray/Ultrasound auto-pick whichever test happened to be
                               first — not a meaningful choice, so it stays hidden. Const Fee's
                               Sub-Department (which consultant/specialty) is worth showing. */}
-                          {i.subDept?.name && !NO_SUBDEPT_PICKER_DEPT_IDS.includes(i.billHead?.refDepartmentId) && (
+                          {i.subDept?.name && !isNoPickerDept(i.billHead?.refDepartment?.name) && (
                             <div className="dr-td-sub-line">{i.subDept.name}</div>
                           )}
                         </td>

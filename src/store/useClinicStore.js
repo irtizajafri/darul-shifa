@@ -528,6 +528,10 @@ export const useClinicStore = create((set) => ({
     return request(`/admission/adjustment/search?q=${encodeURIComponent(q || '')}`);
   },
 
+  searchAdmissionsForProvisionalBill: async (q) => {
+    return request(`/provisional-bill/search?q=${encodeURIComponent(q || '')}`);
+  },
+
   fetchAdmissionForAdjustment: async (id) => {
     return request(`/admission/adjustment/${id}`);
   },

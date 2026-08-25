@@ -2240,6 +2240,29 @@ async function searchAdmissionsForAdjustment(q) {
   }));
 }
 
+// Provisional Bill needs to stay viewable/reprintable for an admission at ANY
+// status (active, discharge, closed) — billing is a historical record, not
+// gated to only-active admissions like searchAdmissionsForAdjustment (which
+// many other active-admission workflows rely on and must NOT be widened).
+async function searchAdmissionsForProvisionalBill(q) {
+  const term = String(q || '').trim();
+  const where = term
+    ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+    : {};
+  const rows = await prisma.clinicAdmission.findMany({
+    where,
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  return rows.map((a) => ({
+    id: a.id,
+    admissionNo: a.admissionNo,
+    patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    createdAt: a.createdAt,
+    status: a.status,
+  }));
+}
+
 async function getAdmissionForAdjustment(id) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
@@ -2553,7 +2576,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // for the number of days it was occupied — any part of a day counts as a full
 // day (standard hospital room-billing convention), and the still-open segment
 // (transferredAt = null) keeps accruing days up to "now" on every view.
-function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesById, rateOverridesByEnteredAt }) {
+function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesById, rateOverridesByEnteredAt, asOfDate }) {
   const segments = [];
   const sorted = [...shiftHistory].sort((a, b) => new Date(a.shiftedAt) - new Date(b.shiftedAt));
 
@@ -2565,7 +2588,13 @@ function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesB
     const roomCategory = roomCategoryId ? roomCategoriesById[roomCategoryId] || null : null;
     const bed = bedId ? bedsById[bedId] || null : null;
     const startMs = new Date(enteredAt).getTime();
-    const endMs = (transferredAt ? new Date(transferredAt) : new Date()).getTime();
+    // The still-open (last) segment has no transferredAt — for a still-active
+    // admission that means "counting up to right now" (a live running total
+    // is correct while the patient is actually still admitted). But once the
+    // patient has discharged/closed, "now" would keep inflating Ward History
+    // every time the bill is reprinted later — freeze it at asOfDate (the
+    // Discharge Certificate's dischargeDate) instead.
+    const endMs = (transferredAt ? new Date(transferredAt) : (asOfDate || new Date())).getTime();
     const days = Math.max(1, Math.ceil((endMs - startMs) / MS_PER_DAY));
     // A segment is uniquely identified by its enteredAt timestamp within this
     // admission — manual overrides (see updateWardHistoryRate) key off it,
@@ -2585,8 +2614,11 @@ function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesB
     curRoomCategoryId = bedsById[shift.toBedId]?.roomCategoryId || null;
     curEnteredAt = shift.shiftedAt;
   }
-  // Final (still current, or only) segment — open-ended.
-  pushSegment(curRoomCategoryId, curBedId, curEnteredAt, null);
+  // Final (still current, or only) segment — open-ended while still active
+  // (shows "Current" on screen/print). Once discharged/closed, cap it at
+  // asOfDate so it also displays as an actual "Transferred"/end timestamp
+  // instead of misleadingly still saying "Current" on a reprinted bill.
+  pushSegment(curRoomCategoryId, curBedId, curEnteredAt, asOfDate || null);
 
   return segments;
 }
@@ -2599,6 +2631,7 @@ async function getProvisionalBillDetail(admissionId) {
     roomCategory, bed, surgeryType, dischargeType, consultant,
     billItems, labVisits, diagnosticOtherVisits, otherVisits,
     payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory, rateOverrideRows, latestDiscountRefund,
+    dischargeCertificate,
   ] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
@@ -2653,6 +2686,7 @@ async function getProvisionalBillDetail(admissionId) {
       where: { admissionId: Number(admissionId) },
       orderBy: { id: 'desc' },
     }),
+    prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: Number(admissionId) } }),
   ]);
 
   const roomCategoryIds = [...new Set(billItems.map((i) => i.roomCategoryId).filter(Boolean))];
@@ -2697,8 +2731,13 @@ async function getProvisionalBillDetail(admissionId) {
   const rateOverridesByEnteredAt = new Map(
     rateOverrideRows.map((r) => [new Date(r.enteredAt).getTime(), r.rate])
   );
+  // Once the patient is no longer active, freeze the open-ended ward segment
+  // at the actual discharge moment instead of "now" (see computeWardHistory).
+  const asOfDate = admission.status !== 'active' && dischargeCertificate?.dischargeDate
+    ? new Date(dischargeCertificate.dischargeDate)
+    : null;
   const wardHistory = computeWardHistory({
-    admission, shiftHistory, bedsById, roomCategoriesById: wardById, rateOverridesByEnteredAt,
+    admission, shiftHistory, bedsById, roomCategoriesById: wardById, rateOverridesByEnteredAt, asOfDate,
   });
   const wardAmount = wardHistory.reduce((s, seg) => s + seg.charges, 0);
 
@@ -3155,7 +3194,11 @@ async function getDischargeBillDetail(admissionId) {
   const doctorIds = [...new Set(billItems.map((i) => i.doctorId).filter(Boolean))];
   const subDeptIds = [...new Set(billItems.map((i) => i.subDeptId).filter(Boolean))];
   const [headRows, doctorRows, subDeptRows] = await Promise.all([
-    billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } } }) : [],
+    // refDepartment (name, not just id) included so the frontend can decide
+    // "hide the Sub-Department picker for Lab/Radiology/Ultrasound" by
+    // department NAME — the numeric refDepartmentId is per-database and
+    // isn't safe to hardcode across deployments.
+    billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } }, include: { refDepartment: { select: { id: true, name: true } } } }) : [],
     doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } } }) : [],
     subDeptIds.length ? prisma.clinicSubDepartment.findMany({ where: { id: { in: subDeptIds } } }) : [],
   ]);
@@ -4985,6 +5028,7 @@ module.exports = {
   createAdmission,
   getAvailableBeds,
   searchAdmissionsForAdjustment,
+  searchAdmissionsForProvisionalBill,
   getAdmissionForAdjustment,
   updateAdmissionAdjustment,
   updateAdmissionStatus,

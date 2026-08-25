@@ -64,25 +64,25 @@ function printProvisionalBill() {
 }
 
 // ── Admission Lookup Modal — active/admitted patients only ────────────────────
-function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment }) {
+function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
   useEffect(() => {
-    searchAdmissionsForAdjustment('')
+    searchAdmissions('')
       .then((data) => setRows(data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [searchAdmissionsForAdjustment]);
+  }, [searchAdmissions]);
 
   function handleQueryChange(val) {
     setQ(val);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setLoading(true);
-      searchAdmissionsForAdjustment(val)
+      searchAdmissions(val)
         .then((data) => setRows(data || []))
         .catch(() => setRows([]))
         .finally(() => setLoading(false));
@@ -391,7 +391,7 @@ export default function ProvisionalBill() {
     billHeads, fetchBillHeads,
     surgeryTypes, fetchSurgeryTypes,
     dischargeTypes, fetchDischargeTypes,
-    searchAdmissionsForAdjustment,
+    searchAdmissionsForProvisionalBill,
     fetchProvisionalBillDetail,
     updateWardHistoryRate,
     addProvisionalBillItem,
@@ -512,7 +512,7 @@ export default function ProvisionalBill() {
     if (!admissionNo) return;
     (async () => {
       try {
-        const rows = await searchAdmissionsForAdjustment(admissionNo);
+        const rows = await searchAdmissionsForProvisionalBill(admissionNo);
         const match = rows.find(r => r.admissionNo === admissionNo) || rows[0];
         if (!match) { toast.error('Is Admission # ka koi record nahi mila'); return; }
         setShowLookup(false);
@@ -671,7 +671,7 @@ export default function ProvisionalBill() {
         <AdmissionLookupModal
           onSelect={handleSelect}
           onClose={() => navigate(-1)}
-          searchAdmissionsForAdjustment={searchAdmissionsForAdjustment}
+          searchAdmissions={searchAdmissionsForProvisionalBill}
         />
       )}
       {showPatientInfo && detail && <PatientInfoModal detail={detail} onClose={() => setShowPatientInfo(false)} />}
