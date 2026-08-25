@@ -14,16 +14,16 @@ const API = 'http://localhost:5001/api/clinic';
 const todayStr = () => new Date().toISOString().split('T')[0];
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; };
 
-// Birth Cert. / Final Bill still don't exist as features anywhere in the
-// system (no data model, no entry form, no print template), so they show in
-// the list to match the legacy layout but aren't functional until built.
+// Birth Cert. still doesn't exist as a feature anywhere in the system (no
+// data model, no entry form, no print template), so it shows in the list to
+// match the legacy layout but isn't functional until built.
 const DOC_TYPES = [
   { value: 'slip',        label: 'Slip',                 enabled: true },
   { value: 'admission',   label: 'Admission',             enabled: true },
   { value: 'discharge',   label: 'Discharge Certificate', enabled: true },
   { value: 'birth',       label: 'Birth Cert.',           enabled: false },
   { value: 'provisional', label: 'Provisional Bill',      enabled: true },
-  { value: 'final',       label: 'Final Bill',            enabled: false },
+  { value: 'final',       label: 'Final Bill',            enabled: true },
 ];
 
 export default function ReprintFilter() {
@@ -97,6 +97,11 @@ export default function ReprintFilter() {
 
     if (docType === 'discharge') {
       navigate(`/clinic/transactions/discount-refund-admission?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
+      return;
+    }
+
+    if (docType === 'final') {
+      navigate(`/clinic/discharge-refund?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
       return;
     }
   }

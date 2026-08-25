@@ -3227,8 +3227,12 @@ async function getDischargeBillDetail(admissionId) {
     billHeadId: null,
     doctorId: null,
     billHead: null,
-    doctor: null,
-    description: e.payeeName ? `${e.accountName} — ${e.payeeName}` : e.accountName,
+    // Payee name (the surgeon/anaesthetist actually paid) belongs in the
+    // Dr./Staff column like every other row, not crammed into the
+    // description text — a lightweight { name } object is enough since
+    // nothing here needs the full ClinicDoctor record (row is read-only).
+    doctor: e.payeeName ? { name: e.payeeName } : null,
+    description: e.accountName,
     qty: 1,
     rate: Number(e.amount),
     amount: Number(e.amount),

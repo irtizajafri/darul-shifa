@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, DoorOpen, Save, Copy, RotateCcw, FileText, Printer, X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
@@ -228,7 +228,7 @@ function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
         <tbody>
           {billItems.map((i) => (
             <tr key={i.id}>
-              <td>{i.billHead?.description || i.billHead?.headCode || '—'}</td>
+              <td>{i.billHead?.description || i.billHead?.headCode || i.description || '—'}</td>
               <td>{i.doctor?.name || '—'}</td>
               <td className="r">{fmt2(i.amount)}</td>
             </tr>
@@ -263,6 +263,7 @@ function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
 
 export default function DischargeRefund() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const printedBy = user?.name || user?.username || user?.email || '';
 
@@ -304,6 +305,8 @@ export default function DischargeRefund() {
   const [amountEdit, setAmountEdit] = useState(null); // { itemId, value } | null
   const [savingAmount, setSavingAmount] = useState(false);
 
+  const [reprintReady, setReprintReady] = useState(false);
+
   useEffect(() => {
     fetchBillHeads();
     fetchDoctors();
@@ -329,6 +332,33 @@ export default function DischargeRefund() {
     setShowLookup(false);
     await loadDetail(row_.id);
   }
+
+  // Reprint (Report > Reprint > Final Bill): ?admissionNo=...&autoprint=1 —
+  // same pattern as Provisional Bill / Discharge Certificate's reprint entry.
+  useEffect(() => {
+    const admissionNo = searchParams.get('admissionNo');
+    const autoprint = searchParams.get('autoprint');
+    if (!admissionNo) return;
+    (async () => {
+      try {
+        const rows = await searchAdmissionsForDischargeRefund(admissionNo);
+        const match = rows.find(r => r.admissionNo === admissionNo) || rows[0];
+        if (!match) { toast.error('Is Admission # ka koi record nahi mila'); return; }
+        setShowLookup(false);
+        const d = await loadDetail(match.id);
+        if (autoprint && d) { setIsDuplicate(true); setReprintReady(true); }
+      } catch {
+        toast.error('Final Bill reprint lookup failed');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!reprintReady) return;
+    const t = setTimeout(() => { printDischargeBill(); setReprintReady(false); }, 300);
+    return () => clearTimeout(t);
+  }, [reprintReady]);
 
   function resetToLookup() {
     setAdmissionId(null);

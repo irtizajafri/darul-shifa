@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -65,22 +65,31 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const timer = useRef(null);
 
-  useEffect(() => {
-    fetch(`${API}/admission/receiving/search`)
+  // The backend endpoint only ever returns the most recent 100 admissions
+  // (by id) — fine as an initial "browse recent" list, but a text search
+  // must re-query the server with the typed term, or an older admission
+  // (very common once it's discharged/closed, not just-created) would never
+  // even be fetched to filter through, regardless of the checkbox/search text.
+  function runSearch(term) {
+    return fetch(`${API}/admission/receiving/search?q=${encodeURIComponent(term)}`)
       .then(r => r.json())
       .then(res => setRows(res.data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, []);
+  }
 
-  const statusFiltered = rows.filter(r =>
+  useEffect(() => { runSearch(''); }, []);
+
+  function handleQueryChange(val) {
+    setQ(val);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => { setLoading(true); runSearch(val); }, 300);
+  }
+
+  const filtered = rows.filter(r =>
     closedFilesOnly ? (r.status === 'discharge' || r.status === 'closed') : r.status === 'active'
-  );
-  const filtered = statusFiltered.filter(r =>
-    !q.trim() ||
-    r.admissionNo?.toLowerCase().includes(q.trim().toLowerCase()) ||
-    r.patientName?.toLowerCase().includes(q.trim().toLowerCase())
   );
 
   return (
@@ -97,7 +106,7 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
             className="dra-modal-search-input"
             placeholder="Search Admission # or Patient Name…"
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onChange={e => handleQueryChange(e.target.value)}
           />
         </div>
         <div className="dra-modal-body">
