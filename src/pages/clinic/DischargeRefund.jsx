@@ -272,6 +272,11 @@ export default function DischargeRefund() {
     doctors, fetchDoctors,
     fetchDoctorSubDeptsForDepartment,
     searchAdmissionsForDischargeRefund,
+    // Reused (any-status) search for Reprint specifically — a closed file's
+    // Final Bill must still be reprintable, unlike the normal admission
+    // lookup below which deliberately only shows 'discharge' status (once
+    // closed, there's nothing left to add/edit there).
+    searchAdmissionsForProvisionalBill,
     fetchDischargeBillDetail,
     addDischargeBillItem,
     updateDischargeBillItem,
@@ -341,7 +346,7 @@ export default function DischargeRefund() {
     if (!admissionNo) return;
     (async () => {
       try {
-        const rows = await searchAdmissionsForDischargeRefund(admissionNo);
+        const rows = await searchAdmissionsForProvisionalBill(admissionNo);
         const match = rows.find(r => r.admissionNo === admissionNo) || rows[0];
         if (!match) { toast.error('Is Admission # ka koi record nahi mila'); return; }
         setShowLookup(false);
