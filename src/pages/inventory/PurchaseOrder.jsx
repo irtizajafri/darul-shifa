@@ -8,6 +8,7 @@ import { Plus, Printer, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { canBackDate } from '../../utils/permissions';
 import { printPODocument } from '../../utils/printPO';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
@@ -133,6 +134,8 @@ const createEmptyPoLine = () => ({
 
 export default function PurchaseOrder() {
   const { user } = useAuthStore();
+  const allowBackDating = canBackDate(user);
+  const today = new Date().toISOString().slice(0, 10);
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -441,6 +444,8 @@ export default function PurchaseOrder() {
                   type="date"
                   value={formData.poDate}
                   onChange={(e) => setFormData((p) => ({ ...p, poDate: e.target.value }))}
+                  min={allowBackDating ? undefined : today}
+                  max={allowBackDating ? undefined : today}
                   className="px-3 py-2 border border-slate-300 rounded-md text-sm w-full"
                   required
                 />

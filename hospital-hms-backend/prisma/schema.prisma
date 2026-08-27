@@ -1500,6 +1500,7 @@ model ClinicPanelEmpRoomEntitlement {
 
 model ClinicAntenatal {
   id               Int       @id @default(autoincrement())
+  serialNo         String?
   mrNo             String    @default("")
   antenatalNo      String    @default("")
   registrationDate DateTime  @db.Date @default(now())
@@ -1585,6 +1586,23 @@ model AccPayeeHead {
   // one of these links (e.g. Surgeon + Anaesthetic under one "Anesthesia and
   // Surgery" Sub GL) — see AccPayeeHeadStaffCategory below.
   staffCategoryLinks     AccPayeeHeadStaffCategory[]
+  // sourceType='inventory': lets an Inventory Head also pull in one or more
+  // Custom (sourceType='manual') Heads' own manually-typed entries — merged
+  // into the same Payee list, alongside the inventory items, when this
+  // head's linked Main Account is picked in Voucher Expense.
+  linkedCustomHeads      AccPayeeHeadLinkedCustomHead[] @relation("HeadLinkedCustomHeads")
+  linkedToHeads          AccPayeeHeadLinkedCustomHead[] @relation("CustomHeadLinkedTo")
+}
+
+model AccPayeeHeadLinkedCustomHead {
+  id           Int          @id @default(autoincrement())
+  headId       Int
+  customHeadId Int
+  createdAt    DateTime     @default(now())
+  head         AccPayeeHead @relation("HeadLinkedCustomHeads", fields: [headId], references: [id], onDelete: Cascade)
+  customHead   AccPayeeHead @relation("CustomHeadLinkedTo", fields: [customHeadId], references: [id], onDelete: Cascade)
+
+  @@unique([headId, customHeadId])
 }
 
 model AccPayeeHeadMainAccount {

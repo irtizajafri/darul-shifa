@@ -178,6 +178,7 @@ router.get('/opd/by-phone/:phone', controller.getOpdPatientsByPhone);
 router.get('/antenatal', controller.getAntenatalList);
 router.get('/antenatal/by-no/:no', controller.getAntenatalByNo);
 router.post('/antenatal', controller.createAntenatal);
+router.get('/reports/antenatal', controller.getAntenatalReport);
 
 // Admission
 router.get('/admission/available-beds', controller.getAvailableBeds);

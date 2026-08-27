@@ -8,7 +8,7 @@ import { Plus, Printer, Search, X, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
-import { hasPermission } from '../../utils/permissions';
+import { hasPermission, canBackDate } from '../../utils/permissions';
 import { printGRNDocument } from '../../utils/printGRN';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
@@ -103,6 +103,8 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
 export default function GoodsReceipt() {
   const { user } = useAuthStore();
   const canEditGRN = hasPermission(user, 'inventory', 'grn', 'edit');
+  const allowBackDating = canBackDate(user);
+  const today = new Date().toISOString().slice(0, 10);
   const location = useLocation();
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -439,6 +441,8 @@ export default function GoodsReceipt() {
                           <label className="block text-xs text-slate-500 mb-1">Received Date</label>
                           <input type="date" value={editGRNForm.receivedDate}
                             onChange={(e) => setEditGRNForm((f) => ({ ...f, receivedDate: e.target.value }))}
+                            min={allowBackDating ? undefined : today}
+                            max={allowBackDating ? undefined : today}
                             className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
                         </div>
                         <div>
@@ -527,6 +531,8 @@ export default function GoodsReceipt() {
                   type="date"
                   value={headerReceivedDate}
                   onChange={(e) => setHeaderReceivedDate(e.target.value)}
+                  min={allowBackDating ? undefined : today}
+                  max={allowBackDating ? undefined : today}
                   className="px-3 py-2 border border-slate-300 rounded-md text-sm"
                   required
                 />

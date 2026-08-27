@@ -163,6 +163,12 @@ const LINKED_ACCOUNTS_INCLUDE = {
     orderBy: { id: 'asc' },
     include: { staffCategory: { select: { id: true, name: true } } },
   },
+  // sourceType='inventory' only — Custom (manual) Heads merged into this
+  // head's own Payee list (see linkCustomHeadToInventoryHead).
+  linkedCustomHeads: {
+    orderBy: { id: 'asc' },
+    include: { customHead: { select: { id: true, name: true } } },
+  },
 };
 
 async function getPayeeHeads(entityType) {
@@ -314,6 +320,55 @@ async function getInventoryItemsBySubcategory(subcategoryId) {
     where: { subcategoryId: Number(subcategoryId), status: 'active' },
     select: { id: true, code: true, name: true },
     orderBy: { name: 'asc' },
+  });
+}
+
+// Inventory Head's picker list = its own inventory items PLUS the manually-
+// typed entries of every Custom Head linked to it (see
+// AccPayeeHeadLinkedCustomHead) — merged into one list. `optionValue` is a
+// prefixed string (not the raw numeric id) since InventoryItem ids and
+// AccPayeeEntry ids are separate id spaces that can collide; the frontend
+// matches on this instead of id, and `kind` tells it whether picking that
+// row should fill Account Name/Code (an item) or Payee Name (a person).
+async function getInventoryItemsForHead(headId) {
+  const head = await prisma.accPayeeHead.findUnique({
+    where: { id: Number(headId) },
+    include: { linkedCustomHeads: { select: { customHeadId: true } } },
+  });
+  if (!head) throw Object.assign(new Error('Head not found'), { status: 404 });
+
+  const [items, entries] = await Promise.all([
+    head.inventorySubcategoryId ? getInventoryItemsBySubcategory(head.inventorySubcategoryId) : [],
+    head.linkedCustomHeads.length
+      ? prisma.accPayeeEntry.findMany({
+          where: { payeeHeadId: { in: head.linkedCustomHeads.map((l) => l.customHeadId) } },
+          orderBy: { name: 'asc' },
+        })
+      : [],
+  ]);
+
+  return [
+    ...items.map((i) => ({ optionValue: `item-${i.id}`, id: i.id, code: i.code, name: i.name, kind: 'item' })),
+    ...entries.map((e) => ({ optionValue: `payee-${e.id}`, id: e.id, code: '', name: e.name, kind: 'payee' })),
+  ];
+}
+
+async function linkCustomHeadToInventoryHead(headId, customHeadId) {
+  const [head, customHead] = await Promise.all([
+    prisma.accPayeeHead.findUnique({ where: { id: Number(headId) } }),
+    prisma.accPayeeHead.findUnique({ where: { id: Number(customHeadId) } }),
+  ]);
+  if (!head || head.sourceType !== 'inventory') throw Object.assign(new Error('Target head must be an Inventory Head'), { status: 400 });
+  if (!customHead || customHead.sourceType !== 'manual') throw Object.assign(new Error('Linked head must be a Custom Head'), { status: 400 });
+
+  return prisma.accPayeeHeadLinkedCustomHead.create({
+    data: { headId: Number(headId), customHeadId: Number(customHeadId) },
+  });
+}
+
+async function unlinkCustomHeadFromInventoryHead(headId, customHeadId) {
+  return prisma.accPayeeHeadLinkedCustomHead.deleteMany({
+    where: { headId: Number(headId), customHeadId: Number(customHeadId) },
   });
 }
 
@@ -1449,7 +1504,7 @@ module.exports = {
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
   getIpdConsultantHeadForMainAccount, getPendingConsultantFees,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,

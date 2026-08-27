@@ -373,18 +373,20 @@ async function getNextMrNo() {
 // and ClinicAdmission — both draw from the same running number so Admission and
 // OPD slips never collide, even though they live in separate tables.
 async function getNextSerialNo() {
-  const [lastOpd, lastAdm, lastAdmPay, lastPbi] = await Promise.all([
+  const [lastOpd, lastAdm, lastAdmPay, lastPbi, lastAntenatal] = await Promise.all([
     prisma.clinicOpdVisit.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicAdmission.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicAdmissionPayment.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
+    prisma.clinicAntenatal.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
   ]);
   const BASE = 2826016;
   const lastOpdNum    = lastOpd    ? parseInt(lastOpd.serialNo, 10)    || 0 : 0;
   const lastAdmNum     = lastAdm    ? parseInt(lastAdm.serialNo, 10)    || 0 : 0;
   const lastAdmPayNum = lastAdmPay ? parseInt(lastAdmPay.serialNo, 10) || 0 : 0;
   const lastPbiNum    = lastPbi    ? parseInt(lastPbi.serialNo, 10)    || 0 : 0;
-  const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, lastPbiNum + 1, BASE);
+  const lastAntenatalNum = lastAntenatal ? parseInt(lastAntenatal.serialNo, 10) || 0 : 0;
+  const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, lastPbiNum + 1, lastAntenatalNum + 1, BASE);
   return String(n);
 }
 
@@ -989,13 +991,14 @@ async function deletePanelEmployee(id) {
 // ─── Antenatal ────────────────────────────────────────────────────────────────
 
 async function createAntenatal({
-  mrNo, antenatalNo, registrationDate, paymentType,
+  serialNo, mrNo, antenatalNo, registrationDate, paymentType,
   patientName, age, husbandName, phoneNo, address,
   lmpDate, edd, underTreatmentId, para, gravidia, amount,
   employeeId, panelCompanyId, panelEmployeeId, panelDependentId,
 }) {
   return prisma.clinicAntenatal.create({
     data: {
+      serialNo:         serialNo || null,
       mrNo:             mrNo || '',
       antenatalNo:      antenatalNo || '',
       registrationDate: registrationDate ? new Date(registrationDate) : new Date(),
@@ -1028,6 +1031,48 @@ async function getAntenatalByNo(antenatalNo) {
     where: { antenatalNo: { equals: antenatalNo, mode: 'insensitive' } },
     orderBy: { id: 'desc' },
   });
+}
+
+// dateField picks which date the From/To range filters on — mirrors the
+// legacy "Antenatal Report" dialog's date-type dropdown (registration date
+// vs. Expected Delivery date). underTreatmentId has no schema relation
+// (see ClinicAntenatal), so the consultant name is resolved via a second
+// query rather than an include.
+async function getAntenatalReport({ fromDate, toDate, dateField, doctorId }) {
+  const field = dateField === 'edd' ? 'edd' : 'registrationDate';
+  const where = {};
+  if (fromDate || toDate) {
+    where[field] = {
+      ...(fromDate ? { gte: new Date(fromDate + 'T00:00:00') } : {}),
+      ...(toDate ? { lte: new Date(toDate + 'T23:59:59') } : {}),
+    };
+  }
+  if (doctorId) where.underTreatmentId = Number(doctorId);
+
+  const rows = await prisma.clinicAntenatal.findMany({ where, orderBy: { id: 'asc' } });
+
+  const doctorIds = [...new Set(rows.map((r) => r.underTreatmentId).filter(Boolean))];
+  const doctors = doctorIds.length
+    ? await prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, name: true } })
+    : [];
+  const doctorNameById = Object.fromEntries(doctors.map((d) => [d.id, d.name]));
+
+  const resolvedRows = rows.map((r) => ({
+    id: r.id,
+    antenatalNo: r.antenatalNo,
+    serialNo: r.serialNo,
+    registrationDate: r.registrationDate,
+    patientName: r.patientName,
+    consultantName: r.underTreatmentId ? (doctorNameById[r.underTreatmentId] || '—') : '—',
+    lmpDate: r.lmpDate,
+    edd: r.edd,
+    phoneNo: r.phoneNo,
+    husbandName: r.husbandName,
+    amount: Number(r.amount) || 0,
+  }));
+
+  const totalAmount = resolvedRows.reduce((s, r) => s + r.amount, 0);
+  return { rows: resolvedRows, totalCount: resolvedRows.length, totalAmount };
 }
 
 // ─── Receipt ─────────────────────────────────────────────────────────────────
@@ -4527,10 +4572,11 @@ async function getDailyDepartmentStatement(date) {
   const OV_BIZ      = `("createdAt" - INTERVAL '8 hours')::date`;
   const ADM_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
   const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '8 hours')::date`;
+  const ANT_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
   // Cancelled ClinicOpdVisit rows: patient + cancel count still increment, amount/discount don't.
   const OV_CANCELLED = `LOWER(COALESCE(status,'')) IN ('canceled','cancelled')`;
 
-  const [pvRows, ovRows, admRow, admPayRow] = await Promise.all([
+  const [pvRows, ovRows, admRow, admPayRow, antRow] = await Promise.all([
     prisma.$queryRawUnsafe(`
       SELECT department,
         COUNT(*)::int AS count,
@@ -4564,6 +4610,13 @@ async function getDailyDepartmentStatement(date) {
       FROM "ClinicAdmissionPayment"
       WHERE ${ADM_PAY_BIZ} = $1::date
     `, date),
+    prisma.$queryRawUnsafe(`
+      SELECT
+        COUNT(*)::int AS count,
+        COALESCE(SUM(amount),0) AS amount
+      FROM "ClinicAntenatal"
+      WHERE ${ANT_BIZ} = $1::date
+    `, date),
   ]);
 
   const map = new Map();
@@ -4583,6 +4636,8 @@ async function getDailyDepartmentStatement(date) {
   if (adm && (Number(adm.count) > 0)) bump('Admission', adm.count, adm.amount, 0, adm.cancel);
   const admPay = admPayRow[0];
   if (admPay && Number(admPay.amount) > 0) bump('Admission', 0, admPay.amount, 0, 0);
+  const ant = antRow[0];
+  if (ant && Number(ant.count) > 0) bump('Antenatal', ant.count, ant.amount, 0, 0);
 
   const rows = [...map.values()].sort((a, b) => a.department.localeCompare(b.department));
   const total = rows.reduce((s, r) => ({
@@ -5034,6 +5089,7 @@ module.exports = {
   createAntenatal,
   getAntenatalList,
   getAntenatalByNo,
+  getAntenatalReport,
   getOpdPatientByMrNo,
   getOpdPatientsByPhone,
   getOpdVisitBySerial,

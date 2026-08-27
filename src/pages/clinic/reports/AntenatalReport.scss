@@ -1,0 +1,124 @@
+.atr-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f1f5f9;
+  font-family: 'Inter', sans-serif;
+}
+
+.atr-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px 40px;
+}
+
+/* ── Toolbar (screen only) ── */
+.atr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.atr-tool-spacer { flex: 1; }
+
+.atr-tool-btn {
+  background: #475569;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: #334155; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &--excel { background: #0f766e; &:hover:not(:disabled) { background: #0d6460; } }
+  &--pdf   { background: #b91c1c; &:hover:not(:disabled) { background: #991b1b; } }
+}
+
+/* ── Report sheet ── */
+.atr-sheet {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 16px 20px 30px;
+}
+
+.atr-hdr {
+  text-align: center;
+  border-bottom: 2px solid #1e293b;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.atr-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-decoration: underline;
+  color: #000;
+}
+
+.atr-sub {
+  font-size: 0.78rem;
+  color: #1e293b;
+  margin-top: 4px;
+}
+
+.atr-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 60px 0;
+  font-size: 0.9rem;
+}
+
+/* ── Table ── */
+.atr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  color: #111;
+
+  th, td {
+    padding: 6px 8px;
+    vertical-align: top;
+    border-bottom: 1px solid #cbd5e1;
+  }
+
+  thead th {
+    font-weight: 700;
+    border-bottom: 2px solid #1e293b;
+    padding-bottom: 6px;
+  }
+
+  .atr-l { text-align: left; }
+  .atr-c { text-align: center; }
+  .atr-nowrap { white-space: nowrap; }
+
+  tbody tr:hover { background: #f8fafc; }
+}
+
+/* ── Totals ── */
+.atr-totals {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #111;
+
+  div {
+    display: flex;
+    gap: 8px;
+
+    span:first-child { width: 140px; }
+  }
+}
+
+/* ── Print ── */
+@media print {
+  @page { size: A4 landscape; margin: 8mm; }
+  .no-print, .menu-bar, nav { display: none !important; }
+  .atr-page, .atr-body { height: auto; overflow: visible; background: #fff; padding: 0; }
+  .atr-sheet { border: none; padding: 0; }
+  .atr-table { font-size: 8pt; }
+}

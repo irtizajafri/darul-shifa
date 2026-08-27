@@ -92,6 +92,8 @@ export default function ListAttachments() {
   const [savingEmployees, setSavingEmployees] = useState(false);
   const [doctorModal, setDoctorModal] = useState(null);
   const [savingDoctors, setSavingDoctors] = useState(false);
+  const [customHeadLinkModal, setCustomHeadLinkModal] = useState(null); // { headId, headName, checked: Set<customHeadId> }
+  const [savingCustomHeadLinks, setSavingCustomHeadLinks] = useState(false);
 
   // ── Entries expand ────────────────────────────────────────────────────────
   const toggleHead = async (head) => {
@@ -111,9 +113,10 @@ export default function ListAttachments() {
         checked: checkedNames,
       });
     }
-    if (head.sourceType === 'inventory' && head.inventorySubcategoryId) {
-      // Always fetch fresh on expand
-      const r = await fetch(`${API}/linked/inventory-items?subcategoryId=${head.inventorySubcategoryId}`);
+    if (head.sourceType === 'inventory') {
+      // Always fetch fresh on expand — merged inventory items + any linked
+      // Custom Heads' own entries (see getInventoryItemsForHead).
+      const r = await fetch(`${API}/linked/inventory-items-for-head?headId=${head.id}`);
       const j = await r.json();
       setInventoryItems((prev) => ({ ...prev, [head.id]: Array.isArray(j?.data) ? j.data : [] }));
     }
@@ -389,13 +392,13 @@ export default function ListAttachments() {
       ));
     }
     if (head.sourceType === 'inventory') {
-      if (!head.inventorySubcategoryId) return <p className="list-attach__empty">No Sub Category linked</p>;
+      if (!head.inventorySubcategoryId && !(head.linkedCustomHeads || []).length) return <p className="list-attach__empty">No Sub Category or Custom Head linked</p>;
       const items = inventoryItems[head.id];
       if (!items) return <p className="list-attach__empty">Loading…</p>;
-      if (items.length === 0) return <p className="list-attach__empty">No items found in this sub category</p>;
+      if (items.length === 0) return <p className="list-attach__empty">No items found</p>;
       return items.map((item) => (
-        <div key={item.id} className="list-attach__entry-row">
-          <span>{item.code} — {item.name}</span>
+        <div key={item.optionValue} className="list-attach__entry-row">
+          <span>{item.code ? `${item.code} — ` : ''}{item.name}</span>
         </div>
       ));
     }
@@ -559,6 +562,46 @@ export default function ListAttachments() {
     finally { updLink(headId, { saving: false }); }
   };
 
+  // ── Inventory Head <-> Custom Head linking ──────────────────────────────
+  // Lets an Inventory Head's Payee list also include one or more Custom
+  // Heads' manually-typed names, merged in alongside the real inventory
+  // items (see getInventoryItemsForHead on the backend).
+  const openCustomHeadLinkModal = (head) => {
+    const checked = new Set((head.linkedCustomHeads || []).map((l) => l.customHeadId));
+    setCustomHeadLinkModal({ headId: head.id, headName: head.name, checked });
+  };
+
+  const toggleCustomHeadLinkCheck = (customHeadId) => {
+    setCustomHeadLinkModal((m) => {
+      const next = new Set(m.checked);
+      next.has(customHeadId) ? next.delete(customHeadId) : next.add(customHeadId);
+      return { ...m, checked: next };
+    });
+  };
+
+  const saveCustomHeadLinks = async () => {
+    if (!customHeadLinkModal) return;
+    setSavingCustomHeadLinks(true);
+    try {
+      const head = payeeHeads.find((h) => h.id === customHeadLinkModal.headId);
+      const currentIds = new Set((head?.linkedCustomHeads || []).map((l) => l.customHeadId));
+      const wantIds = customHeadLinkModal.checked;
+      const toAdd = [...wantIds].filter((id) => !currentIds.has(id));
+      const toRemove = [...currentIds].filter((id) => !wantIds.has(id));
+      await Promise.all([
+        ...toAdd.map((id) => fetch(`${API}/payee-head-linked-custom-heads`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ headId: customHeadLinkModal.headId, customHeadId: id }),
+        })),
+        ...toRemove.map((id) => fetch(`${API}/payee-head-linked-custom-heads/${customHeadLinkModal.headId}/${id}`, { method: 'DELETE' })),
+      ]);
+      await fetchPayeeHeads(entityType);
+      toast.success('Custom Heads linked');
+      setCustomHeadLinkModal(null);
+    } catch (err) { toast.error(err.message || 'Failed to save'); }
+    finally { setSavingCustomHeadLinks(false); }
+  };
+
   const renderLinkSection = (head) => {
     const ls = linkState[head.id] || emptyLink();
 
@@ -694,6 +737,11 @@ export default function ListAttachments() {
             >
               <Link2 className="w-3.5 h-3.5" />
             </button>
+            {isInventory && (
+              <button className="btn-icon" title="Link Custom Head" onClick={() => openCustomHeadLinkModal(head)}>
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
             {isManual && (
               <>
                 <button className="btn-icon" title="Edit" onClick={() => openEditHead(head)}><Pencil className="w-3.5 h-3.5" /></button>
@@ -1028,6 +1076,41 @@ export default function ListAttachments() {
               <button className="list-attach__link-cancel" onClick={() => setDoctorModal(null)}>Cancel</button>
               <button className="list-attach__link-save" onClick={saveDoctorSelection} disabled={savingDoctors}>
                 {savingDoctors ? 'Saving…' : 'Save & Apply'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Link Custom Head(s) to an Inventory Head */}
+      {customHeadLinkModal && (
+        <div className="acc-param-page__overlay" onClick={() => setCustomHeadLinkModal(null)}>
+          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="list-attach__supplier-modal__header">
+              <div>
+                <div className="list-attach__supplier-modal__title">Link Custom Heads</div>
+                <div className="list-attach__supplier-modal__sub">{customHeadLinkModal.headName} — their entries merge into this Inventory Head's Payee list</div>
+              </div>
+              <button className="list-attach__supplier-modal__close" onClick={() => setCustomHeadLinkModal(null)}>✕</button>
+            </div>
+            <div className="list-attach__supplier-modal__list">
+              {customHeads.length === 0 ? (
+                <p className="list-attach__empty">No Custom Heads yet — create one first via "Add Custom Head".</p>
+              ) : customHeads.map((ch) => (
+                <label key={ch.id} className={`list-attach__supplier-modal__item ${customHeadLinkModal.checked.has(ch.id) ? 'checked' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={customHeadLinkModal.checked.has(ch.id)}
+                    onChange={() => toggleCustomHeadLinkCheck(ch.id)}
+                  />
+                  <span className="list-attach__supplier-modal__name">{ch.name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="list-attach__supplier-modal__footer">
+              <button className="list-attach__link-cancel" onClick={() => setCustomHeadLinkModal(null)}>Cancel</button>
+              <button className="list-attach__link-save" onClick={saveCustomHeadLinks} disabled={savingCustomHeadLinks}>
+                {savingCustomHeadLinks ? 'Saving…' : 'Save & Apply'}
               </button>
             </div>
           </div>

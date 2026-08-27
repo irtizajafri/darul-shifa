@@ -1052,6 +1052,14 @@ async function getAntenatalByNo(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getAntenatalReport(req, res, next) {
+  try {
+    const { fromDate, toDate, dateField, doctorId } = req.query;
+    const data = await service.getAntenatalReport({ fromDate, toDate, dateField, doctorId });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 async function getOpdPatientByMrNo(req, res, next) {
   try {
     const record = await service.getOpdPatientByMrNo(req.params.mrNo);
@@ -1791,6 +1799,7 @@ module.exports = {
   createAntenatal,
   getAntenatalList,
   getAntenatalByNo,
+  getAntenatalReport,
   getOpdPatientByMrNo,
   getOpdPatientsByPhone,
   getOpdVisitBySerial,

@@ -9,6 +9,8 @@ import { Download, FileText, Plus, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToPdf } from '../../utils/exportInventoryReports';
+import { useAuthStore } from '../../store/useAuthStore';
+import { canBackDate } from '../../utils/permissions';
 
 // ── Portal dropdown list (escapes overflow-hidden containers) ─────────────────
 function DropdownPortal({ inputRef, open, items, highlightedIndex, onSelect }) {
@@ -293,6 +295,10 @@ export default function GoodsDiscard() {
     discardedDate: new Date().toISOString().slice(0, 10),
   });
 
+  const { user } = useAuthStore();
+  const allowBackDating = canBackDate(user);
+  const today = new Date().toISOString().slice(0, 10);
+
   const { loading, items, gdns, fetchItems, fetchGDNs, createGDN } = useInventoryStore();
 
   useEffect(() => {
@@ -469,6 +475,8 @@ export default function GoodsDiscard() {
                   type="date"
                   value={form.discardedDate}
                   onChange={(e) => setForm((p) => ({ ...p, discardedDate: e.target.value }))}
+                  min={allowBackDating ? undefined : today}
+                  max={allowBackDating ? undefined : today}
                   className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500"
                   required
                 />

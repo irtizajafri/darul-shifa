@@ -24,6 +24,7 @@ const DOC_TYPES = [
   { value: 'birth',       label: 'Birth Cert.',           enabled: false },
   { value: 'provisional', label: 'Provisional Bill',      enabled: true },
   { value: 'final',       label: 'Final Bill',            enabled: true },
+  { value: 'antenatal',   label: 'Antenatal',             enabled: true },
 ];
 
 export default function ReprintFilter() {
@@ -102,6 +103,11 @@ export default function ReprintFilter() {
 
     if (docType === 'final') {
       navigate(`/clinic/discharge-refund?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
+      return;
+    }
+
+    if (docType === 'antenatal') {
+      navigate(`/clinic/antenatal?antenatalNo=${encodeURIComponent(no)}&autoprint=1`);
       return;
     }
   }

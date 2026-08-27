@@ -20,6 +20,7 @@ const menuItems = [
       { label: 'Consultant Wise Patients', path: '/clinic/reports/consultant-wise' },
       { label: 'Death Certificate Report', path: '/clinic/reports/death-certificate' },
       { label: 'Discharge Certificate Report', path: '/clinic/reports/discharge-certificate' },
+      { label: 'Antenatal Report', path: '/clinic/reports/antenatal' },
       { label: 'Admission Status Change Report', path: '/clinic/reports/admission-status-change' },
     ],
   },

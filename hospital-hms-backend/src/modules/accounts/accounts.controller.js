@@ -37,6 +37,9 @@ async function getSupplierList(req, res, next) { try { success(res, await svc.ge
 async function getDoctorList(req, res, next) { try { success(res, await svc.getDoctorList()); } catch (e) { next(e); } }
 async function getInventorySubcategories(req, res, next) { try { success(res, await svc.getInventorySubcategories()); } catch (e) { next(e); } }
 async function getInventoryItemsBySubcategory(req, res, next) { try { success(res, await svc.getInventoryItemsBySubcategory(req.query.subcategoryId)); } catch (e) { next(e); } }
+async function getInventoryItemsForHead(req, res, next) { try { success(res, await svc.getInventoryItemsForHead(req.query.headId)); } catch (e) { next(e); } }
+async function linkCustomHeadToInventoryHead(req, res, next) { try { success(res, await svc.linkCustomHeadToInventoryHead(req.body.headId, req.body.customHeadId), 'Linked'); } catch (e) { next(e); } }
+async function unlinkCustomHeadFromInventoryHead(req, res, next) { try { await svc.unlinkCustomHeadFromInventoryHead(req.params.headId, req.params.customHeadId); success(res, null, 'Unlinked'); } catch (e) { next(e); } }
 async function getInventoryHeadForMainAccount(req, res, next) { try { success(res, await svc.getInventoryHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
 
 async function getBankAccounts(req, res, next) { try { success(res, await svc.getBankAccounts(et(req))); } catch (e) { next(e); } }
@@ -216,7 +219,7 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
-  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryHeadForMainAccount,
+  getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getSurgeryHeadForMainAccount, getSurgeryPayeesForHead, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory,
   getIpdConsultantHeadForMainAccount, getPendingConsultantFees,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,

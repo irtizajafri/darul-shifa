@@ -361,6 +361,11 @@ export default function VoucherExpenseForm() {
   const [mainAccs, setMainAccs]         = useState([]);
   const [subAccs, setSubAccs]           = useState([]);
   const [isInventoryAcc, setIsInventoryAcc] = useState(false);
+  // Inventory Sub Account dropdown's controlled value — a prefixed string
+  // ("item-15" / "payee-39") since real inventory items and a linked Custom
+  // Head's own entries are separate id spaces merged into one list (see
+  // getInventoryItemsForHead); kept apart from entry.subAccountId, which
+  // stays a plain Int (or null) since that's the real DB column's type.
   const [isSurgeryAcc, setIsSurgeryAcc] = useState(false);
   const [surgeryCategories, setSurgeryCategories] = useState([]); // [{id, name}] linked to the head
   const [surgeryCategoryId, setSurgeryCategoryId] = useState('');
@@ -498,12 +503,20 @@ export default function VoucherExpenseForm() {
       const invJ = await invR.json();
       const invHead = invJ?.data;
 
-      if (invHead?.inventorySubcategoryId) {
-        // Load inventory items as sub account options
+      if (invHead?.id) {
+        // Sub Account stays real inventory items only. Any Custom Heads
+        // linked to this Inventory Head (see getInventoryItemsForHead) feed
+        // the separate Payee picker instead — same UI every other linked
+        // head type already uses — not mixed into the Sub Account list.
         setIsInventoryAcc(true);
-        const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
+        const iR = await fetch(`${API}/linked/inventory-items-for-head?headId=${invHead.id}`);
         const iJ = await iR.json();
-        setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
+        const merged = Array.isArray(iJ?.data) ? iJ.data : [];
+        setSubAccs(merged.filter((m) => m.kind === 'item'));
+        const payeeRows = merged.filter((m) => m.kind === 'payee');
+        setLinkedPayees(payeeRows);
+        setLinkedHeadName(payeeRows.length ? invHead.name : '');
+        setLinkedHeadType(payeeRows.length ? 'inventory-custom' : '');
         return;
       }
     } catch { /* inventory check failed — fall through to regular sub accounts */ }
@@ -596,24 +609,27 @@ export default function VoucherExpenseForm() {
   };
 
   const handleSubAccChange = async (v) => {
-    const sub = subAccs.find((s) => String(s.id) === v);
-    setLinkedPayees([]);
-    setLinkedHeadName('');
-    setLinkedHeadType('');
-    setPayeeSearch('');
-
     if (isInventoryAcc) {
-      // sub is an inventory item — payeeName stays empty, user types manually
+      // subAccs here is real inventory items only (see handleMainAccChange)
+      // — picking one just fills Account Name/Code. Payee stays whatever's
+      // already loaded from this head's linked Custom Heads (if any),
+      // untouched by which item gets picked.
+      const sub = subAccs.find((s) => String(s.id) === v);
       setEntry((e) => ({
         ...e,
         subAccountId: v,
         accountCode: sub?.code || e.accountCode,
         accountName: sub?.name || e.accountName,
-        payeeName: '',
       }));
       return;
     }
 
+    setLinkedPayees([]);
+    setLinkedHeadName('');
+    setLinkedHeadType('');
+    setPayeeSearch('');
+
+    const sub = subAccs.find((s) => String(s.id) === v);
     setEntry((e) => ({
       ...e,
       subAccountId: v,
@@ -658,11 +674,16 @@ export default function VoucherExpenseForm() {
       const invR = await fetch(`${API}/linked/inventory-head-for-main-account?mainAccountId=${e.mainAccountId}`);
       const invJ = await invR.json();
       const invHead = invJ?.data;
-      if (invHead?.inventorySubcategoryId) {
+      if (invHead?.id) {
         setIsInventoryAcc(true);
-        const iR = await fetch(`${API}/linked/inventory-items?subcategoryId=${invHead.inventorySubcategoryId}`);
+        const iR = await fetch(`${API}/linked/inventory-items-for-head?headId=${invHead.id}`);
         const iJ = await iR.json();
-        setSubAccs(Array.isArray(iJ?.data) ? iJ.data : []);
+        const merged = Array.isArray(iJ?.data) ? iJ.data : [];
+        setSubAccs(merged.filter((m) => m.kind === 'item'));
+        const payeeRows = merged.filter((m) => m.kind === 'payee');
+        setLinkedPayees(payeeRows);
+        setLinkedHeadName(payeeRows.length ? invHead.name : '');
+        setLinkedHeadType(payeeRows.length ? 'inventory-custom' : '');
         return;
       }
 
@@ -1123,7 +1144,11 @@ export default function VoucherExpenseForm() {
                 disabled={!entry.mainAccountId}
               >
                 <option value="">None</option>
-                {subAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
+                {subAccs.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.code ? `${a.code} — ` : ''}{a.name}
+                  </option>
+                ))}
               </select>
             )}
           </div>
@@ -1165,7 +1190,7 @@ export default function VoucherExpenseForm() {
                 <label>
                   Payee
                   {linkedHeadName && <span className="ve-form__head-tag">{linkedHeadName}</span>}
-                  {!isSurgeryAcc && !entry.subAccountId && subAccs.length > 0 && (
+                  {!isSurgeryAcc && !entry.subAccountId && subAccs.length > 0 && !linkedPayees.length && (
                     <span className="ve-form__optional"> (select Sub Account first)</span>
                   )}
                 </label>

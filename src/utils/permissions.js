@@ -228,3 +228,13 @@ export function normalizePermissions(perms) {
 
   return result;
 }
+
+/**
+ * Returns true if the user is allowed to enter back-dated transactions.
+ * SuperAdmin always can. Others need allowBackDating flag in their permissions.
+ */
+export function canBackDate(user) {
+  if (!user) return false;
+  if (user.isSuperAdmin) return true;
+  return user.permissions?.allowBackDating === true;
+}

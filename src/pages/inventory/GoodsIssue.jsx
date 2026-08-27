@@ -11,7 +11,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
 import { printGINDocument, printAllGINs, printGDDocument } from '../../utils/printPO';
 import { useAuthStore } from '../../store/useAuthStore';
-import { hasPermission } from '../../utils/permissions';
+import { hasPermission, canBackDate } from '../../utils/permissions';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 
 const CLINIC_API = 'http://localhost:5001/api/clinic';
@@ -95,6 +95,8 @@ export default function GoodsIssue() {
   const canGD     = hasPermission(user, 'inventory', 'gd');
   const canGIN    = hasPermission(user, 'inventory', 'gin');
   const canEditGIN = hasPermission(user, 'inventory', 'gin', 'edit');
+  const allowBackDating = canBackDate(user);
+  const today = new Date().toISOString().slice(0, 10);
 
   const { employees, fetchEmployees } = useEmployeeStore();
   const [ginIssuedById, setGinIssuedById] = useState('');
@@ -782,6 +784,8 @@ export default function GoodsIssue() {
                           <label className="block text-xs text-slate-500 mb-1">Issue Date</label>
                           <input type="date" value={editGINForm.issueDate}
                             onChange={(e) => setEditGINForm((f) => ({ ...f, issueDate: e.target.value }))}
+                            min={allowBackDating ? undefined : today}
+                            max={allowBackDating ? undefined : today}
                             className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500" />
                         </div>
                         <div className="relative">
@@ -887,6 +891,8 @@ export default function GoodsIssue() {
                   type="date"
                   value={gdRequestDate}
                   onChange={(e) => setGdRequestDate(e.target.value)}
+                  min={allowBackDating ? undefined : today}
+                  max={allowBackDating ? undefined : today}
                   className="px-3 py-2 border border-slate-300 rounded-md text-sm w-full"
                   required
                 />
@@ -1112,6 +1118,8 @@ export default function GoodsIssue() {
                   type="date"
                   value={ginIssueDate}
                   onChange={(e) => setGinIssueDate(e.target.value)}
+                  min={allowBackDating ? undefined : today}
+                  max={allowBackDating ? undefined : today}
                   className="px-3 py-2 border border-slate-300 rounded-md text-sm"
                   required
                 />

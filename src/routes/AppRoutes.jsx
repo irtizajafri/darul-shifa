@@ -65,6 +65,8 @@ import DeathCertificateFilter from '../pages/clinic/reports/DeathCertificateFilt
 import DeathCertificateReport from '../pages/clinic/reports/DeathCertificateReport';
 import DischargeCertificateFilter from '../pages/clinic/reports/DischargeCertificateFilter';
 import DischargeCertificateReport from '../pages/clinic/reports/DischargeCertificateReport';
+import AntenatalReportFilter from '../pages/clinic/reports/AntenatalReportFilter';
+import AntenatalReport from '../pages/clinic/reports/AntenatalReport';
 import ReprintFilter from '../pages/clinic/reports/ReprintFilter';
 import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
 import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
@@ -265,6 +267,8 @@ export default function AppRoutes() {
           <Route path="clinic/reports/death-certificate/view" element={<PermissionGuard module="clinic"><DeathCertificateReport /></PermissionGuard>} />
           <Route path="clinic/reports/discharge-certificate"      element={<PermissionGuard module="clinic"><DischargeCertificateFilter /></PermissionGuard>} />
           <Route path="clinic/reports/discharge-certificate/view" element={<PermissionGuard module="clinic"><DischargeCertificateReport /></PermissionGuard>} />
+          <Route path="clinic/reports/antenatal"      element={<PermissionGuard module="clinic"><AntenatalReportFilter /></PermissionGuard>} />
+          <Route path="clinic/reports/antenatal/view" element={<PermissionGuard module="clinic"><AntenatalReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-wise/view" element={<PermissionGuard module="clinic"><ConsultantWiseReport /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-rates"      element={<PermissionGuard module="clinic"><ConsultantRates /></PermissionGuard>} />
           <Route path="clinic/reports/consultant-statement"      element={<PermissionGuard module="clinic"><ConsultantStatementFilter /></PermissionGuard>} />
