@@ -23,6 +23,16 @@ function fmtDateTime(d) {
   return `${day}-${month}-${year} ${time}`;
 }
 
+// Same "Code / Code" label PanelModal builds when you pick fresh — resolved
+// from whatever's already saved on the admission, so re-opening one for edit
+// shows its existing Panel selection instead of a blank picker.
+function resolvePanelLabel(panelCompanyId, panelEmployeeId, panelCompanies, panelEmployees) {
+  if (!panelCompanyId) return '';
+  const company = panelCompanies.find(c => c.id === panelCompanyId);
+  const employee = panelEmployeeId ? panelEmployees.find(e => e.id === panelEmployeeId) : null;
+  return [company?.code, employee?.empCode].filter(Boolean).join(' / ');
+}
+
 // ── Employee Modal (identical to Admission.jsx) ────────────────────────────────
 function EmployeeModal({ onSelect, onClose, searchEmployees }) {
   const [step, setStep] = useState(1);
@@ -344,7 +354,10 @@ export default function AdmissionAdjustment() {
     searchAdmissionsForAdjustment,
     fetchAdmissionForAdjustment,
     updateAdmissionAdjustment,
+    panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees,
   } = useClinicStore();
+
+  useEffect(() => { fetchPanelCompanies(); fetchPanelEmployees(); }, [fetchPanelCompanies, fetchPanelEmployees]);
 
   const [admissionId, setAdmissionId] = useState(null);
   const [form, setForm] = useState(EMPTY);
@@ -411,7 +424,10 @@ export default function AdmissionAdjustment() {
         referralNote:      rec.referralNote || '',
         antenatal:         !!rec.antenatal,
         antenatalNo:       rec.antenatalNo || '',
-        panelLabel:        '',
+        panelCompanyId:    rec.panelCompanyId || null,
+        panelEmployeeId:   rec.panelEmployeeId || null,
+        panelDependentId:  rec.panelDependentId || null,
+        panelLabel:        resolvePanelLabel(rec.panelCompanyId, rec.panelEmployeeId, panelCompanies, panelEmployees),
       });
       if (rec.roomCategoryId) {
         try { setAvailableBeds(await fetchAvailableBeds(rec.roomCategoryId, rec.id)); } catch { setAvailableBeds([]); }

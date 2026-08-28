@@ -26,6 +26,7 @@ const menuItems = [
       { label: 'Discharge Certificate Report',      path: '/clinic/reports/discharge-certificate',           perm: { sub: 'reports', tab: 'discharge-certificate' } },
       { label: 'Antenatal Report',                  path: '/clinic/reports/antenatal',                      perm: { sub: 'reports', tab: 'antenatal' } },
       { label: 'Admission Status Change Report',    path: '/clinic/reports/admission-status-change',         perm: { sub: 'reports', tab: 'admission-status-change' } },
+      { label: 'Status Change History Report',      path: '/clinic/reports/status-change-history',           perm: { sub: 'reports', tab: 'status-change-history' } },
     ],
   },
   { label: 'File', items: [] },
@@ -87,12 +88,14 @@ const menuItems = [
         subItems: [
           { label: 'Panel Companies', path: '/clinic/panels/companies', perm: { sub: 'panels', tab: 'companies' } },
           { label: 'Panel Employees', path: '/clinic/panels/employees', perm: { sub: 'panels', tab: 'employees' } },
+          { label: 'Bill Head',       path: '/clinic/panels/bill-heads', perm: { sub: 'panels', tab: 'bill-heads' } },
         ],
       },
       {
         label: 'Transaction',
         subItems: [
           { label: 'Provisional Bill', path: '/clinic/panels/provisional-bill', perm: { sub: 'panels', tab: 'provisional-bill' } },
+          { label: 'Billing',          path: '/clinic/panels/billing',          perm: { sub: 'panels', tab: 'billing' } },
         ],
       },
       {

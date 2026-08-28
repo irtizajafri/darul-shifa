@@ -1,0 +1,97 @@
+.pbh-kind-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #475569;
+
+  &--package { background: #ede9fe; color: #6d28d9; }
+}
+
+.pbh-kind-select {
+  display: flex;
+  gap: 10px;
+}
+
+.pbh-kind-opt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  &--active { border-color: #1a3c6e; background: #eff6ff; color: #1a3c6e; font-weight: 600; }
+}
+
+.pbh-package-editor {
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 12px;
+}
+
+.pbh-package-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.pbh-package-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+
+  input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 6px 9px;
+    font-size: 0.82rem;
+    outline: none;
+    flex: 1;
+    &:focus { border-color: #3b82f6; }
+  }
+}
+
+.pbh-rate-input { max-width: 90px; flex: none !important; text-align: right; }
+
+.pbh-add-med-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #0f766e; color: #fff; border: none; border-radius: 6px; padding: 0 12px;
+  font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  &:hover { background: #0d6460; } &:disabled { opacity: 0.6; }
+}
+
+.pbh-package-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.pbh-package-empty {
+  padding: 16px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.82rem;
+}
+
+.pbh-package-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-bottom: 1px solid #f1f5f9;
+  &:last-child { border-bottom: none; }
+
+  button { background: none; border: none; color: #ef4444; cursor: pointer; padding: 2px; }
+}
+
+.pbh-med-name { flex: 1; }
+.pbh-med-rate { color: #334155; font-weight: 600; font-variant-numeric: tabular-nums; }

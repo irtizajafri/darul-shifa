@@ -72,6 +72,7 @@ router.put('/cc-config', controller.updateCcConfig);
 
 // Provisional Bill
 router.get('/provisional-bill/search', controller.searchAdmissionsForProvisionalBill);
+router.get('/provisional-bill/search-active', controller.searchActiveAdmissionsForProvisionalBill);
 router.get('/provisional-bill/:admissionId', controller.getProvisionalBillDetail);
 router.put('/provisional-bill/:admissionId/ward-history-rate', controller.updateWardHistoryRate);
 router.post('/provisional-bill/:admissionId/items', controller.addProvisionalBillItem);
@@ -191,6 +192,22 @@ router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaym
 
 router.get('/admission/discount-refund/by-number/:admissionNo', controller.getAdmissionForDiscountRefund);
 router.post('/admission/discount-refund/:admissionId/add', controller.addAdmissionDiscountRefund);
+router.get('/admission/panel-billing/search', controller.searchPanelAdmissions);
+router.get('/admission/panel-billing/by-number/:admissionNo', controller.getPanelAdmissionBilling);
+router.patch('/admission/panel-billing/items/:itemId', controller.updatePanelBillingItem);
+router.patch('/admission/panel-billing/header/:admissionId', controller.updatePanelBillingHeader);
+router.post('/admission/panel-billing/:admissionId/items', controller.addPanelBillingItem);
+router.post('/admission/panel-billing/:admissionId/items/bulk', controller.addPanelBillingItemsBulk);
+router.delete('/admission/panel-billing/items/:itemId', controller.deletePanelBillingItem);
+
+// Panels > Parameter > Bill Head (Panel-only)
+router.get('/panel-bill-heads', controller.getPanelBillHeads);
+router.get('/panel-bill-heads/search', controller.searchPanelBillHeads);
+router.post('/panel-bill-heads', controller.createPanelBillHead);
+router.put('/panel-bill-heads/:id', controller.updatePanelBillHead);
+router.delete('/panel-bill-heads/:id', controller.deletePanelBillHead);
+router.post('/panel-bill-heads/:headId/items', controller.addPanelBillHeadItem);
+router.delete('/panel-bill-head-items/:itemId', controller.deletePanelBillHeadItem);
 router.get('/admission/discharge-certificate/:admissionId', controller.getDischargeCertificate);
 router.post('/admission/discharge-certificate/:admissionId', controller.saveDischargeCertificate);
 router.get('/reports/discharge-certificate', controller.getDischargeCertificateReport);
@@ -218,7 +235,12 @@ router.put('/admission/adjustment/:id', controller.updateAdmissionAdjustment);
 
 // Admission Status Change
 router.put('/admission/status/:id', controller.updateAdmissionStatus);
+// NB: despite the name, this one is specifically the Wipeout report (kept
+// as-is, an existing frontend page already relies on this exact URL) —
+// status-change-history below is the general Admit/Discharge/Closed
+// transition log.
 router.get('/admission/status-change-report', controller.getAdmissionWipeoutReport);
+router.get('/admission/status-change-history', controller.getAdmissionStatusChangeHistory);
 
 // Bed Shifting
 router.get('/admission/:id/bed-shifts', controller.getBedShiftHistory);

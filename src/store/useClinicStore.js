@@ -532,6 +532,13 @@ export const useClinicStore = create((set) => ({
     return request(`/provisional-bill/search?q=${encodeURIComponent(q || '')}`);
   },
 
+  // Provisional Bill's own "start/continue a bill" lookup — active-only,
+  // unlike searchAdmissionsForProvisionalBill above which stays status-
+  // agnostic on purpose for reprinting an already-closed bill.
+  searchActiveAdmissionsForProvisionalBill: async (q, panelOnly) => {
+    return request(`/provisional-bill/search-active?q=${encodeURIComponent(q || '')}${panelOnly ? '&panelOnly=1' : ''}`);
+  },
+
   fetchAdmissionForAdjustment: async (id) => {
     return request(`/admission/adjustment/${id}`);
   },
@@ -546,6 +553,12 @@ export const useClinicStore = create((set) => ({
 
   fetchAdmissionWipeoutReport: async () => {
     return request('/admission/status-change-report');
+  },
+
+  // Every non-wipeout status change (Admit/Discharge/Closed, either
+  // direction) — wipeout stays in its own report above.
+  fetchAdmissionStatusChangeHistory: async () => {
+    return request('/admission/status-change-history');
   },
 
   fetchBedShiftHistory: async (admissionId) => {
@@ -706,6 +719,73 @@ export const useClinicStore = create((set) => ({
   // ── Provisional Bill ─────────────────────────────────────────────────────────
   fetchProvisionalBillDetail: async (admissionId) => {
     return request(`/provisional-bill/${admissionId}`);
+  },
+
+  // ── Panel Billing (Panels > Transaction > Billing) ──────────────────────────
+  fetchPanelAdmissionBilling: async (admissionNo) => {
+    return request(`/admission/panel-billing/by-number/${encodeURIComponent(admissionNo)}`);
+  },
+
+  searchPanelAdmissions: async (q) => {
+    return request(`/admission/panel-billing/search?q=${encodeURIComponent(q || '')}`);
+  },
+
+  updatePanelBillingItem: async (itemId, payload) => {
+    return request(`/admission/panel-billing/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  updatePanelBillingHeader: async (admissionId, payload) => {
+    return request(`/admission/panel-billing/header/${admissionId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  addPanelBillingItem: async (admissionId, payload) => {
+    return request(`/admission/panel-billing/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  deletePanelBillingItem: async (itemId) => {
+    return request(`/admission/panel-billing/items/${itemId}`, { method: 'DELETE' });
+  },
+
+  addPanelBillingItemsBulk: async (admissionId, items) => {
+    return request(`/admission/panel-billing/${admissionId}/items/bulk`, { method: 'POST', body: JSON.stringify({ items }) });
+  },
+
+  // ── Panels > Parameter > Bill Head (Panel-only) ─────────────────────────────
+  panelBillHeads: [],
+
+  fetchPanelBillHeads: async () => {
+    const data = await request('/panel-bill-heads');
+    set({ panelBillHeads: data });
+    return data;
+  },
+
+  searchPanelBillHeads: async (q) => {
+    return request(`/panel-bill-heads/search?q=${encodeURIComponent(q || '')}`);
+  },
+
+  createPanelBillHead: async (payload) => {
+    const data = await request('/panel-bill-heads', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ panelBillHeads: [data, ...s.panelBillHeads] }));
+    return data;
+  },
+
+  updatePanelBillHead: async (id, payload) => {
+    const data = await request(`/panel-bill-heads/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    set((s) => ({ panelBillHeads: s.panelBillHeads.map((h) => (h.id === id ? data : h)) }));
+    return data;
+  },
+
+  deletePanelBillHead: async (id) => {
+    await request(`/panel-bill-heads/${id}`, { method: 'DELETE' });
+    set((s) => ({ panelBillHeads: s.panelBillHeads.filter((h) => h.id !== id) }));
+  },
+
+  addPanelBillHeadItem: async (headId, payload) => {
+    return request(`/panel-bill-heads/${headId}/items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  deletePanelBillHeadItem: async (itemId) => {
+    return request(`/panel-bill-head-items/${itemId}`, { method: 'DELETE' });
   },
 
   updateWardHistoryRate: async (admissionId, enteredAt, rate) => {

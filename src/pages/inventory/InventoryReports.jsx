@@ -1847,7 +1847,7 @@ export default function InventoryReports() {
         <div className="flex-1 min-w-0">
           <Card className="p-0 overflow-hidden h-full min-h-[500px] flex flex-col">
             <div className="p-4 border-b border-slate-200 bg-slate-50">
-              <h2 className="font-semibold text-slate-800">{activeReport}</h2>
+              <h2 className="font-semibold text-black">{activeReport}</h2>
             </div>
             {effectiveReport === 'Stock Position' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -1953,7 +1953,7 @@ export default function InventoryReports() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Items in Stock</p>
-                    <p className="text-lg font-semibold text-slate-800">{stockPositionReport?.total?.itemCount || 0}</p>
+                    <p className="text-lg font-semibold text-black">{stockPositionReport?.total?.itemCount || 0}</p>
                   </Card>
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Total Quantity</p>
@@ -1985,7 +1985,7 @@ export default function InventoryReports() {
                         {(stockPositionReport?.rows || []).map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-3">{row.code}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.name}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3 text-slate-500">{row.itemType === 'fixed asset' ? (row.location || '-') : '-'}</td>
                             <td className="px-4 py-3 text-blue-700">{Number(row.currentQuantity || 0).toFixed(2)}</td>
@@ -2110,7 +2110,7 @@ export default function InventoryReports() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-0.5">
                       <p className="text-xs text-slate-500">Items</p>
-                      <p className="text-xl font-bold text-slate-800">{itemLedgerReport?.summary?.itemCount || 0}</p>
+                      <p className="text-xl font-bold text-black">{itemLedgerReport?.summary?.itemCount || 0}</p>
                     </div>
                     <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-0.5">
                       <p className="text-xs text-slate-500">Total Received</p>
@@ -2161,7 +2161,7 @@ export default function InventoryReports() {
                             return (
                               <tr key={group.itemId} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50 transition-colors`}>
                                 <td className="px-3 py-2.5 font-mono text-slate-500">{group.itemCode}</td>
-                                <td className="px-3 py-2.5 font-semibold text-slate-800">{group.itemName}</td>
+                                <td className="px-3 py-2.5 font-semibold text-black">{group.itemName}</td>
                                 <td className="px-3 py-2.5 text-slate-600">{group.category}</td>
                                 <td className="px-3 py-2.5 text-slate-600">{group.subcategory}</td>
                                 <td className="px-3 py-2.5 text-right text-slate-700">{Number(group.openingBalance || 0).toFixed(2)}</td>
@@ -2395,11 +2395,11 @@ export default function InventoryReports() {
                           ).map((r) => (
                             <tr key={r.itemCode} className="hover:bg-slate-50">
                               <td className="px-4 py-3 text-xs">{r.itemCode}</td>
-                              <td className="px-4 py-3 font-medium text-slate-800">{r.item}</td>
+                              <td className="px-4 py-3 font-medium text-black">{r.item}</td>
                               <td className="px-4 py-3">{r.category}</td>
                               <td className="px-4 py-3">{r.subcategory}</td>
                               <td className="px-4 py-3 text-emerald-700 font-semibold">{r.totalQty.toFixed(2)}</td>
-                              <td className="px-4 py-3 font-semibold text-slate-800">{r.totalAmount.toFixed(2)}</td>
+                              <td className="px-4 py-3 font-semibold text-black">{r.totalAmount.toFixed(2)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -2430,7 +2430,7 @@ export default function InventoryReports() {
                           return (
                             <tr key={row.key}>
                               <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                              <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
+                              <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                               <td className="px-4 py-3">{row.itemCode}</td>
                               <td className="px-4 py-3">{row.category}</td>
                               <td className="px-4 py-3">{row.subcategory}</td>
@@ -2439,7 +2439,7 @@ export default function InventoryReports() {
                               <td className="px-4 py-3 text-slate-500">{row.model || <span className="text-slate-300">—</span>}</td>
                               <td className="px-4 py-3">{row.quantity}</td>
                               <td className="px-4 py-3">{row.rate.toFixed(2)}</td>
-                              <td className="px-4 py-3 font-semibold text-slate-800">{row.amount.toFixed(2)}</td>
+                              <td className="px-4 py-3 font-semibold text-black">{row.amount.toFixed(2)}</td>
                               <td className="px-4 py-3">
                                 <button
                                   onClick={() => rawGRN && printGRNDocument({
@@ -2572,7 +2572,7 @@ export default function InventoryReports() {
                           <div className="flex items-center gap-3 py-0.5">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${color}`}>{initials}</div>
                             <div className="min-w-0">
-                              <p className="font-semibold text-slate-800 text-sm leading-tight">{emp.firstName} {emp.lastName}</p>
+                              <p className="font-semibold text-black text-sm leading-tight">{emp.firstName} {emp.lastName}</p>
                               <p className="text-xs text-slate-400 truncate">{emp.email || emp.empCode || ''}</p>
                             </div>
                           </div>
@@ -2636,7 +2636,7 @@ export default function InventoryReports() {
                           ).map((r) => (
                             <tr key={r.itemCode} className="hover:bg-slate-50">
                               <td className="px-4 py-3 text-xs">{r.itemCode}</td>
-                              <td className="px-4 py-3 font-medium text-slate-800">{r.item}</td>
+                              <td className="px-4 py-3 font-medium text-black">{r.item}</td>
                               <td className="px-4 py-3">{r.category}</td>
                               <td className="px-4 py-3">{r.subcategory}</td>
                               <td className="px-4 py-3 text-rose-700 font-semibold">{r.totalQty.toFixed(2)}</td>
@@ -2668,12 +2668,12 @@ export default function InventoryReports() {
                           <tr key={row.key}>
                             <td className="px-4 py-3 text-slate-500 text-xs">{row.ginCode || '-'}</td>
                             <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.subcategory}</td>
                             <td className="px-4 py-3">{row.department}</td>
-                            <td className="px-4 py-3 font-semibold text-slate-800">{row.quantity}</td>
+                            <td className="px-4 py-3 font-semibold text-black">{row.quantity}</td>
                             <td className="px-4 py-3 text-slate-600">{Number(row.rate || 0).toFixed(2)}</td>
                             <td className="px-4 py-3 font-semibold text-blue-700">{Number(row.amount || 0).toFixed(2)}</td>
                           </tr>
@@ -2814,11 +2814,11 @@ export default function InventoryReports() {
                         {shortExpiryRows.map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.subcategory}</td>
-                            <td className="px-4 py-3 font-semibold text-slate-800">{Number(row.quantity || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 font-semibold text-black">{Number(row.quantity || 0).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -2920,11 +2920,11 @@ export default function InventoryReports() {
                             <td className="px-4 py-3 text-red-700 font-semibold">
                               {row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : '-'}
                             </td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.subcategory}</td>
-                            <td className="px-4 py-3 font-semibold text-slate-800">{Number(row.quantity || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 font-semibold text-black">{Number(row.quantity || 0).toFixed(2)}</td>
                             <td className="px-4 py-3">{row.referenceId}</td>
                           </tr>
                         ))}
@@ -3096,12 +3096,12 @@ export default function InventoryReports() {
                         {discardRows.map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.subcategory}</td>
                             <td className="px-4 py-3">{Number(row.quantity || 0).toFixed(2)}</td>
-                            <td className="px-4 py-3 font-semibold text-slate-800">{Number(row.amount || 0).toFixed(2)}</td>
+                            <td className="px-4 py-3 font-semibold text-black">{Number(row.amount || 0).toFixed(2)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -3228,13 +3228,13 @@ export default function InventoryReports() {
                           <tr key={row.key}>
                             <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-700">{row.moNumber}</td>
                             <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.item}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.supplier}</td>
                             <td className="px-4 py-3 text-slate-500">
                               {row.cost != null ? Number(row.cost).toLocaleString() : '-'}
                             </td>
-                            <td className="px-4 py-3 font-semibold text-slate-800">
+                            <td className="px-4 py-3 font-semibold text-black">
                               {row.actualCost != null ? Number(row.actualCost).toLocaleString() : '-'}
                             </td>
                             <td className="px-4 py-3 max-w-[160px] truncate">{row.natureOfRepair}</td>
@@ -3341,11 +3341,11 @@ export default function InventoryReports() {
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Invoices</p>
-                    <p className="text-lg font-semibold text-slate-800">{dailySalesReport?.summary?.invoiceCount || 0}</p>
+                    <p className="text-lg font-semibold text-black">{dailySalesReport?.summary?.invoiceCount || 0}</p>
                   </Card>
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Total Qty</p>
-                    <p className="text-lg font-semibold text-slate-800">{Number(dailySalesReport?.summary?.grandTotalQty || 0).toFixed(2)}</p>
+                    <p className="text-lg font-semibold text-black">{Number(dailySalesReport?.summary?.grandTotalQty || 0).toFixed(2)}</p>
                   </Card>
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Total Purchase</p>
@@ -3368,7 +3368,7 @@ export default function InventoryReports() {
                       <Card key={inv.invoiceId} className="p-0 overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                           <div>
-                            <p className="font-semibold text-slate-800">{inv.invoiceCode}</p>
+                            <p className="font-semibold text-black">{inv.invoiceCode}</p>
                             <p className="text-xs text-slate-500">
                               {inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'} • {inv.customerName}
                             </p>
@@ -3394,7 +3394,7 @@ export default function InventoryReports() {
                               <tbody className="divide-y divide-slate-100">
                                 {(inv.lines || []).map((line, idx) => (
                                   <tr key={idx} className="hover:bg-slate-50">
-                                    <td className="px-4 py-2 font-medium text-slate-800">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
+                                    <td className="px-4 py-2 font-medium text-black">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
                                     <td className="px-4 py-2 text-xs">{line.category}</td>
                                     <td className="px-4 py-2 text-xs">{line.subcategory}</td>
                                     <td className="px-4 py-2">{line.qty}</td>
@@ -3427,7 +3427,7 @@ export default function InventoryReports() {
                               <tbody className="divide-y divide-slate-100">
                                 {(inv.lines || []).map((line, idx) => (
                                   <tr key={idx} className="hover:bg-slate-50">
-                                    <td className="px-4 py-2 font-medium text-slate-800">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
+                                    <td className="px-4 py-2 font-medium text-black">{line.itemName} <span className="text-xs text-slate-400">({line.itemCode})</span></td>
                                     <td className="px-4 py-2 text-xs">{line.category}</td>
                                     <td className="px-4 py-2 text-xs">{line.subcategory}</td>
                                     <td className="px-4 py-2">{line.qty}</td>
@@ -3574,7 +3574,7 @@ export default function InventoryReports() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Total Records</p>
-                    <p className="text-lg font-semibold text-slate-800">{supplierLedgerReport?.summary?.totalRecords || 0}</p>
+                    <p className="text-lg font-semibold text-black">{supplierLedgerReport?.summary?.totalRecords || 0}</p>
                   </Card>
                   <Card className="p-3">
                     <p className="text-xs text-slate-500">Total GRN Value</p>
@@ -3590,7 +3590,7 @@ export default function InventoryReports() {
                         {/* Card Header — Supplier Name + Summary */}
                         <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
                           <div>
-                            <p className="font-semibold text-slate-800">{group.supplierName}</p>
+                            <p className="font-semibold text-black">{group.supplierName}</p>
                             <p className="text-xs text-slate-500">
                               Records: {group.totalRecords} • Total: Rs. {Number(group.totalAmount).toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                             </p>
@@ -3618,7 +3618,7 @@ export default function InventoryReports() {
                                     {row.date ? new Date(row.date).toLocaleDateString() : '-'}
                                   </td>
                                   <td className="px-4 py-3 text-xs">
-                                    <div className="font-medium text-slate-800">{row.itemName}</div>
+                                    <div className="font-medium text-black">{row.itemName}</div>
                                     <div className="text-slate-400">{row.itemCode}</div>
                                   </td>
                                   <td className="px-4 py-3 text-xs text-slate-600">{row.categoryName}</td>
@@ -3750,7 +3750,7 @@ export default function InventoryReports() {
                         {reportRows.map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-3">{row.code}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.name}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.subcategory}</td>
                             <td className="px-4 py-3">{row.unit}</td>
@@ -3872,7 +3872,7 @@ export default function InventoryReports() {
                           const rawPO = (purchaseOrders || []).find((p) => p.id === row.key);
                           return (
                             <tr key={row.key}>
-                              <td className="px-4 py-3 font-medium text-slate-800">{row.code}</td>
+                              <td className="px-4 py-3 font-medium text-black">{row.code}</td>
                               <td className="px-4 py-3">{row.supplier}</td>
                               <td className="px-4 py-3">{row.item}</td>
                               <td className="px-4 py-3">{row.requiredQuantity}</td>
@@ -3993,7 +3993,7 @@ export default function InventoryReports() {
                         {reportRows.map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-3">{row.code}</td>
-                            <td className="px-4 py-3 font-medium text-slate-800">{row.name}</td>
+                            <td className="px-4 py-3 font-medium text-black">{row.name}</td>
                             <td className="px-4 py-3">{row.category}</td>
                             <td className="px-4 py-3">{row.stock}</td>
                             <td className="px-4 py-3">{row.threshold}</td>

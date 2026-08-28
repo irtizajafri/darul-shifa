@@ -51,9 +51,11 @@ import ClinicPanelCompanyListPage from '../pages/clinic/panels/ClinicPanelCompan
 import ClinicPanelCompanyFormPage from '../pages/clinic/panels/ClinicPanelCompanyFormPage';
 import ClinicPanelEmployeeListPage from '../pages/clinic/panels/ClinicPanelEmployeeListPage';
 import ClinicPanelEmployeeFormPage from '../pages/clinic/panels/ClinicPanelEmployeeFormPage';
+import ClinicPanelBillHeadListPage from '../pages/clinic/parameters/ClinicPanelBillHeadListPage';
 import BillComparisonReport from '../pages/clinic/panels/BillComparisonReport';
 import PanelBillingDetailReport from '../pages/clinic/panels/PanelBillingDetailReport';
 import PanelProvisionalBill from '../pages/clinic/panels/PanelProvisionalBill';
+import PanelBilling from '../pages/clinic/panels/PanelBilling';
 import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
 import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
 import DeathCertificateFilter from '../pages/clinic/reports/DeathCertificateFilter';
@@ -95,6 +97,7 @@ import BirthCertificate from '../pages/clinic/BirthCertificate';
 import AdmissionAdjustment from '../pages/clinic/AdmissionAdjustment';
 import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
 import AdmissionStatusChangeReport from '../pages/clinic/reports/AdmissionStatusChangeReport';
+import AdmissionStatusChangeHistoryReport from '../pages/clinic/reports/AdmissionStatusChangeHistoryReport';
 import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
 import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTypePage';
@@ -238,11 +241,13 @@ export default function ProtectedRoutes() {
       <Route path="clinic/panels/companies/new" element={<PermissionGuard module="clinic" subModule="panels" tab="companies"><ClinicPanelCompanyFormPage /></PermissionGuard>} />
       <Route path="clinic/panels/companies/:id" element={<PermissionGuard module="clinic" subModule="panels" tab="companies"><ClinicPanelCompanyFormPage /></PermissionGuard>} />
       <Route path="clinic/panels/employees"     element={<PermissionGuard module="clinic" subModule="panels" tab="employees"><ClinicPanelEmployeeListPage /></PermissionGuard>} />
+      <Route path="clinic/panels/bill-heads"    element={<PermissionGuard module="clinic" subModule="panels" tab="bill-heads"><ClinicPanelBillHeadListPage /></PermissionGuard>} />
       <Route path="clinic/panels/employees/new" element={<PermissionGuard module="clinic" subModule="panels" tab="employees"><ClinicPanelEmployeeFormPage /></PermissionGuard>} />
       <Route path="clinic/panels/employees/:id" element={<PermissionGuard module="clinic" subModule="panels" tab="employees"><ClinicPanelEmployeeFormPage /></PermissionGuard>} />
       <Route path="clinic/panels/bill-comparison"   element={<PermissionGuard module="clinic" subModule="panels" tab="bill-comparison"><BillComparisonReport /></PermissionGuard>} />
       <Route path="clinic/panels/billing-detail"    element={<PermissionGuard module="clinic" subModule="panels" tab="billing-detail"><PanelBillingDetailReport /></PermissionGuard>} />
       <Route path="clinic/panels/provisional-bill"  element={<PermissionGuard module="clinic" subModule="panels" tab="provisional-bill"><PanelProvisionalBill /></PermissionGuard>} />
+      <Route path="clinic/panels/billing"           element={<PermissionGuard module="clinic" subModule="panels" tab="billing"><PanelBilling /></PermissionGuard>} />
 
       {/* ── Clinic Reports ── */}
       <Route path="clinic/reports/patients-list"                  element={<PermissionGuard module="clinic" subModule="reports" tab="patients-list"><PatientsListFilter /></PermissionGuard>} />
@@ -275,6 +280,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/reports/user-date-summary"              element={<PermissionGuard module="clinic" subModule="reports" tab="user-date-summary"><UserDateSummaryFilter /></PermissionGuard>} />
       <Route path="clinic/reports/user-date-summary/view"         element={<PermissionGuard module="clinic" subModule="reports"><UserDateSummaryReport /></PermissionGuard>} />
       <Route path="clinic/reports/admission-status-change"        element={<PermissionGuard module="clinic" subModule="reports" tab="admission-status-change"><AdmissionStatusChangeReport /></PermissionGuard>} />
+      <Route path="clinic/reports/status-change-history"          element={<PermissionGuard module="clinic" subModule="reports" tab="status-change-history"><AdmissionStatusChangeHistoryReport /></PermissionGuard>} />
 
       {/* ── Clinic Inquiries ── */}
       <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic" subModule="inquiries" tab="revenue-dashboard"><RevenueDashboard /></PermissionGuard>} />

@@ -1,4 +1,4 @@
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useTabStore } from '../../store/useTabStore';
 import ProtectedRoutes from '../../routes/ProtectedRoutes';
@@ -26,6 +26,13 @@ function TabRouteSync({ tabId }) {
   const unregisterTabNavigate = useTabStore((s) => s.unregisterTabNavigate);
   const updateTabPath = useTabStore((s) => s.updateTabPath);
   const updateTabLabel = useTabStore((s) => s.updateTabLabel);
+  // Whether this tab's real browser-history entry has been claimed yet —
+  // its very first location (mount, or a brand-new tab's '/dashboard')
+  // replaces the current entry instead of pushing a new one, same reason
+  // switching tabs doesn't push either: it's not a step the user took
+  // *inside* a page, it's just this tab's history catching up to what's
+  // already showing.
+  const hasSyncedHistoryRef = useRef(false);
 
   useEffect(() => {
     registerTabNavigate(tabId, navigate);
@@ -34,9 +41,28 @@ function TabRouteSync({ tabId }) {
   }, [tabId, navigate]);
 
   useEffect(() => {
-    updateTabPath(tabId, location.pathname + location.search);
+    const path = location.pathname + location.search;
+    updateTabPath(tabId, path);
     const { label, Icon } = resolveTabLabel(location.pathname);
     updateTabLabel(tabId, label, Icon);
+
+    // Every open tab has its own isolated <MemoryRouter> — necessary so
+    // tabs stay independent of each other, but it means none of this ever
+    // touches the real browser address bar/history on its own. Mirror it
+    // here, but only for whichever tab is actually visible right now (a
+    // background tab navigating shouldn't hijack the address bar), and
+    // never for a location change that's just this tab catching up to a
+    // browser back/forward the popstate listener below already handled
+    // (tagged __fromPopstate) — that step already exists in real history,
+    // re-pushing it would duplicate it.
+    if (useTabStore.getState().activeTabId === tabId && !location.state?.__fromPopstate) {
+      if (!hasSyncedHistoryRef.current) {
+        window.history.replaceState({ tabId }, '', path);
+      } else {
+        window.history.pushState({ tabId }, '', path);
+      }
+    }
+    hasSyncedHistoryRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabId, location.pathname, location.search]);
 
@@ -81,9 +107,41 @@ const TabInstance = memo(function TabInstance({ tabId, initialPath, isActive }) 
   );
 });
 
+// Reacts to the browser's actual back/forward buttons — see TabRouteSync's
+// pushState/replaceState calls above for the other half. Reads store state
+// live via getState() rather than hook selectors: this listener is
+// registered once and must always see whatever's current at the moment the
+// user presses back, not whatever it was when this effect first ran.
+function usePopStateSync() {
+  useEffect(() => {
+    const onPopState = (e) => {
+      const { tabs: liveTabs, activeTabId: liveActiveId, activateTab, navigateFns } = useTabStore.getState();
+      // The entry we're landing on was tagged with whichever tab it
+      // belonged to when it was pushed (see TabRouteSync) — fall back to
+      // the currently active tab if that tab's since been closed, or this
+      // is a same-document entry from before our own history-sync started
+      // (e.g. right after login).
+      const targetTabId = e.state?.tabId && liveTabs.some((t) => t.id === e.state.tabId)
+        ? e.state.tabId
+        : liveActiveId;
+      if (targetTabId !== liveActiveId) activateTab(targetTabId);
+      const path = window.location.pathname + window.location.search;
+      // replace:true — the browser already moved; this just tells that
+      // tab's own <MemoryRouter> to catch up, not asking it to push a
+      // second, duplicate step into its own internal history. __fromPopstate
+      // tells TabRouteSync not to mirror this particular change back onto
+      // window.history — it's already there.
+      navigateFns[targetTabId]?.(path, { replace: true, state: { __fromPopstate: true } });
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+}
+
 export default function TabsContainer() {
   const tabs = useTabStore((s) => s.tabs);
   const activeTabId = useTabStore((s) => s.activeTabId);
+  usePopStateSync();
 
   return (
     <main className="flex-1 p-4 lg:p-6 overflow-auto">

@@ -97,11 +97,19 @@ export const useTabStore = create((set, get) => ({
   },
 
   activateTab: (tabId) => {
-    const { tabs } = get();
+    const { tabs, tabPaths } = get();
     const tab = tabs.find((t) => t.id === tabId);
     if (!tab) return null;
     syncModule(tab.module);
     set({ activeTabId: tabId });
+    // Switching which tab is visible is never a back-able step on its own
+    // (real Chrome tabs work the same way — the back button doesn't undo a
+    // tab switch) — just move the address bar to match whichever tab is
+    // now showing, without adding a new history entry. See TabRouteSync in
+    // TabsContainer.jsx for the other half (pushing a real step per
+    // in-tab navigation) and its popstate listener (crossing back into a
+    // different tab's own history).
+    window.history.replaceState({ tabId }, '', tabPaths[tabId] || tab.path);
     return tab;
   },
 
@@ -118,6 +126,7 @@ export const useTabStore = create((set, get) => ({
       const next = newTabs[Math.min(idx, newTabs.length - 1)];
       syncModule(next.module);
       set({ tabs: newTabs, activeTabId: next.id, navigateFns: nextNavigateFns, tabPaths: nextTabPaths });
+      window.history.replaceState({ tabId: next.id }, '', nextTabPaths[next.id] || next.path);
       return next;
     }
     set({ tabs: newTabs, navigateFns: nextNavigateFns, tabPaths: nextTabPaths });

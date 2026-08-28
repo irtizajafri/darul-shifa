@@ -1,0 +1,292 @@
+.pnb-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f1f5f9;
+  font-family: 'Inter', sans-serif;
+}
+
+.pnb-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px 40px;
+  display: flex;
+  justify-content: center;
+}
+
+.pnb-window {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 1080px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+
+.pnb-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1a3c6e;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+
+  .pnb-title-right { font-weight: 700; }
+}
+
+/* ── Header ── */
+.pnb-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pnb-hg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  label { font-size: 0.68rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+
+  &--wide { flex: 1 1 220px; }
+}
+
+.pnb-lookup {
+  display: flex;
+  gap: 4px;
+
+  input { border: 1px solid #cbd5e1; border-radius: 6px 0 0 6px; padding: 6px 10px; font-size: 0.85rem; width: 140px; outline: none;
+    &:focus { border-color: #3b82f6; } }
+  button { background: #1a3c6e; color: #fff; border: none; border-radius: 0 6px 6px 0; padding: 0 12px; cursor: pointer;
+    &:hover { background: #15305a; } &:disabled { opacity: 0.6; } }
+}
+
+.pnb-val {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #1e293b;
+  padding: 6px 0;
+  min-width: 100px;
+
+  &--blue { color: #1d4ed8; }
+}
+
+.pnb-date-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #1e293b;
+  outline: none;
+  &:focus { border-color: #3b82f6; }
+}
+
+/* ── Manual add row (Medicine / Laboratory / Ultrasound / Radiology) ── */
+.pnb-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  padding: 12px 16px;
+  border-bottom: 1px dashed #e2e8f0;
+  background: #f8fafc;
+}
+
+.pnb-fg {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+
+  label { font-size: 0.66rem; font-weight: 600; color: #64748b; text-transform: uppercase; }
+  input, select {
+    border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 9px; font-size: 0.82rem; outline: none; min-width: 150px;
+    &:focus { border-color: #3b82f6; }
+  }
+  &--sm input, &--sm select { min-width: 80px; width: 80px; }
+  &--search { flex: 1 1 220px; }
+  &--search input { width: 100%; min-width: 0; }
+}
+
+.pnb-combo { position: relative; }
+
+.pnb-combo-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  z-index: 20;
+}
+
+.pnb-combo-opt {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  &:hover { background: #eff6ff; }
+}
+
+.pnb-combo-code { color: #94a3b8; font-size: 0.72rem; }
+
+.pnb-add-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #0f766e; color: #fff; border: none; border-radius: 6px; padding: 7px 14px;
+  font-size: 0.82rem; font-weight: 600; cursor: pointer; height: 32px;
+  &:hover { background: #0d6460; } &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+.pnb-del {
+  background: none; border: none; color: #ef4444; cursor: pointer; font-size: 0.8rem;
+}
+
+/* ── Grid ── */
+.pnb-tab-body { padding: 14px 16px; min-height: 320px; }
+
+.pnb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+
+  th, td { border: 1px solid #e2e8f0; padding: 5px 8px; text-align: left; }
+  thead th { background: #f1f5f9; color: #334155; font-weight: 700; font-size: 0.72rem; text-transform: uppercase; }
+  .r { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: #eff6ff; }
+  .pnb-empty { text-align: center; color: #94a3b8; padding: 30px 0; }
+}
+
+.pnb-clickable {
+  cursor: pointer;
+  background: #f0f9ff;
+}
+
+.pnb-edit-cell { padding: 2px 6px !important; }
+
+.pnb-edit-display {
+  display: inline-block;
+  min-width: 40px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: text;
+  &:hover { background: #eef2ff; outline: 1px dashed #93c5fd; }
+}
+
+.pnb-edit-input {
+  width: 80px;
+  border: 1px solid #3b82f6;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 0.8rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.pnb-hint {
+  font-size: 0.68rem;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+/* ── Footer ── */
+.pnb-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pnb-btn {
+  background: #475569; color: #fff; border: none; border-radius: 7px; padding: 8px 16px;
+  font-size: 0.83rem; font-weight: 600; cursor: pointer;
+  &:hover { background: #334155; }
+}
+
+.pnb-total {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #334155;
+
+  span { font-size: 1.3rem; font-weight: 900; color: #1a3c6e; margin-left: 10px; }
+}
+
+/* ── Detail popup (Pharmacy Bill / Diagnostic Bill) ── */
+.pnb-modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+}
+
+.pnb-modal {
+  background: #fff; border-radius: 10px; width: 100%; max-width: 680px; max-height: 80vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.pnb-modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #1a3c6e; color: #fff; padding: 10px 14px; font-size: 0.88rem; font-weight: 700;
+
+  button { background: none; border: none; color: #fff; cursor: pointer; opacity: 0.8; &:hover { opacity: 1; } }
+}
+
+.pnb-modal-body { flex: 1; overflow: auto; padding: 12px 14px; }
+
+.pnb-modal-footer {
+  padding: 10px 14px; border-top: 1px solid #e2e8f0; background: #f8fafc;
+  text-align: right; font-weight: 600; color: #334155;
+  span { font-size: 1.1rem; font-weight: 900; color: #1a3c6e; margin-left: 8px; }
+}
+
+.pnb-combo-package { color: #6d28d9; font-size: 0.72rem; font-weight: 600; }
+
+/* ── Medicine Package checklist modal ── */
+.pnb-pkg-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.pnb-pkg-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.85rem;
+  cursor: pointer;
+  &:last-child { border-bottom: none; }
+  &:hover { background: #f8fafc; }
+
+  input[type="checkbox"] { width: 15px; height: 15px; flex-shrink: 0; }
+}
+
+.pnb-pkg-name { flex: 1; }
+.pnb-pkg-rate { color: #334155; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.pnb-pkg-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pnb-pkg-footer-total {
+  margin-left: auto;
+  font-weight: 600;
+  color: #334155;
+  font-size: 0.85rem;
+  span { font-size: 1.05rem; font-weight: 900; color: #1a3c6e; margin-left: 6px; }
+}

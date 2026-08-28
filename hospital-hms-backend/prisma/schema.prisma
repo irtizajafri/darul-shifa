@@ -1040,6 +1040,12 @@ model ClinicAdmission {
   antenatal          Boolean  @default(false)
   antenatalNo        String?
   dischargeDiscount  Float?
+  // Panel Company/Employee selected via the same Panel picker OPD slips use
+  // (patientCategory 'panel') — plain soft-linked ids, no @relation, matching
+  // ClinicOpdVisit's identical fields (never enforced as an FK there either).
+  panelCompanyId     Int?
+  panelEmployeeId    Int?
+  panelDependentId   Int?
   status             String   @default("active")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -1054,6 +1060,79 @@ model ClinicAdmission {
   wardHistoryRateOverrides ClinicWardHistoryRateOverride[]
   otRegisters        ClinicOtRegister[]
   birthCertificates  ClinicBirthCertificate[]
+  panelBillingItems  ClinicPanelBillingItem[]
+  panelBillingHeader ClinicPanelBillingHeader?
+}
+
+// Panels > Transaction > Billing — a per-admission, independently-editable
+// snapshot of the Provisional Bill rows (see getPanelAdmissionBilling). Seeded
+// once from the live Provisional Bill the first time Billing is opened for an
+// admission; every Rate/Qty/Remarks edit after that lives here only — the
+// original Provisional Bill (billItems/Ward History/Diagnostic/Pharmacy tabs)
+// is never touched.
+model ClinicPanelBillingItem {
+  id          Int             @id @default(autoincrement())
+  admissionId Int
+  admission   ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  billHeadId  Int?
+  code        String?
+  description String
+  kind        String          @default("item") // ward | item | pharmacy | diagnostic | custom
+  qty         Float           @default(0)
+  rate        Float           @default(0)
+  amount      Float           @default(0)
+  remarks     String?
+  // Must stay within the header's admitDate/dischargeDate — see
+  // ClinicPanelBillingHeader and updatePanelBillingItem's validation.
+  date        DateTime?
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([admissionId])
+}
+
+// Panels > Billing header — its own editable Admit Date/Discharge Date,
+// independent of the actual Admission/Discharge Certificate (same snapshot
+// principle as ClinicPanelBillingItem). Every row's own Date (above) must
+// stay within this range — enforced in updatePanelBillingItem/addPanelBillingItem.
+model ClinicPanelBillingHeader {
+  admissionId   Int             @id
+  admission     ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  admitDate     DateTime?
+  dischargeDate DateTime?
+  updatedAt     DateTime        @updatedAt
+}
+
+// Panels > Parameter > Bill Head — a bill-head list independent of the main
+// Clinic Bill Heads (ClinicBillHead), only ever offered inside Panel Billing's
+// manual-add flow. Two kinds: 'simple' (just a name, Qty/Rate entered freely
+// when added to a bill — same as any other manual-add) and 'package' (a named
+// bundle, e.g. "Surgery", holding its own list of medicines+rates below —
+// adding a package head to a bill opens a checklist so only the medicines that
+// actually applied for that patient get added, each as its own bill row).
+model ClinicPanelBillHead {
+  id          Int      @id @default(autoincrement())
+  headCode    String   @unique
+  description String
+  kind        String   @default("simple") // simple | package
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  packageItems ClinicPanelBillHeadItem[]
+}
+
+model ClinicPanelBillHeadItem {
+  id        Int                 @id @default(autoincrement())
+  headId    Int
+  head      ClinicPanelBillHead @relation(fields: [headId], references: [id], onDelete: Cascade)
+  medicine  String
+  rate      Float               @default(0)
+  sortOrder Int                 @default(0)
+  createdAt DateTime            @default(now())
+
+  @@index([headId])
 }
 
 // ─── Birth Certificate ────────────────────────────────────────────────────────
@@ -1290,6 +1369,26 @@ model ClinicAdmissionWipeoutLog {
   reason             String
   wipedOutBy         String?
   wipedOutAt         DateTime @default(now())
+}
+
+// Every non-wipeout File Status change (Admit/Discharge/Closed, in any
+// direction) — wipeout stays its own separate log/report (above) since it
+// deletes the admission outright; this one is for admissions that still
+// exist, just moved between statuses. No FK to ClinicAdmission on purpose:
+// admissionNo/patientName are snapshotted directly so this row keeps making
+// sense even if the admission is later wiped out.
+model ClinicAdmissionStatusLog {
+  id          Int      @id @default(autoincrement())
+  admissionId Int?
+  admissionNo String
+  patientName String
+  fromStatus  String
+  toStatus    String
+  reason      String
+  changedBy   String?
+  changedAt   DateTime @default(now())
+
+  @@index([admissionId])
 }
 
 // ─── Receiving against Admission (payment history, one row per receipt) ──────

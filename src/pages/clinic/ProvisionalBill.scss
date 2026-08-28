@@ -4,6 +4,23 @@ $red:    #c62828;
 $amber:  #b8730b;
 $border: #bbb;
 
+// "Panel" toggle inside the Admission Lookup Modal — filters the list to
+// patientCategory 'panel' only.
+.aa-modal-panel-toggle {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 3px;
+  border: 1px solid $border;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+
+  &:hover { border-color: $blue; color: $blue; }
+  &--active { background: $blue; border-color: $blue; color: #fff; }
+}
+
 .pb-body {
   flex: 1;
   overflow: auto;

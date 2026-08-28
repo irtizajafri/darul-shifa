@@ -150,7 +150,9 @@ export const PERMISSIONS_MAP = {
         tabs: [
           { key: 'companies',        label: 'Panel Companies' },
           { key: 'employees',        label: 'Panel Employees' },
+          { key: 'bill-heads',       label: 'Bill Head' },
           { key: 'provisional-bill', label: 'Panel Provisional Bill' },
+          { key: 'billing',          label: 'Billing' },
           { key: 'bill-comparison',  label: 'Bill Comparison Report' },
           { key: 'billing-detail',   label: 'Billing Detail Report' },
         ],
@@ -186,6 +188,7 @@ export const PERMISSIONS_MAP = {
           { key: 'discharge-certificate',           label: 'Discharge Certificate Report' },
           { key: 'antenatal',                       label: 'Antenatal Report' },
           { key: 'admission-status-change',         label: 'Admission Status Change Report' },
+          { key: 'status-change-history',           label: 'Status Change History Report' },
           { key: 'consultant-statement',            label: 'Consultant Statement' },
           { key: 'consultant-rates',                label: 'Consultant Rates' },
         ],

@@ -64,25 +64,31 @@ function printProvisionalBill() {
 }
 
 // ── Admission Lookup Modal — active/admitted patients only ────────────────────
+// "Panel" toggle re-runs the same search with patientCategory restricted to
+// panel admissions — searchAdmissions is searchActiveAdmissionsForProvisionalBill,
+// which accepts (q, panelOnly); harmless no-op extra arg for any other caller.
 function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [panelOnly, setPanelOnly] = useState(false);
   const timer = useRef(null);
 
   useEffect(() => {
-    searchAdmissions('')
+    setLoading(true);
+    searchAdmissions(q, panelOnly)
       .then((data) => setRows(data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [searchAdmissions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchAdmissions, panelOnly]);
 
   function handleQueryChange(val) {
     setQ(val);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setLoading(true);
-      searchAdmissions(val)
+      searchAdmissions(val, panelOnly)
         .then((data) => setRows(data || []))
         .catch(() => setRows([]))
         .finally(() => setLoading(false));
@@ -105,6 +111,14 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
             value={q}
             onChange={e => handleQueryChange(e.target.value)}
           />
+          <button
+            type="button"
+            className={`aa-modal-panel-toggle ${panelOnly ? 'aa-modal-panel-toggle--active' : ''}`}
+            onClick={() => setPanelOnly((v) => !v)}
+            title="Sirf Panel patients dikhao"
+          >
+            Panel
+          </button>
         </div>
         <div className="aa-modal-body">
           {loading ? (
@@ -393,6 +407,7 @@ export default function ProvisionalBill() {
     surgeryTypes, fetchSurgeryTypes,
     dischargeTypes, fetchDischargeTypes,
     searchAdmissionsForProvisionalBill,
+    searchActiveAdmissionsForProvisionalBill,
     fetchProvisionalBillDetail,
     updateWardHistoryRate,
     addProvisionalBillItem,
@@ -672,7 +687,12 @@ export default function ProvisionalBill() {
         <AdmissionLookupModal
           onSelect={handleSelect}
           onClose={() => navigate(-1)}
-          searchAdmissions={searchAdmissionsForProvisionalBill}
+          // Active-only here — once Discharged/Closed, further billing work
+          // moves to Final Bill (Discharge & Refund) instead. Reprinting an
+          // already-closed Provisional Bill (below, via ?admissionNo=) still
+          // uses the status-agnostic search — that's a historical record,
+          // not a "start new work" lookup.
+          searchAdmissions={searchActiveAdmissionsForProvisionalBill}
         />
       )}
       {showPatientInfo && detail && <PatientInfoModal detail={detail} onClose={() => setShowPatientInfo(false)} />}

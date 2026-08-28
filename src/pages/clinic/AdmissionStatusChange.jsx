@@ -34,26 +34,30 @@ const WIPEOUT_REASONS = [
   'Panel closed',
 ];
 
-// ── Admission Lookup Modal — active/admitted patients only ────────────────────
-function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment }) {
+// ── Admission Lookup Modal — any status (active/discharge/closed), since
+// changing a discharged/closed file's status (or wiping it out) is exactly
+// what this page is for. Reuses the same status-agnostic search Provisional
+// Bill uses — deliberately NOT searchAdmissionsForAdjustment, which stays
+// active-only for the Admission Adjustment page that actually relies on it.
+function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
   useEffect(() => {
-    searchAdmissionsForAdjustment('')
+    searchAdmissions('')
       .then((data) => setRows(data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [searchAdmissionsForAdjustment]);
+  }, [searchAdmissions]);
 
   function handleQueryChange(val) {
     setQ(val);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setLoading(true);
-      searchAdmissionsForAdjustment(val)
+      searchAdmissions(val)
         .then((data) => setRows(data || []))
         .catch(() => setRows([]))
         .finally(() => setLoading(false));
@@ -127,7 +131,7 @@ export default function AdmissionStatusChange() {
     roomCategories, fetchRoomCategories,
     beds, fetchBeds,
     surgeryTypes, fetchSurgeryTypes,
-    searchAdmissionsForAdjustment,
+    searchAdmissionsForProvisionalBill,
     fetchAdmissionForAdjustment,
     updateAdmissionStatus,
   } = useClinicStore();
@@ -171,6 +175,9 @@ export default function AdmissionStatusChange() {
 
   async function handleSave() {
     if (fileStatus === 'wipeout' && !reason) return toast.error('Reason select karna zaroori hai');
+    if (fileStatus !== 'wipeout' && fileStatus !== admission.status && !reason.trim()) {
+      return toast.error('Reason likhna zaroori hai');
+    }
     setSaving(true);
     try {
       await updateAdmissionStatus(admission.id, { status: fileStatus, reason, changedBy });
@@ -199,7 +206,7 @@ export default function AdmissionStatusChange() {
         <AdmissionLookupModal
           onSelect={handleSelect}
           onClose={() => navigate(-1)}
-          searchAdmissionsForAdjustment={searchAdmissionsForAdjustment}
+          searchAdmissions={searchAdmissionsForProvisionalBill}
         />
       )}
 
@@ -287,6 +294,23 @@ export default function AdmissionStatusChange() {
                       <option value="">— Select Reason —</option>
                       {WIPEOUT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
+                  </>
+                )}
+
+                {/* Any other real status change also needs a reason on record
+                    (see Reports > Status Change History) — wipeout keeps its
+                    own fixed dropdown above, everything else is free text
+                    since "why was this re-admitted" etc. varies too much for
+                    a preset list. */}
+                {fileStatus !== 'wipeout' && fileStatus !== admission.status && (
+                  <>
+                    <label className="asc-status-label asc-status-label--reason">Reason</label>
+                    <input
+                      className="asc-status-select"
+                      value={reason}
+                      onChange={e => setReason(e.target.value)}
+                      placeholder="Status kyun badla ja raha hai…"
+                    />
                   </>
                 )}
               </div>

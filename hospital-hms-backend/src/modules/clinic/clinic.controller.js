@@ -1148,6 +1148,134 @@ async function getAdmissionForDiscountRefund(req, res, next) {
   }
 }
 
+async function getPanelAdmissionBilling(req, res, next) {
+  try {
+    const data = await service.getPanelAdmissionBilling(req.params.admissionNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updatePanelBillingItem(req, res, next) {
+  try {
+    const { qty, rate, date, remarks } = req.body;
+    const data = await service.updatePanelBillingItem(req.params.itemId, { qty, rate, date, remarks });
+    success(res, data, 'Row updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updatePanelBillingHeader(req, res, next) {
+  try {
+    const { admitDate, dischargeDate } = req.body;
+    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate });
+    success(res, data, 'Header updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addPanelBillingItem(req, res, next) {
+  try {
+    const { description, qty, rate, date, remarks } = req.body;
+    const data = await service.addPanelBillingItem(req.params.admissionId, { description, qty, rate, date, remarks });
+    success(res, data, 'Row added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deletePanelBillingItem(req, res, next) {
+  try {
+    const data = await service.deletePanelBillingItem(req.params.itemId);
+    success(res, data, 'Row deleted');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addPanelBillingItemsBulk(req, res, next) {
+  try {
+    const data = await service.addPanelBillingItemsBulk(req.params.admissionId, req.body.items);
+    success(res, data, 'Rows added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getPanelBillHeads(req, res, next) {
+  try {
+    success(res, await service.getPanelBillHeads());
+  } catch (err) { next(err); }
+}
+
+async function searchPanelBillHeads(req, res, next) {
+  try {
+    success(res, await service.searchPanelBillHeads(req.query.q));
+  } catch (err) { next(err); }
+}
+
+async function createPanelBillHead(req, res, next) {
+  try {
+    const { description, kind } = req.body;
+    const data = await service.createPanelBillHead({ description, kind });
+    success(res, data, 'Head created');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updatePanelBillHead(req, res, next) {
+  try {
+    const { description, status } = req.body;
+    const data = await service.updatePanelBillHead(req.params.id, { description, status });
+    success(res, data, 'Head updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deletePanelBillHead(req, res, next) {
+  try {
+    const data = await service.deletePanelBillHead(req.params.id);
+    success(res, data, 'Head deleted');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addPanelBillHeadItem(req, res, next) {
+  try {
+    const { medicine, rate } = req.body;
+    const data = await service.addPanelBillHeadItem(req.params.headId, { medicine, rate });
+    success(res, data, 'Medicine added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deletePanelBillHeadItem(req, res, next) {
+  try {
+    const data = await service.deletePanelBillHeadItem(req.params.itemId);
+    success(res, data, 'Medicine removed');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function addAdmissionDiscountRefund(req, res, next) {
   try {
     const { billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName } = req.body;
@@ -1342,6 +1470,18 @@ async function searchAdmissionsForProvisionalBill(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function searchActiveAdmissionsForProvisionalBill(req, res, next) {
+  try {
+    success(res, await service.searchActiveAdmissionsForProvisionalBill(req.query.q, req.query.panelOnly === '1' || req.query.panelOnly === 'true'));
+  } catch (err) { next(err); }
+}
+
+async function searchPanelAdmissions(req, res, next) {
+  try {
+    success(res, await service.searchPanelAdmissions(req.query.q));
+  } catch (err) { next(err); }
+}
+
 async function getAdmissionForAdjustment(req, res, next) {
   try {
     success(res, await service.getAdmissionForAdjustment(req.params.id));
@@ -1378,6 +1518,12 @@ async function updateAdmissionStatus(req, res, next) {
 async function getAdmissionWipeoutReport(req, res, next) {
   try {
     success(res, await service.getAdmissionWipeoutReport());
+  } catch (err) { next(err); }
+}
+
+async function getAdmissionStatusChangeHistory(req, res, next) {
+  try {
+    success(res, await service.getAdmissionStatusChangeHistory());
   } catch (err) { next(err); }
 }
 
@@ -1811,6 +1957,20 @@ module.exports = {
   addAdmissionPayment,
   getAdmissionPaymentForPrint,
   getAdmissionForDiscountRefund,
+  getPanelAdmissionBilling,
+  searchPanelAdmissions,
+  updatePanelBillingItem,
+  updatePanelBillingHeader,
+  addPanelBillingItem,
+  deletePanelBillingItem,
+  addPanelBillingItemsBulk,
+  getPanelBillHeads,
+  searchPanelBillHeads,
+  createPanelBillHead,
+  updatePanelBillHead,
+  deletePanelBillHead,
+  addPanelBillHeadItem,
+  deletePanelBillHeadItem,
   addAdmissionDiscountRefund,
   getDischargeCertificate,
   saveDischargeCertificate,
@@ -1831,10 +1991,12 @@ module.exports = {
   getAvailableBeds,
   searchAdmissionsForAdjustment,
   searchAdmissionsForProvisionalBill,
+  searchActiveAdmissionsForProvisionalBill,
   getAdmissionForAdjustment,
   updateAdmissionAdjustment,
   updateAdmissionStatus,
   getAdmissionWipeoutReport,
+  getAdmissionStatusChangeHistory,
   getBedShiftHistory,
   shiftAdmissionBed,
   setBedStatus,

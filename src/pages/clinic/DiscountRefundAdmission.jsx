@@ -618,7 +618,10 @@ export default function DiscountRefundAdmission() {
                 )}
               </div>
 
-              {netBalance === 0 && (
+              {/* Panel patients: company pays later, so Balance being non-zero
+                  never blocks the certificate — everyone else still needs
+                  Net Balance cleared to 0 first. */}
+              {(netBalance === 0 || admission?.patientCategory === 'panel') && (
                 <div className="dc-trigger-row">
                   <button className="dc-trigger-btn" onClick={openDischargeCertificate}>
                     Discharge Certificate
