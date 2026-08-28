@@ -42,3 +42,57 @@ a {
   outline-offset: 2px;
   border-radius: 3px;
 }
+
+/* Tab switching (see TabsContainer.jsx) — every open tab's page stays
+   mounted under display:none/block so switching never loses state; a
+   background pane going display:none -> block is what actually restarts
+   this animation each time, giving the swap a soft fade instead of a hard
+   instant cut, without making the hidden panes animatable/interactive
+   (display:none still fully removes them from layout and tab order). */
+@keyframes tabs-container-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.tabs-container__pane--active {
+  animation: tabs-container-fade-in 0.15s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tabs-container__pane--active { animation: none; }
+}
+
+/* Chrome-style "New Tab" button, anchored at the end of the tab strip (see
+   TabBar.jsx). Idle state is a faint ring hinting it's alive/clickable;
+   hovering fills it with a blue→violet glow and the "+" spins into place —
+   deliberately reserved for this one button so it reads as the strip's
+   single "create" action, not sprinkled everywhere. */
+.tabbar-new-tab {
+  position: relative;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35);
+}
+.tabbar-new-tab__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  opacity: 0;
+  transform: scale(0.55);
+  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+}
+.tabbar-new-tab:hover {
+  box-shadow: none;
+}
+.tabbar-new-tab:hover .tabbar-new-tab__glow {
+  opacity: 1;
+  transform: scale(1);
+  box-shadow: 0 0 14px rgba(124, 58, 237, 0.55);
+}
+.tabbar-new-tab:active .tabbar-new-tab__glow {
+  box-shadow: 0 0 6px rgba(124, 58, 237, 0.4);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tabbar-new-tab,
+  .tabbar-new-tab__glow,
+  .tabbar-new-tab svg {
+    transition: none !important;
+  }
+}

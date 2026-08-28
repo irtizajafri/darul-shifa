@@ -3,12 +3,11 @@ import { Menu, LogOut, User, KeyRound, X, Eye, EyeOff, Phone, MapPin, Graduation
 import ceoPhoto from '../../assets/ceo.JPG';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
-import { useNavigate } from 'react-router-dom';
+import TabBar from './TabBar';
 import toast from 'react-hot-toast';
 
 function ChangePasswordModal({ user, onClose }) {
   const { logout } = useAuthStore();
-  const navigate = useNavigate();
   const [form, setForm] = useState({ current: '', next: '', confirm: '' });
   const [show, setShow] = useState({ current: false, next: false, confirm: false });
   const [loading, setLoading] = useState(false);
@@ -30,8 +29,11 @@ function ChangePasswordModal({ user, onClose }) {
       const json = await res.json();
       if (!json.ok) { toast.error(json.message || 'Failed to change password'); return; }
       toast.success('Password changed. Please login again.');
+      // No explicit navigate needed — logout() flips isAuthenticated, and
+      // AppRoutes swaps straight to the Login screen on its own (Navbar and
+      // everything else in MainLayout live outside any router now, see
+      // AppRoutes.jsx, so there's no useNavigate() to call here any more).
       logout();
-      navigate('/login');
     } catch {
       toast.error('Could not connect to server');
     } finally {
@@ -98,14 +100,15 @@ function DetailRow({ icon: Icon, label, value }) {
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuthStore();
   const { employees, fetchEmployees } = useEmployeeStore();
-  const navigate = useNavigate();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
   const dropdownRef = useRef(null);
 
+  // logout() flips isAuthenticated; AppRoutes reacts to that and swaps to
+  // the Login screen on its own — no navigate() call needed (or available:
+  // Navbar lives outside any router now, see AppRoutes.jsx).
   const handleLogout = () => {
     logout();
-    navigate('/login');
   };
 
   useEffect(() => {
@@ -153,12 +156,14 @@ export default function Navbar({ onMenuClick }) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 bg-white border-b border-[#E2E8F0]">
-        <button onClick={onMenuClick} className="p-2 rounded-lg hover:bg-[#F8FAFC]">
-          <Menu className="w-6 h-6 text-[#0F172A]" />
-        </button>
-        <div className="flex-1" />
-        <div className="flex items-center gap-4">
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 h-16 px-4 bg-white border-b border-[#E2E8F0]">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <button onClick={onMenuClick} className="p-2 rounded-lg hover:bg-[#F8FAFC] shrink-0" title="Menu">
+            <Menu className="w-6 h-6 text-[#0F172A]" />
+          </button>
+          <TabBar />
+        </div>
+        <div className="flex items-center gap-4 shrink-0">
 
           {/* User avatar */}
           <div className="relative hidden sm:block" ref={dropdownRef}>

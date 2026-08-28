@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useLocation } from 'react-router-dom';
 import { Search, ArrowRight } from 'lucide-react';
 import useFocusTrap from '../../hooks/useFocusTrap';
+import { useTabStore } from '../../store/useTabStore';
 
 const GLOBAL_ACTIONS = [
   { id: 'nav-po',       label: 'Purchase Orders (PO)',  hint: 'Navigate',  path: '/inventory/po' },
@@ -36,15 +36,21 @@ export default function CommandPalette() {
   const [highlighted, setHighlighted] = useState(0);
   const overlayRef = useRef(null);
   const inputRef = useRef(null);
-  const navigate = useNavigate();
-  const location = useLocation();
+  // CommandPalette is global chrome, mounted outside every tab's own
+  // <MemoryRouter> — "the current page" has to come from the active tab's
+  // own remembered path (kept in sync by TabRouteSync, stored separately
+  // from `tabs` in `tabPaths` so this selector only fires on a real change
+  // to the active tab's own path, not any background tab's), and "go there"
+  // has to go through that tab's own navigate(), not a shared router hook.
+  const navigateActiveTab = useTabStore((s) => s.navigateActiveTab);
+  const currentPathname = useTabStore((s) => (s.tabPaths[s.activeTabId] || '/dashboard').split('?')[0]);
 
   useFocusTrap(overlayRef, open);
 
   const actions = useMemo(() => {
-    const pageActions = PAGE_ACTIONS[location.pathname] || [];
+    const pageActions = PAGE_ACTIONS[currentPathname] || [];
     return [...pageActions, ...GLOBAL_ACTIONS];
-  }, [location.pathname]);
+  }, [currentPathname]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -79,7 +85,7 @@ export default function CommandPalette() {
 
   const run = (action) => {
     close();
-    navigate(action.path, action.state ? { state: action.state } : undefined);
+    navigateActiveTab(action.path, action.state ? { state: action.state } : undefined);
   };
 
   const handleKeyDown = (e) => {

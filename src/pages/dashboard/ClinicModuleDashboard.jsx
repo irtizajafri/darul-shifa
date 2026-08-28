@@ -5,7 +5,6 @@ import {
   Stethoscope,
   HeartPulse,
   Smile,
-  LayoutDashboard,
   FlaskConical,
   Waves,
   Radiation,
@@ -16,58 +15,77 @@ import {
   FileText,
 } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import hospitalLogo from '../../assets/download.png';
 import './ClinicModuleDashboard.scss';
 
+// subModule + optional tab mirrors AppRoutes guards exactly
 const sections = [
   {
     title: 'Out Patients Department',
     color: 'blue',
     cards: [
-      { title: 'General OPD', icon: UserRound, path: '/clinic/general-opd', active: true },
-      { title: 'Consultant OPD', icon: Stethoscope, path: '/clinic/consultant-opd', active: true },
-      { title: 'Emergency & Chest Pain Clinic', icon: HeartPulse, path: '/clinic/emergency-opd', active: true },
-      { title: 'Dental', icon: Smile, path: '/clinic/dental', active: true },
-      { title: 'Therapy', icon: Smile, path: '/clinic/therapy', active: true },
+      { title: 'General OPD',                  icon: UserRound,   path: '/clinic/general-opd',   subModule: 'general-opd' },
+      { title: 'Consultant OPD',               icon: Stethoscope, path: '/clinic/consultant-opd', subModule: 'general-opd' },
+      { title: 'Emergency & Chest Pain Clinic', icon: HeartPulse,  path: '/clinic/emergency-opd', subModule: 'general-opd' },
+      { title: 'Dental',                       icon: Smile,       path: '/clinic/dental',        subModule: 'general-opd' },
+      { title: 'Therapy',                      icon: Smile,       path: '/clinic/therapy',       subModule: 'general-opd' },
     ],
   },
   {
     title: 'Miscellaneous',
     color: 'purple',
     cards: [
-      { title: 'Miscellaneous', icon: HelpCircle, path: '/clinic/miscellaneous', active: true },
-      { title: 'Admission', icon: BedDouble, path: '/clinic/admission', active: true },
-      { title: 'Ambulance', icon: BedDouble, path: '/clinic/ambulance', active: true },
+      { title: 'Miscellaneous', icon: HelpCircle, path: '/clinic/miscellaneous', subModule: 'general-opd' },
+      { title: 'Admission',     icon: BedDouble,  path: '/clinic/admission',     subModule: 'admission' },
+      { title: 'Ambulance',     icon: BedDouble,  path: '/clinic/ambulance',     subModule: 'general-opd' },
     ],
   },
   {
     title: 'Diagnostic Department',
     color: 'teal',
     cards: [
-      { title: 'Laboratory', icon: FlaskConical, path: '/clinic/laboratory', active: true },
-      { title: 'Ultra Sound, Echo & Color Doppler', icon: Waves, path: '/clinic/ultrasound', active: true },
-      { title: 'Radiology', icon: Radiation, path: '/clinic/radiology', active: true },
-      { title: 'Blood Bank', icon: Droplets, path: '/clinic/blood-bank', active: true },
+      { title: 'Laboratory',                      icon: FlaskConical, path: '/clinic/laboratory',  subModule: 'general-opd' },
+      { title: 'Ultra Sound, Echo & Color Doppler', icon: Waves,      path: '/clinic/ultrasound',  subModule: 'general-opd' },
+      { title: 'Radiology',                       icon: Radiation,    path: '/clinic/radiology',   subModule: 'general-opd' },
+      { title: 'Blood Bank',                      icon: Droplets,     path: '/clinic/blood-bank',  subModule: 'general-opd' },
     ],
   },
   {
     title: 'Payments',
     color: 'rose',
     cards: [
-      { title: 'Discharge & Refund',      icon: LogOut,     path: '/clinic/discharge-refund', active: true },
-      { title: 'Consultant Statement',      icon: FileText,   path: '/clinic/reports/consultant-statement', active: true },
+      { title: 'Discharge & Refund',   icon: LogOut,   path: '/clinic/discharge-refund',              subModule: 'billing', tab: 'discharge-refund' },
+      { title: 'Consultant Statement', icon: FileText, path: '/clinic/reports/consultant-statement',   subModule: 'reports', tab: 'consultant-statement' },
     ],
   },
 ];
 
 export default function ClinicModuleDashboard() {
   const { setModule } = useModuleStore();
+  const { user } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => {
     setModule('clinic');
   }, [setModule]);
+
+  // Filter a card based on user permissions
+  const canSeeCard = (card) => {
+    if (!user) return false;
+    if (user.isSuperAdmin) return true;
+    return hasPermission(user, 'clinic', card.subModule, card.tab ?? null);
+  };
+
+  // Build filtered sections — hide empty sections too
+  const visibleSections = sections
+    .map((section) => ({
+      ...section,
+      cards: section.cards.filter(canSeeCard),
+    }))
+    .filter((section) => section.cards.length > 0);
 
   const handleCardClick = (card) => {
     if (card.path) navigate(card.path);
@@ -81,21 +99,20 @@ export default function ClinicModuleDashboard() {
       </div>
 
       <div className="clinic-sections-grid">
-        {sections.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.title} className={`clinic-section section-${section.color}`}>
             <h2 className="section-title">{section.title}</h2>
             <div className="section-cards">
               {section.cards.map((card) => (
                 <div
                   key={card.title}
-                  className={`dept-card ${card.active ? 'dept-card--active' : 'dept-card--soon'}`}
+                  className="dept-card dept-card--active"
                   onClick={() => handleCardClick(card)}
                 >
                   <div className="dept-card-icon">
                     <card.icon className="w-5 h-5" />
                   </div>
                   <span className="dept-card-label">{card.title}</span>
-                  {!card.active && <span className="coming-soon-badge">Coming Soon</span>}
                 </div>
               ))}
             </div>

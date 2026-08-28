@@ -588,13 +588,14 @@ export default function ListAttachments() {
       const wantIds = customHeadLinkModal.checked;
       const toAdd = [...wantIds].filter((id) => !currentIds.has(id));
       const toRemove = [...currentIds].filter((id) => !wantIds.has(id));
-      await Promise.all([
+      const results = await Promise.all([
         ...toAdd.map((id) => fetch(`${API}/payee-head-linked-custom-heads`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ headId: customHeadLinkModal.headId, customHeadId: id }),
         })),
         ...toRemove.map((id) => fetch(`${API}/payee-head-linked-custom-heads/${customHeadLinkModal.headId}/${id}`, { method: 'DELETE' })),
       ]);
+      if (results.some((r) => !r.ok)) throw new Error('Kuch links save nahi ho paye — dobara try karein');
       await fetchPayeeHeads(entityType);
       toast.success('Custom Heads linked');
       setCustomHeadLinkModal(null);

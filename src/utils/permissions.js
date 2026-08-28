@@ -105,15 +105,109 @@ export const PERMISSIONS_MAP = {
     label: 'Clinic',
     dashboardRoute: '/clinic-module',
     subModules: [
-      { key: 'general-opd',      label: 'General OPD' },
-      { key: 'department',       label: 'Department' },
-      { key: 'sub-department',   label: 'Sub Department' },
-      { key: 'staff-category',   label: 'Staff Category' },
-      { key: 'doctors',          label: 'Doctors / Consultant' },
-      { key: 'room-category',    label: 'Room Category' },
-      { key: 'bed',              label: 'Bed' },
-      { key: 'bill-heads',       label: 'Bill Heads' },
-      { key: 'panel-companies',  label: 'Panel Companies' },
+      // ── OPD ─────────────────────────────────────────────────────────────────
+      { key: 'general-opd', label: 'General OPD (All Departments)' },
+      { key: 'antenatal',   label: 'Antenatal' },
+      { key: 'admission',   label: 'Admission' },
+
+      // ── Transactions ─────────────────────────────────────────────────────────
+      {
+        key: 'transactions',
+        label: 'Transactions',
+        tabs: [
+          { key: 'receive-balance-slip',        label: 'Receive Balance against Slip' },
+          { key: 'cancel-slip',                 label: 'Cancel Slip' },
+          { key: 'slip-refund',                 label: 'Slip Refund' },
+          { key: 'slip-adjustment',             label: 'Slip Adjustment' },
+          { key: 'slip-transfer',               label: 'Slip Transfer' },
+          { key: 'receiving-against-admission', label: 'Receiving against Admission' },
+          { key: 'discount-refund-admission',   label: 'Discount & Refund Against Admission' },
+          { key: 'appointment',                 label: 'Appointment' },
+          { key: 'ot-register',                 label: 'OT Register' },
+          { key: 'birth-certificate',           label: 'Birth Certificate' },
+          { key: 'admission-adjustment',        label: 'Admission Adjustment' },
+          { key: 'admission-status-change',     label: 'Admission Status Change' },
+          { key: 'bed-shifting',                label: 'Bed Shifting' },
+          { key: 'bed-status',                  label: 'Bed Status' },
+          { key: 'upload-patient-document',     label: 'Upload Patient Document' },
+        ],
+      },
+
+      // ── Billing ──────────────────────────────────────────────────────────────
+      {
+        key: 'billing',
+        label: 'Billing',
+        tabs: [
+          { key: 'provisional-bill', label: 'Provisional Bill' },
+          { key: 'discharge-refund', label: 'Discharge & Refund' },
+        ],
+      },
+
+      // ── Panels ───────────────────────────────────────────────────────────────
+      {
+        key: 'panels',
+        label: 'Panels',
+        tabs: [
+          { key: 'companies',        label: 'Panel Companies' },
+          { key: 'employees',        label: 'Panel Employees' },
+          { key: 'provisional-bill', label: 'Panel Provisional Bill' },
+          { key: 'bill-comparison',  label: 'Bill Comparison Report' },
+          { key: 'billing-detail',   label: 'Billing Detail Report' },
+        ],
+      },
+
+      // ── Inquiries ────────────────────────────────────────────────────────────
+      {
+        key: 'inquiries',
+        label: 'Inquiries',
+        tabs: [
+          { key: 'revenue-dashboard', label: 'Revenue Dashboard' },
+          { key: 'patient-documents', label: 'Patient Documents' },
+        ],
+      },
+
+      // ── Reports ──────────────────────────────────────────────────────────────
+      {
+        key: 'reports',
+        label: 'Reports',
+        tabs: [
+          { key: 'reprint',                         label: 'Reprint' },
+          { key: 'departmental-performance',        label: 'Departmental Performance' },
+          { key: 'doctor-departmental-performance', label: 'Doctor Departmental Performance' },
+          { key: 'admission-wise',                  label: 'Admission Report' },
+          { key: 'ot-register',                     label: 'OT Register Report' },
+          { key: 'birth-certificate',               label: 'Birth Certificate Report' },
+          { key: 'appointment',                     label: 'Appointment Register' },
+          { key: 'department-patients',             label: 'Department wise Patients' },
+          { key: 'user-date-summary',               label: 'User by Date Summary' },
+          { key: 'patients-list',                   label: 'Patients List' },
+          { key: 'consultant-wise',                 label: 'Consultant Wise Patients' },
+          { key: 'death-certificate',               label: 'Death Certificate Report' },
+          { key: 'discharge-certificate',           label: 'Discharge Certificate Report' },
+          { key: 'antenatal',                       label: 'Antenatal Report' },
+          { key: 'admission-status-change',         label: 'Admission Status Change Report' },
+          { key: 'consultant-statement',            label: 'Consultant Statement' },
+          { key: 'consultant-rates',                label: 'Consultant Rates' },
+        ],
+      },
+
+      // ── Parameters ───────────────────────────────────────────────────────────
+      { key: 'department',      label: 'Department' },
+      { key: 'sub-department',  label: 'Sub Department' },
+      { key: 'staff-category',  label: 'Staff Category' },
+      { key: 'doctors',         label: 'Doctors / Consultant' },
+      { key: 'room-category',   label: 'Room Category' },
+      { key: 'bed',             label: 'Bed' },
+      { key: 'bill-heads',      label: 'Bill Heads' },
+      { key: 'surgery-types',   label: 'Surgery Types' },
+      { key: 'symptoms',        label: 'Symptoms' },
+      { key: 'diseases',        label: 'Diseases' },
+      { key: 'document-types',  label: 'Document Types' },
+      { key: 'discharge-types', label: 'Discharge Types' },
+      { key: 'shift',           label: 'Shift' },
+      { key: 'credit-card',     label: 'Credit Card %' },
+      { key: 'death-certificate', label: 'Death Certificate (Parameter)' },
+      { key: 'pharmacy-stores', label: 'Pharmacy Stores' },
     ],
   },
   accounts: {

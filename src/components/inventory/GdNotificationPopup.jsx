@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bell, PackageCheck, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useTabStore } from '../../store/useTabStore';
 import { hasPermission } from '../../utils/permissions';
 
 const POLL_INTERVAL = 30000; // 30 seconds
@@ -11,7 +11,10 @@ export default function GdNotificationPopup() {
   const { user } = useAuthStore();
   const canSee = hasPermission(user, 'inventory', 'gd-notifications');
 
-  const navigate = useNavigate();
+  // Mounted at the very top of the app (see AppRoutes.jsx), outside every
+  // tab's own router — "Issue GIN" has to navigate the currently active
+  // tab, not the outer shell router.
+  const navigateActiveTab = useTabStore((s) => s.navigateActiveTab);
   const { fetchUnreadGdNotifications, markGdNotificationsRead } = useInventoryStore();
   const [notifications, setNotifications] = useState([]);
   const [showPopup, setShowPopup] = useState(false);
@@ -45,7 +48,7 @@ export default function GdNotificationPopup() {
     await markGdNotificationsRead(ids);
     setShowPopup(false);
     setNotifications([]);
-    navigate(`/inventory/gin?gdHeaderId=${notif.gdHeader?.id}`);
+    navigateActiveTab(`/inventory/gin?gdHeaderId=${notif.gdHeader?.id}`);
   };
 
   if (!showPopup || notifications.length === 0) return null;

@@ -1,4 +1,3 @@
-import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -22,7 +21,6 @@ import {
   Wrench,
   ShieldCheck,
   UserRound,
-  Plus,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -73,26 +71,26 @@ const employeeNavItems = [
   { path: '/leave-encashment', label: 'Leave Encashment',  Icon: CreditCard,     subModule: 'leave-encashment' },
 ];
 
-function NewTabButton({ onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      title="New Tab"
-      className="p-1.5 rounded-lg text-[#94A3B8] hover:text-[#2563EB] hover:bg-[#EFF6FF] transition-colors"
-    >
-      <Plus className="w-4 h-4" />
-    </button>
-  );
-}
-
 export default function Sidebar({ isOpen, onClose, collapsed }) {
   const { activeModule, setModule, clearModule } = useModuleStore();
   const { user } = useAuthStore();
-  const { activeTabId, createNewTab, updateTabModule, updateTabLabel } = useTabStore();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const currentPath = location.pathname;
+  // Individual selectors, not a whole-store destructure: every keystroke
+  // navigation in ANY open tab touches the store's `tabPaths` map, so
+  // subscribing to the whole store would re-render Sidebar on every
+  // navigation in every tab, not just the active one. Selecting a derived
+  // primitive (a string) for currentPath, and the action functions
+  // individually (zustand keeps those referentially stable forever), means
+  // Sidebar only re-renders when something it actually displays changes.
+  // (New-tab creation moved to Navbar, next to the hamburger button.)
+  const activeTabId = useTabStore((s) => s.activeTabId);
+  const updateTabModule = useTabStore((s) => s.updateTabModule);
+  const navigateActiveTab = useTabStore((s) => s.navigateActiveTab);
+  // Sidebar lives outside every tab's own <MemoryRouter> (it's shared chrome,
+  // not per-tab content), so it can't read "the current page" via
+  // useLocation() any more — that hook would resolve to the outer,
+  // effectively-static shell router instead. The active tab's own
+  // remembered path (kept in sync by TabRouteSync) is the real answer.
+  const currentPath = useTabStore((s) => (s.tabPaths[s.activeTabId] || '/dashboard').split('?')[0]);
 
   const navClass = (path) =>
     clsx(
@@ -109,22 +107,17 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     </>
   );
 
-  const go = (path, module, state, label, Icon) => {
+  // Tab label/icon are no longer set from here — TabRouteSync (see
+  // TabsContainer.jsx) derives them straight from wherever the tab actually
+  // lands, so they stay correct even for navigation that never goes through
+  // Sidebar at all (a card on the Main Dashboard, a Link inside a page).
+  const go = (path, module, state) => {
     if (module !== undefined) {
       if (module) setModule(module);
       else clearModule();
       updateTabModule(activeTabId, module);
     }
-    if (label) updateTabLabel(activeTabId, label, Icon);
-    if (state) navigate(path, { state });
-    else navigate(path);
-    onClose();
-  };
-
-  const handleNewTab = () => {
-    createNewTab();
-    clearModule();
-    navigate('/dashboard');
+    navigateActiveTab(path, state ? { state } : undefined);
     onClose();
   };
 
@@ -142,14 +135,13 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
           {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">HR Module</p>}
-          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {visibleEmpItems.map((item) => (
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
-              onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, undefined, item.label, item.Icon)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
             >
               {navItem(item)}
             </div>
@@ -164,14 +156,13 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
           {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Accounts Module</p>}
-          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {accountsNavItems.map((item) => (
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
-              onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, undefined, item.label, item.Icon)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
             >
               {navItem(item)}
             </div>
@@ -194,14 +185,13 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
           {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Inventory Module</p>}
-          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {visibleInvItems.map((item) => (
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
-              onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, item.state, item.label, item.Icon)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path, undefined, item.state)}
             >
               {navItem(item)}
             </div>
@@ -216,7 +206,6 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
           {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Clinic Module</p>}
-          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {clinicNavItems.map((item, i) => {
@@ -231,7 +220,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
               <div
                 key={item.path + item.label}
                 className={navClass(item.path)}
-                onClick={() => item.toDashboard ? go('/dashboard', null, undefined, item.label, item.Icon) : go(item.path, undefined, undefined, item.label, item.Icon)}
+                onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path)}
               >
                 {navItem(item)}
               </div>
@@ -247,10 +236,9 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       <aside className={sidebarClass}>
         <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
           {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Module</p>}
-          <NewTabButton onClick={handleNewTab} />
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          <div className={navClass('/dashboard')} onClick={() => go('/dashboard', null, undefined, 'Dashboard', LayoutDashboard)}>
+          <div className={navClass('/dashboard')} onClick={() => go('/dashboard', null)}>
             <ArrowLeft className="w-5 h-5 shrink-0" />
             {!collapsed && <span>Main Dashboard</span>}
           </div>
@@ -280,7 +268,6 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     <aside className={sidebarClass}>
       <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
         {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Main Menu</p>}
-        <NewTabButton onClick={handleNewTab} />
       </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {mainItems
@@ -289,7 +276,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           <div
             key={item.path + item.label}
             className={navClass(item.path)}
-            onClick={() => go(item.path, item.module ?? null, undefined, item.label, item.Icon)}
+            onClick={() => go(item.path, item.module ?? null)}
           >
             <item.Icon className="w-5 h-5 shrink-0" />
             {!collapsed && <span>{item.label}</span>}
@@ -299,7 +286,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
         {user?.isSuperAdmin && (
           <div
             className={navClass('/admin/users')}
-            onClick={() => go('/admin/users', null, undefined, 'User Management', ShieldCheck)}
+            onClick={() => go('/admin/users', null)}
           >
             <ShieldCheck className="w-5 h-5 shrink-0" />
             {!collapsed && <span>User Management</span>}

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
-import TabBar from './TabBar';
 import TabsContainer from './TabsContainer';
 import CommandPalette from '../shared/CommandPalette';
 
@@ -24,7 +23,6 @@ export default function MainLayout() {
       )}
       <div className="flex-1 flex flex-col min-w-0 h-screen">
         <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <TabBar />
         <TabsContainer />
       </div>
       <CommandPalette />

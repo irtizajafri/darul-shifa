@@ -50,11 +50,11 @@ function UnauthorizedModal() {
   );
 }
 
-export default function PermissionGuard({ module, subModule, subModules, children }) {
+export default function PermissionGuard({ module, subModule, subModules, tab, children }) {
   const { user } = useAuthStore();
   const allowed = subModules
     ? subModules.some((sm) => hasPermission(user, module, sm))
-    : hasPermission(user, module, subModule);
+    : hasPermission(user, module, subModule, tab ?? null);
 
   if (allowed) return children;
   return <UnauthorizedModal />;
