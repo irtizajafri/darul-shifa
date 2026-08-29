@@ -56,6 +56,8 @@ import BillComparisonReport from '../pages/clinic/panels/BillComparisonReport';
 import PanelBillingDetailReport from '../pages/clinic/panels/PanelBillingDetailReport';
 import PanelProvisionalBill from '../pages/clinic/panels/PanelProvisionalBill';
 import PanelBilling from '../pages/clinic/panels/PanelBilling';
+import PanelChequeReceived from '../pages/clinic/panels/PanelChequeReceived';
+import PanelChequesReport from '../pages/clinic/panels/PanelChequesReport';
 import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
 import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
 import DeathCertificateFilter from '../pages/clinic/reports/DeathCertificateFilter';
@@ -102,6 +104,7 @@ import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
 import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTypePage';
 import UploadPatientDocument from '../pages/clinic/UploadPatientDocument';
+import SurgeryInformation from '../pages/clinic/SurgeryInformation';
 import PatientDocumentsReport from '../pages/clinic/inquiries/PatientDocumentsReport';
 import ClinicDischargeTypePage from '../pages/clinic/parameters/ClinicDischargeTypePage';
 import ClinicShiftPage from '../pages/clinic/parameters/ClinicShiftPage';
@@ -248,6 +251,8 @@ export default function ProtectedRoutes() {
       <Route path="clinic/panels/billing-detail"    element={<PermissionGuard module="clinic" subModule="panels" tab="billing-detail"><PanelBillingDetailReport /></PermissionGuard>} />
       <Route path="clinic/panels/provisional-bill"  element={<PermissionGuard module="clinic" subModule="panels" tab="provisional-bill"><PanelProvisionalBill /></PermissionGuard>} />
       <Route path="clinic/panels/billing"           element={<PermissionGuard module="clinic" subModule="panels" tab="billing"><PanelBilling /></PermissionGuard>} />
+      <Route path="clinic/panels/cheque-received"   element={<PermissionGuard module="clinic" subModule="panels" tab="cheque-received"><PanelChequeReceived /></PermissionGuard>} />
+      <Route path="clinic/panels/cheques-report"    element={<PermissionGuard module="clinic" subModule="panels" tab="cheques-report"><PanelChequesReport /></PermissionGuard>} />
 
       {/* ── Clinic Reports ── */}
       <Route path="clinic/reports/patients-list"                  element={<PermissionGuard module="clinic" subModule="reports" tab="patients-list"><PatientsListFilter /></PermissionGuard>} />
@@ -302,6 +307,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/transactions/bed-shifting"                element={<PermissionGuard module="clinic" subModule="transactions" tab="bed-shifting"><BedShifting /></PermissionGuard>} />
       <Route path="clinic/transactions/bed-status"                  element={<PermissionGuard module="clinic" subModule="transactions" tab="bed-status"><BedStatus /></PermissionGuard>} />
       <Route path="clinic/transactions/upload-patient-document"     element={<PermissionGuard module="clinic" subModule="transactions" tab="upload-patient-document"><UploadPatientDocument /></PermissionGuard>} />
+      <Route path="clinic/transactions/surgery-information"         element={<PermissionGuard module="clinic" subModule="transactions" tab="surgery-information"><SurgeryInformation /></PermissionGuard>} />
 
       {/* ── Clinic Billing ── */}
       <Route path="clinic/billing/provisional-bill" element={<PermissionGuard module="clinic" subModule="billing" tab="provisional-bill"><ProvisionalBill /></PermissionGuard>} />

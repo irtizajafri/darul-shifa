@@ -198,7 +198,16 @@ router.patch('/admission/panel-billing/items/:itemId', controller.updatePanelBil
 router.patch('/admission/panel-billing/header/:admissionId', controller.updatePanelBillingHeader);
 router.post('/admission/panel-billing/:admissionId/items', controller.addPanelBillingItem);
 router.post('/admission/panel-billing/:admissionId/items/bulk', controller.addPanelBillingItemsBulk);
+router.post('/admission/panel-billing/:admissionId/items/override', controller.overrideLiveDetailItem);
 router.delete('/admission/panel-billing/items/:itemId', controller.deletePanelBillingItem);
+
+// Panels > Panel Cheque Transaction
+router.get('/panel-cheque/summary', controller.getPanelChequeSummary);
+router.get('/panel-cheque/report', controller.getPanelChequesReport);
+router.get('/panel-cheque/unpaid', controller.getUnpaidPanelAdmissions);
+router.post('/panel-cheque/receive', controller.receivePanelCheque);
+router.post('/panel-cheque/import/preview', controller.previewPanelChequeImport);
+router.post('/panel-cheque/import/confirm', controller.confirmPanelChequeImport);
 
 // Panels > Parameter > Bill Head (Panel-only)
 router.get('/panel-bill-heads', controller.getPanelBillHeads);
@@ -214,6 +223,9 @@ router.get('/reports/discharge-certificate', controller.getDischargeCertificateR
 
 router.get('/admission/ot-register/by-number/:admissionNo', controller.getOtRegisterForAdmission);
 router.post('/admission/ot-register/:admissionId/save', controller.saveOtRegister);
+
+router.get('/admission/surgery-information/by-number/:admissionNo', controller.getSurgeryInformationForAdmission);
+router.post('/admission/surgery-information/:admissionId/save', controller.saveSurgeryInformation);
 
 router.get('/admission/birth-certificate/by-number/:admissionNo', controller.getBirthCertificateForAdmission);
 router.post('/admission/birth-certificate/:admissionId/save', controller.saveBirthCertificate);

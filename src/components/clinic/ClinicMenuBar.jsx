@@ -78,6 +78,7 @@ const menuItems = [
       { label: 'Bed Shifting',                          path: '/clinic/transactions/bed-shifting',             perm: { sub: 'transactions', tab: 'bed-shifting' } },
       { label: 'Bed Status',                            path: '/clinic/transactions/bed-status',               perm: { sub: 'transactions', tab: 'bed-status' } },
       { label: 'Upload Patient Document',               path: '/clinic/transactions/upload-patient-document',  perm: { sub: 'transactions', tab: 'upload-patient-document' } },
+      { label: 'Surgery / Procedure Information',       path: '/clinic/transactions/surgery-information',       perm: { sub: 'transactions', tab: 'surgery-information' } },
     ],
   },
   {
@@ -103,8 +104,10 @@ const menuItems = [
         subItems: [
           { label: 'Bill Comparison Report', path: '/clinic/panels/bill-comparison', perm: { sub: 'panels', tab: 'bill-comparison' } },
           { label: 'Billing Detail Report',  path: '/clinic/panels/billing-detail',  perm: { sub: 'panels', tab: 'billing-detail' } },
+          { label: 'Panel Cheques Report',   path: '/clinic/panels/cheques-report',  perm: { sub: 'panels', tab: 'cheques-report' } },
         ],
       },
+      { label: 'Panel Cheque Transaction', path: '/clinic/panels/cheque-received', perm: { sub: 'panels', tab: 'cheque-received' } },
     ],
   },
   {

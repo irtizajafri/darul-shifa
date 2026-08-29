@@ -257,37 +257,76 @@ async function deleteDailySheet(id) {
 }
 
 // ── Fuel Tanks ────────────────────────────────────────────────────────────────
-// Central fuel is stocked into a tank first (FuelStock.tankId), then moved to a
-// specific generator via a Transfer. A tank's current level is derived, never
-// stored: everything ever stocked into it minus everything ever transferred out.
+// balance = stockedIn + tankTransferIn - genTransferOut - tankTransferOut
+// Tank level is always derived — never stored directly.
 
 async function tankBalanceMap(tankIds) {
-  const where = tankIds ? { tankId: { in: tankIds } } : {};
-  const [stockRows, transferRows] = await Promise.all([
-    prisma.fuelStock.groupBy({ by: ['tankId'], _sum: { quantity: true }, where: { ...where, tankId: { not: null } } }),
-    prisma.fuelTransfer.groupBy({ by: ['tankId'], _sum: { quantity: true }, where: tankIds ? { tankId: { in: tankIds } } : {} }),
+  const idList = tankIds ?? [];
+  const hasFilter = idList.length > 0;
+
+  const [stockRows, genTransferRows, tankOutRows, tankInRows] = await Promise.all([
+    prisma.fuelStock.groupBy({
+      by: ['tankId'],
+      _sum: { quantity: true },
+      where: hasFilter ? { tankId: { in: idList, not: null } } : { tankId: { not: null } },
+    }),
+    prisma.fuelTransfer.groupBy({
+      by: ['tankId'],
+      _sum: { quantity: true },
+      where: hasFilter ? { tankId: { in: idList } } : {},
+    }),
+    prisma.fuelTankTransfer.groupBy({
+      by: ['fromTankId'],
+      _sum: { quantity: true },
+      where: hasFilter ? { fromTankId: { in: idList } } : {},
+    }),
+    prisma.fuelTankTransfer.groupBy({
+      by: ['toTankId'],
+      _sum: { quantity: true },
+      where: hasFilter ? { toTankId: { in: idList } } : {},
+    }),
   ]);
-  const stockByTank = Object.fromEntries(stockRows.map((r) => [r.tankId, Number(r._sum.quantity || 0)]));
-  const outByTank = Object.fromEntries(transferRows.map((r) => [r.tankId, Number(r._sum.quantity || 0)]));
-  return { stockByTank, outByTank };
+
+  const stockByTank    = Object.fromEntries(stockRows.map((r) => [r.tankId,     Number(r._sum.quantity || 0)]));
+  const genOutByTank   = Object.fromEntries(genTransferRows.map((r) => [r.tankId,     Number(r._sum.quantity || 0)]));
+  const tankOutByTank  = Object.fromEntries(tankOutRows.map((r) => [r.fromTankId, Number(r._sum.quantity || 0)]));
+  const tankInByTank   = Object.fromEntries(tankInRows.map((r) => [r.toTankId,   Number(r._sum.quantity || 0)]));
+
+  return { stockByTank, genOutByTank, tankOutByTank, tankInByTank };
+}
+
+function calcBalance(id, { stockByTank, genOutByTank, tankOutByTank, tankInByTank }) {
+  return (stockByTank[id] || 0)
+       + (tankInByTank[id] || 0)
+       - (genOutByTank[id] || 0)
+       - (tankOutByTank[id] || 0);
 }
 
 async function listTanks() {
   const tanks = await prisma.fuelTank.findMany({ orderBy: { createdAt: 'asc' } });
-  const { stockByTank, outByTank } = await tankBalanceMap(tanks.map((t) => t.id));
+  const maps = await tankBalanceMap(tanks.map((t) => t.id));
   return tanks.map((t) => ({
     ...t,
-    stockedIn: stockByTank[t.id] || 0,
-    transferredOut: outByTank[t.id] || 0,
-    balance: (stockByTank[t.id] || 0) - (outByTank[t.id] || 0),
+    stockedIn:      maps.stockByTank[t.id]   || 0,
+    genTransferOut: maps.genOutByTank[t.id]  || 0,
+    tankTransferOut:maps.tankOutByTank[t.id] || 0,
+    tankTransferIn: maps.tankInByTank[t.id]  || 0,
+    balance: calcBalance(t.id, maps),
   }));
 }
 
 async function getTank(id) {
   const tank = await prisma.fuelTank.findUnique({ where: { id: Number(id) } });
   if (!tank) throw new Error('Tank not found');
-  const { stockByTank, outByTank } = await tankBalanceMap([tank.id]);
-  return { ...tank, stockedIn: stockByTank[tank.id] || 0, transferredOut: outByTank[tank.id] || 0, balance: (stockByTank[tank.id] || 0) - (outByTank[tank.id] || 0) };
+  const maps = await tankBalanceMap([tank.id]);
+  return {
+    ...tank,
+    stockedIn:       maps.stockByTank[tank.id]   || 0,
+    genTransferOut:  maps.genOutByTank[tank.id]  || 0,
+    tankTransferOut: maps.tankOutByTank[tank.id] || 0,
+    tankTransferIn:  maps.tankInByTank[tank.id]  || 0,
+    balance: calcBalance(tank.id, maps),
+  };
 }
 
 async function createTank({ name, capacity, status = 'active' }) {
@@ -331,15 +370,23 @@ async function createFuelStock({ tankId, date, quantity, rate, amount, supplier,
   });
 }
 
+// FIX: balance check before delete — prevent negative tank balance
 async function deleteFuelStock(id) {
+  const stock = await prisma.fuelStock.findUnique({ where: { id: Number(id) } });
+  if (!stock) throw new Error('Entry not found');
+  if (stock.tankId) {
+    const maps = await tankBalanceMap([stock.tankId]);
+    const currentBalance = calcBalance(stock.tankId, maps);
+    if (currentBalance - stock.quantity < -0.001) {
+      throw new Error(
+        `Delete nahi ho sakta — is entry ko hatane se tank ka balance negative (${(currentBalance - stock.quantity).toFixed(2)} L) ho jaega. Pehle transfers delete karein.`
+      );
+    }
+  }
   return prisma.fuelStock.delete({ where: { id: Number(id) } });
 }
 
 // ── Fuel Transfers (Tank → Generator) ─────────────────────────────────────────
-// Moves fuel out of a tank into a generator. Also creates the matching
-// FuelGeneratorEntry (entryType: 'fuel') in the same transaction so the
-// generator's existing Fuel tab / history / L-per-hr average keep working
-// exactly as before — the transfer is just where that entry's fuel came from.
 
 async function listTransfers({ tankId, generatorId } = {}) {
   return prisma.fuelTransfer.findMany({
@@ -360,9 +407,9 @@ async function createTransfer({ tankId, generatorId, quantity, rate, date, lastH
   if (!generatorId) throw new Error('Select a destination generator');
   const qty = requireNum(quantity, 'Quantity');
 
-  const { stockByTank, outByTank } = await tankBalanceMap([Number(tankId)]);
-  const available = (stockByTank[tankId] || 0) - (outByTank[tankId] || 0);
-  if (qty > available) {
+  const maps = await tankBalanceMap([Number(tankId)]);
+  const available = calcBalance(Number(tankId), maps);
+  if (qty > available + 0.001) {
     throw new Error(`Tank mein sirf ${available.toFixed(2)} L available hai — ${qty} L transfer nahi ho sakta`);
   }
 
@@ -415,6 +462,138 @@ async function deleteTransfer(id) {
   });
 }
 
+// ── Fuel Tank → Tank Transfers ────────────────────────────────────────────────
+
+async function listTankTransfers({ fromTankId, toTankId } = {}) {
+  return prisma.fuelTankTransfer.findMany({
+    where: {
+      ...(fromTankId ? { fromTankId: Number(fromTankId) } : {}),
+      ...(toTankId   ? { toTankId:   Number(toTankId)   } : {}),
+    },
+    include: {
+      fromTank: { select: { id: true, name: true } },
+      toTank:   { select: { id: true, name: true } },
+    },
+    orderBy: { date: 'desc' },
+  });
+}
+
+async function createTankTransfer({ fromTankId, toTankId, quantity, rate, date, notes }) {
+  if (!fromTankId) throw new Error('Source tank select karein');
+  if (!toTankId)   throw new Error('Destination tank select karein');
+  if (Number(fromTankId) === Number(toTankId)) throw new Error('Source aur destination alag tank honi chahiye');
+  const qty = requireNum(quantity, 'Quantity');
+  if (qty <= 0) throw new Error('Quantity zero se zyada honi chahiye');
+
+  const maps = await tankBalanceMap([Number(fromTankId)]);
+  const available = calcBalance(Number(fromTankId), maps);
+  if (qty > available + 0.001) {
+    throw new Error(`Tank mein sirf ${available.toFixed(2)} L available hai — ${qty} L transfer nahi ho sakta`);
+  }
+
+  return prisma.fuelTankTransfer.create({
+    data: {
+      fromTankId: Number(fromTankId),
+      toTankId:   Number(toTankId),
+      quantity:   qty,
+      rate:       parseNum(rate),
+      date:       date ? new Date(date) : new Date(),
+      notes:      notes?.trim() || null,
+    },
+    include: {
+      fromTank: { select: { id: true, name: true } },
+      toTank:   { select: { id: true, name: true } },
+    },
+  });
+}
+
+async function deleteTankTransfer(id) {
+  const transfer = await prisma.fuelTankTransfer.findUnique({ where: { id: Number(id) } });
+  if (!transfer) throw new Error('Transfer not found');
+  return prisma.fuelTankTransfer.delete({ where: { id: Number(id) } });
+}
+
+// ── Fuel Tank Report ──────────────────────────────────────────────────────────
+// Per-tank breakdown: purchases, gen-transfers, tank-to-tank moves, balance.
+
+async function getTankReport({ tankId, from, to } = {}) {
+  const dateWhere = (from || to) ? {
+    date: {
+      ...(from ? { gte: new Date(`${from}T00:00:00`) } : {}),
+      ...(to   ? { lte: new Date(`${to}T23:59:59`)   } : {}),
+    },
+  } : {};
+
+  const byTank       = tankId ? { tankId:     Number(tankId) } : {};
+  const byFromTank   = tankId ? { fromTankId: Number(tankId) } : {};
+  const byToTank     = tankId ? { toTankId:   Number(tankId) } : {};
+
+  const [tanks, stock, genTransfers, tankTransfersOut, tankTransfersIn] = await Promise.all([
+    prisma.fuelTank.findMany({
+      where: tankId ? { id: Number(tankId) } : {},
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.fuelStock.findMany({
+      where: { ...byTank, ...dateWhere },
+      include: { tank: { select: { id: true, name: true } } },
+      orderBy: { date: 'asc' },
+    }),
+    prisma.fuelTransfer.findMany({
+      where: { ...byTank, ...dateWhere },
+      include: {
+        tank:      { select: { id: true, name: true } },
+        generator: { select: { id: true, name: true } },
+      },
+      orderBy: { date: 'asc' },
+    }),
+    prisma.fuelTankTransfer.findMany({
+      where: { ...byFromTank, ...dateWhere },
+      include: {
+        fromTank: { select: { id: true, name: true } },
+        toTank:   { select: { id: true, name: true } },
+      },
+      orderBy: { date: 'asc' },
+    }),
+    prisma.fuelTankTransfer.findMany({
+      where: { ...byToTank, ...dateWhere },
+      include: {
+        fromTank: { select: { id: true, name: true } },
+        toTank:   { select: { id: true, name: true } },
+      },
+      orderBy: { date: 'asc' },
+    }),
+  ]);
+
+  // Current balance — always cumulative (no date filter)
+  const allIds = tanks.map((t) => t.id);
+  const maps = await tankBalanceMap(allIds);
+
+  const tanksWithBalance = tanks.map((t) => ({
+    id: t.id, name: t.name, capacity: t.capacity, status: t.status,
+    balance: calcBalance(t.id, maps),
+  }));
+
+  const totalBalance = tanksWithBalance.reduce((s, t) => s + t.balance, 0);
+
+  return {
+    tanks: tanksWithBalance,
+    stock,
+    genTransfers,
+    tankTransfersOut,
+    tankTransfersIn,
+    totals: {
+      stockQty:       stock.reduce((s, r) => s + r.quantity, 0),
+      stockAmount:    stock.reduce((s, r) => s + Number(r.amount || 0), 0),
+      genTransferQty: genTransfers.reduce((s, r) => s + r.quantity, 0),
+      tankOutQty:     tankTransfersOut.reduce((s, r) => s + r.quantity, 0),
+      tankInQty:      tankTransfersIn.reduce((s, r) => s + r.quantity, 0),
+      totalBalance,
+    },
+  };
+}
+
+// ── Overall Fuel Balance ───────────────────────────────────────────────────────
+
 async function getFuelBalance() {
   const [vehicleAgg, generatorAgg, sheets, tanks] = await Promise.all([
     prisma.fuelVehicleEntry.aggregate({ _sum: { quantity: true }, where: { entryType: 'fuel' } }),
@@ -440,22 +619,20 @@ async function getFuelBalance() {
 }
 
 // ── Daily Report ────────────────────────────────────────────────────────────
-// One row per calendar day, summarising everything that happened across
-// Tanks (stock in), Vehicles (fuel + oil) and Generators (oil — fuel is
-// covered by the tank's transfer-out figure so it isn't double counted).
 function dayKey(d) { return new Date(d).toISOString().slice(0, 10); }
 
 async function getDailyReport({ from, to } = {}) {
   const dateWhere = (from || to) ? {
     date: {
       ...(from ? { gte: new Date(`${from}T00:00:00`) } : {}),
-      ...(to ? { lte: new Date(`${to}T23:59:59`) } : {}),
+      ...(to   ? { lte: new Date(`${to}T23:59:59`)   } : {}),
     },
   } : {};
 
-  const [stock, transfers, vehicleEntries, generatorEntries] = await Promise.all([
+  const [stock, transfers, tankTransfers, vehicleEntries, generatorEntries] = await Promise.all([
     prisma.fuelStock.findMany({ where: dateWhere, include: { tank: { select: { name: true } } } }),
     prisma.fuelTransfer.findMany({ where: dateWhere, include: { tank: { select: { name: true } }, generator: { select: { name: true } } } }),
+    prisma.fuelTankTransfer.findMany({ where: dateWhere, include: { fromTank: { select: { name: true } }, toTank: { select: { name: true } } } }),
     prisma.fuelVehicleEntry.findMany({ where: dateWhere, include: { vehicle: { select: { name: true } } } }),
     prisma.fuelGeneratorEntry.findMany({ where: dateWhere, include: { generator: { select: { name: true } } } }),
   ]);
@@ -467,6 +644,7 @@ async function getDailyReport({ from, to } = {}) {
         date: k,
         tankStockIn: 0, tankStockAmount: 0,
         transferOut: 0,
+        tankToTankOut: 0,
         vehicleFuel: 0, vehicleFuelAmount: 0,
         vehicleOil: 0, vehicleOilAmount: 0,
         generatorOil: 0, generatorOilAmount: 0,
@@ -477,13 +655,14 @@ async function getDailyReport({ from, to } = {}) {
 
   stock.forEach((s) => { const r = ensure(dayKey(s.date)); r.tankStockIn += s.quantity; r.tankStockAmount += Number(s.amount || 0); });
   transfers.forEach((t) => { const r = ensure(dayKey(t.date)); r.transferOut += t.quantity; });
+  tankTransfers.forEach((t) => { const r = ensure(dayKey(t.date)); r.tankToTankOut += t.quantity; });
   vehicleEntries.forEach((e) => {
     const r = ensure(dayKey(e.date));
     if (e.entryType === 'fuel') { r.vehicleFuel += e.quantity; r.vehicleFuelAmount += Number(e.amount || 0); }
     else { r.vehicleOil += e.quantity; r.vehicleOilAmount += Number(e.amount || 0); }
   });
   generatorEntries.forEach((e) => {
-    if (e.entryType !== 'oil') return; // generator fuel is already reflected in transferOut
+    if (e.entryType !== 'oil') return;
     const r = ensure(dayKey(e.date));
     r.generatorOil += e.quantity; r.generatorOilAmount += Number(e.amount || 0);
   });
@@ -495,7 +674,7 @@ async function getDailyReport({ from, to } = {}) {
   const totals = rows.reduce((acc, r) => {
     Object.keys(r).forEach((k) => { if (k !== 'date') acc[k] = (acc[k] || 0) + r[k]; });
     return acc;
-  }, { tankStockIn: 0, tankStockAmount: 0, transferOut: 0, vehicleFuel: 0, vehicleFuelAmount: 0, vehicleOil: 0, vehicleOilAmount: 0, generatorOil: 0, generatorOilAmount: 0, totalAmount: 0 });
+  }, { tankStockIn: 0, tankStockAmount: 0, transferOut: 0, tankToTankOut: 0, vehicleFuel: 0, vehicleFuelAmount: 0, vehicleOil: 0, vehicleOilAmount: 0, generatorOil: 0, generatorOilAmount: 0, totalAmount: 0 });
 
   return { rows, totals };
 }
@@ -509,5 +688,7 @@ module.exports = {
   listTanks, getTank, createTank, updateTank,
   listFuelStock, createFuelStock, deleteFuelStock,
   listTransfers, createTransfer, deleteTransfer,
+  listTankTransfers, createTankTransfer, deleteTankTransfer,
+  getTankReport,
   getFuelBalance, getDailyReport,
 };

@@ -331,6 +331,19 @@
   white-space: nowrap;
 }
 
+.adm-panel-change-btn {
+  background: none;
+  border: 1px solid #93c5fd;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { background: #eff6ff; }
+}
+
 .adm-no-beds {
   font-size: 0.75rem;
   color: #ef4444;

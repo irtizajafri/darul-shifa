@@ -87,6 +87,30 @@
   &:focus { border-color: #3b82f6; }
 }
 
+.pnb-sno-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pnb-sno-input {
+  width: 44px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 6px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: center;
+  outline: none;
+  &:focus { border-color: #3b82f6; }
+}
+
+.pnb-sno-preview {
+  font-size: 0.8rem;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Manual add row (Medicine / Laboratory / Ultrasound / Radiology) ── */
 .pnb-add-row {
   display: flex;
@@ -212,6 +236,15 @@
   background: #475569; color: #fff; border: none; border-radius: 7px; padding: 8px 16px;
   font-size: 0.83rem; font-weight: 600; cursor: pointer;
   &:hover { background: #334155; }
+  &:disabled { opacity: 0.55; cursor: not-allowed; &:hover { background: #475569; } }
+
+  &--save { background: #0f766e; &:hover { background: #0d6460; } }
+}
+
+.pnb-closed-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca;
+  border-radius: 7px; padding: 7px 14px; font-size: 0.8rem; font-weight: 700;
 }
 
 .pnb-total {
@@ -241,7 +274,33 @@
   button { background: none; border: none; color: #fff; cursor: pointer; opacity: 0.8; &:hover { opacity: 1; } }
 }
 
+.pnb-mini-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  outline: none;
+  width: 100%;
+  &:focus { border-color: #3b82f6; }
+
+  &--num { width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.pnb-pkg-row-selected { background: #f0fdf4; }
+
+.pnb-save-row-btn {
+  background: #1a3c6e; color: #fff; border: none; border-radius: 4px; padding: 3px 9px;
+  font-size: 0.72rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+  &:hover { background: #15305a; } &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
 .pnb-modal-body { flex: 1; overflow: auto; padding: 12px 14px; }
+
+.pnb-modal--sm { max-width: 440px; }
+.pnb-close-confirm-body {
+  p { margin: 0 0 10px; font-size: 0.88rem; color: #1e293b; line-height: 1.5; }
+}
+.pnb-close-confirm-hint { font-size: 0.78rem !important; color: #64748b !important; }
 
 .pnb-modal-footer {
   padding: 10px 14px; border-top: 1px solid #e2e8f0; background: #f8fafc;
@@ -290,3 +349,123 @@
   font-size: 0.85rem;
   span { font-size: 1.05rem; font-weight: 900; color: #1a3c6e; margin-left: 6px; }
 }
+
+/* ── Reports dialog ── */
+.pnb-reports-modal { max-width: 460px; }
+
+.pnb-reports-num-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+
+  label { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; white-space: nowrap; }
+  input { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; font-size: 0.85rem; outline: none;
+    &:focus { border-color: #3b82f6; } }
+}
+
+.pnb-reports-types {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pnb-reports-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 6px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #1e293b;
+  cursor: pointer;
+
+  input[type="radio"] { width: 14px; height: 14px; }
+  &:hover { background: #f8fafc; }
+  &--active { background: #eff6ff; font-weight: 600; }
+  &--disabled { color: #cbd5e1; cursor: not-allowed; &:hover { background: none; } }
+}
+
+.pnb-reports-soon {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ── Print reports (Billing Covering Page / Diagnostic Bill) ── */
+.pnbr-print-area { display: none; }
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm; }
+
+  body * { visibility: hidden; }
+  .pnbr-print-area,
+  .pnbr-print-area * { visibility: visible !important; }
+
+  .pnbr-print-area {
+    display: block !important;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    background: #fff;
+  }
+}
+
+.pnbr-cov, .pnbr-diag {
+  font-family: 'Tahoma', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+  padding: 6mm;
+
+  table { width: 100%; border-collapse: collapse; }
+  .l { color: #444; padding: 2px 6px 2px 0; white-space: nowrap; }
+  .v { font-weight: 600; padding: 2px 0; }
+  .r { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.pnbr-cov-hdr {
+  margin-bottom: 8px;
+  td { vertical-align: top; }
+}
+.pnbr-cov-left { font-weight: 700; }
+.pnbr-cov-org { font-size: 13px; }
+.pnbr-cov-right table { width: auto; margin-left: auto; }
+
+.pnbr-cov-info {
+  border-top: 1px solid #333;
+  border-bottom: 1px solid #333;
+  padding: 6px 0;
+  margin-bottom: 10px;
+}
+
+.pnbr-cov-items {
+  th, td { border: 1px solid #999; padding: 4px 8px; }
+  th { background: #f1f5f9; font-weight: 700; }
+}
+
+.pnbr-cov-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid #333;
+}
+.pnbr-cov-words { font-style: italic; text-transform: capitalize; font-size: 11px; }
+.pnbr-cov-total { font-weight: 700; span { font-size: 14px; margin-left: 6px; } }
+
+.pnbr-diag-title { text-align: center; font-weight: 700; text-decoration: underline; margin-bottom: 14px; font-size: 14px; }
+.pnbr-diag-hdr { margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+.pnbr-diag-block { margin-bottom: 14px; }
+.pnbr-diag-dept-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 2px;
+}
+.pnbr-diag-dept { font-weight: 700; text-decoration: underline; }
+.pnbr-diag-amount-label { font-size: 11px; color: #333; }
+.pnbr-diag-tbl td { padding: 2px 0; border: none; }
+.pnbr-diag-subtotal td { font-weight: 700; padding-top: 4px; }
+.pnbr-diag-grand { text-align: right; font-weight: 700; font-size: 13px; margin-top: 14px; span { margin-left: 8px; } }

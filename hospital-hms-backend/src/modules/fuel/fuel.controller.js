@@ -122,6 +122,26 @@ module.exports = {
     success(res, null, 'Transfer deleted');
   }),
 
+  // Tank → Tank transfers
+  listTankTransfers: wrap(async (req, res) => {
+    const data = await service.listTankTransfers(req.query);
+    success(res, data);
+  }),
+  createTankTransfer: wrap(async (req, res) => {
+    const data = await service.createTankTransfer(req.body);
+    success(res, data, 'Fuel transferred between tanks');
+  }),
+  deleteTankTransfer: wrap(async (req, res) => {
+    await service.deleteTankTransfer(req.params.id);
+    success(res, null, 'Tank transfer deleted');
+  }),
+
+  // Tank report
+  getTankReport: wrap(async (req, res) => {
+    const data = await service.getTankReport(req.query);
+    success(res, data);
+  }),
+
   getFuelBalance: wrap(async (req, res) => {
     const data = await service.getFuelBalance();
     success(res, data);

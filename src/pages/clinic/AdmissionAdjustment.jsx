@@ -610,8 +610,13 @@ export default function AdmissionAdjustment() {
                       </label>
                     ))}
                   </div>
-                  {form.panelLabel && (
-                    <span className="adm-panel-badge">{form.panelLabel}</span>
+                  {form.patientCategory === 'panel' && (
+                    <>
+                      {form.panelLabel && <span className="adm-panel-badge">{form.panelLabel}</span>}
+                      <button type="button" className="adm-panel-change-btn" onClick={() => setShowPanelModal(true)}>
+                        {form.panelLabel ? 'Change panel' : 'Select panel…'}
+                      </button>
+                    </>
                   )}
                 </div>
 

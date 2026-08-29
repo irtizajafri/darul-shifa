@@ -1059,6 +1059,7 @@ model ClinicAdmission {
   dischargeCertificate ClinicDischargeCertificate?
   wardHistoryRateOverrides ClinicWardHistoryRateOverride[]
   otRegisters        ClinicOtRegister[]
+  surgeryInformation ClinicSurgeryInformation?
   birthCertificates  ClinicBirthCertificate[]
   panelBillingItems  ClinicPanelBillingItem[]
   panelBillingHeader ClinicPanelBillingHeader?
@@ -1082,9 +1083,25 @@ model ClinicPanelBillingItem {
   rate        Float           @default(0)
   amount      Float           @default(0)
   remarks     String?
+  // Medicine-only — Panadol/Syrup dose ("1 tab", "5ml" etc.), shown/editable
+  // in the Pharmacy Bill detail popup alongside Qty/Rate.
+  dosage      String?
   // Must stay within the header's admitDate/dischargeDate — see
   // ClinicPanelBillingHeader and updatePanelBillingItem's validation.
   date        DateTime?
+  // Set when this row is a manual Medicine/Laboratory/Radiology/Ultrasound
+  // add (see addPanelBillingItem) — its own row here (own Date/Qty/Rate,
+  // itemized in the matching detail popup), but its amount rolls into that
+  // head's single row in the main grid instead of showing as a separate
+  // line. Null for every other row (ward/item/pharmacy/diagnostic head rows
+  // themselves, and free-standing custom rows like Panel Heads).
+  groupInto   String?
+  // Set when this row replaces a specific live Provisional Bill entry (its
+  // pharmacyRows/diagnosticRows id, e.g. "inv-19" or "100-87") edited from
+  // the detail popup — see overrideLiveDetailItem. That live entry then gets
+  // excluded from display/totals in its place; the real Provisional Bill
+  // itself is never touched.
+  overridesLiveId String?
   sortOrder   Int             @default(0)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
@@ -1097,11 +1114,18 @@ model ClinicPanelBillingItem {
 // principle as ClinicPanelBillingItem). Every row's own Date (above) must
 // stay within this range — enforced in updatePanelBillingItem/addPanelBillingItem.
 model ClinicPanelBillingHeader {
-  admissionId   Int             @id
-  admission     ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
-  admitDate     DateTime?
-  dischargeDate DateTime?
-  updatedAt     DateTime        @updatedAt
+  admissionId    Int             @id
+  admission      ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  admitDate      DateTime?
+  dischargeDate  DateTime?
+  patientName    String?
+  consultantName String?
+  diagnosis      String?
+  // Billing's own Sno — user types just this 2-digit sequence; the full
+  // "seq-MM-YY" is derived live from admitDate (see formatBillingSno), so it
+  // never goes stale if Admit Date is edited afterward.
+  snoSeq         String?
+  updatedAt      DateTime        @updatedAt
 }
 
 // Panels > Parameter > Bill Head — a bill-head list independent of the main
@@ -1228,6 +1252,37 @@ model ClinicOtRegister {
 
   @@index([admissionId])
   @@index([admissionNo])
+}
+
+// ─── Surgery / Procedure Information ─────────────────────────────────────────
+// operationDateTime: date+time of the procedure
+// surgeryTypeId:     Procedure (from SurgeryType parameters)
+// anesthesistId:     Doctor (Anaesthetic staff category)
+// anesthesiaType:    General | Spinal | Local | None
+// consultantIds:     Selected consultant doctor IDs
+// rmoIds:            Selected RMO doctor IDs
+// techIds:           Selected OT Technician doctor IDs
+// techOnCall:        On-Call flag for OT Technician section
+// itemsJson:         [{itemCode, description, quantity}]
+model ClinicSurgeryInformation {
+  id                Int             @id @default(autoincrement())
+  admissionId       Int             @unique
+  admission         ClinicAdmission @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  operationDateTime DateTime?
+  surgeryTypeId     Int?
+  anesthesistId     Int?
+  anesthesiaType    String          @default("None")
+  consultantIds     Int[]
+  rmoIds            Int[]
+  techIds           Int[]
+  techOnCall        Boolean         @default(false)
+  itemsJson         Json?
+  createdByUserId   String?
+  createdByName     String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([admissionId])
 }
 
 // ─── Discount & Refund Against Admission (mid-admission, before discharge) ───
@@ -1994,6 +2049,43 @@ model AttendanceOverride {
   @@map("attendance_overrides")
 }
 
+// ─── Panel Cheque Transaction ─────────────────────────────────────────────────
+// One cheque received from a Panel company against a batch of that company's
+// "posted" (File Closed) admissions for a given Billing Month — see
+// getPanelChequeSummary/receivePanelCheque. Each covered admission gets its
+// own ClinicPanelChequeReceiptItem, locking in its Billing amount at the time
+// (Billing is already read-only once the file is closed) and its share of
+// the cheque's Received/Deduction split (proportional to its own amount).
+model ClinicPanelChequeReceipt {
+  id              Int      @id @default(autoincrement())
+  panelCompanyId  Int
+  chequeNo        String
+  chequeDate      DateTime
+  billingMonth    Int
+  billingYear     Int
+  totalAmount     Float    @default(0)
+  receivedAmount  Float    @default(0)
+  deduction       Float    @default(0)
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+
+  items ClinicPanelChequeReceiptItem[]
+}
+
+model ClinicPanelChequeReceiptItem {
+  id             Int                      @id @default(autoincrement())
+  receiptId      Int
+  receipt        ClinicPanelChequeReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  admissionId    Int                      @unique
+  amount         Float                    @default(0)
+  receivedShare  Float                    @default(0)
+  deductionShare Float                    @default(0)
+  createdAt      DateTime                 @default(now())
+
+  @@index([receiptId])
+}
+
 // ─── Panel Bill Comparison ────────────────────────────────────────────────────
 
 model ClinicPanelBillRow {
@@ -2145,19 +2237,39 @@ model FuelGeneratorEntry {
 }
 
 // ─── Fuel Tanks — central fuel is stocked here first, then transferred to a
-// specific generator (FuelTransfer). A tank's current level = its stock-in
-// minus everything transferred out of it. ─────────────────────────────────────
+// specific generator (FuelTransfer) or another tank (FuelTankTransfer).
+// A tank's current level = stockIn + tankTransferIn - genTransferOut - tankTransferOut
 model FuelTank {
-  id           Int            @id @default(autoincrement())
-  name         String
-  capacity     Float?
-  status       String         @default("active")
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  stockEntries FuelStock[]
-  transfersOut FuelTransfer[]
+  id               Int                @id @default(autoincrement())
+  name             String
+  capacity         Float?
+  status           String             @default("active")
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  stockEntries     FuelStock[]
+  transfersOut     FuelTransfer[]
+  tankTransfersOut FuelTankTransfer[]  @relation("TankTransfersOut")
+  tankTransfersIn  FuelTankTransfer[]  @relation("TankTransfersIn")
 
   @@index([status])
+}
+
+// Tank → Tank fuel movement (internal redistribution between tanks)
+model FuelTankTransfer {
+  id         Int      @id @default(autoincrement())
+  fromTankId Int
+  fromTank   FuelTank @relation("TankTransfersOut", fields: [fromTankId], references: [id])
+  toTankId   Int
+  toTank     FuelTank @relation("TankTransfersIn", fields: [toTankId], references: [id])
+  quantity   Float
+  rate       Float?
+  date       DateTime @default(now())
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@index([fromTankId])
+  @@index([toTankId])
+  @@index([date])
 }
 
 // A single Tank → Generator fuel movement. Also creates a matching

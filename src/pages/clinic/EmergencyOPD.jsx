@@ -335,7 +335,8 @@ export default function EmergencyOPD() {
   function moveLeft() { setRightDoctors([]); setCheckedLeft([]); }
 
   const isComplementary = form.patientCategory === 'complementary';
-  const paymentMethodDisabled = form.patientCategory === 'panel' || isComplementary;
+  const isPanel = form.patientCategory === 'panel';
+  const paymentMethodDisabled = isPanel || isComplementary;
   const effectivePaymentType = form.patientCategory === 'panel' ? 'panel'
     : isComplementary ? 'complementary'
     : form.paymentMethod;
@@ -358,10 +359,13 @@ export default function EmergencyOPD() {
   const refundAmt = Math.max(0, (Number(receive) || 0) - grandTotal);
 
   // Received amount auto-follows the selected slip amount (doctor/item +
-  // discount + CC surcharge) so it never has to be typed manually.
+  // discount + CC surcharge) so it never has to be typed manually. Panel
+  // patients don't pay cash at the counter — the company settles later via
+  // Panel Cheque Transaction — so Received always stays 0 for them even
+  // though the slip's own Amount/Total keep showing the real charge.
   useEffect(() => {
-    setReceive(isComplementary ? '' : String(grandTotal));
-  }, [grandTotal, isComplementary]);
+    setReceive(isPanel ? '0' : (isComplementary ? '' : String(grandTotal)));
+  }, [grandTotal, isComplementary, isPanel]);
 
   // Auto-fill the slip from the admitted patient's own record — the data
   // already exists on their admission, no need to retype it.
@@ -690,7 +694,7 @@ export default function EmergencyOPD() {
                   )}
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Receive</span>
-                    <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary} />
+                    <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary || isPanel} />
                   </div>
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Refund</span>

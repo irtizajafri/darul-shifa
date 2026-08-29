@@ -130,6 +130,7 @@ export const PERMISSIONS_MAP = {
           { key: 'bed-shifting',                label: 'Bed Shifting' },
           { key: 'bed-status',                  label: 'Bed Status' },
           { key: 'upload-patient-document',     label: 'Upload Patient Document' },
+          { key: 'surgery-information',         label: 'Surgery / Procedure Information' },
         ],
       },
 
@@ -153,8 +154,10 @@ export const PERMISSIONS_MAP = {
           { key: 'bill-heads',       label: 'Bill Head' },
           { key: 'provisional-bill', label: 'Panel Provisional Bill' },
           { key: 'billing',          label: 'Billing' },
+          { key: 'cheque-received',  label: 'Panel Cheque Transaction' },
           { key: 'bill-comparison',  label: 'Bill Comparison Report' },
           { key: 'billing-detail',   label: 'Billing Detail Report' },
+          { key: 'cheques-report',   label: 'Panel Cheques Report' },
         ],
       },
 

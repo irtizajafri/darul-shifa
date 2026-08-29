@@ -22,6 +22,7 @@ export const useFuelStore = create((set) => ({
   fuelBalance: null,
   tanks: [],
   transfers: [],
+  tankTransfers: [],
   loading: false,
   error: null,
 
@@ -61,6 +62,35 @@ export const useFuelStore = create((set) => ({
   deleteTransfer: async (id) => {
     await request(`/transfers/${id}`, { method: 'DELETE' });
     set((s) => ({ transfers: s.transfers.filter((t) => t.id !== id) }));
+  },
+
+  // ── Tank → Tank Transfers ─────────────────────────────────────────────────
+  fetchTankTransfers: async ({ fromTankId, toTankId } = {}) => {
+    const qs = new URLSearchParams();
+    if (fromTankId) qs.set('fromTankId', fromTankId);
+    if (toTankId)   qs.set('toTankId',   toTankId);
+    const data = await request(`/tank-transfers?${qs}`);
+    set({ tankTransfers: Array.isArray(data) ? data : [] });
+  },
+
+  createTankTransfer: async (payload) => {
+    const data = await request('/tank-transfers', { method: 'POST', body: JSON.stringify(payload) });
+    set((s) => ({ tankTransfers: [data, ...s.tankTransfers] }));
+    return data;
+  },
+
+  deleteTankTransfer: async (id) => {
+    await request(`/tank-transfers/${id}`, { method: 'DELETE' });
+    set((s) => ({ tankTransfers: s.tankTransfers.filter((t) => t.id !== id) }));
+  },
+
+  // ── Tank Report ───────────────────────────────────────────────────────────
+  fetchTankReport: async ({ tankId, from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (tankId) qs.set('tankId', tankId);
+    if (from)   qs.set('from', from);
+    if (to)     qs.set('to', to);
+    return request(`/tank-report?${qs}`);
   },
 
   // ── Generators ────────────────────────────────────────────────────────────
@@ -144,7 +174,7 @@ export const useFuelStore = create((set) => ({
     try {
       const qs = new URLSearchParams();
       if (generatorId) qs.set('generatorId', generatorId);
-      if (entryType) qs.set('entryType', entryType);
+      if (entryType)   qs.set('entryType', entryType);
       const data = await request(`/generator-entries?${qs}`);
       set({ generatorEntries: Array.isArray(data) ? data : [], loading: false });
     } catch (err) { set({ error: err.message, loading: false }); throw err; }
@@ -153,7 +183,7 @@ export const useFuelStore = create((set) => ({
   fetchLastGeneratorEntry: async ({ generatorId, entryType }) => {
     const qs = new URLSearchParams();
     if (generatorId) qs.set('generatorId', generatorId);
-    if (entryType) qs.set('entryType', entryType);
+    if (entryType)   qs.set('entryType', entryType);
     return request(`/generator-entries/last?${qs}`);
   },
 
@@ -178,7 +208,7 @@ export const useFuelStore = create((set) => ({
   fetchDailyFuelReport: async ({ from, to } = {}) => {
     const qs = new URLSearchParams();
     if (from) qs.set('from', from);
-    if (to) qs.set('to', to);
+    if (to)   qs.set('to', to);
     return request(`/daily-report?${qs}`);
   },
 
@@ -196,6 +226,7 @@ export const useFuelStore = create((set) => ({
       const qs = tankId ? `?tankId=${tankId}` : '';
       const data = await request(`/stock${qs}`);
       set({ fuelStock: Array.isArray(data) ? data : [] });
+      return Array.isArray(data) ? data : [];
     } catch (err) { throw err; }
   },
 

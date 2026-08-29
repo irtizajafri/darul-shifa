@@ -1160,8 +1160,8 @@ async function getPanelAdmissionBilling(req, res, next) {
 
 async function updatePanelBillingItem(req, res, next) {
   try {
-    const { qty, rate, date, remarks } = req.body;
-    const data = await service.updatePanelBillingItem(req.params.itemId, { qty, rate, date, remarks });
+    const { qty, rate, date, remarks, dosage } = req.body;
+    const data = await service.updatePanelBillingItem(req.params.itemId, { qty, rate, date, remarks, dosage });
     success(res, data, 'Row updated');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -1171,8 +1171,8 @@ async function updatePanelBillingItem(req, res, next) {
 
 async function updatePanelBillingHeader(req, res, next) {
   try {
-    const { admitDate, dischargeDate } = req.body;
-    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate });
+    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq } = req.body;
+    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq });
     success(res, data, 'Header updated');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -1182,9 +1182,20 @@ async function updatePanelBillingHeader(req, res, next) {
 
 async function addPanelBillingItem(req, res, next) {
   try {
-    const { description, qty, rate, date, remarks } = req.body;
-    const data = await service.addPanelBillingItem(req.params.admissionId, { description, qty, rate, date, remarks });
+    const { description, qty, rate, date, remarks, mergeInto, dosage } = req.body;
+    const data = await service.addPanelBillingItem(req.params.admissionId, { description, qty, rate, date, remarks, mergeInto, dosage });
     success(res, data, 'Row added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function overrideLiveDetailItem(req, res, next) {
+  try {
+    const { liveId, mergeInto, description, qty, rate, date, dosage, originalAmount } = req.body;
+    const data = await service.overrideLiveDetailItem(req.params.admissionId, liveId, { mergeInto, description, qty, rate, date, dosage, originalAmount });
+    success(res, data, 'Row updated');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -1480,6 +1491,73 @@ async function searchPanelAdmissions(req, res, next) {
   try {
     success(res, await service.searchPanelAdmissions(req.query.q));
   } catch (err) { next(err); }
+}
+
+async function getPanelChequeSummary(req, res, next) {
+  try {
+    const { from, to } = req.query;
+    success(res, await service.getPanelChequeSummary({ from, to }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getPanelChequesReport(req, res, next) {
+  try {
+    const { status, from, to, panelCompanyId } = req.query;
+    success(res, await service.getPanelChequesReport({ status, from, to, panelCompanyId }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function previewPanelChequeImport(req, res, next) {
+  try {
+    success(res, await service.previewPanelChequeImport(req.body.rows));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function confirmPanelChequeImport(req, res, next) {
+  try {
+    const { rows, companyNameMap } = req.body;
+    const data = await service.confirmPanelChequeImport(rows, { companyNameMap });
+    success(res, data, `${data.imported} admissions imported, ${data.updated} backfilled`);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getUnpaidPanelAdmissions(req, res, next) {
+  try {
+    const { panelCompanyId, month, year } = req.query;
+    success(res, await service.getUnpaidPanelAdmissions({ panelCompanyId, month, year }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function receivePanelCheque(req, res, next) {
+  try {
+    const {
+      panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds,
+      createdByUserId, createdByName,
+    } = req.body;
+    const data = await service.receivePanelCheque({
+      panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds,
+      createdByUserId, createdByName,
+    });
+    success(res, data, 'Cheque receive ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
 }
 
 async function getAdmissionForAdjustment(req, res, next) {
@@ -1959,9 +2037,16 @@ module.exports = {
   getAdmissionForDiscountRefund,
   getPanelAdmissionBilling,
   searchPanelAdmissions,
+  getPanelChequeSummary,
+  getPanelChequesReport,
+  previewPanelChequeImport,
+  confirmPanelChequeImport,
+  getUnpaidPanelAdmissions,
+  receivePanelCheque,
   updatePanelBillingItem,
   updatePanelBillingHeader,
   addPanelBillingItem,
+  overrideLiveDetailItem,
   deletePanelBillingItem,
   addPanelBillingItemsBulk,
   getPanelBillHeads,
@@ -2030,6 +2115,8 @@ module.exports = {
   getDeathCertificate,
   updateDeathCertificate,
   bulkImportDeathCertificates,
+  getSurgeryInformationForAdmission,
+  saveSurgeryInformation,
 };
 
 async function importBillComparison(req, res, next) {
@@ -2124,4 +2211,25 @@ async function bulkImportDeathCertificates(req, res, next) {
     const result = await service.bulkImportDeathCertificates(rows);
     success(res, result, `${result.created} naye, ${result.updated} update, ${result.skipped} skip, ${result.doctorsCreated} naye doctors auto-created`);
   } catch (err) { next(err); }
+}
+
+// ─── Surgery / Procedure Information ─────────────────────────────────────────
+async function getSurgeryInformationForAdmission(req, res, next) {
+  try {
+    const data = await service.getSurgeryInformationForAdmission(req.params.admissionNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function saveSurgeryInformation(req, res, next) {
+  try {
+    const data = await service.saveSurgeryInformation(req.params.admissionId, req.body);
+    success(res, data, 'Surgery Information save ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
 }

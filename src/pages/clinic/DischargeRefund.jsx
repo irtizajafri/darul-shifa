@@ -520,6 +520,9 @@ export default function DischargeRefund() {
                 <div><label>Name</label><span>{detail.admission.patientTitle} {detail.admission.patientName}</span></div>
                 <div><label>S/o, W/o, D/o</label><span>{detail.admission.responsibleParty || '—'}</span></div>
                 <div><label>Room #</label><span>{detail.bed?.name || '—'}</span></div>
+                {detail.admission.patientCategory === 'panel' && (
+                  <div><label>Company</label><span>{detail.company ? `${detail.company.code} — ${detail.company.name}` : '—'}</span></div>
+                )}
               </div>
 
               <div className="dr-separator" />

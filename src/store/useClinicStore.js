@@ -738,6 +738,10 @@ export const useClinicStore = create((set) => ({
     return request(`/admission/panel-billing/header/${admissionId}`, { method: 'PATCH', body: JSON.stringify(payload) });
   },
 
+  overrideLiveDetailItem: async (admissionId, payload) => {
+    return request(`/admission/panel-billing/${admissionId}/items/override`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
   addPanelBillingItem: async (admissionId, payload) => {
     return request(`/admission/panel-billing/${admissionId}/items`, { method: 'POST', body: JSON.stringify(payload) });
   },
@@ -748,6 +752,39 @@ export const useClinicStore = create((set) => ({
 
   addPanelBillingItemsBulk: async (admissionId, items) => {
     return request(`/admission/panel-billing/${admissionId}/items/bulk`, { method: 'POST', body: JSON.stringify({ items }) });
+  },
+
+  // ── Panels > Panel Cheque Transaction ────────────────────────────────────────
+  fetchPanelChequeSummary: async ({ from, to } = {}) => {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    const qs = q.toString();
+    return request(`/panel-cheque/summary${qs ? `?${qs}` : ''}`);
+  },
+
+  fetchPanelChequesReport: async ({ status, from, to, panelCompanyId } = {}) => {
+    const q = new URLSearchParams({ status: status || 'both', panelCompanyId: panelCompanyId || 'ALL' });
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    return request(`/panel-cheque/report?${q.toString()}`);
+  },
+
+  fetchUnpaidPanelAdmissions: async ({ panelCompanyId, month, year }) => {
+    const q = new URLSearchParams({ panelCompanyId, month, year });
+    return request(`/panel-cheque/unpaid?${q.toString()}`);
+  },
+
+  receivePanelCheque: async (payload) => {
+    return request('/panel-cheque/receive', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  previewPanelChequeImport: async (rows) => {
+    return request('/panel-cheque/import/preview', { method: 'POST', body: JSON.stringify({ rows }) });
+  },
+
+  confirmPanelChequeImport: async (rows, companyNameMap) => {
+    return request('/panel-cheque/import/confirm', { method: 'POST', body: JSON.stringify({ rows, companyNameMap }) });
   },
 
   // ── Panels > Parameter > Bill Head (Panel-only) ─────────────────────────────

@@ -1,0 +1,464 @@
+$blue:    #1a3c6e;
+$border:  #bbb;
+$bg:      #dde3ea;
+$white:   #fff;
+
+// ─── Page Shell ───────────────────────────────────────────────────────────────
+.si-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: $bg;
+  font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
+  font-size: 12px;
+  color: #111;
+}
+
+.si-title-bar {
+  background: $blue;
+  color: $white;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+}
+.si-title-text { font-size: 14px; font-weight: 700; letter-spacing: 0.3px; }
+
+.si-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 14px;
+  overflow: auto;
+}
+
+// ─── Shared card ──────────────────────────────────────────────────────────────
+%card {
+  background: $white;
+  border: 1px solid $border;
+  border-radius: 3px;
+}
+
+// ─── Top card: Admission # + Patient Info ─────────────────────────────────────
+.si-top-card {
+  @extend %card;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.si-adm-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.si-adm-lbl {
+  width: 90px;
+  min-width: 90px;
+  font-weight: 700;
+  color: $blue;
+  font-size: 12px;
+}
+.si-adm-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: $blue;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 8px;
+  background: #f0f4fb;
+  max-width: 420px;
+  &[readonly] { cursor: default; }
+}
+
+.si-lookup-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: 1px solid $border; border-radius: 3px;
+  background: #f0f0f0; cursor: pointer; color: #444; padding: 0; flex-shrink: 0;
+  &:hover { background: #e0e8f0; border-color: $blue; color: $blue; }
+}
+.si-clear-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px;
+  border: 1px solid #ccc; border-radius: 3px;
+  background: #f5f5f5; cursor: pointer; color: #999; font-size: 12px;
+  padding: 0; flex-shrink: 0;
+  &:hover { background: #ffe0e0; border-color: #d44; color: #d44; }
+}
+
+// ─── Patient Info Bar ─────────────────────────────────────────────────────────
+.si-patient-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  background: #eef3fb;
+  border: 1px solid #c0d0e8;
+  border-radius: 3px;
+  padding: 6px 10px;
+}
+.si-pi { display: flex; align-items: center; gap: 4px; }
+.si-pi-lbl { font-weight: 600; color: #666; font-size: 11px; white-space: nowrap; }
+.si-pi-val { font-weight: 700; color: #222; font-size: 11.5px; }
+.si-pi-name { color: $blue; font-size: 13px; }
+.si-pi-cat  { text-transform: capitalize; }
+
+// ─── Shared input ─────────────────────────────────────────────────────────────
+.si-input {
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 7px;
+  background: #f9f9f9;
+  color: #111;
+  &:focus { outline: none; border-color: $blue; }
+
+  &--dt     { width: 200px; }
+  &--select { width: 220px; }
+  &--code   { width: 100px; }
+  &--desc   { flex: 1; min-width: 0; }
+  &--qty    { width: 80px; }
+}
+
+// ─── Form Card (Operation Data / Anesthesia row) ──────────────────────────────
+.si-form-card {
+  @extend %card;
+  padding: 10px 14px;
+}
+
+.si-field-row {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+.si-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.si-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.si-lbl {
+  width: 110px;
+  min-width: 110px;
+  text-align: right;
+  font-weight: 600;
+  color: #444;
+  font-size: 11.5px;
+}
+
+// ── Anesthesia radio buttons ──
+.si-field--anesthesia { align-items: center; }
+.si-radios {
+  display: flex;
+  gap: 12px;
+}
+.si-radio-lbl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #333;
+  cursor: pointer;
+  white-space: nowrap;
+
+  input[type="radio"] { cursor: pointer; }
+}
+
+// ─── Staff Columns Card ───────────────────────────────────────────────────────
+.si-staff-card {
+  @extend %card;
+  display: flex;
+  overflow: hidden;
+}
+
+.si-staff-divider {
+  width: 1px;
+  background: $border;
+  flex-shrink: 0;
+}
+
+.si-staff-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 200px;
+  max-height: 240px;
+}
+
+.si-staff-title {
+  background: #e8eef8;
+  border-bottom: 1px solid $border;
+  padding: 5px 10px;
+  font-weight: 700;
+  color: $blue;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.si-oncall-lbl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  cursor: pointer;
+  input { cursor: pointer; }
+}
+
+.si-staff-list-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: #f5f7fb;
+  border-bottom: 1px solid #ddd;
+  font-weight: 700;
+  font-size: 11px;
+  color: #555;
+  flex-shrink: 0;
+}
+.si-staff-c {
+  width: 18px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.si-staff-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.si-staff-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+
+  &:nth-child(even) { background: #f9f9f9; }
+  &:hover { background: #dbe8f8; }
+
+  input[type="checkbox"] { cursor: pointer; flex-shrink: 0; }
+}
+
+.si-staff-name {
+  font-size: 11.5px;
+  color: #222;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.si-staff-empty {
+  padding: 10px;
+  text-align: center;
+  color: #aaa;
+  font-size: 11px;
+  font-style: italic;
+}
+
+// ─── Items Used Card ──────────────────────────────────────────────────────────
+.si-items-card {
+  @extend %card;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.si-items-title {
+  font-weight: 700;
+  color: $blue;
+  font-size: 12px;
+}
+
+.si-items-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.si-items-qty-lbl {
+  font-weight: 600;
+  color: $blue;
+  font-size: 12px;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.si-add-btn {
+  background: $blue;
+  color: $white;
+  border: none;
+  border-radius: 3px;
+  padding: 4px 14px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover { background: #1e4a88; }
+}
+
+.si-items-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  border: 1px solid #ddd;
+
+  th {
+    background: #e8eef8;
+    padding: 5px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+  }
+  td {
+    padding: 4px 10px;
+    border-bottom: 1px solid #eee;
+  }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+}
+
+.si-items-th--code { width: 120px; }
+.si-items-th--qty  { width: 90px; }
+.si-items-th--del  { width: 36px; }
+
+.si-items-empty {
+  text-align: center;
+  color: #aaa;
+  font-style: italic;
+  padding: 14px !important;
+}
+
+.si-del-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #cc0000;
+  padding: 2px 4px;
+  border-radius: 3px;
+  display: flex; align-items: center;
+  &:hover { background: #ffe0e0; }
+}
+
+// ─── Footer ───────────────────────────────────────────────────────────────────
+.si-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 0 4px;
+}
+
+.si-save-btn {
+  background: $blue;
+  color: $white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 24px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  &:hover:not(:disabled) { background: #1e4a88; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+}
+
+// ─── Modals ───────────────────────────────────────────────────────────────────
+.si-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.si-modal {
+  background: $white;
+  border: 1px solid #999;
+  border-radius: 5px;
+  width: 700px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.si-modal-hdr {
+  background: $blue;
+  color: $white;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  font-size: 13px;
+}
+.si-modal-close {
+  background: none; border: none; color: $white;
+  font-size: 16px; cursor: pointer; padding: 0 4px;
+  &:hover { color: #ffcccc; }
+}
+.si-modal-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ddd;
+  background: #f5f7fa;
+}
+.si-modal-icon { color: #777; flex-shrink: 0; }
+.si-modal-input {
+  flex: 1;
+  font-family: inherit;
+  font-size: 12px;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 4px 8px;
+  &:focus { outline: none; border-color: $blue; }
+}
+.si-modal-body { flex: 1; overflow: auto; }
+.si-modal-empty { padding: 24px; text-align: center; color: #888; }
+
+.si-tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+
+  thead tr { background: #e8eef8; position: sticky; top: 0; }
+  th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: $blue;
+    border-bottom: 2px solid #b0c0dc;
+    white-space: nowrap;
+  }
+  tbody tr {
+    cursor: pointer;
+    &:nth-child(even) { background: #f9f9f9; }
+    &:hover { background: #dbe8f8; }
+  }
+  td { padding: 5px 10px; border-bottom: 1px solid #eee; }
+}
+.si-td-empty { text-align: center; color: #999; padding: 20px !important; }

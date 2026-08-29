@@ -31,7 +31,7 @@ router.get('/tanks', controller.listTanks);
 router.post('/tanks', controller.createTank);
 router.patch('/tanks/:id', controller.updateTank);
 
-// Fuel stock, transfers & balance
+// Fuel stock, gen-transfers & balance
 router.get('/balance', controller.getFuelBalance);
 router.get('/stock', controller.listFuelStock);
 router.post('/stock', controller.createFuelStock);
@@ -39,6 +39,14 @@ router.delete('/stock/:id', controller.deleteFuelStock);
 router.get('/transfers', controller.listTransfers);
 router.post('/transfers', controller.createTransfer);
 router.delete('/transfers/:id', controller.deleteTransfer);
+
+// Tank → Tank transfers
+router.get('/tank-transfers', controller.listTankTransfers);
+router.post('/tank-transfers', controller.createTankTransfer);
+router.delete('/tank-transfers/:id', controller.deleteTankTransfer);
+
+// Tank report
+router.get('/tank-report', controller.getTankReport);
 
 // Daily report — cross-module (tanks/vehicles/generators) day-by-day summary
 router.get('/daily-report', controller.getDailyReport);
