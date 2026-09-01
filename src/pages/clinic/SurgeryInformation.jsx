@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Search, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Search, Trash2, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
+import { useInventoryStore } from '../../store/useInventoryStore';
 import './SurgeryInformation.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -179,13 +180,18 @@ const emptyForm = () => ({
   rmoIds:            [],
   techIds:           [],
   techOnCall:        false,
-  itemsJson:         [],       // [{itemCode, description, quantity}]
 });
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SurgeryInformation() {
   const { user }                          = useAuthStore();
   const { surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+  const {
+    masterOptions, fetchMastersOptions,
+    items, fetchItems,
+    createGDBatch,
+    gdHeaders, fetchGDHeaders,
+  } = useInventoryStore();
 
   const [showLookup, setShowLookup] = useState(false);
   const [admission, setAdmission]   = useState(null);
@@ -193,10 +199,95 @@ export default function SurgeryInformation() {
   const [form, setForm]             = useState(emptyForm());
   const [saving, setSaving]         = useState(false);
 
-  // ── New item row state ──
-  const [newItem, setNewItem] = useState({ itemCode: '', description: '', quantity: '' });
+  // ── Request Items (GD) — same Department + Item-search + Qty flow as
+  // Inventory > Goods Issue's own "Create GD" form, just pre-scoped to this
+  // admission (admissionNumber) so it lands in the exact same GD table —
+  // Store sees it via the normal GD notification/Goods Issue screen, no
+  // separate OT-only mechanism.
+  const [gdDepartmentId, setGdDepartmentId] = useState('');
+  const [gdSelectedItems, setGdSelectedItems] = useState([]); // [{itemId, itemName, itemCode, quantityRequested}]
+  const [gdItemSearch, setGdItemSearch] = useState('');
+  const [gdDropdownOpen, setGdDropdownOpen] = useState(false);
+  const [gdHighlighted, setGdHighlighted] = useState(-1);
+  const [gdSubmitting, setGdSubmitting] = useState(false);
+  const gdSearchRef = useRef(null);
+  const gdListRef = useRef(null);
+  const gdQtyRefs = useRef({});
 
-  useEffect(() => { fetchSurgeryTypes(); }, [fetchSurgeryTypes]);
+  useEffect(() => {
+    fetchSurgeryTypes();
+    fetchMastersOptions();
+    fetchItems({ status: 'active' });
+    // eslint-disable-next-line
+  }, [fetchSurgeryTypes]);
+
+  const gdItemSearchResults = useMemo(() => {
+    const q = gdItemSearch.trim().toLowerCase();
+    const pool = !q ? (items || []) : (items || []).filter((it) =>
+      String(it.name || '').toLowerCase().includes(q) || String(it.code || '').toLowerCase().includes(q)
+    );
+    return pool.slice(0, 20);
+  }, [items, gdItemSearch]);
+
+  useEffect(() => {
+    if (gdListRef.current && gdHighlighted >= 0) {
+      gdListRef.current.children[gdHighlighted]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [gdHighlighted]);
+
+  function addGdItem(item) {
+    if (gdSelectedItems.find((i) => i.itemId === item.id)) { toast.error('Item pehle se add hai'); return; }
+    setGdSelectedItems((prev) => [...prev, { itemId: item.id, itemName: item.name, itemCode: item.code, quantityRequested: '' }]);
+    setGdItemSearch('');
+    setGdDropdownOpen(false);
+    setGdHighlighted(-1);
+    setTimeout(() => gdQtyRefs.current[item.id]?.focus(), 0);
+  }
+
+  function removeGdItem(itemId) {
+    setGdSelectedItems((prev) => prev.filter((i) => i.itemId !== itemId));
+  }
+
+  function updateGdItemQty(itemId, qty) {
+    setGdSelectedItems((prev) => prev.map((i) => (i.itemId === itemId ? { ...i, quantityRequested: qty } : i)));
+  }
+
+  function handleGdItemSearchKeyDown(e) {
+    if (!gdDropdownOpen) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setGdDropdownOpen(true); setGdHighlighted(0); }
+      return;
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setGdHighlighted((p) => Math.min(p + 1, gdItemSearchResults.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setGdHighlighted((p) => Math.max(p - 1, 0)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (gdHighlighted >= 0 && gdItemSearchResults[gdHighlighted]) addGdItem(gdItemSearchResults[gdHighlighted]); }
+    else if (e.key === 'Escape') { setGdDropdownOpen(false); setGdHighlighted(-1); }
+  }
+
+  async function handleRequestItems() {
+    if (!admission) return;
+    if (!gdDepartmentId) { toast.error('Department select karein'); return; }
+    if (gdSelectedItems.length === 0) { toast.error('Kam az kam ek item add karein'); return; }
+    const badQty = gdSelectedItems.find((i) => !i.quantityRequested || Number(i.quantityRequested) <= 0);
+    if (badQty) { toast.error(`Quantity darj karein: ${badQty.itemName}`); return; }
+    setGdSubmitting(true);
+    try {
+      await createGDBatch({
+        departmentId: Number(gdDepartmentId),
+        requestDate: new Date().toISOString(),
+        items: gdSelectedItems.map((i) => ({ itemId: i.itemId, quantityRequested: Number(i.quantityRequested) })),
+        admissionNumber: admission.admissionNo,
+        comment: `Surgery — ${admission.patientName}`,
+      });
+      toast.success('Items request ho gayi (GD ban gayi)');
+      setGdSelectedItems([]);
+      setGdItemSearch('');
+      await fetchGDHeaders({ admissionNumber: admission.admissionNo });
+    } catch (e) {
+      toast.error(e.message || 'GD create nahi hui');
+    } finally {
+      setGdSubmitting(false);
+    }
+  }
 
   // Filtered doctor lists by role
   const consultants   = doctorsForRole(allDoctors, 'consultant');
@@ -227,8 +318,11 @@ export default function SurgeryInformation() {
         rmoIds:            si.rmoIds         || [],
         techIds:           si.techIds        || [],
         techOnCall:        si.techOnCall     || false,
-        itemsJson:         Array.isArray(si.itemsJson) ? si.itemsJson : [],
       } : emptyForm());
+
+      setGdSelectedItems([]);
+      setGdItemSearch('');
+      fetchGDHeaders({ admissionNumber: adm.admissionNo }).catch(() => {});
     } catch (e) {
       toast.error(e.message || 'Admission load nahi hui');
     }
@@ -238,22 +332,9 @@ export default function SurgeryInformation() {
     setAdmission(null);
     setAllDoctors([]);
     setForm(emptyForm());
-    setNewItem({ itemCode: '', description: '', quantity: '' });
-  }
-
-  // ── Items helpers ──
-  function addItem() {
-    if (!newItem.description.trim()) { toast.error('Description zaroor darain'); return; }
-    if (!newItem.quantity || Number(newItem.quantity) <= 0) { toast.error('Quantity valid honi chahiye'); return; }
-    set('itemsJson', [
-      ...form.itemsJson,
-      { itemCode: newItem.itemCode.trim(), description: newItem.description.trim(), quantity: Number(newItem.quantity) },
-    ]);
-    setNewItem({ itemCode: '', description: '', quantity: '' });
-  }
-
-  function removeItem(idx) {
-    set('itemsJson', form.itemsJson.filter((_, i) => i !== idx));
+    setGdDepartmentId('');
+    setGdSelectedItems([]);
+    setGdItemSearch('');
   }
 
   // ── Save ──
@@ -417,63 +498,90 @@ export default function SurgeryInformation() {
               />
             </div>
 
-            {/* ── Items Used ── */}
+            {/* ── Request Items (GD) — same Department/Item/Qty flow, same GD ── */}
+            {/* table as Inventory > Goods Issue's "Create GD" form. Whatever is */}
+            {/* requested here shows up there too (GD list, GD Report, Store's */}
+            {/* notification popup) — it's the same data, not a copy. */}
             <div className="si-items-card">
-              <div className="si-items-title">Items Used</div>
+              <div className="si-items-title">Request Items (GD)</div>
 
-              {/* Add row */}
-              <div className="si-items-add-row">
-                <input
-                  className="si-input si-input--code"
-                  placeholder="Item Code"
-                  value={newItem.itemCode}
-                  onChange={e => setNewItem(n => ({ ...n, itemCode: e.target.value }))}
-                />
-                <input
-                  className="si-input si-input--desc"
-                  placeholder="Description"
-                  value={newItem.description}
-                  onChange={e => setNewItem(n => ({ ...n, description: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && addItem()}
-                />
-                <label className="si-items-qty-lbl">Quantity</label>
-                <input
-                  className="si-input si-input--qty"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  placeholder="0"
-                  value={newItem.quantity}
-                  onChange={e => setNewItem(n => ({ ...n, quantity: e.target.value }))}
-                  onKeyDown={e => e.key === 'Enter' && addItem()}
-                />
-                <button className="si-add-btn" onClick={addItem}>Add Items</button>
+              <div className="si-gd-top-row">
+                <select
+                  className="si-input si-input--select"
+                  value={gdDepartmentId}
+                  onChange={e => setGdDepartmentId(e.target.value)}
+                >
+                  <option value="">— Select Department —</option>
+                  {(masterOptions.departments || []).map(d => (
+                    <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
+                  ))}
+                </select>
+
+                <div className="si-gd-search">
+                  <input
+                    ref={gdSearchRef}
+                    className="si-input si-input--desc"
+                    placeholder="Search and add item…"
+                    value={gdItemSearch}
+                    onChange={e => { setGdItemSearch(e.target.value); setGdDropdownOpen(true); setGdHighlighted(-1); }}
+                    onFocus={() => setGdDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setGdDropdownOpen(false), 150)}
+                    onKeyDown={handleGdItemSearchKeyDown}
+                  />
+                  {gdDropdownOpen && gdItemSearchResults.length > 0 && (
+                    <div className="si-gd-dropdown" ref={gdListRef}>
+                      {gdItemSearchResults.map((it, idx) => (
+                        <div
+                          key={it.id}
+                          className={`si-gd-dropdown-opt ${idx === gdHighlighted ? 'si-gd-dropdown-opt--active' : ''}`}
+                          onMouseDown={() => addGdItem(it)}
+                          onMouseEnter={() => setGdHighlighted(idx)}
+                        >
+                          <span className="si-gd-dropdown-name">{it.name}</span>
+                          <span className="si-gd-dropdown-code">{it.code}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Items table */}
+              {/* Pending batch (not yet submitted) */}
               <table className="si-items-tbl">
                 <thead>
                   <tr>
-                    <th className="si-items-th--code">Item Code</th>
-                    <th className="si-items-th--desc">Description</th>
+                    <th className="si-items-th--desc">Item</th>
+                    <th className="si-items-th--code">Code</th>
                     <th className="si-items-th--qty">Quantity</th>
                     <th className="si-items-th--del" />
                   </tr>
                 </thead>
                 <tbody>
-                  {form.itemsJson.length === 0
+                  {gdSelectedItems.length === 0
                     ? (
                       <tr>
                         <td colSpan={4} className="si-items-empty">No items added yet</td>
                       </tr>
                     )
-                    : form.itemsJson.map((item, idx) => (
-                      <tr key={idx}>
-                        <td>{item.itemCode || '—'}</td>
-                        <td>{item.description}</td>
-                        <td>{item.quantity}</td>
+                    : gdSelectedItems.map(row => (
+                      <tr key={row.itemId}>
+                        <td>{row.itemName}</td>
+                        <td>{row.itemCode}</td>
                         <td>
-                          <button className="si-del-btn" onClick={() => removeItem(idx)} title="Remove">
+                          <input
+                            className="si-input si-input--qty"
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            placeholder="Qty"
+                            value={row.quantityRequested}
+                            ref={el => { if (el) gdQtyRefs.current[row.itemId] = el; }}
+                            onChange={e => updateGdItemQty(row.itemId, e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); gdSearchRef.current?.focus(); } }}
+                          />
+                        </td>
+                        <td>
+                          <button className="si-del-btn" onClick={() => removeGdItem(row.itemId)} title="Remove">
                             <Trash2 size={12} />
                           </button>
                         </td>
@@ -482,6 +590,43 @@ export default function SurgeryInformation() {
                   }
                 </tbody>
               </table>
+
+              {gdSelectedItems.length > 0 && (
+                <div className="si-gd-submit-row">
+                  <button className="si-add-btn" onClick={handleRequestItems} disabled={gdSubmitting}>
+                    <Plus size={13} /> {gdSubmitting ? 'Requesting…' : 'Request Items'}
+                  </button>
+                </div>
+              )}
+
+              {/* Already-requested GDs for this admission — same data Store sees */}
+              {gdHeaders.length > 0 && (
+                <div className="si-gd-history">
+                  <div className="si-gd-history-title">Requested (GD Status)</div>
+                  <table className="si-items-tbl">
+                    <thead>
+                      <tr>
+                        <th className="si-items-th--code">GD #</th>
+                        <th className="si-items-th--desc">Item</th>
+                        <th className="si-items-th--qty">Qty</th>
+                        <th className="si-items-th--code">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gdHeaders.flatMap(h => (h.gdItems || []).map(gi => (
+                        <tr key={gi.id}>
+                          <td>{h.code}</td>
+                          <td>{gi.item?.name || '—'}</td>
+                          <td>{gi.quantityRequested}</td>
+                          <td>
+                            <span className={`si-gd-status si-gd-status--${gi.status}`}>{gi.status}</span>
+                          </td>
+                        </tr>
+                      )))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
             {/* ── Footer ── */}

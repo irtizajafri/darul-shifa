@@ -1,0 +1,349 @@
+.dws-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #f1f5f9;
+  font-family: 'Inter', sans-serif;
+}
+
+.dws-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px 40px;
+}
+
+/* ── Toolbar ── */
+.dws-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.dws-titlebar {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1e293b;
+  letter-spacing: 0.02em;
+}
+
+.dws-toolbar-actions { display: flex; gap: 8px; }
+
+.dws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 7px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: #475569;
+  color: #fff;
+  transition: background 0.15s;
+
+  &:hover:not(:disabled) { background: #334155; }
+  &:disabled { opacity: 0.55; cursor: not-allowed; }
+  &--print   { background: #0f766e; &:hover:not(:disabled) { background: #0d6460; } }
+  &--preview { background: #1a3c6e; &:hover:not(:disabled) { background: #15305a; } }
+  &--upload  { background: #6d28d9; &:hover:not(:disabled) { background: #5b21b6; } }
+}
+
+/* ── Report ── */
+.dws-report {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.dws-company-page + .dws-company-page { margin-top: 18px; }
+
+.dws-rpt-head { text-align: center; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 10px; }
+.dws-rpt-sub   { font-size: 0.85rem; font-weight: 600; color: #475569; }
+.dws-rpt-title { font-size: 1.02rem; font-weight: 900; letter-spacing: 1px; color: #1e293b; text-decoration: underline; margin: 2px 0 8px; text-transform: uppercase; }
+
+.dws-doctor-line {
+  display: flex; justify-content: center; gap: 10px; font-size: 0.85rem; font-weight: 700; color: #1e293b; margin-bottom: 4px;
+}
+.dws-doctor-code { color: #64748b; }
+
+.dws-fromto {
+  display: flex; justify-content: center; gap: 24px; font-size: 0.75rem; color: #64748b;
+}
+
+.dws-empty { text-align: center; color: #94a3b8; padding: 40px 0; font-size: 0.9rem; }
+
+.dws-company-hdr {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #1a3c6e;
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+}
+.dws-company-code { color: #94a3b8; font-weight: 600; font-size: 0.78rem; }
+
+.dws-col-labels {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  th {
+    text-align: left; font-weight: 700; color: #64748b; padding: 2px 6px;
+    &.dws-r { text-align: right; }
+  }
+}
+
+.dws-voucher { margin-bottom: 10px; }
+
+.dws-items-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+
+  td { padding: 2px 6px; }
+  .dws-l { text-align: left; }
+  .dws-r { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.dws-voucher-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  color: #1e293b;
+  border-top: 1px solid #e2e8f0;
+  margin-top: 2px;
+}
+
+.dws-words { font-size: 0.76rem; font-style: italic; color: #475569; padding: 2px 6px; }
+
+.dws-signee { font-size: 0.8rem; font-weight: 700; color: #1e293b; padding: 10px 6px 2px; }
+
+.dws-siglabels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.74rem;
+  color: #64748b;
+  padding: 2px 6px 12px;
+
+  span {
+    flex: 1;
+    text-align: center;
+    border-top: 1px solid #94a3b8;
+    padding-top: 2px;
+    margin: 0 20px;
+    &:first-child { margin-left: 0; }
+    &:last-child { margin-right: 0; }
+  }
+}
+
+.dws-company-total {
+  display: flex;
+  justify-content: space-between;
+  background: #eff6ff;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1a3c6e;
+  margin-top: 6px;
+}
+
+/* ── Upload / Import modal ── */
+.dws-modal--wide { max-width: 560px; }
+
+.dws-import-pick {
+  text-align: center;
+  padding: 24px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  p { color: #64748b; font-size: 0.85rem; margin: 0; }
+}
+
+.dws-import-file { font-size: 0.83rem; color: #475569; margin-bottom: 10px; }
+
+.dws-import-warning {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.78rem;
+  margin-bottom: 10px;
+}
+
+.dws-import-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+
+  div {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px;
+    font-size: 0.78rem; color: #475569;
+  }
+  b { font-variant-numeric: tabular-nums; color: #1e293b; }
+}
+
+.dws-import-progress { text-align: center; padding: 20px 10px; p { font-size: 0.85rem; color: #475569; margin: 0; } }
+
+.dws-import-done { text-align: center; padding: 20px 10px; font-size: 0.9rem; color: #1e293b; p { margin: 0 0 8px; } }
+
+/* ── Filter modal ("Statement of Surgery") ── */
+.dws-modal-overlay {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+}
+
+.dws-modal {
+  background: #fff; border-radius: 10px; width: 100%; max-width: 460px;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.dws-modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  background: #1a3c6e; color: #fff; padding: 10px 14px; font-size: 0.88rem; font-weight: 700;
+  button { background: none; border: none; color: #fff; cursor: pointer; opacity: 0.8; &:hover { opacity: 1; } }
+}
+
+.dws-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.dws-checkbox-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+
+.dws-active-consultants { align-self: flex-end; }
+
+.dws-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.dws-col { display: flex; flex-direction: column; gap: 6px; }
+
+.dws-col-hdr {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #1a3c6e;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.dws-field-lbl {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.dws-text-input, .dws-date-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  width: 100%;
+  color: #1e293b;
+
+  &:disabled {
+    background: repeating-linear-gradient(135deg, #f1f5f9, #f1f5f9 4px, #e2e8f0 4px, #e2e8f0 8px);
+    color: #94a3b8;
+    cursor: not-allowed;
+  }
+}
+
+.dws-lookup-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+
+  .dws-text-input { cursor: pointer; }
+}
+
+.dws-lookup-clear, .dws-lookup-btn {
+  flex: none;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #475569;
+  &:hover { background: #eef2f7; }
+}
+
+.dws-modal-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+/* ── Doctor picker ── */
+.dws-modal--picker { max-width: 380px; }
+
+.dws-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #94a3b8;
+
+  input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 0.85rem;
+    color: #1e293b;
+  }
+}
+
+.dws-picker-list { max-height: 320px; overflow-y: auto; }
+
+.dws-picker-empty { text-align: center; color: #94a3b8; padding: 24px 0; font-size: 0.85rem; }
+
+.dws-picker-row {
+  display: flex;
+  gap: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-bottom: 1px solid #f1f5f9;
+  &:hover { background: #eef2f7; }
+}
+
+.dws-picker-code { font-weight: 700; color: #1a3c6e; min-width: 50px; }
+.dws-picker-name { color: #334155; }
+
+/* ── Print — one Company section per A4 page ── */
+@media print {
+  @page { size: A4 portrait; margin: 10mm; }
+  .no-print, .menu-bar, nav { display: none !important; }
+  .dws-page, .dws-body { height: auto; overflow: visible; background: #fff; padding: 0; }
+  .dws-report { border: none; padding: 0; }
+  .dws-company-page + .dws-company-page { margin-top: 0; page-break-before: always; break-before: page; }
+}

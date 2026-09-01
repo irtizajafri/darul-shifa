@@ -1533,6 +1533,99 @@ async function confirmPanelChequeImport(req, res, next) {
   }
 }
 
+async function previewPanelMedicineIssuanceImport(req, res, next) {
+  try {
+    const { admissionNos, companyNames, totalRows, totalAmount } = req.body || {};
+    success(res, await service.previewPanelMedicineIssuanceImport({ admissionNos, companyNames, totalRows, totalAmount }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function confirmPanelMedicineIssuanceImportBatch(req, res, next) {
+  try {
+    const { admissions, companyNameMap } = req.body || {};
+    const data = await service.confirmPanelMedicineIssuanceImportBatch(admissions, { companyNameMap });
+    success(res, data, `${data.imported} imported, ${data.refreshed} refreshed, ${data.itemsCreated} medicine rows`);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getPanelMedicineIssuanceReport(req, res, next) {
+  try {
+    const { scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode } = req.query;
+    success(res, await service.getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function previewPanelAdmitReportImport(req, res, next) {
+  try {
+    const { admissionNos, companyNames, totalRows, totalAmount } = req.body || {};
+    success(res, await service.previewPanelAdmitReportImport({ admissionNos, companyNames, totalRows, totalAmount }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function confirmPanelAdmitReportImportBatch(req, res, next) {
+  try {
+    const { admissions, companyNameMap } = req.body || {};
+    const data = await service.confirmPanelAdmitReportImportBatch(admissions, { companyNameMap });
+    success(res, data, `${data.imported} imported, ${data.refreshed} refreshed, ${data.deptsCreated} dept rows`);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getPanelAdmitReport(req, res, next) {
+  try {
+    const { dateType, fromDate, toDate, panelCompanyId } = req.query;
+    success(res, await service.getPanelAdmitReport({ dateType, fromDate, toDate, panelCompanyId }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function previewDoctorStatementImport(req, res, next) {
+  try {
+    const { doctorCode, doctorName, companyNames, totalVouchers, totalItems, totalAmount } = req.body || {};
+    success(res, await service.previewDoctorStatementImport({ doctorCode, doctorName, companyNames, totalVouchers, totalItems, totalAmount }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function confirmDoctorStatementImport(req, res, next) {
+  try {
+    const { doctorCode, doctorName, companies } = req.body || {};
+    const data = await service.confirmDoctorStatementImport({ doctorCode, doctorName, companies });
+    success(res, data, `${data.vouchersCreated} vouchers, ${data.itemsCreated} items imported`);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getDoctorStatement(req, res, next) {
+  try {
+    const { doctorId, fromDate, toDate } = req.query;
+    success(res, await service.getDoctorStatement({ doctorId, fromDate, toDate }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function getUnpaidPanelAdmissions(req, res, next) {
   try {
     const { panelCompanyId, month, year } = req.query;
@@ -1554,6 +1647,65 @@ async function receivePanelCheque(req, res, next) {
       createdByUserId, createdByName,
     });
     success(res, data, 'Cheque receive ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getMedicineList(req, res, next) {
+  try {
+    const { search, status } = req.query;
+    success(res, await service.getMedicineList({ search, status }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function createMedicine(req, res, next) {
+  try {
+    const data = await service.createMedicine(req.body);
+    success(res, data, 'Medicine add ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updateMedicine(req, res, next) {
+  try {
+    const data = await service.updateMedicine(req.params.id, req.body);
+    success(res, data, 'Medicine update ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deleteMedicine(req, res, next) {
+  try {
+    await service.deleteMedicine(req.params.id);
+    success(res, null, 'Medicine delete ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function previewMedicineImport(req, res, next) {
+  try {
+    success(res, await service.previewMedicineImport(req.body.rows));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function confirmMedicineImport(req, res, next) {
+  try {
+    const data = await service.confirmMedicineImport(req.body.rows);
+    success(res, data, `${data.created} medicines add hui, ${data.updated} update hui`);
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -2041,8 +2193,23 @@ module.exports = {
   getPanelChequesReport,
   previewPanelChequeImport,
   confirmPanelChequeImport,
+  previewPanelMedicineIssuanceImport,
+  confirmPanelMedicineIssuanceImportBatch,
+  getPanelMedicineIssuanceReport,
+  previewPanelAdmitReportImport,
+  confirmPanelAdmitReportImportBatch,
+  getPanelAdmitReport,
+  previewDoctorStatementImport,
+  confirmDoctorStatementImport,
+  getDoctorStatement,
   getUnpaidPanelAdmissions,
   receivePanelCheque,
+  getMedicineList,
+  createMedicine,
+  updateMedicine,
+  deleteMedicine,
+  previewMedicineImport,
+  confirmMedicineImport,
   updatePanelBillingItem,
   updatePanelBillingHeader,
   addPanelBillingItem,

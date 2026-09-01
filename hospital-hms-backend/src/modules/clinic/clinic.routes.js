@@ -209,6 +209,29 @@ router.post('/panel-cheque/receive', controller.receivePanelCheque);
 router.post('/panel-cheque/import/preview', controller.previewPanelChequeImport);
 router.post('/panel-cheque/import/confirm', controller.confirmPanelChequeImport);
 
+// Panels > Reports > Medicine Report — bulk import ("Medical Issuance Report for Panel")
+router.post('/panel-medicine-issuance/import/preview', controller.previewPanelMedicineIssuanceImport);
+router.post('/panel-medicine-issuance/import/confirm', controller.confirmPanelMedicineIssuanceImportBatch);
+router.get('/panel-medicine-issuance/report', controller.getPanelMedicineIssuanceReport);
+
+// Panels > Reports > OPD Admit Report — bulk import ("Admission Wise Panel Report")
+router.post('/panel-admit-report/import/preview', controller.previewPanelAdmitReportImport);
+router.post('/panel-admit-report/import/confirm', controller.confirmPanelAdmitReportImportBatch);
+router.get('/panel-admit-report/report', controller.getPanelAdmitReport);
+
+// Panels > Reports > Doctor Wise Statement — bulk import ("Statement of Consultant for Indoor Files")
+router.post('/doctor-statement/import/preview', controller.previewDoctorStatementImport);
+router.post('/doctor-statement/import/confirm', controller.confirmDoctorStatementImport);
+router.get('/doctor-statement/report', controller.getDoctorStatement);
+
+// Reports > Medicine List (Pharmacy Price List)
+router.get('/medicine', controller.getMedicineList);
+router.post('/medicine', controller.createMedicine);
+router.patch('/medicine/:id', controller.updateMedicine);
+router.delete('/medicine/:id', controller.deleteMedicine);
+router.post('/medicine/import/preview', controller.previewMedicineImport);
+router.post('/medicine/import/confirm', controller.confirmMedicineImport);
+
 // Panels > Parameter > Bill Head (Panel-only)
 router.get('/panel-bill-heads', controller.getPanelBillHeads);
 router.get('/panel-bill-heads/search', controller.searchPanelBillHeads);

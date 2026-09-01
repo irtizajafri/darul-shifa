@@ -294,6 +294,81 @@ $white:   #fff;
   flex-wrap: wrap;
 }
 
+// ─── Request Items (GD) ───────────────────────────────────────────────────────
+.si-gd-top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.si-gd-search {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+
+  .si-input { width: 100%; box-sizing: border-box; }
+}
+
+.si-gd-dropdown {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 3px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  background: $white;
+  border: 1px solid $border;
+  border-radius: 3px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+}
+
+.si-gd-dropdown-opt {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  &:last-child { border-bottom: none; }
+  &:hover, &--active { background: #dbe8f8; }
+}
+.si-gd-dropdown-name { font-weight: 600; color: #222; }
+.si-gd-dropdown-code { color: #888; }
+
+.si-gd-submit-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.si-gd-history {
+  border-top: 1px dashed $border;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.si-gd-history-title {
+  font-weight: 700;
+  color: #555;
+  font-size: 11.5px;
+}
+
+.si-gd-status {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: capitalize;
+
+  &--open    { background: #dbeafe; color: #1d4ed8; }
+  &--partial { background: #fef3c7; color: #b45309; }
+  &--closed  { background: #dcfce7; color: #15803d; }
+}
+
 .si-items-qty-lbl {
   font-weight: 600;
   color: $blue;
@@ -303,6 +378,9 @@ $white:   #fff;
 }
 
 .si-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: $blue;
   color: $white;
   border: none;
@@ -312,6 +390,7 @@ $white:   #fff;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
   white-space: nowrap;
   &:hover { background: #1e4a88; }
 }

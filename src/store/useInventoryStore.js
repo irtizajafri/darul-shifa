@@ -356,7 +356,7 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchGDHeaders: async ({ departmentId = '', status = '', dateFrom = '', dateTo = '' } = {}) => {
+  fetchGDHeaders: async ({ departmentId = '', status = '', dateFrom = '', dateTo = '', admissionNumber = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -364,6 +364,7 @@ export const useInventoryStore = create((set) => ({
       if (status) qs.set('status', String(status));
       if (dateFrom) qs.set('dateFrom', String(dateFrom));
       if (dateTo) qs.set('dateTo', String(dateTo));
+      if (admissionNumber) qs.set('admissionNumber', String(admissionNumber));
       const data = await request(`/gd/headers?${qs.toString()}`);
       set({ gdHeaders: Array.isArray(data) ? data : [], loading: false });
       return data;

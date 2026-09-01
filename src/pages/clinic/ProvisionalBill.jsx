@@ -25,6 +25,7 @@ function fmtDate(d) {
   return `${String(dt.getDate()).padStart(2, '0')}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()}`;
 }
 function fmt2(n) { return Number(n || 0).toFixed(2); }
+function todayIso() { return new Date().toISOString().slice(0, 10); }
 
 function numToWords(n) {
   if (n === 0) return 'zero';
@@ -392,6 +393,128 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   );
 }
 
+// ── Outside Store "Medicine" field — free-text input with a suggestions
+// dropdown fed by the Medicine List (Reports > Medicine List). Picking a
+// suggestion fills the name and, if Rate is still blank, its Retail price;
+// typing something not in the list still works exactly as before (outside
+// stores often sell things not yet catalogued here).
+function MedicineAutocomplete({ value, onTextChange, onSelect }) {
+  const { fetchMedicineList } = useClinicStore();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [highlighted, setHighlighted] = useState(-1);
+  const containerRef = useRef(null);
+  const listRef = useRef(null);
+  const debounceRef = useRef(null);
+  const reqIdRef = useRef(0);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false); setSearch(''); setResults([]); setHighlighted(-1);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (listRef.current && highlighted >= 0) {
+      listRef.current.children[highlighted]?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [highlighted]);
+
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
+
+  // Search hits the backend as-you-type (debounced) instead of holding the
+  // whole Medicine List in the browser — with 11k+ real medicines now
+  // imported, fetching the full list on every Provisional Bill page load
+  // was a ~2MB download every time, which is what made the app feel slow.
+  // A live search only ever pulls back the handful of matching rows.
+  function runSearch(q) {
+    clearTimeout(debounceRef.current);
+    const trimmed = q.trim();
+    if (!trimmed) { setResults([]); setLoading(false); return; }
+    setLoading(true);
+    const reqId = ++reqIdRef.current;
+    debounceRef.current = setTimeout(() => {
+      fetchMedicineList({ status: 'active', search: trimmed })
+        .then((data) => {
+          if (reqId !== reqIdRef.current) return; // a newer keystroke already superseded this
+          // Legacy import junk (names like "*", "-", "----") has no letters —
+          // drop it so suggestions only show real medicine names.
+          const usable = (data || []).filter((m) => /[a-zA-Z]/.test(m.name));
+          setResults(usable.slice(0, 50));
+        })
+        .catch(() => { if (reqId === reqIdRef.current) setResults([]); })
+        .finally(() => { if (reqId === reqIdRef.current) setLoading(false); });
+    }, 300);
+  }
+
+  function selectMedicine(m) {
+    onSelect(m);
+    setSearch('');
+    setResults([]);
+    setOpen(false);
+    setHighlighted(-1);
+  }
+
+  function handleKeyDown(e) {
+    if (!open) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault(); setHighlighted((i) => Math.min(i + 1, results.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); setHighlighted((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (highlighted >= 0 && results[highlighted]) { e.preventDefault(); selectMedicine(results[highlighted]); }
+    } else if (e.key === 'Escape') {
+      setOpen(false); setHighlighted(-1);
+    }
+  }
+
+  return (
+    <div className="pb-med-auto" ref={containerRef}>
+      <input
+        type="text"
+        value={open ? search : value}
+        onChange={(e) => {
+          const v = e.target.value;
+          setSearch(v); onTextChange(v); setOpen(true); setHighlighted(-1); runSearch(v);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={handleKeyDown}
+        placeholder="Medicine naam likhein ya list se select karein"
+        autoComplete="off"
+      />
+      {open && search.trim() && (
+        <div className="pb-med-auto__list" ref={listRef}>
+          {loading ? (
+            <div className="pb-med-auto__empty">Search ho raha hai…</div>
+          ) : results.length === 0 ? (
+            <div className="pb-med-auto__empty">Koi match nahi — free text ke tor pe likh sakte hain</div>
+          ) : results.map((m, idx) => (
+            <div
+              key={m.id}
+              className={`pb-med-auto__opt ${idx === highlighted ? 'pb-med-auto__opt--active' : ''}`}
+              onMouseDown={() => selectMedicine(m)}
+              onMouseEnter={() => setHighlighted(idx)}
+            >
+              <span className="pb-med-auto__name">{m.name}</span>
+              {m.packSize && <span className="pb-med-auto__pack">{m.packSize}</span>}
+              <span className="pb-med-auto__price">Rs. {fmt2(m.retailPrice)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PATIENT_TYPE_OPTIONS = ['In House', 'Discharge'];
 const TABS = ['Provisional Bill', 'Diagnostic Bill', 'Pharmacy Bill'];
 
@@ -415,7 +538,7 @@ export default function ProvisionalBill() {
     updateProvisionalBillItem,
     deleteProvisionalBillItem,
     updateProvisionalBillHeader,
-    pharmacyStores, fetchPharmacyStores,
+    pharmacyStores, fetchPharmacyStores, createPharmacyStore,
     addProvisionalPharmacyItem,
     deleteProvisionalPharmacyItem,
   } = useClinicStore();
@@ -449,9 +572,16 @@ export default function ProvisionalBill() {
   const [wardRateEdit, setWardRateEdit] = useState(null); // { enteredAt, value } | null
   const [savingWardRate, setSavingWardRate] = useState(false);
 
-  const emptyPharmRow = { storeId: '', medDate: '', medicine: '', dosage: '', qty: '', unit: '', rate: '', remarks: '' };
+  const emptyPharmRow = { storeId: '', medDate: todayIso(), medicine: '', dosage: '', qty: '', unit: '', rate: '', remarks: '' };
   const [pharmRow, setPharmRow] = useState(emptyPharmRow);
   const [addingPharmRow, setAddingPharmRow] = useState(false);
+
+  // Outside Hospital Store — inline "+ Add" so a biller mid-entry never has
+  // to leave this screen just to register a store that isn't in the list yet
+  // (full manage/rename/disable still lives at Parameters > Pharmacy Stores).
+  const [showAddStore, setShowAddStore] = useState(false);
+  const [newStoreName, setNewStoreName] = useState('');
+  const [addingStore, setAddingStore] = useState(false);
 
   useEffect(() => {
     fetchRoomCategories();
@@ -459,7 +589,19 @@ export default function ProvisionalBill() {
     fetchSurgeryTypes();
     fetchDischargeTypes();
     fetchPharmacyStores();
+    // Medicine List is 11k+ rows now — MedicineAutocomplete searches the
+    // backend as-you-type instead of this page fetching the whole thing.
   }, [fetchRoomCategories, fetchBillHeads, fetchSurgeryTypes, fetchDischargeTypes, fetchPharmacyStores]);
+
+  // Outside Store almost always means the same one shop ("Saboor Medical
+  // store") — default the picker to it once the list loads instead of
+  // making the biller pick it every single time. Only fills in while the
+  // field is still blank, so it never overrides a deliberate choice.
+  useEffect(() => {
+    if (pharmRow.storeId) return;
+    const def = pharmacyStores.find(s => s.status === 'active' && s.name.toLowerCase().includes('saboor'));
+    if (def) setPharmRow(r => (r.storeId ? r : { ...r, storeId: def.id }));
+  }, [pharmacyStores, pharmRow.storeId]);
 
   const loadDetail = useCallback(async (id, isFreshSelect) => {
     setLoading(true);
@@ -656,7 +798,9 @@ export default function ProvisionalBill() {
     setAddingPharmRow(true);
     try {
       await addProvisionalPharmacyItem(admissionId, pharmRow);
-      setPharmRow(emptyPharmRow);
+      // Keep Store selected — the next medicine in this sitting is almost
+      // always from the same outside store, so only the item fields clear.
+      setPharmRow(r => ({ ...emptyPharmRow, storeId: r.storeId }));
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Medicine add nahi hui');
@@ -671,6 +815,22 @@ export default function ProvisionalBill() {
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Row delete nahi hui');
+    }
+  }
+
+  async function handleAddStore() {
+    if (!newStoreName.trim()) return toast.error('Store naam zaroori hai');
+    setAddingStore(true);
+    try {
+      const store = await createPharmacyStore({ name: newStoreName.trim() });
+      setPharmRow(r => ({ ...r, storeId: store.id }));
+      setNewStoreName('');
+      setShowAddStore(false);
+      toast.success('Store add ho gaya');
+    } catch (e) {
+      toast.error(e.message || 'Store add nahi hua');
+    } finally {
+      setAddingStore(false);
     }
   }
 
@@ -1019,17 +1179,30 @@ export default function ProvisionalBill() {
                       </div>
                       <div className="pb-fg pb-fg--right">
                         <label>Store</label>
-                        <select value={pharmRow.storeId} onChange={e => setPharmRow(r => ({ ...r, storeId: e.target.value }))}>
-                          <option value="">— Select Store —</option>
-                          {activePharmacyStores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
+                        <div className="pb-store-row">
+                          <select value={pharmRow.storeId} onChange={e => setPharmRow(r => ({ ...r, storeId: e.target.value }))}>
+                            <option value="">— Select Store —</option>
+                            {activePharmacyStores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                          <button type="button" className="pb-store-add-btn" title="Add new store" onClick={() => setShowAddStore(true)}>
+                            <Plus size={14} />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     <div className="pb-form-row">
                       <div className="pb-fg pb-fg--full">
                         <label>Medicine</label>
-                        <input value={pharmRow.medicine} onChange={e => setPharmRow(r => ({ ...r, medicine: e.target.value }))} />
+                        <MedicineAutocomplete
+                          value={pharmRow.medicine}
+                          onTextChange={(text) => setPharmRow(r => ({ ...r, medicine: text }))}
+                          onSelect={(m) => setPharmRow(r => ({
+                            ...r,
+                            medicine: m.name,
+                            rate: r.rate ? r.rate : (m.retailPrice ? String(m.retailPrice) : r.rate),
+                          }))}
+                        />
                       </div>
                     </div>
 
@@ -1041,10 +1214,6 @@ export default function ProvisionalBill() {
                       <div className="pb-fg pb-fg--sm">
                         <label>Quantity</label>
                         <input value={pharmRow.qty} onChange={e => setPharmRow(r => ({ ...r, qty: e.target.value }))} />
-                      </div>
-                      <div className="pb-fg pb-fg--sm">
-                        <label>Unit</label>
-                        <input value={pharmRow.unit} onChange={e => setPharmRow(r => ({ ...r, unit: e.target.value }))} placeholder="e.g. strip" />
                       </div>
                     </div>
 
@@ -1092,6 +1261,38 @@ export default function ProvisionalBill() {
                 </>
               )}
             </div>
+
+            {/* ── Quick-Add Outside Store Modal ── */}
+            {showAddStore && (
+              <div className="pb-slip-modal-backdrop" onClick={() => !addingStore && setShowAddStore(false)}>
+                <div className="pb-slip-modal" onClick={e => e.stopPropagation()}>
+                  <div className="pb-slip-modal__header">
+                    <span className="pb-slip-modal__dept">Add Outside Store</span>
+                    <button className="pb-slip-modal__close" onClick={() => setShowAddStore(false)} disabled={addingStore}>✕</button>
+                  </div>
+                  <div className="pb-slip-modal__body">
+                    <div className="pb-slip-modal__row">
+                      <span className="pb-slip-modal__lbl">Name</span>
+                      <input
+                        className="pb-slip-modal__amt-input"
+                        style={{ textAlign: 'left' }}
+                        value={newStoreName}
+                        onChange={e => setNewStoreName(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleAddStore()}
+                        placeholder="e.g. Saboor Medical Store"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="pb-slip-modal__footer">
+                    <button className="pb-slip-modal__cancel" onClick={() => setShowAddStore(false)} disabled={addingStore}>Cancel</button>
+                    <button className="pb-slip-modal__add" onClick={handleAddStore} disabled={addingStore}>
+                      {addingStore ? 'Saving…' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* ── Pending Slip Modal ── */}
             {slipModal && (

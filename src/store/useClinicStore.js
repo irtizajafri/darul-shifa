@@ -787,6 +787,77 @@ export const useClinicStore = create((set) => ({
     return request('/panel-cheque/import/confirm', { method: 'POST', body: JSON.stringify({ rows, companyNameMap }) });
   },
 
+  // ── Panels > Reports > Medicine Report — bulk import ────────────────────────
+  previewPanelMedicineIssuanceImport: async (payload) => {
+    return request('/panel-medicine-issuance/import/preview', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  confirmPanelMedicineIssuanceImportBatch: async (admissions, companyNameMap) => {
+    return request('/panel-medicine-issuance/import/confirm', { method: 'POST', body: JSON.stringify({ admissions, companyNameMap }) });
+  },
+
+  fetchPanelMedicineIssuanceReport: async (params) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+    return request(`/panel-medicine-issuance/report?${q.toString()}`);
+  },
+
+  // ── Panels > Reports > OPD Admit Report — bulk import ───────────────────────
+  previewPanelAdmitReportImport: async (payload) => {
+    return request('/panel-admit-report/import/preview', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  confirmPanelAdmitReportImportBatch: async (admissions, companyNameMap) => {
+    return request('/panel-admit-report/import/confirm', { method: 'POST', body: JSON.stringify({ admissions, companyNameMap }) });
+  },
+
+  fetchPanelAdmitReport: async (params) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+    return request(`/panel-admit-report/report?${q.toString()}`);
+  },
+
+  // ── Panels > Reports > Doctor Wise Statement — bulk import ──────────────────
+  previewDoctorStatementImport: async (payload) => {
+    return request('/doctor-statement/import/preview', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  confirmDoctorStatementImport: async (payload) => {
+    return request('/doctor-statement/import/confirm', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  fetchDoctorStatement: async (params) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+    return request(`/doctor-statement/report?${q.toString()}`);
+  },
+
+  // ── Reports > Medicine List (Pharmacy Price List) ───────────────────────────
+  fetchMedicineList: async ({ search, status } = {}) => {
+    const q = new URLSearchParams();
+    if (search) q.set('search', search);
+    if (status) q.set('status', status);
+    const qs = q.toString();
+    return request(`/medicine${qs ? `?${qs}` : ''}`);
+  },
+
+  createMedicine: async (payload) => {
+    return request('/medicine', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  updateMedicine: async (id, payload) => {
+    return request(`/medicine/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  deleteMedicine: async (id) => {
+    return request(`/medicine/${id}`, { method: 'DELETE' });
+  },
+
+  previewMedicineImport: async (rows) => {
+    return request('/medicine/import/preview', { method: 'POST', body: JSON.stringify({ rows }) });
+  },
+
+  confirmMedicineImport: async (rows) => {
+    return request('/medicine/import/confirm', { method: 'POST', body: JSON.stringify({ rows }) });
+  },
+
   // ── Panels > Parameter > Bill Head (Panel-only) ─────────────────────────────
   panelBillHeads: [],
 

@@ -1128,6 +1128,153 @@ model ClinicPanelBillingHeader {
   updatedAt      DateTime        @updatedAt
 }
 
+// Panels > Reports > Medicine Report — standalone import store for the
+// legacy "MADICAL ISSUANCE REPORT FOR PANEL" Excel. Deliberately NOT linked
+// to ClinicAdmission at all (no FK, no create/match against it) — importing
+// this report must never generate or touch a real hospital admission, it
+// only ever reflects the uploaded file's own data as-is. panelCompanyId is
+// a plain soft-linked id (no @relation), same convention as
+// ClinicAdmission.panelCompanyId elsewhere in this file.
+model ClinicPanelMedicineIssuanceAdmission {
+  id             Int      @id @default(autoincrement())
+  admissionNo    String   @unique
+  patientName    String?
+  panelCompanyId Int?
+  admitDate      DateTime?
+  dischargeDate  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items ClinicPanelMedicineIssuanceItem[]
+
+  @@index([admitDate])
+  @@index([dischargeDate])
+  @@index([panelCompanyId])
+}
+
+model ClinicPanelMedicineIssuanceItem {
+  id                  Int                                  @id @default(autoincrement())
+  issuanceAdmissionId Int
+  issuanceAdmission   ClinicPanelMedicineIssuanceAdmission @relation(fields: [issuanceAdmissionId], references: [id], onDelete: Cascade)
+  description         String
+  medDate             DateTime?
+  rate                Float    @default(0)
+  qty                 Float    @default(0)
+  amount              Float    @default(0)
+  store               String?
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+
+  @@index([issuanceAdmissionId])
+}
+
+// Panels > Reports > OPD Admit Report — "Admission" scope, "Details" view.
+// Standalone import store, same architecture/rationale as
+// ClinicPanelMedicineIssuance* above — deliberately NOT linked to
+// ClinicAdmission (no FK, no create/match against it), reflects the legacy
+// "ADMISSION WISE PANEL REPORT" (RptAdmitPanel.rpt) export as-is.
+model ClinicPanelAdmitReportAdmission {
+  id             Int      @id @default(autoincrement())
+  admissionNo    String   @unique
+  patientName    String?
+  employeeName   String?
+  panelCompanyId Int?
+  status         String?
+  admitDate      DateTime?
+  dischargeDate  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  depts ClinicPanelAdmitReportDept[]
+
+  @@index([admitDate])
+  @@index([dischargeDate])
+  @@index([panelCompanyId])
+}
+
+model ClinicPanelAdmitReportDept {
+  id                Int                             @id @default(autoincrement())
+  reportAdmissionId Int
+  reportAdmission   ClinicPanelAdmitReportAdmission @relation(fields: [reportAdmissionId], references: [id], onDelete: Cascade)
+  dept              String
+  slip              Int    @default(0)
+  amount            Float  @default(0)
+  sortOrder         Int    @default(0)
+
+  slips ClinicPanelAdmitReportSlip[]
+
+  @@index([reportAdmissionId])
+}
+
+// "With Slip" view — the individual slip (serial#) underneath a department
+// row. Only present when imported from the "...with slip" export variant;
+// the plain export only ever produces Dept rows with no Slip children.
+model ClinicPanelAdmitReportSlip {
+  id           Int                        @id @default(autoincrement())
+  reportDeptId Int
+  reportDept   ClinicPanelAdmitReportDept @relation(fields: [reportDeptId], references: [id], onDelete: Cascade)
+  slipNo       Int?
+  patientName  String?
+  amount       Float                      @default(0)
+  sortOrder    Int                        @default(0)
+
+  @@index([reportDeptId])
+}
+
+// Panels > Reports > Doctor Wise Statement — legacy "Statement of
+// Consultant for Indoor Files" export. Standalone import store, same
+// architecture as every other Panel report import — no link to
+// ClinicAdmission. A source file is scoped to ONE doctor (its code+name
+// printed once at the top), broken into Company sections, each holding one
+// or more payment Vouchers (its own "Total Patients / Total For Doctor"
+// subtotal + amount-in-words + signee — a real per-payment slip, not a
+// running total), each voucher holding one or more patient line Items.
+// Re-importing wipes and recreates every voucher for that doctorCode (the
+// natural refresh scope here — a fresh export for a doctor is the current
+// complete truth for them), same never-merge/never-append rule as
+// everywhere else in this file.
+model ClinicDoctorStatementVoucher {
+  id             Int      @id @default(autoincrement())
+  // Raw text from the source file — the legacy system's OWN doctor code,
+  // which does not necessarily match ClinicDoctor.code (e.g. file says
+  // "1030", the live system has the same person as "DAA"). Kept as-is for
+  // display/debugging; clinicDoctorId below is the real filterable link,
+  // resolved by name at import time.
+  doctorCode     String
+  doctorName     String
+  clinicDoctorId Int?
+  companyCode    String?
+  companyName    String
+  panelCompanyId Int?
+  totalPatients  Int      @default(0)
+  totalAmount    Float    @default(0)
+  amountWords    String?
+  signeeName     String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items ClinicDoctorStatementItem[]
+
+  @@index([doctorCode])
+  @@index([clinicDoctorId])
+  @@index([panelCompanyId])
+}
+
+model ClinicDoctorStatementItem {
+  id          Int                          @id @default(autoincrement())
+  voucherId   Int
+  voucher     ClinicDoctorStatementVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  admissionNo String
+  patientName String
+  surgery     String?
+  opDate      DateTime?
+  amount      Float                        @default(0)
+  sortOrder   Int                          @default(0)
+
+  @@index([voucherId])
+}
+
 // Panels > Parameter > Bill Head — a bill-head list independent of the main
 // Clinic Bill Heads (ClinicBillHead), only ever offered inside Panel Billing's
 // manual-add flow. Two kinds: 'simple' (just a name, Qty/Rate entered freely
@@ -2084,6 +2231,23 @@ model ClinicPanelChequeReceiptItem {
   createdAt      DateTime                 @default(now())
 
   @@index([receiptId])
+}
+
+// ─── Medicine List (Pharmacy Price List) ─────────────────────────────────────
+
+model ClinicMedicine {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  packSize    String?
+  retailPrice Float    @default(0)
+  tradePrice  Float    @default(0)
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([name])
+  @@index([status])
 }
 
 // ─── Panel Bill Comparison ────────────────────────────────────────────────────

@@ -1124,12 +1124,14 @@ async function listGDs({ search, departmentId, demandCategoryTypeId, categoryId,
   });
 }
 
-async function listGDHeaders({ departmentId, status, dateFrom, dateTo } = {}) {
+async function listGDHeaders({ departmentId, status, dateFrom, dateTo, admissionNumber } = {}) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
+  const admNo = admissionNumber ? String(admissionNumber).trim() : null;
   return prisma.inventoryGDHeader.findMany({
     where: {
       ...(parsedDepartmentId ? { departmentId: parsedDepartmentId } : {}),
       ...buildStatusFilter(status),
+      ...(admNo ? { admissionNumber: admNo } : {}),
       ...(dateFrom || dateTo
         ? { requestDate: { ...(dateFrom ? { gte: new Date(dateFrom) } : {}), ...(dateTo ? { lte: new Date(dateTo) } : {}) } }
         : {}),

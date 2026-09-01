@@ -158,6 +158,9 @@ export const PERMISSIONS_MAP = {
           { key: 'bill-comparison',  label: 'Bill Comparison Report' },
           { key: 'billing-detail',   label: 'Billing Detail Report' },
           { key: 'cheques-report',   label: 'Panel Cheques Report' },
+          { key: 'medicine-report',  label: 'Medicine Report' },
+          { key: 'opd-admit-report', label: 'OPD Admit Report' },
+          { key: 'doctor-wise-statement', label: 'Doctor Wise Statement' },
         ],
       },
 
@@ -194,6 +197,7 @@ export const PERMISSIONS_MAP = {
           { key: 'status-change-history',           label: 'Status Change History Report' },
           { key: 'consultant-statement',            label: 'Consultant Statement' },
           { key: 'consultant-rates',                label: 'Consultant Rates' },
+          { key: 'medicine-list',                   label: 'Medicine List' },
         ],
       },
 

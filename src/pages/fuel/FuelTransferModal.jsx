@@ -59,6 +59,7 @@ export default function FuelTransferModal({ tanks, generators, defaultTankId, de
   const [rate, setRate] = useState('');
   const [lastHours, setLastHours] = useState('');
   const [currentHours, setCurrentHours] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [phase, setPhase] = useState('form'); // form | transferring | done | error
   const [errorMsg, setErrorMsg] = useState('');
@@ -84,6 +85,7 @@ export default function FuelTransferModal({ tanks, generators, defaultTankId, de
           generatorId: Number(generatorId),
           quantity: qty,
           rate: rate || undefined,
+          date,
           lastHours: lastHours || undefined,
           currentHours: currentHours || undefined,
           notes,
@@ -146,6 +148,10 @@ export default function FuelTransferModal({ tanks, generators, defaultTankId, de
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </select>
+            </div>
+            <div>
+              <label className={labelCls}>Date</label>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

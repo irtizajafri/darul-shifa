@@ -58,6 +58,9 @@ import PanelProvisionalBill from '../pages/clinic/panels/PanelProvisionalBill';
 import PanelBilling from '../pages/clinic/panels/PanelBilling';
 import PanelChequeReceived from '../pages/clinic/panels/PanelChequeReceived';
 import PanelChequesReport from '../pages/clinic/panels/PanelChequesReport';
+import MedicineReport from '../pages/clinic/panels/MedicineReport';
+import OpdAdmitReport from '../pages/clinic/panels/OpdAdmitReport';
+import DoctorWiseStatement from '../pages/clinic/panels/DoctorWiseStatement';
 import PatientsListFilter from '../pages/clinic/reports/PatientsListFilter';
 import PatientsListReport from '../pages/clinic/reports/PatientsListReport';
 import DeathCertificateFilter from '../pages/clinic/reports/DeathCertificateFilter';
@@ -99,6 +102,7 @@ import BirthCertificate from '../pages/clinic/BirthCertificate';
 import AdmissionAdjustment from '../pages/clinic/AdmissionAdjustment';
 import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
 import AdmissionStatusChangeReport from '../pages/clinic/reports/AdmissionStatusChangeReport';
+import MedicineListReport from '../pages/clinic/reports/MedicineListReport';
 import AdmissionStatusChangeHistoryReport from '../pages/clinic/reports/AdmissionStatusChangeHistoryReport';
 import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
@@ -253,6 +257,9 @@ export default function ProtectedRoutes() {
       <Route path="clinic/panels/billing"           element={<PermissionGuard module="clinic" subModule="panels" tab="billing"><PanelBilling /></PermissionGuard>} />
       <Route path="clinic/panels/cheque-received"   element={<PermissionGuard module="clinic" subModule="panels" tab="cheque-received"><PanelChequeReceived /></PermissionGuard>} />
       <Route path="clinic/panels/cheques-report"    element={<PermissionGuard module="clinic" subModule="panels" tab="cheques-report"><PanelChequesReport /></PermissionGuard>} />
+      <Route path="clinic/panels/medicine-report"   element={<PermissionGuard module="clinic" subModule="panels" tab="medicine-report"><MedicineReport /></PermissionGuard>} />
+      <Route path="clinic/panels/opd-admit-report"  element={<PermissionGuard module="clinic" subModule="panels" tab="opd-admit-report"><OpdAdmitReport /></PermissionGuard>} />
+      <Route path="clinic/panels/doctor-wise-statement" element={<PermissionGuard module="clinic" subModule="panels" tab="doctor-wise-statement"><DoctorWiseStatement /></PermissionGuard>} />
 
       {/* ── Clinic Reports ── */}
       <Route path="clinic/reports/patients-list"                  element={<PermissionGuard module="clinic" subModule="reports" tab="patients-list"><PatientsListFilter /></PermissionGuard>} />
@@ -286,6 +293,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/reports/user-date-summary/view"         element={<PermissionGuard module="clinic" subModule="reports"><UserDateSummaryReport /></PermissionGuard>} />
       <Route path="clinic/reports/admission-status-change"        element={<PermissionGuard module="clinic" subModule="reports" tab="admission-status-change"><AdmissionStatusChangeReport /></PermissionGuard>} />
       <Route path="clinic/reports/status-change-history"          element={<PermissionGuard module="clinic" subModule="reports" tab="status-change-history"><AdmissionStatusChangeHistoryReport /></PermissionGuard>} />
+      <Route path="clinic/reports/medicine-list"                  element={<PermissionGuard module="clinic" subModule="reports" tab="medicine-list"><MedicineListReport /></PermissionGuard>} />
 
       {/* ── Clinic Inquiries ── */}
       <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic" subModule="inquiries" tab="revenue-dashboard"><RevenueDashboard /></PermissionGuard>} />

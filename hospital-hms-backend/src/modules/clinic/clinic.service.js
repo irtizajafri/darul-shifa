@@ -3418,6 +3418,10 @@ function splitPatientTitle(fullName) {
 // parser) before anything touches the DB: which Company names don't match
 // an existing ClinicPanelCompany, and which Admission #s would collide with
 // records that already exist (or repeat within the file itself).
+//
+// Back to creating an admission when no real one matches (match-only was
+// tried and reverted same day — see chat — most of this sheet's admission
+// #s have no live counterpart at all, so match-only imported nothing).
 async function previewPanelChequeImport(rows) {
   if (!Array.isArray(rows) || !rows.length) throw Object.assign(new Error('Koi row nahi mili'), { status: 400 });
 
@@ -3584,6 +3588,626 @@ async function confirmPanelChequeImport(rows, { companyNameMap } = {}) {
   }
 
   return { imported, updated, skipped };
+}
+
+// ─── Panel Medicine Issuance Import ("MADICAL ISSUANCE REPORT FOR PANEL") ────
+// Same admission create-vs-backfill-vs-skip safety model as the Panel Cheque
+// import above, but per-admission there are many medicine rows (not one lump
+// sum) — each becomes its own ClinicPanelBillingItem with kind:'pharmacy',
+// groupInto:'Medicine', exactly like a manual "Medicine" add from the Panel
+// Billing screen itself (see addPanelBillingItem/MERGE_HEAD_KIND). The
+// dispensing store (Saboor Medical Store, Hospital Store, OT Supplies, …) has
+// no dedicated column on the item, so it's kept in `remarks` rather than
+// dropped — and is also backfilled into ClinicPharmacyStore so it shows up
+// as a real, selectable Outside Store going forward.
+//
+// The source file (.xls, Crystal Reports export) is capped at 65,535 rows by
+// the legacy file format itself — a genuinely large export lands mid-record
+// at that ceiling. previewPanelMedicineIssuanceImport/confirm don't need to
+// know about that (the frontend parser flags `truncated` for the user), they
+// just work on whatever admissions were actually parsed.
+//
+// Preview only needs the admission#/company-name universe, not the full
+// (potentially 50k+ row) item payload — keeps that request tiny regardless
+// of file size. Confirm is called once per BATCH of admissions (the frontend
+// chunks a large file into several requests) so a single POST body never
+// gets anywhere near Express's json size limit, and progress can be shown.
+//
+// Fully standalone — this import NEVER creates or matches a ClinicAdmission
+// (create-on-import and match-only were both tried and both reverted; the
+// user then asked for the report to just show the file's own data as-is,
+// with zero effect on the real admission system either way). Everything
+// lands only in ClinicPanelMedicineIssuanceAdmission/Item, keyed by
+// admissionNo as plain text — re-uploading the same admission# refreshes
+// its rows in place rather than duplicating them.
+async function previewPanelMedicineIssuanceImport({ admissionNos, companyNames, totalRows, totalAmount }) {
+  const companies = await prisma.clinicPanelCompany.findMany();
+  const companyByName = {};
+  companies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c; });
+  const unmatchedCompanies = [...new Set((companyNames || []).map((n) => String(n).trim()).filter(Boolean))]
+    .filter((name) => !companyByName[name.toLowerCase()]);
+
+  const uniqueAdmNos = [...new Set((admissionNos || []).map((n) => String(n).trim()).filter(Boolean))];
+  const existing = uniqueAdmNos.length
+    ? await prisma.clinicPanelMedicineIssuanceAdmission.findMany({
+        where: { admissionNo: { in: uniqueAdmNos } },
+        select: { admissionNo: true },
+      })
+    : [];
+  const existingSet = new Set(existing.map((a) => a.admissionNo));
+
+  let willCreate = 0, willRefresh = 0;
+  uniqueAdmNos.forEach((no) => { if (existingSet.has(no)) willRefresh += 1; else willCreate += 1; });
+
+  return {
+    totalAdmissions: uniqueAdmNos.length, willCreate, willRefresh,
+    totalRows: Number(totalRows) || 0, totalAmount: Number(totalAmount) || 0,
+    unmatchedCompanies,
+  };
+}
+
+async function confirmPanelMedicineIssuanceImportBatch(admissions, { companyNameMap } = {}) {
+  if (!Array.isArray(admissions) || !admissions.length) throw Object.assign(new Error('Koi admission nahi mili'), { status: 400 });
+
+  const companies = await prisma.clinicPanelCompany.findMany();
+  const companyByName = {};
+  companies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c.id; });
+
+  // Ensure every store name this batch references exists as a real
+  // ClinicPharmacyStore (case-insensitive match on the name half, same
+  // "CODE - Name, only the name matters" convention as company parsing).
+  const storeNamesInBatch = new Set();
+  admissions.forEach((a) => (a.items || []).forEach((it) => {
+    const raw = String(it.store || '').trim();
+    if (!raw) return;
+    const dash = raw.indexOf(' - ');
+    storeNamesInBatch.add((dash !== -1 ? raw.slice(dash + 3) : raw).trim());
+  }));
+  const existingStores = await prisma.clinicPharmacyStore.findMany();
+  const storeByName = new Map(existingStores.map((s) => [s.name.trim().toLowerCase(), s.name]));
+  for (const name of storeNamesInBatch) {
+    if (!name || storeByName.has(name.toLowerCase())) continue;
+    await prisma.clinicPharmacyStore.create({ data: { name } });
+    storeByName.set(name.toLowerCase(), name);
+  }
+  const resolveStoreLabel = (raw) => {
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return null;
+    const dash = trimmed.indexOf(' - ');
+    const name = (dash !== -1 ? trimmed.slice(dash + 3) : trimmed).trim();
+    return storeByName.get(name.toLowerCase()) || name || null;
+  };
+
+  const admissionNos = admissions.map((a) => String(a.admissionNo || '').trim()).filter(Boolean);
+  const existing = admissionNos.length
+    ? await prisma.clinicPanelMedicineIssuanceAdmission.findMany({
+        where: { admissionNo: { in: admissionNos } },
+        select: { id: true, admissionNo: true },
+      })
+    : [];
+  const existingByNo = new Map(existing.map((a) => [a.admissionNo, a.id]));
+
+  let imported = 0, refreshed = 0, skipped = 0, itemsCreated = 0;
+  const seenInBatch = new Set();
+
+  for (const adm of admissions) {
+    const no = String(adm.admissionNo || '').trim();
+    if (!no || seenInBatch.has(no) || !Array.isArray(adm.items) || !adm.items.length) { skipped += 1; continue; }
+    seenInBatch.add(no);
+
+    // Company is best-effort only — an unresolved/blank company name no
+    // longer drops the row (there's no real ClinicAdmission it needs to
+    // attach to), it just leaves panelCompanyId null and the report shows
+    // "—", same as any other missing field in an as-is display.
+    const key = String(adm.companyName || '').trim().toLowerCase();
+    const panelCompanyId = companyByName[key] || (companyNameMap && companyNameMap[key]) || null;
+
+    const admitDt = new Date(adm.admitDate);
+    if (Number.isNaN(admitDt.getTime())) { skipped += 1; continue; }
+    const disDt = adm.dischargeDate ? new Date(adm.dischargeDate) : admitDt;
+
+    const existingId = existingByNo.get(no);
+    let issuanceAdmissionId;
+
+    if (existingId) {
+      issuanceAdmissionId = existingId;
+      await prisma.clinicPanelMedicineIssuanceAdmission.update({
+        where: { id: issuanceAdmissionId },
+        data: { patientName: adm.patientName || null, panelCompanyId, admitDate: admitDt, dischargeDate: disDt },
+      });
+      // Full refresh — this admission#'s rows are replaced wholesale with
+      // whatever this upload says, never merged/appended, so re-uploading
+      // the same or an updated file never duplicates items.
+      await prisma.clinicPanelMedicineIssuanceItem.deleteMany({ where: { issuanceAdmissionId } });
+      refreshed += 1;
+    } else {
+      const created = await prisma.clinicPanelMedicineIssuanceAdmission.create({
+        data: { admissionNo: no, patientName: adm.patientName || null, panelCompanyId, admitDate: admitDt, dischargeDate: disDt },
+      });
+      issuanceAdmissionId = created.id;
+      imported += 1;
+    }
+
+    const itemRows = adm.items.map((it, idx) => {
+      const qty = Number(it.qty) || 0;
+      const rate = Number(it.rate) || 0;
+      const medDt = it.medDate ? new Date(it.medDate) : admitDt;
+      return {
+        issuanceAdmissionId,
+        description: String(it.description || '').trim() || 'Medicine',
+        medDate: Number.isNaN(medDt.getTime()) ? admitDt : medDt,
+        qty, rate,
+        amount: Number.isFinite(Number(it.amount)) ? Number(it.amount) : qty * rate,
+        store: resolveStoreLabel(it.store),
+        sortOrder: idx,
+      };
+    });
+    await prisma.clinicPanelMedicineIssuanceItem.createMany({ data: itemRows });
+    itemsCreated += itemRows.length;
+  }
+
+  return { imported, refreshed, skipped, itemsCreated };
+}
+
+// Panels > Reports > Medicine Report — "View" results. Reads only from the
+// standalone ClinicPanelMedicineIssuanceAdmission/Item tables above — this
+// report is a plain reflection of whatever was last imported, it never
+// joins against ClinicAdmission. panelCompanyId is a plain soft-linked id
+// (no @relation, same convention as ClinicAdmission.panelCompanyId
+// elsewhere in this file), so companies are fetched separately and mapped
+// by id rather than included.
+async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }) {
+  const where = {};
+  if (scopeMode === 'admission' && admissionNo) {
+    where.admissionNo = String(admissionNo).trim();
+  }
+  if (panelCompanyId && panelCompanyId !== 'ALL') {
+    where.panelCompanyId = Number(panelCompanyId);
+  }
+  if (scopeMode === 'date' && fromDate && toDate) {
+    const field = dateType === 'admission' ? 'admitDate' : 'dischargeDate';
+    where[field] = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59`) };
+  }
+
+  const rows = await prisma.clinicPanelMedicineIssuanceAdmission.findMany({
+    where,
+    include: { items: { orderBy: { medDate: 'asc' } } },
+  });
+  const admissions = rows.filter((a) => a.items.length);
+
+  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
+  const companies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } })
+    : [];
+  const companyById = new Map(companies.map((c) => [c.id, c]));
+
+  if (viewMode === 'summary') {
+    const summaryRows = admissions.map((a) => {
+      const total = a.items.reduce((s, i) => s + Number(i.amount || 0), 0);
+      return {
+        admissionNo: a.admissionNo,
+        patientName: a.patientName,
+        companyName: companyById.get(a.panelCompanyId)?.name || null,
+        admitDate: a.admitDate,
+        dischargeDate: a.dischargeDate,
+        itemCount: a.items.length,
+        total,
+      };
+    }).sort((x, y) => new Date(x.admitDate) - new Date(y.admitDate));
+    const grandTotal = summaryRows.reduce((s, r) => s + r.total, 0);
+    return { mode: 'summary', rows: summaryRows, grandTotal };
+  }
+
+  // Details — Day -> Patient -> Medicine, matching the legacy "MADICAL
+  // ISSUANCE REPORT FOR PANEL" layout: one Day Wise Total per date, one
+  // patient block (with its own header info + TOTAL) per admission that had
+  // medicine on that day.
+  const dayMap = new Map(); // 'YYYY-MM-DD' -> [{ admission, item }]
+  admissions.forEach((a) => {
+    a.items.forEach((item) => {
+      const d = item.medDate || a.admitDate;
+      const dayKey = new Date(d).toISOString().slice(0, 10);
+      if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
+      dayMap.get(dayKey).push({ admission: a, item });
+    });
+  });
+
+  const days = [...dayMap.entries()]
+    .sort(([x], [y]) => x.localeCompare(y))
+    .map(([dayKey, entries]) => {
+      const byAdmission = new Map();
+      entries.forEach(({ admission, item }) => {
+        if (!byAdmission.has(admission.id)) byAdmission.set(admission.id, { admission, items: [] });
+        byAdmission.get(admission.id).items.push(item);
+      });
+      const patients = [...byAdmission.values()]
+        .map(({ admission: a, items }) => {
+          const patientTotal = items.reduce((s, i) => s + Number(i.amount || 0), 0);
+          return {
+            admissionNo: a.admissionNo,
+            patientName: a.patientName,
+            companyName: companyById.get(a.panelCompanyId)?.name || null,
+            admitDate: a.admitDate,
+            dischargeDate: a.dischargeDate,
+            items: items.map((i, idx) => ({
+              sno: idx + 1, description: i.description, medDate: i.medDate,
+              rate: i.rate, qty: i.qty, amount: i.amount, store: i.store,
+            })),
+            patientTotal,
+          };
+        })
+        .sort((x, y) => x.admissionNo.localeCompare(y.admissionNo));
+      const dayTotal = patients.reduce((s, p) => s + p.patientTotal, 0);
+      return { date: dayKey, patients, dayTotal };
+    });
+
+  const grandTotal = days.reduce((s, d) => s + d.dayTotal, 0);
+  return { mode: 'details', days, grandTotal };
+}
+
+// Panels > Reports > OPD Admit Report ("Admission" scope, "Details" view) —
+// bulk import for the legacy "ADMISSION WISE PANEL REPORT" (RptAdmitPanel.rpt)
+// Excel export. Same standalone architecture as the Medicine Report import
+// above (see its comment right before previewPanelMedicineIssuanceImport) —
+// never creates or matches a ClinicAdmission, everything lands only in
+// ClinicPanelAdmitReportAdmission/Dept, keyed by admissionNo as plain text.
+// Employee is kept as plain text (no master-list resolution — there's no
+// established "match Panel Employee by name" convention anywhere else in
+// this file to reuse); Company reuses the exact same resolve/unmatched-code
+// flow as Medicine Report since that's shared master data, not the "fake
+// admission" problem the standalone redesign exists to avoid.
+async function previewPanelAdmitReportImport({ admissionNos, companyNames, totalRows, totalAmount }) {
+  const companies = await prisma.clinicPanelCompany.findMany();
+  const companyByName = {};
+  companies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c; });
+  const unmatchedCompanies = [...new Set((companyNames || []).map((n) => String(n).trim()).filter(Boolean))]
+    .filter((name) => !companyByName[name.toLowerCase()]);
+
+  const uniqueAdmNos = [...new Set((admissionNos || []).map((n) => String(n).trim()).filter(Boolean))];
+  const existing = uniqueAdmNos.length
+    ? await prisma.clinicPanelAdmitReportAdmission.findMany({
+        where: { admissionNo: { in: uniqueAdmNos } },
+        select: { admissionNo: true },
+      })
+    : [];
+  const existingSet = new Set(existing.map((a) => a.admissionNo));
+
+  let willCreate = 0, willRefresh = 0;
+  uniqueAdmNos.forEach((no) => { if (existingSet.has(no)) willRefresh += 1; else willCreate += 1; });
+
+  return {
+    totalAdmissions: uniqueAdmNos.length, willCreate, willRefresh,
+    totalRows: Number(totalRows) || 0, totalAmount: Number(totalAmount) || 0,
+    unmatchedCompanies,
+  };
+}
+
+async function confirmPanelAdmitReportImportBatch(admissions, { companyNameMap } = {}) {
+  if (!Array.isArray(admissions) || !admissions.length) throw Object.assign(new Error('Koi admission nahi mili'), { status: 400 });
+
+  const companies = await prisma.clinicPanelCompany.findMany();
+  const companyByName = {};
+  companies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c.id; });
+
+  const admissionNos = admissions.map((a) => String(a.admissionNo || '').trim()).filter(Boolean);
+  const existing = admissionNos.length
+    ? await prisma.clinicPanelAdmitReportAdmission.findMany({
+        where: { admissionNo: { in: admissionNos } },
+        select: { id: true, admissionNo: true },
+      })
+    : [];
+  const existingByNo = new Map(existing.map((a) => [a.admissionNo, a.id]));
+
+  let imported = 0, refreshed = 0, skipped = 0, deptsCreated = 0;
+  const seenInBatch = new Set();
+
+  for (const adm of admissions) {
+    const no = String(adm.admissionNo || '').trim();
+    if (!no || seenInBatch.has(no) || !Array.isArray(adm.depts) || !adm.depts.length) { skipped += 1; continue; }
+    seenInBatch.add(no);
+
+    // Company is best-effort only, same as Medicine Report — an
+    // unresolved/blank company name never drops the row, it just leaves
+    // panelCompanyId null and the report shows "—".
+    const key = String(adm.companyName || '').trim().toLowerCase();
+    const panelCompanyId = companyByName[key] || (companyNameMap && companyNameMap[key]) || null;
+
+    const admitDt = adm.admitDate ? new Date(adm.admitDate) : null;
+    const disDt = adm.dischargeDate ? new Date(adm.dischargeDate) : null;
+
+    const existingId = existingByNo.get(no);
+    let reportAdmissionId;
+
+    if (existingId) {
+      reportAdmissionId = existingId;
+      await prisma.clinicPanelAdmitReportAdmission.update({
+        where: { id: reportAdmissionId },
+        data: {
+          patientName: adm.patientName || null, employeeName: adm.employeeName || null,
+          panelCompanyId, status: adm.status || null, admitDate: admitDt, dischargeDate: disDt,
+        },
+      });
+      // Full refresh — replaces this admission#'s dept rows wholesale, same
+      // never-merge/never-append rule as Medicine Report's item refresh.
+      await prisma.clinicPanelAdmitReportDept.deleteMany({ where: { reportAdmissionId } });
+      refreshed += 1;
+    } else {
+      const created = await prisma.clinicPanelAdmitReportAdmission.create({
+        data: {
+          admissionNo: no, patientName: adm.patientName || null, employeeName: adm.employeeName || null,
+          panelCompanyId, status: adm.status || null, admitDate: admitDt, dischargeDate: disDt,
+        },
+      });
+      reportAdmissionId = created.id;
+      imported += 1;
+    }
+
+    // Depts are created one at a time (not createMany) because — only when
+    // this admission came from the "...with slip" export — each needs its
+    // own id before its Slip children can be inserted underneath it.
+    const slipRows = [];
+    for (let idx = 0; idx < adm.depts.length; idx++) {
+      const d = adm.depts[idx];
+      const createdDept = await prisma.clinicPanelAdmitReportDept.create({
+        data: {
+          reportAdmissionId,
+          dept: String(d.dept || '').trim() || 'ADMIT',
+          slip: Number(d.slip) || 0,
+          amount: Number(d.amount) || 0,
+          sortOrder: idx,
+        },
+      });
+      deptsCreated += 1;
+      if (Array.isArray(d.slips)) {
+        d.slips.forEach((s, sidx) => {
+          slipRows.push({
+            reportDeptId: createdDept.id,
+            slipNo: Number.isFinite(Number(s.slipNo)) ? Number(s.slipNo) : null,
+            patientName: s.patientName || null,
+            amount: Number(s.amount) || 0,
+            sortOrder: sidx,
+          });
+        });
+      }
+    }
+    if (slipRows.length) await prisma.clinicPanelAdmitReportSlip.createMany({ data: slipRows });
+  }
+
+  return { imported, refreshed, skipped, deptsCreated };
+}
+
+// Panels > Reports > OPD Admit Report — "Admission" scope, "Details" view
+// results. Reads only from the standalone tables above — never joins
+// against ClinicAdmission. Header-row Slip/Amount are always derived from
+// the dept breakdown rows rather than stored, so they can never drift.
+async function getPanelAdmitReport({ dateType, fromDate, toDate, panelCompanyId }) {
+  const where = {};
+  if (panelCompanyId && panelCompanyId !== 'ALL') {
+    where.panelCompanyId = Number(panelCompanyId);
+  }
+  if (fromDate && toDate) {
+    const field = dateType === 'admit' ? 'admitDate' : 'dischargeDate';
+    where[field] = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59`) };
+  }
+
+  const rows = await prisma.clinicPanelAdmitReportAdmission.findMany({
+    where,
+    include: {
+      depts: {
+        orderBy: { sortOrder: 'asc' },
+        include: { slips: { orderBy: { sortOrder: 'asc' } } },
+      },
+    },
+    orderBy: { admitDate: 'asc' },
+  });
+
+  const companyIds = [...new Set(rows.map((a) => a.panelCompanyId).filter(Boolean))];
+  const companies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } })
+    : [];
+  const companyById = new Map(companies.map((c) => [c.id, c]));
+
+  const admissions = rows.map((a) => {
+    const slip = a.depts.reduce((s, d) => s + Number(d.slip || 0), 0);
+    const amount = a.depts.reduce((s, d) => s + Number(d.amount || 0), 0);
+    return {
+      admissionNo: a.admissionNo,
+      patientName: a.patientName,
+      employeeName: a.employeeName,
+      companyName: companyById.get(a.panelCompanyId)?.name || null,
+      status: a.status,
+      admitDate: a.admitDate,
+      dischargeDate: a.dischargeDate,
+      slip, amount,
+      depts: a.depts.map((d) => ({
+        dept: d.dept, slip: d.slip, amount: d.amount,
+        slips: d.slips.map((s) => ({ slipNo: s.slipNo, patientName: s.patientName, amount: s.amount })),
+      })),
+    };
+  });
+
+  const totals = {
+    admissionCount: admissions.length,
+    slip: admissions.reduce((s, a) => s + a.slip, 0),
+    amount: admissions.reduce((s, a) => s + a.amount, 0),
+  };
+
+  return { mode: 'details', admissions, totals };
+}
+
+// Panels > Reports > Doctor Wise Statement — bulk import for the legacy
+// "Statement of Consultant for Indoor Files" export. Standalone, same
+// architecture/rationale as every other Panel report import in this file
+// (see previewPanelMedicineIssuanceImport's comment) — never creates or
+// matches a ClinicAdmission. A source file is scoped to one doctor;
+// re-importing wipes and recreates every voucher already on file for that
+// doctorCode, since a fresh export for a doctor is that doctor's current
+// complete truth (see the model comment in schema.prisma).
+async function previewDoctorStatementImport({ doctorCode, doctorName, companyNames, totalVouchers, totalItems, totalAmount }) {
+  const code = String(doctorCode || '').trim();
+  const name = String(doctorName || '').trim();
+  if (!code) throw Object.assign(new Error('Doctor code nahi mila file mein'), { status: 400 });
+
+  // The file's own doctor code is a LEGACY code (e.g. "1030") that does not
+  // necessarily match this doctor's live ClinicDoctor.code (e.g. "DAA") —
+  // resolve by NAME instead, same principle as Company resolution elsewhere.
+  const [doctor, existingCount, companies] = await Promise.all([
+    name ? prisma.clinicDoctor.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } }) : null,
+    prisma.clinicDoctorStatementVoucher.count({ where: { doctorCode: code } }),
+    prisma.clinicPanelCompany.findMany(),
+  ]);
+  const companyByName = new Set(companies.map((c) => c.name.trim().toLowerCase()));
+  const unmatchedCompanies = [...new Set((companyNames || []).map((n) => String(n).trim()).filter(Boolean))]
+    .filter((cName) => !companyByName.has(cName.toLowerCase()));
+
+  return {
+    doctorCode: code,
+    doctorName: name,
+    doctorMatched: Boolean(doctor),
+    doctorRealCode: doctor?.code || null,
+    willReplace: existingCount > 0,
+    existingVoucherCount: existingCount,
+    totalVouchers: Number(totalVouchers) || 0,
+    totalItems: Number(totalItems) || 0,
+    totalAmount: Number(totalAmount) || 0,
+    unmatchedCompanies,
+  };
+}
+
+async function confirmDoctorStatementImport({ doctorCode, doctorName, companies }) {
+  const code = String(doctorCode || '').trim();
+  const name = String(doctorName || '').trim();
+  if (!code || !Array.isArray(companies) || !companies.length) {
+    throw Object.assign(new Error('Doctor code ya company data nahi mila'), { status: 400 });
+  }
+
+  const [matchedDoctor, panelCompanies] = await Promise.all([
+    name ? prisma.clinicDoctor.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } }) : null,
+    prisma.clinicPanelCompany.findMany(),
+  ]);
+  const clinicDoctorId = matchedDoctor?.id || null;
+  const companyByName = {};
+  panelCompanies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c.id; });
+
+  // Full refresh — this doctor's statement is replaced wholesale with
+  // whatever this file says (cascades to every item under each voucher).
+  await prisma.clinicDoctorStatementVoucher.deleteMany({ where: { doctorCode: code } });
+
+  let vouchersCreated = 0, itemsCreated = 0;
+  let sortOrder = 0;
+
+  for (const comp of companies) {
+    const companyName = String(comp.companyName || '').trim();
+    if (!companyName || !Array.isArray(comp.vouchers)) continue;
+    const key = companyName.toLowerCase();
+    const panelCompanyId = companyByName[key] || null;
+
+    for (const v of comp.vouchers) {
+      if (!Array.isArray(v.items) || !v.items.length) continue;
+      const createdVoucher = await prisma.clinicDoctorStatementVoucher.create({
+        data: {
+          doctorCode: code, doctorName: name, clinicDoctorId,
+          companyCode: comp.companyCode || null, companyName, panelCompanyId,
+          totalPatients: Number(v.totalPatients) || v.items.length,
+          totalAmount: Number(v.totalAmount) || v.items.reduce((s, it) => s + (Number(it.amount) || 0), 0),
+          amountWords: v.amountWords || null,
+          signeeName: v.signeeName || null,
+          sortOrder: sortOrder++,
+        },
+      });
+      vouchersCreated += 1;
+
+      const itemRows = v.items.map((it, idx) => ({
+        voucherId: createdVoucher.id,
+        admissionNo: String(it.admissionNo || '').trim(),
+        patientName: String(it.patientName || '').trim(),
+        surgery: it.surgery || null,
+        opDate: it.opDate ? new Date(it.opDate) : null,
+        amount: Number(it.amount) || 0,
+        sortOrder: idx,
+      }));
+      await prisma.clinicDoctorStatementItem.createMany({ data: itemRows });
+      itemsCreated += itemRows.length;
+    }
+  }
+
+  return { vouchersCreated, itemsCreated, doctorMatched: Boolean(matchedDoctor) };
+}
+
+// Panels > Reports > Doctor Wise Statement — results. Reads only from the
+// standalone tables above. Doctor is matched by clinicDoctorId (resolved by
+// NAME at import time — the file's own doctorCode is a legacy code that
+// doesn't necessarily match ClinicDoctor.code, see confirm above). Date
+// range is best-effort against each item's own Op. Date — an item with no
+// Op. Date (e.g. a plain "General Admission" line, never a surgery) always
+// passes through rather than being hidden, since the source file itself
+// includes those undated rows in every date-ranged export it produces.
+async function getDoctorStatement({ doctorId, fromDate, toDate }) {
+  const doctor = await prisma.clinicDoctor.findUnique({ where: { id: Number(doctorId) } });
+  if (!doctor) throw Object.assign(new Error('Doctor nahi mila'), { status: 404 });
+
+  const vouchers = await prisma.clinicDoctorStatementVoucher.findMany({
+    where: { clinicDoctorId: doctor.id },
+    include: { items: { orderBy: { sortOrder: 'asc' } } },
+    orderBy: { sortOrder: 'asc' },
+  });
+
+  const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+  const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+  const inRange = (d) => {
+    if (!d) return true;
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  };
+
+  const companyIds = [...new Set(vouchers.map((v) => v.panelCompanyId).filter(Boolean))];
+  const panelCompanies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } })
+    : [];
+  const companyById = new Map(panelCompanies.map((c) => [c.id, c]));
+
+  const filteredVouchers = vouchers
+    .map((v) => ({ ...v, items: v.items.filter((it) => inRange(it.opDate)) }))
+    .filter((v) => v.items.length);
+
+  const companyMap = new Map();
+  filteredVouchers.forEach((v) => {
+    const key = v.panelCompanyId || v.companyName;
+    if (!companyMap.has(key)) {
+      companyMap.set(key, {
+        companyCode: v.companyCode,
+        companyName: companyById.get(v.panelCompanyId)?.name || v.companyName,
+        vouchers: [],
+      });
+    }
+    const amount = v.items.reduce((s, it) => s + Number(it.amount || 0), 0);
+    companyMap.get(key).vouchers.push({
+      totalPatients: v.items.length,
+      totalAmount: amount,
+      amountWords: v.amountWords,
+      signeeName: v.signeeName,
+      items: v.items.map((it) => ({
+        admissionNo: it.admissionNo, patientName: it.patientName,
+        surgery: it.surgery, opDate: it.opDate, amount: it.amount,
+      })),
+    });
+  });
+
+  const companiesOut = [...companyMap.values()].map((c) => ({
+    ...c,
+    totalPatients: c.vouchers.reduce((s, v) => s + v.totalPatients, 0),
+    totalAmount: c.vouchers.reduce((s, v) => s + v.totalAmount, 0),
+  })).sort((a, b) => a.companyName.localeCompare(b.companyName));
+
+  const grandTotal = companiesOut.reduce((s, c) => s + c.totalAmount, 0);
+  const grandPatients = companiesOut.reduce((s, c) => s + c.totalPatients, 0);
+
+  return {
+    doctor: { id: doctor.id, code: doctor.code, name: doctor.name },
+    companies: companiesOut,
+    grandTotal, grandPatients,
+  };
 }
 
 async function getAdmissionForAdjustment(id) {
@@ -4200,9 +4824,12 @@ async function getProvisionalBillDetail(admissionId) {
 
   const provisionalAmount = resolvedBillItems.reduce((s, i) => s + Number(i.amount || 0), 0);
   const diagnosticAmount  = diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  // Pharmacy is tracked only on its own tab (in-app) — excluded from Bill
-  // Amount / Balance entirely, per explicit instruction.
-  const billAmount = provisionalAmount + wardAmount + diagnosticAmount;
+  // Pharmacy (both Hospital Store sales-invoice items and manually-entered
+  // Outside Store items) now counts toward Bill Amount — matches how
+  // importProvisionalDataIntoDischargeBill already folds the same pharmacyRows
+  // total into the Final Bill, so Provisional and Discharge agree.
+  const pharmacyAmount = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const billAmount = provisionalAmount + wardAmount + diagnosticAmount + pharmacyAmount;
   const discountAmount = Number(latestDiscountRefund?.discountAmount) || 0;
   const netBillAmount = Math.max(0, billAmount - discountAmount);
 
@@ -4235,6 +4862,7 @@ async function getProvisionalBillDetail(admissionId) {
     pendingSlips,
     pendingDiagnosticSlips,
     pharmacyRows,
+    pharmacyAmount,
     patientInfo: { paymentHistory, amountReceived },
     balanceInfo: {
       billAmount,
@@ -6314,6 +6942,136 @@ async function receiveBalancePayment(id, amount) {
   });
 }
 
+// ─── Medicine List (Pharmacy Price List) ─────────────────────────────────────
+
+async function getMedicineList({ search, status } = {}) {
+  const where = {};
+  if (status && status !== 'all') where.status = status;
+  const q = String(search || '').trim();
+  if (q) {
+    where.OR = [
+      { name: { contains: q, mode: 'insensitive' } },
+      { code: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+  return prisma.clinicMedicine.findMany({ where, orderBy: { name: 'asc' } });
+}
+
+async function createMedicine({ code, name, packSize, retailPrice, tradePrice }) {
+  const cleanCode = String(code || '').trim();
+  const cleanName = String(name || '').trim();
+  if (!cleanCode) throw Object.assign(new Error('Medicine code zaroori hai'), { status: 400 });
+  if (!cleanName) throw Object.assign(new Error('Medicine naam zaroori hai'), { status: 400 });
+  const existing = await prisma.clinicMedicine.findUnique({ where: { code: cleanCode } });
+  if (existing) throw Object.assign(new Error('Yeh code pehle se mojood hai'), { status: 400 });
+  return prisma.clinicMedicine.create({
+    data: {
+      code: cleanCode,
+      name: cleanName,
+      packSize: packSize ? String(packSize).trim() : null,
+      retailPrice: Number(retailPrice) || 0,
+      tradePrice: Number(tradePrice) || 0,
+    },
+  });
+}
+
+async function updateMedicine(id, { code, name, packSize, retailPrice, tradePrice, status }) {
+  const medicine = await prisma.clinicMedicine.findUnique({ where: { id: Number(id) } });
+  if (!medicine) throw Object.assign(new Error('Medicine nahi mili'), { status: 404 });
+  const data = {};
+  if (code !== undefined) {
+    const cleanCode = String(code).trim();
+    if (!cleanCode) throw Object.assign(new Error('Medicine code zaroori hai'), { status: 400 });
+    if (cleanCode !== medicine.code) {
+      const dup = await prisma.clinicMedicine.findUnique({ where: { code: cleanCode } });
+      if (dup) throw Object.assign(new Error('Yeh code pehle se mojood hai'), { status: 400 });
+    }
+    data.code = cleanCode;
+  }
+  if (name !== undefined) {
+    const cleanName = String(name).trim();
+    if (!cleanName) throw Object.assign(new Error('Medicine naam zaroori hai'), { status: 400 });
+    data.name = cleanName;
+  }
+  if (packSize !== undefined) data.packSize = packSize ? String(packSize).trim() : null;
+  if (retailPrice !== undefined) data.retailPrice = Number(retailPrice) || 0;
+  if (tradePrice !== undefined) data.tradePrice = Number(tradePrice) || 0;
+  if (status !== undefined) data.status = status === 'inactive' ? 'inactive' : 'active';
+  return prisma.clinicMedicine.update({ where: { id: Number(id) }, data });
+}
+
+async function deleteMedicine(id) {
+  const medicine = await prisma.clinicMedicine.findUnique({ where: { id: Number(id) } });
+  if (!medicine) throw Object.assign(new Error('Medicine nahi mili'), { status: 404 });
+  await prisma.clinicMedicine.delete({ where: { id: Number(id) } });
+  return { deleted: true };
+}
+
+// Dry-run: file ke rows ko live DB codes se compare karke sirf counts/warnings
+// deta hai, kuch likhta nahi — Panel Cheque import ka wahi established pattern.
+async function previewMedicineImport(rows) {
+  if (!Array.isArray(rows) || !rows.length) throw Object.assign(new Error('Koi row nahi mili'), { status: 400 });
+  const codes = [...new Set(rows.map((r) => String(r.code || '').trim()).filter(Boolean))];
+  const existing = codes.length
+    ? await prisma.clinicMedicine.findMany({ where: { code: { in: codes } }, select: { code: true } })
+    : [];
+  const existingSet = new Set(existing.map((e) => e.code));
+  const seenInFile = new Set();
+  const duplicatesInFile = new Set();
+  let willCreate = 0, willUpdate = 0, blank = 0;
+  let totalRetail = 0, totalTrade = 0;
+  for (const r of rows) {
+    const code = String(r.code || '').trim();
+    const name = String(r.name || '').trim();
+    if (!code || !name) { blank += 1; continue; }
+    if (seenInFile.has(code)) { duplicatesInFile.add(code); continue; }
+    seenInFile.add(code);
+    if (existingSet.has(code)) willUpdate += 1; else willCreate += 1;
+    totalRetail += Number(r.retailPrice) || 0;
+    totalTrade += Number(r.tradePrice) || 0;
+  }
+  return {
+    totalRows: rows.length, willCreate, willUpdate, blank,
+    duplicatesInFile: [...duplicatesInFile], totalRetail, totalTrade,
+  };
+}
+
+// Actual writer — upsert by `code` (yehi legacy "id" column hai, file mein).
+// Re-upload hamesha safe hai: existing medicine ka naam/price bas refresh
+// hota hai, koi duplicate row nahi banti.
+async function confirmMedicineImport(rows) {
+  if (!Array.isArray(rows) || !rows.length) throw Object.assign(new Error('Koi row nahi mili'), { status: 400 });
+  const codes = [...new Set(rows.map((r) => String(r.code || '').trim()).filter(Boolean))];
+  const existing = codes.length
+    ? await prisma.clinicMedicine.findMany({ where: { code: { in: codes } }, select: { code: true } })
+    : [];
+  const existingSet = new Set(existing.map((e) => e.code));
+  const seenInFile = new Set();
+  let created = 0, updated = 0, skipped = 0;
+  const BATCH = 50;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (r) => {
+      const code = String(r.code || '').trim();
+      const name = String(r.name || '').trim();
+      if (!code || !name || seenInFile.has(code)) { skipped += 1; return; }
+      seenInFile.add(code);
+      const packSize = (r.packSize !== undefined && r.packSize !== null && String(r.packSize).trim() !== '')
+        ? String(r.packSize).trim() : null;
+      const retailPrice = Number(r.retailPrice) || 0;
+      const tradePrice = Number(r.tradePrice) || 0;
+      const isUpdate = existingSet.has(code);
+      await prisma.clinicMedicine.upsert({
+        where: { code },
+        create: { code, name, packSize, retailPrice, tradePrice },
+        update: { name, packSize, retailPrice, tradePrice },
+      });
+      if (isUpdate) updated += 1; else created += 1;
+    }));
+  }
+  return { created, updated, skipped };
+}
+
 module.exports = {
   getAllDepartments,
   createDepartment,
@@ -6446,6 +7204,15 @@ module.exports = {
   getPanelChequesReport,
   previewPanelChequeImport,
   confirmPanelChequeImport,
+  previewPanelMedicineIssuanceImport,
+  confirmPanelMedicineIssuanceImportBatch,
+  getPanelMedicineIssuanceReport,
+  previewPanelAdmitReportImport,
+  confirmPanelAdmitReportImportBatch,
+  getPanelAdmitReport,
+  previewDoctorStatementImport,
+  confirmDoctorStatementImport,
+  getDoctorStatement,
   getUnpaidPanelAdmissions,
   receivePanelCheque,
   updatePanelBillingItem,
@@ -6523,6 +7290,12 @@ module.exports = {
   bulkImportDeathCertificates,
   getSurgeryInformationForAdmission,
   saveSurgeryInformation,
+  getMedicineList,
+  createMedicine,
+  updateMedicine,
+  deleteMedicine,
+  previewMedicineImport,
+  confirmMedicineImport,
 };
 
 // ─── Panel Billing Detail (bill-head wise) ───────────────────────────────────
@@ -7133,6 +7906,8 @@ async function saveSurgeryInformation(admissionId, payload) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
+  const existing = await prisma.clinicSurgeryInformation.findUnique({ where: { admissionId: Number(admissionId) } });
+
   const toIntArr = (arr) => Array.isArray(arr) ? arr.map(Number).filter(n => !isNaN(n)) : [];
 
   const data = {
@@ -7144,12 +7919,17 @@ async function saveSurgeryInformation(admissionId, payload) {
     rmoIds:            toIntArr(payload.rmoIds),
     techIds:           toIntArr(payload.techIds),
     techOnCall:        Boolean(payload.techOnCall),
-    itemsJson:         Array.isArray(payload.itemsJson) ? payload.itemsJson : null,
+    // Items Used (free-text) is retired in favour of real GD requests — the
+    // frontend no longer sends this key at all. Only overwrite it when a
+    // caller explicitly passes something, so old saved records (and any
+    // other future caller) aren't silently wiped to null on every re-save.
+    ...(payload.itemsJson !== undefined
+      ? { itemsJson: Array.isArray(payload.itemsJson) ? payload.itemsJson : null }
+      : {}),
     createdByUserId:   payload.createdByUserId != null ? String(payload.createdByUserId) : null,
     createdByName:     payload.createdByName   || null,
   };
 
-  const existing = await prisma.clinicSurgeryInformation.findUnique({ where: { admissionId: Number(admissionId) } });
   if (existing) {
     return prisma.clinicSurgeryInformation.update({ where: { id: existing.id }, data });
   }
