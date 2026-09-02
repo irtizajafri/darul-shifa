@@ -28,7 +28,7 @@ export default function MainGL() {
     setSaving(true);
     try {
       if (modal.mode === 'add') {
-        await createMainGL({ name: form.name, entity_type: entityType });
+        await createMainGL({ name: form.name, entityType });
         toast.success('Main GL created');
       } else {
         await updateMainGL(modal.row.id, { name: form.name });

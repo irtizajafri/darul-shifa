@@ -595,10 +595,10 @@ async function createGD(req, res, next) {
 
 async function createGDBatch(req, res, next) {
   try {
-    const { departmentId, items, admissionNumber, comment } = req.body || {};
+    const { departmentId, items, admissionNumber, comment, createdByName } = req.body || {};
     if (!isNumericId(departmentId)) return fail(res, 400, 'Invalid departmentId');
     if (!Array.isArray(items) || items.length === 0) return fail(res, 400, 'items array is required');
-    const data = await service.createGDBatch({ departmentId, items, admissionNumber, comment });
+    const data = await service.createGDBatch({ departmentId, items, admissionNumber, comment, createdByName });
     return success(res, data, 'gd batch created');
   } catch (err) {
     if (String(err.message).includes('inactive') || String(err.message).includes('not found') || String(err.message).includes('must') || String(err.message).includes('Invalid')) {

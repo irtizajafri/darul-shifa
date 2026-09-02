@@ -1211,7 +1211,7 @@ async function createGD(payload) {
   });
 }
 
-async function createGDBatch({ departmentId, items = [], admissionNumber, comment }) {
+async function createGDBatch({ departmentId, items = [], admissionNumber, comment, createdByName }) {
   const deptId = Number(departmentId);
   if (!Number.isFinite(deptId) || deptId <= 0) throw new Error('Invalid departmentId');
   if (!Array.isArray(items) || items.length === 0) throw new Error('items array is required');
@@ -1251,6 +1251,7 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, commen
       requestDate: new Date(),
       admissionNumber: admissionNumber ? String(admissionNumber).trim() : null,
       comment: comment ? String(comment).trim() : null,
+      createdByName: createdByName ? String(createdByName).trim() : null,
     },
   });
 
@@ -1332,7 +1333,7 @@ async function createGIN(payload) {
   const gdHeaderId = parsePositiveNumber(payload.gdHeaderId);
 
   if (gdHeaderId) {
-    return createGINFromHeader({ gdHeaderId, items: payload.items, issueDate: payload.issueDate, note: payload.note, issuedById: payload.issuedById });
+    return createGINFromHeader({ gdHeaderId, items: payload.items, issueDate: payload.issueDate, note: payload.note, issuedById: payload.issuedById, createdByName: payload.createdByName });
   }
 
   const issuedQuantity = parsePositiveNumber(payload.issuedQuantity);
@@ -1367,6 +1368,7 @@ async function createGIN(payload) {
         issuedQuantity,
         issueDate: payload.issueDate ? new Date(payload.issueDate) : new Date(),
         status: 'issued',
+        createdByName: payload.createdByName ? String(payload.createdByName).trim() : null,
       },
     });
 
@@ -1404,7 +1406,7 @@ async function createGIN(payload) {
   });
 }
 
-async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, issuedById }) {
+async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, issuedById, createdByName }) {
   const header = await prisma.inventoryGDHeader.findUnique({
     where: { id: gdHeaderId },
     include: {
@@ -1435,6 +1437,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
         issueDate: issueDate ? new Date(issueDate) : new Date(),
         admissionNumber: header.admissionNumber || null,
         status: 'issued',
+        createdByName: createdByName ? String(createdByName).trim() : null,
         ...(parsedIssuedById ? { issuedById: parsedIssuedById } : {}),
       },
     });
@@ -2883,10 +2886,13 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
       const delta = resolveMovementDelta(movement);
 
       let eventDate = movement.createdAt;
+      let sortDate = movement.createdAt;
       if (referenceType === 'OPENING' || movement.movementType?.toUpperCase() === 'OPENING') {
         eventDate = new Date(0); // epoch — always process first
+        sortDate = new Date(0);
       } else if (referenceType === 'GIN' && referenceId && ginDateByCode.has(referenceId)) {
-        eventDate = ginDateByCode.get(referenceId) || movement.createdAt;
+        eventDate = ginDateByCode.get(referenceId) || movement.createdAt; // display date = issueDate
+        // sortDate stays as movement.createdAt so same-day GRNs sort before GINs correctly
       }
 
       return {
@@ -2895,6 +2901,7 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
         referenceId,
         delta,
         eventDate,
+        sortDate,
       };
     })
     .filter((movement) => {
@@ -2902,8 +2909,8 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
       return true;
     })
     .sort((a, b) => {
-      const timeA = new Date(a.eventDate).getTime();
-      const timeB = new Date(b.eventDate).getTime();
+      const timeA = new Date(a.sortDate).getTime();
+      const timeB = new Date(b.sortDate).getTime();
       if (timeA !== timeB) return timeA - timeB;
 
       const typeA = a.delta >= 0 ? 0 : 1;
@@ -3467,10 +3474,13 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       const delta = resolveMovementDelta(movement);
 
       let eventDate = movement.createdAt;
+      let sortDate = movement.createdAt;
       if (referenceType === 'OPENING' || movement.movementType?.toUpperCase() === 'OPENING') {
         eventDate = new Date(0); // epoch — always process first
+        sortDate = new Date(0);
       } else if (referenceType === 'GIN' && referenceId && ginDateByCode.has(referenceId)) {
-        eventDate = ginDateByCode.get(referenceId) || movement.createdAt;
+        eventDate = ginDateByCode.get(referenceId) || movement.createdAt; // display date = issueDate
+        // sortDate stays as movement.createdAt so same-day GRNs sort before GINs correctly
       }
 
       return {
@@ -3479,6 +3489,7 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
         referenceId,
         delta,
         eventDate,
+        sortDate,
       };
     })
     .filter((movement) => {
@@ -3486,8 +3497,8 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       return true;
     })
     .sort((a, b) => {
-      const timeA = new Date(a.eventDate).getTime();
-      const timeB = new Date(b.eventDate).getTime();
+      const timeA = new Date(a.sortDate).getTime();
+      const timeB = new Date(b.sortDate).getTime();
       if (timeA !== timeB) return timeA - timeB;
 
       const typeA = a.delta >= 0 ? 0 : 1;

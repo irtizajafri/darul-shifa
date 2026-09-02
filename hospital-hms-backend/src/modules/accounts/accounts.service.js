@@ -14,7 +14,11 @@ async function getMainGLs(entityType) {
 }
 
 async function createMainGL({ name, entityType }) {
-  const count = await prisma.accMainGL.count({ where: { entityType } });
+  // `code` is globally unique (not scoped by entityType — see schema), so the
+  // sequence has to be counted across ALL Main GLs, not just this entityType's
+  // — counting only this entityType's rows would regenerate "E-1" for the
+  // first Corporate Main GL even though Non-Corporate already has one.
+  const count = await prisma.accMainGL.count();
   const code = `E-${count + 1}`;
   return prisma.accMainGL.create({ data: { code, name: name.trim(), entityType } });
 }
@@ -1323,6 +1327,23 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
     }
   }
 
+  // "Income" for the Corporate entity also includes Panel Cheque receipts
+  // (see receivePanelCheque) — the actual received amount posted against a
+  // panel/insurance company's cheque, keyed by that cheque's own Cheque Date
+  // (same convention as Voucher's own voucherDate driving the calendar, not
+  // when it was entered into the system).
+  if (entityType === 'corporate') {
+    const chequeWhere = {};
+    if (dateFrom && dateTo) chequeWhere.chequeDate = { gte: dateFrom, lte: dateTo };
+    const cheques = await prisma.clinicPanelChequeReceipt.findMany({
+      where: chequeWhere,
+      select: { chequeDate: true, receivedAmount: true },
+    });
+    for (const c of cheques) {
+      bump(c.chequeDate, Number(c.receivedAmount) || 0, false);
+    }
+  }
+
   const toRow = (e, keyField) => ({
     [keyField]: e.key,
     totalPatients: e.totalCount, totalAmount: e.totalAmount,
@@ -1383,6 +1404,14 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
       });
       lastYearAmount += lyClinic.data.reduce((s, d) => s + (Number(d.totalAmount) || 0), 0);
     }
+
+    if (entityType === 'corporate') {
+      const lyCheques = await prisma.clinicPanelChequeReceipt.findMany({
+        where: { chequeDate: { gte: lyFrom, lte: lyTo } },
+        select: { receivedAmount: true },
+      });
+      lastYearAmount += lyCheques.reduce((s, c) => s + (Number(c.receivedAmount) || 0), 0);
+    }
   }
 
   const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1411,6 +1440,45 @@ async function getClinicRevenueForDate(date) {
   });
   if (autoVoucher) return null;
   return clinicSvc.getDailyDepartmentStatement(date);
+}
+
+// Corporate's equivalent of getClinicRevenueForDate above — used by the
+// Inquiry calendar's double-click modal to show WHICH Panel Cheques made up
+// that day's Income (see getAccountsInquiryDashboard's Corporate merge).
+// Each cheque can cover several admissions' Panel Billing at once — that
+// count, plus the cheque's own totalAmount/deduction, is included so the
+// modal shows exactly what was posted, not just a bare total.
+async function getPanelChequeRevenueForDate(date) {
+  const receipts = await prisma.clinicPanelChequeReceipt.findMany({
+    where: { chequeDate: new Date(date) },
+    include: { items: { select: { id: true } } },
+    orderBy: { id: 'asc' },
+  });
+  if (!receipts.length) return { rows: [], total: { amount: 0, count: 0 } };
+
+  // ClinicPanelChequeReceipt.panelCompanyId has no declared Prisma relation
+  // (raw FK only) — same manual join clinic.service.js's own
+  // getPanelChequeSummary already uses for this exact table.
+  const companyIds = [...new Set(receipts.map((r) => r.panelCompanyId).filter(Boolean))];
+  const companies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true } })
+    : [];
+  const companyById = new Map(companies.map((c) => [c.id, c.name]));
+
+  const rows = receipts.map((r) => ({
+    id: r.id,
+    companyName: companyById.get(r.panelCompanyId) || '—',
+    chequeNo: r.chequeNo,
+    billingMonth: r.billingMonth,
+    billingYear: r.billingYear,
+    admissionsCount: r.items.length,
+    totalAmount: Number(r.totalAmount) || 0,
+    receivedAmount: Number(r.receivedAmount) || 0,
+    deduction: Number(r.deduction) || 0,
+  }));
+
+  const total = { amount: rows.reduce((s, r) => s + r.receivedAmount, 0), count: rows.length };
+  return { rows, total };
 }
 
 // Single-day Income/Expense/Diff — same numbers the Inquiry calendar's day
@@ -1519,6 +1587,7 @@ module.exports = {
   getVoucherSummary,
   getAccountsInquiryDashboard,
   getClinicRevenueForDate,
+  getPanelChequeRevenueForDate,
   getDailyIncomeExpenseDiff,
   generateAutoIncomeVoucherForDate,
 };

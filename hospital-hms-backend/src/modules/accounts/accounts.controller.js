@@ -204,6 +204,15 @@ async function getClinicRevenueForDate(req, res, next) {
   }
 }
 
+async function getPanelChequeRevenueForDate(req, res, next) {
+  try {
+    success(res, await svc.getPanelChequeRevenueForDate(req.query.date));
+  } catch (e) {
+    if (e.status) return fail(res, e.status, e.message);
+    next(e);
+  }
+}
+
 async function getDailyIncomeExpenseDiff(req, res, next) {
   try {
     success(res, await svc.getDailyIncomeExpenseDiff(req.query.date, req.query.entityType));
@@ -236,5 +245,6 @@ module.exports = {
   createBankDepositAdj, getBankDepositAdjs,
   getAccountsInquiryDashboard,
   getClinicRevenueForDate,
+  getPanelChequeRevenueForDate,
   getDailyIncomeExpenseDiff,
 };

@@ -454,6 +454,12 @@ export const useClinicStore = create((set) => ({
     set((s) => ({ panelCompanies: s.panelCompanies.filter((p) => p.id !== id) }));
   },
 
+  // ── Clinic > Parameters > Update Rates ──────────────────────────────────────
+  fetchPanelRateCard: async (panelCompanyId) => request(`/panel-companies/${panelCompanyId}/rate-card`),
+
+  savePanelRateCard: async (panelCompanyId, payload) =>
+    request(`/panel-companies/${panelCompanyId}/rate-card`, { method: 'PUT', body: JSON.stringify(payload) }),
+
   // ── Panel Employees ──────────────────────────────────────────────────────────
   panelEmployees: [],
 
@@ -740,6 +746,10 @@ export const useClinicStore = create((set) => ({
 
   overrideLiveDetailItem: async (admissionId, payload) => {
     return request(`/admission/panel-billing/${admissionId}/items/override`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  excludeLiveDetailItem: async (admissionId, payload) => {
+    return request(`/admission/panel-billing/${admissionId}/items/exclude`, { method: 'POST', body: JSON.stringify(payload) });
   },
 
   addPanelBillingItem: async (admissionId, payload) => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Plus, Pencil, Trash2, Search, Power, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
@@ -21,7 +21,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 
 export default function ClinicPanelBillHeadListPage() {
   const {
     panelBillHeads, loading, fetchPanelBillHeads, createPanelBillHead, updatePanelBillHead, deletePanelBillHead,
-    addPanelBillHeadItem, deletePanelBillHeadItem,
+    addPanelBillHeadItem, deletePanelBillHeadItem, fetchMedicineList,
   } = useClinicStore();
 
   const [query, setQuery] = useState('');
@@ -33,9 +33,16 @@ export default function ClinicPanelBillHeadListPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   // Package-medicine sub-form (only shown once the head being edited is a 'package')
+  // Medicine field is a search combo backed by the Medicine List (Panels >
+  // Reports > Medicine List / Pharmacy Price List, same ClinicMedicine table
+  // Panel Billing's own manual-add Medicine field searches) — same master
+  // list everywhere, not free text.
   const [medName, setMedName] = useState('');
   const [medRate, setMedRate] = useState('');
+  const [medOptions, setMedOptions] = useState([]);
+  const [showMedOptions, setShowMedOptions] = useState(false);
   const [addingMed, setAddingMed] = useState(false);
+  const medSearchTimer = useRef(null);
 
   useEffect(() => { fetchPanelBillHeads(); }, [fetchPanelBillHeads]);
 
@@ -64,6 +71,25 @@ export default function ClinicPanelBillHeadListPage() {
     setKind('simple');
     setMedName('');
     setMedRate('');
+    setMedOptions([]);
+    setShowMedOptions(false);
+  }
+
+  function handleMedNameChange(val) {
+    setMedName(val);
+    setShowMedOptions(true);
+    clearTimeout(medSearchTimer.current);
+    medSearchTimer.current = setTimeout(() => {
+      fetchMedicineList({ search: val, status: 'active' })
+        .then((meds) => setMedOptions(meds || []))
+        .catch(() => setMedOptions([]));
+    }, 300);
+  }
+
+  function pickMedOption(opt) {
+    setShowMedOptions(false);
+    setMedName(opt.name);
+    if (opt.retailPrice != null) setMedRate(String(opt.retailPrice));
   }
 
   async function handleSave() {
@@ -121,6 +147,7 @@ export default function ClinicPanelBillHeadListPage() {
       setEditing((h) => ({ ...h, packageItems: [...h.packageItems, row] }));
       setMedName('');
       setMedRate('');
+      setMedOptions([]);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -246,7 +273,24 @@ export default function ClinicPanelBillHeadListPage() {
             <div className="pbh-package-editor">
               <div className="pbh-package-title">Medicines in this package</div>
               <div className="pbh-package-add-row">
-                <input placeholder="Medicine name" value={medName} onChange={(e) => setMedName(e.target.value)} />
+                <div className="pbh-combo">
+                  <input
+                    placeholder="Medicine name — Medicine List se search karo"
+                    value={medName}
+                    onChange={(e) => handleMedNameChange(e.target.value)}
+                    onFocus={() => handleMedNameChange(medName)}
+                    onBlur={() => setTimeout(() => setShowMedOptions(false), 150)}
+                  />
+                  {showMedOptions && medOptions.length > 0 && (
+                    <div className="pbh-combo-list">
+                      {medOptions.map((opt) => (
+                        <div key={opt.id} className="pbh-combo-opt" onMouseDown={() => pickMedOption(opt)}>
+                          {opt.name}<span className="pbh-combo-code"> ({opt.code})</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <input placeholder="Rate" value={medRate} onChange={(e) => setMedRate(e.target.value)} className="pbh-rate-input" />
                 <button className="pbh-add-med-btn" onClick={handleAddMedicine} disabled={addingMed}><Plus size={13} /> Add</button>
               </div>

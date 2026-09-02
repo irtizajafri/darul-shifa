@@ -145,13 +145,51 @@ function ClinicRevenueCard({ data }) {
   );
 }
 
+// ── Panel Cheque revenue card — cheques received that day (Corporate only) ────
+function PanelChequeRevenueCard({ data }) {
+  if (!data || !data.rows.length) return null;
+  return (
+    <div className="aid-hist-voucher">
+      <div className="aid-hist-voucher-hdr">
+        <span className="aid-hist-vno">Panel Cheques Received</span>
+        <span className="aid-hist-vamt aid-hist-vamt--inc">{fmtA(data.total.amount)}</span>
+      </div>
+      <table className="aid-hist-tbl">
+        <thead>
+          <tr>
+            <th>Panel Company</th>
+            <th>Cheque #</th>
+            <th>Billing Month</th>
+            <th className="num">Admissions</th>
+            <th className="num">Deduction</th>
+            <th className="num">Received</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.rows.map(r => (
+            <tr key={r.id}>
+              <td>{r.companyName}</td>
+              <td>{r.chequeNo}</td>
+              <td>{MN[r.billingMonth - 1]} {r.billingYear}</td>
+              <td className="td-num">{fmtN(r.admissionsCount)}</td>
+              <td className="td-num">{fmtA(r.deduction)}</td>
+              <td className="td-num">{fmtA(r.receivedAmount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Voucher History Modal (double-click a calendar day) ────────────────────────
-// Income = Clinic patient revenue (Non-Corporate only) + Voucher Income entries.
-// Expense = Voucher Expense entries.
+// Income = Clinic patient revenue (Non-Corporate) / Panel Cheques received
+// (Corporate) + Voucher Income entries. Expense = Voucher Expense entries.
 function VoucherHistoryModal({ date, entityType, onClose }) {
   const [expenseVouchers, setExpenseVouchers] = useState([]);
   const [incomeVouchers, setIncomeVouchers] = useState([]);
   const [clinicRevenue, setClinicRevenue] = useState(null);
+  const [chequeRevenue, setChequeRevenue] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -159,26 +197,31 @@ function VoucherHistoryModal({ date, entityType, onClose }) {
     const qExp = new URLSearchParams({ type: 'expense', ...base });
     const qInc = new URLSearchParams({ type: 'income',  ...base });
     const isNonCorporate = (entityType || 'non-corporate') === 'non-corporate';
+    const isCorporate = entityType === 'corporate';
     Promise.all([
       fetch(`${API}/voucher-reprint?${qExp}`).then(r => r.json()),
       fetch(`${API}/voucher-reprint?${qInc}`).then(r => r.json()),
       isNonCorporate ? fetch(`${API}/inquiry/clinic-revenue?date=${date}`).then(r => r.json()) : Promise.resolve(null),
+      isCorporate ? fetch(`${API}/inquiry/panel-cheque-revenue?date=${date}`).then(r => r.json()) : Promise.resolve(null),
     ])
-      .then(([expJson, incJson, clinicJson]) => {
+      .then(([expJson, incJson, clinicJson, chequeJson]) => {
         setExpenseVouchers(expJson.data || []);
         setIncomeVouchers(incJson.data || []);
         setClinicRevenue(clinicJson?.data || null);
+        setChequeRevenue(chequeJson?.data || null);
       })
-      .catch(() => { setExpenseVouchers([]); setIncomeVouchers([]); setClinicRevenue(null); })
+      .catch(() => { setExpenseVouchers([]); setIncomeVouchers([]); setClinicRevenue(null); setChequeRevenue(null); })
       .finally(() => setLoading(false));
   }, [date, entityType]);
 
   const expenseTotal = expenseVouchers.reduce((s, v) => s + Number(v.totalAmount || 0), 0);
   const voucherIncomeTotal = incomeVouchers.reduce((s, v) => s + Number(v.totalAmount || 0), 0);
   const clinicTotal = clinicRevenue?.total?.amount || 0;
-  const incomeTotal = voucherIncomeTotal + clinicTotal;
+  const chequeTotal = chequeRevenue?.total?.amount || 0;
+  const incomeTotal = voucherIncomeTotal + clinicTotal + chequeTotal;
   const hasClinic = Boolean(clinicRevenue?.rows?.length);
-  const isEmpty = !loading && expenseVouchers.length === 0 && incomeVouchers.length === 0 && !hasClinic;
+  const hasCheques = Boolean(chequeRevenue?.rows?.length);
+  const isEmpty = !loading && expenseVouchers.length === 0 && incomeVouchers.length === 0 && !hasClinic && !hasCheques;
 
   return (
     <div className="aid-hist-overlay" onClick={onClose}>
@@ -191,10 +234,11 @@ function VoucherHistoryModal({ date, entityType, onClose }) {
           {loading && <div className="aid-hist-loading">Loading…</div>}
           {isEmpty && <div className="aid-hist-empty">Is date ke liye koi voucher ya revenue nahi mila.</div>}
 
-          {!loading && (hasClinic || incomeVouchers.length > 0) && (
+          {!loading && (hasClinic || hasCheques || incomeVouchers.length > 0) && (
             <>
               <div className="aid-hist-section-lbl aid-hist-section-lbl--inc">Income</div>
               {hasClinic && <ClinicRevenueCard data={clinicRevenue} />}
+              {hasCheques && <PanelChequeRevenueCard data={chequeRevenue} />}
               {incomeVouchers.map(v => <IncomeVoucherCard v={v} key={v.id} />)}
             </>
           )}
@@ -208,7 +252,7 @@ function VoucherHistoryModal({ date, entityType, onClose }) {
         </div>
         {!isEmpty && !loading && (
           <div className="aid-hist-net">
-            <span>Income {hasClinic ? `(incl. Clinic revenue)` : ''}: {incomeVouchers.length + (hasClinic ? 1 : 0)} entries</span>
+            <span>Income {hasClinic ? '(incl. Clinic revenue)' : hasCheques ? '(incl. Panel Cheques)' : ''}: {incomeVouchers.length + (hasClinic ? 1 : 0) + (hasCheques ? 1 : 0)} entries</span>
             <span className="aid-hist-net-inc">{fmtA(incomeTotal)}</span>
           </div>
         )}

@@ -32,7 +32,7 @@ export default function SubGL() {
     setSaving(true);
     try {
       if (modal.mode === 'add') {
-        await createSubGL({ ...form, entity_type: entityType });
+        await createSubGL({ ...form, entityType });
         toast.success('Sub GL created');
       } else {
         await updateSubGL(modal.row.id, { name: form.name });

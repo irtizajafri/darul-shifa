@@ -28,7 +28,7 @@ export default function IncomeCategory() {
     setSaving(true);
     try {
       if (modal.mode === 'add') {
-        await createIncomeCategory({ name, entity_type: entityType });
+        await createIncomeCategory({ name, entityType });
         toast.success('Category created');
       } else {
         await updateIncomeCategory(modal.row.id, { name });

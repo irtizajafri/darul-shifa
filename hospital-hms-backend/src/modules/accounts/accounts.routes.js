@@ -99,6 +99,7 @@ router.post('/bank-deposit-adjs', ctrl.createBankDepositAdj);
 
 router.get('/inquiry/dashboard', ctrl.getAccountsInquiryDashboard);
 router.get('/inquiry/clinic-revenue', ctrl.getClinicRevenueForDate);
+router.get('/inquiry/panel-cheque-revenue', ctrl.getPanelChequeRevenueForDate);
 router.get('/inquiry/daily-diff', ctrl.getDailyIncomeExpenseDiff);
 
 module.exports = router;

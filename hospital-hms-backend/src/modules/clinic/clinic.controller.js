@@ -971,6 +971,28 @@ async function deletePanelCompany(req, res, next) {
   }
 }
 
+// ─── Clinic > Parameters > Update Rates ────────────────────────────────────────
+async function getPanelRateCard(req, res, next) {
+  try {
+    const data = await service.getPanelRateCard(req.params.id);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function savePanelRateCard(req, res, next) {
+  try {
+    const { subDeptRates, wardRates, doctorRates } = req.body || {};
+    const data = await service.savePanelRateCard(req.params.id, { subDeptRates, wardRates, doctorRates });
+    success(res, data, 'Rates updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 // ─── Panel Employees ──────────────────────────────────────────────────────────
 
 async function getPanelEmployees(req, res, next) {
@@ -1196,6 +1218,17 @@ async function overrideLiveDetailItem(req, res, next) {
     const { liveId, mergeInto, description, qty, rate, date, dosage, originalAmount } = req.body;
     const data = await service.overrideLiveDetailItem(req.params.admissionId, liveId, { mergeInto, description, qty, rate, date, dosage, originalAmount });
     success(res, data, 'Row updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function excludeLiveDetailItem(req, res, next) {
+  try {
+    const { liveId, mergeInto, originalAmount } = req.body;
+    const data = await service.excludeLiveDetailItem(req.params.admissionId, liveId, { mergeInto, originalAmount });
+    success(res, data, 'Row deleted');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -2153,6 +2186,8 @@ module.exports = {
   createPanelCompany,
   updatePanelCompany,
   deletePanelCompany,
+  getPanelRateCard,
+  savePanelRateCard,
   getPanelEmployees,
   getPanelEmployee,
   createPanelEmployee,
@@ -2214,6 +2249,7 @@ module.exports = {
   updatePanelBillingHeader,
   addPanelBillingItem,
   overrideLiveDetailItem,
+  excludeLiveDetailItem,
   deletePanelBillingItem,
   addPanelBillingItemsBulk,
   getPanelBillHeads,

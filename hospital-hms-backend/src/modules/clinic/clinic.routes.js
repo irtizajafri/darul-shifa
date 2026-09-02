@@ -163,6 +163,8 @@ router.get('/panel-companies/:id', controller.getPanelCompany);
 router.post('/panel-companies', controller.createPanelCompany);
 router.put('/panel-companies/:id', controller.updatePanelCompany);
 router.delete('/panel-companies/:id', controller.deletePanelCompany);
+router.get('/panel-companies/:id/rate-card', controller.getPanelRateCard);
+router.put('/panel-companies/:id/rate-card', controller.savePanelRateCard);
 
 // Panel Employees
 router.get('/panel-employees', controller.getPanelEmployees);
@@ -199,6 +201,7 @@ router.patch('/admission/panel-billing/header/:admissionId', controller.updatePa
 router.post('/admission/panel-billing/:admissionId/items', controller.addPanelBillingItem);
 router.post('/admission/panel-billing/:admissionId/items/bulk', controller.addPanelBillingItemsBulk);
 router.post('/admission/panel-billing/:admissionId/items/override', controller.overrideLiveDetailItem);
+router.post('/admission/panel-billing/:admissionId/items/exclude', controller.excludeLiveDetailItem);
 router.delete('/admission/panel-billing/items/:itemId', controller.deletePanelBillingItem);
 
 // Panels > Panel Cheque Transaction

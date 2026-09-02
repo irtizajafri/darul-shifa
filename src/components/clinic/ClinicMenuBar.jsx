@@ -91,6 +91,7 @@ const menuItems = [
           { label: 'Panel Companies', path: '/clinic/panels/companies', perm: { sub: 'panels', tab: 'companies' } },
           { label: 'Panel Employees', path: '/clinic/panels/employees', perm: { sub: 'panels', tab: 'employees' } },
           { label: 'Bill Head',       path: '/clinic/panels/bill-heads', perm: { sub: 'panels', tab: 'bill-heads' } },
+          { label: 'Update Rates',    path: '/clinic/panels/update-rates', perm: { sub: 'panels', tab: 'update-rates' } },
         ],
       },
       {

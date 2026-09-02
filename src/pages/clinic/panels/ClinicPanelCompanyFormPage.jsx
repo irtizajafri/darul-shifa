@@ -49,6 +49,10 @@ function buildRoomRows(roomCategories, existing = []) {
       code: rc.code,
       name: rc.name,
       enabled: ex ? ex.enabled : true,
+      // No input for this here (see Clinic > Parameters > Update Rates) —
+      // carried through unchanged so saving from this form never zeroes out
+      // a Ward rate set from that page.
+      rate: ex ? ex.rate : 0,
     };
   });
 }
@@ -151,6 +155,7 @@ export default function ClinicPanelCompanyFormPage() {
       roomEntitlements: roomRows.map((r) => ({
         roomCategoryId: r.roomCategoryId,
         enabled: r.enabled,
+        rate: r.rate,
       })),
     };
     try {

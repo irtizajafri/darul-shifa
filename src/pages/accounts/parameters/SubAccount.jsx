@@ -74,7 +74,7 @@ export default function SubAccount() {
     setSaving(true);
     try {
       if (modal.mode === 'add') {
-        await createSubAccount({ name: form.name, mainAccountId: form.mainAccountId, entity_type: entityType });
+        await createSubAccount({ name: form.name, mainAccountId: form.mainAccountId, entityType });
         toast.success('Sub Account created');
       } else {
         await updateSubAccount(modal.row.id, { name: form.name });

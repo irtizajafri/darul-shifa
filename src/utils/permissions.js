@@ -161,6 +161,7 @@ export const PERMISSIONS_MAP = {
           { key: 'medicine-report',  label: 'Medicine Report' },
           { key: 'opd-admit-report', label: 'OPD Admit Report' },
           { key: 'doctor-wise-statement', label: 'Doctor Wise Statement' },
+          { key: 'update-rates',     label: 'Update Rates' },
         ],
       },
 

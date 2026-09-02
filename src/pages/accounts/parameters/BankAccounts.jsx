@@ -29,7 +29,7 @@ export default function BankAccounts() {
     setSaving(true);
     try {
       if (modal.mode === 'add') {
-        await createBankAccount({ ...form, entity_type: entityType });
+        await createBankAccount({ ...form, entityType });
         toast.success('Bank Account created');
       } else {
         await updateBankAccount(modal.row.id, form);

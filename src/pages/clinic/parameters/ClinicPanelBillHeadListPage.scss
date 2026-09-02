@@ -58,6 +58,31 @@
   }
 }
 
+.pbh-combo { flex: 1; position: relative; }
+
+.pbh-combo-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+  z-index: 20;
+}
+
+.pbh-combo-opt {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  &:hover { background: #eff6ff; }
+}
+
+.pbh-combo-code { color: #94a3b8; font-size: 0.72rem; }
+
 .pbh-rate-input { max-width: 90px; flex: none !important; text-align: right; }
 
 .pbh-add-med-btn {

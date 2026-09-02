@@ -56,7 +56,7 @@ export default function MainAccount() {
     setSaving(true);
     try {
       if (modal.mode === 'add') {
-        await createMainAccount({ name: form.name, subGlId: form.subGlId, entity_type: entityType });
+        await createMainAccount({ name: form.name, subGlId: form.subGlId, entityType });
         toast.success('Main Account created');
       } else {
         await updateMainAccount(modal.row.id, { name: form.name });

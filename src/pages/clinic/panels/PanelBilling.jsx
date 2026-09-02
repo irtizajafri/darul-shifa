@@ -1,14 +1,36 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { Search, X, Plus } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
-import { useInventoryStore } from '../../../store/useInventoryStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import '../AdmissionAdjustment.scss'; // .aa-* lookup-modal classes
 import './PanelBilling.scss';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+// Medicine Bill (legacy "PHARMACY/MEDICAL STORE BILL") prints Qty/Rate/Amount
+// to 2 decimals, unlike every other report on this screen — its own helper.
+const fmt2 = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pad2 = (n) => String(n).padStart(2, '0');
+// 19-06-2026 — Medicine Bill's own "Admission date" format, distinct from
+// every other report's dd-Mon-yyyy.
+function fmtDdMmYyyyNum(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${pad2(dt.getDate())}-${pad2(dt.getMonth() + 1)}-${dt.getFullYear()}`;
+}
+// 21-Jun-2026 00:00 — Medicine Bill's "Discharge date".
+function fmtDdMonYyyyHm(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${pad2(dt.getDate())}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+}
+// Jun-19-2026 00:00 — Medicine Bill's per-row "Medicine Date".
+function fmtMonDdYyyyHm(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${dt.toLocaleString('en-GB', { month: 'short' })}-${pad2(dt.getDate())}-${dt.getFullYear()} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+}
 
 // Manual-add types — same lists already used elsewhere in Clinic (Sub
 // Department parameters for Lab/Ultrasound/Radiology test names, Inventory
@@ -17,7 +39,10 @@ const CUSTOM_TYPES = [
   // mergeInto: adding one of these folds straight into that head's single
   // row (creating it if this admission never had one) instead of showing as
   // its own new line — matches the Laboratory/Radiology/Ultrasound split.
-  { key: 'medicine',   label: 'Medicine',   source: 'inventory', mergeInto: 'Medicine' },
+  // Medicine is sourced from the Medicine List (Panels > Reports > Medicine
+  // List / Pharmacy Price List, ClinicMedicine) — same master list that page
+  // manages, not Inventory.
+  { key: 'medicine',   label: 'Medicine',   source: 'medicineList', mergeInto: 'Medicine' },
   { key: 'lab',        label: 'Laboratory', source: 'subdept', deptName: 'LABORATORY', mergeInto: 'Laboratory' },
   { key: 'ultrasound', label: 'Ultrasound', source: 'subdept', deptName: 'Ultra Sound, Echo & Color Doppler', mergeInto: 'Ultra Sound, Echo & Color Doppler' },
   { key: 'radiology',  label: 'Radiology',  source: 'subdept', deptName: 'RADIOLOGY', mergeInto: 'Radiology' },
@@ -87,7 +112,7 @@ function numToWords(n) {
 // the first two are wired up so far, the rest are placeholders for later.
 const REPORT_TYPES = [
   { key: 'covering',      label: 'Billing Covering Page',              ready: true },
-  { key: 'medicine',      label: 'Medicine Bill',                      ready: false },
+  { key: 'medicine',      label: 'Medicine Bill',                      ready: true },
   { key: 'diagnostic',    label: 'Diagnostic Bill',                    ready: true },
   { key: 'companyWise',   label: 'Company Wise Consolidate Report',    ready: false },
   { key: 'dateWise',      label: 'Date Wise Detail Report',            ready: false },
@@ -193,12 +218,13 @@ function PanelAdmissionLookupModal({ onSelect, onClose, searchPanelAdmissions })
 export default function PanelBilling() {
   const {
     fetchPanelAdmissionBilling, searchPanelAdmissions, updatePanelBillingItem,
-    updatePanelBillingHeader, overrideLiveDetailItem,
+    updatePanelBillingHeader, overrideLiveDetailItem, excludeLiveDetailItem,
     addPanelBillingItem, deletePanelBillingItem, addPanelBillingItemsBulk,
     subDepartments, fetchSubDepartments, searchPanelBillHeads,
+    doctors, fetchDoctors, diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes,
+    fetchMedicineList, createMedicine,
     finalizeDischarge,
   } = useClinicStore();
-  const { fetchItems: searchInventoryItems } = useInventoryStore();
   const { user } = useAuthStore();
   const [admitNo, setAdmitNo] = useState('');
   const [data, setData] = useState(null);
@@ -234,6 +260,7 @@ export default function PanelBilling() {
   const [customDose, setCustomDose] = useState(''); // Medicine only
   const [addingCustom, setAddingCustom] = useState(false);
   const customSearchTimer = useRef(null);
+  const [showAddMedicine, setShowAddMedicine] = useState(false); // quick-add straight into the Medicine List
 
   // Medicine Package checklist — set when a 'package' Panel Head is picked,
   // instead of filling the manual-add form.
@@ -241,6 +268,25 @@ export default function PanelBilling() {
   const [confirmingPackage, setConfirmingPackage] = useState(false);
 
   useEffect(() => { fetchSubDepartments(); }, [fetchSubDepartments]);
+  useEffect(() => { fetchDoctors(); fetchDiseases(); fetchSurgeryTypes(); }, [fetchDoctors, fetchDiseases, fetchSurgeryTypes]);
+
+  // Consultant dropdown — live Doctor list; the already-saved name is added
+  // in too (even if it's since left the active list) so opening an old
+  // admission never silently blanks what's already on record.
+  const consultantOptions = useMemo(() => {
+    const names = new Set(doctors.map((d) => d.name));
+    if (data?.admission.consultantName) names.add(data.admission.consultantName);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [doctors, data?.admission.consultantName]);
+
+  // Diagnosis dropdown — Diseases + Surgery Types mixed together, same
+  // established pattern as Discharge Certificate's Diagnosis field (see
+  // DiscountRefundAdmission.jsx).
+  const diagnosisOptions = useMemo(() => {
+    const names = new Set([...diseases.map((d) => d.name), ...surgeryTypes.map((s) => s.name)]);
+    if (data?.admission.diagnosis) names.add(data.admission.diagnosis);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [diseases, surgeryTypes, data?.admission.diagnosis]);
 
   function handleCustomQueryChange(val) {
     setCustomQuery(val);
@@ -267,10 +313,11 @@ export default function PanelBilling() {
       }, 300);
       return;
     }
-    // Medicine — Inventory item search, debounced.
+    // Medicine — Medicine List (Panels > Reports > Medicine List / Pharmacy
+    // Price List) search, debounced.
     customSearchTimer.current = setTimeout(() => {
-      searchInventoryItems({ search: val })
-        .then((items) => setCustomOptions((items || []).map((it) => ({ id: it.id, name: it.name, code: it.code }))))
+      fetchMedicineList({ search: val, status: 'active' })
+        .then((meds) => setCustomOptions((meds || []).map((m) => ({ id: m.id, name: m.name, code: m.code, retailPrice: m.retailPrice }))))
         .catch(() => setCustomOptions([]));
     }, 300);
   }
@@ -286,6 +333,20 @@ export default function PanelBilling() {
       return;
     }
     setCustomQuery(opt.name);
+    if (customType === 'medicine' && opt.retailPrice != null) setCustomRate(String(opt.retailPrice));
+  }
+
+  // Quick-add straight from the Medicine field — lands in the Medicine List
+  // (ClinicMedicine, same table Panels > Reports > Medicine List manages),
+  // then feeds right back into the Item field so it can be added to this
+  // bill immediately, no need to leave this screen.
+  async function handleCreateMedicine(payload) {
+    const med = await createMedicine(payload);
+    toast.success('Medicine List mein add ho gayi');
+    setCustomType('medicine');
+    setCustomQuery(med.name);
+    setCustomRate(med.retailPrice ? String(med.retailPrice) : '');
+    setShowAddMedicine(false);
   }
 
   function togglePackageItem(itemId) {
@@ -410,6 +471,20 @@ export default function PanelBilling() {
   // saving the same live entry again from here on just edits that override.
   async function handleOverrideDetailRow(liveId, mergeInto, originalAmount, description, patch) {
     await overrideLiveDetailItem(data.admission.id, { liveId, mergeInto, description, originalAmount, ...patch });
+    loadByAdmitNo(data.admission.admissionNo);
+  }
+
+  // Delete a row from inside the Pharmacy/Diagnostic detail popup — a manual
+  // add (key "manual-<id>") is a real ClinicPanelBillingItem, so this just
+  // deletes it outright; a live Provisional Bill entry has no row of its own
+  // here to delete, so it's excluded instead (see excludeLiveDetailItem) —
+  // same "Provisional Bill stays untouched" principle as editing one.
+  async function handleDeleteDetailRow(key, mergeInto, originalAmount) {
+    if (String(key).startsWith('manual-')) {
+      await deletePanelBillingItem(key.replace('manual-', ''));
+    } else {
+      await excludeLiveDetailItem(data.admission.id, { liveId: key, mergeInto, originalAmount });
+    }
     loadByAdmitNo(data.admission.admissionNo);
   }
 
@@ -562,11 +637,23 @@ export default function PanelBilling() {
     }
   }
 
-  // Consultant / Diagnosis — typing updates locally; save only fires on blur.
+  // Patient Name — typing updates locally; save only fires on blur.
   function handleHeaderTextInput(field, value) {
     setData((d) => ({ ...d, admission: { ...d.admission, [field]: value } }));
   }
   async function handleHeaderTextBlur(field, value) {
+    try {
+      await updatePanelBillingHeader(data.admission.id, { [field]: value });
+    } catch (e) {
+      toast.error(e.message || 'Save nahi hua');
+    }
+  }
+
+  // Consultant / Diagnosis — both dropdowns now (Doctor list / Diseases +
+  // Surgery Types), so a pick is already the final value — save right away,
+  // no separate blur step needed.
+  async function handleHeaderSelectChange(field, value) {
+    setData((d) => ({ ...d, admission: { ...d.admission, [field]: value } }));
     try {
       await updatePanelBillingHeader(data.admission.id, { [field]: value });
     } catch (e) {
@@ -675,19 +762,23 @@ export default function PanelBilling() {
             <div className="pnb-hg">
               <label>Consultant</label>
               {data ? (
-                <input className="pnb-date-input" value={data.admission.consultantName || ''}
-                  onChange={(e) => handleHeaderTextInput('consultantName', e.target.value)}
-                  onBlur={(e) => handleHeaderTextBlur('consultantName', e.target.value)}
-                  placeholder="Consultant naam" disabled={readOnly} />
+                <select className="pnb-date-input" value={data.admission.consultantName || ''}
+                  onChange={(e) => handleHeaderSelectChange('consultantName', e.target.value)}
+                  disabled={readOnly}>
+                  <option value="">— Select —</option>
+                  {consultantOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
               ) : <div className="pnb-val">—</div>}
             </div>
             <div className="pnb-hg pnb-hg--wide">
               <label>Diagnosis</label>
               {data ? (
-                <input className="pnb-date-input" value={data.admission.diagnosis || ''}
-                  onChange={(e) => handleHeaderTextInput('diagnosis', e.target.value)}
-                  onBlur={(e) => handleHeaderTextBlur('diagnosis', e.target.value)}
-                  placeholder="Diagnosis" style={{ width: '100%' }} disabled={readOnly} />
+                <select className="pnb-date-input" value={data.admission.diagnosis || ''}
+                  onChange={(e) => handleHeaderSelectChange('diagnosis', e.target.value)}
+                  style={{ width: '100%' }} disabled={readOnly}>
+                  <option value="">— Select —</option>
+                  {diagnosisOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
               ) : <div className="pnb-val">—</div>}
             </div>
           </div>
@@ -726,6 +817,14 @@ export default function PanelBilling() {
                   )}
                 </div>
               </div>
+              {customType === 'medicine' && (
+                <div className="pnb-fg">
+                  <label>&nbsp;</label>
+                  <button type="button" className="pnb-new-med-btn" onClick={() => setShowAddMedicine(true)}>
+                    <Plus size={13} /> New Medicine
+                  </button>
+                </div>
+              )}
               {customType === 'medicine' && (
                 <div className="pnb-fg pnb-fg--sm">
                   <label>Dose</label>
@@ -806,6 +905,7 @@ export default function PanelBilling() {
 
       {printData?.type === 'covering' && <BillingCoveringPagePrintTemplate data={printData.data} />}
       {printData?.type === 'diagnostic' && <DiagnosticBillPrintTemplate data={printData.data} />}
+      {printData?.type === 'medicine' && <MedicineBillPrintTemplate data={printData.data} />}
 
       {popup === 'pharmacy' && data && (
         <PharmacyDetailModal
@@ -814,6 +914,7 @@ export default function PanelBilling() {
           onConfirmAdd={handleConfirmDetailCopy}
           onSaveRow={handleSaveDetailRow}
           onOverrideRow={handleOverrideDetailRow}
+          onDeleteRow={handleDeleteDetailRow}
           confirming={copying}
           readOnly={readOnly}
         />
@@ -826,6 +927,7 @@ export default function PanelBilling() {
           onConfirmAdd={handleConfirmDetailCopy}
           onSaveRow={handleSaveDetailRow}
           onOverrideRow={handleOverrideDetailRow}
+          onDeleteRow={handleDeleteDetailRow}
           confirming={copying}
           readOnly={readOnly}
         />
@@ -849,6 +951,69 @@ export default function PanelBilling() {
           confirming={confirmingPackage}
         />
       )}
+
+      {showAddMedicine && (
+        <QuickAddMedicineModal
+          onClose={() => setShowAddMedicine(false)}
+          onCreate={handleCreateMedicine}
+        />
+      )}
+    </div>
+  );
+}
+
+// Quick-add a new Medicine straight into the Medicine List (Panels > Reports
+// > Medicine List / Pharmacy Price List, ClinicMedicine) without leaving
+// this screen — same fields/validation as that page's own Add form (code +
+// name required, code must be unique).
+function QuickAddMedicineModal({ onClose, onCreate }) {
+  const [form, setForm] = useState({ code: '', name: '', packSize: '', retailPrice: '', tradePrice: '' });
+  const [saving, setSaving] = useState(false);
+
+  function setField(field, value) {
+    setForm((f) => ({ ...f, [field]: value }));
+  }
+
+  async function handleSubmit() {
+    if (!form.code.trim()) return toast.error('Code zaroori hai');
+    if (!form.name.trim()) return toast.error('Naam zaroori hai');
+    setSaving(true);
+    try {
+      await onCreate({
+        code: form.code.trim(),
+        name: form.name.trim(),
+        packSize: form.packSize.trim() || undefined,
+        retailPrice: Number(form.retailPrice) || 0,
+        tradePrice: Number(form.tradePrice) || 0,
+      });
+    } catch (e) {
+      toast.error(e.message || 'Add nahi hui');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pnb-modal-overlay" onMouseDown={onClose}>
+      <div className="pnb-modal pnb-modal--sm" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="pnb-modal-head">
+          <span>New Medicine</span>
+          <button onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="pnb-modal-body pnb-new-med-body">
+          <label>Code *<input value={form.code} onChange={(e) => setField('code', e.target.value)} autoFocus /></label>
+          <label>Name *<input value={form.name} onChange={(e) => setField('name', e.target.value)} /></label>
+          <label>Pack Size<input value={form.packSize} onChange={(e) => setField('packSize', e.target.value)} placeholder="e.g. 10 tabs" /></label>
+          <label>Retail Price<input type="number" min="0" step="0.01" value={form.retailPrice} onChange={(e) => setField('retailPrice', e.target.value)} /></label>
+          <label>Trade Price<input type="number" min="0" step="0.01" value={form.tradePrice} onChange={(e) => setField('tradePrice', e.target.value)} /></label>
+        </div>
+        <div className="pnb-pkg-footer">
+          <button className="pnb-btn" onClick={onClose}>Cancel</button>
+          <button className="pnb-add-btn" onClick={handleSubmit} disabled={saving} style={{ marginLeft: 'auto' }}>
+            {saving ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -948,7 +1113,7 @@ function EditableCell({ row, field, editCell, savingCell, onStart, onChange, onS
 // Pharmacy Bill detail — check any number of medicines (Qty/Rate/Date all
 // editable right here first), each checked one gets repeated as its own row
 // on the actual bill below.
-function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, confirming, readOnly }) {
+function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, onDeleteRow, confirming, readOnly }) {
   const [selections, setSelections] = useState(() =>
     rows.map((r) => ({
       key: r.id, isManual: String(r.id).startsWith('manual-'), originalAmount: r.amount,
@@ -956,6 +1121,7 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
     }))
   );
   const [savingKey, setSavingKey] = useState(null);
+  const [deletingKey, setDeletingKey] = useState(null);
 
   function toggle(key) {
     setSelections((s) => s.map((r) => (r.key === key ? { ...r, checked: !r.checked } : r)));
@@ -993,6 +1159,25 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
       toast.error(e.message || 'Save nahi hua');
     } finally {
       setSavingKey(null);
+    }
+  }
+
+  // Remove an already-added entry — a manual add gets actually deleted; a
+  // live Provisional Bill entry instead gets excluded from this Billing
+  // screen only (the real Provisional Bill stays untouched) — see
+  // onDeleteRow/excludeLiveDetailItem.
+  async function handleDeleteOne(key) {
+    const row = selections.find((s) => s.key === key);
+    if (!window.confirm(`"${row.medicine}" ko bill se delete karna hai?`)) return;
+    setDeletingKey(key);
+    try {
+      await onDeleteRow(key, 'Medicine', row.originalAmount);
+      setSelections((s) => s.filter((r) => r.key !== key));
+      toast.success('Delete ho gaya');
+    } catch (e) {
+      toast.error(e.message || 'Delete nahi hua');
+    } finally {
+      setDeletingKey(null);
     }
   }
 
@@ -1034,10 +1219,16 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>
                   <td>
                     {!readOnly && (
-                      <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key}
-                        title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>
-                        {savingKey === r.key ? '…' : 'Save'}
-                      </button>
+                      <div className="pnb-row-actions">
+                        <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
+                          title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>
+                          {savingKey === r.key ? '…' : 'Save'}
+                        </button>
+                        <button className="pnb-del-row-btn" onClick={() => handleDeleteOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
+                          title={r.isManual ? 'Delete this entry' : 'Delete from this bill (Provisional Bill stays as-is)'}>
+                          {deletingKey === r.key ? '…' : '✕'}
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -1061,7 +1252,7 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
 // Rate defaults to the original Amount since these aren't naturally qty×rate
 // like medicine), each checked one gets repeated as its own row on the
 // actual bill below.
-function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, confirming, readOnly }) {
+function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, onDeleteRow, confirming, readOnly }) {
   const [selections, setSelections] = useState(() =>
     rows.map((r) => ({
       key: r.id, isManual: String(r.id).startsWith('manual-'), originalAmount: r.amount, particulars: r.particulars || r.department,
@@ -1069,6 +1260,7 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
     }))
   );
   const [savingKey, setSavingKey] = useState(null);
+  const [deletingKey, setDeletingKey] = useState(null);
 
   function toggle(key) {
     setSelections((s) => s.map((r) => (r.key === key ? { ...r, checked: !r.checked } : r)));
@@ -1107,6 +1299,25 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
     }
   }
 
+  // Remove an already-added entry — a manual add gets actually deleted; a
+  // live Provisional Bill entry instead gets excluded from this Billing
+  // screen only (the real Provisional Bill stays untouched) — see
+  // onDeleteRow/excludeLiveDetailItem.
+  async function handleDeleteOne(key) {
+    const row = selections.find((s) => s.key === key);
+    if (!window.confirm(`"${row.particulars}" ko bill se delete karna hai?`)) return;
+    setDeletingKey(key);
+    try {
+      await onDeleteRow(key, title, row.originalAmount);
+      setSelections((s) => s.filter((r) => r.key !== key));
+      toast.success('Delete ho gaya');
+    } catch (e) {
+      toast.error(e.message || 'Delete nahi hua');
+    } finally {
+      setDeletingKey(null);
+    }
+  }
+
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
       <div className="pnb-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -1141,10 +1352,16 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>
                   <td>
                     {!readOnly && (
-                      <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key}
-                        title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>
-                        {savingKey === r.key ? '…' : 'Save'}
-                      </button>
+                      <div className="pnb-row-actions">
+                        <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
+                          title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>
+                          {savingKey === r.key ? '…' : 'Save'}
+                        </button>
+                        <button className="pnb-del-row-btn" onClick={() => handleDeleteOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
+                          title={r.isManual ? 'Delete this entry' : 'Delete from this bill (Provisional Bill stays as-is)'}>
+                          {deletingKey === r.key ? '…' : '✕'}
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -1333,6 +1550,60 @@ function DiagnosticBillPrintTemplate({ data }) {
         })}
 
         <div className="pnbr-diag-grand">Grand Total <span>{fmt(grandTotal)}</span></div>
+      </div>
+    </div>
+  );
+}
+
+// ── Medicine Bill (print) — mirrors the legacy "PHARMACY/MEDICAL STORE
+// BILL" printout exactly: every Pharmacy row (Hospital Store sales invoices
+// + Outside Store + manual Panel Billing adds — same data as the Pharmacy
+// Bill detail popup), one flat chronological list, "code - name" where a
+// code exists (only Hospital Store rows carry one, same as the legacy data).
+function MedicineBillPrintTemplate({ data }) {
+  if (!data) return null;
+  const { admission } = data;
+  const rows = [...data.pharmacyRows].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+  const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  return (
+    <div className="pnbr-print-area">
+      <div className="pnbr-med">
+        <div className="pnbr-med-title">PHARMACY/MEDICAL STORE BILL</div>
+        <table className="pnbr-med-hdr">
+          <tbody>
+            <tr>
+              <td className="l">Admission #</td><td className="v">{admission.admissionNo}</td>
+              <td className="l">Patient Name</td><td className="v">{admission.patientName}</td>
+            </tr>
+            <tr>
+              <td className="l">Admission date</td><td className="v">{fmtDdMmYyyyNum(admission.admitDate)}</td>
+              <td className="l">Discharge date</td><td className="v">{admission.dischargeDate ? fmtDdMonYyyyHm(admission.dischargeDate) : '—'}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table className="pnbr-med-tbl">
+          <thead>
+            <tr><th>Medicine Date</th><th>Medicine</th><th>Dose</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={6} className="pnbr-med-empty">Koi medicine/store item nahi mila</td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.id}>
+                <td>{fmtMonDdYyyyHm(r.date)}</td>
+                <td>{r.code ? `${r.code} - ${r.medicine}` : r.medicine}</td>
+                <td>{r.dosage || ''}</td>
+                <td className="r">{fmt2(r.qty)}</td>
+                <td className="r">{fmt2(r.rate)}</td>
+                <td className="r">{fmt2(r.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="pnbr-med-total">Total <span>{fmt2(total)}</span></div>
       </div>
     </div>
   );

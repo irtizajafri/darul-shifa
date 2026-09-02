@@ -832,6 +832,10 @@ function mapRoomEntitlement(r) {
   return {
     roomCategoryId: Number(r.roomCategoryId),
     enabled: Boolean(r.enabled),
+    // No input for this on the Panel Company form itself (see Update Rates
+    // instead) — passed through as-is so saving from here never zeroes out a
+    // Ward rate set from that page.
+    rate: Number(r.rate) || 0,
   };
 }
 
@@ -873,6 +877,106 @@ async function updatePanelCompany(id, { code, name, billingTo, status, subDeptRa
 
 async function deletePanelCompany(id) {
   return prisma.clinicPanelCompany.delete({ where: { id: Number(id) } });
+}
+
+// ─── Clinic > Parameters > Update Rates ────────────────────────────────────────
+// A dedicated quick-access rate card for one Panel Company — Sub Department
+// rates, Ward (Room Category) rates, and per-Doctor Consultant/RMO rates —
+// separate from the full Panel Company edit screen (which has no rate input
+// for Ward at all, and none for doctors). Which of the Consultant/RMO tabs a
+// doctor shows up under is driven purely by that doctor's own
+// ClinicDoctor.staffCategory — see ClinicPanelDoctorRate.
+async function getPanelRateCard(panelCompanyId) {
+  const id = Number(panelCompanyId);
+  const [company, subDepartments, roomCategories, doctors, subDeptRates, roomRates, doctorRates] = await Promise.all([
+    prisma.clinicPanelCompany.findUnique({ where: { id } }),
+    prisma.clinicSubDepartment.findMany({
+      include: { department: { select: { id: true, name: true } } },
+      orderBy: [{ department: { name: 'asc' } }, { name: 'asc' }],
+    }),
+    prisma.clinicRoomCategory.findMany({ orderBy: { name: 'asc' } }),
+    prisma.clinicDoctor.findMany({
+      select: { id: true, code: true, name: true, status: true, staffCategory: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.clinicPanelSubDeptRate.findMany({ where: { panelCompanyId: id } }),
+    prisma.clinicPanelRoomEntitlement.findMany({ where: { panelCompanyId: id } }),
+    prisma.clinicPanelDoctorRate.findMany({ where: { panelCompanyId: id } }),
+  ]);
+  if (!company) throw Object.assign(new Error('Panel Company not found'), { status: 404 });
+
+  const subDeptById = new Map(subDeptRates.map((r) => [r.subDeptId, r]));
+  const roomById = new Map(roomRates.map((r) => [r.roomCategoryId, r]));
+  const doctorRateById = new Map(doctorRates.map((r) => [r.doctorId, r]));
+
+  const buildDoctorRows = (categoryName) => doctors
+    .filter((d) => d.staffCategory?.name === categoryName)
+    .map((d) => {
+      const ex = doctorRateById.get(d.id);
+      return {
+        doctorId: d.id, code: d.code, name: d.name,
+        enabled: ex ? ex.enabled : true, rate: ex ? ex.rate : 0, status: ex ? ex.status : 'active',
+      };
+    });
+
+  return {
+    company: { id: company.id, code: company.code, name: company.name },
+    subDeptRows: subDepartments.map((sd) => {
+      const ex = subDeptById.get(sd.id);
+      return {
+        subDeptId: sd.id, deptName: sd.department?.name || '—', subDeptName: sd.name,
+        enabled: ex ? ex.enabled : true, rate: ex ? ex.rate : 0, status: ex ? ex.status : 'active',
+      };
+    }),
+    wardRows: roomCategories.map((rc) => {
+      const ex = roomById.get(rc.id);
+      return {
+        roomCategoryId: rc.id, code: rc.code, name: rc.name,
+        enabled: ex ? ex.enabled : true, rate: ex ? ex.rate : 0,
+      };
+    }),
+    consultantRows: buildDoctorRows('Consultant'),
+    rmoRows: buildDoctorRows('RMO'),
+  };
+}
+
+async function savePanelRateCard(panelCompanyId, { subDeptRates = [], wardRates = [], doctorRates = [] }) {
+  const id = Number(panelCompanyId);
+  const company = await prisma.clinicPanelCompany.findUnique({ where: { id } });
+  if (!company) throw Object.assign(new Error('Panel Company not found'), { status: 404 });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.clinicPanelSubDeptRate.deleteMany({ where: { panelCompanyId: id } });
+    await tx.clinicPanelRoomEntitlement.deleteMany({ where: { panelCompanyId: id } });
+    await tx.clinicPanelDoctorRate.deleteMany({ where: { panelCompanyId: id } });
+
+    if (subDeptRates.length) {
+      await tx.clinicPanelSubDeptRate.createMany({
+        data: subDeptRates.map((r) => ({
+          panelCompanyId: id, subDeptId: Number(r.subDeptId), enabled: Boolean(r.enabled),
+          rate: Number(r.rate) || 0, status: r.status || 'active',
+        })),
+      });
+    }
+    if (wardRates.length) {
+      await tx.clinicPanelRoomEntitlement.createMany({
+        data: wardRates.map((r) => ({
+          panelCompanyId: id, roomCategoryId: Number(r.roomCategoryId), enabled: Boolean(r.enabled),
+          rate: Number(r.rate) || 0,
+        })),
+      });
+    }
+    if (doctorRates.length) {
+      await tx.clinicPanelDoctorRate.createMany({
+        data: doctorRates.map((r) => ({
+          panelCompanyId: id, doctorId: Number(r.doctorId), enabled: Boolean(r.enabled),
+          rate: Number(r.rate) || 0, status: r.status || 'active',
+        })),
+      });
+    }
+  });
+
+  return getPanelRateCard(id);
 }
 
 // ─── Panel Employees ──────────────────────────────────────────────────────────
@@ -1861,11 +1965,14 @@ async function getPanelAdmissionBilling(admissionNo) {
 
   const billingAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-  const manualPharmacyRows = groupedByHead.Medicine?.map((r) => ({
+  // Excluded rows (see excludeLiveDetailItem) are pure zero-amount deletion
+  // markers — already removed the live entry from totals via `overriddenLiveIds`
+  // below, so they should never surface here as a ghost zero-amount line.
+  const manualPharmacyRows = groupedByHead.Medicine?.filter((r) => !r.excluded).map((r) => ({
     id: `manual-${r.id}`, source: 'manual', storeName: null, date: r.date, medicine: r.description, dosage: r.dosage, qty: r.qty, rate: r.rate, amount: r.amount,
   })) || [];
   const manualDiagnosticRows = ['Laboratory', 'Radiology', 'Ultra Sound, Echo & Color Doppler']
-    .flatMap((dept) => (groupedByHead[dept] || []).map((r) => ({
+    .flatMap((dept) => (groupedByHead[dept] || []).filter((r) => !r.excluded).map((r) => ({
       id: `manual-${r.id}`, date: r.date, conCode: null, department: dept, particulars: r.description, qty: r.qty, rate: r.rate, amount: r.amount,
     })));
 
@@ -2124,6 +2231,63 @@ async function overrideLiveDetailItem(admissionId, liveId, { mergeInto, descript
       amount: q * r,
       date: itemDate,
       dosage: dosage?.trim() || null,
+      sortOrder: (agg._max.sortOrder ?? -1) + 1,
+    },
+  });
+}
+
+// Deleting a *live* Provisional Bill entry from the Pharmacy/Diagnostic
+// detail popup — same "never touch the real Provisional Bill" principle as
+// overrideLiveDetailItem: instead of an actual delete (there's no real row
+// here to delete, `liveId` points into the Provisional Bill's own data),
+// this creates a permanent zero-amount marker (own overridesLiveId,
+// excluded:true) so the live entry disappears from this Billing screen for
+// good, while the head's base row keeps the amount removed exactly once.
+// Re-deleting an entry that was already edited via overrideLiveDetailItem
+// (or already deleted) just re-zeroes that same row rather than double-
+// subtracting from the base.
+async function excludeLiveDetailItem(admissionId, liveId, { mergeInto, originalAmount }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (admission.status === 'closed') throw Object.assign(new Error('Ye file close ho chuki hai — Billing ab read-only hai'), { status: 400 });
+  if (!liveId) throw Object.assign(new Error('liveId zaroori hai'), { status: 400 });
+  if (!mergeInto || !MERGE_HEAD_KIND[mergeInto]) throw Object.assign(new Error('Invalid head'), { status: 400 });
+
+  const existing = await prisma.clinicPanelBillingItem.findFirst({
+    where: { admissionId: Number(admissionId), overridesLiveId: liveId },
+  });
+  if (existing) {
+    return prisma.clinicPanelBillingItem.update({
+      where: { id: existing.id },
+      data: { qty: 0, rate: 0, amount: 0, excluded: true },
+    });
+  }
+
+  const baseRow = await prisma.clinicPanelBillingItem.findFirst({
+    where: { admissionId: Number(admissionId), description: mergeInto, groupInto: null },
+  });
+  if (baseRow) {
+    const origAmount = Number(originalAmount) || 0;
+    const newQty = Math.max(0, baseRow.qty - 1);
+    const newAmount = Math.max(0, baseRow.amount - origAmount);
+    await prisma.clinicPanelBillingItem.update({
+      where: { id: baseRow.id },
+      data: { qty: newQty, amount: newAmount, rate: newQty ? newAmount / newQty : 0 },
+    });
+  }
+
+  const agg = await prisma.clinicPanelBillingItem.aggregate({ where: { admissionId: Number(admissionId) }, _max: { sortOrder: true } });
+  return prisma.clinicPanelBillingItem.create({
+    data: {
+      admissionId: Number(admissionId),
+      description: mergeInto,
+      kind: MERGE_HEAD_KIND[mergeInto],
+      groupInto: mergeInto,
+      overridesLiveId: liveId,
+      excluded: true,
+      qty: 0,
+      rate: 0,
+      amount: 0,
       sortOrder: (agg._max.sortOrder ?? -1) + 1,
     },
   });
@@ -3113,8 +3277,12 @@ async function getPanelChequeSummary({ from, to }) {
     const dt = new Date(d);
     const year = dt.getFullYear();
     const month = dt.getMonth() + 1;
-    const ipdAmt = amountByAdmission[a.id] || 0;
     const receipt = receiptByAdmission[a.id];
+    // Once a cheque has been posted for this admission (receivePanelCheque),
+    // its billed amount stops counting toward "still outstanding" (IPD Amt /
+    // Total) — it only contributes via Received/Deduction below, as a
+    // settled historical fact for that month/company, not as pending money.
+    const ipdAmt = receipt ? 0 : (amountByAdmission[a.id] || 0);
     const received = receipt ? Number(receipt.receivedShare) || 0 : 0;
     const deduction = receipt ? Number(receipt.deductionShare) || 0 : 0;
 
@@ -3142,7 +3310,10 @@ async function getPanelChequeSummary({ from, to }) {
     companyMap[cKey].deduction += deduction;
   }
 
-  const finish = (r) => ({ ...r, total: r.ipdAmt + r.opdAmt, balance: Math.max(0, r.ipdAmt + r.opdAmt - r.received - r.deduction) });
+  // Balance = the still-pending total — ipdAmt/opdAmt above already exclude
+  // anything a cheque has covered, so there's nothing left to net out here
+  // (no more double-subtracting Received/Deduction from it).
+  const finish = (r) => ({ ...r, total: r.ipdAmt + r.opdAmt, balance: r.ipdAmt + r.opdAmt });
   const monthRows = Object.values(monthMap).map(finish).sort((a, b) => (a.year - b.year) || (a.month - b.month));
   const companyRows = Object.values(companyMap).map(finish)
     .sort((a, b) => (a.year - b.year) || (a.month - b.month) || a.company.localeCompare(b.company));
@@ -4800,6 +4971,11 @@ async function getProvisionalBillDetail(admissionId) {
       id: `inv-${si.id}`,
       source: 'hospital',
       storeName: null,
+      // Inventory item code — legacy "PHARMACY/MEDICAL STORE BILL" print
+      // shows every line as "code - name" (see getMedicineBillReport); only
+      // Hospital Store rows have one (Outside Store / manual Panel Billing
+      // adds never did in the legacy system either).
+      code: si.item?.code || null,
       date: si.invoiceDate,
       medicine: si.item?.name || '—',
       qty: si.quantity,
@@ -7178,6 +7354,8 @@ module.exports = {
   createPanelCompany,
   updatePanelCompany,
   deletePanelCompany,
+  getPanelRateCard,
+  savePanelRateCard,
   getAllPanelEmployees,
   getPanelEmployeeById,
   createPanelEmployee,
@@ -7219,6 +7397,7 @@ module.exports = {
   updatePanelBillingHeader,
   addPanelBillingItem,
   overrideLiveDetailItem,
+  excludeLiveDetailItem,
   deletePanelBillingItem,
   addPanelBillingItemsBulk,
   getPanelBillHeads,
