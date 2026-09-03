@@ -121,6 +121,176 @@ async function deleteSubAccount(id) {
   return prisma.accSubAccount.delete({ where: { id: Number(id) } });
 }
 
+// ── Voucher Expense — pending GRN queue (auto-popup) ────────────────────────
+// Powers the "clear the backlog" popup on the Voucher Expense screen: every
+// still-unpaid GRN that a "Vendors / Suppliers" head or an "Inventory" head
+// (List Attachments) is wired up to for this entityType, flattened into one
+// list, most-recent first, each row carrying the full Main GL → Sub GL →
+// Main Account → Sub Account chain so the form can auto-fill itself the
+// moment a row is picked. A head only contributes rows once it's actually
+// linked to a Sub Account (AccPayeeHeadAccount) — that link is what tells us
+// which account chain to auto-select, so an unlinked head has nowhere to
+// land and is skipped. The same underlying GRN can legitimately appear
+// twice (once under "Vendors / Suppliers", once under a more specific
+// Inventory Head covering its subcategory) — that's intentional, it lets
+// the user book it under whichever chain is correct.
+async function getPendingGrnQueue(entityType) {
+  const paymentMode = entityType === 'corporate' ? 'panel' : 'cash';
+
+  const heads = await prisma.accPayeeHead.findMany({
+    where: { entityType, sourceType: { in: ['vendor', 'inventory'] } },
+    include: {
+      linkedAccounts: {
+        take: 1,
+        orderBy: { id: 'asc' },
+        include: {
+          subAccount: {
+            select: {
+              id: true, code: true, name: true,
+              mainAccount: {
+                select: {
+                  id: true, code: true, name: true,
+                  subGL: {
+                    select: {
+                      id: true, code: true, name: true,
+                      mainGL: { select: { id: true, code: true, name: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const rows = [];
+  for (const head of heads) {
+    const link = head.linkedAccounts[0];
+    if (!link) continue; // not wired to any Sub Account yet — nothing to auto-fill into
+    if (head.sourceType === 'inventory' && !head.inventorySubcategoryId) continue;
+
+    const sub = link.subAccount;
+    const main = sub.mainAccount;
+    const subGl = main.subGL;
+    const mainGl = subGl.mainGL;
+
+    const grns = await prisma.inventoryGRN.findMany({
+      where: {
+        isPaid: false,
+        paymentMode,
+        ...(head.sourceType === 'inventory' ? { subcategoryId: head.inventorySubcategoryId } : {}),
+      },
+      include: { supplier: { select: { name: true } }, item: { select: { name: true } } },
+      orderBy: [{ billDate: 'desc' }, { receivedDate: 'desc' }],
+    });
+
+    for (const g of grns) {
+      rows.push({
+        id: `grn-${g.id}-head-${head.id}`,
+        grnId: g.id,
+        headId: head.id,
+        headName: head.name,
+        supplierName: g.supplier.name,
+        itemName: g.item.name,
+        code: g.code,
+        amount: g.totalAmount,
+        date: g.billDate || g.receivedDate,
+        chain: {
+          mainGlId: mainGl.id, mainGlCode: mainGl.code, mainGlName: mainGl.name,
+          subGlId: subGl.id, subGlCode: subGl.code, subGlName: subGl.name,
+          mainAccountId: main.id, mainAccountCode: main.code, mainAccountName: main.name,
+          subAccountId: sub.id, subAccountCode: sub.code, subAccountName: sub.name,
+        },
+      });
+    }
+  }
+
+  rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return rows;
+}
+
+// One-time seed: clones the entire Non-Corporate Main GL → Sub GL → Main
+// Account → Sub Account tree into brand-new Corporate rows (own ids/codes,
+// no link back to the source) so Corporate starts from the same structure
+// instead of being built by hand from scratch. Guarded to only run while
+// Corporate is still empty — after that, each side is edited independently
+// via its own Parameters screens (no re-sync).
+async function copyChartToCorporate() {
+  const alreadyCopied = await prisma.accMainGL.findFirst({ where: { entityType: 'corporate' } });
+  if (alreadyCopied) {
+    throw new Error('Corporate chart of accounts already has data — copy already done. Edit it directly from the Corporate Parameters screens.');
+  }
+
+  const sourceMainGLs = await prisma.accMainGL.findMany({
+    where: { entityType: 'non-corporate' },
+    orderBy: { id: 'asc' },
+    include: {
+      subGLs: {
+        orderBy: { id: 'asc' },
+        include: {
+          mainAccounts: {
+            orderBy: { id: 'asc' },
+            include: { subAccounts: { orderBy: { id: 'asc' } } },
+          },
+        },
+      },
+    },
+  });
+  if (sourceMainGLs.length === 0) {
+    throw new Error('Non-Corporate chart of accounts is empty — nothing to copy.');
+  }
+
+  const counts = { mainGL: 0, subGL: 0, mainAccount: 0, subAccount: 0 };
+
+  await prisma.$transaction(async (tx) => {
+    // `code` is globally unique (not scoped by entityType), so Main GL codes
+    // continue the existing global sequence (same rule as createMainGL above)
+    // — e.g. Non-Corporate's E-1..E-3 become Corporate's E-4..E-6. Every
+    // level below derives its code from its own *new* parent's new code, so
+    // uniqueness falls out automatically without extra checks.
+    let mainGlSeq = await tx.accMainGL.count();
+
+    for (const srcGL of sourceMainGLs) {
+      mainGlSeq += 1;
+      const newGL = await tx.accMainGL.create({
+        data: { code: `E-${mainGlSeq}`, name: srcGL.name, entityType: 'corporate' },
+      });
+      counts.mainGL += 1;
+
+      let subGlSeq = 0;
+      for (const srcSubGL of srcGL.subGLs) {
+        subGlSeq += 1;
+        const newSubGL = await tx.accSubGL.create({
+          data: { code: `${newGL.code}.${subGlSeq}`, name: srcSubGL.name, mainGlId: newGL.id, entityType: 'corporate' },
+        });
+        counts.subGL += 1;
+
+        let mainAccSeq = 0;
+        for (const srcMA of srcSubGL.mainAccounts) {
+          mainAccSeq += 1;
+          const newMA = await tx.accMainAccount.create({
+            data: { code: `${newSubGL.code}.${mainAccSeq}`, name: srcMA.name, subGlId: newSubGL.id, entityType: 'corporate' },
+          });
+          counts.mainAccount += 1;
+
+          let subAccSeq = 0;
+          for (const srcSA of srcMA.subAccounts) {
+            subAccSeq += 1;
+            await tx.accSubAccount.create({
+              data: { code: `${newMA.code}.${subAccSeq}`, name: srcSA.name, mainAccountId: newMA.id, entityType: 'corporate' },
+            });
+            counts.subAccount += 1;
+          }
+        }
+      }
+    }
+  });
+
+  return counts;
+}
+
 // ── Payee Heads ───────────────────────────────────────────────────────────────
 
 const SYSTEM_HEAD_DEFS = [
@@ -478,9 +648,12 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
     });
     // Only suppliers with at least one unpaid GRN belong in the pay-list —
     // once every GRN is paid off, the supplier drops out until a new GRN
-    // comes in.
+    // comes in. Which GRNs count depends on the GRN's own Payment Mode
+    // radio (Cash / Panel): Cash GRNs are a Non-Corporate expense, Panel
+    // GRNs are a Corporate expense — so each entity's Voucher Expense only
+    // ever offers suppliers with unpaid GRNs of its own mode.
     const dueSupplierRows = await prisma.inventoryGRN.findMany({
-      where: { isPaid: false },
+      where: { isPaid: false, paymentMode: entityType === 'corporate' ? 'panel' : 'cash' },
       select: { supplierId: true },
       distinct: ['supplierId'],
     });
@@ -999,9 +1172,13 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   });
 }
 
-async function getSupplierGRNs(supplierId) {
+async function getSupplierGRNs(supplierId, entityType) {
   return prisma.inventoryGRN.findMany({
-    where: { supplierId: Number(supplierId), isPaid: false },
+    where: {
+      supplierId: Number(supplierId),
+      isPaid: false,
+      paymentMode: entityType === 'corporate' ? 'panel' : 'cash',
+    },
     include: { item: { select: { name: true } } },
     orderBy: { receivedDate: 'desc' },
   });
@@ -1569,6 +1746,7 @@ module.exports = {
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
+  copyChartToCorporate, getPendingGrnQueue,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
   getIpdConsultantHeadForMainAccount, getPendingConsultantFees,

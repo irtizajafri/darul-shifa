@@ -1255,6 +1255,76 @@ async function addPanelBillingItemsBulk(req, res, next) {
   }
 }
 
+// ─── Panels > Transaction > Billing — OPD (Slip #) side ────────────────────────
+async function searchPanelOpdVisits(req, res, next) {
+  try {
+    success(res, await service.searchPanelOpdVisits(req.query.q));
+  } catch (err) { next(err); }
+}
+
+async function getPanelOpdVisitBilling(req, res, next) {
+  try {
+    const data = await service.getPanelOpdVisitBilling(req.params.serialNo);
+    success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updatePanelOpdBillingItem(req, res, next) {
+  try {
+    const { qty, rate, date, remarks, dosage } = req.body;
+    const data = await service.updatePanelOpdBillingItem(req.params.itemId, { qty, rate, date, remarks, dosage });
+    success(res, data, 'Row updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function updatePanelOpdBillingHeader(req, res, next) {
+  try {
+    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq } = req.body;
+    const data = await service.updatePanelOpdBillingHeader(req.params.opdVisitId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq });
+    success(res, data, 'Header updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addPanelOpdBillingItem(req, res, next) {
+  try {
+    const { description, qty, rate, date, remarks, mergeInto, dosage } = req.body;
+    const data = await service.addPanelOpdBillingItem(req.params.opdVisitId, { description, qty, rate, date, remarks, mergeInto, dosage });
+    success(res, data, 'Row added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function deletePanelOpdBillingItem(req, res, next) {
+  try {
+    const data = await service.deletePanelOpdBillingItem(req.params.itemId);
+    success(res, data, 'Row deleted');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function addPanelOpdBillingItemsBulk(req, res, next) {
+  try {
+    const data = await service.addPanelOpdBillingItemsBulk(req.params.opdVisitId, req.body.items);
+    success(res, data, 'Rows added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function getPanelBillHeads(req, res, next) {
   try {
     success(res, await service.getPanelBillHeads());
@@ -1348,10 +1418,12 @@ async function saveDischargeCertificate(req, res, next) {
     const {
       diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
       dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
+      dischargeDate,
     } = req.body;
     const data = await service.saveDischargeCertificate(req.params.admissionId, {
       diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
       dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
+      dischargeDate,
     });
     success(res, data, 'Discharge Certificate save ho gaya');
   } catch (err) {
@@ -1597,6 +1669,37 @@ async function getPanelMedicineIssuanceReport(req, res, next) {
   }
 }
 
+async function previewPanelMedicineIssuanceTxnImport(req, res, next) {
+  try {
+    const { admissionNos, companyNames, totalRows, totalAmount } = req.body || {};
+    success(res, await service.previewPanelMedicineIssuanceTxnImport({ admissionNos, companyNames, totalRows, totalAmount }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function confirmPanelMedicineIssuanceTxnImportBatch(req, res, next) {
+  try {
+    const { admissions, companyNameMap } = req.body || {};
+    const data = await service.confirmPanelMedicineIssuanceTxnImportBatch(admissions, { companyNameMap });
+    success(res, data, `${data.imported} imported, ${data.refreshed} refreshed, ${data.itemsCreated} medicine rows`);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getPanelMedicineIssuanceTxnReport(req, res, next) {
+  try {
+    const { scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode } = req.query;
+    success(res, await service.getPanelMedicineIssuanceTxnReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function previewPanelAdmitReportImport(req, res, next) {
   try {
     const { admissionNos, companyNames, totalRows, totalAmount } = req.body || {};
@@ -1672,11 +1775,11 @@ async function getUnpaidPanelAdmissions(req, res, next) {
 async function receivePanelCheque(req, res, next) {
   try {
     const {
-      panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds,
+      panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds,
       createdByUserId, createdByName,
     } = req.body;
     const data = await service.receivePanelCheque({
-      panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds,
+      panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds,
       createdByUserId, createdByName,
     });
     success(res, data, 'Cheque receive ho gaya');
@@ -2231,6 +2334,9 @@ module.exports = {
   previewPanelMedicineIssuanceImport,
   confirmPanelMedicineIssuanceImportBatch,
   getPanelMedicineIssuanceReport,
+  previewPanelMedicineIssuanceTxnImport,
+  confirmPanelMedicineIssuanceTxnImportBatch,
+  getPanelMedicineIssuanceTxnReport,
   previewPanelAdmitReportImport,
   confirmPanelAdmitReportImportBatch,
   getPanelAdmitReport,
@@ -2252,6 +2358,13 @@ module.exports = {
   excludeLiveDetailItem,
   deletePanelBillingItem,
   addPanelBillingItemsBulk,
+  searchPanelOpdVisits,
+  getPanelOpdVisitBilling,
+  updatePanelOpdBillingItem,
+  updatePanelOpdBillingHeader,
+  addPanelOpdBillingItem,
+  deletePanelOpdBillingItem,
+  addPanelOpdBillingItemsBulk,
   getPanelBillHeads,
   searchPanelBillHeads,
   createPanelBillHead,

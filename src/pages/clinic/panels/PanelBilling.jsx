@@ -138,12 +138,16 @@ function printWithA4Override(styleId) {
   window.print();
 }
 
-// ── Panel Admission Lookup Modal — patientCategory 'panel' only ────────────────
-function PanelAdmissionLookupModal({ onSelect, onClose, searchPanelAdmissions }) {
+// ── Panel Admission/OPD Lookup Modal — patientCategory/paymentType 'panel'
+// only. Same modal for both Billing modes (see `mode` prop) — just the
+// number-column label/placeholder/date-column label swap.
+function PanelAdmissionLookupModal({ mode = 'admission', onSelect, onClose, searchPanelAdmissions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const timer = useRef(null);
+  const numberLabel = mode === 'opd' ? 'Slip #' : 'Admission #';
+  const dateLabel = mode === 'opd' ? 'Visit Date' : 'Admission Date';
 
   useEffect(() => {
     searchPanelAdmissions('')
@@ -176,7 +180,7 @@ function PanelAdmissionLookupModal({ onSelect, onClose, searchPanelAdmissions })
           <input
             autoFocus
             className="aa-modal-search-input"
-            placeholder="Search Admission # or Patient Name…"
+            placeholder={`Search ${numberLabel} or Patient Name…`}
             value={q}
             onChange={(e) => handleQueryChange(e.target.value)}
           />
@@ -187,7 +191,7 @@ function PanelAdmissionLookupModal({ onSelect, onClose, searchPanelAdmissions })
           ) : (
             <table className="aa-modal-tbl">
               <thead>
-                <tr><th>Admission #</th><th>Patient</th><th>Status</th><th>Admission Date</th></tr>
+                <tr><th>{numberLabel}</th><th>Patient</th><th>Status</th><th>{dateLabel}</th></tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
@@ -220,12 +224,21 @@ export default function PanelBilling() {
     fetchPanelAdmissionBilling, searchPanelAdmissions, updatePanelBillingItem,
     updatePanelBillingHeader, overrideLiveDetailItem, excludeLiveDetailItem,
     addPanelBillingItem, deletePanelBillingItem, addPanelBillingItemsBulk,
+    fetchPanelOpdVisitBilling, searchPanelOpdVisits, updatePanelOpdBillingItem,
+    updatePanelOpdBillingHeader, addPanelOpdBillingItem, deletePanelOpdBillingItem,
+    addPanelOpdBillingItemsBulk,
     subDepartments, fetchSubDepartments, searchPanelBillHeads,
     doctors, fetchDoctors, diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes,
     fetchMedicineList, createMedicine,
     finalizeDischarge,
   } = useClinicStore();
   const { user } = useAuthStore();
+  // Same "Billing" screen, toggled between Admission # (IPD) and Slip #
+  // (panel OPD visits — Consultant/Ultrasound/etc.) lookup. Which one is
+  // currently loaded is also readable off data.admission.sourceType once a
+  // record is loaded (see isOpd below) — lookupMode only matters before/while
+  // choosing what to look up next.
+  const [lookupMode, setLookupMode] = useState('admission'); // 'admission' | 'opd'
   const [admitNo, setAdmitNo] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -236,10 +249,13 @@ export default function PanelBilling() {
   const [editCell, setEditCell] = useState(null); // { itemId, field: 'rate'|'qty', value } | null
   const [savingCell, setSavingCell] = useState(false);
 
+  const isOpd = data?.admission.sourceType === 'opd';
+
   // Once the real Admission File is closed (see handleConfirmCloseFile below)
   // this Billing snapshot goes read-only — data stays visible/printable, but
-  // nothing can be added/edited/deleted anymore.
-  const readOnly = data?.admission.status === 'closed';
+  // nothing can be added/edited/deleted anymore. OPD Billing never locks —
+  // a panel OPD visit has no "Close File" lifecycle to mirror.
+  const readOnly = !isOpd && data?.admission.status === 'closed';
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [closingFile, setClosingFile] = useState(false);
 
@@ -361,7 +377,8 @@ export default function PanelBilling() {
     if (!checked.length) return toast.error('Kam az kam ek medicine select karo');
     setConfirmingPackage(true);
     try {
-      const rows = await addPanelBillingItemsBulk(
+      const bulkAdd = isOpd ? addPanelOpdBillingItemsBulk : addPanelBillingItemsBulk;
+      const rows = await bulkAdd(
         data.admission.id,
         checked.map((it) => ({ description: it.medicine, qty: 1, rate: it.rate }))
       );
@@ -391,12 +408,13 @@ export default function PanelBilling() {
     const dosage = customType === 'medicine' ? customDose.trim() || undefined : undefined;
     setAddingCustom(true);
     try {
-      const row = await addPanelBillingItem(data.admission.id, { description, qty, rate, mergeInto, dosage });
+      const addFn = isOpd ? addPanelOpdBillingItem : addPanelBillingItem;
+      const row = await addFn(data.admission.id, { description, qty, rate, mergeInto, dosage });
       if (mergeInto) {
         // Grouped adds fold into their head row (and feed that head's detail
         // popup) server-side — reload so the grid shows the recomputed
         // total instead of this raw itemized row.
-        await loadByAdmitNo(data.admission.admissionNo);
+        await reload();
       } else {
         setData((d) => ({ ...d, rows: [...d.rows, row], billingAmount: d.billingAmount + row.amount }));
       }
@@ -413,7 +431,8 @@ export default function PanelBilling() {
 
   async function handleDeleteCustom(row) {
     try {
-      await deletePanelBillingItem(row.id);
+      const delFn = isOpd ? deletePanelOpdBillingItem : deletePanelBillingItem;
+      await delFn(row.id);
       setData((d) => ({
         ...d,
         rows: d.rows.filter((r) => r.id !== row.id),
@@ -431,12 +450,13 @@ export default function PanelBilling() {
     if (!data) return;
     setCopying(true);
     try {
-      const rows = await addPanelBillingItemsBulk(data.admission.id, items);
+      const bulkAdd = isOpd ? addPanelOpdBillingItemsBulk : addPanelBillingItemsBulk;
+      const rows = await bulkAdd(data.admission.id, items);
       setPopup(null);
       if (items.some((it) => it.mergeInto)) {
         // Grouped adds fold into their head row server-side — reload so the
         // grid shows the recomputed total instead of these raw itemized rows.
-        await loadByAdmitNo(data.admission.admissionNo);
+        await reload();
       } else {
         setData((d) => ({
           ...d,
@@ -458,34 +478,40 @@ export default function PanelBilling() {
   // (see PharmacyDetailModal/DiagnosticDetailModal).
   async function handleSaveDetailRow(key, patch) {
     const realId = key.replace('manual-', '');
-    await updatePanelBillingItem(realId, patch);
+    const updateFn = isOpd ? updatePanelOpdBillingItem : updatePanelBillingItem;
+    await updateFn(realId, patch);
     // Main grid's aggregate total needs the fresh amount — the popup itself
     // keeps its own already-updated local row state, so this can run in the
     // background without disturbing what's on screen.
-    loadByAdmitNo(data.admission.admissionNo);
+    reload();
   }
 
   // Editing a *live* Provisional Bill entry — the real Provisional Bill is
   // never touched. This creates a Billing-only override in its place (see
   // overrideLiveDetailItem) that replaces it in both display and totals;
   // saving the same live entry again from here on just edits that override.
+  // Admission-only — an OPD visit has no live rows at all (every OPD
+  // pharmacyRows/diagnosticRows entry is already `manual-` prefixed, so this
+  // is never actually called in OPD mode).
   async function handleOverrideDetailRow(liveId, mergeInto, originalAmount, description, patch) {
     await overrideLiveDetailItem(data.admission.id, { liveId, mergeInto, description, originalAmount, ...patch });
-    loadByAdmitNo(data.admission.admissionNo);
+    reload();
   }
 
   // Delete a row from inside the Pharmacy/Diagnostic detail popup — a manual
-  // add (key "manual-<id>") is a real ClinicPanelBillingItem, so this just
-  // deletes it outright; a live Provisional Bill entry has no row of its own
-  // here to delete, so it's excluded instead (see excludeLiveDetailItem) —
-  // same "Provisional Bill stays untouched" principle as editing one.
+  // add (key "manual-<id>") is a real snapshot row, so this just deletes it
+  // outright; a live Provisional Bill entry (Admission mode only — OPD has
+  // none) has no row of its own here to delete, so it's excluded instead
+  // (see excludeLiveDetailItem) — same "Provisional Bill stays untouched"
+  // principle as editing one.
   async function handleDeleteDetailRow(key, mergeInto, originalAmount) {
     if (String(key).startsWith('manual-')) {
-      await deletePanelBillingItem(key.replace('manual-', ''));
+      const delFn = isOpd ? deletePanelOpdBillingItem : deletePanelBillingItem;
+      await delFn(key.replace('manual-', ''));
     } else {
       await excludeLiveDetailItem(data.admission.id, { liveId: key, mergeInto, originalAmount });
     }
-    loadByAdmitNo(data.admission.admissionNo);
+    reload();
   }
 
   async function loadByAdmitNo(no) {
@@ -500,6 +526,29 @@ export default function PanelBilling() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadBySlipNo(no) {
+    setLoading(true);
+    try {
+      const res = await fetchPanelOpdVisitBilling(no);
+      setData(res);
+      setAdmitNo(res.admission.admissionNo); // same field holds the Slip # in OPD mode
+    } catch (e) {
+      setData(null);
+      toast.error(e.message || 'Lookup failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Re-fetch whichever record is currently loaded, in whichever mode it's
+  // actually in — every mutation handler above uses this instead of calling
+  // loadByAdmitNo directly, so it stays correct after a mode-agnostic reload.
+  async function reload() {
+    if (!data) return;
+    if (data.admission.sourceType === 'opd') await loadBySlipNo(data.admission.admissionNo);
+    else await loadByAdmitNo(data.admission.admissionNo);
   }
 
   function openReports() {
@@ -528,19 +577,29 @@ export default function PanelBilling() {
 
   function lookup() {
     const no = admitNo.trim();
-    if (!no) return toast.error('Admission # daalo');
-    loadByAdmitNo(no);
+    if (!no) return toast.error(lookupMode === 'opd' ? 'Slip # daalo' : 'Admission # daalo');
+    if (lookupMode === 'opd') loadBySlipNo(no);
+    else loadByAdmitNo(no);
   }
 
   function handleSelectFromModal(row) {
     setShowLookup(false);
-    loadByAdmitNo(row.admissionNo);
+    if (lookupMode === 'opd') loadBySlipNo(row.admissionNo);
+    else loadByAdmitNo(row.admissionNo);
   }
 
   function handleCancel() {
     setAdmitNo('');
     setData(null);
     setPopup(null);
+  }
+
+  // Switching Admission #/Slip # mode mid-lookup would otherwise leave a
+  // stale record from the other mode on screen — clear it.
+  function switchLookupMode(mode) {
+    if (mode === lookupMode) return;
+    setLookupMode(mode);
+    handleCancel();
   }
 
   // "Save" on the Billing footer — every edit already saves itself live, so
@@ -589,10 +648,11 @@ export default function PanelBilling() {
 
   async function handleSaveCell() {
     if (!editCell) return;
+    const updateItemFn = isOpd ? updatePanelOpdBillingItem : updatePanelBillingItem;
     if (editCell.field === 'remarks') {
       setSavingCell(true);
       try {
-        const updated = await updatePanelBillingItem(editCell.itemId, { remarks: editCell.value });
+        const updated = await updateItemFn(editCell.itemId, { remarks: editCell.value });
         setData((d) => ({ ...d, rows: d.rows.map((r) => (r.id === updated.id ? { ...r, remarks: updated.remarks } : r)) }));
         setEditCell(null);
       } catch (e) {
@@ -608,7 +668,7 @@ export default function PanelBilling() {
     const payload = editCell.field === 'rate' ? { qty: row.qty, rate: val } : { qty: val, rate: row.rate };
     setSavingCell(true);
     try {
-      const updated = await updatePanelBillingItem(editCell.itemId, payload);
+      const updated = await updateItemFn(editCell.itemId, payload);
       setData((d) => ({
         ...d,
         rows: d.rows.map((r) => (r.id === updated.id ? { ...r, qty: updated.qty, rate: updated.rate, amount: updated.amount } : r)),
@@ -624,7 +684,8 @@ export default function PanelBilling() {
 
   async function handleHeaderDateChange(field, value) {
     try {
-      const updated = await updatePanelBillingHeader(data.admission.id, { [field]: value || null });
+      const updateHeaderFn = isOpd ? updatePanelOpdBillingHeader : updatePanelBillingHeader;
+      const updated = await updateHeaderFn(data.admission.id, { [field]: value || null });
       setData((d) => {
         const admitDate = field === 'admitDate' ? updated.admitDate : d.admission.admitDate;
         const dischargeDate = field === 'dischargeDate' ? updated.dischargeDate : d.admission.dischargeDate;
@@ -643,7 +704,8 @@ export default function PanelBilling() {
   }
   async function handleHeaderTextBlur(field, value) {
     try {
-      await updatePanelBillingHeader(data.admission.id, { [field]: value });
+      const updateHeaderFn = isOpd ? updatePanelOpdBillingHeader : updatePanelBillingHeader;
+      await updateHeaderFn(data.admission.id, { [field]: value });
     } catch (e) {
       toast.error(e.message || 'Save nahi hua');
     }
@@ -655,7 +717,8 @@ export default function PanelBilling() {
   async function handleHeaderSelectChange(field, value) {
     setData((d) => ({ ...d, admission: { ...d.admission, [field]: value } }));
     try {
-      await updatePanelBillingHeader(data.admission.id, { [field]: value });
+      const updateHeaderFn = isOpd ? updatePanelOpdBillingHeader : updatePanelBillingHeader;
+      await updateHeaderFn(data.admission.id, { [field]: value });
     } catch (e) {
       toast.error(e.message || 'Save nahi hua');
     }
@@ -672,7 +735,8 @@ export default function PanelBilling() {
   }
   async function handleSnoSeqBlur(value) {
     try {
-      const updated = await updatePanelBillingHeader(data.admission.id, { snoSeq: value.trim() || null });
+      const updateHeaderFn = isOpd ? updatePanelOpdBillingHeader : updatePanelBillingHeader;
+      const updated = await updateHeaderFn(data.admission.id, { snoSeq: value.trim() || null });
       setData((d) => ({
         ...d,
         admission: { ...d.admission, snoSeq: updated.snoSeq, serialNo: formatBillingSno(updated.snoSeq, d.admission.admitDate) || d.admission.serialNo },
@@ -688,9 +752,10 @@ export default function PanelBilling() {
 
       {showLookup && (
         <PanelAdmissionLookupModal
+          mode={lookupMode}
           onSelect={handleSelectFromModal}
           onClose={() => setShowLookup(false)}
-          searchPanelAdmissions={searchPanelAdmissions}
+          searchPanelAdmissions={lookupMode === 'opd' ? searchPanelOpdVisits : searchPanelAdmissions}
         />
       )}
 
@@ -704,13 +769,18 @@ export default function PanelBilling() {
           {/* ── Header ── */}
           <div className="pnb-header">
             <div className="pnb-hg">
-              <label>Admission #</label>
+              <div className="pnb-mode-toggle">
+                <button type="button" className={`pnb-mode-btn ${lookupMode === 'admission' ? 'pnb-mode-btn--active' : ''}`}
+                  onClick={() => switchLookupMode('admission')}>Admission #</button>
+                <button type="button" className={`pnb-mode-btn ${lookupMode === 'opd' ? 'pnb-mode-btn--active' : ''}`}
+                  onClick={() => switchLookupMode('opd')}>Slip #</button>
+              </div>
               <div className="pnb-lookup">
                 <input
                   value={admitNo}
                   onChange={(e) => setAdmitNo(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && lookup()}
-                  placeholder="e.g. 174628"
+                  placeholder={lookupMode === 'opd' ? 'e.g. 2840123' : 'e.g. 174628'}
                 />
                 <button onClick={() => setShowLookup(true)} disabled={loading}><Search size={14} /></button>
               </div>
@@ -733,14 +803,14 @@ export default function PanelBilling() {
               ) : <div className="pnb-val">—</div>}
             </div>
             <div className="pnb-hg">
-              <label>Admit Date</label>
+              <label>{isOpd ? 'Visit Date' : 'Admit Date'}</label>
               {data ? (
                 <input type="date" className="pnb-date-input" value={toInputDate(data.admission.admitDate)}
                   onChange={(e) => handleHeaderDateChange('admitDate', e.target.value)} disabled={readOnly} />
               ) : <div className="pnb-val">—</div>}
             </div>
             <div className="pnb-hg">
-              <label>Discharge Date</label>
+              <label>{isOpd ? 'Billing Date' : 'Discharge Date'}</label>
               {data ? (
                 <input type="date" className="pnb-date-input" value={toInputDate(data.admission.dischargeDate)}
                   onChange={(e) => handleHeaderDateChange('dischargeDate', e.target.value)} disabled={readOnly} />
@@ -853,7 +923,7 @@ export default function PanelBilling() {
               </thead>
               <tbody>
                 {!data ? (
-                  <tr><td colSpan={6} className="pnb-empty">Admission # lookup karo — Panel patient ka Provisional Bill data yahan aayega.</td></tr>
+                  <tr><td colSpan={6} className="pnb-empty">{lookupMode === 'opd' ? 'Slip # lookup karo — Panel OPD visit ka data yahan aayega.' : 'Admission # lookup karo — Panel patient ka Provisional Bill data yahan aayega.'}</td></tr>
                 ) : data.rows.map((r) => {
                   const clickable = r.kind === 'pharmacy' || r.kind === 'diagnostic';
                   return (
@@ -869,7 +939,7 @@ export default function PanelBilling() {
                       <EditableCell row={r} field="remarks" type="text" editCell={editCell} savingCell={savingCell}
                         onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
                         onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.remarks || <span className="pnb-hint">add remarks</span>} />
-                      <td>{r.kind === 'custom' && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
+                      <td>{(isOpd || r.kind === 'custom') && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
                     </tr>
                   );
                 })}
@@ -879,11 +949,18 @@ export default function PanelBilling() {
 
           {/* ── Footer ── */}
           <div className="pnb-footer">
-            <button className="pnb-btn" onClick={openReports}>Reports</button>
-            {readOnly ? (
-              <span className="pnb-closed-badge" title="Is admission ki file close ho chuki hai — Billing ab sirf dekhne/print ke liye hai">File Closed</span>
-            ) : (
-              <button className="pnb-btn pnb-btn--save" onClick={handleSaveClick} disabled={!data}>Save</button>
+            {/* Reports (Billing Covering Page / Diagnostic Bill / Medicine Bill)
+                are Admission-only prints — not offered for a Slip # record. */}
+            {!isOpd && <button className="pnb-btn" onClick={openReports}>Reports</button>}
+            {/* "Close File" has no OPD equivalent (see readOnly/isOpd above) —
+                OPD mode has nothing to Save either, every edit already
+                autosaves, so just Cancel + the live total remain. */}
+            {!isOpd && (
+              readOnly ? (
+                <span className="pnb-closed-badge" title="Is admission ki file close ho chuki hai — Billing ab sirf dekhne/print ke liye hai">File Closed</span>
+              ) : (
+                <button className="pnb-btn pnb-btn--save" onClick={handleSaveClick} disabled={!data}>Save</button>
+              )
             )}
             <button className="pnb-btn" onClick={handleCancel}>Cancel</button>
             <div className="pnb-total">Billing Amt <span>{fmt(data?.billingAmount)}</span></div>
@@ -1183,7 +1260,7 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
 
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
-      <div className="pnb-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()}>
         <div className="pnb-modal-head">
           <span>Pharmacy Bill</span>
           <button onClick={onClose}><X size={16} /></button>
@@ -1320,7 +1397,7 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
 
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
-      <div className="pnb-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()}>
         <div className="pnb-modal-head">
           <span>{title}</span>
           <button onClick={onClose}><X size={16} /></button>

@@ -524,6 +524,10 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const [checkedLeft, setCheckedLeft] = useState([]);
   const [rightDoctors, setRightDoctors] = useState([]);
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
+  // Free-text filter over the left-panel picker (Doctor/Sub Department name
+  // or code) — some departments (Laboratory, Ultrasound, Radiology…) list
+  // dozens of sub-departments, too many to scan by eye.
+  const [leftSearch, setLeftSearch] = useState('');
   const [receive, setReceive] = useState('');
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('amount');
@@ -590,11 +594,25 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
 
   async function loadDoctors(onCall) {
     setLoadingDoctors(true);
+    setLeftSearch('');
     try {
       const rows = await fetchAvailableDoctors({ day: todayDay(), time: currentTime(), onCall, departmentName });
       setLeftDoctors(rows || []);
     } catch { setLeftDoctors([]); }
     finally { setLoadingDoctors(false); }
+  }
+
+  // Matches by Doctor name/code or Sub Department name/code — whichever of
+  // those columns is actually showing for this department's layout.
+  function matchesLeftSearch(r) {
+    const q = leftSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (r.doctor?.name || '').toLowerCase().includes(q) ||
+      (r.doctor?.code || '').toLowerCase().includes(q) ||
+      (r.subDept?.name || '').toLowerCase().includes(q) ||
+      (r.subDept?.code || '').toLowerCase().includes(q)
+    );
   }
 
   function handleCategoryChange(v) {
@@ -1197,9 +1215,10 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                 if (r.doctor && !acc.find(d => d.id === r.doctor.id)) acc.push(r.doctor);
                 return acc;
               }, []);
-              const visibleRows = selectedDoctorId
+              const visibleRows = (selectedDoctorId
                 ? leftDoctors.filter(r => r.doctor?.id === Number(selectedDoctorId))
-                : leftDoctors;
+                : leftDoctors
+              ).filter(matchesLeftSearch);
               return (
                 <>
                   <div className="gopd-doctor-dropdown-row">
@@ -1214,6 +1233,14 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                         <option key={d.id} value={d.id}>{d.code} — {d.name}</option>
                       ))}
                     </select>
+                  </div>
+                  <div className="gopd-left-search-row">
+                    <input
+                      className="gopd-left-search-input"
+                      value={leftSearch}
+                      onChange={e => setLeftSearch(e.target.value)}
+                      placeholder="Search Sub Department name/code…"
+                    />
                   </div>
                   <div className="gopd-table-wrap">
                     {loadingDoctors ? (
@@ -1231,7 +1258,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                         <tbody>
                           {visibleRows.length === 0 ? (
                             <tr><td colSpan={4} className="gopd-empty-cell">
-                              {selectedDoctorId ? 'No sub-departments for this doctor' : 'Select a doctor to view sub-departments'}
+                              {!selectedDoctorId ? 'Select a doctor to view sub-departments' : leftSearch ? 'No match' : 'No sub-departments for this doctor'}
                             </td></tr>
                           ) : visibleRows.map(r => (
                             <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={() => toggleLeft(r.id)}>
@@ -1251,6 +1278,14 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
 
             {layout === 'doctor' && (
               <div className="gopd-table-wrap">
+                <div className="gopd-left-search-row">
+                  <input
+                    className="gopd-left-search-input"
+                    value={leftSearch}
+                    onChange={e => setLeftSearch(e.target.value)}
+                    placeholder={showDoctorColumn ? 'Search Doctor or Sub Department…' : 'Search Sub Department…'}
+                  />
+                </div>
                 {loadingDoctors ? (
                   <div className="gopd-loading">Loading doctors...</div>
                 ) : (
@@ -1265,11 +1300,11 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                       </tr>
                     </thead>
                     <tbody>
-                      {leftDoctors.length === 0 ? (
+                      {leftDoctors.filter(matchesLeftSearch).length === 0 ? (
                         <tr><td colSpan={showDoctorColumn ? 5 : 3} className="gopd-empty-cell">
-                          {form.onCall ? 'No active doctors found' : 'No doctors scheduled for today at this time'}
+                          {leftDoctors.length === 0 ? (form.onCall ? 'No active doctors found' : 'No doctors scheduled for today at this time') : 'No match'}
                         </td></tr>
-                      ) : leftDoctors.map(r => {
+                      ) : leftDoctors.filter(matchesLeftSearch).map(r => {
                         const needsModal = departmentName === 'Miscellaneous' && (r.quantityEditable || r.priceEditable);
                         const rowClick = () => (needsModal ? setMiscModalItem(r) : toggleLeft(r.id));
                         return (

@@ -115,6 +115,7 @@ export default function GoodsReceipt() {
   const [headerReceivedDate, setHeaderReceivedDate] = useState(new Date().toISOString().slice(0, 10));
   const [headerBillDate, setHeaderBillDate] = useState('');
   const [paymentType, setPaymentType] = useState('cash');
+  const [paymentMode, setPaymentMode] = useState('cash');
   const [paymentNote, setPaymentNote] = useState('');
   const [draftLines, setDraftLines] = useState([]);
   const [editingGRN, setEditingGRN] = useState(null);
@@ -233,6 +234,7 @@ export default function GoodsReceipt() {
           billDate: headerBillDate || undefined,
           expiryDate: line.expiryDate || undefined,
           paymentType,
+          paymentMode,
           paymentNote: paymentType === 'installment' ? paymentNote : undefined,
           manufacturer: line.manufacturerEnabled && line.manufacturer.trim() ? line.manufacturer.trim() : undefined,
           model: line.modelEnabled && line.model.trim() ? line.model.trim() : undefined,
@@ -266,6 +268,7 @@ export default function GoodsReceipt() {
       setHeaderReceivedDate(new Date().toISOString().slice(0, 10));
       setHeaderBillDate('');
       setPaymentType('cash');
+      setPaymentMode('cash');
       setPaymentNote('');
       setShowCreate(false);
       toast.success(`GRN saved (${draftLines.length} item${draftLines.length !== 1 ? 's' : ''})`);
@@ -280,6 +283,7 @@ export default function GoodsReceipt() {
     setHeaderReceivedDate(new Date().toISOString().slice(0, 10));
     setHeaderBillDate('');
     setPaymentType('cash');
+    setPaymentMode('cash');
     setPaymentNote('');
     setShowCreate(false);
   };
@@ -312,6 +316,7 @@ export default function GoodsReceipt() {
       receivedQuantity: grn.receivedQuantity != null ? String(grn.receivedQuantity) : '',
       receivedRate: grn.receivedRate != null ? String(grn.receivedRate) : '',
       paymentType: grn.paymentType || 'cash',
+      paymentMode: grn.paymentMode || 'cash',
       paymentNote: grn.paymentNote || '',
     });
   };
@@ -473,8 +478,21 @@ export default function GoodsReceipt() {
                             <label key={pt} className="flex items-center gap-1.5 text-sm cursor-pointer capitalize">
                               <input type="radio" name="editPaymentType" value={pt}
                                 checked={editGRNForm.paymentType === pt}
-                                onChange={() => setEditGRNForm((f) => ({ ...f, paymentType: pt, paymentNote: pt === 'cash' ? '' : f.paymentNote }))} />
+                                onChange={() => setEditGRNForm((f) => ({ ...f, paymentType: pt, paymentNote: pt === 'installment' ? f.paymentNote : '' }))} />
                               {pt}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-500 mb-1">Payment Mode</label>
+                        <div className="flex gap-4 px-3 py-2 border border-slate-300 rounded-md bg-white">
+                          {['cash', 'panel'].map((pm) => (
+                            <label key={pm} className="flex items-center gap-1.5 text-sm cursor-pointer capitalize">
+                              <input type="radio" name="editPaymentMode" value={pm}
+                                checked={editGRNForm.paymentMode === pm}
+                                onChange={() => setEditGRNForm((f) => ({ ...f, paymentMode: pm }))} />
+                              {pm}
                             </label>
                           ))}
                         </div>
@@ -547,7 +565,7 @@ export default function GoodsReceipt() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Payment Type</label>
+                <label className="block text-xs text-slate-500 mb-1">Payment Terms</label>
                 <div className="flex gap-4 px-3 py-2 border border-slate-300 rounded-md bg-white">
                   <label className="flex items-center gap-1.5 text-sm cursor-pointer">
                     <input
@@ -568,6 +586,31 @@ export default function GoodsReceipt() {
                       onChange={() => setPaymentType('installment')}
                     />
                     Installment
+                  </label>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-500 mb-1">Payment Mode</label>
+                <div className="flex gap-4 px-3 py-2 border border-slate-300 rounded-md bg-white">
+                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="paymentMode"
+                      value="cash"
+                      checked={paymentMode === 'cash'}
+                      onChange={() => setPaymentMode('cash')}
+                    />
+                    Cash
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
+                    <input
+                      type="radio"
+                      name="paymentMode"
+                      value="panel"
+                      checked={paymentMode === 'panel'}
+                      onChange={() => setPaymentMode('panel')}
+                    />
+                    Panel
                   </label>
                 </div>
               </div>

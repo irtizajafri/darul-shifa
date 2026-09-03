@@ -27,6 +27,13 @@ function fmtDate(d) {
   return `${String(dt.getDate()).padStart(2, '0')}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()}`;
 }
 
+// `<input type="date">`'s own value format — used both to default the field
+// to today and to preload an already-saved certificate's date into it.
+function toDateInputValue(d) {
+  const dt = d ? new Date(d) : new Date();
+  return dt.toISOString().slice(0, 10);
+}
+
 const REASON_OPTIONS = [
   { value: 'treated', label: 'Patient Treated' },
   { value: 'transfer', label: 'Patient Transfer' },
@@ -154,6 +161,17 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
         <div className="dc-modal-body">
           <div className="dc-modal-info">
             {admission.patientTitle} {admission.patientName} · {roomCategory?.name || '—'} / {bed?.name || '—'} · Consultant: {consultant?.name || '—'}
+          </div>
+
+          <div className="dc-modal-row">
+            <label>Discharge Date *</label>
+            <input
+              type="date"
+              value={form.dischargeDate}
+              min={toDateInputValue(admission.createdAt)}
+              onChange={e => onChange('dischargeDate', e.target.value)}
+              required
+            />
           </div>
 
           <div className="dc-modal-row">
@@ -433,6 +451,7 @@ export default function DiscountRefundAdmission() {
       const { certificate, ...header } = json.data;
       setDcHeader(header);
       setDcForm({
+        dischargeDate: toDateInputValue(certificate?.dischargeDate),
         reasonOfDischarge: certificate?.reasonOfDischarge || '',
         diagnosis: certificate?.diagnosis || '',
         furtherTreatmentNeeded: certificate?.furtherTreatmentNeeded || '',
@@ -472,7 +491,7 @@ export default function DiscountRefundAdmission() {
       } else {
         toast.error('Is admission ka Discharge Certificate abhi tak nahi bana — pehle bana lein');
         setDcForm({
-          reasonOfDischarge: '', diagnosis: '', furtherTreatmentNeeded: '',
+          dischargeDate: toDateInputValue(), reasonOfDischarge: '', diagnosis: '', furtherTreatmentNeeded: '',
           medicinePrescribed: '', followUp: '', medicalOfficer: '',
         });
         setDcOpen(true);
@@ -490,6 +509,7 @@ export default function DiscountRefundAdmission() {
   }, []);
 
   async function handleDcSaveAndPrint() {
+    if (!dcForm.dischargeDate) { toast.error('Discharge Date select karein'); return; }
     if (!dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
     setDcSaving(true);
     try {

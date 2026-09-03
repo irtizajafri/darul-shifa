@@ -427,6 +427,7 @@ model InventoryGRN {
   billDate         DateTime?
   paymentType      String               @default("cash")
   paymentNote      String?
+  paymentMode      String               @default("cash")
   isPaid           Boolean              @default(false)
   manufacturer     String?
   model            String?
@@ -954,6 +955,8 @@ model ClinicOpdVisit {
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   doctors         ClinicOpdVisitDoctor[]
+  panelBillingItems  ClinicPanelOpdBillingItem[]
+  panelBillingHeader ClinicPanelOpdBillingHeader?
 
   @@index([createdAt])
 }
@@ -1144,6 +1147,51 @@ model ClinicPanelBillingHeader {
   updatedAt      DateTime        @updatedAt
 }
 
+// Panels > Transaction > Billing — OPD (Slip #) side of the same screen.
+// Mirrors ClinicPanelBillingItem/Header exactly, but for a panel OPD visit
+// instead of a panel admission — no override/exclude machinery (a visit has
+// no separate "live Provisional Bill" to protect; every row here is plain
+// editable/deletable) and no Ward History (OPD has no ward). See
+// getPanelOpdVisitBilling.
+model ClinicPanelOpdBillingItem {
+  id          Int            @id @default(autoincrement())
+  opdVisitId  Int
+  opdVisit    ClinicOpdVisit @relation(fields: [opdVisitId], references: [id], onDelete: Cascade)
+  billHeadId  Int?
+  code        String?
+  description String
+  kind        String         @default("item") // item | pharmacy | diagnostic | custom
+  qty         Float          @default(0)
+  rate        Float          @default(0)
+  amount      Float          @default(0)
+  remarks     String?
+  dosage      String?
+  date        DateTime?
+  // Manual Medicine/Laboratory/Radiology/Ultrasound add — same
+  // merge-into-head-row behavior as ClinicPanelBillingItem.groupInto.
+  groupInto   String?
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([opdVisitId])
+}
+
+// Same snapshot principle as ClinicPanelBillingHeader — billingDate is what
+// Panel Cheque Transaction's Month/Company summary buckets this slip by
+// (renamed from "dischargeDate" since an OPD visit isn't discharged).
+model ClinicPanelOpdBillingHeader {
+  opdVisitId     Int            @id
+  opdVisit       ClinicOpdVisit @relation(fields: [opdVisitId], references: [id], onDelete: Cascade)
+  visitDate      DateTime?
+  billingDate    DateTime?
+  patientName    String?
+  consultantName String?
+  diagnosis      String?
+  snoSeq         String?
+  updatedAt      DateTime       @updatedAt
+}
+
 // Panels > Reports > Medicine Report — standalone import store for the
 // legacy "MADICAL ISSUANCE REPORT FOR PANEL" Excel. Deliberately NOT linked
 // to ClinicAdmission at all (no FK, no create/match against it) — importing
@@ -1172,6 +1220,44 @@ model ClinicPanelMedicineIssuanceItem {
   id                  Int                                  @id @default(autoincrement())
   issuanceAdmissionId Int
   issuanceAdmission   ClinicPanelMedicineIssuanceAdmission @relation(fields: [issuanceAdmissionId], references: [id], onDelete: Cascade)
+  description         String
+  medDate             DateTime?
+  rate                Float    @default(0)
+  qty                 Float    @default(0)
+  amount              Float    @default(0)
+  store               String?
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+
+  @@index([issuanceAdmissionId])
+}
+
+// Panels > Transaction > Medicine Issuance — same "MADICAL ISSUANCE REPORT
+// FOR PANEL" import/UI as ClinicPanelMedicineIssuance* above (Panels >
+// Reports > Medicine Report), but a fully separate table set per an explicit
+// request to keep the Transaction-side copy independent of the Report-side
+// one — uploading into one never touches the other.
+model ClinicPanelMedicineIssuanceTxnAdmission {
+  id             Int      @id @default(autoincrement())
+  admissionNo    String   @unique
+  patientName    String?
+  panelCompanyId Int?
+  admitDate      DateTime?
+  dischargeDate  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  items ClinicPanelMedicineIssuanceTxnItem[]
+
+  @@index([admitDate])
+  @@index([dischargeDate])
+  @@index([panelCompanyId])
+}
+
+model ClinicPanelMedicineIssuanceTxnItem {
+  id                  Int                                     @id @default(autoincrement())
+  issuanceAdmissionId Int
+  issuanceAdmission   ClinicPanelMedicineIssuanceTxnAdmission @relation(fields: [issuanceAdmissionId], references: [id], onDelete: Cascade)
   description         String
   medDate             DateTime?
   rate                Float    @default(0)
@@ -2259,7 +2345,8 @@ model ClinicPanelChequeReceipt {
   createdByName   String?
   createdAt       DateTime @default(now())
 
-  items ClinicPanelChequeReceiptItem[]
+  items    ClinicPanelChequeReceiptItem[]
+  opdItems ClinicPanelChequeReceiptOpdItem[]
 }
 
 model ClinicPanelChequeReceiptItem {
@@ -2267,6 +2354,23 @@ model ClinicPanelChequeReceiptItem {
   receiptId      Int
   receipt        ClinicPanelChequeReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   admissionId    Int                      @unique
+  amount         Float                    @default(0)
+  receivedShare  Float                    @default(0)
+  deductionShare Float                    @default(0)
+  createdAt      DateTime                 @default(now())
+
+  @@index([receiptId])
+}
+
+// Same as ClinicPanelChequeReceiptItem above, but for a panel OPD visit
+// (ClinicPanelOpdBillingItem) instead of an admission — one cheque receipt
+// can cover a mix of admissions and OPD slips together (real insurance
+// practice: one cheque settles everything due for that company/month).
+model ClinicPanelChequeReceiptOpdItem {
+  id             Int                      @id @default(autoincrement())
+  receiptId      Int
+  receipt        ClinicPanelChequeReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  opdVisitId     Int                      @unique
   amount         Float                    @default(0)
   receivedShare  Float                    @default(0)
   deductionShare Float                    @default(0)

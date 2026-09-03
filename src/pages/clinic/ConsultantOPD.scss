@@ -487,6 +487,25 @@
   &:focus { border-color: #3b82f6; }
 }
 
+.gopd-left-search-row {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.gopd-left-search-input {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #0f172a;
+  outline: none;
+  &::placeholder { color: #94a3b8; }
+  &:focus { border-color: #3b82f6; }
+}
+
 // ── Transfer buttons ──────────────────────────────────────────────────────────
 .gopd-transfer {
   display: flex;

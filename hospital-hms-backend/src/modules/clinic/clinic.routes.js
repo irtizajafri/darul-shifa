@@ -204,6 +204,16 @@ router.post('/admission/panel-billing/:admissionId/items/override', controller.o
 router.post('/admission/panel-billing/:admissionId/items/exclude', controller.excludeLiveDetailItem);
 router.delete('/admission/panel-billing/items/:itemId', controller.deletePanelBillingItem);
 
+// Panels > Transaction > Billing — OPD (Slip #) side, same screen toggled to
+// look up a panel OPD visit by Slip # instead of an admission by Admission #.
+router.get('/opd-panel-billing/search', controller.searchPanelOpdVisits);
+router.get('/opd-panel-billing/by-serial/:serialNo', controller.getPanelOpdVisitBilling);
+router.patch('/opd-panel-billing/items/:itemId', controller.updatePanelOpdBillingItem);
+router.patch('/opd-panel-billing/header/:opdVisitId', controller.updatePanelOpdBillingHeader);
+router.post('/opd-panel-billing/:opdVisitId/items', controller.addPanelOpdBillingItem);
+router.post('/opd-panel-billing/:opdVisitId/items/bulk', controller.addPanelOpdBillingItemsBulk);
+router.delete('/opd-panel-billing/items/:itemId', controller.deletePanelOpdBillingItem);
+
 // Panels > Panel Cheque Transaction
 router.get('/panel-cheque/summary', controller.getPanelChequeSummary);
 router.get('/panel-cheque/report', controller.getPanelChequesReport);
@@ -216,6 +226,9 @@ router.post('/panel-cheque/import/confirm', controller.confirmPanelChequeImport)
 router.post('/panel-medicine-issuance/import/preview', controller.previewPanelMedicineIssuanceImport);
 router.post('/panel-medicine-issuance/import/confirm', controller.confirmPanelMedicineIssuanceImportBatch);
 router.get('/panel-medicine-issuance/report', controller.getPanelMedicineIssuanceReport);
+router.post('/panel-medicine-issuance-txn/import/preview', controller.previewPanelMedicineIssuanceTxnImport);
+router.post('/panel-medicine-issuance-txn/import/confirm', controller.confirmPanelMedicineIssuanceTxnImportBatch);
+router.get('/panel-medicine-issuance-txn/report', controller.getPanelMedicineIssuanceTxnReport);
 
 // Panels > Reports > OPD Admit Report — bulk import ("Admission Wise Panel Report")
 router.post('/panel-admit-report/import/preview', controller.previewPanelAdmitReportImport);

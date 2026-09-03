@@ -22,6 +22,9 @@ router.post('/sub-account', ctrl.createSubAccount);
 router.put('/sub-account/:id', ctrl.updateSubAccount);
 router.delete('/sub-account/:id', ctrl.deleteSubAccount);
 
+router.post('/copy-chart-to-corporate', ctrl.copyChartToCorporate);
+router.get('/pending-grn-queue', ctrl.getPendingGrnQueue);
+
 router.get('/payee-heads', ctrl.getPayeeHeads);
 router.post('/payee-heads', ctrl.createPayeeHead);
 router.put('/payee-heads/:id', ctrl.updatePayeeHead);

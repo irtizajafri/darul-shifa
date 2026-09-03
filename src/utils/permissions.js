@@ -159,6 +159,7 @@ export const PERMISSIONS_MAP = {
           { key: 'billing-detail',   label: 'Billing Detail Report' },
           { key: 'cheques-report',   label: 'Panel Cheques Report' },
           { key: 'medicine-report',  label: 'Medicine Report' },
+          { key: 'medicine-issuance-txn', label: 'Medicine Issuance' },
           { key: 'opd-admit-report', label: 'OPD Admit Report' },
           { key: 'doctor-wise-statement', label: 'Doctor Wise Statement' },
           { key: 'update-rates',     label: 'Update Rates' },

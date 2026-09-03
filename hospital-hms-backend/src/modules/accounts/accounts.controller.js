@@ -22,6 +22,8 @@ async function getSubAccounts(req, res, next) { try { success(res, await svc.get
 async function createSubAccount(req, res, next) { try { success(res, await svc.createSubAccount(req.body), 'created'); } catch (e) { next(e); } }
 async function updateSubAccount(req, res, next) { try { success(res, await svc.updateSubAccount(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
 async function deleteSubAccount(req, res, next) { try { await svc.deleteSubAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+async function copyChartToCorporate(req, res, next) { try { success(res, await svc.copyChartToCorporate(), 'copied'); } catch (e) { next(e); } }
+async function getPendingGrnQueue(req, res, next) { try { success(res, await svc.getPendingGrnQueue(et(req))); } catch (e) { next(e); } }
 
 async function getPayeeHeads(req, res, next) { try { success(res, await svc.getPayeeHeads(et(req))); } catch (e) { next(e); } }
 async function createPayeeHead(req, res, next) { try { success(res, await svc.createPayeeHead(req.body), 'created'); } catch (e) { next(e); } }
@@ -67,7 +69,7 @@ async function createIncomeCategory(req, res, next) { try { success(res, await s
 async function updateIncomeCategory(req, res, next) { try { success(res, await svc.updateIncomeCategory(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
 async function deleteIncomeCategory(req, res, next) { try { await svc.deleteIncomeCategory(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
-async function getSupplierGRNs(req, res, next) { try { success(res, await svc.getSupplierGRNs(req.query.supplierId)); } catch (e) { next(e); } }
+async function getSupplierGRNs(req, res, next) { try { success(res, await svc.getSupplierGRNs(req.query.supplierId, et(req))); } catch (e) { next(e); } }
 async function getConsultantVisits(req, res, next) { try { const { doctorName, dateFrom, dateTo } = req.query; success(res, await svc.getConsultantVisits(doctorName, dateFrom, dateTo)); } catch (e) { next(e); } }
 
 async function createBankDeposit(req, res, next) {
@@ -227,6 +229,7 @@ module.exports = {
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
+  copyChartToCorporate, getPendingGrnQueue,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getSurgeryHeadForMainAccount, getSurgeryPayeesForHead, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory,

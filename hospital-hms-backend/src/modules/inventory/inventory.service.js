@@ -859,6 +859,7 @@ async function createGRN(payload) {
         billDate: payload.billDate ? new Date(payload.billDate) : null,
         paymentType: payload.paymentType === 'installment' ? 'installment' : 'cash',
         paymentNote: payload.paymentNote ? String(payload.paymentNote).trim() : null,
+        paymentMode: payload.paymentMode === 'panel' ? 'panel' : 'cash',
         manufacturer: payload.manufacturer ? String(payload.manufacturer).trim() : null,
         model: payload.model ? String(payload.model).trim() : null,
       },
@@ -940,6 +941,7 @@ async function updateGRN(id, payload) {
     if (payload.billDate !== undefined) data.billDate = payload.billDate ? new Date(payload.billDate) : null;
     if (payload.paymentType !== undefined) data.paymentType = payload.paymentType === 'installment' ? 'installment' : 'cash';
     if (payload.paymentNote !== undefined) data.paymentNote = payload.paymentNote ? String(payload.paymentNote).trim() : null;
+    if (payload.paymentMode !== undefined) data.paymentMode = payload.paymentMode === 'panel' ? 'panel' : 'cash';
     if (payload.supplierId !== undefined && payload.supplierId) data.supplierId = Number(payload.supplierId);
 
     const newQty = payload.receivedQuantity !== undefined ? Number(payload.receivedQuantity) : null;

@@ -108,6 +108,7 @@ const menuItems = [
           { label: 'Billing Detail Report',  path: '/clinic/panels/billing-detail',  perm: { sub: 'panels', tab: 'billing-detail' } },
           { label: 'Panel Cheques Report',   path: '/clinic/panels/cheques-report',  perm: { sub: 'panels', tab: 'cheques-report' } },
           { label: 'Medicine Report',        path: '/clinic/panels/medicine-report', perm: { sub: 'panels', tab: 'medicine-report' } },
+          { label: 'Medicine Issuance',      path: '/clinic/panels/medicine-issuance-txn', perm: { sub: 'panels', tab: 'medicine-issuance-txn' } },
           { label: 'OPD Admit Report',       path: '/clinic/panels/opd-admit-report', perm: { sub: 'panels', tab: 'opd-admit-report' } },
           { label: 'Doctor Wise Statement',  path: '/clinic/panels/doctor-wise-statement', perm: { sub: 'panels', tab: 'doctor-wise-statement' } },
         ],

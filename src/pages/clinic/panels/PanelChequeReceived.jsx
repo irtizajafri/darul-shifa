@@ -250,10 +250,14 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
     return () => { cancelled = true; };
   }, [target, fetchUnpaidPanelAdmissions]);
 
-  function toggle(admissionId) {
+  // `checked` keys off each row's own `id` (prefixed "adm-<id>"/"opd-<id>" —
+  // see getUnpaidPanelAdmissions) rather than the raw admissionId, since a
+  // Company/Month batch can now mix real Admissions and panel OPD Slips
+  // together and their numeric ids aren't otherwise distinguishable.
+  function toggle(id) {
     setChecked((s) => {
       const next = new Set(s);
-      if (next.has(admissionId)) next.delete(admissionId); else next.add(admissionId);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }
@@ -262,7 +266,7 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
     setChecked(new Set());
   }
 
-  const checkedRows = rows.filter((r) => checked.has(r.admissionId));
+  const checkedRows = rows.filter((r) => checked.has(r.id));
   const totalAmount = checkedRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const receivedAmount = Number(amuont) || 0;
   const deduction = totalAmount - receivedAmount;
@@ -281,7 +285,8 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
         chequeNo: chequeNo.trim(),
         chequeDate,
         receivedAmount,
-        admissionIds: [...checked],
+        admissionIds: checkedRows.filter((r) => r.admissionId != null).map((r) => r.admissionId),
+        opdVisitIds: checkedRows.filter((r) => r.opdVisitId != null).map((r) => r.opdVisitId),
         createdByUserId: user?.id != null ? String(user.id) : null,
         createdByName: user?.name || user?.username || user?.email || null,
       });
@@ -316,8 +321,8 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
               ) : !rows.length ? (
                 <tr><td className="pcr-empty" colSpan={5}>Is company/month ke liye koi unpaid bill nahi mila.</td></tr>
               ) : rows.map((r) => (
-                <tr key={r.admissionId} className={checked.has(r.admissionId) ? 'pcr-modal-row-checked' : ''}>
-                  <td><input type="checkbox" checked={checked.has(r.admissionId)} onChange={() => toggle(r.admissionId)} /></td>
+                <tr key={r.id} className={checked.has(r.id) ? 'pcr-modal-row-checked' : ''}>
+                  <td><input type="checkbox" checked={checked.has(r.id)} onChange={() => toggle(r.id)} /></td>
                   <td>{r.billType}</td>
                   <td>{r.number}</td>
                   <td>{r.patName}</td>

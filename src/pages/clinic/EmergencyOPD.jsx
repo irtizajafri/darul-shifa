@@ -249,6 +249,9 @@ export default function EmergencyOPD() {
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [checkedLeft, setCheckedLeft] = useState([]);
   const [rightDoctors, setRightDoctors] = useState([]);
+  // Free-text filter over the left-panel picker (Doctor/Sub Department name
+  // or code).
+  const [leftSearch, setLeftSearch] = useState('');
   const [receive, setReceive] = useState('');
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('amount');
@@ -289,11 +292,24 @@ export default function EmergencyOPD() {
 
   async function loadDoctors(onCall) {
     setLoadingDoctors(true);
+    setLeftSearch('');
     try {
       const rows = await fetchAvailableDoctors({ day: todayDay(), time: currentTime(), onCall, departmentName: 'Emergency' });
       setLeftDoctors(rows || []);
     } catch { setLeftDoctors([]); }
     finally { setLoadingDoctors(false); }
+  }
+
+  // Matches by Doctor name/code or Sub Department name/code.
+  function matchesLeftSearch(r) {
+    const q = leftSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (r.doctor?.name || '').toLowerCase().includes(q) ||
+      (r.doctor?.code || '').toLowerCase().includes(q) ||
+      (r.subDept?.name || '').toLowerCase().includes(q) ||
+      (r.subDept?.code || '').toLowerCase().includes(q)
+    );
   }
 
   function handleCategoryChange(v) {
@@ -610,6 +626,14 @@ export default function EmergencyOPD() {
         <div className="gopd-main">
           <div className="gopd-left-panel">
             <div className="gopd-table-wrap">
+              <div className="gopd-left-search-row">
+                <input
+                  className="gopd-left-search-input"
+                  value={leftSearch}
+                  onChange={e => setLeftSearch(e.target.value)}
+                  placeholder="Search Doctor or Sub Department…"
+                />
+              </div>
               {loadingDoctors ? (
                 <div className="gopd-loading">Loading doctors...</div>
               ) : (
@@ -624,9 +648,9 @@ export default function EmergencyOPD() {
                     </tr>
                   </thead>
                   <tbody>
-                    {leftDoctors.length === 0 ? (
-                      <tr><td colSpan={5} className="gopd-empty-cell">No doctors scheduled</td></tr>
-                    ) : leftDoctors.map(r => (
+                    {leftDoctors.filter(matchesLeftSearch).length === 0 ? (
+                      <tr><td colSpan={5} className="gopd-empty-cell">{leftDoctors.length === 0 ? 'No doctors scheduled' : 'No match'}</td></tr>
+                    ) : leftDoctors.filter(matchesLeftSearch).map(r => (
                       <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={() => toggleLeft(r.id)}>
                         <td><input type="checkbox" checked={checkedLeft.includes(r.id)} onChange={() => toggleLeft(r.id)} onClick={e => e.stopPropagation()} /></td>
                         <td>{r.doctor?.code}</td>

@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Settings2, BookOpen, AlignLeft, Layers, Users, Landmark, FileDigit, Tag, ArrowLeft } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { Settings2, BookOpen, AlignLeft, Layers, Users, Landmark, FileDigit, Tag, ArrowLeft, Copy } from 'lucide-react';
+import { useAccountsStore } from '../../../store/useAccountsStore';
 import './AccountsParameters.scss';
 
 const ITEMS = [
@@ -16,8 +19,38 @@ const ITEMS = [
 export default function AccountsParameters() {
   const { entityType } = useParams();
   const navigate = useNavigate();
+  const { mainGLs, fetchMainGLs, copyChartToCorporate } = useAccountsStore();
 
   const label = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+
+  // Only relevant on the Corporate side — checks whether the Main GL /
+  // Sub GL / Main Account / Sub Account tree has already been copied over
+  // from Non-Corporate, so the one-time "Copy" button hides itself once
+  // it's no longer needed.
+  const [checkingCopy, setCheckingCopy] = useState(entityType === 'corporate');
+  const [copying, setCopying] = useState(false);
+
+  useEffect(() => {
+    if (entityType !== 'corporate') return;
+    setCheckingCopy(true);
+    fetchMainGLs('corporate').finally(() => setCheckingCopy(false));
+  }, [entityType]);
+
+  const handleCopyFromNonCorporate = async () => {
+    if (!confirm('Copy the entire Non-Corporate Main GL / Sub GL / Main Account / Sub Account structure into Corporate? This creates brand-new, independent Corporate records — it only runs once.')) return;
+    setCopying(true);
+    try {
+      const result = await copyChartToCorporate();
+      toast.success(`Copied: ${result.mainGL} Main GL, ${result.subGL} Sub GL, ${result.mainAccount} Main Account, ${result.subAccount} Sub Account`);
+      await fetchMainGLs('corporate');
+    } catch (e) {
+      toast.error(e.message || 'Copy failed');
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  const showCopyBanner = entityType === 'corporate' && !checkingCopy && mainGLs.length === 0;
 
   return (
     <div className="acc-parameters">
@@ -30,6 +63,18 @@ export default function AccountsParameters() {
           <p>Accounting for {label}</p>
         </div>
       </div>
+
+      {showCopyBanner && (
+        <div className="acc-parameters__copy-banner">
+          <div>
+            <strong>Corporate chart of accounts is empty.</strong>
+            <p>Copy the Main GL / Sub GL / Main Account / Sub Account structure from Non-Corporate to start from the same setup — a one-time action, both sides stay fully independent afterwards.</p>
+          </div>
+          <button className="acc-parameters__copy-btn" onClick={handleCopyFromNonCorporate} disabled={copying}>
+            <Copy className="w-4 h-4" /> {copying ? 'Copying…' : 'Copy from Non-Corporate'}
+          </button>
+        </div>
+      )}
 
       <div className="acc-parameters__grid">
         {ITEMS.map((item) => (

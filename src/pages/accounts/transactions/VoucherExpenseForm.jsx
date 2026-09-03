@@ -403,11 +403,97 @@ export default function VoucherExpenseForm() {
   const [utilBillLoading, setUtilBillLoading]   = useState(false);
   const [checkedUtilBills, setCheckedUtilBills] = useState({});
 
+  // ── Pending GRN queue (auto-popup) ──────────────────────────────────────
+  // Every still-unpaid GRN under a "Vendors / Suppliers" or "Inventory" List
+  // Attachment head, fetched once on load and re-offered after every entry
+  // that gets added — a quick "clear the backlog" loop that sits alongside
+  // the regular manual Sub Account → Payee flow above, not in place of it.
+  const [pendingQueue, setPendingQueue]   = useState([]);
+  const [queueModalOpen, setQueueModalOpen] = useState(false);
+  const [queueLoading, setQueueLoading]   = useState(false);
+
   const [bankAccounts, setBankAccounts]   = useState([]);
   const [selectedBankId, setSelectedBankId] = useState(bankId ? String(bankId) : '');
   const [cashSerial, setCashSerial] = useState(1); // fetched from backend on mount
 
   useEffect(() => { fetchMainGLs(entityType); }, [entityType]);
+
+  // Fetch the pending GRN backlog once on load and auto-open the queue popup
+  // if there's anything to clear — editing an already-saved voucher skips
+  // this, it's only a quick-entry aid for building new ones.
+  const fetchPendingQueue = async () => {
+    setQueueLoading(true);
+    try {
+      const r = await fetch(`${API}/pending-grn-queue?entityType=${entityType}`);
+      const j = await r.json();
+      setPendingQueue(Array.isArray(j?.data) ? j.data : []);
+    } catch {
+      setPendingQueue([]);
+    } finally {
+      setQueueLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isEditMode) return;
+    fetchPendingQueue();
+  }, [entityType]);
+
+  useEffect(() => {
+    if (!isEditMode && pendingQueue.length > 0 && !queueLoading) setQueueModalOpen(true);
+  }, [pendingQueue]);
+
+  // A GRN already staged into the local `entries` list (added but not yet
+  // saved) hasn't actually flipped isPaid on the backend, so it has to be
+  // hidden client-side or the same row would offer itself again.
+  const stagedGrnIds = new Set(entries.flatMap((e) => Array.isArray(e.grnIds) ? e.grnIds : []));
+  const visibleQueue = pendingQueue.filter((q) => !stagedGrnIds.has(q.grnId));
+
+  // Fills the whole chain the item's head is wired to (Main GL → Sub GL →
+  // Main Account → Sub Account) plus payee/amount/GRN in one go. Does its
+  // own fetches rather than calling handleMainGlChange &c. in sequence —
+  // those read the cascading-select state (subGLs/mainAccs/subAccs) via
+  // closures fixed at render time, which stay stale across awaits within
+  // one call chain; using each fetch's own response directly avoids that.
+  const fillFromQueueItem = async (item) => {
+    setQueueModalOpen(false);
+    const { chain } = item;
+    setIsInventoryAcc(false);
+    resetSurgeryState();
+
+    const [subGlJ, mainAccJ, subAccJ, payeeJ] = await Promise.all([
+      fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${chain.mainGlId}`).then((r) => r.json()),
+      fetch(`${API}/main-account?entityType=${entityType}&subGlId=${chain.subGlId}`).then((r) => r.json()),
+      fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${chain.mainAccountId}`).then((r) => r.json()),
+      fetch(`${API}/payee-entries/by-sub-account?subAccountId=${chain.subAccountId}&entityType=${entityType}`).then((r) => r.json()),
+    ]);
+    const subGlList  = Array.isArray(subGlJ?.data) ? subGlJ.data : [];
+    const mainAccList = Array.isArray(mainAccJ?.data) ? mainAccJ.data : [];
+    const subAccList = Array.isArray(subAccJ?.data) ? subAccJ.data : [];
+    setSubGLs(subGlList);
+    setMainAccs(mainAccList);
+    setSubAccs(subAccList);
+    setLinkedPayees(payeeJ?.data?.entries || []);
+    setLinkedHeadName(payeeJ?.data?.headName || '');
+    setLinkedHeadType(payeeJ?.data?.type || '');
+    setPayeeSearch(item.supplierName);
+
+    const mainAcc = mainAccList.find((a) => String(a.id) === String(chain.mainAccountId));
+    const subAcc  = subAccList.find((a) => String(a.id) === String(chain.subAccountId));
+
+    setEntry((e) => ({
+      ...e,
+      mainGlId: String(chain.mainGlId),
+      subGlId: String(chain.subGlId),
+      mainAccountId: String(chain.mainAccountId),
+      subAccountId: String(chain.subAccountId),
+      accountCode: subAcc?.code || mainAcc?.code || '',
+      accountName: subAcc?.name || mainAcc?.name || '',
+      payeeName: item.supplierName,
+      amount: String(item.amount),
+      grnIds: [item.grnId],
+    }));
+  };
 
   // Fetch global next cash serial from backend on mount (cash mode only)
   useEffect(() => {
@@ -769,7 +855,7 @@ export default function VoucherExpenseForm() {
     setGrnModal({ supplierName: payee.name, grns: null });
     setGrnLoading(true);
     try {
-      const r = await fetch(`${API}/supplier-grns?supplierId=${payee.id}`);
+      const r = await fetch(`${API}/supplier-grns?supplierId=${payee.id}&entityType=${entityType}`);
       const j = await r.json();
       setGrnModal((prev) => ({ ...prev, grns: j?.data || [] }));
     } catch {
@@ -983,6 +1069,11 @@ export default function VoucherExpenseForm() {
     setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
     resetSurgeryState();
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
+
+    // Entry's in the list — if any pending GRNs are still uncovered, bring
+    // the queue popup back so the next one can be picked straight away.
+    const nowStaged = new Set([...stagedGrnIds, ...(entry.grnIds || [])]);
+    if (pendingQueue.some((q) => !nowStaged.has(q.grnId))) setQueueModalOpen(true);
   };
 
   const total = entries.reduce((s, e) => s + Number(e.amount), 0);
@@ -1315,7 +1406,7 @@ export default function VoucherExpenseForm() {
             <button className="ve-form__submit-btn" onClick={() => navigate(`/accounts/${entityType}/transactions`)}>
               Done
             </button>
-            <button className="ve-form__add-btn" onClick={() => { setSavedVoucherNo(null); setEntries([]); setEntry(emptyEntry()); }}>
+            <button className="ve-form__add-btn" onClick={() => { setSavedVoucherNo(null); setEntries([]); setEntry(emptyEntry()); fetchPendingQueue(); }}>
               New Voucher
             </button>
           </div>
@@ -1403,6 +1494,63 @@ export default function VoucherExpenseForm() {
               </tr>
             </tfoot>
           </table>
+        </div>
+      )}
+
+      {/* ── Pending GRN Queue Modal (auto-popup) ── */}
+      {queueModalOpen && (
+        <div className="ve-sal-modal__backdrop" onClick={() => setQueueModalOpen(false)}>
+          <div className="ve-grn-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ve-sal-modal__header">
+              <div>
+                <div className="ve-sal-modal__title">Pending Payments</div>
+                <div className="ve-sal-modal__sub">
+                  {visibleQueue.length} unpaid Vendor/Supplier &amp; Inventory GRN{visibleQueue.length === 1 ? '' : 's'} — most recent first
+                </div>
+              </div>
+              <button className="ve-sal-modal__close" onClick={() => setQueueModalOpen(false)}>✕</button>
+            </div>
+
+            {queueLoading ? (
+              <div className="ve-sal-modal__loading">Loading…</div>
+            ) : !visibleQueue.length ? (
+              <div className="ve-sal-modal__no-data">Sab pending GRNs is voucher mein add ho chuke hain.</div>
+            ) : (
+              <div className="ve-grn-modal__table-wrap">
+                <table className="ve-grn-modal__table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>GRN #</th>
+                      <th>Item</th>
+                      <th>Supplier</th>
+                      <th>Head</th>
+                      <th>Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleQueue.map((q) => (
+                      <tr key={q.id} onClick={() => fillFromQueueItem(q)}>
+                        <td>{new Date(q.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                        <td className="ve-grn-modal__code">{q.code}</td>
+                        <td>{q.itemName}</td>
+                        <td>{q.supplierName}</td>
+                        <td>{q.headName}</td>
+                        <td className="ve-grn-modal__amount">PKR {Number(q.amount).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="ve-grn-modal__footer">
+              <span className="ve-sal-modal__sub">Row pe click karke form fill karo, phir neeche Confirm karke agla pending item mil jayega.</span>
+              <div className="ve-grn-modal__actions">
+                <button className="ve-sal-modal__cancel" onClick={() => setQueueModalOpen(false)}>Close</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

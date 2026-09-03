@@ -33,6 +33,7 @@ export const useAccountsStore = create((set) => ({
     await req(`/main-gl/${id}`, { method: 'DELETE' });
     set((s) => ({ mainGLs: s.mainGLs.filter((r) => r.id !== id) }));
   },
+  copyChartToCorporate: async () => req('/copy-chart-to-corporate', { method: 'POST' }),
 
   // Sub GL
   subGLs: [],

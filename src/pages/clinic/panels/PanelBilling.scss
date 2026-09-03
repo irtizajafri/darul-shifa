@@ -66,6 +66,37 @@
     &:hover { background: #15305a; } &:disabled { opacity: 0.6; } }
 }
 
+// Admission # / Slip # mode toggle — sits where the plain "Admission #"
+// label used to be.
+.pnb-mode-toggle {
+  display: flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+  width: fit-content;
+}
+
+.pnb-mode-btn {
+  background: #f8fafc;
+  color: #64748b;
+  border: none;
+  padding: 3px 9px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  white-space: nowrap;
+  &:not(:last-child) { border-right: 1px solid #cbd5e1; }
+  &:hover { background: #eff6ff; }
+
+  &--active {
+    background: #1a3c6e;
+    color: #fff;
+    &:hover { background: #1a3c6e; }
+  }
+}
+
 .pnb-val {
   font-size: 0.86rem;
   font-weight: 600;
@@ -328,6 +359,22 @@
 .pnb-modal-body { flex: 1; overflow: auto; padding: 12px 14px; }
 
 .pnb-modal--sm { max-width: 440px; }
+
+/* Medicine / Laboratory / Radiology / Ultrasound detail popups — bigger
+   window, smaller type so more columns/rows fit without feeling cramped. */
+.pnb-modal--detail {
+  max-width: 960px;
+  max-height: 88vh;
+
+  .pnb-table {
+    font-size: 0.72rem;
+    th, td { padding: 4px 7px; }
+    thead th { font-size: 0.66rem; }
+  }
+  .pnb-mini-input { font-size: 0.72rem; padding: 3px 5px; }
+  .pnb-save-row-btn, .pnb-del-row-btn { font-size: 0.68rem; padding: 2px 7px; }
+  .pnb-pkg-footer-total { font-size: 0.8rem; span { font-size: 0.95rem; } }
+}
 .pnb-close-confirm-body {
   p { margin: 0 0 10px; font-size: 0.88rem; color: #1e293b; line-height: 1.5; }
 }

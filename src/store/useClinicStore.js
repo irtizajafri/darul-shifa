@@ -764,6 +764,35 @@ export const useClinicStore = create((set) => ({
     return request(`/admission/panel-billing/${admissionId}/items/bulk`, { method: 'POST', body: JSON.stringify({ items }) });
   },
 
+  // ── Panel Billing — OPD (Slip #) side, same "Billing" screen toggled ───────
+  fetchPanelOpdVisitBilling: async (serialNo) => {
+    return request(`/opd-panel-billing/by-serial/${encodeURIComponent(serialNo)}`);
+  },
+
+  searchPanelOpdVisits: async (q) => {
+    return request(`/opd-panel-billing/search?q=${encodeURIComponent(q || '')}`);
+  },
+
+  updatePanelOpdBillingItem: async (itemId, payload) => {
+    return request(`/opd-panel-billing/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  updatePanelOpdBillingHeader: async (opdVisitId, payload) => {
+    return request(`/opd-panel-billing/header/${opdVisitId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  addPanelOpdBillingItem: async (opdVisitId, payload) => {
+    return request(`/opd-panel-billing/${opdVisitId}/items`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  deletePanelOpdBillingItem: async (itemId) => {
+    return request(`/opd-panel-billing/items/${itemId}`, { method: 'DELETE' });
+  },
+
+  addPanelOpdBillingItemsBulk: async (opdVisitId, items) => {
+    return request(`/opd-panel-billing/${opdVisitId}/items/bulk`, { method: 'POST', body: JSON.stringify({ items }) });
+  },
+
   // ── Panels > Panel Cheque Transaction ────────────────────────────────────────
   fetchPanelChequeSummary: async ({ from, to } = {}) => {
     const q = new URLSearchParams();
@@ -809,6 +838,21 @@ export const useClinicStore = create((set) => ({
   fetchPanelMedicineIssuanceReport: async (params) => {
     const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
     return request(`/panel-medicine-issuance/report?${q.toString()}`);
+  },
+
+  // ── Panels > Transaction > Medicine Issuance — bulk import (own table,
+  // separate from Reports > Medicine Report above) ───────────────────────────
+  previewPanelMedicineIssuanceTxnImport: async (payload) => {
+    return request('/panel-medicine-issuance-txn/import/preview', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  confirmPanelMedicineIssuanceTxnImportBatch: async (admissions, companyNameMap) => {
+    return request('/panel-medicine-issuance-txn/import/confirm', { method: 'POST', body: JSON.stringify({ admissions, companyNameMap }) });
+  },
+
+  fetchPanelMedicineIssuanceTxnReport: async (params) => {
+    const q = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+    return request(`/panel-medicine-issuance-txn/report?${q.toString()}`);
   },
 
   // ── Panels > Reports > OPD Admit Report — bulk import ───────────────────────

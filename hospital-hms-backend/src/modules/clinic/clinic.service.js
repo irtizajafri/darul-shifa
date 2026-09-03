@@ -2367,6 +2367,330 @@ async function addPanelBillingItemsBulk(admissionId, items) {
   });
 }
 
+// ─── Panels > Transaction > Billing — OPD (Slip #) side ────────────────────────
+// Same screen as Admission Billing above (see getPanelAdmissionBilling), just
+// toggled to look up a panel OPD visit by Slip # instead of an admission by
+// Admission #. Deliberately much simpler than the admission version — an OPD
+// visit has no Ward History and no separate "live Provisional Bill" of its
+// own to pull from/protect (no override/exclude machinery needed here): its
+// only "live" source is its own ClinicOpdVisitDoctor rows, seeded once into
+// ClinicPanelOpdBillingItem exactly like Admission's Room Charges/bill-head
+// rows are, then every row (seeded or manually added) is just a plain
+// editable/deletable snapshot row from there on.
+
+async function searchPanelOpdVisits(q) {
+  const term = String(q || '').trim();
+  const rows = await prisma.clinicOpdVisit.findMany({
+    where: {
+      paymentType: { equals: 'panel', mode: 'insensitive' },
+      status: 'active',
+      ...(term
+        ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+        : {}),
+    },
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  return rows.map((v) => ({
+    id: v.id,
+    admissionNo: v.serialNo, // same key name as searchPanelAdmissions — frontend lookup modal reuses its row shape
+    patientName: v.patientName,
+    createdAt: v.createdAt,
+    status: v.status,
+  }));
+}
+
+async function getPanelOpdVisitBilling(serialNo) {
+  const visit = await prisma.clinicOpdVisit.findFirst({
+    where: { serialNo: String(serialNo).trim() },
+    include: { doctors: { include: { doctor: true, subDept: true } } },
+  });
+  if (!visit) throw Object.assign(new Error('Is Slip # ka koi record nahi mila'), { status: 404 });
+  if (String(visit.paymentType || '').toLowerCase() !== 'panel') {
+    throw Object.assign(new Error('Yeh visit Panel category ka nahi hai'), { status: 400 });
+  }
+
+  const [panelCompany, panelEmployee] = await Promise.all([
+    visit.panelCompanyId ? prisma.clinicPanelCompany.findUnique({ where: { id: visit.panelCompanyId } }) : null,
+    visit.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: visit.panelEmployeeId } }) : null,
+  ]);
+
+  // Seed source: the visit's own real service rows — one per doctor/subDept
+  // (a visit can have more than one, e.g. two sub-departments in one slip).
+  // `kind` reuses the exact same MERGE_HEAD_KIND map Admission Billing uses
+  // (keyed off the visit's own department), so a manual Medicine/Lab/
+  // Radiology/Ultrasound add later folds into the right head consistently.
+  const computedRows = visit.doctors.map((d) => ({
+    billHeadId: null, code: null, description: d.subDept?.name || visit.department || 'Service',
+    kind: MERGE_HEAD_KIND[visit.department] || 'item',
+    qty: d.quantity || 1, rate: d.quantity ? d.amount / d.quantity : d.amount, amount: d.amount, remarks: null,
+  }));
+
+  const livePatientName = visit.patientName;
+  let header = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: visit.id } });
+  if (!header) {
+    header = await prisma.clinicPanelOpdBillingHeader.create({
+      data: {
+        opdVisitId: visit.id,
+        visitDate: visit.createdAt,
+        billingDate: null,
+        patientName: livePatientName || null,
+        consultantName: visit.doctors[0]?.doctor?.name || null,
+        diagnosis: null,
+      },
+    });
+  }
+
+  let snapshotRows = await prisma.clinicPanelOpdBillingItem.findMany({ where: { opdVisitId: visit.id }, orderBy: { sortOrder: 'asc' } });
+  if (snapshotRows.length === 0 && computedRows.length) {
+    await prisma.clinicPanelOpdBillingItem.createMany({
+      data: computedRows.map((r, i) => ({
+        opdVisitId: visit.id, billHeadId: r.billHeadId, code: r.code, description: r.description,
+        kind: r.kind, qty: r.qty, rate: r.rate, amount: r.amount, remarks: r.remarks,
+        date: header.visitDate, sortOrder: i,
+      })),
+    });
+    snapshotRows = await prisma.clinicPanelOpdBillingItem.findMany({ where: { opdVisitId: visit.id }, orderBy: { sortOrder: 'asc' } });
+  }
+
+  // Manual Medicine/Laboratory/Radiology/Ultrasound adds (groupInto set) roll
+  // into their head row's Amount — same grouping pass as getPanelAdmissionBilling.
+  const groupedRows = snapshotRows.filter((r) => r.groupInto);
+  const ungroupedRows = snapshotRows.filter((r) => !r.groupInto);
+  const groupedByHead = {};
+  groupedRows.forEach((r) => { (groupedByHead[r.groupInto] ||= []).push(r); });
+
+  const rows = ungroupedRows.map((r) => {
+    const extra = groupedByHead[r.description];
+    if (!extra) return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind: r.kind, qty: r.qty, rate: r.rate, amount: r.amount, remarks: r.remarks, date: r.date };
+    const extraQty = extra.reduce((s, x) => s + x.qty, 0);
+    const extraAmount = extra.reduce((s, x) => s + x.amount, 0);
+    const qty = r.qty + extraQty;
+    const amount = r.amount + extraAmount;
+    return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind: r.kind, qty, rate: qty ? amount / qty : 0, amount, remarks: r.remarks, date: r.date };
+  });
+  Object.entries(groupedByHead).forEach(([head, extra]) => {
+    if (rows.some((r) => r.description === head)) return;
+    const qty = extra.reduce((s, x) => s + x.qty, 0);
+    const amount = extra.reduce((s, x) => s + x.amount, 0);
+    rows.push({ id: extra[0].id, billHeadId: null, code: null, description: head, kind: MERGE_HEAD_KIND[head] || 'item', qty, rate: qty ? amount / qty : 0, amount, remarks: null, date: extra[0].date });
+  });
+
+  const billingAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  // No live pull for OPD (see comment above) — every Medicine/Lab/Radiology/
+  // Ultrasound row is a manual add, always `manual-` prefixed, so the shared
+  // Pharmacy/Diagnostic detail popups treat every OPD row as `isManual` and
+  // never take the override/exclude path (that's Admission-only).
+  const manualPharmacyRows = groupedByHead.Medicine?.map((r) => ({
+    id: `manual-${r.id}`, source: 'manual', storeName: null, date: r.date, medicine: r.description, dosage: r.dosage, qty: r.qty, rate: r.rate, amount: r.amount,
+  })) || [];
+  const manualDiagnosticRows = ['Laboratory', 'Radiology', 'Ultra Sound, Echo & Color Doppler']
+    .flatMap((dept) => (groupedByHead[dept] || []).map((r) => ({
+      id: `manual-${r.id}`, date: r.date, conCode: null, department: dept, particulars: r.description, qty: r.qty, rate: r.rate, amount: r.amount,
+    })));
+
+  const visitDate = header.visitDate;
+  const billingDate = header.billingDate;
+
+  return {
+    admission: {
+      id: visit.id,
+      admissionNo: visit.serialNo, // same key name as the admission response — frontend renders whichever mode it's in
+      sourceType: 'opd',
+      serialNo: formatBillingSno(header.snoSeq, visitDate) || visit.serialNo,
+      snoSeq: header.snoSeq,
+      patientName: header.patientName || livePatientName,
+      status: visit.status,
+      admitDate: visitDate,
+      dischargeDate: billingDate,
+      consultantName: header.consultantName,
+      diagnosis: header.diagnosis,
+      days: 1,
+    },
+    company: panelCompany ? { id: panelCompany.id, code: panelCompany.code, name: panelCompany.name } : null,
+    employee: panelEmployee ? { id: panelEmployee.id, empCode: panelEmployee.empCode, name: panelEmployee.name } : null,
+    rows,
+    pharmacyRows: manualPharmacyRows,
+    diagnosticRows: manualDiagnosticRows,
+    billingAmount,
+  };
+}
+
+// Every row's Date must stay within its visit's Billing header Visit/Billing
+// Date range — same idea as assertDateWithinHeader for Admission Billing.
+async function assertOpdDateWithinHeader(opdVisitId, date) {
+  const header = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: Number(opdVisitId) } });
+  if (!header) return;
+  const d = new Date(date);
+  if (header.visitDate && d < new Date(header.visitDate)) {
+    throw Object.assign(new Error('Date, Visit Date se pehle nahi ho sakti'), { status: 400 });
+  }
+  if (header.billingDate && d > new Date(header.billingDate)) {
+    throw Object.assign(new Error('Date, Billing Date ke baad nahi ho sakti'), { status: 400 });
+  }
+}
+
+async function updatePanelOpdBillingItem(itemId, { qty, rate, date, remarks, dosage }) {
+  const item = await prisma.clinicPanelOpdBillingItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Row not found'), { status: 404 });
+
+  const q = qty != null ? Number(qty) : item.qty;
+  const r = rate != null ? Number(rate) : item.rate;
+  if (!Number.isFinite(q) || q < 0) throw Object.assign(new Error('Qty valid number honi chahiye'), { status: 400 });
+  if (!Number.isFinite(r) || r < 0) throw Object.assign(new Error('Rate valid number honi chahiye'), { status: 400 });
+
+  let newDate = item.date;
+  if (date !== undefined) {
+    newDate = date ? new Date(date) : null;
+    if (date && Number.isNaN(newDate.getTime())) throw Object.assign(new Error('Date invalid hai'), { status: 400 });
+    if (newDate) await assertOpdDateWithinHeader(item.opdVisitId, newDate);
+  }
+
+  return prisma.clinicPanelOpdBillingItem.update({
+    where: { id: Number(itemId) },
+    data: {
+      qty: q, rate: r, amount: q * r,
+      ...(date !== undefined ? { date: newDate } : {}),
+      ...(remarks !== undefined ? { remarks: remarks?.trim() || null } : {}),
+      ...(dosage !== undefined ? { dosage: dosage?.trim() || null } : {}),
+    },
+  });
+}
+
+async function updatePanelOpdBillingHeader(opdVisitId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq }) {
+  const header = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: Number(opdVisitId) } });
+  if (!header) throw Object.assign(new Error('Billing header not found — pehle Billing open karo'), { status: 404 });
+
+  // Frontend keeps sending the same admitDate/dischargeDate field names
+  // (shared component with Admission Billing) — mapped here onto
+  // visitDate/billingDate.
+  const newVisitDate = admitDate !== undefined ? (admitDate ? new Date(admitDate) : null) : header.visitDate;
+  const newBillingDate = dischargeDate !== undefined ? (dischargeDate ? new Date(dischargeDate) : null) : header.billingDate;
+  if (admitDate && Number.isNaN(newVisitDate?.getTime())) throw Object.assign(new Error('Visit Date invalid hai'), { status: 400 });
+  if (dischargeDate && Number.isNaN(newBillingDate?.getTime())) throw Object.assign(new Error('Billing Date invalid hai'), { status: 400 });
+  if (newVisitDate && newBillingDate && newBillingDate < newVisitDate) {
+    throw Object.assign(new Error('Billing Date, Visit Date se pehle nahi ho sakti'), { status: 400 });
+  }
+
+  if (snoSeq !== undefined && snoSeq && !/^\d{2}$/.test(snoSeq)) {
+    throw Object.assign(new Error('Sno sirf 2-digit number hona chahiye (e.g. 01)'), { status: 400 });
+  }
+
+  return prisma.clinicPanelOpdBillingHeader.update({
+    where: { opdVisitId: Number(opdVisitId) },
+    data: {
+      visitDate: newVisitDate,
+      billingDate: newBillingDate,
+      ...(patientName !== undefined ? { patientName: patientName?.trim() || null } : {}),
+      ...(consultantName !== undefined ? { consultantName: consultantName?.trim() || null } : {}),
+      ...(diagnosis !== undefined ? { diagnosis: diagnosis?.trim() || null } : {}),
+      ...(snoSeq !== undefined ? { snoSeq: snoSeq || null } : {}),
+    },
+  });
+}
+
+async function addPanelOpdBillingItem(opdVisitId, { description, qty, rate, date, remarks, mergeInto, dosage }) {
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(opdVisitId) } });
+  if (!visit) throw Object.assign(new Error('Visit not found'), { status: 404 });
+  if (!description?.trim()) throw Object.assign(new Error('Description zaroori hai'), { status: 400 });
+  const q = Number(qty);
+  const r = Number(rate);
+  if (!Number.isFinite(q) || q <= 0) throw Object.assign(new Error('Qty valid number honi chahiye'), { status: 400 });
+  if (!Number.isFinite(r) || r < 0) throw Object.assign(new Error('Rate valid number honi chahiye'), { status: 400 });
+
+  const header = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: Number(opdVisitId) } });
+  const itemDate = date ? new Date(date) : header?.visitDate || null;
+  if (date && Number.isNaN(itemDate.getTime())) throw Object.assign(new Error('Date invalid hai'), { status: 400 });
+  if (itemDate) await assertOpdDateWithinHeader(opdVisitId, itemDate);
+
+  const isGrouped = mergeInto && MERGE_HEAD_KIND[mergeInto];
+
+  const agg = await prisma.clinicPanelOpdBillingItem.aggregate({
+    where: { opdVisitId: Number(opdVisitId) },
+    _max: { sortOrder: true },
+  });
+
+  return prisma.clinicPanelOpdBillingItem.create({
+    data: {
+      opdVisitId: Number(opdVisitId),
+      description: description.trim(),
+      kind: isGrouped ? MERGE_HEAD_KIND[mergeInto] : 'custom',
+      groupInto: isGrouped ? mergeInto : null,
+      qty: q,
+      rate: r,
+      amount: q * r,
+      date: itemDate,
+      remarks: remarks?.trim() || null,
+      dosage: dosage?.trim() || null,
+      sortOrder: (agg._max.sortOrder ?? -1) + 1,
+    },
+  });
+}
+
+async function deletePanelOpdBillingItem(itemId) {
+  const item = await prisma.clinicPanelOpdBillingItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Row not found'), { status: 404 });
+  // Unlike Admission Billing, OPD has no protected "live" head rows to guard
+  // against deletion — every row here (seeded from the visit's own
+  // ClinicOpdVisitDoctor rows, or manually added) is a plain editable
+  // snapshot row, so all of them are deletable.
+  await prisma.clinicPanelOpdBillingItem.delete({ where: { id: Number(itemId) } });
+  return { deleted: true };
+}
+
+async function addPanelOpdBillingItemsBulk(opdVisitId, items) {
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(opdVisitId) } });
+  if (!visit) throw Object.assign(new Error('Visit not found'), { status: 404 });
+  if (!Array.isArray(items) || !items.length) throw Object.assign(new Error('Koi item select nahi kiya'), { status: 400 });
+
+  const header = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: Number(opdVisitId) } });
+
+  const agg = await prisma.clinicPanelOpdBillingItem.aggregate({
+    where: { opdVisitId: Number(opdVisitId) },
+    _max: { sortOrder: true },
+  });
+  let nextSort = (agg._max.sortOrder ?? -1) + 1;
+
+  const rows = items.map((it) => {
+    const description = String(it.description || '').trim();
+    const qty = Number(it.qty) || 1;
+    const rate = Number(it.rate) || 0;
+    if (!description) throw Object.assign(new Error('Description zaroori hai'), { status: 400 });
+    const date = it.date ? new Date(it.date) : header?.visitDate || null;
+    if (it.date && Number.isNaN(date.getTime())) throw Object.assign(new Error(`Date invalid hai (${description})`), { status: 400 });
+    if (date && header) {
+      if (header.visitDate && date < new Date(header.visitDate)) {
+        throw Object.assign(new Error(`${description}: Date, Visit Date se pehle nahi ho sakti`), { status: 400 });
+      }
+      if (header.billingDate && date > new Date(header.billingDate)) {
+        throw Object.assign(new Error(`${description}: Date, Billing Date ke baad nahi ho sakti`), { status: 400 });
+      }
+    }
+    const isGrouped = it.mergeInto && MERGE_HEAD_KIND[it.mergeInto];
+    return {
+      opdVisitId: Number(opdVisitId),
+      description,
+      kind: isGrouped ? MERGE_HEAD_KIND[it.mergeInto] : 'custom',
+      groupInto: isGrouped ? it.mergeInto : null,
+      qty,
+      rate,
+      amount: qty * rate,
+      date,
+      remarks: it.remarks?.trim() || null,
+      dosage: it.dosage?.trim() || null,
+      sortOrder: nextSort++,
+    };
+  });
+
+  const firstSort = nextSort - rows.length;
+  await prisma.clinicPanelOpdBillingItem.createMany({ data: rows });
+  return prisma.clinicPanelOpdBillingItem.findMany({
+    where: { opdVisitId: Number(opdVisitId), sortOrder: { gte: firstSort } },
+    orderBy: { sortOrder: 'asc' },
+  });
+}
+
 // ─── Panels > Parameter > Bill Head (Panel-only, separate from ClinicBillHead) ──
 
 async function getPanelBillHeads() {
@@ -2497,11 +2821,24 @@ async function getDischargeCertificate(admissionId) {
 async function saveDischargeCertificate(admissionId, {
   diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
   dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
+  dischargeDate,
 }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
   if (!DISCHARGE_REASONS.includes(reasonOfDischarge)) {
     throw Object.assign(new Error('Reason of Discharge zaroori hai'), { status: 400 });
+  }
+  // Editable/mandatory — was always server "now" before, so a discharge
+  // being entered late (or backdated on purpose) had no way to record the
+  // actual discharge date; staff can now open it to any date, including
+  // one in the past, but never before the patient was even admitted.
+  if (!dischargeDate) throw Object.assign(new Error('Discharge Date zaroori hai'), { status: 400 });
+  const parsedDischargeDate = new Date(dischargeDate);
+  if (Number.isNaN(parsedDischargeDate.getTime())) {
+    throw Object.assign(new Error('Discharge Date invalid hai'), { status: 400 });
+  }
+  if (parsedDischargeDate < admission.createdAt) {
+    throw Object.assign(new Error('Discharge Date, Admission Date se pehle nahi ho sakti'), { status: 400 });
   }
 
   const data = {
@@ -2512,6 +2849,7 @@ async function saveDischargeCertificate(admissionId, {
     dischargeMedicine: dischargeMedicine?.trim() || null,
     followUp: followUp?.trim() || null,
     medicalOfficer: medicalOfficer?.trim() || null,
+    dischargeDate: parsedDischargeDate,
   };
 
   const saved = await prisma.clinicDischargeCertificate.upsert({
@@ -2520,7 +2858,6 @@ async function saveDischargeCertificate(admissionId, {
     create: {
       admissionId: Number(admissionId),
       ...data,
-      dischargeDate: new Date(),
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
     },
@@ -3250,16 +3587,19 @@ async function getPanelChequeSummary({ from, to }) {
     },
     select: { id: true, panelCompanyId: true, panelBillingHeader: { select: { dischargeDate: true } } },
   });
-  if (!admissions.length) return { monthRows: [], companyRows: [] };
-
+  // No early-return-if-empty here anymore — OPD visits (merged in below) can
+  // still have data for this range even when there are zero matching
+  // admissions, so both sources always get a chance to run.
   const admissionIds = admissions.map((a) => a.id);
   const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
 
-  const [amountRows, receiptItems, companies] = await Promise.all([
-    prisma.clinicPanelBillingItem.groupBy({ by: ['admissionId'], where: { admissionId: { in: admissionIds } }, _sum: { amount: true } }),
-    prisma.clinicPanelChequeReceiptItem.findMany({ where: { admissionId: { in: admissionIds } } }),
-    companyIds.length ? prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } }) : [],
-  ]);
+  const [amountRows, receiptItems, companies] = admissionIds.length
+    ? await Promise.all([
+        prisma.clinicPanelBillingItem.groupBy({ by: ['admissionId'], where: { admissionId: { in: admissionIds } }, _sum: { amount: true } }),
+        prisma.clinicPanelChequeReceiptItem.findMany({ where: { admissionId: { in: admissionIds } } }),
+        companyIds.length ? prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } }) : [],
+      ])
+    : [[], [], []];
 
   const amountByAdmission = {};
   amountRows.forEach((r) => { amountByAdmission[r.admissionId] = Number(r._sum.amount) || 0; });
@@ -3308,6 +3648,76 @@ async function getPanelChequeSummary({ from, to }) {
     companyMap[cKey].ipdAmt += ipdAmt;
     companyMap[cKey].received += received;
     companyMap[cKey].deduction += deduction;
+  }
+
+  // Panel OPD visits (Slip #) merge into the exact same month/company
+  // buckets, keyed by their own Billing Date (ClinicPanelOpdBillingHeader.
+  // billingDate — same role as panelBillingHeader.dischargeDate above) —
+  // same "already-cheque-received amount drops out of Total, only shows via
+  // Received/Deduction" rule.
+  const opdVisits = await prisma.clinicOpdVisit.findMany({
+    where: {
+      paymentType: { equals: 'panel', mode: 'insensitive' },
+      status: 'active',
+      panelBillingHeader: {
+        billingDate: Object.keys(dischargeDateFilter).length ? dischargeDateFilter : { not: null },
+      },
+    },
+    select: { id: true, panelCompanyId: true, panelBillingHeader: { select: { billingDate: true } } },
+  });
+
+  if (opdVisits.length) {
+    const opdVisitIds = opdVisits.map((v) => v.id);
+    const opdCompanyIds = [...new Set(opdVisits.map((v) => v.panelCompanyId).filter(Boolean))];
+
+    const [opdAmountRows, opdReceiptItems, opdCompanies] = await Promise.all([
+      prisma.clinicPanelOpdBillingItem.groupBy({ by: ['opdVisitId'], where: { opdVisitId: { in: opdVisitIds } }, _sum: { amount: true } }),
+      prisma.clinicPanelChequeReceiptOpdItem.findMany({ where: { opdVisitId: { in: opdVisitIds } } }),
+      opdCompanyIds.length ? prisma.clinicPanelCompany.findMany({ where: { id: { in: opdCompanyIds } } }) : [],
+    ]);
+
+    const amountByOpdVisit = {};
+    opdAmountRows.forEach((r) => { amountByOpdVisit[r.opdVisitId] = Number(r._sum.amount) || 0; });
+    const receiptByOpdVisit = {};
+    opdReceiptItems.forEach((r) => { receiptByOpdVisit[r.opdVisitId] = r; });
+    const opdCompanyById = {};
+    opdCompanies.forEach((c) => { opdCompanyById[c.id] = c; });
+    companies.forEach((c) => { opdCompanyById[c.id] = c; }); // reuse admission-side lookups already fetched above
+
+    for (const v of opdVisits) {
+      const d = v.panelBillingHeader?.billingDate;
+      if (!d) continue;
+      const dt = new Date(d);
+      const year = dt.getFullYear();
+      const month = dt.getMonth() + 1;
+      const receipt = receiptByOpdVisit[v.id];
+      const opdAmt = receipt ? 0 : (amountByOpdVisit[v.id] || 0);
+      const received = receipt ? Number(receipt.receivedShare) || 0 : 0;
+      const deduction = receipt ? Number(receipt.deductionShare) || 0 : 0;
+
+      const mKey = `${year}-${month}`;
+      if (!monthMap[mKey]) {
+        monthMap[mKey] = { monthName: CHEQUE_MONTH_NAMES[month - 1], month, year, ipdAmt: 0, opdAmt: 0, received: 0, deduction: 0 };
+      }
+      monthMap[mKey].opdAmt += opdAmt;
+      monthMap[mKey].received += received;
+      monthMap[mKey].deduction += deduction;
+
+      const company = opdCompanyById[v.panelCompanyId];
+      const cKey = `${year}-${month}-${v.panelCompanyId || 'none'}`;
+      if (!companyMap[cKey]) {
+        companyMap[cKey] = {
+          monthName: CHEQUE_MONTH_NAMES[month - 1], month, year,
+          panelCompanyId: v.panelCompanyId || null,
+          company: company ? company.name : 'Unknown',
+          companyCode: company ? company.code : null,
+          ipdAmt: 0, opdAmt: 0, received: 0, deduction: 0,
+        };
+      }
+      companyMap[cKey].opdAmt += opdAmt;
+      companyMap[cKey].received += received;
+      companyMap[cKey].deduction += deduction;
+    }
   }
 
   // Balance = the still-pending total — ipdAmt/opdAmt above already exclude
@@ -3483,35 +3893,82 @@ async function getUnpaidPanelAdmissions({ panelCompanyId, month, year }) {
       panelBillingHeader: { select: { patientName: true } },
     },
   });
-  if (!admissions.length) return [];
 
   const admissionIds = admissions.map((a) => a.id);
-  const [amountRows, receiptItems] = await Promise.all([
-    prisma.clinicPanelBillingItem.groupBy({ by: ['admissionId'], where: { admissionId: { in: admissionIds } }, _sum: { amount: true } }),
-    prisma.clinicPanelChequeReceiptItem.findMany({ where: { admissionId: { in: admissionIds } }, select: { admissionId: true } }),
-  ]);
+  const [amountRows, receiptItems] = admissionIds.length
+    ? await Promise.all([
+        prisma.clinicPanelBillingItem.groupBy({ by: ['admissionId'], where: { admissionId: { in: admissionIds } }, _sum: { amount: true } }),
+        prisma.clinicPanelChequeReceiptItem.findMany({ where: { admissionId: { in: admissionIds } }, select: { admissionId: true } }),
+      ])
+    : [[], []];
   const amountByAdmission = {};
   amountRows.forEach((r) => { amountByAdmission[r.admissionId] = Number(r._sum.amount) || 0; });
   const paidIds = new Set(receiptItems.map((r) => r.admissionId));
 
-  return admissions
+  const admissionRows = admissions
     .filter((a) => !paidIds.has(a.id))
     .map((a) => ({
+      id: `adm-${a.id}`,
       admissionId: a.id,
+      opdVisitId: null,
       billType: 'Admission',
       number: a.admissionNo,
       patName: a.panelBillingHeader?.patientName || `${a.patientTitle || ''} ${a.patientName}`.trim(),
       amount: amountByAdmission[a.id] || 0,
-    }))
-    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
+    }));
+
+  // Panel OPD visits (Slip #) for the same company/Billing Month — same
+  // checklist, tagged with their own Bill Type so the existing "Bill Type"
+  // column already tells them apart (see receivePanelCheque).
+  const opdVisits = await prisma.clinicOpdVisit.findMany({
+    where: {
+      paymentType: { equals: 'panel', mode: 'insensitive' },
+      status: 'active',
+      panelCompanyId: compId,
+      panelBillingHeader: { billingDate: { gte: start, lt: end } },
+    },
+    select: {
+      id: true, serialNo: true, patientName: true,
+      panelBillingHeader: { select: { patientName: true } },
+    },
+  });
+
+  const opdVisitIds = opdVisits.map((v) => v.id);
+  const [opdAmountRows, opdReceiptItems] = opdVisitIds.length
+    ? await Promise.all([
+        prisma.clinicPanelOpdBillingItem.groupBy({ by: ['opdVisitId'], where: { opdVisitId: { in: opdVisitIds } }, _sum: { amount: true } }),
+        prisma.clinicPanelChequeReceiptOpdItem.findMany({ where: { opdVisitId: { in: opdVisitIds } }, select: { opdVisitId: true } }),
+      ])
+    : [[], []];
+  const amountByOpdVisit = {};
+  opdAmountRows.forEach((r) => { amountByOpdVisit[r.opdVisitId] = Number(r._sum.amount) || 0; });
+  const paidOpdIds = new Set(opdReceiptItems.map((r) => r.opdVisitId));
+
+  const opdRows = opdVisits
+    .filter((v) => !paidOpdIds.has(v.id))
+    .map((v) => ({
+      id: `opd-${v.id}`,
+      admissionId: null,
+      opdVisitId: v.id,
+      billType: 'OPD Slip',
+      number: v.serialNo,
+      patName: v.panelBillingHeader?.patientName || v.patientName,
+      amount: amountByOpdVisit[v.id] || 0,
+    }));
+
+  return [...admissionRows, ...opdRows].sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
 }
 
 // Save a cheque received from a Panel company against a chosen batch of its
-// posted admissions for one Billing Month — locks in each admission's
-// Billing amount and its proportional share of Received/Deduction (based on
-// the typed receivedAmount vs the batch's combined amount). Every covered
-// admission then permanently drops out of getUnpaidPanelAdmissions.
-async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, createdByUserId, createdByName }) {
+// posted admissions AND/OR panel OPD visits (Slip #) for one Billing Month —
+// locks in each bill's Billing amount and its proportional share of
+// Received/Deduction (based on the typed receivedAmount vs the batch's
+// combined amount, admissions + OPD slips together — real insurance
+// practice, one cheque settles everything due for that company/month).
+// Every covered admission/visit then permanently drops out of
+// getUnpaidPanelAdmissions. `opdVisitIds` is optional — omitting it behaves
+// exactly as before this was added (admissions-only).
+async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds, createdByUserId, createdByName }) {
   const compId = Number(panelCompanyId);
   const m = Number(billingMonth);
   const y = Number(billingYear);
@@ -3520,29 +3977,50 @@ async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, c
   if (!chequeNo?.trim()) throw Object.assign(new Error('Cheque # zaroori hai'), { status: 400 });
   if (!chequeDate) throw Object.assign(new Error('Cheque Date zaroori hai'), { status: 400 });
   const ids = Array.isArray(admissionIds) ? [...new Set(admissionIds.map(Number).filter(Boolean))] : [];
-  if (!ids.length) throw Object.assign(new Error('Kam az kam ek bill select karo'), { status: 400 });
+  const opdIds = Array.isArray(opdVisitIds) ? [...new Set(opdVisitIds.map(Number).filter(Boolean))] : [];
+  if (!ids.length && !opdIds.length) throw Object.assign(new Error('Kam az kam ek bill select karo'), { status: 400 });
   const received = Number(receivedAmount);
   if (!Number.isFinite(received) || received < 0) throw Object.assign(new Error('Amount valid number honi chahiye'), { status: 400 });
   const chequeDt = new Date(chequeDate);
   if (Number.isNaN(chequeDt.getTime())) throw Object.assign(new Error('Cheque Date invalid hai'), { status: 400 });
 
-  const admissions = await prisma.clinicAdmission.findMany({
-    where: { id: { in: ids }, panelCompanyId: compId, patientCategory: 'panel', status: 'closed' },
-  });
+  const admissions = ids.length
+    ? await prisma.clinicAdmission.findMany({
+        where: { id: { in: ids }, panelCompanyId: compId, patientCategory: 'panel', status: 'closed' },
+      })
+    : [];
   if (admissions.length !== ids.length) {
     throw Object.assign(new Error('Kuch selected bills is company/status se match nahi karte'), { status: 400 });
   }
 
-  const already = await prisma.clinicPanelChequeReceiptItem.findMany({ where: { admissionId: { in: ids } } });
-  if (already.length) {
+  const opdVisits = opdIds.length
+    ? await prisma.clinicOpdVisit.findMany({
+        where: { id: { in: opdIds }, panelCompanyId: compId, paymentType: { equals: 'panel', mode: 'insensitive' }, status: 'active' },
+      })
+    : [];
+  if (opdVisits.length !== opdIds.length) {
+    throw Object.assign(new Error('Kuch selected OPD slips is company/status se match nahi karte'), { status: 400 });
+  }
+
+  const [already, alreadyOpd] = await Promise.all([
+    ids.length ? prisma.clinicPanelChequeReceiptItem.findMany({ where: { admissionId: { in: ids } } }) : [],
+    opdIds.length ? prisma.clinicPanelChequeReceiptOpdItem.findMany({ where: { opdVisitId: { in: opdIds } } }) : [],
+  ]);
+  if (already.length || alreadyOpd.length) {
     throw Object.assign(new Error('Kuch selected bills pehle se kisi cheque mein receive ho chuke hain'), { status: 409 });
   }
 
-  const amountRows = await prisma.clinicPanelBillingItem.groupBy({ by: ['admissionId'], where: { admissionId: { in: ids } }, _sum: { amount: true } });
+  const [amountRows, opdAmountRows] = await Promise.all([
+    ids.length ? prisma.clinicPanelBillingItem.groupBy({ by: ['admissionId'], where: { admissionId: { in: ids } }, _sum: { amount: true } }) : [],
+    opdIds.length ? prisma.clinicPanelOpdBillingItem.groupBy({ by: ['opdVisitId'], where: { opdVisitId: { in: opdIds } }, _sum: { amount: true } }) : [],
+  ]);
   const amountByAdmission = {};
   amountRows.forEach((r) => { amountByAdmission[r.admissionId] = Number(r._sum.amount) || 0; });
+  const amountByOpdVisit = {};
+  opdAmountRows.forEach((r) => { amountByOpdVisit[r.opdVisitId] = Number(r._sum.amount) || 0; });
 
-  const totalAmount = ids.reduce((s, id) => s + (amountByAdmission[id] || 0), 0);
+  const totalAmount = ids.reduce((s, id) => s + (amountByAdmission[id] || 0), 0)
+    + opdIds.reduce((s, id) => s + (amountByOpdVisit[id] || 0), 0);
   const deduction = totalAmount - received;
 
   return prisma.clinicPanelChequeReceipt.create({
@@ -3564,8 +4042,15 @@ async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, c
           return { admissionId: id, amount: amt, receivedShare: received * share, deductionShare: deduction * share };
         }),
       },
+      opdItems: {
+        create: opdIds.map((id) => {
+          const amt = amountByOpdVisit[id] || 0;
+          const share = totalAmount > 0 ? amt / totalAmount : 0;
+          return { opdVisitId: id, amount: amt, receivedShare: received * share, deductionShare: deduction * share };
+        }),
+      },
     },
-    include: { items: true },
+    include: { items: true, opdItems: true },
   });
 }
 
@@ -3974,6 +4459,219 @@ async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType
   // patient block (with its own header info + TOTAL) per admission that had
   // medicine on that day.
   const dayMap = new Map(); // 'YYYY-MM-DD' -> [{ admission, item }]
+  admissions.forEach((a) => {
+    a.items.forEach((item) => {
+      const d = item.medDate || a.admitDate;
+      const dayKey = new Date(d).toISOString().slice(0, 10);
+      if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
+      dayMap.get(dayKey).push({ admission: a, item });
+    });
+  });
+
+  const days = [...dayMap.entries()]
+    .sort(([x], [y]) => x.localeCompare(y))
+    .map(([dayKey, entries]) => {
+      const byAdmission = new Map();
+      entries.forEach(({ admission, item }) => {
+        if (!byAdmission.has(admission.id)) byAdmission.set(admission.id, { admission, items: [] });
+        byAdmission.get(admission.id).items.push(item);
+      });
+      const patients = [...byAdmission.values()]
+        .map(({ admission: a, items }) => {
+          const patientTotal = items.reduce((s, i) => s + Number(i.amount || 0), 0);
+          return {
+            admissionNo: a.admissionNo,
+            patientName: a.patientName,
+            companyName: companyById.get(a.panelCompanyId)?.name || null,
+            admitDate: a.admitDate,
+            dischargeDate: a.dischargeDate,
+            items: items.map((i, idx) => ({
+              sno: idx + 1, description: i.description, medDate: i.medDate,
+              rate: i.rate, qty: i.qty, amount: i.amount, store: i.store,
+            })),
+            patientTotal,
+          };
+        })
+        .sort((x, y) => x.admissionNo.localeCompare(y.admissionNo));
+      const dayTotal = patients.reduce((s, p) => s + p.patientTotal, 0);
+      return { date: dayKey, patients, dayTotal };
+    });
+
+  const grandTotal = days.reduce((s, d) => s + d.dayTotal, 0);
+  return { mode: 'details', days, grandTotal };
+}
+
+// ─── Panels > Transaction > Medicine Issuance ──────────────────────────────────
+// Exact same "MADICAL ISSUANCE REPORT FOR PANEL" import/report as
+// previewPanelMedicineIssuanceImport/confirmPanelMedicineIssuanceImportBatch/
+// getPanelMedicineIssuanceReport above (same Excel format, same parsing
+// contract from the frontend, same standalone/never-touches-ClinicAdmission
+// principle) — but a fully separate table set
+// (ClinicPanelMedicineIssuanceTxnAdmission/Item), per explicit request to
+// keep this Transaction-side copy independent of the Report-side one.
+
+async function previewPanelMedicineIssuanceTxnImport({ admissionNos, companyNames, totalRows, totalAmount }) {
+  const companies = await prisma.clinicPanelCompany.findMany();
+  const companyByName = {};
+  companies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c; });
+  const unmatchedCompanies = [...new Set((companyNames || []).map((n) => String(n).trim()).filter(Boolean))]
+    .filter((name) => !companyByName[name.toLowerCase()]);
+
+  const uniqueAdmNos = [...new Set((admissionNos || []).map((n) => String(n).trim()).filter(Boolean))];
+  const existing = uniqueAdmNos.length
+    ? await prisma.clinicPanelMedicineIssuanceTxnAdmission.findMany({
+        where: { admissionNo: { in: uniqueAdmNos } },
+        select: { admissionNo: true },
+      })
+    : [];
+  const existingSet = new Set(existing.map((a) => a.admissionNo));
+
+  let willCreate = 0, willRefresh = 0;
+  uniqueAdmNos.forEach((no) => { if (existingSet.has(no)) willRefresh += 1; else willCreate += 1; });
+
+  return {
+    totalAdmissions: uniqueAdmNos.length, willCreate, willRefresh,
+    totalRows: Number(totalRows) || 0, totalAmount: Number(totalAmount) || 0,
+    unmatchedCompanies,
+  };
+}
+
+async function confirmPanelMedicineIssuanceTxnImportBatch(admissions, { companyNameMap } = {}) {
+  if (!Array.isArray(admissions) || !admissions.length) throw Object.assign(new Error('Koi admission nahi mili'), { status: 400 });
+
+  const companies = await prisma.clinicPanelCompany.findMany();
+  const companyByName = {};
+  companies.forEach((c) => { companyByName[c.name.trim().toLowerCase()] = c.id; });
+
+  const storeNamesInBatch = new Set();
+  admissions.forEach((a) => (a.items || []).forEach((it) => {
+    const raw = String(it.store || '').trim();
+    if (!raw) return;
+    const dash = raw.indexOf(' - ');
+    storeNamesInBatch.add((dash !== -1 ? raw.slice(dash + 3) : raw).trim());
+  }));
+  const existingStores = await prisma.clinicPharmacyStore.findMany();
+  const storeByName = new Map(existingStores.map((s) => [s.name.trim().toLowerCase(), s.name]));
+  for (const name of storeNamesInBatch) {
+    if (!name || storeByName.has(name.toLowerCase())) continue;
+    await prisma.clinicPharmacyStore.create({ data: { name } });
+    storeByName.set(name.toLowerCase(), name);
+  }
+  const resolveStoreLabel = (raw) => {
+    const trimmed = String(raw || '').trim();
+    if (!trimmed) return null;
+    const dash = trimmed.indexOf(' - ');
+    const name = (dash !== -1 ? trimmed.slice(dash + 3) : trimmed).trim();
+    return storeByName.get(name.toLowerCase()) || name || null;
+  };
+
+  const admissionNos = admissions.map((a) => String(a.admissionNo || '').trim()).filter(Boolean);
+  const existing = admissionNos.length
+    ? await prisma.clinicPanelMedicineIssuanceTxnAdmission.findMany({
+        where: { admissionNo: { in: admissionNos } },
+        select: { id: true, admissionNo: true },
+      })
+    : [];
+  const existingByNo = new Map(existing.map((a) => [a.admissionNo, a.id]));
+
+  let imported = 0, refreshed = 0, skipped = 0, itemsCreated = 0;
+  const seenInBatch = new Set();
+
+  for (const adm of admissions) {
+    const no = String(adm.admissionNo || '').trim();
+    if (!no || seenInBatch.has(no) || !Array.isArray(adm.items) || !adm.items.length) { skipped += 1; continue; }
+    seenInBatch.add(no);
+
+    const key = String(adm.companyName || '').trim().toLowerCase();
+    const panelCompanyId = companyByName[key] || (companyNameMap && companyNameMap[key]) || null;
+
+    const admitDt = new Date(adm.admitDate);
+    if (Number.isNaN(admitDt.getTime())) { skipped += 1; continue; }
+    const disDt = adm.dischargeDate ? new Date(adm.dischargeDate) : admitDt;
+
+    const existingId = existingByNo.get(no);
+    let issuanceAdmissionId;
+
+    if (existingId) {
+      issuanceAdmissionId = existingId;
+      await prisma.clinicPanelMedicineIssuanceTxnAdmission.update({
+        where: { id: issuanceAdmissionId },
+        data: { patientName: adm.patientName || null, panelCompanyId, admitDate: admitDt, dischargeDate: disDt },
+      });
+      await prisma.clinicPanelMedicineIssuanceTxnItem.deleteMany({ where: { issuanceAdmissionId } });
+      refreshed += 1;
+    } else {
+      const created = await prisma.clinicPanelMedicineIssuanceTxnAdmission.create({
+        data: { admissionNo: no, patientName: adm.patientName || null, panelCompanyId, admitDate: admitDt, dischargeDate: disDt },
+      });
+      issuanceAdmissionId = created.id;
+      imported += 1;
+    }
+
+    const itemRows = adm.items.map((it, idx) => {
+      const qty = Number(it.qty) || 0;
+      const rate = Number(it.rate) || 0;
+      const medDt = it.medDate ? new Date(it.medDate) : admitDt;
+      return {
+        issuanceAdmissionId,
+        description: String(it.description || '').trim() || 'Medicine',
+        medDate: Number.isNaN(medDt.getTime()) ? admitDt : medDt,
+        qty, rate,
+        amount: Number.isFinite(Number(it.amount)) ? Number(it.amount) : qty * rate,
+        store: resolveStoreLabel(it.store),
+        sortOrder: idx,
+      };
+    });
+    await prisma.clinicPanelMedicineIssuanceTxnItem.createMany({ data: itemRows });
+    itemsCreated += itemRows.length;
+  }
+
+  return { imported, refreshed, skipped, itemsCreated };
+}
+
+async function getPanelMedicineIssuanceTxnReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }) {
+  const where = {};
+  if (scopeMode === 'admission' && admissionNo) {
+    where.admissionNo = String(admissionNo).trim();
+  }
+  if (panelCompanyId && panelCompanyId !== 'ALL') {
+    where.panelCompanyId = Number(panelCompanyId);
+  }
+  if (scopeMode === 'date' && fromDate && toDate) {
+    const field = dateType === 'admission' ? 'admitDate' : 'dischargeDate';
+    where[field] = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59`) };
+  }
+
+  const rows = await prisma.clinicPanelMedicineIssuanceTxnAdmission.findMany({
+    where,
+    include: { items: { orderBy: { medDate: 'asc' } } },
+  });
+  const admissions = rows.filter((a) => a.items.length);
+
+  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
+  const companies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } })
+    : [];
+  const companyById = new Map(companies.map((c) => [c.id, c]));
+
+  if (viewMode === 'summary') {
+    const summaryRows = admissions.map((a) => {
+      const total = a.items.reduce((s, i) => s + Number(i.amount || 0), 0);
+      return {
+        admissionNo: a.admissionNo,
+        patientName: a.patientName,
+        companyName: companyById.get(a.panelCompanyId)?.name || null,
+        admitDate: a.admitDate,
+        dischargeDate: a.dischargeDate,
+        itemCount: a.items.length,
+        total,
+      };
+    }).sort((x, y) => new Date(x.admitDate) - new Date(y.admitDate));
+    const grandTotal = summaryRows.reduce((s, r) => s + r.total, 0);
+    return { mode: 'summary', rows: summaryRows, grandTotal };
+  }
+
+  const dayMap = new Map();
   admissions.forEach((a) => {
     a.items.forEach((item) => {
       const d = item.medDate || a.admitDate;
@@ -7385,6 +8083,9 @@ module.exports = {
   previewPanelMedicineIssuanceImport,
   confirmPanelMedicineIssuanceImportBatch,
   getPanelMedicineIssuanceReport,
+  previewPanelMedicineIssuanceTxnImport,
+  confirmPanelMedicineIssuanceTxnImportBatch,
+  getPanelMedicineIssuanceTxnReport,
   previewPanelAdmitReportImport,
   confirmPanelAdmitReportImportBatch,
   getPanelAdmitReport,
@@ -7400,6 +8101,13 @@ module.exports = {
   excludeLiveDetailItem,
   deletePanelBillingItem,
   addPanelBillingItemsBulk,
+  searchPanelOpdVisits,
+  getPanelOpdVisitBilling,
+  updatePanelOpdBillingItem,
+  updatePanelOpdBillingHeader,
+  addPanelOpdBillingItem,
+  deletePanelOpdBillingItem,
+  addPanelOpdBillingItemsBulk,
   getPanelBillHeads,
   searchPanelBillHeads,
   createPanelBillHead,
