@@ -1236,7 +1236,7 @@ async function createGD(payload) {
   });
 }
 
-async function createGDBatch({ departmentId, items = [], admissionNumber, comment, createdByName }) {
+async function createGDBatch({ departmentId, items = [], admissionNumber, patientName, comment, createdByName }) {
   const deptId = Number(departmentId);
   if (!Number.isFinite(deptId) || deptId <= 0) throw new Error('Invalid departmentId');
   if (!Array.isArray(items) || items.length === 0) throw new Error('items array is required');
@@ -1275,6 +1275,7 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, commen
       status: 'open',
       requestDate: new Date(),
       admissionNumber: admissionNumber ? String(admissionNumber).trim() : null,
+      patientName: patientName ? String(patientName).trim() : null,
       comment: comment ? String(comment).trim() : null,
       createdByName: createdByName ? String(createdByName).trim() : null,
     },
@@ -1470,6 +1471,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
         departmentId: header.departmentId,
         issueDate: issueDate ? new Date(issueDate) : new Date(),
         admissionNumber: header.admissionNumber || null,
+        patientName: header.patientName || null,
         status: 'issued',
         createdByName: createdByName ? String(createdByName).trim() : null,
         ...(parsedIssuedById ? { issuedById: parsedIssuedById } : {}),

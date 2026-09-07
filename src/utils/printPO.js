@@ -138,6 +138,7 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
     ? new Date(row.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
     : '-';
   const admissionNumber = row.admissionNumber || null;
+  const patientName     = row.patientName || null;
   const comment         = row.comment || null;
 
   const tableRows = (row.gdItems || []).map((gi, idx) => {
@@ -207,6 +208,7 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
       <div class="info-value">${department}</div>
     </div>
     ${admissionNumber ? `<div class="info-row"><div class="info-label">Admission No.</div><div class="info-value">${admissionNumber}</div></div>` : ''}
+    ${patientName ? `<div class="info-row"><div class="info-label">Patient Name</div><div class="info-value">${patientName}</div></div>` : ''}
     ${comment ? `<div class="info-row"><div class="info-label">Comment</div><div class="info-value">${comment}</div></div>` : ''}
   </div>
   <table>
@@ -243,6 +245,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
   const gdRef     = row.gdHeader?.code || row.gd?.code || '-';
   const department = row.department?.name || row.gdHeader?.department?.name || '-';
   const admissionNumber = row.admissionNumber || row.gdHeader?.admissionNumber || null;
+  const patientName     = row.patientName || row.gdHeader?.patientName || null;
   const issuedBy  = row.issuedBy ? `${row.issuedBy.firstName} ${row.issuedBy.lastName}` : '-';
   const issueDate  = row.issueDate
     ? new Date(row.issueDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -289,16 +292,16 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
     .title { font-size: 17pt; font-weight: 700; letter-spacing: 0.3px; }
     .gin-meta { text-align: right; font-size: 8pt; line-height: 1.7; }
     .divider { border: none; border-top: 2px solid #aaa; margin-bottom: 7px; }
-    .info-section { border: 1px solid #bbb; margin-bottom: 12px; }
-    .info-row { display: flex; border-bottom: 1px solid #e0e0e0; }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { background: #e8e8e8; padding: 5px 10px; font-weight: 600; font-size: 8pt; white-space: nowrap; border-right: 1px solid #bbb; min-width: 90px; }
-    .info-value { padding: 5px 10px; font-size: 8pt; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    .info-section { display: grid; grid-template-columns: max-content 1fr max-content 1fr; border: 1px solid #bbb; margin-bottom: 12px; }
+    .info-row { display: contents; }
+    .info-label { background: #e8e8e8; padding: 5px 8px; font-weight: 600; font-size: 8pt; white-space: nowrap; border-right: 1px solid #bbb; border-bottom: 1px solid #e0e0e0; }
+    .info-row:nth-child(even) .info-label { border-left: 1px solid #bbb; }
+    .info-value { padding: 5px 8px; font-size: 8pt; border-bottom: 1px solid #e0e0e0; }
+    table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 8px; }
     thead tr { background: #e8e8e8; }
-    th { padding: 5px 3px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 7.5pt; line-height: 1.4; }
-    tbody tr td { border: 1px solid #ddd; padding: 4px 3px; text-align: center; font-size: 7.5pt; }
-    tbody tr td.desc { text-align: left; padding-left: 5px; }
+    th { padding: 3px 2px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 6.8pt; line-height: 1.3; word-wrap: break-word; }
+    tbody tr td { border: 1px solid #ddd; padding: 3px 2px; text-align: center; font-size: 6.8pt; word-wrap: break-word; }
+    tbody tr td.desc { text-align: left; padding-left: 4px; }
     tbody tr:nth-child(even) { background: #f9f9f9; }
     .status-badge { padding: 1px 6px; border-radius: 10px; font-size: 7pt; font-weight: 600; }
     .status-open    { background: #dbeafe; color: #1d4ed8; }
@@ -334,8 +337,18 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
       <div class="info-value">${issuedBy}</div>
     </div>
     ${admissionNumber ? `<div class="info-row"><div class="info-label">Admission No.</div><div class="info-value">${admissionNumber}</div></div>` : ''}
+    ${patientName ? `<div class="info-row"><div class="info-label">Patient Name</div><div class="info-value">${patientName}</div></div>` : ''}
   </div>
   <table>
+    <colgroup>
+      <col style="width:6%">
+      <col style="width:26%">
+      <col style="width:12%">
+      <col style="width:12%">
+      <col style="width:18%">
+      <col style="width:12%">
+      <col style="width:14%">
+    </colgroup>
     <thead>
       <tr>
         <th>S.No</th>
