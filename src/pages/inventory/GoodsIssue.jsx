@@ -5,6 +5,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { ChevronDown, ChevronUp, ClipboardList, Download, FileText, PackageCheck, Pencil, Plus, Printer, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
@@ -155,6 +156,14 @@ export default function GoodsIssue() {
   const [ginIssuedQtys, setGinIssuedQtys] = useState({});
   const [createdGDHeader, setCreatedGDHeader] = useState(null);
 
+  // GIN — fixed-asset lines need specific serial units picked (so the GD's
+  // Location actually lands on the right physical unit, not just the item
+  // in general). { [gdItemId]: AssetInstance[] } / { [gdItemId]: number[] }
+  const [ginUnitOptions, setGinUnitOptions] = useState({});
+  const [ginSelectedUnits, setGinSelectedUnits] = useState({});
+  const [ginUnitPickerFor, setGinUnitPickerFor] = useState(null); // gdItem | null
+  const [ginUnitLoading, setGinUnitLoading] = useState(false);
+
   const [editingGIN, setEditingGIN] = useState(null);
   const [editGINForm, setEditGINForm] = useState({});
   const [editGINQtys, setEditGINQtys] = useState({});
@@ -177,6 +186,7 @@ export default function GoodsIssue() {
     createGDBatch,
     createGIN,
     updateGIN,
+    fetchAssetInstances,
   } = useInventoryStore();
 
   useEffect(() => {
@@ -218,7 +228,7 @@ export default function GoodsIssue() {
 
   useModalKeys({
     active: showGINForm,
-    onEsc: () => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); setGinIssuedById(''); setGinIssuedBySearch(''); },
+    onEsc: () => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); setGinIssuedById(''); setGinIssuedBySearch(''); setGinUnitOptions({}); setGinSelectedUnits({}); },
     onCtrlS: () => handleCreateGIN(fakeEvent, false),
     onCtrlP: () => handleCreateGIN(fakeEvent, true),
   });
@@ -321,7 +331,7 @@ export default function GoodsIssue() {
       return;
     }
     setGdSelectedItems((prev) => [...prev, {
-      itemId: item.id, itemName: item.name, itemCode: item.code,
+      itemId: item.id, itemName: item.name, itemCode: item.code, itemType: item.itemType,
       quantityRequested: '',
       locationEnabled: false, location: '',
     }]);
@@ -387,12 +397,46 @@ export default function GoodsIssue() {
     [gdHeaders, selectedGDHeaderId]
   );
 
+  // Opens the unit-picker for one fixed-asset GD line — fetches its
+  // currently-"working" (available) units lazily, on first open only.
+  const openGinUnitPicker = async (gdItem) => {
+    setGinUnitPickerFor(gdItem);
+    if (ginUnitOptions[gdItem.id]) return;
+    setGinUnitLoading(true);
+    try {
+      const rows = await fetchAssetInstances({ itemId: gdItem.itemId, condition: 'working' });
+      setGinUnitOptions((prev) => ({ ...prev, [gdItem.id]: Array.isArray(rows) ? rows : [] }));
+    } catch {
+      setGinUnitOptions((prev) => ({ ...prev, [gdItem.id]: [] }));
+    } finally {
+      setGinUnitLoading(false);
+    }
+  };
+
+  const toggleGinUnit = (gdItemId, instanceId) => {
+    setGinSelectedUnits((prev) => {
+      const current = prev[gdItemId] || [];
+      const next = current.includes(instanceId) ? current.filter((id) => id !== instanceId) : [...current, instanceId];
+      return { ...prev, [gdItemId]: next };
+    });
+  };
+
   const handleCreateGIN = async (e, andPrint = false) => {
     e.preventDefault();
     if (!selectedGDHeaderId) { toast.error('Please select a GD'); return; }
+    for (const gdItem of (selectedGDHeader?.gdItems || [])) {
+      if (gdItem.item?.itemType !== 'fixed asset') continue;
+      const qty = Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested);
+      const picked = (ginSelectedUnits[gdItem.id] || []).length;
+      if (qty > 0 && picked !== qty) {
+        toast.error(`${gdItem.item?.name || 'Item'}: select exactly ${qty} asset unit(s) (${picked} selected)`);
+        return;
+      }
+    }
     const items = (selectedGDHeader?.gdItems || []).map((gdItem) => ({
       gdItemId: gdItem.id,
       issuedQuantity: Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested),
+      ...(ginSelectedUnits[gdItem.id]?.length ? { assetInstanceIds: ginSelectedUnits[gdItem.id] } : {}),
     }));
     try {
       const newGIN = await createGIN({
@@ -409,6 +453,8 @@ export default function GoodsIssue() {
       setGinIssuedQtys({});
       setGinIssuedById('');
       setGinIssuedBySearch('');
+      setGinUnitOptions({});
+      setGinSelectedUnits({});
       setShowGINForm(false);
       toast.success('GIN created');
       if (andPrint && newGIN) printGINDocument(newGIN, { printedBy: newGIN.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
@@ -842,6 +888,7 @@ export default function GoodsIssue() {
                                 <thead>
                                   <tr className="bg-slate-50 text-slate-500 uppercase border-b border-slate-200">
                                     <th className="px-3 py-1.5 text-left font-semibold">Item</th>
+                                    <th className="px-3 py-1.5 text-left font-semibold">Location</th>
                                     <th className="px-3 py-1.5 text-center font-semibold w-28">Issued Qty</th>
                                   </tr>
                                 </thead>
@@ -849,6 +896,7 @@ export default function GoodsIssue() {
                                   {(editingGIN.ginItems || []).map((gi) => (
                                     <tr key={gi.id}>
                                       <td className="px-3 py-1.5 font-medium text-slate-800">{gi.item?.name || '-'}</td>
+                                      <td className="px-3 py-1.5 text-slate-500">{gi.gdItem?.location || '-'}</td>
                                       <td className="px-3 py-1.5 text-center">
                                         <input
                                           type="number"
@@ -1010,24 +1058,32 @@ export default function GoodsIssue() {
                           />
                         </td>
                         <td className="px-4 py-2">
-                          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none text-slate-500 whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={row.locationEnabled}
-                              onChange={(e) => toggleGdItemLocation(row.itemId, e.target.checked)}
-                              className="w-3.5 h-3.5 accent-blue-600"
-                            />
-                            Add Location
-                          </label>
-                          {row.locationEnabled && (
-                            <input
-                              type="text"
-                              placeholder="e.g. Ward A, Room 3"
-                              value={row.location}
-                              onChange={(e) => updateGdItemLocation(row.itemId, e.target.value)}
-                              className="mt-1.5 px-2 py-1 border border-blue-300 rounded text-xs w-36 focus:outline-none focus:border-blue-500"
-                              autoFocus
-                            />
+                          {row.itemType === 'fixed asset' ? (
+                            <>
+                              <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none text-slate-500 whitespace-nowrap">
+                                <input
+                                  type="checkbox"
+                                  checked={row.locationEnabled}
+                                  onChange={(e) => toggleGdItemLocation(row.itemId, e.target.checked)}
+                                  className="w-3.5 h-3.5 accent-blue-600"
+                                />
+                                Add Location
+                              </label>
+                              {row.locationEnabled && (
+                                <div className="mt-1.5 w-36 [&_[role=combobox]]:py-1 [&_[role=combobox]]:px-2 [&_[role=combobox]]:text-xs">
+                                  <SearchableSelect
+                                    options={masterOptions.locations || []}
+                                    value={row.location}
+                                    onChange={(name) => updateGdItemLocation(row.itemId, name)}
+                                    getKey={(loc) => loc.name}
+                                    getLabel={(loc) => loc.name}
+                                    placeholder="Select Location…"
+                                  />
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
                           )}
                         </td>
                         <td className="px-4 py-2">
@@ -1119,7 +1175,7 @@ export default function GoodsIssue() {
             <div className="flex flex-wrap gap-3 items-end">
               <select
                 value={selectedGDHeaderId}
-                onChange={(e) => { setSelectedGDHeaderId(e.target.value); setGinIssuedQtys({}); }}
+                onChange={(e) => { setSelectedGDHeaderId(e.target.value); setGinIssuedQtys({}); setGinUnitOptions({}); setGinSelectedUnits({}); }}
                 className="px-3 py-2 border border-slate-300 rounded-md text-sm flex-1 min-w-[220px]"
                 required
               >
@@ -1196,6 +1252,8 @@ export default function GoodsIssue() {
                       <th className="px-4 py-2 text-left font-semibold">Stock</th>
                       <th className="px-4 py-2 text-left font-semibold">Demanded</th>
                       <th className="px-4 py-2 text-left font-semibold">Issue Qty</th>
+                      <th className="px-4 py-2 text-left font-semibold">Location</th>
+                      <th className="px-4 py-2 text-left font-semibold">Asset Units</th>
                       <th className="px-4 py-2 text-left font-semibold">Status</th>
                     </tr>
                   </thead>
@@ -1203,6 +1261,9 @@ export default function GoodsIssue() {
                     {(selectedGDHeader.gdItems || []).map((gdItem, idx) => {
                       const stock = Number(gdItem.item?.currentStock || 0);
                       const stockColor = stock <= 0 ? 'text-red-500 bg-red-50' : stock <= 10 ? 'text-orange-500 bg-orange-50' : 'text-green-600 bg-green-50';
+                      const isFixedAsset = gdItem.item?.itemType === 'fixed asset';
+                      const qty = Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested) || 0;
+                      const pickedCount = (ginSelectedUnits[gdItem.id] || []).length;
                       return (
                       <tr key={gdItem.id} className={gdItem.status === 'closed' ? 'opacity-40' : ''}>
                         <td className="px-4 py-2 text-slate-500">{idx + 1}</td>
@@ -1217,10 +1278,32 @@ export default function GoodsIssue() {
                             min="0"
                             placeholder={gdItem.quantityRequested}
                             value={ginIssuedQtys[gdItem.id] ?? ''}
-                            onChange={(e) => setGinIssuedQtys((prev) => ({ ...prev, [gdItem.id]: e.target.value }))}
+                            onChange={(e) => {
+                              setGinIssuedQtys((prev) => ({ ...prev, [gdItem.id]: e.target.value }));
+                              setGinSelectedUnits((prev) => ({ ...prev, [gdItem.id]: [] }));
+                            }}
                             disabled={gdItem.status === 'closed'}
                             className="px-2 py-1 border border-slate-300 rounded text-sm w-24 focus:outline-none focus:border-blue-500 disabled:bg-slate-100"
                           />
+                        </td>
+                        <td className="px-4 py-2 text-slate-600">{gdItem.location || '—'}</td>
+                        <td className="px-4 py-2">
+                          {isFixedAsset ? (
+                            <button
+                              type="button"
+                              onClick={() => openGinUnitPicker(gdItem)}
+                              disabled={gdItem.status === 'closed' || qty <= 0}
+                              className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                pickedCount === qty && qty > 0
+                                  ? 'text-green-700 border-green-300 bg-green-50 hover:bg-green-100'
+                                  : 'text-blue-600 border-blue-200 hover:bg-blue-50'
+                              }`}
+                            >
+                              Select ({pickedCount}/{qty})
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-2 capitalize text-xs">
                           <span className={`px-2 py-0.5 rounded-full font-medium ${gdItem.status === 'closed' ? 'bg-green-100 text-green-700' : gdItem.status === 'partial' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
@@ -1238,11 +1321,67 @@ export default function GoodsIssue() {
             <div className="flex gap-2">
               <Button type="submit" label={loading ? 'Saving...' : 'Save GIN'} disabled={loading || !selectedGDHeaderId} />
               <Button type="button" label={loading ? 'Saving...' : 'Save & Print'} disabled={loading || !selectedGDHeaderId} onClick={(e) => handleCreateGIN(e, true)} />
-              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); setGinIssuedById(''); setGinIssuedBySearch(''); }} />
+              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGINForm(false); setSelectedGDHeaderId(''); setGinIssuedQtys({}); setGinIssuedById(''); setGinIssuedBySearch(''); setGinUnitOptions({}); setGinSelectedUnits({}); }} />
             </div>
           </form>
         </Card>
       )}
+
+      {/* GIN — Select Asset Units (fixed-asset lines only) */}
+      {ginUnitPickerFor && (() => {
+        const gdItem = ginUnitPickerFor;
+        const qty = Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested) || 0;
+        const options = ginUnitOptions[gdItem.id] || [];
+        const selected = ginSelectedUnits[gdItem.id] || [];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
+              <div className="bg-blue-50 border-b border-blue-100 px-5 py-3 flex items-center justify-between shrink-0">
+                <h2 className="text-sm font-bold text-blue-800">Select Asset Units — {gdItem.item?.name}</h2>
+                <button onClick={() => setGinUnitPickerFor(null)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              </div>
+              <div className="px-5 py-3 border-b border-slate-100 text-xs text-slate-500 shrink-0">
+                {selected.length} / {qty} selected — sirf "working" units yahan dikhti hain
+              </div>
+              <div className="overflow-y-auto px-5 py-3">
+                {ginUnitLoading ? (
+                  <div className="text-center text-sm text-slate-400 py-8">Loading…</div>
+                ) : options.length === 0 ? (
+                  <div className="text-center text-sm text-slate-400 py-8">Koi available (working) unit nahi mili</div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {options.map((inst) => {
+                      const checked = selected.includes(inst.id);
+                      const disabled = !checked && selected.length >= qty;
+                      return (
+                        <label key={inst.id} className={`flex items-center gap-2 text-sm px-2 py-1.5 border rounded-md ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-slate-50'} ${checked ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={disabled}
+                            onChange={() => toggleGinUnit(gdItem.id, inst.id)}
+                          />
+                          <span className="font-mono text-xs">{inst.assetTag}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 shrink-0">
+                <Button type="button" variant="secondary" size="sm" label="Cancel" onClick={() => setGinUnitPickerFor(null)} />
+                <Button
+                  type="button"
+                  size="sm"
+                  label="Done"
+                  disabled={selected.length !== qty}
+                  onClick={() => setGinUnitPickerFor(null)}
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* {canGD && (
       <div className="flex items-center justify-between mb-2">

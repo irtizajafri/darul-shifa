@@ -255,6 +255,21 @@ model InventoryStorage {
   @@index([status])
 }
 
+// Master Setup > Locations — simple named-location list (rooms/offices/wards
+// etc.), bulk-loadable via Excel; independent of InventoryStorage above
+// (which drives fixed-asset "current asset" item placement) — this one just
+// backs free-text location pickers like Goods Discard's "Add Location".
+model InventoryLocation {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String   @unique
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
 model InventoryItem {
   id             Int                   @id @default(autoincrement())
   code           String                @unique
@@ -559,6 +574,8 @@ model InventoryGINItem {
   issuedQuantity Float
   createdAt      DateTime      @default(now())
 
+  assetInstances AssetInstance[]
+
   @@index([ginId])
   @@index([itemId])
 }
@@ -667,6 +684,12 @@ model AssetInstance {
   grn           InventoryGRN?         @relation(fields: [grnId], references: [id])
   maintenanceId Int?
   maintenance   InventoryMaintenance? @relation(fields: [maintenanceId], references: [id])
+  // Set whenever this unit is picked in a GIN's "Select Asset Units" list
+  // (fixed-asset items only) — the GD line's own Location then gets copied
+  // onto this unit's `location` below, so the unit carries the location of
+  // wherever it was actually issued to, not just a free-text GD note.
+  ginItemId     Int?
+  ginItem       InventoryGINItem?     @relation(fields: [ginItemId], references: [id])
   condition     String                @default("working")
   location      String?
   serialNumber  String?
@@ -676,6 +699,7 @@ model AssetInstance {
 
   @@index([itemId])
   @@index([condition])
+  @@index([ginItemId])
 }
 
 // ─── Clinic Module ────────────────────────────────────────────────────────────

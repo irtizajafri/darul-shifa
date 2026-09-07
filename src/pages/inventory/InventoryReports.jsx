@@ -33,6 +33,7 @@ export default function InventoryReports() {
     subcategoryId: '',
     assetType: '',
     departmentId: '',
+    location: '',
   });
   const [ledgerSummary, setLedgerSummary] = useState(false);
   const [receivingSummary, setReceivingSummary] = useState(false);
@@ -56,6 +57,7 @@ export default function InventoryReports() {
     subcategoryId: '',
     assetType: '',
     issuedById: '',
+    location: '',
   });
   const [gdFilters, setGdFilters] = useState({
     dateFrom: '',
@@ -65,6 +67,7 @@ export default function InventoryReports() {
     subcategoryId: '',
     itemId: '',
     status: '',
+    location: '',
   });
   const [discardFilters, setDiscardFilters] = useState({
     dateFrom: '',
@@ -73,6 +76,7 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
     assetType: '',
+    location: '',
   });
   const [expiryFilters, setExpiryFilters] = useState({
     exactDate: '',
@@ -134,6 +138,7 @@ export default function InventoryReports() {
     itemCode: '',
     categoryId: '',
     subcategoryId: '',
+    location: '',
   });
   const [reorderFilters, setReorderFilters] = useState({
     assetType: '',
@@ -142,6 +147,7 @@ export default function InventoryReports() {
     itemCode: '',
     categoryId: '',
     subcategoryId: '',
+    location: '',
   });
   const [supplierLedgerFilters, setSupplierLedgerFilters] = useState({
     dateFrom: '',
@@ -186,15 +192,23 @@ export default function InventoryReports() {
     fetchSupplierLedgerReport,
     purchaseOrders,
     fetchPurchaseOrders,
+    fetchItemLocationMap,
   } = useInventoryStore();
 
   const { employees, fetchEmployees } = useEmployeeStore();
+
+  // itemId → "Loc A, Loc B" — GD/GIN-stamped Location(s) on that item's
+  // asset units, used by every item-level report's Location filter/column
+  // (Item List, Reorder, Discard). Fetched once; Stock Position/Repairing
+  // compute their own copy server-side since they need it live per request.
+  const [itemLocationMap, setItemLocationMap] = useState({});
 
   useEffect(() => {
     Promise.all([fetchItems(), fetchReorderAlerts(), fetchMastersOptions(), fetchEmployees()]).catch((err) => {
       toast.error(err.message || 'Failed to load inventory reports data');
     });
-  }, [fetchItems, fetchReorderAlerts, fetchMastersOptions, fetchEmployees]);
+    fetchItemLocationMap().then(setItemLocationMap).catch(() => setItemLocationMap({}));
+  }, [fetchItems, fetchReorderAlerts, fetchMastersOptions, fetchEmployees, fetchItemLocationMap]);
 
   useEffect(() => {
     if (activeReport !== 'Item Ledger') return;
@@ -470,12 +484,13 @@ export default function InventoryReports() {
     return [...new Set(brands)].sort();
   }, [items]);
 
+  // Sourced from the Location master (Master Setup > Locations) — same list
+  // GD/GIN's "Add Location" picker uses, since that's what actually stamps
+  // AssetInstance.location now (the old per-item assetLocation note is gone
+  // from this report).
   const fixedAssetLocationOptions = useMemo(() => {
-    const locs = (items || [])
-      .filter((i) => i.itemType === 'fixed asset' && i.assetLocation)
-      .map((i) => i.assetLocation);
-    return [...new Set(locs)].sort();
-  }, [items]);
+    return [...new Set((masterOptions?.locations || []).map((l) => l.name))].sort();
+  }, [masterOptions?.locations]);
 
   const updateRepairingFilter = (key, value) => {
     setRepairingFilters((prev) => {
@@ -607,6 +622,7 @@ export default function InventoryReports() {
       const rows = (Array.isArray(rawData) ? rawData : [])
         .filter((gd) => !gdFilters.itemId || String(gd.itemId) === String(gdFilters.itemId))
         .filter((gd) => !gdFilters.status || gd.status === gdFilters.status)
+        .filter((gd) => !gdFilters.location || (gd.location || '').toLowerCase().includes(gdFilters.location.toLowerCase()))
         .map((gd) => ({
           'GD Code': gd.code,
           Date: gd.requestDate ? new Date(gd.requestDate).toLocaleDateString('en-PK') : '-',
@@ -627,7 +643,7 @@ export default function InventoryReports() {
   };
 
   const resetGdFilters = () => {
-    const emptyFilters = { dateFrom: '', dateTo: '', departmentId: '', categoryId: '', subcategoryId: '', itemId: '', status: '' };
+    const emptyFilters = { dateFrom: '', dateTo: '', departmentId: '', categoryId: '', subcategoryId: '', itemId: '', status: '', location: '' };
     setGdFilters(emptyFilters);
     fetchGDs(emptyFilters).catch((err) => {
       toast.error(err.message || 'Failed to load GD report');
@@ -671,6 +687,7 @@ export default function InventoryReports() {
       categoryId: '',
       subcategoryId: '',
       assetType: '',
+      location: '',
     };
     setDiscardFilters(emptyFilters);
     fetchGDNs(emptyFilters).catch((err) => {
@@ -925,6 +942,7 @@ export default function InventoryReports() {
       subcategoryId: '',
       assetType: '',
       departmentId: '',
+      location: '',
     };
     setLedgerFilters(emptyFilters);
     fetchItemLedgerReport(emptyFilters).catch((err) => {
@@ -945,6 +963,10 @@ export default function InventoryReports() {
           if (itemListFilters.subcategoryId && String(row.subcategoryId) !== String(itemListFilters.subcategoryId)) return false;
           if (itemListFilters.dateFrom && row.createdAt?.slice(0, 10) < itemListFilters.dateFrom) return false;
           if (itemListFilters.dateTo && row.createdAt?.slice(0, 10) > itemListFilters.dateTo) return false;
+          if (itemListFilters.location) {
+            const loc = itemLocationMap[row.id] || '';
+            if (!loc.toLowerCase().includes(itemListFilters.location.toLowerCase())) return false;
+          }
           return true;
         })
         .map((row) => ({
@@ -956,6 +978,7 @@ export default function InventoryReports() {
           unit: row.unit || '-',
           storage: row.storage?.name || '-',
           reorderLevel: row.reorderLevel || 0,
+          location: row.itemType === 'fixed asset' ? (itemLocationMap[row.id] || '-') : '-',
           status: row.status || 'active',
         }));
     }
@@ -969,6 +992,10 @@ export default function InventoryReports() {
           if (reorderFilters.subcategoryId && String(row.item?.subcategoryId) !== String(reorderFilters.subcategoryId)) return false;
           if (reorderFilters.dateFrom && row.createdAt?.slice(0, 10) < reorderFilters.dateFrom) return false;
           if (reorderFilters.dateTo && row.createdAt?.slice(0, 10) > reorderFilters.dateTo) return false;
+          if (reorderFilters.location) {
+            const loc = itemLocationMap[row.item?.id] || '';
+            if (!loc.toLowerCase().includes(reorderFilters.location.toLowerCase())) return false;
+          }
           return true;
         })
         .map((row) => ({
@@ -978,6 +1005,7 @@ export default function InventoryReports() {
           category: row.item?.category?.name || '-',
           stock: row.currentQty,
           threshold: row.thresholdQty,
+          location: row.item?.itemType === 'fixed asset' ? (itemLocationMap[row.item?.id] || '-') : '-',
           status: row.status,
         }));
     }
@@ -997,7 +1025,7 @@ export default function InventoryReports() {
     }
 
     return [];
-  }, [activeReport, items, reorderAlerts, stockPositionReport, itemListFilters, reorderFilters]);
+  }, [activeReport, items, reorderAlerts, stockPositionReport, itemListFilters, reorderFilters, itemLocationMap]);
 
   const ledgerExportRows = useMemo(() => {
     const result = [];
@@ -1131,6 +1159,8 @@ export default function InventoryReports() {
         filteredGinItems.forEach((gi, idx) => {
           const qty = Number(gi.issuedQuantity || 0);
           const rate = Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0);
+          const location = gi.gdItem?.location || '-';
+          if (issuanceFilters.location && !location.toLowerCase().includes(issuanceFilters.location.toLowerCase())) return;
           rows.push({
             key: `${gin.id}-${idx}`,
             ginCode: gin.code,
@@ -1141,6 +1171,7 @@ export default function InventoryReports() {
             subcategory: gi.item?.subcategory?.name || '-',
             department: dept,
             issuedBy,
+            location,
             quantity: qty,
             rate,
             amount: qty * rate,
@@ -1149,24 +1180,28 @@ export default function InventoryReports() {
       } else {
         const qty = Number(gin.issuedQuantity || 0);
         const rate = Number(gin.item?.lastGrnRate || gin.item?.purchasePrice || 0);
-        rows.push({
-          key: gin.id,
-          ginCode: gin.code,
-          date: gin.issueDate,
-          item: gin.item?.name || '-',
-          itemCode: gin.item?.code || '-',
-          category: gin.item?.category?.name || '-',
-          subcategory: gin.item?.subcategory?.name || '-',
-          department: dept,
-          issuedBy,
-          quantity: qty,
-          rate,
-          amount: qty * rate,
-        });
+        const location = gin.gd?.location || '-';
+        if (!(issuanceFilters.location && !location.toLowerCase().includes(issuanceFilters.location.toLowerCase()))) {
+          rows.push({
+            key: gin.id,
+            ginCode: gin.code,
+            date: gin.issueDate,
+            item: gin.item?.name || '-',
+            itemCode: gin.item?.code || '-',
+            category: gin.item?.category?.name || '-',
+            subcategory: gin.item?.subcategory?.name || '-',
+            department: dept,
+            issuedBy,
+            location,
+            quantity: qty,
+            rate,
+            amount: qty * rate,
+          });
+        }
       }
     }
     return rows;
-  }, [gins, issuanceFilters.itemId]);
+  }, [gins, issuanceFilters.itemId, issuanceFilters.location]);
 
   const issuanceExportRows = useMemo(() => {
     return issuanceRows.map((row) => ({
@@ -1178,6 +1213,7 @@ export default function InventoryReports() {
       Subcategory: row.subcategory,
       Department: row.department,
       'Issued By': row.issuedBy,
+      Location: row.location,
       'Issued Qty': row.quantity,
       Rate: Number(row.rate || 0).toFixed(2),
       Amount: Number(row.amount || 0).toFixed(2),
@@ -1199,6 +1235,7 @@ export default function InventoryReports() {
   const gdRows = useMemo(() => {
     return (gds || [])
       .filter((gd) => !gdFilters.itemId || String(gd.itemId) === String(gdFilters.itemId))
+      .filter((gd) => !gdFilters.location || (gd.location || '').toLowerCase().includes(gdFilters.location.toLowerCase()))
       .map((gd) => ({
         key: gd.id,
         gdCode: gd.code,
@@ -1213,7 +1250,7 @@ export default function InventoryReports() {
         status: gd.status || '-',
         location: gd.location || '',
       }));
-  }, [gds, gdFilters.itemId]);
+  }, [gds, gdFilters.itemId, gdFilters.location]);
 
   const gdExportRows = useMemo(() => {
     return gdRows.map((row) => ({
@@ -1239,10 +1276,11 @@ export default function InventoryReports() {
       itemCode: row.item?.code || '-',
       category: row.item?.category?.name || '-',
       subcategory: row.item?.subcategory?.name || '-',
+      location: row.item?.itemType === 'fixed asset' ? (itemLocationMap[row.item?.id] || '-') : '-',
       quantity: Number(row.quantity || 0),
       amount: Number(row.amount || 0),
     }));
-  }, [gdns]);
+  }, [gdns, itemLocationMap]);
 
   const discardExportRows = useMemo(() => {
     return discardRows.map((row) => ({
@@ -1251,6 +1289,7 @@ export default function InventoryReports() {
       'Item Code': row.itemCode,
       Category: row.category,
       Subcategory: row.subcategory,
+      Location: row.location,
       Quantity: row.quantity,
       Amount: row.amount,
     }));
@@ -1308,23 +1347,53 @@ export default function InventoryReports() {
     }));
   }, [shortExpiryRows]);
 
+  // "PD0302010-01, PD0302010-05, PD0302010-09" → "PD0302010-01,05,09" — every
+  // unit of one maintenance record shares the same base item code, so only
+  // the first tag needs it in full; the rest just need their own suffix.
+  function formatAssetTags(tags) {
+    if (tags.length === 0) return '';
+    if (tags.length === 1) return tags[0];
+    const lastDash = tags[0].lastIndexOf('-');
+    if (lastDash === -1) return tags.join(', ');
+    const prefix = tags[0].slice(0, lastDash);
+    const suffixes = tags.map((tag) => {
+      const dash = tag.lastIndexOf('-');
+      return dash !== -1 && tag.slice(0, dash) === prefix ? tag.slice(dash + 1) : tag;
+    });
+    return `${prefix}-${suffixes.join(',')}`;
+  }
+
   const repairingRows = useMemo(() => {
-    return (maintenanceRecords || []).map((row) => ({
-      key: row.id,
-      moNumber: row.moNumber || '-',
-      date: row.date,
-      item: row.item?.name || row.itemName || '-',
-      itemCode: row.item?.code || row.itemCode || '-',
-      category: row.item?.category?.name || row.categoryName || '-',
-      subcategory: row.item?.subcategory?.name || row.subcategoryName || '-',
-      supplier: row.supplier?.name || row.supplierName || '-',
-      cost: row.cost != null ? Number(row.cost) : null,
-      actualCost: row.actualCost != null ? Number(row.actualCost) : null,
-      natureOfRepair: row.natureOfRepair || '-',
-      status: row.status || 'in_repair',
-      checkedBy: row.checkedBy || '-',
-      warrantyDays: row.warrantyDays != null ? row.warrantyDays : '-',
-    }));
+    return (maintenanceRecords || []).map((row) => {
+      // Fixed-asset records can carry several units at once (Select Asset
+      // Units for Repair) — each may itself have a different Location (see
+      // GD/GIN's "Add Location" → asset unit stamping), so join whatever's
+      // set rather than assuming one shared value.
+      const locations = [...new Set((row.assetInstances || []).map((a) => a.location).filter(Boolean))];
+      // The base item code (e.g. "PD0302010") is shared by every unit of
+      // that item — for a fixed asset with specific units picked, that's
+      // incomplete (doesn't say WHICH unit went in for repair). Show the
+      // actual asset tag(s) instead whenever units were tracked.
+      const assetTags = (row.assetInstances || []).map((a) => a.assetTag).filter(Boolean);
+      return {
+        key: row.id,
+        moNumber: row.moNumber || '-',
+        date: row.date,
+        item: row.item?.name || row.itemName || '-',
+        itemCode: assetTags.length > 0 ? formatAssetTags(assetTags) : (row.item?.code || row.itemCode || '-'),
+        category: row.item?.category?.name || row.categoryName || '-',
+        subcategory: row.item?.subcategory?.name || row.subcategoryName || '-',
+        supplier: row.supplier?.name || row.supplierName || '-',
+        location: locations.length > 0 ? locations.join(', ') : '-',
+        cost: row.cost != null ? Number(row.cost) : null,
+        actualCost: row.actualCost != null ? Number(row.actualCost) : null,
+        natureOfRepair: row.natureOfRepair || '-',
+        status: row.status || 'in_repair',
+        checkedBy: row.checkedBy || '-',
+        warrantyDays: row.warrantyDays != null ? row.warrantyDays : '-',
+        returnDate: row.receivedDate || null,
+      };
+    });
   }, [maintenanceRecords]);
 
   const repairingExportRows = useMemo(() => {
@@ -1336,14 +1405,29 @@ export default function InventoryReports() {
       Category: row.category,
       Subcategory: row.subcategory,
       Supplier: row.supplier,
+      Location: row.location,
       'Est. Cost (PKR)': row.cost != null ? row.cost : '-',
       'Actual Cost (PKR)': row.actualCost != null ? row.actualCost : '-',
       'Nature of Repair': row.natureOfRepair,
       'Checked By': row.checkedBy,
       'Warranty (Days)': row.warrantyDays,
       Status: row.status === 'in_repair' ? 'In Repair' : row.status === 'completed' ? 'Completed' : 'Discarded',
+      'Return Date': row.returnDate ? new Date(row.returnDate).toLocaleDateString() : '-',
     }));
   }, [repairingRows]);
+
+  // PDF/Print only — no per-row Category/Subcategory column; those show in
+  // the filter-summary header instead (only when actually filtered on),
+  // same convention every other report's PDF already follows. Excel keeps
+  // the full column set from repairingExportRows above.
+  const repairingPdfRows = useMemo(() => {
+    return repairingExportRows.map((row) => {
+      const copy = { ...row };
+      delete copy.Category;
+      delete copy.Subcategory;
+      return copy;
+    });
+  }, [repairingExportRows]);
 
   const poRows = useMemo(() => {
     return (purchaseOrders || []).filter((row) => {
@@ -1404,6 +1488,7 @@ export default function InventoryReports() {
       Subcategory: row.subcategory,
       Unit: row.unit,
       Storage: row.storage,
+      Location: row.location,
       'Reorder Level': row.reorderLevel,
       Status: row.status,
     }));
@@ -1416,6 +1501,7 @@ export default function InventoryReports() {
       Category: row.category,
       'Current Stock': row.stock,
       'Reorder Level': row.threshold,
+      Location: row.location,
       Status: row.status,
     }));
   }, [reportRows]);
@@ -1442,6 +1528,7 @@ export default function InventoryReports() {
       push('Subcategory', subName(ledgerFilters.subcategoryId));
       push('Item', itemName(ledgerFilters.itemId));
       push('Type', ledgerFilters.assetType);
+      push('Location', ledgerFilters.location);
       if (ledgerSummary) parts.push('View: Summary');
     } else if (report === 'Receiving Report') {
       push('From', fmtDate(receivingFilters.dateFrom));
@@ -1460,6 +1547,7 @@ export default function InventoryReports() {
       push('Subcategory', subName(issuanceFilters.subcategoryId));
       push('Item', itemName(issuanceFilters.itemId));
       push('Type', issuanceFilters.assetType);
+      push('Location', issuanceFilters.location);
       if (issuanceFilters.issuedById) {
         const emp = (employees || []).find((e) => String(e.id) === String(issuanceFilters.issuedById));
         if (emp) push('Issued By', `${emp.firstName} ${emp.lastName}`);
@@ -1473,10 +1561,12 @@ export default function InventoryReports() {
       push('Subcategory', subName(gdFilters.subcategoryId));
       push('Item', itemName(gdFilters.itemId));
       push('Status', gdFilters.status);
+      push('Location', gdFilters.location);
     } else if (report === 'Discard Report') {
       push('From', fmtDate(discardFilters.dateFrom));
       push('To', fmtDate(discardFilters.dateTo));
       push('Item', itemName(discardFilters.itemId));
+      push('Location', discardFilters.location);
     } else if (report === 'Stock Position') {
       push('As Of', fmtDate(stockPositionFilters.asOfDate));
       push('Category', catName(stockPositionFilters.categoryId));
@@ -1525,16 +1615,20 @@ export default function InventoryReports() {
       push('From', fmtDate(repairingFilters.dateFrom));
       push('To', fmtDate(repairingFilters.dateTo));
       push('Status', repairingFilters.status);
+      push('Category', catName(repairingFilters.categoryId));
+      push('Subcategory', subName(repairingFilters.subcategoryId));
       push('Item', itemName(repairingFilters.itemId));
     } else if (report === 'Item List') {
       push('Category', catName(itemListFilters.categoryId));
       push('Subcategory', subName(itemListFilters.subcategoryId));
       push('Type', itemListFilters.assetType);
       push('Status', itemListFilters.status);
+      push('Location', itemListFilters.location);
     } else if (report === 'Reorder Report') {
       push('Category', catName(reorderFilters.categoryId));
       push('Subcategory', subName(reorderFilters.subcategoryId));
       push('Type', reorderFilters.assetType);
+      push('Location', reorderFilters.location);
     }
 
     return parts;
@@ -1604,7 +1698,7 @@ export default function InventoryReports() {
       return;
     }
     if (activeReport === 'Repairing Report') {
-      exportRowsToPdf({ fileName: 'inventory-repairing-report', title: 'Maintenance / Repairing Report', rows: repairingExportRows, ...meta });
+      exportRowsToPdf({ fileName: 'inventory-repairing-report', title: 'Maintenance / Repairing Report', rows: repairingPdfRows, ...meta });
       return;
     }
     if (activeReport === 'Purchase Order Report') {
@@ -1659,7 +1753,7 @@ export default function InventoryReports() {
     if (activeReport === 'Discard Report') { printRowsToPdf({ title: 'Discard Report', rows: discardExportRows, ...meta }); return; }
     if (activeReport === 'Short Expiry') { printRowsToPdf({ title: 'Short Expiry Report', rows: shortExpiryExportRows, ...meta }); return; }
     if (activeReport === 'Expiry') { printRowsToPdf({ title: 'Expiry Report', rows: expiryExportRows, ...meta }); return; }
-    if (activeReport === 'Repairing Report') { printRowsToPdf({ title: 'Maintenance / Repairing Report', rows: repairingExportRows, ...meta }); return; }
+    if (activeReport === 'Repairing Report') { printRowsToPdf({ title: 'Maintenance / Repairing Report', rows: repairingPdfRows, ...meta }); return; }
     if (activeReport === 'Purchase Order Report') { printRowsToPdf({ title: 'Purchase Order Report', rows: poExportRows, ...meta }); return; }
     if (activeReport === 'Daily Sales') { printRowsToPdf({ title: 'Daily Sales Report', rows: dailySalesExportRows, ...meta }); return; }
     if (activeReport === 'Supplier Ledger') { printRowsToPdf({ title: 'Supplier Ledger Report', rows: supplierLedgerExportRows, ...meta }); return; }
@@ -2088,6 +2182,21 @@ export default function InventoryReports() {
                         <option value="fixed asset">Fixed Asset</option>
                       </select>
                     </div>
+                    {ledgerFilters.assetType === 'fixed asset' && (
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 block mb-1">Location</label>
+                        <select
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                          value={ledgerFilters.location}
+                          onChange={(e) => updateLedgerFilter('location', e.target.value)}
+                        >
+                          <option value="">All Locations</option>
+                          {fixedAssetLocationOptions.map((loc) => (
+                            <option key={loc} value={loc}>{loc}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-3 pt-1">
                     <Button size="sm" label="Apply Filters" onClick={applyLedgerFilters} />
@@ -2555,6 +2664,21 @@ export default function InventoryReports() {
                       <option value="fixed asset">Fixed Asset</option>
                     </select>
                   </div>
+                  {issuanceFilters.assetType === 'fixed asset' && (
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Location</label>
+                      <select
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={issuanceFilters.location}
+                        onChange={(e) => updateIssuanceFilter('location', e.target.value)}
+                      >
+                        <option value="">All Locations</option>
+                        {fixedAssetLocationOptions.map((loc) => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Issued To</label>
                     <SearchableSelect
@@ -2991,6 +3115,14 @@ export default function InventoryReports() {
                       <option value="closed">Closed</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Location</label>
+                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={gdFilters.location} onChange={(e) => updateGdFilter('location', e.target.value)}>
+                      <option value="">All Locations</option>
+                      {fixedAssetLocationOptions.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" label="Apply" onClick={applyGdFilters} />
@@ -3070,6 +3202,21 @@ export default function InventoryReports() {
                       <option value="fixed asset">Fixed Asset</option>
                     </select>
                   </div>
+                  {discardFilters.assetType === 'fixed asset' && (
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Location</label>
+                      <select
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={discardFilters.location}
+                        onChange={(e) => updateDiscardFilter('location', e.target.value)}
+                      >
+                        <option value="">All Locations</option>
+                        {fixedAssetLocationOptions.map((loc) => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex gap-2">
@@ -3203,65 +3350,8 @@ export default function InventoryReports() {
                   <Button size="sm" label="Apply" onClick={applyRepairingFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetRepairingFilters} />
                 </div>
-
-                {false && (<>
-                {repairingRows.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-sm">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200">
-                          <th className="px-4 py-3">MO No</th>
-                          <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Item</th>
-                          <th className="px-4 py-3">Category</th>
-                          <th className="px-4 py-3">Supplier</th>
-                          <th className="px-4 py-3">Est. Cost</th>
-                          <th className="px-4 py-3">Actual Cost</th>
-                          <th className="px-4 py-3">Nature of Repair</th>
-                          <th className="px-4 py-3">Checked By</th>
-                          <th className="px-4 py-3">Warranty</th>
-                          <th className="px-4 py-3">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {repairingRows.map((row) => (
-                          <tr key={row.key}>
-                            <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-700">{row.moNumber}</td>
-                            <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
-                            <td className="px-4 py-3 font-medium text-black">{row.item}</td>
-                            <td className="px-4 py-3">{row.category}</td>
-                            <td className="px-4 py-3">{row.supplier}</td>
-                            <td className="px-4 py-3 text-slate-500">
-                              {row.cost != null ? Number(row.cost).toLocaleString() : '-'}
-                            </td>
-                            <td className="px-4 py-3 font-semibold text-black">
-                              {row.actualCost != null ? Number(row.actualCost).toLocaleString() : '-'}
-                            </td>
-                            <td className="px-4 py-3 max-w-[160px] truncate">{row.natureOfRepair}</td>
-                            <td className="px-4 py-3">{row.checkedBy}</td>
-                            <td className="px-4 py-3">
-                              {row.warrantyDays !== '-'
-                                ? <span className="text-xs bg-violet-50 text-violet-700 border border-violet-200 px-2 py-0.5 rounded-full">{row.warrantyDays} days</span>
-                                : '-'}
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
-                                row.status === 'in_repair' ? 'bg-orange-100 text-orange-700 border-orange-200' :
-                                row.status === 'completed' ? 'bg-green-100 text-green-700 border-green-200' :
-                                                             'bg-red-100 text-red-700 border-red-200'
-                              }`}>
-                                {row.status === 'in_repair' ? 'In Repair' : row.status === 'completed' ? 'Completed' : 'Discarded'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center text-slate-400 py-10">No repairing entries found for selected filters.</div>
-                )}
-                </>)}
+                {/* No on-screen report detail here by design — Export CSV /
+                    Export PDF / Print (top toolbar) are the only output. */}
               </div>
             ) : effectiveReport === 'Daily Sales' ? (
               <div className="p-4 space-y-4 overflow-y-auto">
@@ -3725,10 +3815,25 @@ export default function InventoryReports() {
                       <option value="fixed asset">Fixed Asset</option>
                     </select>
                   </div>
+                  {itemListFilters.assetType === 'fixed asset' && (
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Location</label>
+                      <select
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={itemListFilters.location}
+                        onChange={(e) => setItemListFilters((p) => ({ ...p, location: e.target.value }))}
+                      >
+                        <option value="">All Locations</option>
+                        {fixedAssetLocationOptions.map((loc) => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
-                  <Button size="sm" variant="outline" label="Reset" onClick={() => setItemListFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
+                  <Button size="sm" variant="outline" label="Reset" onClick={() => setItemListFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '', location: '' })} />
                 </div>
                 {false && (<>
                 {reportRows.length > 0 ? (
@@ -3970,10 +4075,25 @@ export default function InventoryReports() {
                       <option value="fixed asset">Fixed Asset</option>
                     </select>
                   </div>
+                  {reorderFilters.assetType === 'fixed asset' && (
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Location</label>
+                      <select
+                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        value={reorderFilters.location}
+                        onChange={(e) => setReorderFilters((p) => ({ ...p, location: e.target.value }))}
+                      >
+                        <option value="">All Locations</option>
+                        {fixedAssetLocationOptions.map((loc) => (
+                          <option key={loc} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button size="sm" label="Apply" onClick={() => setPendingPrint(true)} />
-                  <Button size="sm" variant="outline" label="Reset" onClick={() => setReorderFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '' })} />
+                  <Button size="sm" variant="outline" label="Reset" onClick={() => setReorderFilters({ assetType: '', dateFrom: '', dateTo: '', itemCode: '', categoryId: '', subcategoryId: '', location: '' })} />
                 </div>
                 {false && (<>
                 {reportRows.length > 0 ? (

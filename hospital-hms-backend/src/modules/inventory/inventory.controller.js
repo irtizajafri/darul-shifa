@@ -406,6 +406,74 @@ async function deleteStorage(req, res, next) {
   }
 }
 
+async function listLocations(req, res, next) {
+  try {
+    const data = await service.listLocations(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function createLocation(req, res, next) {
+  try {
+    const missing = missingFields(req.body || {}, ['name']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.createLocation(req.body || {});
+    return success(res, data, 'location created');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('exists') || String(err.message).toLowerCase().includes('unique')) {
+      return fail(res, 409, err.message);
+    }
+    next(err);
+  }
+}
+
+async function updateLocation(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const missing = missingFields(req.body || {}, ['name']);
+    if (missing.length) return fail(res, 400, `Missing fields: ${missing.join(', ')}`);
+    const data = await service.updateLocation(req.params.id, req.body || {});
+    return success(res, data, 'location updated');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    if (String(err.message).toLowerCase().includes('exists')) return fail(res, 409, err.message);
+    next(err);
+  }
+}
+
+async function deleteLocation(req, res, next) {
+  try {
+    if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
+    const data = await service.deleteLocation(req.params.id);
+    return success(res, data, 'location deleted');
+  } catch (err) {
+    if (String(err.message).toLowerCase().includes('not found')) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function previewLocationImport(req, res, next) {
+  try {
+    const names = Array.isArray(req.body?.names) ? req.body.names : [];
+    const data = await service.previewLocationImport(names);
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function confirmLocationImport(req, res, next) {
+  try {
+    const names = Array.isArray(req.body?.names) ? req.body.names : [];
+    const data = await service.confirmLocationImport(names);
+    return success(res, data, 'locations imported');
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function updateDepartment(req, res, next) {
   try {
     if (!isNumericId(req.params.id)) return fail(res, 400, 'Invalid id');
@@ -985,6 +1053,12 @@ module.exports = {
   deleteSupplier,
   updateStorage,
   deleteStorage,
+  listLocations,
+  createLocation,
+  updateLocation,
+  deleteLocation,
+  previewLocationImport,
+  confirmLocationImport,
   updateDepartment,
   deleteDepartment,
   listPurchaseOrders,
@@ -1018,6 +1092,7 @@ module.exports = {
   createMaintenance,
   receiveMaintenance,
   listAssetInstances,
+  getItemLocationMap,
   updateAssetInstance,
   listUnreadGdNotifications,
   markGdNotificationsRead,
@@ -1038,6 +1113,15 @@ async function resyncAllItemCurrentStock(req, res, next) {
 async function listAssetInstances(req, res, next) {
   try {
     const data = await service.listAssetInstances(req.query || {});
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getItemLocationMap(req, res, next) {
+  try {
+    const data = await service.getItemLocationMap();
     return success(res, data);
   } catch (err) {
     next(err);

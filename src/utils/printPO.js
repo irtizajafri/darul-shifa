@@ -242,6 +242,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
   const ginCode   = row.code || '-';
   const gdRef     = row.gdHeader?.code || row.gd?.code || '-';
   const department = row.department?.name || row.gdHeader?.department?.name || '-';
+  const admissionNumber = row.admissionNumber || row.gdHeader?.admissionNumber || null;
   const issuedBy  = row.issuedBy ? `${row.issuedBy.firstName} ${row.issuedBy.lastName}` : '-';
   const issueDate  = row.issueDate
     ? new Date(row.issueDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -257,6 +258,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
     const qtyDemand  = gi.gdItem?.quantityRequested ?? gi.quantityRequested ?? '-';
     const qtyIssued  = gi.issuedQuantity ?? '-';
     const status     = gi.gdItem?.status ?? gi.status ?? '-';
+    const location   = gi.gdItem?.location || '-';
     const reqDate    = gi.gdItem?.requestDate
       ? new Date(gi.gdItem.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
       : reqDateFallback;
@@ -265,6 +267,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
       <td class="desc">${itemName}</td>
       <td>${qtyDemand}</td>
       <td>${qtyIssued}</td>
+      <td>${location}</td>
       <td><span class="status-badge status-${String(status).toLowerCase()}">${status}</span></td>
       <td>${reqDate}</td>
     </tr>`;
@@ -330,6 +333,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
       <div class="info-label">Issued To</div>
       <div class="info-value">${issuedBy}</div>
     </div>
+    ${admissionNumber ? `<div class="info-row"><div class="info-label">Admission No.</div><div class="info-value">${admissionNumber}</div></div>` : ''}
   </div>
   <table>
     <thead>
@@ -338,11 +342,12 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
         <th>Item Name</th>
         <th>Qty<br>Demanded</th>
         <th>Qty<br>Issued</th>
+        <th>Location</th>
         <th>Status</th>
         <th>Request<br>Date</th>
       </tr>
     </thead>
-    <tbody>${tableRows || '<tr><td colspan="6" style="text-align:center;padding:8px;">No items</td></tr>'}</tbody>
+    <tbody>${tableRows || '<tr><td colspan="7" style="text-align:center;padding:8px;">No items</td></tr>'}</tbody>
   </table>
   <div class="signatures">
     <div class="sig"><div class="sig-line"></div>Store Keeper</div>

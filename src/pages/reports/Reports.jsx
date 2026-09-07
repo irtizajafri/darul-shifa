@@ -1177,11 +1177,14 @@ export default function Reports() {
 
   // ─── FIX 7: missed_out = sirf timeIn hai, timeOut missing ─────────────────
   // Yeh absent nahi — deduction partial hona chahiye ya HR decide kare
-  // Filhaal missed_out ko absent ki tarah treat karo (1x per day, not 2x)
+  // Filhaal missed_out ko 1x per day treat karo, lekin off days skip karo
+  // (totalAbsents ki tarah isRosterOff check add kiya — Sunday missed punch galat deduct ho raha tha)
   const totalMissedOut = effectiveAttendanceWithOverrides.filter((r) => {
     if (shouldSkipAutoDeduction(r)) return false;
     const status = normalizePayrollStatus(r.status);
-    return status === 'missed_out';
+    if (status !== 'missed_out') return false;
+    const dateStr = new Date(r.date).toISOString().split('T')[0];
+    return !isRosterOff(dateStr);
   }).length;
 
   const totalLeaves = effectiveAttendanceWithOverrides.filter((r) => {

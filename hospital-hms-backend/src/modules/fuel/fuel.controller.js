@@ -147,6 +147,11 @@ module.exports = {
     success(res, data);
   }),
 
+  getGeneratorFuelBalance: wrap(async (req, res) => {
+    const data = await service.getGeneratorFuelBalance(req.params.id);
+    success(res, data);
+  }),
+
   // Daily sheets
   listDailySheets: wrap(async (req, res) => {
     const { generatorId } = req.query;

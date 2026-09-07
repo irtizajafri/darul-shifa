@@ -26,6 +26,7 @@ export const useInventoryStore = create((set) => ({
   subcategories: [],
   suppliers: [],
   storages: [],
+  locations: [],
   departments: [],
   demandCategoryTypes: [],
   items: [],
@@ -74,6 +75,7 @@ export const useInventoryStore = create((set) => ({
     subcategories: [],
     suppliers: [],
     storages: [],
+    locations: [],
     departments: [],
     demandCategoryTypes: [],
   },
@@ -186,6 +188,43 @@ export const useInventoryStore = create((set) => ({
   }),
 
   deleteStorage: async (id) => request(`/storages/${id}`, { method: 'DELETE' }),
+
+  fetchLocations: async ({ search = '', status = '' } = {}) => {
+    set({ loading: true, error: null });
+    try {
+      const qs = new URLSearchParams();
+      if (search) qs.set('search', search);
+      if (status) qs.set('status', status);
+      const data = await request(`/locations?${qs.toString()}`);
+      set({ locations: Array.isArray(data) ? data : [], loading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, loading: false });
+      throw err;
+    }
+  },
+
+  createLocation: async (payload) => request('/locations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  updateLocation: async (id, payload) => request(`/locations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  }),
+
+  deleteLocation: async (id) => request(`/locations/${id}`, { method: 'DELETE' }),
+
+  previewLocationImport: async (names) => request('/locations/import/preview', {
+    method: 'POST',
+    body: JSON.stringify({ names }),
+  }),
+
+  confirmLocationImport: async (names) => request('/locations/import/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ names }),
+  }),
 
   fetchDepartments: async ({ search = '', status = '' } = {}) => {
     set({ loading: true, error: null });
@@ -547,6 +586,10 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  // { [itemId]: "Loc A, Loc B" } — every item that currently has at least
+  // one asset unit with a Location stamped via GD/GIN.
+  fetchItemLocationMap: async () => request('/asset-instances/by-item-location'),
+
   fetchMastersOptions: async ({ search = '' } = {}) => {
     try {
       const qs = new URLSearchParams();
@@ -558,6 +601,7 @@ export const useInventoryStore = create((set) => ({
           subcategories: data?.subcategories || [],
           suppliers: data?.suppliers || [],
           storages: data?.storages || [],
+          locations: data?.locations || [],
           departments: data?.departments || [],
           demandCategoryTypes: data?.demandCategoryTypes || [],
         },

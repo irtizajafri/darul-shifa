@@ -46,6 +46,7 @@ export default function TankToTankModal({ tanks, defaultFromTankId, onClose, onD
   const [fromTankId, setFromTankId] = useState(defaultFromTankId ? String(defaultFromTankId) : '');
   const [toTankId,   setToTankId]   = useState('');
   const [quantity,   setQuantity]   = useState('');
+  const [rate,       setRate]       = useState('');
   const [date,       setDate]       = useState(new Date().toISOString().slice(0, 10));
   const [notes,      setNotes]      = useState('');
   const [phase, setPhase]           = useState('form'); // form | transferring | done | error
@@ -71,6 +72,7 @@ export default function TankToTankModal({ tanks, defaultFromTankId, onClose, onD
           fromTankId: Number(fromTankId),
           toTankId:   Number(toTankId),
           quantity:   qty,
+          rate:       rate || undefined,
           date,
           notes,
         }),
@@ -143,6 +145,15 @@ export default function TankToTankModal({ tanks, defaultFromTankId, onClose, onD
                 <input type="number" step="0.01" min="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={inputCls} placeholder="e.g. 50" required />
                 {fromTank && <p className="text-[11px] text-slate-400 mt-1">Available: {fmtNum(fromTank.balance)} L</p>}
               </div>
+              <div>
+                <label className={labelCls}>Rate (Rs/L)</label>
+                <input type="number" step="0.01" min="0" value={rate} onChange={(e) => setRate(e.target.value)} className={inputCls} placeholder="Optional" />
+              </div>
+              {quantity && rate && (
+                <div className="flex items-end pb-2">
+                  <p className="text-[11px] text-slate-400">Amount: {fmtNum(Number(quantity) * Number(rate))} Rs</p>
+                </div>
+              )}
             </div>
             <div>
               <label className={labelCls}>Notes</label>

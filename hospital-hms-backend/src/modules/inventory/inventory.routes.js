@@ -27,6 +27,13 @@ router.post('/storages', controller.createStorage);
 router.patch('/storages/:id', controller.updateStorage);
 router.delete('/storages/:id', controller.deleteStorage);
 
+router.get('/locations', controller.listLocations);
+router.post('/locations', controller.createLocation);
+router.patch('/locations/:id', controller.updateLocation);
+router.delete('/locations/:id', controller.deleteLocation);
+router.post('/locations/import/preview', controller.previewLocationImport);
+router.post('/locations/import/confirm', controller.confirmLocationImport);
+
 router.get('/departments', controller.listDepartments);
 router.post('/departments', controller.createDepartment);
 router.patch('/departments/:id', controller.updateDepartment);
@@ -82,6 +89,7 @@ router.post('/maintenance', controller.createMaintenance);
 router.patch('/maintenance/:id/receive', controller.receiveMaintenance);
 
 router.get('/asset-instances', controller.listAssetInstances);
+router.get('/asset-instances/by-item-location', controller.getItemLocationMap);
 router.patch('/asset-instances/:id', controller.updateAssetInstance);
 
 router.get('/gd-notifications/unread', controller.listUnreadGdNotifications);

@@ -95,10 +95,12 @@ export const useFuelStore = create((set) => ({
 
   // ── Generators ────────────────────────────────────────────────────────────
   fetchGenerators: async () => {
-    try {
-      const data = await request('/generators');
-      set({ generators: Array.isArray(data) ? data : [] });
-    } catch (err) { throw err; }
+    const data = await request('/generators');
+    set({ generators: Array.isArray(data) ? data : [] });
+  },
+
+  fetchGeneratorFuelBalance: async (generatorId) => {
+    return request(`/generators/${generatorId}/fuel-balance`);
   },
 
   createGenerator: async (payload) => {

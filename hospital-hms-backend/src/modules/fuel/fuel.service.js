@@ -592,6 +592,40 @@ async function getTankReport({ tankId, from, to } = {}) {
   };
 }
 
+// ── Per-Generator Fuel Balance ────────────────────────────────────────────────
+// totalTransferred = all Tank→Gen transfers for this generator
+// totalConsumed    = sum of (gaugeOn - gaugeOff) from daily sheets
+// available        = totalTransferred - totalConsumed
+
+async function getGeneratorFuelBalance(generatorId) {
+  const [transferAgg, sheets] = await Promise.all([
+    prisma.fuelTransfer.aggregate({
+      _sum: { quantity: true },
+      where: { generatorId: Number(generatorId) },
+    }),
+    prisma.generatorDailySheet.findMany({
+      where: {
+        generatorId: Number(generatorId),
+        fuelGaugeOn:  { not: null },
+        fuelGaugeOff: { not: null },
+      },
+      select: { fuelGaugeOn: true, fuelGaugeOff: true },
+    }),
+  ]);
+
+  const totalTransferred = Number(transferAgg._sum.quantity || 0);
+  const totalConsumed = sheets.reduce((sum, s) => {
+    const c = Number(s.fuelGaugeOn) - Number(s.fuelGaugeOff);
+    return sum + (c > 0 ? c : 0);
+  }, 0);
+
+  return {
+    totalTransferred,
+    totalConsumed,
+    available: totalTransferred - totalConsumed,
+  };
+}
+
 // ── Overall Fuel Balance ───────────────────────────────────────────────────────
 
 async function getFuelBalance() {
@@ -691,4 +725,5 @@ module.exports = {
   listTankTransfers, createTankTransfer, deleteTankTransfer,
   getTankReport,
   getFuelBalance, getDailyReport,
+  getGeneratorFuelBalance,
 };

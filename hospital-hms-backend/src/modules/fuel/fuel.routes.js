@@ -6,6 +6,7 @@ const controller = require('./fuel.controller');
 router.get('/generators', controller.listGenerators);
 router.post('/generators', controller.createGenerator);
 router.patch('/generators/:id', controller.updateGenerator);
+router.get('/generators/:id/fuel-balance', controller.getGeneratorFuelBalance);
 
 // Vehicles
 router.get('/vehicles', controller.listVehicles);

@@ -427,9 +427,20 @@ export default function Maintenance() {
                       }
                     />
                     <span className="font-mono text-xs">{inst.assetTag}</span>
-                    <span className={`text-xs px-1 rounded ${inst.condition === 'working' ? 'text-green-700 bg-green-50' : inst.condition === 'under repair' ? 'text-orange-700 bg-orange-50' : 'text-red-700 bg-red-50'}`}>
-                      {inst.condition}
-                    </span>
+                    {/* GD/GIN issuance stamps a unit's Location onto it — once
+                        set, that's more useful here than the generic
+                        "working" badge (units still under repair keep
+                        showing their condition instead, since there's no
+                        location to show for those). */}
+                    {inst.location ? (
+                      <span className="text-xs px-1 rounded text-indigo-700 bg-indigo-50" title="Location">
+                        {inst.location}
+                      </span>
+                    ) : (
+                      <span className={`text-xs px-1 rounded ${inst.condition === 'working' ? 'text-green-700 bg-green-50' : inst.condition === 'under repair' ? 'text-orange-700 bg-orange-50' : 'text-red-700 bg-red-50'}`}>
+                        {inst.condition}
+                      </span>
+                    )}
                   </label>
                 ))}
               </div>

@@ -31,6 +31,7 @@ export default function GeneratorManagement({ generator, onBack }) {
     dailySheets, fetchDailySheets, fetchLastDailySheet, createDailySheet, updateDailySheet, deleteDailySheet,
     fuelBalance, fetchFuelBalance,
     tanks, fetchTanks, deleteTransfer,
+    fetchGeneratorFuelBalance,
   } = useFuelStore();
   const gid = generator?.id;
 
@@ -42,6 +43,7 @@ export default function GeneratorManagement({ generator, onBack }) {
   const [sheetForm, setSheetForm] = useState(EMPTY_SHEET);
   const [editingSheet, setEditingSheet] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [genFuelBal, setGenFuelBal] = useState(null); // { totalTransferred, totalConsumed, available }
 
   const entryType = activeTab.toLowerCase();
 
@@ -53,6 +55,7 @@ export default function GeneratorManagement({ generator, onBack }) {
   useEffect(() => {
     if (activeTab === 'Daily Sheets') {
       fetchDailySheets(gid).catch((e) => toast.error(e.message));
+      fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => setGenFuelBal(null));
     } else {
       fetchGeneratorEntries({ generatorId: gid, entryType }).catch((e) => toast.error(e.message));
       fetchLastGeneratorEntry({ generatorId: gid, entryType }).then(setLastEntry).catch(() => setLastEntry(null));
@@ -118,6 +121,7 @@ export default function GeneratorManagement({ generator, onBack }) {
       setEditingSheet(null);
       fetchDailySheets(gid);
       fetchFuelBalance();
+      fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => {});
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
   };
@@ -254,6 +258,27 @@ export default function GeneratorManagement({ generator, onBack }) {
       {showForm && activeTab === 'Daily Sheets' && (
         <div className="mb-6 bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
           <h3 className="font-semibold text-slate-700 mb-4">{editingSheet ? 'Edit Daily Sheet' : 'Add Daily Sheet'}</h3>
+
+          {/* Generator diesel balance — always visible when form is open */}
+          {genFuelBal !== null && (
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 text-center">
+                <p className="text-[10px] text-blue-500 font-medium uppercase tracking-wide">Total Transferred</p>
+                <p className="text-base font-bold text-blue-700">{Number(genFuelBal.totalTransferred).toFixed(2)} L</p>
+              </div>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-center">
+                <p className="text-[10px] text-red-500 font-medium uppercase tracking-wide">Total Consumed</p>
+                <p className="text-base font-bold text-red-600">{Number(genFuelBal.totalConsumed).toFixed(2)} L</p>
+              </div>
+              <div className={`rounded-lg px-3 py-2.5 text-center border ${genFuelBal.available <= 0 ? 'bg-red-50 border-red-300' : 'bg-emerald-50 border-emerald-300'}`}>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-600">Available Diesel</p>
+                <p className={`text-base font-bold ${genFuelBal.available <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                  {Number(genFuelBal.available).toFixed(2)} L
+                </p>
+              </div>
+            </div>
+          )}
+
           <form onSubmit={handleSheetSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
@@ -369,6 +394,26 @@ export default function GeneratorManagement({ generator, onBack }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Daily sheets balance bar (jab form closed ho) */}
+      {activeTab === 'Daily Sheets' && !showForm && genFuelBal !== null && (
+        <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 text-center">
+            <p className="text-[10px] text-blue-500 font-medium uppercase tracking-wide">Total Transferred</p>
+            <p className="text-base font-bold text-blue-700">{Number(genFuelBal.totalTransferred).toFixed(2)} L</p>
+          </div>
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 text-center">
+            <p className="text-[10px] text-red-500 font-medium uppercase tracking-wide">Total Consumed</p>
+            <p className="text-base font-bold text-red-600">{Number(genFuelBal.totalConsumed).toFixed(2)} L</p>
+          </div>
+          <div className={`rounded-lg px-3 py-2.5 text-center border ${genFuelBal.available <= 0 ? 'bg-red-50 border-red-300' : 'bg-emerald-50 border-emerald-300'}`}>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-600">Available Diesel</p>
+            <p className={`text-base font-bold ${genFuelBal.available <= 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+              {Number(genFuelBal.available).toFixed(2)} L
+            </p>
           </div>
         </div>
       )}

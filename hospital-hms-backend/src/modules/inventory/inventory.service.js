@@ -1061,7 +1061,7 @@ async function updateGIN(id, payload) {
       include: {
         gdHeader: { include: { department: true } },
         department: true,
-        ginItems: { include: { item: true } },
+        ginItems: { include: { item: true, gdItem: true, assetInstances: true } },
         issuedBy: { select: { id: true, firstName: true, lastName: true, empCode: true } },
       },
     });
@@ -1078,6 +1078,29 @@ async function listAssetInstances({ itemId, condition } = {}) {
     include: { item: { select: { name: true, code: true } } },
     orderBy: { assetTag: 'asc' },
   });
+}
+
+// itemId → comma-joined distinct Location(s) currently on that item's asset
+// units (GD/GIN "Add Location" → Select Asset Units). Backs the Location
+// filter/column on the item-level Inventory Reports (Item List, Reorder,
+// Discard) — same lightweight aggregate Stock Position already computes
+// inline, pulled out here so those reports can reuse it without pulling
+// every AssetInstance's full row into the browser.
+async function getItemLocationMap() {
+  const rows = await prisma.assetInstance.findMany({
+    where: { location: { not: null } },
+    select: { itemId: true, location: true },
+  });
+  const byItem = new Map();
+  for (const row of rows) {
+    if (!row.location) continue;
+    const set = byItem.get(row.itemId) || new Set();
+    set.add(row.location);
+    byItem.set(row.itemId, set);
+  }
+  const map = {};
+  for (const [itemId, set] of byItem) map[itemId] = [...set].join(', ');
+  return map;
 }
 
 async function updateAssetInstance(id, { condition, location, serialNumber, notes }) {
@@ -1325,7 +1348,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       department: true,
       item: { include: { category: true, subcategory: true } },
       issuedBy: { select: { id: true, firstName: true, lastName: true, empCode: true } },
-      ginItems: { include: { item: { include: { category: true, subcategory: true } }, gdItem: true } },
+      ginItems: { include: { item: { include: { category: true, subcategory: true } }, gdItem: true, assetInstances: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -1421,9 +1444,18 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
   if (header.status === 'closed') throw new Error('GD already fully issued');
 
   const itemsMap = {};
+  // Fixed-asset lines only — which specific serial-tagged units (out of the
+  // item's pool) are actually going out with this GIN. Optional: current-
+  // asset items (no serial units) never send this, and older callers that
+  // predate this feature still work unchanged.
+  const assetInstancesMap = {};
   if (Array.isArray(items) && items.length > 0) {
     for (const entry of items) {
-      itemsMap[Number(entry.gdItemId)] = parsePositiveNumber(entry.issuedQuantity);
+      const gdItemId = Number(entry.gdItemId);
+      itemsMap[gdItemId] = parsePositiveNumber(entry.issuedQuantity);
+      if (Array.isArray(entry.assetInstanceIds) && entry.assetInstanceIds.length > 0) {
+        assetInstancesMap[gdItemId] = entry.assetInstanceIds.map(Number).filter(Boolean);
+      }
     }
   }
 
@@ -1462,7 +1494,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
       const stock = Number(currentItem?.currentStock || 0);
       if (qty > stock) throw new Error(`Insufficient stock for item: ${gdItem.item?.name || gdItem.itemId}`);
 
-      await tx.inventoryGINItem.create({
+      const createdGinItem = await tx.inventoryGINItem.create({
         data: {
           ginId: gin.id,
           gdItemId: gdItem.id,
@@ -1470,6 +1502,25 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
           issuedQuantity: qty,
         },
       });
+
+      const pickedInstanceIds = assetInstancesMap[gdItem.id];
+      if (pickedInstanceIds && pickedInstanceIds.length > 0) {
+        if (pickedInstanceIds.length !== qty) {
+          throw new Error(`Select exactly ${qty} asset unit(s) for ${gdItem.item?.name || gdItem.itemId}`);
+        }
+        const pickedInstances = await tx.assetInstance.findMany({ where: { id: { in: pickedInstanceIds } } });
+        if (pickedInstances.length !== pickedInstanceIds.length) {
+          throw new Error('One or more selected asset units were not found');
+        }
+        for (const inst of pickedInstances) {
+          if (inst.itemId !== gdItem.itemId) throw new Error(`Asset unit ${inst.assetTag} does not belong to this item`);
+          if (inst.condition !== 'working') throw new Error(`Asset unit ${inst.assetTag} is not available (currently "${inst.condition}")`);
+        }
+        await tx.assetInstance.updateMany({
+          where: { id: { in: pickedInstanceIds } },
+          data: { location: gdItem.location || null, ginItemId: createdGinItem.id },
+        });
+      }
 
       const previousStock = stock;
       const newStock = stock - qty;
@@ -1514,7 +1565,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
       where: { id: gin.id },
       include: {
         gdHeader: { include: { department: true } },
-        ginItems: { include: { item: true, gdItem: true } },
+        ginItems: { include: { item: true, gdItem: true, assetInstances: true } },
         department: true,
         issuedBy: { select: { id: true, firstName: true, lastName: true, empCode: true } },
       },
@@ -1794,10 +1845,11 @@ async function createSalesInvoiceWithItems(payload) {
   });
 }
 
-async function listGDNs({ search, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType }) {
+async function listGDNs({ search, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, location }) {
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
+  const locationFilter = location ? String(location).trim() : null;
 
   const rows = await prisma.inventoryGDN.findMany({
     where: {
@@ -1806,6 +1858,7 @@ async function listGDNs({ search, itemId, categoryId, subcategoryId, dateFrom, d
       ...(parsedCategoryId ? { item: { categoryId: parsedCategoryId } } : {}),
       ...(parsedSubcategoryId ? { item: { subcategoryId: parsedSubcategoryId } } : {}),
       ...(assetType ? { item: { itemType: assetType } } : {}),
+      ...(locationFilter ? { item: { assetInstances: { some: { location: { equals: locationFilter, mode: 'insensitive' } } } } } : {}),
       ...(dateFrom || dateTo
         ? {
             discardedDate: {
@@ -2431,6 +2484,108 @@ async function deleteStorage(id) {
   return { id: numId, deleted: true };
 }
 
+// ── Locations (Master Setup) ─────────────────────────────────────────────────
+async function listLocations({ search, status }) {
+  return prisma.inventoryLocation.findMany({
+    where: {
+      ...buildSearchFilter(search, ['code', 'name']),
+      ...buildStatusFilter(status),
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+async function createLocation(payload) {
+  const name = String(payload.name || '').trim();
+  if (!name) throw new Error('Location name zaroori hai');
+  const duplicate = await prisma.inventoryLocation.findFirst({ where: { name: { equals: name, mode: 'insensitive' } }, select: { id: true } });
+  if (duplicate) throw new Error('Location with this name already exists');
+
+  const status = normalizeStatus(payload.status);
+  const code = String(payload.code || '').trim() || await generateTwoDigitMasterCode('inventoryLocation');
+
+  return prisma.inventoryLocation.create({ data: { code, name, status } });
+}
+
+async function updateLocation(id, payload) {
+  const existing = await prisma.inventoryLocation.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw new Error('Location not found');
+  const name = String(payload.name || '').trim();
+  if (!name) throw new Error('Location name zaroori hai');
+  const duplicate = await prisma.inventoryLocation.findFirst({
+    where: { name: { equals: name, mode: 'insensitive' }, id: { not: Number(id) } },
+    select: { id: true },
+  });
+  if (duplicate) throw new Error('Location with this name already exists');
+
+  return prisma.inventoryLocation.update({
+    where: { id: Number(id) },
+    data: { name, status: normalizeStatus(payload.status) },
+  });
+}
+
+async function deleteLocation(id) {
+  const numId = Number(id);
+  const existing = await prisma.inventoryLocation.findUnique({ where: { id: numId } });
+  if (!existing) throw new Error('Location not found');
+  await prisma.inventoryLocation.delete({ where: { id: numId } });
+  return { id: numId, deleted: true };
+}
+
+// Excel import — sheet is just an S.No/Locations name list (see MasterSetup's
+// Locations tab), so there's nothing to "preview" beyond which names are
+// brand-new vs. already in the master list; existing names are silently
+// skipped on confirm rather than erroring, since re-uploading the same sheet
+// (or a superset of it) later is expected, not a mistake.
+function cleanLocationNames(names) {
+  const seen = new Set();
+  const cleaned = [];
+  for (const raw of names || []) {
+    const name = String(raw || '').trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(name);
+  }
+  return cleaned;
+}
+
+async function previewLocationImport(names) {
+  const cleaned = cleanLocationNames(names);
+  const existing = await prisma.inventoryLocation.findMany({ select: { name: true } });
+  const existingNames = new Set(existing.map((r) => r.name.toLowerCase()));
+
+  const toCreate = cleaned.filter((n) => !existingNames.has(n.toLowerCase()));
+  const alreadyExists = cleaned.filter((n) => existingNames.has(n.toLowerCase()));
+
+  return { toCreate, alreadyExists, totalInFile: (names || []).length };
+}
+
+async function confirmLocationImport(names) {
+  const cleaned = cleanLocationNames(names);
+  const existing = await prisma.inventoryLocation.findMany({ select: { name: true } });
+  const existingNames = new Set(existing.map((r) => r.name.toLowerCase()));
+  const toCreate = cleaned.filter((n) => !existingNames.has(n.toLowerCase()));
+  if (toCreate.length === 0) return { created: 0 };
+
+  let seq = 0;
+  const existingCodes = await prisma.inventoryLocation.findMany({ select: { code: true } });
+  existingCodes.forEach((row) => {
+    const parsed = Number(parseTwoDigitCode(row?.code));
+    if (Number.isFinite(parsed)) seq = Math.max(seq, parsed);
+  });
+
+  await prisma.inventoryLocation.createMany({
+    data: toCreate.map((name) => {
+      seq += 1;
+      return { code: padTwo(seq), name, status: ACTIVE };
+    }),
+  });
+
+  return { created: toCreate.length };
+}
+
 async function updateDepartment(id, payload) {
   const existing = await prisma.inventoryDepartment.findUnique({ where: { id: Number(id) } });
   if (!existing) throw new Error('Department not found');
@@ -2791,11 +2946,12 @@ function formatRemainingBreakdown(lots) {
     .join(' + ');
 }
 
-async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subcategoryId, assetType, departmentId }) {
+async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subcategoryId, assetType, departmentId, location }) {
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
   const parsedDepartmentId = parsePositiveNumber(departmentId);
+  const locationFilter = location ? String(location).trim() : null;
 
   const fromDate = toStartOfDay(dateFrom);
   const toDate = toEndOfDay(dateTo);
@@ -2806,6 +2962,9 @@ async function listItemLedgerReport({ dateFrom, dateTo, itemId, categoryId, subc
       ...(parsedCategoryId ? { categoryId: parsedCategoryId } : {}),
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
       ...(assetType ? { itemType: assetType } : {}),
+      // Same GD/GIN-stamped AssetInstance location Stock Position filters
+      // by — which item(s) currently have a unit at that location.
+      ...(locationFilter ? { assetInstances: { some: { location: { equals: locationFilter, mode: 'insensitive' } } } } : {}),
     },
     include: {
       category: true,
@@ -3326,7 +3485,7 @@ async function listItemAddOptions({ search }) {
 
   const q = normalizeSearch(search);
 
-  const [categories, subcategories, suppliers, storages, departments, demandCategoryTypes] = await Promise.all([
+  const [categories, subcategories, suppliers, storages, locations, departments, demandCategoryTypes] = await Promise.all([
     prisma.inventoryCategory.findMany({
       where: {
         status: ACTIVE,
@@ -3356,6 +3515,13 @@ async function listItemAddOptions({ search }) {
       },
       orderBy: { name: 'asc' },
     }),
+    prisma.inventoryLocation.findMany({
+      where: {
+        status: ACTIVE,
+        ...buildSearchFilter(q, ['code', 'name']),
+      },
+      orderBy: { name: 'asc' },
+    }),
     prisma.inventoryDepartment.findMany({
       where: {
         status: ACTIVE,
@@ -3372,7 +3538,7 @@ async function listItemAddOptions({ search }) {
     }),
   ]);
 
-  return { categories, subcategories, suppliers, storages, departments, demandCategoryTypes };
+  return { categories, subcategories, suppliers, storages, locations, departments, demandCategoryTypes };
 }
 
 async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, assetType, brand, location, itemId }) {
@@ -3393,7 +3559,10 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       ...(parsedSubcategoryId ? { subcategoryId: parsedSubcategoryId } : {}),
       ...(assetType ? { itemType: assetType } : {}),
       ...(brandFilter ? { brand: { equals: brandFilter, mode: 'insensitive' } } : {}),
-      ...(locationFilter ? { assetLocation: { equals: locationFilter, mode: 'insensitive' } } : {}),
+      // Location now tracks where a fixed asset's actual units currently
+      // are (stamped via GD/GIN's "Add Location" → Select Asset Units),
+      // not the old one-time-typed InventoryItem.assetLocation note.
+      ...(locationFilter ? { assetInstances: { some: { location: { equals: locationFilter, mode: 'insensitive' } } } } : {}),
     },
     include: {
       category: true,
@@ -3415,6 +3584,18 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
 
   const itemIds = items.map((item) => item.id);
   const itemById = new Map(items.map((item) => [item.id, item]));
+
+  const assetInstanceRows = await prisma.assetInstance.findMany({
+    where: { itemId: { in: itemIds }, location: { not: null } },
+    select: { itemId: true, location: true },
+  });
+  const locationsByItemId = new Map();
+  for (const row of assetInstanceRows) {
+    if (!row.location) continue;
+    const set = locationsByItemId.get(row.itemId) || new Set();
+    set.add(row.location);
+    locationsByItemId.set(row.itemId, set);
+  }
 
   // Fetch all stock movements up to asOfDate
   const stockMovements = await prisma.inventoryStockMovement.findMany({
@@ -3566,7 +3747,7 @@ async function listStockPositionReport({ asOfDate, categoryId, subcategoryId, as
       unit: baseUnit,
       status: item.status,
       brand: item.brand || '-',
-      location: item.assetLocation || '-',
+      location: locationsByItemId.has(item.id) ? [...locationsByItemId.get(item.id)].join(', ') : '-',
       itemType: item.itemType || '-',
     };
   }).filter((row) => row.currentQuantity > 0); // Only show items with stock
@@ -3801,6 +3982,12 @@ module.exports = {
   deleteSupplier,
   updateStorage,
   deleteStorage,
+  listLocations,
+  createLocation,
+  updateLocation,
+  deleteLocation,
+  previewLocationImport,
+  confirmLocationImport,
   updateDepartment,
   deleteDepartment,
   listPurchaseOrders,
@@ -3834,6 +4021,7 @@ module.exports = {
   createMaintenance,
   receiveMaintenance,
   listAssetInstances,
+  getItemLocationMap,
   updateAssetInstance,
   listUnreadGdNotifications,
   markGdNotificationsRead,
@@ -3870,7 +4058,7 @@ async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId,
       item: { include: { category: true, subcategory: true } },
       supplier: true,
       employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
-      assetInstances: { select: { id: true, assetTag: true, condition: true } },
+      assetInstances: { select: { id: true, assetTag: true, condition: true, location: true } },
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   });

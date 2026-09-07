@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Eye, Plus, Printer, Search, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronUp, Eye, Plus, Printer, Search, Upload, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -11,7 +12,35 @@ import NoTabAccess from '../../components/auth/NoTabAccess';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useInventoryStore } from '../../store/useInventoryStore';
 
-const TABS = ['Items', 'Categories', 'Subcategories', 'Suppliers', 'Storages', 'Departments'];
+const TABS = ['Items', 'Categories', 'Subcategories', 'Suppliers', 'Storages', 'Locations', 'Departments'];
+const TABLE_COLUMN_COUNT = { Items: 9, Locations: 4 };
+
+// Excel sheet is a simple S.No / Locations list — find the "Locations" (or
+// "Location") column by header text rather than a fixed index, so column
+// order/extra columns in the source file don't break the import.
+function parseLocationsExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+        if (!rows.length) return resolve([]);
+
+        const headerRow = rows[0].map((c) => String(c || '').trim().toLowerCase());
+        let col = headerRow.findIndex((c) => c === 'locations' || c === 'location');
+        if (col === -1) col = headerRow.length > 1 ? 1 : 0; // fall back to 2nd column (S.No is usually col 0)
+
+        const names = rows.slice(1)
+          .map((r) => String(r[col] || '').trim())
+          .filter(Boolean);
+        resolve(names);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
 const STATUS_OPTIONS = ['active', 'inactive'];
 const ITEM_TYPES = ['current asset', 'fixed asset'];
 const UNIT_OPTIONS = ['kg', 'liters', 'pieces', 'boxes', 'ml', 'dozen', 'feet', 'inches', 'millimeters', 'centimeter'];
@@ -57,6 +86,7 @@ export default function MasterSetup() {
     subcategories,
     suppliers,
     storages,
+    locations,
   departments,
     items,
     masterOptions,
@@ -64,6 +94,7 @@ export default function MasterSetup() {
     fetchSubcategories,
     fetchSuppliers,
     fetchStorages,
+    fetchLocations,
   fetchDepartments,
     fetchItems,
     fetchMastersOptions,
@@ -79,6 +110,11 @@ export default function MasterSetup() {
     createStorage,
     updateStorage,
     deleteStorage,
+    createLocation,
+    updateLocation,
+    deleteLocation,
+    previewLocationImport,
+    confirmLocationImport,
   createDepartment,
     updateDepartment,
     deleteDepartment,
@@ -97,6 +133,13 @@ export default function MasterSetup() {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [editingRow, setEditingRow] = useState(null);
   const [viewingItem, setViewingItem] = useState(null);
+
+  // Locations tab — Excel bulk import
+  const importFileRef = useRef(null);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importPreview, setImportPreview] = useState(null); // { toCreate, alreadyExists, totalInFile } | null
+  const [importParsing, setImportParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const generateFixedAssetPDF = (item, shouldPrint = false) => {
     const doc = new jsPDF();
@@ -200,9 +243,10 @@ export default function MasterSetup() {
     if (activeTab === 'Categories') return categories;
     if (activeTab === 'Subcategories') return subcategories;
     if (activeTab === 'Suppliers') return suppliers;
+    if (activeTab === 'Locations') return locations;
     if (activeTab === 'Departments') return departments;
     return storages;
-  }, [activeTab, items, categories, subcategories, suppliers, storages, departments]);
+  }, [activeTab, items, categories, subcategories, suppliers, storages, locations, departments]);
 
   const filteredSubcategoriesForItem = useMemo(() => {
     const selectedCategory = Number(formData.categoryId);
@@ -216,6 +260,7 @@ export default function MasterSetup() {
     if (tabName === 'Categories') return fetchCategories(payload);
     if (tabName === 'Subcategories') return fetchSubcategories(payload);
     if (tabName === 'Suppliers') return fetchSuppliers(payload);
+    if (tabName === 'Locations') return fetchLocations(payload);
     if (tabName === 'Departments') return fetchDepartments(payload);
     return fetchStorages(payload);
   };
@@ -357,6 +402,20 @@ export default function MasterSetup() {
         return;
       }
 
+      if (activeTab === 'Locations') {
+        if (editingRow) {
+          await saveAndRefresh((p) => updateLocation(editingRow.id, p), { name: formData.name, status: formData.status }, 'Location updated');
+        } else {
+          const enteredName = String(formData.name || '').trim().toLowerCase();
+          if ((locations || []).some((r) => String(r.name || '').trim().toLowerCase() === enteredName)) {
+            toast.error('Location with this name already exists');
+            return;
+          }
+          await saveAndRefresh(createLocation, { code: formData.code || undefined, name: formData.name, status: formData.status }, 'Location created');
+        }
+        return;
+      }
+
       if (activeTab === 'Departments') {
         if (editingRow) {
           await saveAndRefresh((p) => updateDepartment(editingRow.id, p), { name: formData.name, status: formData.status }, 'Department updated');
@@ -448,6 +507,8 @@ export default function MasterSetup() {
         await updateSupplier(row.id, { name: row.name, address: row.address, contactDetails: row.contactDetails, bankingDetails: row.bankingDetails, status });
       } else if (tab === 'Storages') {
         await updateStorage(row.id, { name: row.name, numberAllotment: row.numberAllotment, status });
+      } else if (tab === 'Locations') {
+        await updateLocation(row.id, { name: row.name, status });
       } else if (tab === 'Departments') {
         await updateDepartment(row.id, { name: row.name, status });
       }
@@ -468,6 +529,7 @@ export default function MasterSetup() {
       else if (activeTab === 'Subcategories') await deleteSubcategory(row.id);
       else if (activeTab === 'Suppliers') await deleteSupplier(row.id);
       else if (activeTab === 'Storages') await deleteStorage(row.id);
+      else if (activeTab === 'Locations') await deleteLocation(row.id);
       else if (activeTab === 'Departments') await deleteDepartment(row.id);
       await loadByTab(activeTab, query);
       toast.success(`${label} deleted`);
@@ -490,7 +552,51 @@ export default function MasterSetup() {
   };
 
   const recordCount = Array.isArray(currentRows) ? currentRows.length : 0;
-  const tableColumnCount = activeTab === 'Items' ? 9 : 6;
+  const tableColumnCount = TABLE_COLUMN_COUNT[activeTab] ?? 6;
+
+  // ── Locations Excel import ──────────────────────────────────────────────
+  const openImportModal = () => {
+    setImportPreview(null);
+    setShowImportModal(true);
+  };
+  const closeImportModal = () => {
+    setShowImportModal(false);
+    setImportPreview(null);
+    if (importFileRef.current) importFileRef.current.value = '';
+  };
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportParsing(true);
+    setImportPreview(null);
+    try {
+      const names = await parseLocationsExcel(file);
+      if (!names.length) {
+        toast.error('Excel mein koi location naam nahi mila — "Locations" column check karein');
+        return;
+      }
+      const preview = await previewLocationImport(names);
+      setImportPreview(preview);
+    } catch (err) {
+      toast.error(err.message || 'Excel parse nahi hui');
+    } finally {
+      setImportParsing(false);
+    }
+  };
+  const handleConfirmImport = async () => {
+    if (!importPreview?.toCreate?.length) return;
+    setImporting(true);
+    try {
+      const result = await confirmLocationImport(importPreview.toCreate);
+      toast.success(`${result.created} location(s) import ho gaye`);
+      closeImportModal();
+      await loadByTab('Locations', query);
+    } catch (err) {
+      toast.error(err.message || 'Import save nahi hui');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   if (visibleTabs.length === 0) return <NoTabAccess />;
 
@@ -501,7 +607,12 @@ export default function MasterSetup() {
           <h1 className="text-2xl font-bold text-slate-900">Master Setup</h1>
           <p className="text-slate-500 text-sm">Inventory masters & item registration (API integrated)</p>
         </div>
-        <Button label={`Add New ${effectiveTab.slice(0, -1)}`} icon={Plus} onClick={openAddModal} />
+        <div className="flex items-center gap-2">
+          {effectiveTab === 'Locations' && (
+            <Button label="Upload Excel" icon={Upload} variant="outline" onClick={openImportModal} />
+          )}
+          <Button label={`Add New ${effectiveTab.slice(0, -1)}`} icon={Plus} onClick={openAddModal} />
+        </div>
       </div>
 
       <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg mb-6 w-fit">
@@ -606,6 +717,14 @@ export default function MasterSetup() {
                     <th className="px-6 py-4 font-semibold">Name</th>
                     <th className="px-6 py-4 font-semibold">Number Allotment</th>
                     <th className="px-6 py-4 font-semibold">Items</th>
+                    <th className="px-6 py-4 font-semibold">Status</th>
+                    <th className="px-6 py-4 font-semibold">Actions</th>
+                  </>
+                )}
+                {effectiveTab === 'Locations' && (
+                  <>
+                    <th className="px-6 py-4 font-semibold">Code</th>
+                    <th className="px-6 py-4 font-semibold">Name</th>
                     <th className="px-6 py-4 font-semibold">Status</th>
                     <th className="px-6 py-4 font-semibold">Actions</th>
                   </>
@@ -780,6 +899,25 @@ export default function MasterSetup() {
                       </>
                     )}
 
+                    {effectiveTab === 'Locations' && (
+                      <>
+                        <td className="px-6 py-4">{row.code}</td>
+                        <td className="px-6 py-4 font-medium text-slate-800">{row.name}</td>
+                        <td className="px-6 py-4 capitalize">{row.status}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            <Button label="Edit" size="sm" variant="outline" onClick={() => openEditModal(row)} />
+                            {row.status !== 'inactive' ? (
+                              <Button label="Inactive" size="sm" variant="secondary" onClick={() => handleSetStatus(row, 'inactive')} />
+                            ) : (
+                              <Button label="Activate" size="sm" variant="outline" onClick={() => handleSetStatus(row, 'active')} />
+                            )}
+                            <Button label="Delete" size="sm" variant="danger" onClick={() => handleDelete(row)} />
+                          </div>
+                        </td>
+                      </>
+                    )}
+
                     {effectiveTab === 'Departments' && (
                       <>
                         <td className="px-6 py-4">{row.code}</td>
@@ -841,7 +979,7 @@ export default function MasterSetup() {
                   ))}
                 </select>
 
-                {(activeTab === 'Categories' || activeTab === 'Subcategories' || activeTab === 'Suppliers' || activeTab === 'Storages' || activeTab === 'Departments' || activeTab === 'Items') && (
+                {(activeTab === 'Categories' || activeTab === 'Subcategories' || activeTab === 'Suppliers' || activeTab === 'Storages' || activeTab === 'Locations' || activeTab === 'Departments' || activeTab === 'Items') && (
                   <input
                     placeholder={effectiveTab === 'Items' ? 'Item Name' : 'Name'}
                     value={formData.name}
@@ -1124,6 +1262,70 @@ export default function MasterSetup() {
                 <Button label="Save" type="submit" />
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Locations — Excel Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-2 sm:p-4">
+          <div className="w-full max-w-lg bg-white rounded-xl border border-slate-200 shadow-xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+              <h3 className="text-base sm:text-lg font-semibold text-slate-900">Upload Locations Excel</h3>
+              <button onClick={closeImportModal} className="text-slate-500 hover:text-slate-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              <p className="text-sm text-slate-500">
+                "S.No" aur "Locations" column wali Excel (.xls/.xlsx) select karein — jitne naye naam honge wahi add honge, jo pehle se maujood hain wo skip ho jayenge.
+              </p>
+
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".xls,.xlsx"
+                onChange={handleImportFile}
+                className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+
+              {importParsing && <p className="text-sm text-slate-500">Excel parse ho rahi hai...</p>}
+
+              {importPreview && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-green-50 border border-green-100 px-3 py-2">
+                      <p className="text-xs text-green-700">Naye Locations</p>
+                      <p className="text-lg font-semibold text-green-800">{importPreview.toCreate.length}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+                      <p className="text-xs text-slate-500">Pehle se maujood (skip)</p>
+                      <p className="text-lg font-semibold text-slate-700">{importPreview.alreadyExists.length}</p>
+                    </div>
+                  </div>
+
+                  {importPreview.toCreate.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-md">
+                      <ul className="divide-y divide-slate-100 text-sm">
+                        {importPreview.toCreate.map((name) => (
+                          <li key={name} className="px-3 py-1.5 text-slate-700">{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-200 shrink-0">
+              <Button label="Cancel" variant="secondary" onClick={closeImportModal} />
+              <Button
+                label={importing ? 'Importing...' : `Import ${importPreview?.toCreate?.length || ''}`}
+                onClick={handleConfirmImport}
+                disabled={!importPreview?.toCreate?.length || importing}
+              />
+            </div>
           </div>
         </div>
       )}

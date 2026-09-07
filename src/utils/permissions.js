@@ -50,6 +50,7 @@ export const PERMISSIONS_MAP = {
           { key: 'subcategories', label: 'Subcategories' },
           { key: 'suppliers',     label: 'Suppliers' },
           { key: 'storages',      label: 'Storages' },
+          { key: 'locations',     label: 'Locations' },
           { key: 'departments',   label: 'Departments' },
         ],
       },
