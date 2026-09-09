@@ -1,4 +1,52 @@
 const prisma = require('../../config/db');
+const accountsService = require('../accounts/accounts.service');
+
+// Advance/Loan is always posted to the Non-Corporate book, Cash mode — the
+// specific Sub Account is whatever's linked to the 'advance-loan' system
+// head in List Attachments (Accounts → Non-Corporate → Parameters). Not
+// configurable per-record: this module doesn't collect entityType/payment
+// mode from the user, by design (see chat with user, 2026-09-09).
+const ADVANCE_LOAN_VOUCHER_ENTITY_TYPE = 'non-corporate';
+
+// Creates the auto Voucher Expense for a just-created, already-disbursed
+// (status='active') Advance/Loan. Returns { voucherNo } on success, or
+// { warning } if the 'advance-loan' head isn't linked to a Sub Account yet
+// (List Attachments) — the Advance/Loan record itself is never blocked by
+// this; HR can still record it, accounts just needs to finish setup.
+async function tryCreateAdvanceLoanVoucher(advanceLoan) {
+  try {
+    const chain = await accountsService.getAdvanceLoanVoucherAccountChain(ADVANCE_LOAN_VOUCHER_ENTITY_TYPE);
+    if (!chain) {
+      return { warning: 'Advance/Loan save ho gaya, lekin voucher nahi bana — Accounts → Non-Corporate → Parameters → List Attachments mein "Employee Advance/Loan" head ko pehle kisi account se link karein.' };
+    }
+    const employee = advanceLoan.employee;
+    const payeeName = employee ? `${employee.firstName} ${employee.lastName}`.trim() : 'Unknown Employee';
+    const voucherDate = new Date().toISOString().slice(0, 10);
+    const voucher = await accountsService.createVoucherExpense({
+      entityType: ADVANCE_LOAN_VOUCHER_ENTITY_TYPE,
+      mode: 'cash',
+      bankId: null,
+      voucherDate,
+      entries: [{
+        mainGlId:      chain.mainGlId,
+        subGlId:       chain.subGlId,
+        mainAccountId: chain.mainAccountId,
+        subAccountId:  chain.subAccountId,
+        accountCode:   chain.accountCode,
+        accountName:   chain.accountName,
+        payeeName,
+        amount:      advanceLoan.amount,
+        particulars: `${advanceLoan.type === 'loan' ? 'Loan' : 'Advance'} issued — ${payeeName}`,
+      }],
+    });
+    return { voucherNo: voucher.voucherNo };
+  } catch (err) {
+    // Never let a voucher-posting failure undo an already-saved Advance/Loan
+    // record — HR's record is the source of truth; surface the failure as a
+    // warning so accounts can post it manually instead.
+    return { warning: `Advance/Loan save ho gaya, lekin voucher banate waqt error aayi: ${err.message}` };
+  }
+}
 
 const CLOSED_LOAN_STATUSES = ['closed', 'completed', 'settled', 'cancelled', 'canceled'];
 
@@ -285,12 +333,23 @@ async function create(payload) {
     remarks,
   });
 
+  // 'active' means the money is actually disbursed right now (this module
+  // has no separate pending→approved step in current use — the frontend
+  // always saves with status:'active' directly) — that's the moment an
+  // expense voucher should exist, not later.
+  let voucherResult = null;
+  if (normalizedStatus === 'active') {
+    voucherResult = await tryCreateAdvanceLoanVoucher(created);
+  }
+
   return {
     ...created,
     baseSchedule: view.baseSchedule,
     recoveries: view.recoveries,
     schedule: view.schedule,
-    remarks: remarks || ''
+    remarks: remarks || '',
+    voucherNo: voucherResult?.voucherNo || null,
+    voucherWarning: voucherResult?.warning || null,
   };
 }
 

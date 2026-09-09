@@ -1215,9 +1215,12 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                 if (r.doctor && !acc.find(d => d.id === r.doctor.id)) acc.push(r.doctor);
                 return acc;
               }, []);
+              // No doctor picked yet → show nothing rather than every doctor's
+              // tests flattened together (same sub-department name would repeat
+              // once per doctor who offers it — confusing before a doctor is chosen).
               const visibleRows = (selectedDoctorId
                 ? leftDoctors.filter(r => r.doctor?.id === Number(selectedDoctorId))
-                : leftDoctors
+                : []
               ).filter(matchesLeftSearch);
               return (
                 <>

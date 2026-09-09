@@ -225,8 +225,14 @@ export default function AdvanceLoan() {
         await updateAdvanceLoan(editingRecord.id, payload);
         toast.success('Record updated');
       } else {
-        await createAdvanceLoan(payload);
-        toast.success('Record saved');
+        const saved = await createAdvanceLoan(payload);
+        if (saved?.voucherWarning) {
+          toast(saved.voucherWarning, { icon: '⚠️', duration: 7000 });
+        } else if (saved?.voucherNo) {
+          toast.success(`Record saved — Voucher ${saved.voucherNo} auto-created`);
+        } else {
+          toast.success('Record saved');
+        }
       }
 
       await fetchAdvanceLoans();

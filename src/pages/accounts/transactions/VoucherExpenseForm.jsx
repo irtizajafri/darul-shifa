@@ -373,6 +373,13 @@ export default function VoucherExpenseForm() {
   const [admissionQuery, setAdmissionQuery] = useState('');
   const [admissionResults, setAdmissionResults] = useState([]);
   const [admissionSearchOpen, setAdmissionSearchOpen] = useState(false);
+  // Surgery/Anesthesia — one payment can cover several patients' files at
+  // once (e.g. paying a surgeon for a batch of cases together), so multiple
+  // admissions can be picked into the same entry. There's no separate DB
+  // column for this list — entry.admissionNo stays the single text field it
+  // already was, just holding a comma-joined string (kept in sync below),
+  // so no schema change was needed.
+  const [selectedAdmissions, setSelectedAdmissions] = useState([]); // [{admissionNo, patientName}]
   const admissionSearchTimer = useRef(null);
   // IPD Consultant Fee — payee list loads straight off the Main Account (no
   // Sub Account, no admission picker); the admission(s) instead get picked
@@ -553,7 +560,7 @@ export default function VoucherExpenseForm() {
   const resetSurgeryState = () => {
     setIsSurgeryAcc(false);
     setSurgeryCategories([]); setSurgeryCategoryId(''); setSurgeryHeadIdForFetch(null);
-    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false);
+    setAdmissionQuery(''); setAdmissionResults([]); setAdmissionSearchOpen(false); setSelectedAdmissions([]);
     setIsIpdConsultantAcc(false);
   };
 
@@ -689,10 +696,28 @@ export default function VoucherExpenseForm() {
   };
 
   const handleAdmissionSelect = (row) => {
-    setEntry((e) => ({ ...e, admissionNo: row.admissionNo, accountName: mainAccs.find((a) => String(a.id) === String(e.mainAccountId))?.name || e.accountName }));
-    setAdmissionQuery(`${row.admissionNo} — ${row.patientName}`);
+    setSelectedAdmissions((prev) =>
+      prev.some((a) => a.admissionNo === row.admissionNo)
+        ? prev // already picked — ignore duplicate click
+        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName }]
+    );
+    setEntry((e) => ({ ...e, accountName: mainAccs.find((a) => String(a.id) === String(e.mainAccountId))?.name || e.accountName }));
+    setAdmissionQuery('');
     setAdmissionSearchOpen(false);
   };
+
+  const handleAdmissionRemove = (admissionNo) => {
+    setSelectedAdmissions((prev) => prev.filter((a) => a.admissionNo !== admissionNo));
+  };
+
+  // Keep entry.admissionNo (the field actually persisted/validated/used in
+  // narration) as a comma-joined string of whatever's currently picked.
+  useEffect(() => {
+    setEntry((e) => {
+      const joined = selectedAdmissions.map((a) => a.admissionNo).join(', ');
+      return e.admissionNo === joined ? e : { ...e, admissionNo: joined };
+    });
+  }, [selectedAdmissions]);
 
   const handleSubAccChange = async (v) => {
     if (isInventoryAcc) {
@@ -743,7 +768,11 @@ export default function VoucherExpenseForm() {
     setEntry({ ...e });
     setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
     resetSurgeryState();
-    setAdmissionQuery(e.admissionNo || '');
+    // Patient names aren't stored on the entry itself — re-editing shows just
+    // the admission numbers as chips (still fully removable/re-searchable).
+    setSelectedAdmissions(
+      e.admissionNo ? e.admissionNo.split(',').map((s) => s.trim()).filter(Boolean).map((no) => ({ admissionNo: no, patientName: '' })) : []
+    );
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
 
     if (e.mainGlId) {
@@ -1206,9 +1235,19 @@ export default function VoucherExpenseForm() {
               <input className="ve-form__alloc-input" value="— Payee mein consultant select karein, admission wahin se milega —" readOnly disabled />
             ) : isSurgeryAcc ? (
               <div className="ve-form__payee-picker" style={{ flex: 1 }}>
+                {selectedAdmissions.length > 0 && (
+                  <div className="ve-form__admission-chips">
+                    {selectedAdmissions.map((a) => (
+                      <span key={a.admissionNo} className="ve-form__admission-chip">
+                        {a.admissionNo}{a.patientName ? ` — ${a.patientName}` : ''}
+                        <button type="button" onMouseDown={(ev) => { ev.preventDefault(); handleAdmissionRemove(a.admissionNo); }}>✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <input
                   className="ve-form__alloc-input"
-                  placeholder="Search Admission # or Patient Name… (recent first)"
+                  placeholder={selectedAdmissions.length ? 'Search to add another admission…' : 'Search Admission # or Patient Name… (multiple allowed)'}
                   value={admissionQuery}
                   onChange={(e) => handleAdmissionQueryChange(e.target.value)}
                   onFocus={() => setAdmissionSearchOpen(true)}
@@ -1216,9 +1255,12 @@ export default function VoucherExpenseForm() {
                 />
                 {admissionSearchOpen && (
                   <div className="ve-form__payee-list">
-                    {admissionResults.length === 0 ? (
+                    {admissionResults.filter((r) => !selectedAdmissions.some((a) => a.admissionNo === r.admissionNo)).length === 0 ? (
                       <div className="ve-form__payee-item" style={{ cursor: 'default', color: '#94a3b8' }}>No admissions found</div>
-                    ) : admissionResults.slice(0, 8).map((r) => (
+                    ) : admissionResults
+                        .filter((r) => !selectedAdmissions.some((a) => a.admissionNo === r.admissionNo))
+                        .slice(0, 8)
+                        .map((r) => (
                       <div key={r.id} className="ve-form__payee-item" onMouseDown={() => handleAdmissionSelect(r)}>
                         <span className="ve-form__payee-code">{r.admissionNo}</span>
                         <span>{r.patientName}</span>

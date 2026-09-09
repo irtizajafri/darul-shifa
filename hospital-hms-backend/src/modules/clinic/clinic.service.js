@@ -3468,7 +3468,14 @@ async function searchAdmissionsForAdjustment(q) {
   const rows = await prisma.clinicAdmission.findMany({
     where,
     orderBy: { id: 'desc' },
-    take: 100,
+    // Was capped at 100 — but this list is status:'active' only, which is a
+    // naturally small/bounded set (currently-admitted patients), not the full
+    // admission history. The old cap silently hid older active admissions
+    // (e.g. ones created in bulk via "Generate Admissions") once 100+ newer
+    // admissions had been created since — even though they were still 'active'
+    // and should always be findable here. 1000 gives headroom well above the
+    // real active-patient count without ever showing the full historical table.
+    take: 1000,
   });
   return rows.map((a) => ({
     id: a.id,

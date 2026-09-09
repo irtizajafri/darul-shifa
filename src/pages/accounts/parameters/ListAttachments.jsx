@@ -21,11 +21,13 @@ function matchUtility(entryName) {
 
 const SOURCE_BADGE = {
   employee:  { label: 'HR Module',        color: '#3b82f6' },
+  'employee-manual': { label: 'HR Module (Manual)', color: '#6366f1' },
   vendor:    { label: 'Inventory Module', color: '#f59e0b' },
   doctor:    { label: 'Clinic Module',    color: '#10b981' },
   inventory: { label: 'Inventory Items',  color: '#0ea5e9' },
   surgery:   { label: 'Surgery/Anesthesia', color: '#ec4899' },
   'ipd-consultant': { label: 'IPD Consultant', color: '#d946ef' },
+  'advance-loan': { label: 'Employee Management', color: '#14b8a6' },
   manual:    { label: 'Custom',           color: '#8b5cf6' },
 };
 
@@ -376,7 +378,7 @@ export default function ListAttachments() {
   const customHeads = payeeHeads.filter((h) => h.sourceType === 'manual');
 
   const renderEntries = (head) => {
-    if (head.sourceType === 'employee') {
+    if (head.sourceType === 'employee' || head.sourceType === 'employee-manual') {
       if (linkedEmployees.length === 0) return <p className="list-attach__empty">No employees found in HR module</p>;
       return linkedEmployees.map((e) => (
         <div key={e.id} className="list-attach__entry-row"><span>{e.firstName} {e.lastName}</span></div>
@@ -384,6 +386,9 @@ export default function ListAttachments() {
     }
     if (head.sourceType === 'vendor') {
       return null;
+    }
+    if (head.sourceType === 'advance-loan') {
+      return <p className="list-attach__empty">Koi payee list nahi — sirf ek Account link chahiye. "Link to Account" se Sub Account attach karein; jab Employee Management mein Advance/Loan banega, uska voucher isi account pe post hoga.</p>;
     }
     if (head.sourceType === 'doctor') {
       if (linkedDoctors.length === 0) return <p className="list-attach__empty">No doctors found in Clinic module</p>;
@@ -683,7 +688,7 @@ export default function ListAttachments() {
                   const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
                   setSupplierModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allSuppliers: linkedSuppliers, checked: checkedNames });
                 }
-                if (head.sourceType === 'employee' && e.target.value) {
+                if ((head.sourceType === 'employee' || head.sourceType === 'employee-manual') && e.target.value) {
                   const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
                   const j = await r.json();
                   const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));

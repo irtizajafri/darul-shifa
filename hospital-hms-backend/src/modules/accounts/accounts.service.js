@@ -294,9 +294,16 @@ async function copyChartToCorporate() {
 // ── Payee Heads ───────────────────────────────────────────────────────────────
 
 const SYSTEM_HEAD_DEFS = [
-  { sourceType: 'employee', name: 'Employees' },
-  { sourceType: 'vendor',   name: 'Vendors / Suppliers' },
-  { sourceType: 'doctor',   name: 'Doctors / Consultants' },
+  { sourceType: 'employee',        name: 'Employees' },
+  { sourceType: 'employee-manual', name: 'Employees (Manual Amount)' },
+  { sourceType: 'vendor',          name: 'Vendors / Suppliers' },
+  { sourceType: 'doctor',          name: 'Doctors / Consultants' },
+  // No payee list of its own — just a single Link-to-Account target. When an
+  // Advance/Loan is created (Employee Management), the backend looks up
+  // whichever Sub Account is linked to this head (see
+  // getAdvanceLoanVoucherAccountChain) and posts the auto Voucher Expense
+  // against it. Left unlinked = no auto-voucher, just a warning back to HR.
+  { sourceType: 'advance-loan',    name: 'Employee Advance/Loan' },
 ];
 
 async function ensureSystemHeads(entityType) {
@@ -449,6 +456,35 @@ async function getIpdConsultantHeadForMainAccount(mainAccountId) {
   });
   if (!link?.payeeHead || link.payeeHead.sourceType !== 'ipd-consultant') return null;
   return link.payeeHead;
+}
+
+// Whichever Sub Account is linked to the 'advance-loan' system head for this
+// entityType (set up once via List Attachments → "Employee Advance/Loan" →
+// Link to Account) — the posting target for auto-vouchers created from
+// Employee Management when an Advance/Loan is saved. Returns null if the
+// head hasn't been linked to an account yet (caller should skip the
+// auto-voucher and surface that to the user rather than guessing an account).
+async function getAdvanceLoanVoucherAccountChain(entityType) {
+  const head = await prisma.accPayeeHead.findFirst({ where: { sourceType: 'advance-loan', entityType } });
+  if (!head) return null;
+  const link = await prisma.accPayeeHeadAccount.findFirst({
+    where: { payeeHeadId: head.id },
+    include: {
+      subAccount: {
+        include: { mainAccount: { include: { subGL: { include: { mainGL: true } } } } },
+      },
+    },
+  });
+  if (!link?.subAccount) return null;
+  const sa = link.subAccount;
+  return {
+    subAccountId: sa.id,
+    accountCode:  sa.code,
+    accountName:  sa.name,
+    mainAccountId: sa.mainAccount.id,
+    subGlId:      sa.mainAccount.subGL.id,
+    mainGlId:     sa.mainAccount.subGL.mainGL.id,
+  };
 }
 
 // Unpaid Const Fee rows for one doctor, optionally narrowed to a date range
@@ -633,6 +669,31 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       ? dueEmps.filter((e) => checkedNames.includes(e.name))
       : dueEmps;
     return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueEmps, checkedNames };
+  }
+
+  // Same employee source as above, but deliberately NOT gated by salary-paid
+  // status — this head is for one-off manual payments to an employee (e.g.
+  // reimbursement, bonus) where the amount isn't derived from a payslip, so
+  // clicking a payee in Voucher Expense just fills the name and leaves Amount
+  // for manual entry (no Salary Verification popup — see linkedHeadType
+  // handling in VoucherExpenseForm.jsx, which only auto-opens that popup for
+  // sourceType==='employee').
+  if (head.sourceType === 'employee-manual') {
+    const checkedEntries = await prisma.accPayeeEntry.findMany({
+      where: { payeeHeadId: head.id, subAccountId: Number(subAccountId) },
+      select: { name: true },
+    });
+    const checkedNames = checkedEntries.map((e) => e.name);
+    const rows = await prisma.employee.findMany({
+      where: { status: 'Active' },
+      select: { id: true, firstName: true, lastName: true, empCode: true },
+      orderBy: { firstName: 'asc' },
+    });
+    const allEmps = rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode }));
+    const filteredEntries = checkedNames.length > 0
+      ? allEmps.filter((e) => checkedNames.includes(e.name))
+      : allEmps;
+    return { type: 'employee-manual', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: allEmps, checkedNames };
   }
 
   if (head.sourceType === 'vendor') {
@@ -1749,7 +1810,7 @@ module.exports = {
   copyChartToCorporate, getPendingGrnQueue,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
-  getIpdConsultantHeadForMainAccount, getPendingConsultantFees,
+  getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,

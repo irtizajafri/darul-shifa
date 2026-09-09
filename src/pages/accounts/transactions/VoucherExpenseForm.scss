@@ -255,6 +255,44 @@
     input { margin: 0; }
   }
 
+  // ── Surgery/Anesthesia — multiple admissions picked into one entry ────────
+  &__admission-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.4rem;
+  }
+
+  &__admission-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid #fbcfe8;
+    background: #fdf2f8;
+    color: #be185d;
+    font-size: 0.76rem;
+    font-weight: 500;
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.1rem;
+      height: 1.1rem;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: #be185d;
+      font-size: 0.7rem;
+      line-height: 1;
+      cursor: pointer;
+
+      &:hover { background: #fbcfe8; }
+    }
+  }
+
   // ── Payee picker ────────────────────────────────────────────────────────────
   &__payee-picker { position: relative; }
 
