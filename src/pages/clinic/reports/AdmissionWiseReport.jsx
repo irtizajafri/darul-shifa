@@ -62,22 +62,24 @@ export default function AdmissionWiseReport() {
     const content = document.getElementById('awr-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>Admission Wise Report</title>
       <style>
+        @page{size:landscape;margin:8mm;}
         *{box-sizing:border-box;}
-        body{font-family:Tahoma,sans-serif;font-size:11px;margin:0;padding:12px;}
-        table{width:100%;border-collapse:collapse;font-size:10px;}
-        th{background:#1a3c6e!important;color:#fff!important;padding:4px 6px;text-align:left;
+        body{font-family:Tahoma,sans-serif;font-size:9px;margin:0;padding:10px;}
+        table{width:100%;border-collapse:collapse;font-size:8.5px;table-layout:fixed;}
+        th,td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        th{background:#1a3c6e!important;color:#fff!important;padding:3px 5px;text-align:left;
            -webkit-print-color-adjust:exact;print-color-adjust:exact;}
         th.num{text-align:right;}
-        td{padding:3px 6px;border-bottom:1px solid #ddd;}
+        td{padding:2px 5px;border-bottom:1px solid #ddd;}
         .td-num{text-align:right;}
-        .ddp-doc-row td{font-weight:600;}
-        .ddp-bucket-row td{background:#f4f6fa!important;font-style:italic;padding-left:20px;font-size:9px;color:#475569;
+        .ddp-doc-row td{font-weight:600;white-space:normal;}
+        .ddp-bucket-row td{background:#f4f6fa!important;font-style:italic;padding-left:20px;font-size:7.5px;color:#475569;
           -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        .ddp-detail-row td{padding-left:34px;color:#334155;font-size:9px;}
+        .ddp-detail-row td{padding-left:34px;color:#334155;font-size:7.5px;}
         .ddp-total-row td{background:#eef2f8!important;font-weight:700;border-top:2px solid #1a3c6e;
           -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        h1{font-size:13px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
-        p{font-size:10px;margin:0;color:#555;}
+        h1{font-size:12px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
+        p{font-size:9px;margin:0;color:#555;}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -176,6 +178,19 @@ export default function AdmissionWiseReport() {
 
           {!loading && rows.length > 0 && !isSummary && (
             <table className="ddp-table">
+              <colgroup>
+                <col style={{ width: '22%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '9%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Admit Number &amp; Patient Name</th>

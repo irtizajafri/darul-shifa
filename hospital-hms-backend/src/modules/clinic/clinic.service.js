@@ -3457,13 +3457,21 @@ async function getAvailableBeds(roomCategoryId, excludeAdmissionId) {
 // in Revenue Dashboard / Patients List; changing it here would silently alter
 // past financial records without a corresponding payment trail).
 
-async function searchAdmissionsForAdjustment(q) {
+// entityType is optional and, when passed, narrows by patientCategory the
+// same way GRN/Doctor payments already split Cash vs Panel elsewhere in
+// Accounts ('corporate' book = Panel files only, 'non-corporate' book =
+// everything except Panel — private/staff/cc). Left undefined for callers
+// that don't care about the split (e.g. Inventory GD's admission picker),
+// so existing behaviour there is unchanged.
+async function searchAdmissionsForAdjustment(q, entityType) {
   const term = String(q || '').trim();
   const where = {
     status: 'active',
     ...(term
       ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
       : {}),
+    ...(entityType === 'corporate' ? { patientCategory: 'panel' } : {}),
+    ...(entityType === 'non-corporate' ? { patientCategory: { not: 'panel' } } : {}),
   };
   const rows = await prisma.clinicAdmission.findMany({
     where,
@@ -7689,6 +7697,7 @@ async function getAdmissionWiseReport({ fromDate, toDate, statusMode, patientTyp
     where,
     include: {
       provisionalBillItems: true,
+      dischargeCertificate: { select: { dischargeDate: true } },
     },
     orderBy: { admissionNo: 'asc' },
   });
@@ -7729,7 +7738,12 @@ async function getAdmissionWiseReport({ fromDate, toDate, statusMode, patientTyp
       patientType: a.patientCategory,
       status: (a.status === 'discharge' || a.status === 'closed') ? 'Discharge' : 'Admit',
       admitDate: a.createdAt,
-      disDate: (a.status === 'discharge' || a.status === 'closed') ? a.updatedAt : null,
+      // Was a.updatedAt — that's just "last time this row was touched", bumped
+      // by any edit at all (a bulk job in this case had stamped every closed
+      // admission with the exact same updatedAt, so every row showed the same
+      // "discharge date"). The real discharge date lives on the Discharge
+      // Certificate, one per admission — null here if it hasn't been issued yet.
+      disDate: (a.status === 'discharge' || a.status === 'closed') ? (a.dischargeCertificate?.dischargeDate || null) : null,
       // Patients-list-style demographic fields, straight off the admission record.
       mrNo: a.mrNo || null,
       age: `${a.ageYears || 0}Y ${a.ageMonths || 0}M ${a.ageDays || 0}D`,
@@ -7954,6 +7968,7 @@ async function confirmMedicineImport(rows) {
 }
 
 module.exports = {
+  calcFeeSplit,
   getAllDepartments,
   createDepartment,
   updateDepartment,

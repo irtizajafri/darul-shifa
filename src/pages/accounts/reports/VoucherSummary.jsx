@@ -90,52 +90,62 @@ function groupVouchers(vouchers) {
 
 // ── Print CSS ──────────────────────────────────────────────────────────────────
 const SUMMARY_CSS = `
+  @page { size: landscape; margin: 8mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:Arial,sans-serif; font-size:10px; color:#000; background:#fff; }
-  .vs-page { padding:16px 22px; }
+  body { font-family:Arial,sans-serif; font-size:9px; color:#000; background:#fff; }
+  .vs-page { padding:12px 16px; }
 
   .vs-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px; }
-  .vs-entity { font-size:13px; font-weight:900; }
-  .vs-page-no { font-size:10px; color:#555; }
+  .vs-entity { font-size:12px; font-weight:900; }
+  .vs-page-no { font-size:9px; color:#555; }
 
   .vs-sub { display:flex; justify-content:space-between; align-items:center;
             border-bottom:2px solid #000; padding-bottom:5px; margin-bottom:0; }
-  .vs-report-title { font-size:15px; font-weight:900; text-transform:uppercase; letter-spacing:0.04em; }
-  .vs-print-info { display:flex; gap:18px; font-size:9.5px; }
+  .vs-report-title { font-size:13px; font-weight:900; text-transform:uppercase; letter-spacing:0.04em; }
+  .vs-print-info { display:flex; gap:18px; font-size:8.5px; }
   .vs-print-by   { font-weight:700; }
 
+  /* table-layout:fixed makes every <th style="width:X%"> below strictly
+     enforced instead of just a hint the browser can override for long
+     content — that's what was letting rows wrap across lines. Long text
+     (Particulars/Payee) still wraps within its own cell, everything else
+     (dates, cheque #, amounts) stays on one line. */
+  table.vs-main, table.vs-entry { table-layout:fixed; }
+
   table.vs-main { width:100%; border-collapse:collapse; }
-  table.vs-main th { padding:4px 7px; font-size:10px; font-weight:700; text-align:left;
+  table.vs-main th { padding:3px 6px; font-size:9px; font-weight:700; text-align:left;
                      background:#e0e0e0; border-top:2px solid #000; border-bottom:2px solid #000; }
-  table.vs-main td { padding:3px 7px; font-size:10px; text-align:left; }
+  table.vs-main td { padding:2px 6px; font-size:9px; text-align:left; }
   .vs-td-r { text-align:right !important; }
 
   /* Year row */
-  .vs-year-row td { font-size:11px; font-weight:900; padding:5px 7px;
+  .vs-year-row td { font-size:10px; font-weight:900; padding:4px 6px;
                     border-top:1.5px solid #000; border-bottom:1.5px solid #000;
                     vertical-align:middle; }
 
   /* Month row */
-  .vs-month-row td { font-size:10.5px; font-weight:700; padding:4px 7px;
+  .vs-month-row td { font-size:9.5px; font-weight:700; padding:3px 6px;
                      border-top:1px solid #bbb; border-bottom:1px solid #bbb;
                      vertical-align:middle; }
 
   /* Day row */
-  .vs-day-row td { font-size:10px; font-weight:700; padding:3px 7px;
-                   border-bottom:1px solid #ddd; vertical-align:middle; }
+  .vs-day-row td { font-size:9px; font-weight:700; padding:2px 6px;
+                   border-bottom:1px solid #ddd; vertical-align:middle; white-space:nowrap; }
 
   /* Voucher summary row */
-  .vs-voucher-row td { padding:3px 7px 1px 10px; font-size:10px; }
+  .vs-voucher-row td { padding:2px 6px 1px 9px; font-size:9px; white-space:nowrap; }
 
   /* Entries sub-table wrapper */
-  .vs-entry-wrap td { padding:1px 0 7px 20px; }
+  .vs-entry-wrap td { padding:1px 0 6px 18px; }
   table.vs-entry { width:100%; border-collapse:collapse; }
-  table.vs-entry th { padding:3px 5px; font-size:9px; font-weight:700; text-align:left;
-                      background:#ececec; border-top:1.5px solid #000; border-bottom:1.5px solid #000; }
-  table.vs-entry td { padding:4px 5px; font-size:9px; text-align:left; border-bottom:1px solid #ccc; }
+  table.vs-entry th { padding:2px 4px; font-size:8px; font-weight:700; text-align:left;
+                      background:#ececec; border-top:1.5px solid #000; border-bottom:1.5px solid #000;
+                      overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  table.vs-entry td { padding:3px 4px; font-size:8px; text-align:left; border-bottom:1px solid #ccc;
+                      overflow:hidden; word-wrap:break-word; }
   table.vs-entry tr:last-child td { border-bottom:1.5px solid #000; }
-  .vs-cell-top { font-size:9px; font-weight:700; }
-  .vs-cell-sub { font-size:8.5px; color:#555; margin-top:1px; }
+  .vs-cell-top { font-size:8px; font-weight:700; }
+  .vs-cell-sub { font-size:7.5px; color:#555; margin-top:1px; }
 `;
 
 // ── Build print HTML ────────────────────────────────────────────────────────────

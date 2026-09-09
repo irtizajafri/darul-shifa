@@ -125,7 +125,7 @@ async function getSurgeryHeadForMainAccount(req, res, next) { try { success(res,
 async function getSurgeryPayeesForHead(req, res, next) { try { success(res, await svc.getSurgeryPayeesForHead(req.query.headId, req.query.staffCategoryId)); } catch (e) { next(e); } }
 async function getIpdConsultantHeadForMainAccount(req, res, next) { try { success(res, await svc.getIpdConsultantHeadForMainAccount(req.query.mainAccountId)); } catch (e) { next(e); } }
 async function getPendingConsultantFees(req, res, next) {
-  try { success(res, await svc.getPendingConsultantFees(req.query.doctorId, req.query.fromDate, req.query.toDate)); }
+  try { success(res, await svc.getPendingConsultantFees(req.query.doctorId, req.query.fromDate, req.query.toDate, req.query.entityType)); }
   catch (e) { next(e); }
 }
 async function addPayeeHeadStaffCategory(req, res, next) {

@@ -999,6 +999,11 @@ model ClinicOpdVisitDoctor {
   extAmount   Float               @default(0)
   quantity    Int                 @default(1)
   createdAt   DateTime            @default(now())
+  // Once this row's fee is picked into a Voucher Expense (IPD Consultant Fee
+  // payee type, alongside Discharge Bill Const Fee rows), this flips true so
+  // it stops showing as pending — same idea as ClinicDischargeBillItem.isPaid.
+  isPaid      Boolean             @default(false)
+  feePayments AccVoucherExpenseEntryOpdDoctorFee[]
 }
 
 // ─── Clinic Room & Bed ────────────────────────────────────────────────────────
@@ -2233,6 +2238,7 @@ model AccVoucherExpenseEntry {
   createdAt     DateTime          @default(now())
 
   consultantFeeItems AccVoucherExpenseEntryConsultantFee[]
+  opdDoctorFeeItems  AccVoucherExpenseEntryOpdDoctorFee[]
 }
 
 // IPD Consultant Fee payee type (see AccPayeeHead.sourceType='ipd-consultant')
@@ -2251,6 +2257,25 @@ model AccVoucherExpenseEntryConsultantFee {
 
   @@index([voucherExpenseEntryId])
   @@index([dischargeBillItemId])
+}
+
+// Same idea as AccVoucherExpenseEntryConsultantFee above, but for doctor fees
+// sourced from Laboratory/Radiology/Ultrasound ClinicOpdVisitDoctor rows
+// (linked to an admission via ClinicOpdVisit.admitNo) instead of Discharge
+// Bill rows — the Final Bill screen collapses these into one lump-sum row
+// per department and never assigns them a doctor, so they'd never show as
+// payable otherwise. See getPendingConsultantFees.
+model AccVoucherExpenseEntryOpdDoctorFee {
+  id                    Int                    @id @default(autoincrement())
+  voucherExpenseEntryId Int
+  voucherExpenseEntry   AccVoucherExpenseEntry @relation(fields: [voucherExpenseEntryId], references: [id], onDelete: Cascade)
+  opdVisitDoctorId      Int
+  opdVisitDoctor        ClinicOpdVisitDoctor   @relation(fields: [opdVisitDoctorId], references: [id])
+  amount                Float
+  createdAt             DateTime               @default(now())
+
+  @@index([voucherExpenseEntryId])
+  @@index([opdVisitDoctorId])
 }
 
 model AccVoucherIncome {

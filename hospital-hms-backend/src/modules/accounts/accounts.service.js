@@ -419,6 +419,25 @@ async function removePayeeHeadStaffCategory(headId, staffCategoryId) {
 // "Anesthesia" for this particular payment) — must still be one of the
 // categories actually linked to this head.
 async function getSurgeryPayeesForHead(headId, staffCategoryId) {
+  const head = await prisma.accPayeeHead.findUnique({ where: { id: Number(headId) }, select: { sourceType: true } });
+
+  // IPD Consultant Fee doesn't gate its payee list by Staff Category — a
+  // doctor's actual pending amount comes entirely from whichever
+  // ClinicDoctorSubDept links they have (see getPendingConsultantFees, which
+  // has no category filter either), and plenty of doctors who bill through
+  // Final Bill sub-departments (X-Ray/Lab providers etc.) have no Staff
+  // Category set at all — filtering here would silently hide them even
+  // though they have real pending fees. Show every active doctor instead;
+  // one with nothing pending just shows an empty list on click, same as today.
+  if (head?.sourceType === 'ipd-consultant') {
+    const rows = await prisma.clinicDoctor.findMany({
+      where: { status: 'active' },
+      select: { id: true, name: true, code: true, staffCategory: { select: { name: true } } },
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((d) => ({ id: d.id, name: d.name, code: d.code, categoryName: d.staffCategory?.name || null }));
+  }
+
   const links = await prisma.accPayeeHeadStaffCategory.findMany({
     where: { payeeHeadId: Number(headId) },
     select: { staffCategoryId: true },
@@ -487,34 +506,142 @@ async function getAdvanceLoanVoucherAccountChain(entityType) {
   };
 }
 
-// Unpaid Const Fee rows for one doctor, optionally narrowed to a date range
-// (matched against when that row was added to the Final Bill) — each is a
-// single admission's Doctor Fee share, already split, ready to pick into a
-// payment.
-async function getPendingConsultantFees(doctorId, fromDate, toDate) {
-  const where = {
-    doctorId: Number(doctorId),
-    isPaid: false,
-    doctorFee: { not: null },
-  };
-  if (fromDate || toDate) {
-    where.createdAt = {};
-    if (fromDate) where.createdAt.gte = new Date(`${fromDate}T00:00:00`);
-    if (toDate) where.createdAt.lte = new Date(`${toDate}T23:59:59`);
-  }
-  const rows = await prisma.clinicDischargeBillItem.findMany({
-    where,
+// Laboratory/Radiology/Ultrasound Final Bill charges are billed as ONE
+// collapsed row per department (see getDischargeBillDetail's diagByDept),
+// which never carries a doctor — so their per-test doctor fees can only be
+// found at the source: ClinicOpdVisitDoctor rows on the admission-linked OPD
+// visit. Matches clinic.service.js's own Laboratory + DIAGNOSTIC_DEPTS scope.
+const OPD_DOCTOR_FEE_DEPTS = ['Laboratory', 'Radiology', 'Ultra Sound, Echo & Color Doppler'];
+
+// Unpaid doctor fees for one doctor, optionally narrowed to a date range —
+// merged from two sources so Voucher Expense's IPD Consultant Fee picker
+// shows everything payable without the Final Bill screen itself changing:
+//   "dbi-<id>"  — ClinicDischargeBillItem rows (Const Fee, or any row added
+//                 manually via the Doctor+Sub-Department picker — not
+//                 Const-Fee-only, billHead.refDepartmentId also covers
+//                 Laboratory/Ultrasound/X-Ray, see that model's subDeptId
+//                 comment). doctorFee is already split and stored.
+//   "opdv-<id>" — ClinicOpdVisitDoctor rows from Laboratory/Radiology/
+//                 Ultrasound OPD visits linked to this admission
+//                 (visit.admitNo), which the Final Bill collapses into one
+//                 lump-sum row per department and never assigns a doctor to.
+//                 doctorFee is computed here the same way
+//                 addDischargeBillItem does — from that doctor+sub-dept's
+//                 configured %/amount (ClinicDoctorSubDept).
+// Both use string-prefixed ids since they're picked from the same list and
+// need to resolve back to two different tables on payment (see
+// linkConsultantFeeItems).
+// entityType, when passed, narrows both sources by patientCategory the same
+// way GRN/Doctor payments and the Surgery/Anesthesia admission picker already
+// split Cash vs Panel elsewhere in Accounts ('corporate' book = Panel
+// admissions only, 'non-corporate' book = everything except Panel).
+async function getPendingConsultantFees(doctorId, fromDate, toDate, entityType) {
+  const docId = Number(doctorId);
+  const dateRange = {};
+  if (fromDate) dateRange.gte = new Date(`${fromDate}T00:00:00`);
+  if (toDate) dateRange.lte = new Date(`${toDate}T23:59:59`);
+  const patientCategoryWhere = entityType === 'corporate' ? { equals: 'panel' }
+    : entityType === 'non-corporate' ? { not: 'panel' }
+    : undefined;
+
+  // ── Source 1: Discharge Bill rows ──────────────────────────────────────
+  const dbiWhere = { doctorId: docId, isPaid: false, doctorFee: { not: null } };
+  if (fromDate || toDate) dbiWhere.createdAt = dateRange;
+  if (patientCategoryWhere) dbiWhere.admission = { patientCategory: patientCategoryWhere };
+  const dbiRows = await prisma.clinicDischargeBillItem.findMany({
+    where: dbiWhere,
     orderBy: { createdAt: 'desc' },
-    include: { admission: { select: { id: true, admissionNo: true, patientTitle: true, patientName: true } } },
+    include: {
+      admission: {
+        select: {
+          id: true, admissionNo: true, patientTitle: true, patientName: true,
+          dischargeCertificate: { select: { dischargeDate: true } },
+        },
+      },
+    },
   });
-  return rows.map((r) => ({
-    id: r.id,
+
+  // subDeptId has no declared Prisma relation on this model (loose FK,
+  // matches an existing ClinicSubDepartment.id) — resolved with a small
+  // follow-up lookup instead of an include.
+  const dbiSubDeptIds = [...new Set(dbiRows.map((r) => r.subDeptId).filter(Boolean))];
+  const dbiSubDepts = dbiSubDeptIds.length
+    ? await prisma.clinicSubDepartment.findMany({ where: { id: { in: dbiSubDeptIds } }, select: { id: true, name: true } })
+    : [];
+  const dbiSubDeptNameById = new Map(dbiSubDepts.map((s) => [s.id, s.name]));
+
+  const dbiResults = dbiRows.map((r) => ({
+    id: `dbi-${r.id}`,
     admissionId: r.admission?.id,
     admissionNo: r.admission?.admissionNo || '',
     patientName: r.admission ? `${r.admission.patientTitle || ''} ${r.admission.patientName}`.trim() : '',
     date: r.createdAt,
+    // Only set once the Discharge Certificate is actually issued — a row can
+    // be pending before that happens, so this legitimately shows blank for
+    // still-admitted patients rather than a guessed/wrong date.
+    dischargeDate: r.admission?.dischargeCertificate?.dischargeDate || null,
+    subDeptName: r.subDeptId ? (dbiSubDeptNameById.get(r.subDeptId) || null) : null,
+    rate: Number(r.rate) || 0,
     amount: Number(r.doctorFee) || 0,
   }));
+
+  // ── Source 2: Laboratory/Radiology/Ultrasound OPD visit-doctor rows ────
+  const opdWhere = {
+    doctorId: docId,
+    isPaid: false,
+    visit: { admitNo: { not: null }, adjustPayment: true, department: { in: OPD_DOCTOR_FEE_DEPTS } },
+  };
+  if (fromDate || toDate) opdWhere.createdAt = dateRange;
+  const opdRows = await prisma.clinicOpdVisitDoctor.findMany({
+    where: opdWhere,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      visit: { select: { admitNo: true, patientName: true } },
+      subDept: { select: { id: true, name: true } },
+    },
+  });
+
+  let opdResults = [];
+  if (opdRows.length) {
+    const subDeptIds = [...new Set(opdRows.map((r) => r.subDeptId))];
+    const links = await prisma.clinicDoctorSubDept.findMany({ where: { doctorId: docId, subDeptId: { in: subDeptIds } } });
+    const linkBySubDept = new Map(links.map((l) => [l.subDeptId, l]));
+
+    const admitNos = [...new Set(opdRows.map((r) => r.visit.admitNo).filter(Boolean))];
+    const admissions = admitNos.length
+      ? await prisma.clinicAdmission.findMany({
+          where: { admissionNo: { in: admitNos } },
+          select: { id: true, admissionNo: true, patientCategory: true, dischargeCertificate: { select: { dischargeDate: true } } },
+        })
+      : [];
+    const admissionByNo = new Map(admissions.map((a) => [a.admissionNo, a]));
+
+    opdResults = opdRows.map((r) => {
+      const link = linkBySubDept.get(r.subDeptId);
+      // No pricing link configured for this doctor+sub-dept pair — can't
+      // split a real amount, so skip rather than showing 0/wrong.
+      if (!link) return null;
+      const admission = admissionByNo.get(r.visit.admitNo);
+      // Can't classify Cash vs Panel without a resolved admission — exclude
+      // rather than guess, same as an actual category mismatch.
+      if (entityType === 'corporate' && admission?.patientCategory !== 'panel') return null;
+      if (entityType === 'non-corporate' && (!admission || admission.patientCategory === 'panel')) return null;
+      const split = clinicSvc.calcFeeSplit(Number(r.amount) || 0, link.paymentType, link.normalFees);
+      return {
+        id: `opdv-${r.id}`,
+        admissionId: admission?.id || null,
+        admissionNo: r.visit.admitNo || '',
+        patientName: r.visit.patientName || '',
+        date: r.createdAt,
+        dischargeDate: admission?.dischargeCertificate?.dischargeDate || null,
+        subDeptName: r.subDept?.name || null,
+        rate: Number(r.amount) || 0,
+        amount: split.doctorFee,
+      };
+    }).filter(Boolean);
+  }
+
+  return [...dbiResults, ...opdResults].sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 async function getInventorySubcategories() {
@@ -1081,21 +1208,48 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
 // isPaid so it stops showing as still-owed. `createdEntries` must be in the
 // same order as `entries` — true for a fresh nested `create`, which always
 // preserves input order.
+// itemIds come prefixed ("dbi-123" / "opdv-45") — see getPendingConsultantFees
+// for why there are two source tables — so each id is routed to its own
+// table's link-record + isPaid flip instead of assuming one shape.
 async function linkConsultantFeeItems(entries, createdEntries) {
   for (let i = 0; i < entries.length; i++) {
-    const itemIds = Array.isArray(entries[i].consultantFeeItemIds)
-      ? entries[i].consultantFeeItemIds.map(Number).filter(Boolean)
-      : [];
-    if (!itemIds.length) continue;
-    const items = await prisma.clinicDischargeBillItem.findMany({ where: { id: { in: itemIds } } });
-    await prisma.accVoucherExpenseEntryConsultantFee.createMany({
-      data: items.map((it) => ({
-        voucherExpenseEntryId: createdEntries[i].id,
-        dischargeBillItemId: it.id,
-        amount: Number(it.doctorFee) || 0,
-      })),
-    });
-    await prisma.clinicDischargeBillItem.updateMany({ where: { id: { in: itemIds } }, data: { isPaid: true } });
+    const rawIds = Array.isArray(entries[i].consultantFeeItemIds) ? entries[i].consultantFeeItemIds : [];
+    if (!rawIds.length) continue;
+
+    const dbiIds = rawIds.filter((id) => String(id).startsWith('dbi-')).map((id) => Number(String(id).slice(4))).filter(Boolean);
+    const opdIds = rawIds.filter((id) => String(id).startsWith('opdv-')).map((id) => Number(String(id).slice(5))).filter(Boolean);
+
+    if (dbiIds.length) {
+      const items = await prisma.clinicDischargeBillItem.findMany({ where: { id: { in: dbiIds } } });
+      await prisma.accVoucherExpenseEntryConsultantFee.createMany({
+        data: items.map((it) => ({
+          voucherExpenseEntryId: createdEntries[i].id,
+          dischargeBillItemId: it.id,
+          amount: Number(it.doctorFee) || 0,
+        })),
+      });
+      await prisma.clinicDischargeBillItem.updateMany({ where: { id: { in: dbiIds } }, data: { isPaid: true } });
+    }
+
+    if (opdIds.length) {
+      const rows = await prisma.clinicOpdVisitDoctor.findMany({ where: { id: { in: opdIds } } });
+      const links = await prisma.clinicDoctorSubDept.findMany({
+        where: { OR: rows.map((r) => ({ doctorId: r.doctorId, subDeptId: r.subDeptId })) },
+      });
+      const linkByKey = new Map(links.map((l) => [`${l.doctorId}-${l.subDeptId}`, l]));
+      await prisma.accVoucherExpenseEntryOpdDoctorFee.createMany({
+        data: rows.map((r) => {
+          const link = linkByKey.get(`${r.doctorId}-${r.subDeptId}`);
+          const split = link ? clinicSvc.calcFeeSplit(Number(r.amount) || 0, link.paymentType, link.normalFees) : { doctorFee: 0 };
+          return {
+            voucherExpenseEntryId: createdEntries[i].id,
+            opdVisitDoctorId: r.id,
+            amount: split.doctorFee,
+          };
+        }),
+      });
+      await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: opdIds } }, data: { isPaid: true } });
+    }
   }
 }
 

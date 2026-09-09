@@ -1576,7 +1576,7 @@ async function getAvailableBeds(req, res, next) {
 
 async function searchAdmissionsForAdjustment(req, res, next) {
   try {
-    success(res, await service.searchAdmissionsForAdjustment(req.query.q));
+    success(res, await service.searchAdmissionsForAdjustment(req.query.q, req.query.entityType));
   } catch (err) { next(err); }
 }
 

@@ -631,8 +631,10 @@ export default function VoucherExpenseForm() {
         setLinkedHeadType('surgery');
         const cats = (surgHead.staffCategoryLinks || []).map((l) => l.staffCategory);
         setSurgeryCategories(cats);
-        // Show recent admissions immediately so the picker isn't empty
-        fetch(`${CLINIC_API}/admission/adjustment/search?q=`)
+        // Show recent admissions immediately so the picker isn't empty —
+        // entityType narrows to this book's Cash (non-corporate) or Panel
+        // (corporate) files only, same split GRN/Doctor payments already use.
+        fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${entityType}`)
           .then((r) => r.json())
           .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
           .catch(() => {});
@@ -688,7 +690,7 @@ export default function VoucherExpenseForm() {
     clearTimeout(admissionSearchTimer.current);
     admissionSearchTimer.current = setTimeout(async () => {
       try {
-        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}`);
+        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}&entityType=${entityType}`);
         const j = await r.json();
         setAdmissionResults(Array.isArray(j?.data) ? j.data : []);
       } catch { setAdmissionResults([]); }
@@ -950,7 +952,7 @@ export default function VoucherExpenseForm() {
     setPendingFeesModal({ doctorName: payee.name, doctorId: payee.id, fees: null });
     setPendingFeesLoading(true);
     try {
-      const q = new URLSearchParams({ doctorId: payee.id });
+      const q = new URLSearchParams({ doctorId: payee.id, entityType });
       if (pfDateFrom) q.set('fromDate', pfDateFrom);
       if (pfDateTo)   q.set('toDate', pfDateTo);
       const r = await fetch(`${API}/linked/pending-consultant-fees?${q}`);
@@ -967,7 +969,7 @@ export default function VoucherExpenseForm() {
     if (!pendingFeesModal) return;
     setPendingFeesLoading(true);
     try {
-      const q = new URLSearchParams({ doctorId: pendingFeesModal.doctorId });
+      const q = new URLSearchParams({ doctorId: pendingFeesModal.doctorId, entityType });
       if (pfDateFrom) q.set('fromDate', pfDateFrom);
       if (pfDateTo)   q.set('toDate', pfDateTo);
       const r = await fetch(`${API}/linked/pending-consultant-fees?${q}`);
@@ -1916,7 +1918,10 @@ export default function VoucherExpenseForm() {
                         </th>
                         <th>Admission #</th>
                         <th>Date</th>
+                        <th>Discharge Date</th>
                         <th>Patient Name</th>
+                        <th>Sub Department</th>
+                        <th>Rate</th>
                         <th>Amount</th>
                       </tr>
                     </thead>
@@ -1929,7 +1934,10 @@ export default function VoucherExpenseForm() {
                           <td><input type="checkbox" checked={!!checkedFees[f.id]} onChange={() => {}} /></td>
                           <td className="ve-grn-modal__code">{f.admissionNo || '—'}</td>
                           <td>{f.date ? new Date(f.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                          <td>{f.dischargeDate ? new Date(f.dischargeDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                           <td>{f.patientName}</td>
+                          <td>{f.subDeptName || '—'}</td>
+                          <td>PKR {Number(f.rate || 0).toLocaleString()}</td>
                           <td className="ve-grn-modal__amount">PKR {Number(f.amount || 0).toLocaleString()}</td>
                         </tr>
                       ))}
@@ -1946,7 +1954,11 @@ export default function VoucherExpenseForm() {
                     <button className="ve-sal-modal__verify"
                       disabled={pfCheckedTotal === 0}
                       onClick={() => {
-                        const ids = Object.keys(checkedFees).filter((k) => checkedFees[k]).map(Number);
+                        // ids come prefixed ("dbi-123" / "opdv-45") — two
+                        // different source tables get merged into one list
+                        // (see getPendingConsultantFees), so keep them as
+                        // strings rather than coercing to Number.
+                        const ids = Object.keys(checkedFees).filter((k) => checkedFees[k]);
                         setEntry((f) => ({ ...f, amount: String(pfCheckedTotal), consultantFeeItemIds: ids }));
                         setPendingFeesModal(null);
                       }}
