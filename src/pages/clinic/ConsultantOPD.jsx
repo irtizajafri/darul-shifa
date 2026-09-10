@@ -542,6 +542,18 @@ export default function ConsultantOPD() {
     : (Number(discount) || 0);
   const totalAmount = isComplementary ? 0 : Math.max(0, grossAmount - discountAmt);
 
+  // Administrative Expenses — Doctor Parameter's own toggle+rate, added
+  // automatically once per unique doctor actually picked (not once per
+  // sub-dept/service that doctor has selected), silently folded into the
+  // total — no separate line item, and it doesn't touch any individual
+  // ClinicOpdVisitDoctor row's amount (those still submit as just the
+  // consultation/service fee — see the doctors: rightDoctors.map below —
+  // so it never leaks into the doctor-fee-split/IPD Consultant Fee
+  // reporting those rows feed). Not charged on a complementary slip.
+  const adminExpenseTotal = isComplementary ? 0 : [...new Map(
+    rightDoctors.filter(r => r.doctor?.administrativeExpenseEnabled).map(r => [r.doctor.id, r.doctor.administrativeExpenseRate || 0])
+  ).values()].reduce((s, rate) => s + rate, 0);
+
   // Credit Card surcharge — if paying by CC and the slip amount is >= the
   // configured min amount, add the configured percentage on top.
   const isCcMethod = effectivePaymentType === 'cc';
@@ -549,7 +561,7 @@ export default function ConsultantOPD() {
   const ccMinAmount = ccConfig?.minAmount || 0;
   const ccApplicable = !isComplementary && isCcMethod && ccPercentage > 0 && totalAmount >= ccMinAmount;
   const ccCharge = ccApplicable ? Math.round((totalAmount * ccPercentage) / 100) : 0;
-  const grandTotal = totalAmount + ccCharge;
+  const grandTotal = totalAmount + ccCharge + adminExpenseTotal;
 
   const refundAmt  = Math.max(0, (Number(receive) || 0) - grandTotal);
   const balanceAmt = Math.max(0, grandTotal - (Number(receive) || 0));

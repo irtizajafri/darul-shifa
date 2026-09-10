@@ -82,8 +82,23 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   const fmt = (v) => Number(v || 0).toFixed(2);
   const showToken = tokenNo > 0;
 
+  // Administrative Expenses (Doctor Parameter's own toggle+rate) is added
+  // to the visit's Total automatically when that doctor is picked (see
+  // ConsultantOPD's grandTotal) but deliberately NOT stored on the
+  // individual ClinicOpdVisitDoctor row itself (that would overstate
+  // doctor-wise revenue reports and doctor-fee-split reporting) — so it's
+  // folded back in here, display-only, onto that doctor's first line item,
+  // so the printed amount next to each service still adds up to the Total.
+  const shownAdminExpenseDoctors = new Set();
   const lineItemsHtml = (docEntries.length ? docEntries : [{ subDept: { name: doc.department || 'OPD' }, amount: grossAmt }])
-    .map((d) => `<div class="line-item"><span>${(d.subDept?.name || '').toUpperCase()}</span><span>${fmt(d.amount)}</span></div>`)
+    .map((d) => {
+      let amt = d.amount;
+      if (d.doctor?.administrativeExpenseEnabled && !shownAdminExpenseDoctors.has(d.doctor.id)) {
+        amt = Number(amt || 0) + Number(d.doctor.administrativeExpenseRate || 0);
+        shownAdminExpenseDoctors.add(d.doctor.id);
+      }
+      return `<div class="line-item"><span>${(d.subDept?.name || '').toUpperCase()}</span><span>${fmt(amt)}</span></div>`;
+    })
     .join('');
 
   return `<!DOCTYPE html>

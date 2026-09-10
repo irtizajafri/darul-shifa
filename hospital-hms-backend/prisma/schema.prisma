@@ -878,6 +878,11 @@ model ClinicDoctor {
   staffCategory   ClinicStaffCategory?  @relation(fields: [staffCategoryId], references: [id])
   status          String                @default("active")
   consultantDays  String[]
+  // Flat charge auto-added to the OPD slip whenever this doctor is picked —
+  // step 1 only (the parameter itself); slip-side auto-add wiring is a
+  // separate, later change.
+  administrativeExpenseEnabled Boolean  @default(false)
+  administrativeExpenseRate    Float    @default(0)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1416,13 +1421,16 @@ model ClinicDoctorStatementItem {
 // adding a package head to a bill opens a checklist so only the medicines that
 // actually applied for that patient get added, each as its own bill row).
 model ClinicPanelBillHead {
-  id          Int      @id @default(autoincrement())
-  headCode    String   @unique
-  description String
-  kind        String   @default("simple") // simple | package
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id             Int      @id @default(autoincrement())
+  headCode       String   @unique
+  description    String
+  kind           String   @default("simple") // simple | package
+  // Same canonical Panel Billing sequence as ClinicBillHead.panelSortOrder —
+  // see comment there. Null for anything outside the legacy 37-row list.
+  panelSortOrder Int?
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   packageItems ClinicPanelBillHeadItem[]
 }
@@ -1754,6 +1762,11 @@ model ClinicBillHead {
   staffCategoryRequired Boolean                  @default(false)
   discountApply         Boolean                  @default(false)
   discountSeq           Int                      @default(0)
+  // Fixed display order for the Panel Billing screen's row sequence — matches
+  // the legacy system's 37-row Sno list. Distinct from discountSeq above
+  // (which drives discount computation order, not display order). Null for
+  // any head outside that canonical list (falls back to appearing last).
+  panelSortOrder        Int?
   status                String                   @default("active")
   createdAt             DateTime                 @default(now())
   updatedAt             DateTime                 @updatedAt

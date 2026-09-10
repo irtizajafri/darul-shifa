@@ -67,6 +67,7 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const EMPTY_FORM = {
   code: '', name: '', speciality: '', qualification: '',
   staffCategoryId: '', status: 'active', consultantDays: [],
+  administrativeExpenseEnabled: false, administrativeExpenseRate: '',
 };
 
 const EMPTY_SUBDEPT = {
@@ -145,6 +146,8 @@ export default function ClinicDoctorPage() {
       staffCategoryId: doc.staffCategoryId ? String(doc.staffCategoryId) : '',
       status: doc.status,
       consultantDays: doc.consultantDays || [],
+      administrativeExpenseEnabled: Boolean(doc.administrativeExpenseEnabled),
+      administrativeExpenseRate: doc.administrativeExpenseRate ? String(doc.administrativeExpenseRate) : '',
     });
     setSubDeptRows(
       (doc.subDepts || []).map((s) => ({
@@ -287,6 +290,7 @@ export default function ClinicDoctorPage() {
     const payload = {
       ...form,
       staffCategoryId: form.staffCategoryId || null,
+      administrativeExpenseRate: parseFloat(form.administrativeExpenseRate) || 0,
       subDepts: subDeptRows.map((r) => ({
         subDeptId: r.subDeptId,
         consultantDays: r.consultantDays || [],
@@ -601,6 +605,31 @@ export default function ClinicDoctorPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Step 1 of the Administrative Expenses feature — parameter
+                only. Slip-side auto-add (when this doctor is picked on an
+                OPD visit) is separate, later work. */}
+            <div className="cdp-field mt-4">
+              <label className="cdp-radio">
+                <input
+                  type="checkbox"
+                  checked={form.administrativeExpenseEnabled}
+                  onChange={(e) => setForm((f) => ({ ...f, administrativeExpenseEnabled: e.target.checked }))}
+                />
+                Administrative Expenses
+              </label>
+              {form.administrativeExpenseEnabled && (
+                <Input
+                  label="Rate"
+                  type="number"
+                  min="0"
+                  className="mt-2"
+                  value={form.administrativeExpenseRate}
+                  onChange={(e) => setForm((f) => ({ ...f, administrativeExpenseRate: e.target.value }))}
+                  placeholder="e.g. 500"
+                />
+              )}
             </div>
 
           </div>

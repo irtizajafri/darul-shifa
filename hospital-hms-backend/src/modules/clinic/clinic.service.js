@@ -278,7 +278,7 @@ function mapSubDept(s) {
   };
 }
 
-async function createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, subDepts = [] }) {
+async function createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts = [] }) {
   return prisma.clinicDoctor.create({
     data: {
       code: code.trim(),
@@ -288,13 +288,15 @@ async function createDoctor({ code, name, speciality, qualification, staffCatego
       staffCategoryId: staffCategoryId ? Number(staffCategoryId) : null,
       status: status || 'active',
       consultantDays: consultantDays || [],
+      administrativeExpenseEnabled: Boolean(administrativeExpenseEnabled),
+      administrativeExpenseRate: administrativeExpenseEnabled ? (Number(administrativeExpenseRate) || 0) : 0,
       subDepts: { create: subDepts.map(mapSubDept) },
     },
     include: DOCTOR_INCLUDE,
   });
 }
 
-async function updateDoctor(id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, subDepts = [] }) {
+async function updateDoctor(id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts = [] }) {
   return prisma.$transaction(async (tx) => {
     await tx.clinicDoctorSubDept.deleteMany({ where: { doctorId: Number(id) } });
     return tx.clinicDoctor.update({
@@ -307,6 +309,8 @@ async function updateDoctor(id, { code, name, speciality, qualification, staffCa
         staffCategoryId: staffCategoryId ? Number(staffCategoryId) : null,
         status: status || 'active',
         consultantDays: consultantDays || [],
+        administrativeExpenseEnabled: Boolean(administrativeExpenseEnabled),
+        administrativeExpenseRate: administrativeExpenseEnabled ? (Number(administrativeExpenseRate) || 0) : 0,
         subDepts: { create: subDepts.map(mapSubDept) },
       },
       include: DOCTOR_INCLUDE,
@@ -321,7 +325,7 @@ async function deleteDoctor(id) {
 // ─── OPD ─────────────────────────────────────────────────────────────────────
 
 const SUBDEPT_INCLUDE = {
-  doctor: { select: { id: true, code: true, name: true, consultantDays: true, status: true } },
+  doctor: { select: { id: true, code: true, name: true, consultantDays: true, status: true, administrativeExpenseEnabled: true, administrativeExpenseRate: true } },
   subDept: {
     include: { department: { select: { id: true, name: true } } },
   },
@@ -1730,12 +1734,25 @@ async function getPanelAdmissionBilling(admissionNo) {
     throw Object.assign(new Error('Is admission ka Discharge Certificate abhi tak nahi bana — Billing sirf uske baad show hoti hai'), { status: 400 });
   }
 
-  const [detail, billHeads, panelCompany, panelEmployee] = await Promise.all([
+  const [detail, billHeads, panelHeadOrders, panelCompany, panelEmployee] = await Promise.all([
     getProvisionalBillDetail(admission.id),
     prisma.clinicBillHead.findMany({ where: { status: 'active' }, orderBy: { id: 'asc' } }),
+    prisma.clinicPanelBillHead.findMany({ where: { panelSortOrder: { not: null } }, select: { description: true, panelSortOrder: true } }),
     admission.panelCompanyId ? prisma.clinicPanelCompany.findUnique({ where: { id: admission.panelCompanyId } }) : null,
     admission.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: admission.panelEmployeeId } }) : null,
   ]);
+
+  // Panel Billing's fixed row sequence — matches the legacy system's 37-row
+  // Sno order (see migration 011). Keyed by description so it applies
+  // uniformly to ClinicBillHead rows, ClinicPanelBillHead rows and the two
+  // synthetic diagnostic rows below alike; applied at read time (not baked
+  // into the snapshot's own sortOrder) so it takes effect for every already-
+  // seeded admission too, not just newly-opened ones. Radiology / Ultra
+  // Sound, Echo & Color Doppler have no legacy Sno of their own — slotted in
+  // right after Laboratory (180).
+  const sortOrderByDesc = { Radiology: 181, 'Ultra Sound, Echo & Color Doppler': 182 };
+  billHeads.forEach((h) => { if (h.panelSortOrder != null) sortOrderByDesc[h.description] = h.panelSortOrder; });
+  panelHeadOrders.forEach((h) => { sortOrderByDesc[h.description] = h.panelSortOrder; });
 
   // Provisional Bill items grouped by bill head (Room Charges comes from Ward
   // History instead of a headId-tagged item; Medicine/Laboratory come from
@@ -1780,6 +1797,16 @@ async function getPanelAdmissionBilling(admissionNo) {
       if (h.description === 'Laboratory') {
         return { billHeadId: h.id, code: h.headCode, description: h.description, kind: 'diagnostic', qty: diagByDept.Laboratory.length, rate: 0, amount: diagAmount('Laboratory'), remarks: null };
       }
+      // Same treatment as Laboratory above — the legacy "Ultrasound" head
+      // (Sno 24) now IS the "Ultra Sound, Echo & Color Doppler" diagnostic
+      // row (used to be a separate synthetic row below with a different
+      // description, so clicking "Ultrasound" did nothing; merged into one
+      // clickable, diagnostic-sourced row so it opens the same detail-popup
+      // Laboratory/Radiology already do, matching department = the real
+      // diagnostic department name — see rowDoubleClick's DIAG_DEPT_ALIASES).
+      if (h.description === 'Ultrasound') {
+        return { billHeadId: h.id, code: h.headCode, description: h.description, kind: 'diagnostic', qty: diagByDept['Ultra Sound, Echo & Color Doppler'].length, rate: 0, amount: diagAmount('Ultra Sound, Echo & Color Doppler'), remarks: null };
+      }
       const items = itemsByHeadId[h.id] || [];
       const amount = items.reduce((s, i) => s + Number(i.amount || 0), 0);
       const qty = items.reduce((s, i) => s + Number(i.qty || 0), 0);
@@ -1788,16 +1815,13 @@ async function getPanelAdmissionBilling(admissionNo) {
         qty, rate: qty ? amount / qty : 0, amount, remarks: items.length === 1 ? (items[0].remarks || null) : null,
       };
     }),
-    // Not their own ClinicBillHead (Radiology has none at all; Ultrasound's
-    // existing head stays item-based, for manual Provisional Bill entries) —
-    // these two are purely diagnostic-sourced, synthetic rows.
+    // Radiology has no ClinicBillHead of its own at all — purely
+    // diagnostic-sourced, synthetic row (Ultra Sound's equivalent synthetic
+    // row was removed — see the 'Ultrasound' special case above, which now
+    // covers the same data under the legacy "Ultrasound" head instead).
     {
       billHeadId: null, code: null, description: 'Radiology', kind: 'diagnostic',
       qty: diagByDept.Radiology.length, rate: 0, amount: diagAmount('Radiology'), remarks: null,
-    },
-    {
-      billHeadId: null, code: null, description: 'Ultra Sound, Echo & Color Doppler', kind: 'diagnostic',
-      qty: diagByDept['Ultra Sound, Echo & Color Doppler'].length, rate: 0, amount: diagAmount('Ultra Sound, Echo & Color Doppler'), remarks: null,
     },
   ];
 
@@ -1836,11 +1860,15 @@ async function getPanelAdmissionBilling(admissionNo) {
   // see ClinicPanelBillingItem. Seed it once, the very first time Billing is
   // opened for this admission; every load after that returns the snapshot
   // (with whatever edits were saved), never the freshly-recomputed numbers.
-  // Only heads that actually had something in the Provisional Bill get seeded
-  // — a head nobody used never shows up here at all. Every row's Date starts
-  // out at the header's Admit Date (must stay within Admit/Discharge — see
-  // updatePanelBillingItem).
-  const usedRows = computedRows.filter((r) => Number(r.qty) > 0 || Number(r.amount) !== 0);
+  // A head that actually had something in the Provisional Bill gets seeded
+  // even if it's not in the canonical list below; a canonical-list head (see
+  // migration 011 / sortOrderByDesc above) always gets seeded too, blank or
+  // not, same as ClinicPanelBillHead simple heads already do — the legacy
+  // 37-row template shows every row every time, ready to fill in. Every
+  // row's Date starts out at the header's Admit Date (must stay within
+  // Admit/Discharge — see updatePanelBillingItem).
+  const canonicalHeadDescs = new Set(billHeads.filter((h) => h.panelSortOrder != null).map((h) => h.description));
+  const usedRows = computedRows.filter((r) => Number(r.qty) > 0 || Number(r.amount) !== 0 || canonicalHeadDescs.has(r.description));
 
   let snapshotRows = await prisma.clinicPanelBillingItem.findMany({
     where: { admissionId: admission.id },
@@ -1963,6 +1991,15 @@ async function getPanelAdmissionBilling(admissionNo) {
     rows.push({ id: extra[0].id, billHeadId: null, code: null, description: head, kind: MERGE_HEAD_KIND[head] || 'item', qty, rate: qty ? amount / qty : 0, amount, remarks: null, date: extra[0].date });
   });
 
+  // Display order always follows the legacy Sno sequence, not insertion/
+  // snapshot order — anything outside that canonical list (NG Tube, Surgery,
+  // other custom heads) keeps its existing relative order, pushed after it.
+  rows.sort((a, b) => {
+    const oa = sortOrderByDesc[a.description] ?? Infinity;
+    const ob = sortOrderByDesc[b.description] ?? Infinity;
+    return oa !== ob ? oa - ob : 0;
+  });
+
   const billingAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
   // Excluded rows (see excludeLiveDetailItem) are pure zero-amount deletion
@@ -1987,6 +2024,11 @@ async function getPanelAdmissionBilling(admissionNo) {
   const dischargeDate = header.dischargeDate;
   const days = Math.max(1, Math.ceil(((dischargeDate ? new Date(dischargeDate) : new Date()) - new Date(admitDate)) / 86400000));
 
+  // Covering Page's "Room/Ward" field — the room category name(s) this
+  // admission actually stayed in (from Ward History), joined if the patient
+  // was transferred between more than one during the stay.
+  const roomWard = [...new Set(detail.wardHistory.map((w) => w.roomCategory?.name).filter(Boolean))].join(' / ') || null;
+
   return {
     admission: {
       id: admission.id,
@@ -2000,6 +2042,7 @@ async function getPanelAdmissionBilling(admissionNo) {
       consultantName: header.consultantName,
       diagnosis: header.diagnosis,
       days,
+      roomWard,
     },
     company: panelCompany ? { id: panelCompany.id, code: panelCompany.code, name: panelCompany.name } : null,
     employee: panelEmployee ? { id: panelEmployee.id, empCode: panelEmployee.empCode, name: panelEmployee.name } : null,
@@ -8208,10 +8251,14 @@ module.exports = {
 };
 
 // ─── Panel Billing Detail (bill-head wise) ───────────────────────────────────
+// Labels here must stay in sync with ClinicBillHead.description — 3 of them
+// were renamed to their legacy Sno label (migration 011); kept in step here
+// too so importPanelBillingDetail's find-or-create keeps matching the same
+// row instead of silently creating a duplicate "Const Fee"/etc. head.
 const PANEL_BILL_HEADS = [
-  { key: 'constFee',        label: 'Const Fee' },
-  { key: 'followUp',        label: 'Follow-up' },
-  { key: 'anesthesia',      label: 'Anesthesia' },
+  { key: 'constFee',        label: 'a) Consultant Fee' },
+  { key: 'followUp',        label: 'b) Follow-up' },
+  { key: 'anesthesia',      label: 'Anesthesia Charges' },
   { key: 'medicine',        label: 'Medicine' },
   { key: 'laboratory',      label: 'Laboratory' },
   { key: 'costOfBlood',     label: 'Cost of Blood' },

@@ -686,10 +686,10 @@ async function getDoctors(req, res, next) {
 
 async function createDoctor(req, res, next) {
   try {
-    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, subDepts } = req.body;
+    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts } = req.body;
     if (!code?.trim()) return fail(res, 400, 'Code is required');
     if (!name?.trim()) return fail(res, 400, 'Name is required');
-    const data = await service.createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, subDepts });
+    const data = await service.createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts });
     success(res, data, 'Doctor created');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Doctor code already exists');
@@ -699,10 +699,10 @@ async function createDoctor(req, res, next) {
 
 async function updateDoctor(req, res, next) {
   try {
-    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, subDepts } = req.body;
+    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts } = req.body;
     if (!code?.trim()) return fail(res, 400, 'Code is required');
     if (!name?.trim()) return fail(res, 400, 'Name is required');
-    const data = await service.updateDoctor(req.params.id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, subDepts });
+    const data = await service.updateDoctor(req.params.id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts });
     success(res, data, 'Doctor updated');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Doctor code already exists');

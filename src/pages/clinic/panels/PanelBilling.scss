@@ -248,6 +248,22 @@
   background: #f0f9ff;
 }
 
+// Read-only breakdown row (which medicine / which test) shown inline right
+// under Medicine/Laboratory/Radiology/Ultrasound — smaller, indented,
+// muted, no hover highlight (not clickable/editable like the parent row).
+.pnb-subrow {
+  font-size: 0.74rem;
+  color: #64748b;
+  background: #fafbfc;
+  &:hover { background: #fafbfc !important; }
+  td { padding-top: 3px; padding-bottom: 3px; }
+}
+.pnb-subrow-desc {
+  padding-left: 22px !important;
+  position: relative;
+  &::before { content: '↳'; position: absolute; left: 8px; color: #cbd5e1; }
+}
+
 .pnb-edit-cell { padding: 2px 6px !important; }
 
 .pnb-edit-display {
@@ -375,6 +391,22 @@
   .pnb-save-row-btn, .pnb-del-row-btn { font-size: 0.68rem; padding: 2px 7px; }
   .pnb-pkg-footer-total { font-size: 0.8rem; span { font-size: 0.95rem; } }
 }
+
+// Bulk date change — pick a date, check any number of rows (same checkbox
+// column as "Add Selected"), Apply updates every checked row's Date at once
+// instead of one at a time.
+.pnb-bulk-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+
+  input[type='date'] { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 8px; font-size: 0.8rem; }
+}
 .pnb-close-confirm-body {
   p { margin: 0 0 10px; font-size: 0.88rem; color: #1e293b; line-height: 1.5; }
 }
@@ -475,7 +507,12 @@
 .pnbr-print-area { display: none; }
 
 @media print {
-  @page { size: A4 portrait; margin: 12mm; }
+  /* Prints on pre-printed hospital letterhead — generous top margin so
+     content starts below the letterhead artwork. This is just the generic
+     fallback; the actual print always uses printWithA4Override's per-report
+     margin (PanelBilling.jsx, PRINT_TOP_MARGIN) — 48mm for Covering Page,
+     35mm for Medicine/Diagnostic. */
+  @page { size: A4 portrait; margin: 35mm 10mm; }
 
   body * { visibility: hidden; }
   .pnbr-print-area,
@@ -502,32 +539,59 @@
   .r { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
-.pnbr-cov-hdr {
-  margin-bottom: 8px;
-  td { vertical-align: top; }
-}
-.pnbr-cov-left { font-weight: 700; }
-.pnbr-cov-org { font-size: 13px; }
-.pnbr-cov-right table { width: auto; margin-left: auto; }
-
-.pnbr-cov-info {
-  border-top: 1px solid #333;
-  border-bottom: 1px solid #333;
-  padding: 6px 0;
+// One outer box for the WHOLE report — personal-info grid (left column
+// To/CMO/address + patient info, right column Bill No/Admit info, split by
+// one vertical rule down the middle via pnbr-cov-colL's border-right, with
+// a horizontal rule + a label/value vertical rule on every row), the items
+// list and the total all sit inside this same frame, top to bottom.
+.pnbr-cov-box {
+  border: 1px solid #333;
   margin-bottom: 10px;
+  padding-bottom: 6px;
+  table { width: 100%; border-collapse: collapse; }
+}
+.pnbr-cov-main { table-layout: fixed; }
+.pnbr-cov-main, .pnbr-cov-colL table, .pnbr-cov-colR table { height: 100%; }
+.pnbr-cov-colL, .pnbr-cov-colR { vertical-align: top; }
+.pnbr-cov-colL { border-right: 1px solid #333; width: 50%; }
+
+.pnbr-cov-colL table tr, .pnbr-cov-colR table tr { border-bottom: 1px solid #333; }
+.pnbr-cov-colL table tr:last-child, .pnbr-cov-colR table tr:last-child { border-bottom: none; }
+// "To:" / "C.M.O" rows have no rule below them — matches the reference,
+// where the address block reads as one ungapped 3-line group.
+.pnbr-cov-noline { border-bottom: none !important; }
+.pnbr-cov-colL td, .pnbr-cov-colR td { border-right: 1px solid #333; padding: 4px 10px; vertical-align: top; }
+.pnbr-cov-colL td:last-child, .pnbr-cov-colR td:last-child { border-right: none; }
+// The shared .l/.v rules (see .pnbr-cov block above) are a more specific
+// compound selector than the two rules just above, so they'd otherwise win
+// and collapse this padding back down — restate it here at matching
+// specificity so label/value text actually gets breathing room from the
+// vertical dividers instead of sitting flush against them.
+.pnbr-cov-colL, .pnbr-cov-colR {
+  .l, .v { padding: 4px 10px; }
 }
 
+.pnbr-cov-org { font-size: 13px; font-weight: 700; }
+
+// Items list — horizontal hairline under each row (and the header); the
+// only vertical rules are right after the # column and right before Amount.
+// border-top separates it from the personal-info grid above (now the same
+// box), since that grid's own last row deliberately has no border-bottom.
 .pnbr-cov-items {
-  th, td { border: 1px solid #999; padding: 4px 8px; }
-  th { background: #f1f5f9; font-weight: 700; }
+  border-top: 1px solid #333;
+  th, td { border: none; padding: 4px 10px; }
+  th { border-bottom: 1px solid #333; font-weight: 700; text-align: left; &.r { text-align: right; } }
+  tbody tr td { border-bottom: 1px solid #ccc; }
+  th:first-child, td:first-child { border-right: 1px solid #333; padding-right: 10px; }
+  th:last-child, td:last-child { border-left: 1px solid #333; padding-left: 10px; }
 }
 
 .pnbr-cov-total-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-top: 10px;
-  padding-top: 6px;
+  margin: 10px 10px 0;
+  padding: 6px 0 8px;
   border-top: 1px solid #333;
 }
 .pnbr-cov-words { font-style: italic; text-transform: capitalize; font-size: 11px; }

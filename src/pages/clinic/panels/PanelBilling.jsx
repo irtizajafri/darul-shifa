@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import toast from 'react-hot-toast';
 import { Search, X, Plus } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
@@ -86,10 +86,40 @@ function formatBillingSno(seq, admitDate) {
   return `${seq}-${mm}-${yy}`;
 }
 
-function ddmmyyyy(d) {
-  if (!d) return '';
-  const dt = new Date(d);
-  return `${String(dt.getDate()).padStart(2, '0')}${String(dt.getMonth() + 1).padStart(2, '0')}${dt.getFullYear()}`;
+// Covering Page's "Bill No." — the Billing header's own Sno sequence (same
+// number as the "Sno" field/preview on the main Billing screen) followed by
+// Admit Date's month and 4-digit year, no separators — e.g. Sno 09 + May
+// 2026 admit date → "09052026".
+function billNo(admission) {
+  if (!admission.snoSeq || !admission.admitDate) return '—';
+  const dt = new Date(admission.admitDate);
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  return `${admission.snoSeq}${mm}${dt.getFullYear()}`;
+}
+
+// The "Ultrasound" head (legacy Sno 24) is diagnostic-sourced but keeps the
+// short legacy label — its real diagnosticRows department is the longer
+// "Ultra Sound, Echo & Color Doppler" name, so translate here rather than
+// filtering/matching on a name that'll never match.
+const DIAG_DEPT_ALIASES = { Ultrasound: 'Ultra Sound, Echo & Color Doppler' };
+
+// Medicine/Laboratory/Radiology/Ultrasound rows are always-visible totals —
+// their real line items (which medicine, which test) live in
+// pharmacyRows/diagnosticRows and used to only surface via the double-click
+// detail modal. Now also shown inline, indented right under the parent row,
+// so they're visible without a click; the modal stays for actually editing/
+// overriding/deleting/adding entries.
+function subItemsFor(row, data) {
+  if (row.kind === 'pharmacy') {
+    return data.pharmacyRows.map((p) => ({ id: p.id, label: p.medicine, rate: p.rate, qty: p.qty, amount: p.amount }));
+  }
+  if (row.kind === 'diagnostic') {
+    const dept = DIAG_DEPT_ALIASES[row.description] || row.description;
+    return data.diagnosticRows
+      .filter((d) => d.department === dept)
+      .map((d) => ({ id: d.id, label: d.particulars || dept, rate: d.rate, qty: d.qty, amount: d.amount }));
+  }
+  return [];
 }
 
 function numToWords(n) {
@@ -124,14 +154,22 @@ const REPORT_TYPES = [
 // ProvisionalBill.jsx for the same issue) — inject an override right before
 // printing so this isn't silently overridden by whichever other page's
 // `@page` rule happens to load last.
-function printWithA4Override(styleId) {
+// All three reports wired up here (Billing Covering Page, Medicine Bill,
+// Diagnostic Bill) print on pre-printed hospital letterhead — top margin left
+// generous (same value as DischargeRefund.jsx's Final Bill print) so content
+// starts below the letterhead artwork instead of overlapping it. Covering
+// Page needs extra room beyond that (its letterhead sits lower) — 50px more
+// (~13mm) than the other two.
+const PRINT_TOP_MARGIN = { covering: '48mm', medicine: '35mm', diagnostic: '35mm' };
+function printWithA4Override(styleId, reportType) {
   let style = document.getElementById(styleId);
   if (!style) {
     style = document.createElement('style');
     style.id = styleId;
     document.head.appendChild(style);
   }
-  style.textContent = '@page { size: A4 portrait !important; margin: 12mm !important; }';
+  const topMargin = PRINT_TOP_MARGIN[reportType] || '35mm';
+  style.textContent = `@page { size: A4 portrait !important; margin: ${topMargin} 10mm !important; }`;
   const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
   setTimeout(cleanup, 5000);
@@ -283,6 +321,20 @@ export default function PanelBilling() {
   const [packagePicker, setPackagePicker] = useState(null); // { description, items: [{...packageItem, checked}] } | null
   const [confirmingPackage, setConfirmingPackage] = useState(false);
 
+  // Consultant / Diagnosis — search-as-you-type combos (same .pnb-combo UI
+  // as the manual-add Item field above). Diagnosis also accepts arbitrary
+  // free text, not just list picks; Consultant does too, for the same
+  // "don't block on an incomplete parameter list" reason. Kept in sync with
+  // the loaded admission's saved value via the effect below.
+  const [consultantQuery, setConsultantQuery] = useState('');
+  const [showConsultantOptions, setShowConsultantOptions] = useState(false);
+  const [diagnosisQuery, setDiagnosisQuery] = useState('');
+  const [showDiagnosisOptions, setShowDiagnosisOptions] = useState(false);
+  useEffect(() => {
+    setConsultantQuery(data?.admission.consultantName || '');
+    setDiagnosisQuery(data?.admission.diagnosis || '');
+  }, [data?.admission.id]);
+
   useEffect(() => { fetchSubDepartments(); }, [fetchSubDepartments]);
   useEffect(() => { fetchDoctors(); fetchDiseases(); fetchSurgeryTypes(); }, [fetchDoctors, fetchDiseases, fetchSurgeryTypes]);
 
@@ -303,6 +355,16 @@ export default function PanelBilling() {
     if (data?.admission.diagnosis) names.add(data.admission.diagnosis);
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [diseases, surgeryTypes, data?.admission.diagnosis]);
+
+  // Search-filtered views of the two lists above, for the combo dropdowns.
+  const filteredConsultantOptions = useMemo(() => {
+    const q = consultantQuery.trim().toLowerCase();
+    return q ? consultantOptions.filter((n) => n.toLowerCase().includes(q)) : consultantOptions;
+  }, [consultantOptions, consultantQuery]);
+  const filteredDiagnosisOptions = useMemo(() => {
+    const q = diagnosisQuery.trim().toLowerCase();
+    return q ? diagnosisOptions.filter((n) => n.toLowerCase().includes(q)) : diagnosisOptions;
+  }, [diagnosisOptions, diagnosisQuery]);
 
   function handleCustomQueryChange(val) {
     setCustomQuery(val);
@@ -567,7 +629,7 @@ export default function PanelBilling() {
       const res = await fetchPanelAdmissionBilling(no);
       setPrintData({ type: reportType, data: res });
       setShowReports(false);
-      setTimeout(() => printWithA4Override(`pnbr-print-${reportType}`), 300);
+      setTimeout(() => printWithA4Override(`pnbr-print-${reportType}`, reportType), 300);
     } catch (e) {
       toast.error(e.message || 'Report load nahi hui');
     } finally {
@@ -636,7 +698,10 @@ export default function PanelBilling() {
 
   function rowDoubleClick(row) {
     if (row.kind === 'pharmacy') setPopup('pharmacy');
-    else if (row.kind === 'diagnostic') { setDiagnosticDept(row.description); setPopup('diagnostic'); }
+    else if (row.kind === 'diagnostic') {
+      setDiagnosticDept(DIAG_DEPT_ALIASES[row.description] || row.description);
+      setPopup('diagnostic');
+    }
   }
 
   function startEdit(row, field, e) {
@@ -722,6 +787,46 @@ export default function PanelBilling() {
     } catch (e) {
       toast.error(e.message || 'Save nahi hua');
     }
+  }
+
+  // Selecting/typing a Consultant also stamps their name onto the "a)
+  // Consultant Fee" row's Remarks — best-effort: the header's Consultant
+  // field itself already saved either way, so a failure here (or that row
+  // not existing at all, e.g. OPD mode) is silently skipped, never surfaced
+  // as an error to the user.
+  async function updateConsultantFeeRemarks(consultantName) {
+    const feeRow = data?.rows.find((r) => r.description === 'a) Consultant Fee');
+    if (!feeRow) return;
+    try {
+      const updateItemFn = isOpd ? updatePanelOpdBillingItem : updatePanelBillingItem;
+      const updated = await updateItemFn(feeRow.id, { remarks: consultantName || null });
+      setData((d) => ({ ...d, rows: d.rows.map((r) => (r.id === updated.id ? { ...r, remarks: updated.remarks } : r)) }));
+    } catch {
+      // best-effort, see comment above
+    }
+  }
+
+  function saveConsultant(value) {
+    const name = value.trim();
+    setConsultantQuery(name);
+    if (name === (data.admission.consultantName || '')) return;
+    handleHeaderSelectChange('consultantName', name);
+    updateConsultantFeeRemarks(name);
+  }
+  function pickConsultant(name) {
+    setShowConsultantOptions(false);
+    saveConsultant(name);
+  }
+
+  function saveDiagnosis(value) {
+    const text = value.trim();
+    setDiagnosisQuery(text);
+    if (text === (data.admission.diagnosis || '')) return;
+    handleHeaderSelectChange('diagnosis', text);
+  }
+  function pickDiagnosis(name) {
+    setShowDiagnosisOptions(false);
+    saveDiagnosis(name);
   }
 
   // Sno — user types just the 2-digit sequence, Month/Year come live from
@@ -832,23 +937,48 @@ export default function PanelBilling() {
             <div className="pnb-hg">
               <label>Consultant</label>
               {data ? (
-                <select className="pnb-date-input" value={data.admission.consultantName || ''}
-                  onChange={(e) => handleHeaderSelectChange('consultantName', e.target.value)}
-                  disabled={readOnly}>
-                  <option value="">— Select —</option>
-                  {consultantOptions.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
+                <div className="pnb-combo">
+                  <input
+                    className="pnb-date-input"
+                    value={consultantQuery}
+                    onChange={(e) => { setConsultantQuery(e.target.value); setShowConsultantOptions(true); }}
+                    onFocus={() => setShowConsultantOptions(true)}
+                    onBlur={(e) => setTimeout(() => { setShowConsultantOptions(false); saveConsultant(e.target.value); }, 150)}
+                    placeholder="Naam type karo ya list se select karo…"
+                    disabled={readOnly}
+                  />
+                  {showConsultantOptions && filteredConsultantOptions.length > 0 && (
+                    <div className="pnb-combo-list">
+                      {filteredConsultantOptions.map((name) => (
+                        <div key={name} className="pnb-combo-opt" onMouseDown={() => pickConsultant(name)}>{name}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : <div className="pnb-val">—</div>}
             </div>
             <div className="pnb-hg pnb-hg--wide">
               <label>Diagnosis</label>
               {data ? (
-                <select className="pnb-date-input" value={data.admission.diagnosis || ''}
-                  onChange={(e) => handleHeaderSelectChange('diagnosis', e.target.value)}
-                  style={{ width: '100%' }} disabled={readOnly}>
-                  <option value="">— Select —</option>
-                  {diagnosisOptions.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
+                <div className="pnb-combo">
+                  <input
+                    className="pnb-date-input"
+                    style={{ width: '100%' }}
+                    value={diagnosisQuery}
+                    onChange={(e) => { setDiagnosisQuery(e.target.value); setShowDiagnosisOptions(true); }}
+                    onFocus={() => setShowDiagnosisOptions(true)}
+                    onBlur={(e) => setTimeout(() => { setShowDiagnosisOptions(false); saveDiagnosis(e.target.value); }, 150)}
+                    placeholder="Naam type karo ya list se select karo…"
+                    disabled={readOnly}
+                  />
+                  {showDiagnosisOptions && filteredDiagnosisOptions.length > 0 && (
+                    <div className="pnb-combo-list">
+                      {filteredDiagnosisOptions.map((name) => (
+                        <div key={name} className="pnb-combo-opt" onMouseDown={() => pickDiagnosis(name)}>{name}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : <div className="pnb-val">—</div>}
             </div>
           </div>
@@ -926,21 +1056,37 @@ export default function PanelBilling() {
                   <tr><td colSpan={6} className="pnb-empty">{lookupMode === 'opd' ? 'Slip # lookup karo — Panel OPD visit ka data yahan aayega.' : 'Admission # lookup karo — Panel patient ka Provisional Bill data yahan aayega.'}</td></tr>
                 ) : data.rows.map((r) => {
                   const clickable = r.kind === 'pharmacy' || r.kind === 'diagnostic';
+                  const subItems = clickable ? subItemsFor(r, data) : [];
                   return (
-                    <tr key={r.id} className={clickable ? 'pnb-clickable' : ''} onDoubleClick={() => rowDoubleClick(r)}>
-                      <td>{r.description}{clickable && <span className="pnb-hint"> (double-click for detail)</span>}</td>
-                      <EditableCell row={r} field="rate" editCell={editCell} savingCell={savingCell}
-                        onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
-                        onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={fmt(r.rate)} />
-                      <EditableCell row={r} field="qty" editCell={editCell} savingCell={savingCell}
-                        onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
-                        onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.qty || 0} />
-                      <td className="r">{fmt(r.amount)}</td>
-                      <EditableCell row={r} field="remarks" type="text" editCell={editCell} savingCell={savingCell}
-                        onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
-                        onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.remarks || <span className="pnb-hint">add remarks</span>} />
-                      <td>{(isOpd || r.kind === 'custom') && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
-                    </tr>
+                    <Fragment key={r.id}>
+                      <tr className={clickable ? 'pnb-clickable' : ''} onDoubleClick={() => rowDoubleClick(r)}>
+                        <td>{r.description}{clickable && <span className="pnb-hint"> (double-click for detail)</span>}</td>
+                        <EditableCell row={r} field="rate" editCell={editCell} savingCell={savingCell}
+                          onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
+                          onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={fmt(r.rate)} />
+                        <EditableCell row={r} field="qty" editCell={editCell} savingCell={savingCell}
+                          onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
+                          onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.qty || 0} />
+                        <td className="r">{fmt(r.amount)}</td>
+                        <EditableCell row={r} field="remarks" type="text" editCell={editCell} savingCell={savingCell}
+                          onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
+                          onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.remarks || <span className="pnb-hint">add remarks</span>} />
+                        <td>{(isOpd || r.kind === 'custom') && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
+                      </tr>
+                      {/* Read-only breakdown — always visible now, no click
+                          needed; double-click the parent row above still
+                          opens the modal for actually editing this data. */}
+                      {subItems.map((si) => (
+                        <tr key={`sub-${r.id}-${si.id}`} className="pnb-subrow">
+                          <td className="pnb-subrow-desc">{si.label}</td>
+                          <td className="r">{fmt(si.rate)}</td>
+                          <td className="r">{si.qty || 0}</td>
+                          <td className="r">{fmt(si.amount)}</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      ))}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1199,6 +1345,8 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
   );
   const [savingKey, setSavingKey] = useState(null);
   const [deletingKey, setDeletingKey] = useState(null);
+  const [bulkDate, setBulkDate] = useState('');
+  const [bulkApplying, setBulkApplying] = useState(false);
 
   function toggle(key) {
     setSelections((s) => s.map((r) => (r.key === key ? { ...r, checked: !r.checked } : r)));
@@ -1215,6 +1363,30 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
     onConfirmAdd(checked.map((r) => ({
       description: r.medicine, dosage: r.dosage, qty: Number(r.qty) || 0, rate: Number(r.rate) || 0, date: r.date, mergeInto: 'Medicine',
     })));
+  }
+
+  // Change the Date on every checked row at once, already-added entries
+  // included — same save path each row's own "Save" button uses (Billing-
+  // only override for a live entry, direct update for a manual one), just
+  // looped over the whole selection instead of one row at a time.
+  async function handleBulkDate() {
+    if (!bulkDate) return toast.error('Date select karo');
+    const targets = checked;
+    if (!targets.length) return toast.error('Kam az kam ek row select karo');
+    setBulkApplying(true);
+    try {
+      for (const row of targets) {
+        const patch = { date: bulkDate, qty: Number(row.qty) || 0, rate: Number(row.rate) || 0, dosage: row.dosage };
+        if (row.isManual) await onSaveRow(row.key, patch);
+        else await onOverrideRow(row.key, 'Medicine', row.originalAmount, row.medicine, patch);
+      }
+      setSelections((s) => s.map((r) => (r.checked ? { ...r, date: bulkDate } : r)));
+      toast.success(`${targets.length} row ki date update ho gayi`);
+    } catch (e) {
+      toast.error(e.message || 'Bulk date update nahi hui');
+    } finally {
+      setBulkApplying(false);
+    }
   }
 
   // Correct an already-added entry in place — no duplicate, unlike checking
@@ -1266,6 +1438,14 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="pnb-modal-body">
+          {!readOnly && (
+            <div className="pnb-bulk-date-row">
+              <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={bulkApplying} />
+              <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}>
+                {bulkApplying ? 'Applying…' : `Apply Date to Selected (${checked.length})`}
+              </button>
+            </div>
+          )}
           <table className="pnb-table">
             <thead>
               <tr><th></th><th>Date</th><th>Medicine</th><th>Dose</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
@@ -1338,6 +1518,8 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
   );
   const [savingKey, setSavingKey] = useState(null);
   const [deletingKey, setDeletingKey] = useState(null);
+  const [bulkDate, setBulkDate] = useState('');
+  const [bulkApplying, setBulkApplying] = useState(false);
 
   function toggle(key) {
     setSelections((s) => s.map((r) => (r.key === key ? { ...r, checked: !r.checked } : r)));
@@ -1352,6 +1534,28 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
   function handleAdd() {
     if (!checked.length) return toast.error('Kam az kam ek test select karo');
     onConfirmAdd(checked.map((r) => ({ description: r.particulars, qty: Number(r.qty) || 0, rate: Number(r.rate) || 0, date: r.date, mergeInto: title })));
+  }
+
+  // Change the Date on every checked row at once — same save path each
+  // row's own "Save" button uses, looped over the whole selection.
+  async function handleBulkDate() {
+    if (!bulkDate) return toast.error('Date select karo');
+    const targets = checked;
+    if (!targets.length) return toast.error('Kam az kam ek row select karo');
+    setBulkApplying(true);
+    try {
+      for (const row of targets) {
+        const patch = { date: bulkDate, qty: Number(row.qty) || 0, rate: Number(row.rate) || 0 };
+        if (row.isManual) await onSaveRow(row.key, patch);
+        else await onOverrideRow(row.key, title, row.originalAmount, row.particulars, patch);
+      }
+      setSelections((s) => s.map((r) => (r.checked ? { ...r, date: bulkDate } : r)));
+      toast.success(`${targets.length} row ki date update ho gayi`);
+    } catch (e) {
+      toast.error(e.message || 'Bulk date update nahi hui');
+    } finally {
+      setBulkApplying(false);
+    }
   }
 
   // Correct an already-added entry in place — no duplicate. Manual entries
@@ -1403,6 +1607,14 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="pnb-modal-body">
+          {!readOnly && (
+            <div className="pnb-bulk-date-row">
+              <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={bulkApplying} />
+              <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}>
+                {bulkApplying ? 'Applying…' : `Apply Date to Selected (${checked.length})`}
+              </button>
+            </div>
+          )}
           <table className="pnb-table">
             <thead>
               <tr><th></th><th>Date</th><th>Particulars</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
@@ -1504,77 +1716,75 @@ function ReportsModal({ admitNo, onAdmitNoChange, reportType, onReportTypeChange
 // Laboratory/Radiology/Ultrasound are blended totals, shown amount-only.
 function BillingCoveringPagePrintTemplate({ data }) {
   if (!data) return null;
-  const { admission, company, employee } = data;
+  const { admission, company } = data;
   const rows = data.rows.filter((r) => Number(r.amount) !== 0);
   const total = data.billingAmount;
 
   return (
     <div className="pnbr-print-area">
       <div className="pnbr-cov">
-        <table className="pnbr-cov-hdr">
-          <tbody>
-            <tr>
-              <td className="pnbr-cov-left">
-                <div>To.</div>
-                <div>C.M.O</div>
-                <div className="pnbr-cov-org">{company?.name || '—'}</div>
-              </td>
-              <td className="pnbr-cov-right">
-                <table>
-                  <tbody>
-                    <tr><td className="l">Bill No.</td><td className="v">{ddmmyyyy(admission.admitDate)}</td></tr>
-                    <tr><td className="l">Date:</td><td className="v">{fmtDate(new Date())}</td></tr>
-                    <tr><td className="l">Admit No.</td><td className="v">P-{admission.admissionNo}</td></tr>
-                  </tbody>
-                </table>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table className="pnbr-cov-info">
-          <tbody>
-            <tr>
-              <td className="l">Patients Name:</td><td className="v">{admission.patientName}</td>
-              <td className="l">Organization :</td><td className="v">{company?.name || '—'}</td>
-            </tr>
-            <tr>
-              <td className="l">Emp.C.No</td><td className="v">{employee?.empCode || '—'}</td>
-              <td className="l">DOD :</td><td className="v">{fmtDate(admission.dischargeDate)}</td>
-            </tr>
-            <tr>
-              <td className="l">D.O.A</td><td className="v">{fmtDate(admission.admitDate)}</td>
-              <td className="l">Consultant :</td><td className="v">{admission.consultantName || '—'}</td>
-            </tr>
-            <tr>
-              <td className="l">No of Days:</td><td className="v">{admission.days}</td>
-              <td className="l">Entitled for :</td><td className="v"></td>
-            </tr>
-            <tr>
-              <td className="l">Diagnosis:</td><td className="v" colSpan={3}>{admission.diagnosis || '—'}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <table className="pnbr-cov-items">
-          <thead>
-            <tr><th>#</th><th>Description</th><th className="r">Detail</th><th className="r">Amount</th></tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.id}>
-                <td>{i + 1}</td>
-                <td>{r.description}</td>
-                <td className="r">{(r.kind === 'ward' || r.kind === 'item' || r.kind === 'custom') ? `${fmt(r.rate)} X ${r.qty}` : ''}</td>
-                <td className="r">{fmt(r.amount)}</td>
+        {/* One bordered box for the ENTIRE report — personal-info grid
+            (left column To/CMO/address + patient info, right column Bill
+            No/Admit info, one vertical rule down the middle, a horizontal
+            rule between every row), the items list and the total, all
+            inside the same outer frame. */}
+        <div className="pnbr-cov-box">
+          <table className="pnbr-cov-main">
+            <tbody>
+              <tr>
+                <td className="pnbr-cov-colL">
+                  {/* Exactly 7 rows, 1-for-1 with the right column below, so
+                      every horizontal rule lines up across the whole box. */}
+                  <table>
+                    <tbody>
+                      <tr className="pnbr-cov-noline"><td className="l" colSpan={2}>To:</td></tr>
+                      <tr className="pnbr-cov-noline"><td className="l" colSpan={2}>C.M.O</td></tr>
+                      <tr><td className="l pnbr-cov-org" colSpan={2}>{company?.name || '—'}</td></tr>
+                      <tr><td className="l">Patients Name:</td><td className="v">{admission.patientName}</td></tr>
+                      <tr><td className="l">D.O.A</td><td className="v">{fmtDate(admission.admitDate)}</td></tr>
+                      <tr><td className="l">No of Days:</td><td className="v">{admission.days}</td></tr>
+                      <tr><td className="l">Diagnosis:</td><td className="v">{admission.diagnosis || '—'}</td></tr>
+                    </tbody>
+                  </table>
+                </td>
+                <td className="pnbr-cov-colR">
+                  <table>
+                    <tbody>
+                      <tr><td className="l">Bill No:</td><td className="v">{billNo(admission)}</td></tr>
+                      <tr><td className="l">Date:</td><td className="v">{fmtDate(new Date())}</td></tr>
+                      <tr><td className="l">Admit No:</td><td className="v">P-{admission.admissionNo}</td></tr>
+                      <tr><td className="l">Room/Ward:</td><td className="v">{admission.roomWard || '—'}</td></tr>
+                      <tr><td className="l">DOD</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
+                      <tr><td className="l">Consultant:</td><td className="v">{admission.consultantName || '—'}</td></tr>
+                      <tr><td className="l">Entitled For:</td><td className="v"></td></tr>
+                    </tbody>
+                  </table>
+                </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
 
-        <div className="pnbr-cov-total-row">
-          <div className="pnbr-cov-words">{numToWords(Math.floor(total))} and xx/100</div>
-          <div className="pnbr-cov-total">TOTAL : <span>{fmt(total)}</span></div>
+          <table className="pnbr-cov-items">
+            <thead>
+              <tr><th>#</th><th>Description</th><th>Remarks</th><th className="r">Detail</th><th className="r">Amount</th></tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.id}>
+                  <td>{i + 1}</td>
+                  <td>{r.description}</td>
+                  <td>{r.remarks || ''}</td>
+                  <td className="r">{(r.kind === 'ward' || r.kind === 'item' || r.kind === 'custom') ? `${fmt(r.rate)} X ${r.qty}` : ''}</td>
+                  <td className="r">{fmt(r.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div className="pnbr-cov-total-row">
+            <div className="pnbr-cov-words">{numToWords(Math.floor(total))} and only</div>
+            <div className="pnbr-cov-total">TOTAL : <span>{fmt(total)}</span></div>
+          </div>
         </div>
       </div>
     </div>
