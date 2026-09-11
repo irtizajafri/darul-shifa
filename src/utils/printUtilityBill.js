@@ -1,4 +1,4 @@
-import { RECEIPT_LOGO_DATA_URI } from '../pages/clinic/receiptLogo';
+import logoSvgRaw from '../assets/logo.svg?raw';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) =>
@@ -149,6 +149,12 @@ export function printUtilityBill({
     : 0;
   const isIncrease = changePct >= 0;
 
+  // ── Inline SVG — make it scale to container width ───────────────────────
+  const logoSvg = logoSvgRaw
+    .replace(/\bwidth="[^"]*"/, '')          // remove fixed width attr
+    .replace(/\bheight="[^"]*"/, '')         // remove fixed height attr
+    .replace(/<svg /, '<svg style="width:80%;height:auto;display:block;margin:0 auto" ');
+
   // ── Bill metadata ────────────────────────────────────────────────────────
   const billedTo    = meter.departmentName || meter.location || meter.meterNo || 'N/A';
   const meterDisplay = meter.meterNo || meter.departmentName || '-';
@@ -182,20 +188,9 @@ export function printUtilityBill({
 <body>
 <div class="page">
 
-  <!-- ═══ HEADER ═══ -->
-  <div style="background:#1a3a5c;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:4px 4px 0 0">
-    <div style="display:flex;align-items:center;gap:12px">
-      <img src="${RECEIPT_LOGO_DATA_URI}" style="height:44px;border-radius:3px" alt="">
-      <div>
-        <div style="color:#fff;font-size:19px;font-weight:900;letter-spacing:2px;line-height:1">DARUL SHIFA</div>
-        <div style="color:#a8c4dc;font-size:9.5px;letter-spacing:1.5px;margin-top:2px">HOSPITAL</div>
-        <div style="color:#c8dcea;font-size:8px;letter-spacing:3px;margin-top:3px;border-top:1px solid #3a5a7c;padding-top:3px">${meter.utility === 'gas' ? 'GAS' : meter.utility === 'ptcl' ? 'TELEPHONE' : 'ELECTRICITY'} BILL</div>
-      </div>
-    </div>
-    <div style="border:2px solid #c8a84b;border-radius:50%;width:56px;height:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#c8a84b;line-height:1">
-      <span style="font-size:18px;font-weight:900">35</span>
-      <span style="font-size:7.5px;font-weight:500;margin-top:1px">Years</span>
-    </div>
+  <!-- ═══ HEADER — logo only ═══ -->
+  <div style="border:1px solid #c5d3e0;border-radius:4px 4px 0 0;padding:6px 14px;background:#fff">
+    ${logoSvg}
   </div>
 
   <!-- ═══ CUSTOMER INFO ═══ -->
