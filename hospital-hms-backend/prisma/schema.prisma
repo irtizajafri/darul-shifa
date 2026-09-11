@@ -1180,6 +1180,9 @@ model ClinicPanelBillingHeader {
   // "seq-MM-YY" is derived live from admitDate (see formatBillingSno), so it
   // never goes stale if Admit Date is edited afterward.
   snoSeq         String?
+  // Manually picked from Clinic > Parameters > Room Category — shows on the
+  // Billing Covering Page's "Entitled For" row.
+  entitledFor    String?
   updatedAt      DateTime        @updatedAt
 }
 
@@ -2181,7 +2184,10 @@ model AccIncomeCategory {
 
 model AccVoucherExpense {
   id          Int                      @id @default(autoincrement())
-  voucherNo   String                   @unique
+  // Not globally unique on its own — generateVoucherNo() scopes the
+  // sequence per entityType, so the same "VE-<date>-001" can legitimately
+  // exist once per book (Corporate/Non-Corporate); see migration 013.
+  voucherNo   String
   voucherType String
   voucherDate DateTime
   mode        String
@@ -2192,6 +2198,8 @@ model AccVoucherExpense {
   createdAt   DateTime                 @default(now())
   entries     AccVoucherExpenseEntry[]
   draftItems  AccVoucherExpenseDraft[]
+
+  @@unique([voucherNo, entityType])
 }
 
 // ─── Expense Draft — individual clinic/reception payments saved throughout the
@@ -2293,7 +2301,8 @@ model AccVoucherExpenseEntryOpdDoctorFee {
 
 model AccVoucherIncome {
   id          Int                     @id @default(autoincrement())
-  voucherNo   String                  @unique
+  // Same reasoning as AccVoucherExpense.voucherNo above — see migration 013.
+  voucherNo   String
   voucherType String
   voucherDate DateTime
   mode        String
@@ -2303,6 +2312,8 @@ model AccVoucherIncome {
   source      String                  @default("manual")
   createdAt   DateTime                @default(now())
   entries     AccVoucherIncomeEntry[]
+
+  @@unique([voucherNo, entityType])
 }
 
 model AccVoucherIncomeEntry {

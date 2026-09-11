@@ -1099,6 +1099,8 @@ module.exports = {
   resyncAllItemCurrentStock,
   listMRNs,
   createMRN,
+  previewBulkItems,
+  bulkImportItems,
 };
 
 async function resyncAllItemCurrentStock(req, res, next) {
@@ -1151,6 +1153,33 @@ async function markGdNotificationsRead(req, res, next) {
     const { ids } = req.body;
     await service.markGdNotificationsRead(ids);
     return success(res, null, 'Notifications marked as read');
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── Bulk Items Import ────────────────────────────────────────────────────────
+async function previewBulkItems(req, res, next) {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ ok: false, message: 'No rows provided' });
+    }
+    const result = await service.previewBulkItems(rows);
+    return success(res, result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function bulkImportItems(req, res, next) {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({ ok: false, message: 'No rows provided' });
+    }
+    const result = await service.bulkImportItems(rows);
+    return success(res, result, `Import complete: ${result.created} created, ${result.skipped} skipped`);
   } catch (err) {
     next(err);
   }

@@ -28,6 +28,7 @@ const SOURCE_BADGE = {
   surgery:   { label: 'Surgery/Anesthesia', color: '#ec4899' },
   'ipd-consultant': { label: 'IPD Consultant', color: '#d946ef' },
   'advance-loan': { label: 'Employee Management', color: '#14b8a6' },
+  'slip-admission-refund': { label: 'Clinic (Refunds)', color: '#f97316' },
   manual:    { label: 'Custom',           color: '#8b5cf6' },
 };
 
@@ -389,6 +390,9 @@ export default function ListAttachments() {
     }
     if (head.sourceType === 'advance-loan') {
       return <p className="list-attach__empty">Koi payee list nahi — sirf ek Account link chahiye. "Link to Account" se Sub Account attach karein; jab Employee Management mein Advance/Loan banega, uska voucher isi account pe post hoga.</p>;
+    }
+    if (head.sourceType === 'slip-admission-refund') {
+      return <p className="list-attach__empty">Koi payee list nahi — sirf ek Account link chahiye. "Link to Account" se Sub Account attach karein; jab Clinic mein Slip Refund ya Admission Refund process hoga, uska voucher isi account pe post hoga (is book — {entityType === 'corporate' ? 'Corporate' : 'Non-Corporate'} — ki slips/admissions ke liye).</p>;
     }
     if (head.sourceType === 'doctor') {
       if (linkedDoctors.length === 0) return <p className="list-attach__empty">No doctors found in Clinic module</p>;

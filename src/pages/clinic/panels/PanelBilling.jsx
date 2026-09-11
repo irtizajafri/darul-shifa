@@ -267,6 +267,7 @@ export default function PanelBilling() {
     addPanelOpdBillingItemsBulk,
     subDepartments, fetchSubDepartments, searchPanelBillHeads,
     doctors, fetchDoctors, diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes,
+    roomCategories, fetchRoomCategories,
     fetchMedicineList, createMedicine,
     finalizeDischarge,
   } = useClinicStore();
@@ -336,7 +337,7 @@ export default function PanelBilling() {
   }, [data?.admission.id]);
 
   useEffect(() => { fetchSubDepartments(); }, [fetchSubDepartments]);
-  useEffect(() => { fetchDoctors(); fetchDiseases(); fetchSurgeryTypes(); }, [fetchDoctors, fetchDiseases, fetchSurgeryTypes]);
+  useEffect(() => { fetchDoctors(); fetchDiseases(); fetchSurgeryTypes(); fetchRoomCategories(); }, [fetchDoctors, fetchDiseases, fetchSurgeryTypes, fetchRoomCategories]);
 
   // Consultant dropdown — live Doctor list; the already-saved name is added
   // in too (even if it's since left the active list) so opening an old
@@ -979,6 +980,17 @@ export default function PanelBilling() {
                     </div>
                   )}
                 </div>
+              ) : <div className="pnb-val">—</div>}
+            </div>
+            <div className="pnb-hg">
+              <label>Entitled For</label>
+              {data ? (
+                <select className="pnb-date-input" value={data.admission.entitledFor || ''}
+                  onChange={(e) => handleHeaderSelectChange('entitledFor', e.target.value)}
+                  disabled={readOnly}>
+                  <option value="">— Select —</option>
+                  {roomCategories.map((rc) => <option key={rc.id} value={rc.name}>{rc.name}</option>)}
+                </select>
               ) : <div className="pnb-val">—</div>}
             </div>
           </div>
@@ -1733,7 +1745,7 @@ function BillingCoveringPagePrintTemplate({ data }) {
             <tbody>
               <tr>
                 <td className="pnbr-cov-colL">
-                  {/* Exactly 7 rows, 1-for-1 with the right column below, so
+                  {/* Exactly 6 rows, 1-for-1 with the right column below, so
                       every horizontal rule lines up across the whole box. */}
                   <table>
                     <tbody>
@@ -1742,7 +1754,6 @@ function BillingCoveringPagePrintTemplate({ data }) {
                       <tr><td className="l pnbr-cov-org" colSpan={2}>{company?.name || '—'}</td></tr>
                       <tr><td className="l">Patients Name:</td><td className="v">{admission.patientName}</td></tr>
                       <tr><td className="l">D.O.A</td><td className="v">{fmtDate(admission.admitDate)}</td></tr>
-                      <tr><td className="l">No of Days:</td><td className="v">{admission.days}</td></tr>
                       <tr><td className="l">Diagnosis:</td><td className="v">{admission.diagnosis || '—'}</td></tr>
                     </tbody>
                   </table>
@@ -1753,10 +1764,9 @@ function BillingCoveringPagePrintTemplate({ data }) {
                       <tr><td className="l">Bill No:</td><td className="v">{billNo(admission)}</td></tr>
                       <tr><td className="l">Date:</td><td className="v">{fmtDate(new Date())}</td></tr>
                       <tr><td className="l">Admit No:</td><td className="v">P-{admission.admissionNo}</td></tr>
-                      <tr><td className="l">Room/Ward:</td><td className="v">{admission.roomWard || '—'}</td></tr>
                       <tr><td className="l">DOD</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
                       <tr><td className="l">Consultant:</td><td className="v">{admission.consultantName || '—'}</td></tr>
-                      <tr><td className="l">Entitled For:</td><td className="v"></td></tr>
+                      <tr><td className="l">Entitled For:</td><td className="v">{admission.entitledFor || '—'}</td></tr>
                     </tbody>
                   </table>
                 </td>
@@ -1784,6 +1794,11 @@ function BillingCoveringPagePrintTemplate({ data }) {
           <div className="pnbr-cov-total-row">
             <div className="pnbr-cov-words">{numToWords(Math.floor(total))} and only</div>
             <div className="pnbr-cov-total">TOTAL : <span>{fmt(total)}</span></div>
+          </div>
+
+          <div className="pnbr-cov-sign">
+            <div className="pnbr-cov-sign-line" />
+            <div className="pnbr-cov-sign-label">Signature</div>
           </div>
         </div>
       </div>

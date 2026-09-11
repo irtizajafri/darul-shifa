@@ -597,6 +597,15 @@
 .pnbr-cov-words { font-style: italic; text-transform: capitalize; font-size: 11px; }
 .pnbr-cov-total { font-weight: 700; span { font-size: 14px; margin-left: 6px; } }
 
+.pnbr-cov-sign {
+  margin: 30px 10px 4px;
+  width: 160px;
+  margin-left: auto; // right-aligned, under the Total
+  text-align: center;
+}
+.pnbr-cov-sign-line { border-top: 1px solid #333; }
+.pnbr-cov-sign-label { font-size: 10px; color: #444; padding-top: 3px; }
+
 .pnbr-diag-title { text-align: center; font-weight: 700; text-decoration: underline; margin-bottom: 14px; font-size: 14px; }
 .pnbr-diag-hdr { margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid #333; }
 .pnbr-diag-block { margin-bottom: 14px; }

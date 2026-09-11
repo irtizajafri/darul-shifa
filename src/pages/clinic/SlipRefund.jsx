@@ -118,7 +118,13 @@ export default function SlipRefund() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Refund nahi ho saka');
-      toast.success('Refund process ho gaya');
+      if (json.data?.voucherWarning) {
+        toast(json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
+      } else if (json.data?.voucherNo) {
+        toast.success(`Refund process ho gaya — Voucher ${json.data.voucherNo} auto-create ho gaya`);
+      } else {
+        toast.success('Refund process ho gaya');
+      }
       resetToSearch();
     } catch (e) {
       toast.error(e.message || 'Error processing refund');

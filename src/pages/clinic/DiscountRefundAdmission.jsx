@@ -431,7 +431,13 @@ export default function DiscountRefundAdmission() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
-      toast.success('Discount/Refund save ho gaya');
+      if (json.data?.voucherWarning) {
+        toast(json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
+      } else if (json.data?.voucherNo) {
+        toast.success(`Discount/Refund save ho gaya — Voucher ${json.data.voucherNo} auto-create ho gaya`);
+      } else {
+        toast.success('Discount/Refund save ho gaya');
+      }
       // Reload the same admission (not resetForm/blank) so Net Balance and
       // history immediately reflect the discount that was just saved.
       await loadAdmissionByNo(admission.admissionNo);

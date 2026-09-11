@@ -2024,11 +2024,6 @@ async function getPanelAdmissionBilling(admissionNo) {
   const dischargeDate = header.dischargeDate;
   const days = Math.max(1, Math.ceil(((dischargeDate ? new Date(dischargeDate) : new Date()) - new Date(admitDate)) / 86400000));
 
-  // Covering Page's "Room/Ward" field — the room category name(s) this
-  // admission actually stayed in (from Ward History), joined if the patient
-  // was transferred between more than one during the stay.
-  const roomWard = [...new Set(detail.wardHistory.map((w) => w.roomCategory?.name).filter(Boolean))].join(' / ') || null;
-
   return {
     admission: {
       id: admission.id,
@@ -2042,7 +2037,7 @@ async function getPanelAdmissionBilling(admissionNo) {
       consultantName: header.consultantName,
       diagnosis: header.diagnosis,
       days,
-      roomWard,
+      entitledFor: header.entitledFor,
     },
     company: panelCompany ? { id: panelCompany.id, code: panelCompany.code, name: panelCompany.name } : null,
     employee: panelEmployee ? { id: panelEmployee.id, empCode: panelEmployee.empCode, name: panelEmployee.name } : null,
@@ -2128,7 +2123,7 @@ async function updatePanelBillingItem(itemId, { qty, rate, date, remarks, dosage
 // Panels > Billing header — editable Admit Date/Discharge Date (see
 // ClinicPanelBillingHeader). Doesn't touch the real Admission/Discharge
 // Certificate — a Billing-only override, same as everything else here.
-async function updatePanelBillingHeader(admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq }) {
+async function updatePanelBillingHeader(admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor }) {
   await assertBillingNotClosed(admissionId);
   const header = await prisma.clinicPanelBillingHeader.findUnique({ where: { admissionId: Number(admissionId) } });
   if (!header) throw Object.assign(new Error('Billing header not found — pehle Billing open karo'), { status: 404 });
@@ -2154,6 +2149,7 @@ async function updatePanelBillingHeader(admissionId, { admitDate, dischargeDate,
       ...(consultantName !== undefined ? { consultantName: consultantName?.trim() || null } : {}),
       ...(diagnosis !== undefined ? { diagnosis: diagnosis?.trim() || null } : {}),
       ...(snoSeq !== undefined ? { snoSeq: snoSeq || null } : {}),
+      ...(entitledFor !== undefined ? { entitledFor: entitledFor?.trim() || null } : {}),
     },
   });
 }
@@ -2827,7 +2823,7 @@ async function addAdmissionDiscountRefund(admissionId, {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
-  return prisma.clinicAdmissionDiscountRefund.create({
+  const created = await prisma.clinicAdmissionDiscountRefund.create({
     data: {
       admissionId: Number(admissionId),
       billAmount: Number(billAmount) || 0,
@@ -2841,6 +2837,16 @@ async function addAdmissionDiscountRefund(admissionId, {
       createdByName: createdByName || null,
     },
   });
+  // Controller uses these to auto-post a Refund Voucher (refundVoucher.service.js)
+  // when refundAmount > 0 — not needed for discount-only saves.
+  return {
+    ...created,
+    admission: {
+      admissionNo: admission.admissionNo,
+      patientName: `${admission.patientTitle || ''} ${admission.patientName}`.trim(),
+      patientCategory: admission.patientCategory,
+    },
+  };
 }
 
 const DISCHARGE_REASONS = ['treated', 'transfer', 'lama', 'expired', 'discharge_on_request'];
@@ -7142,7 +7148,11 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '8 hours')::date`;
 
   // Cancelled ClinicOpdVisit rows: patient still counts (COUNT(*) untouched), amount is 0.
-  const OV_AMT = `(CASE WHEN LOWER(COALESCE(status,'')) IN ('canceled','cancelled') THEN 0 ELSE (receive - COALESCE(refund,0)) END)`;
+  // A slip that's been refunded (Slip Refund) still shows its full/gross
+  // Received amount here, deliberately NOT net of refund — refund is a
+  // separate concern tracked on the slip itself, not something this
+  // dashboard's revenue figures subtract.
+  const OV_AMT = `(CASE WHEN LOWER(COALESCE(status,'')) IN ('canceled','cancelled') THEN 0 ELSE receive END)`;
 
   // ── Helper: aggregate row → object ───────────────────────────────────────
   const toObj = (r, keyField) => ({
@@ -7179,15 +7189,16 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   };
 
   // ── SQL fragments shared across periods ───────────────────────────────────
+  // Gross Received throughout — deliberately not net of refund, see OV_AMT.
   const pvAggCols = `
     COUNT(*)::int AS "totalPatients",
-    COALESCE(SUM(received - COALESCE(refund,0)),0) AS "totalAmount",
+    COALESCE(SUM(received),0) AS "totalAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'Cash')::int  AS "cashPatients",
-    COALESCE(SUM(received - COALESCE(refund,0)) FILTER (WHERE "paymentType" = 'Cash'),0)  AS "cashAmount",
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Cash'),0)  AS "cashAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'Panel')::int AS "panelPatients",
-    COALESCE(SUM(received - COALESCE(refund,0)) FILTER (WHERE "paymentType" = 'Panel'),0) AS "panelAmount",
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Panel'),0) AS "panelAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'C Card')::int AS "ccPatients",
-    COALESCE(SUM(received - COALESCE(refund,0)) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount"`;
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount"`;
 
   const ovAggCols = `
     COUNT(*)::int AS "totalPatients",
@@ -7382,7 +7393,7 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     const admPayLyP  = [...admPayParams, lyStart, lyEnd];
     const admPayLySi = admPayParams.length + 1, admPayLyEi = admPayParams.length + 2;
     const [pvLy, ovLy, admLy, admPayLy] = await Promise.all([
-      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received - COALESCE(refund,0)),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND ${PV_BIZ} >= $${pvLySi}::date AND ${PV_BIZ} <= $${pvLyEi}::date`, ...pvLyP),
+      prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(received),0) AS total FROM "PatientVisit" WHERE ${pvWhere} AND ${PV_BIZ} >= $${pvLySi}::date AND ${PV_BIZ} <= $${pvLyEi}::date`, ...pvLyP),
       prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(${OV_AMT}),0) AS total FROM "ClinicOpdVisit" WHERE ${ovWhere} AND ${OV_BIZ} >= $${ovLySi}::date AND ${OV_BIZ} <= $${ovLyEi}::date`, ...ovLyP),
       prisma.$queryRawUnsafe(`SELECT COALESCE(SUM("advancePayment"),0) AS total FROM "ClinicAdmission" WHERE ${admWhere} AND ${ADM_BIZ} >= $${admLySi}::date AND ${ADM_BIZ} <= $${admLyEi}::date`, ...admLyP),
       prisma.$queryRawUnsafe(`SELECT COALESCE(SUM(amount),0) AS total FROM "ClinicAdmissionPayment" WHERE ${admPayWhere} AND ${ADM_PAY_BIZ} >= $${admPayLySi}::date AND ${ADM_PAY_BIZ} <= $${admPayLyEi}::date`, ...admPayLyP),
@@ -7394,7 +7405,7 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   const [pvTrend, ovTrend, admTrend, admPayTrend] = await Promise.all([
     prisma.$queryRawUnsafe(`
       SELECT EXTRACT(YEAR FROM ${PV_BIZ})::int AS year, EXTRACT(MONTH FROM ${PV_BIZ})::int AS month,
-        COUNT(*)::int AS "totalPatients", COALESCE(SUM(received - COALESCE(refund,0)),0) AS "totalAmount"
+        COUNT(*)::int AS "totalPatients", COALESCE(SUM(received),0) AS "totalAmount"
       FROM "PatientVisit"
       WHERE ${pvWhere} AND ${PV_BIZ} >= (CURRENT_DATE - INTERVAL '12 months')
       GROUP BY EXTRACT(YEAR FROM ${PV_BIZ}), EXTRACT(MONTH FROM ${PV_BIZ}) ORDER BY year, month
@@ -7479,7 +7490,7 @@ async function getDailyDepartmentStatement(date) {
     prisma.$queryRawUnsafe(`
       SELECT department,
         COUNT(*)::int AS count,
-        COALESCE(SUM(received - COALESCE(refund,0)),0) AS amount,
+        COALESCE(SUM(received),0) AS amount,
         COALESCE(SUM(COALESCE(discount,0)),0) AS discount,
         0::int AS cancel
       FROM "PatientVisit"
@@ -7489,7 +7500,7 @@ async function getDailyDepartmentStatement(date) {
     prisma.$queryRawUnsafe(`
       SELECT department,
         COUNT(*)::int AS count,
-        COALESCE(SUM(CASE WHEN ${OV_CANCELLED} THEN 0 ELSE (receive - COALESCE(refund,0)) END),0) AS amount,
+        COALESCE(SUM(CASE WHEN ${OV_CANCELLED} THEN 0 ELSE receive END),0) AS amount,
         COALESCE(SUM(CASE WHEN ${OV_CANCELLED} THEN 0 ELSE COALESCE(discount,0) END),0) AS discount,
         COUNT(*) FILTER (WHERE ${OV_CANCELLED})::int AS cancel
       FROM "ClinicOpdVisit"

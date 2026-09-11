@@ -226,6 +226,16 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify({ names }),
   }),
 
+  previewBulkItems: async (rows) => request('/items/import/preview', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
+  }),
+
+  bulkImportItems: async (rows) => request('/items/import/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ rows }),
+  }),
+
   fetchDepartments: async ({ search = '', status = '' } = {}) => {
     set({ loading: true, error: null });
     try {

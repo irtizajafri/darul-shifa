@@ -3958,6 +3958,260 @@ async function createMRN({ ginId, returnDate, receivedBy, notes, items = [] }) {
   });
 }
 
+// ── Bulk Items Import (Excel) ─────────────────────────────────────────────────
+
+const BULK_VALID_UNITS = ['kg', 'liters', 'pieces', 'boxes', 'ml', 'dozen', 'feet', 'inches', 'millimeters', 'centimeter'];
+const BULK_VALID_CONDITIONS = ['working', 'under repair', 'condemned', 'in store'];
+const BULK_VALID_ITEM_TYPES = ['fixed asset', 'current asset'];
+
+async function previewBulkItems(rows) {
+  const [allCategories, allSubcategories, allItems] = await Promise.all([
+    prisma.inventoryCategory.findMany({ select: { id: true, name: true } }),
+    prisma.inventorySubcategory.findMany({ select: { id: true, name: true, categoryId: true } }),
+    prisma.inventoryItem.findMany({ select: { id: true, name: true, model: true, itemType: true } }),
+  ]);
+
+  const catMap = new Map(allCategories.map((c) => [c.name.trim().toLowerCase(), c]));
+  const subMap = new Map(allSubcategories.map((s) => [`${s.categoryId}::${s.name.trim().toLowerCase()}`, s]));
+
+  const existingKeys = new Set(
+    allItems.map((i) => {
+      const n = String(i.name || '').trim().toLowerCase();
+      const m = String(i.model || '').trim().toLowerCase();
+      return i.itemType === 'fixed asset' ? `${n}::${m}` : n;
+    })
+  );
+
+  const toCreate = [];
+  const alreadyExists = [];
+  const invalidRows = [];
+  const newCategoriesSet = new Set();
+  const newSubcategoriesSet = new Set();
+  const seenInBatch = new Set();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2;
+    const name = String(row.name || '').trim();
+    if (!name) { invalidRows.push({ row: rowNum, reason: 'Item name is empty' }); continue; }
+
+    const catName = String(row.categoryName || '').trim();
+    if (!catName) { invalidRows.push({ row: rowNum, reason: `"${name}" — category missing` }); continue; }
+
+    const rawType = String(row.assetType || 'fixed asset').trim().toLowerCase();
+    const itemType = BULK_VALID_ITEM_TYPES.includes(rawType) ? rawType : 'fixed asset';
+    const model = String(row.model || '').trim();
+
+    const dupKey = itemType === 'fixed asset' ? `${name.toLowerCase()}::${model.toLowerCase()}` : name.toLowerCase();
+    if (existingKeys.has(dupKey) || seenInBatch.has(dupKey)) {
+      alreadyExists.push(name);
+      continue;
+    }
+
+    const cat = catMap.get(catName.toLowerCase());
+    if (!cat) newCategoriesSet.add(catName);
+
+    const subName = String(row.subcategoryName || '').trim();
+    if (subName) {
+      const subKey = cat ? `${cat.id}::${subName.toLowerCase()}` : null;
+      if (!subKey || !subMap.has(subKey)) newSubcategoriesSet.add(`${catName} → ${subName}`);
+    }
+
+    toCreate.push({
+      rowNum,
+      name,
+      category: catName,
+      subcategory: subName || '-',
+      itemType,
+      model: model || '-',
+    });
+    seenInBatch.add(dupKey);
+  }
+
+  return {
+    totalInFile: rows.length,
+    toCreate: toCreate.length,
+    toCreateSample: toCreate.slice(0, 100),
+    alreadyExists: alreadyExists.length,
+    invalidRows,
+    newCategories: [...newCategoriesSet],
+    newSubcategories: [...newSubcategoriesSet],
+  };
+}
+
+async function bulkImportItems(rows) {
+  // Load all master data once
+  const [allCategories, allSubcategories, allSuppliers, allItems] = await Promise.all([
+    prisma.inventoryCategory.findMany({ select: { id: true, name: true, code: true } }),
+    prisma.inventorySubcategory.findMany({ select: { id: true, name: true, categoryId: true, code: true } }),
+    prisma.inventorySupplier.findMany({ select: { id: true, name: true } }),
+    prisma.inventoryItem.findMany({ select: { id: true, name: true, model: true, itemType: true } }),
+  ]);
+
+  const catMap = new Map(allCategories.map((c) => [c.name.trim().toLowerCase(), c]));
+  const subMap = new Map(allSubcategories.map((s) => [`${s.categoryId}::${s.name.trim().toLowerCase()}`, s]));
+  const supMap = new Map(allSuppliers.map((s) => [s.name.trim().toLowerCase(), s]));
+
+  const existingKeys = new Set(
+    allItems.map((i) => {
+      const n = String(i.name || '').trim().toLowerCase();
+      const m = String(i.model || '').trim().toLowerCase();
+      return i.itemType === 'fixed asset' ? `${n}::${m}` : n;
+    })
+  );
+
+  let created = 0;
+  let skipped = 0;
+  const errors = [];
+  const seenInBatch = new Set();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2;
+
+    try {
+      const name = String(row.name || '').trim();
+      if (!name) { errors.push({ row: rowNum, reason: 'Item name is empty' }); continue; }
+
+      const catName = String(row.categoryName || '').trim();
+      if (!catName) { errors.push({ row: rowNum, reason: `"${name}" — category missing` }); continue; }
+
+      const rawType = String(row.assetType || 'fixed asset').trim().toLowerCase();
+      const itemType = BULK_VALID_ITEM_TYPES.includes(rawType) ? rawType : 'fixed asset';
+      const model = parseOptionalString(row.model);
+
+      const dupKey = itemType === 'fixed asset' ? `${name.toLowerCase()}::${(model || '').toLowerCase()}` : name.toLowerCase();
+      if (existingKeys.has(dupKey) || seenInBatch.has(dupKey)) { skipped++; continue; }
+
+      // Find or create category
+      let cat = catMap.get(catName.toLowerCase());
+      if (!cat) {
+        const codeSeq = String(catMap.size + 1).padStart(2, '0');
+        cat = await prisma.inventoryCategory.create({
+          data: { code: `C${codeSeq}`, name: catName, status: 'active' },
+          select: { id: true, name: true, code: true },
+        });
+        catMap.set(catName.toLowerCase(), cat);
+      }
+
+      // Find or create subcategory
+      const subName = String(row.subcategoryName || '').trim();
+      const subKey = `${cat.id}::${subName.toLowerCase()}`;
+      let sub = subName ? subMap.get(subKey) : null;
+      if (!sub && subName) {
+        const subSeq = String(subMap.size + 1).padStart(2, '0');
+        sub = await prisma.inventorySubcategory.create({
+          data: { code: `${cat.code || 'S'}${subSeq}`, name: subName, categoryId: cat.id, status: 'active' },
+          select: { id: true, name: true, categoryId: true, code: true },
+        });
+        subMap.set(subKey, sub);
+      }
+      if (!sub) { errors.push({ row: rowNum, reason: `"${name}" — subcategory missing` }); continue; }
+
+      // Supplier (optional, no auto-create)
+      const supName = String(row.supplierName || '').trim();
+      const sup = supName ? supMap.get(supName.toLowerCase()) : null;
+
+      const purchasePrice = Math.max(0, parseFloat(row.purchasePrice) || 0);
+      const openingStock = Math.max(0, parseInt(row.openingStock) || 0);
+      const reorderLevel = Math.max(0, parseInt(row.reorderLevel) || 0);
+      const rawUnit = String(row.unit || '').trim().toLowerCase();
+      const unit = BULK_VALID_UNITS.includes(rawUnit) ? rawUnit : 'pieces';
+      const rawCond = String(row.condition || '').trim().toLowerCase();
+      const assetCondition = BULK_VALID_CONDITIONS.includes(rawCond) ? rawCond : 'working';
+      const rawStatus = String(row.status || 'active').trim().toLowerCase();
+      const status = rawStatus === 'inactive' ? 'inactive' : 'active';
+      const rawUsefulLife = parseInt(row.usefulLife) || null;
+      const usefulLifeUnit = String(row.usefulLifeUnit || 'years').trim().toLowerCase();
+
+      // Generate unique code
+      let code;
+      let codeRetry = 0;
+      while (codeRetry < 5) {
+        try {
+          code = await generateInventoryItemCode({ categoryId: cat.id, subcategoryId: sub.id });
+          break;
+        } catch {
+          codeRetry++;
+          if (codeRetry >= 5) throw new Error('Could not generate unique code');
+        }
+      }
+
+      const createdItem = await prisma.inventoryItem.create({
+        data: {
+          code,
+          name,
+          itemType,
+          unit,
+          purchasePrice,
+          lastGrnRate: purchasePrice,
+          hasExpiry: false,
+          reorderLevel,
+          currentStock: openingStock,
+          status,
+          brand: parseOptionalString(row.brand),
+          model: parseOptionalString(row.model),
+          serialNumber: parseOptionalString(row.serialNumber),
+          assetLocation: parseOptionalString(row.assetLocation),
+          purchaseDate: parseOptionalDate(row.purchaseDate),
+          warrantyUntil: parseOptionalDate(row.warrantyUntil),
+          usefulLifeYears: rawUsefulLife && rawUsefulLife > 0 ? rawUsefulLife : null,
+          assetCondition,
+          bookValue: null,
+          comment: parseOptionalString(row.comment),
+          categoryId: cat.id,
+          subcategoryId: sub.id,
+          supplierId: sup ? sup.id : null,
+          storageId: null,
+        },
+      });
+
+      // Optional: usefulLifeUnit raw update
+      if (rawUsefulLife && rawUsefulLife > 0) {
+        try {
+          await ensureUsefulLifeUnitColumn();
+          await prisma.$executeRaw`UPDATE "InventoryItem" SET "usefulLifeUnit" = ${usefulLifeUnit} WHERE "id" = ${createdItem.id}`;
+        } catch { /* non-fatal */ }
+      }
+
+      // Opening stock movement
+      if (openingStock > 0) {
+        await prisma.inventoryStockMovement.create({
+          data: {
+            itemId: createdItem.id,
+            movementType: 'OPENING',
+            referenceType: 'OPENING',
+            quantity: openingStock,
+            unitRate: purchasePrice,
+            previousStock: 0,
+            newStock: openingStock,
+            note: 'Opening stock from bulk import',
+          },
+        });
+
+        if (itemType === 'fixed asset') {
+          const count = Math.floor(openingStock);
+          const instanceData = [];
+          for (let j = 0; j < count; j++) {
+            instanceData.push({ assetTag: `${createdItem.code}-${String(j + 1).padStart(2, '0')}`, itemId: createdItem.id, condition: 'working' });
+          }
+          if (instanceData.length > 0) await prisma.assetInstance.createMany({ data: instanceData });
+        }
+
+        await syncReorderAlert(prisma, createdItem);
+      }
+
+      existingKeys.add(dupKey);
+      seenInBatch.add(dupKey);
+      created++;
+    } catch (err) {
+      errors.push({ row: rowNum, reason: err.message });
+    }
+  }
+
+  return { created, skipped, errors };
+}
+
 module.exports = {
   listCategories,
   createCategory,
@@ -4030,6 +4284,8 @@ module.exports = {
   resyncAllItemCurrentStock,
   listMRNs,
   createMRN,
+  previewBulkItems,
+  bulkImportItems,
 };
 
 async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {

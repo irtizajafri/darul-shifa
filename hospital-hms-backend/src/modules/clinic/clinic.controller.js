@@ -1,4 +1,5 @@
 const service = require('./clinic.service');
+const refundVoucherSvc = require('./refundVoucher.service');
 const { success, fail } = require('../../utils/response');
 
 // ─── Department ───────────────────────────────────────────────────────────────
@@ -1193,8 +1194,8 @@ async function updatePanelBillingItem(req, res, next) {
 
 async function updatePanelBillingHeader(req, res, next) {
   try {
-    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq } = req.body;
-    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq });
+    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor } = req.body;
+    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor });
     success(res, data, 'Header updated');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -1396,6 +1397,20 @@ async function addAdmissionDiscountRefund(req, res, next) {
     const data = await service.addAdmissionDiscountRefund(req.params.admissionId, {
       billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName,
     });
+    // Auto Voucher Expense — only for an actual Refund amount, never for a
+    // plain Discount (that's a waiver, not cash going back out). Never
+    // blocks the save above even if this fails — see tryCreateRefundVoucher.
+    if (Number(refundAmount) > 0) {
+      const entityType = refundVoucherSvc.entityTypeFromPatientCategory(data.admission.patientCategory);
+      const result = await refundVoucherSvc.tryCreateRefundVoucher({
+        entityType,
+        payeeName: data.admission.patientName,
+        amount: Number(refundAmount),
+        particulars: `Admission Refund — ${data.admission.patientName} (${data.admission.admissionNo})`,
+      });
+      if (result.voucherNo) data.voucherNo = result.voucherNo;
+      else if (result.warning) data.voucherWarning = result.warning;
+    }
     success(res, data, 'Discount/Refund save ho gaya');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -1990,6 +2005,17 @@ async function refundVisit(req, res, next) {
   try {
     const { amount, reason, note, refundedBy } = req.body;
     const data = await service.refundVisit(req.params.source, req.params.id, { amount, reason, note, refundedBy });
+    // Auto Voucher Expense — never blocks the refund save above even if
+    // this fails, see tryCreateRefundVoucher.
+    const entityType = refundVoucherSvc.entityTypeFromPaymentType(data.paymentType);
+    const result = await refundVoucherSvc.tryCreateRefundVoucher({
+      entityType,
+      payeeName: data.patientName,
+      amount: Number(amount),
+      particulars: `Slip Refund — ${data.patientName} (${data.serialNo || ''})`,
+    });
+    if (result.voucherNo) data.voucherNo = result.voucherNo;
+    else if (result.warning) data.voucherWarning = result.warning;
     success(res, data, 'Refund process ho gaya');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);

@@ -44,6 +44,8 @@ router.post('/demand-category-types', controller.createDemandCategoryType);
 
 router.get('/items', controller.listItems);
 router.post('/items', controller.createItem);
+router.post('/items/import/preview', controller.previewBulkItems);
+router.post('/items/import/confirm', controller.bulkImportItems);
 router.put('/items/:id', controller.updateItem);
 router.patch('/items/:id/status', controller.updateItemStatus);
 router.delete('/items/:id', controller.deleteItem);

@@ -304,6 +304,13 @@ const SYSTEM_HEAD_DEFS = [
   // getAdvanceLoanVoucherAccountChain) and posts the auto Voucher Expense
   // against it. Left unlinked = no auto-voucher, just a warning back to HR.
   { sourceType: 'advance-loan',    name: 'Employee Advance/Loan' },
+  // Same Link-to-Account-only pattern as advance-loan above. When a Slip
+  // Refund or an Admission's Refund amount is processed (Clinic), the
+  // backend posts an auto Voucher Expense against whichever Sub Account is
+  // linked here — see getRefundVoucherAccountChain — in the SAME book
+  // (Corporate/Panel vs Non-Corporate) as the original slip/admission, so
+  // this head exists once per entityType, each linked separately.
+  { sourceType: 'slip-admission-refund', name: 'Slip/Admission Refund' },
 ];
 
 async function ensureSystemHeads(entityType) {
@@ -485,6 +492,31 @@ async function getIpdConsultantHeadForMainAccount(mainAccountId) {
 // auto-voucher and surface that to the user rather than guessing an account).
 async function getAdvanceLoanVoucherAccountChain(entityType) {
   const head = await prisma.accPayeeHead.findFirst({ where: { sourceType: 'advance-loan', entityType } });
+  if (!head) return null;
+  const link = await prisma.accPayeeHeadAccount.findFirst({
+    where: { payeeHeadId: head.id },
+    include: {
+      subAccount: {
+        include: { mainAccount: { include: { subGL: { include: { mainGL: true } } } } },
+      },
+    },
+  });
+  if (!link?.subAccount) return null;
+  const sa = link.subAccount;
+  return {
+    subAccountId: sa.id,
+    accountCode:  sa.code,
+    accountName:  sa.name,
+    mainAccountId: sa.mainAccount.id,
+    subGlId:      sa.mainAccount.subGL.id,
+    mainGlId:     sa.mainAccount.subGL.mainGL.id,
+  };
+}
+
+// Same lookup as getAdvanceLoanVoucherAccountChain above, for the
+// 'slip-admission-refund' system head instead — see clinic/refundVoucher.service.js.
+async function getRefundVoucherAccountChain(entityType) {
+  const head = await prisma.accPayeeHead.findFirst({ where: { sourceType: 'slip-admission-refund', entityType } });
   if (!head) return null;
   const link = await prisma.accPayeeHeadAccount.findFirst({
     where: { payeeHeadId: head.id },
@@ -1057,8 +1089,14 @@ function getBusinessDate() {
 
 // ─── Expense Draft ────────────────────────────────────────────────────────────
 
-async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars }) {
-  const businessDate = getBusinessDate();
+// `date` is the voucher's own Date field from the form — when it's a real
+// backdated entry (e.g. today is 11 Sept but the form's Date says 1 Sept),
+// the draft now posts under THAT day instead of always today's business
+// date. A blank/invalid/future date falls back to today's business date
+// (never post something dated ahead of when it was actually entered).
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date }) {
+  const today = getBusinessDate();
+  const businessDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today) ? date : today;
   return prisma.accVoucherExpenseDraft.create({
     data: {
       businessDate, entityType, mode: mode || 'cash',
@@ -1075,11 +1113,13 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
   });
 }
 
+// Every still-pending draft, not just today's — a backdated one must stay
+// visible/manageable here until it's actually posted, not disappear from
+// view just because its date isn't today.
 async function getDraftExpenses(entityType) {
-  const businessDate = getBusinessDate();
   return prisma.accVoucherExpenseDraft.findMany({
-    where: { entityType, businessDate, status: 'pending' },
-    orderBy: [{ mainGlName: 'asc' }, { createdAt: 'asc' }],
+    where: { entityType, status: 'pending' },
+    orderBy: [{ businessDate: 'asc' }, { mainGlName: 'asc' }, { createdAt: 'asc' }],
   });
 }
 
@@ -1090,29 +1130,37 @@ async function deleteDraftExpense(id) {
   return prisma.accVoucherExpenseDraft.delete({ where: { id: Number(id) } });
 }
 
-// Called by day-close job: groups pending drafts by Main GL → one voucher each.
+// Called by day-close job (and the manual "Post Now" button): flashes every
+// PENDING draft dated `date` or EARLIER — not just exactly `date` — so a
+// backdated draft (Date field set to an earlier day than it was actually
+// saved) still gets swept up and posted under its own real date, and any
+// draft a missed day-close run left behind also self-heals on the next run
+// instead of being stuck forever. Grouped by (businessDate, Main GL) — not
+// Main GL alone — so each day's entries become their own voucher(s), dated
+// correctly, rather than every backdated entry getting stamped with `date`.
 async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
   const drafts = await prisma.accVoucherExpenseDraft.findMany({
-    where: { entityType, businessDate: date, status: 'pending' },
+    where: { entityType, businessDate: { lte: date }, status: 'pending' },
     orderBy: { createdAt: 'asc' },
   });
   if (!drafts.length) return [];
 
-  // Group by mainGlId
+  // Group by businessDate + mainGlId
   const groups = {};
   for (const d of drafts) {
-    const key = String(d.mainGlId);
+    const key = `${d.businessDate}|${d.mainGlId}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(d);
   }
 
   const vouchers = [];
   for (const entries of Object.values(groups)) {
+    const groupDate = entries[0].businessDate;
     const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
-    const voucherNo   = await generateVoucherNo(entityType, date);
+    const voucherNo   = await generateVoucherNo(entityType, groupDate);
     const voucher = await prisma.accVoucherExpense.create({
       data: {
-        voucherNo, voucherType: 'CASH', voucherDate: new Date(date),
+        voucherNo, voucherType: 'CASH', voucherDate: new Date(groupDate),
         mode: 'cash', entityType, totalAmount, source: 'draft-auto',
         entries: {
           create: entries.map((e) => ({
@@ -1131,7 +1179,7 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
       where: { id: { in: entries.map((e) => e.id) } },
       data:  { status: 'posted', postedVoucherId: voucher.id },
     });
-    vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: entries[0].mainGlName, entriesCount: entries.length, totalAmount });
+    vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: entries[0].mainGlName, businessDate: groupDate, entriesCount: entries.length, totalAmount });
   }
   return vouchers;
 }
@@ -1964,7 +2012,7 @@ module.exports = {
   copyChartToCorporate, getPendingGrnQueue,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
-  getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain,
+  getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain, getRefundVoucherAccountChain,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,

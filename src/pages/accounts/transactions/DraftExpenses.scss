@@ -192,6 +192,16 @@
     border-radius: 4px;
     letter-spacing: 0.04em;
   }
+  // Marks a group whose Date field isn't today — a backdated entry, posting
+  // under its own date instead of today's.
+  &__group-backdated {
+    font-size: 0.7rem;
+    font-weight: 700;
+    background: #fef3c7;
+    color: #92400e;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+  }
   &__group-meta {
     display: flex;
     align-items: center;

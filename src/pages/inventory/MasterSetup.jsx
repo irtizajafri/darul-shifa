@@ -15,6 +15,78 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 const TABS = ['Items', 'Categories', 'Subcategories', 'Suppliers', 'Storages', 'Locations', 'Departments'];
 const TABLE_COLUMN_COUNT = { Items: 9, Locations: 4 };
 
+// ── Items bulk-import Excel parser ───────────────────────────────────────────
+// Reads the hospital's standard fixed-asset Excel template.
+// Column headers are matched by name (case-insensitive, trimmed) so column
+// order doesn't matter. Returns an array of row objects ready for the API.
+const ITEMS_HEADER_MAP = {
+  item: 'name',
+  'item name': 'name',
+  category: 'categoryName',
+  'sub category': 'subcategoryName',
+  subcategory: 'subcategoryName',
+  supplier: 'supplierName',
+  'asset type': 'assetType',
+  unit: 'unit',
+  reorder: 'reorderLevel',
+  'reorder level': 'reorderLevel',
+  'purchase price': 'purchasePrice',
+  'opening stock': 'openingStock',
+  brand: 'brand',
+  model: 'model',
+  'serial number': 'serialNumber',
+  'sarial numb': 'serialNumber',
+  'serial no': 'serialNumber',
+  'asset location': 'assetLocation',
+  'asset locat': 'assetLocation',
+  'purchase date': 'purchaseDate',
+  'warranty until': 'warrantyUntil',
+  'warranty u': 'warrantyUntil',
+  'usefull life': 'usefulLife',
+  'useful life': 'usefulLife',
+  condition: 'condition',
+  status: 'status',
+  comment: 'comment',
+};
+
+function parseItemsExcel(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
+        if (rawRows.length < 2) return resolve([]);
+
+        // Build column index map from header row
+        const headerRow = rawRows[0].map((h) => String(h || '').trim().toLowerCase());
+        const colIndex = {};
+        headerRow.forEach((h, idx) => {
+          const mapped = ITEMS_HEADER_MAP[h];
+          if (mapped && !(mapped in colIndex)) colIndex[mapped] = idx;
+        });
+
+        if (!('name' in colIndex)) return reject(new Error('"Item" column nahi mili — header row check karein'));
+
+        const results = [];
+        for (let r = 1; r < rawRows.length; r++) {
+          const row = rawRows[r];
+          const name = String(row[colIndex.name] ?? '').trim();
+          if (!name) continue; // skip blank rows
+          const obj = {};
+          for (const [field, idx] of Object.entries(colIndex)) {
+            obj[field] = String(row[idx] ?? '').trim();
+          }
+          results.push(obj);
+        }
+        resolve(results);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 // Excel sheet is a simple S.No / Locations list — find the "Locations" (or
 // "Location") column by header text rather than a fixed index, so column
 // order/extra columns in the source file don't break the import.
@@ -115,6 +187,8 @@ export default function MasterSetup() {
     deleteLocation,
     previewLocationImport,
     confirmLocationImport,
+    previewBulkItems,
+    bulkImportItems,
   createDepartment,
     updateDepartment,
     deleteDepartment,
@@ -140,6 +214,15 @@ export default function MasterSetup() {
   const [importPreview, setImportPreview] = useState(null); // { toCreate, alreadyExists, totalInFile } | null
   const [importParsing, setImportParsing] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // Items tab — Excel bulk import
+  const itemsImportFileRef = useRef(null);
+  const [showItemsImportModal, setShowItemsImportModal] = useState(false);
+  const [itemsImportParsedRows, setItemsImportParsedRows] = useState(null); // raw parsed rows
+  const [itemsImportPreview, setItemsImportPreview] = useState(null);
+  const [itemsImportParsing, setItemsImportParsing] = useState(false);
+  const [itemsImporting, setItemsImporting] = useState(false);
+  const [itemsImportResult, setItemsImportResult] = useState(null);
 
   const generateFixedAssetPDF = (item, shouldPrint = false) => {
     const doc = new jsPDF();
@@ -598,6 +681,56 @@ export default function MasterSetup() {
     }
   };
 
+  // ── Items Excel import handlers ─────────────────────────────────────────
+  const openItemsImportModal = () => {
+    setItemsImportParsedRows(null);
+    setItemsImportPreview(null);
+    setItemsImportResult(null);
+    setShowItemsImportModal(true);
+  };
+  const closeItemsImportModal = () => {
+    setShowItemsImportModal(false);
+    setItemsImportParsedRows(null);
+    setItemsImportPreview(null);
+    setItemsImportResult(null);
+    if (itemsImportFileRef.current) itemsImportFileRef.current.value = '';
+  };
+  const handleItemsImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setItemsImportParsing(true);
+    setItemsImportPreview(null);
+    setItemsImportParsedRows(null);
+    try {
+      const rows = await parseItemsExcel(file);
+      if (!rows.length) {
+        toast.error('Excel mein koi row nahi mili — file check karein');
+        return;
+      }
+      setItemsImportParsedRows(rows);
+      const preview = await previewBulkItems(rows);
+      setItemsImportPreview(preview);
+    } catch (err) {
+      toast.error(err.message || 'Excel parse nahi hui');
+    } finally {
+      setItemsImportParsing(false);
+    }
+  };
+  const handleConfirmItemsImport = async () => {
+    if (!itemsImportParsedRows?.length) return;
+    setItemsImporting(true);
+    try {
+      const result = await bulkImportItems(itemsImportParsedRows);
+      setItemsImportResult(result);
+      toast.success(`${result.created} item(s) import ho gaye`);
+      await Promise.all([loadByTab('Items', query), fetchMastersOptions()]);
+    } catch (err) {
+      toast.error(err.message || 'Import save nahi hui');
+    } finally {
+      setItemsImporting(false);
+    }
+  };
+
   if (visibleTabs.length === 0) return <NoTabAccess />;
 
   return (
@@ -610,6 +743,9 @@ export default function MasterSetup() {
         <div className="flex items-center gap-2">
           {effectiveTab === 'Locations' && (
             <Button label="Upload Excel" icon={Upload} variant="outline" onClick={openImportModal} />
+          )}
+          {effectiveTab === 'Items' && (
+            <Button label="Bulk Upload" icon={Upload} variant="outline" onClick={openItemsImportModal} />
           )}
           <Button label={`Add New ${effectiveTab.slice(0, -1)}`} icon={Plus} onClick={openAddModal} />
         </div>
@@ -1262,6 +1398,192 @@ export default function MasterSetup() {
                 <Button label="Save" type="submit" />
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Items — Bulk Excel Import Modal */}
+      {showItemsImportModal && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/40 p-2 sm:p-4">
+          <div className="w-full max-w-2xl bg-white rounded-xl border border-slate-200 shadow-xl flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Bulk Upload Items (Excel)</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Fixed/current asset items — apni Excel file select karein</p>
+              </div>
+              <button onClick={closeItemsImportModal} className="text-slate-500 hover:text-slate-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1">
+              {/* File input */}
+              {!itemsImportResult && (
+                <>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                    <p className="text-xs text-blue-700 font-medium mb-1">Expected columns (order doesn't matter):</p>
+                    <p className="text-xs text-blue-600">
+                      Item, Category, Sub Category, Supplier, Asset Type, Unit, Reorder, Purchase Price, Opening Stock, Brand, Model, Serial Number, Asset Location, Purchase Date, Warranty Until, Usefull Life, Condition, Status, Comment
+                    </p>
+                  </div>
+
+                  <input
+                    ref={itemsImportFileRef}
+                    type="file"
+                    accept=".xls,.xlsx"
+                    onChange={handleItemsImportFile}
+                    className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                </>
+              )}
+
+              {itemsImportParsing && (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  Preview load ho raha hai...
+                </div>
+              )}
+
+              {/* Preview */}
+              {itemsImportPreview && !itemsImportResult && (
+                <div className="space-y-3">
+                  {/* Stats cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-center">
+                      <p className="text-xs text-blue-600">File mein rows</p>
+                      <p className="text-lg font-bold text-blue-800">{itemsImportPreview.totalInFile}</p>
+                    </div>
+                    <div className="rounded-lg bg-green-50 border border-green-100 px-3 py-2 text-center">
+                      <p className="text-xs text-green-600">Naye items</p>
+                      <p className="text-lg font-bold text-green-800">{itemsImportPreview.toCreate}</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2 text-center">
+                      <p className="text-xs text-amber-600">Pehle se hai (skip)</p>
+                      <p className="text-lg font-bold text-amber-700">{itemsImportPreview.alreadyExists}</p>
+                    </div>
+                    <div className="rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-center">
+                      <p className="text-xs text-red-600">Invalid rows</p>
+                      <p className="text-lg font-bold text-red-700">{itemsImportPreview.invalidRows?.length || 0}</p>
+                    </div>
+                  </div>
+
+                  {/* New categories/subcategories info */}
+                  {(itemsImportPreview.newCategories?.length > 0 || itemsImportPreview.newSubcategories?.length > 0) && (
+                    <div className="rounded-lg bg-violet-50 border border-violet-200 px-4 py-3 space-y-1.5">
+                      <p className="text-xs font-semibold text-violet-700">Auto-create hoga (pehle se DB mein nahi):</p>
+                      {itemsImportPreview.newCategories?.length > 0 && (
+                        <p className="text-xs text-violet-600">
+                          <span className="font-medium">Categories ({itemsImportPreview.newCategories.length}):</span>{' '}
+                          {itemsImportPreview.newCategories.slice(0, 5).join(', ')}{itemsImportPreview.newCategories.length > 5 ? ` +${itemsImportPreview.newCategories.length - 5} more` : ''}
+                        </p>
+                      )}
+                      {itemsImportPreview.newSubcategories?.length > 0 && (
+                        <p className="text-xs text-violet-600">
+                          <span className="font-medium">Subcategories ({itemsImportPreview.newSubcategories.length}):</span>{' '}
+                          {itemsImportPreview.newSubcategories.slice(0, 3).join(', ')}{itemsImportPreview.newSubcategories.length > 3 ? ` +${itemsImportPreview.newSubcategories.length - 3} more` : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Invalid rows */}
+                  {itemsImportPreview.invalidRows?.length > 0 && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                      <p className="text-xs font-semibold text-red-700 mb-1">Invalid rows (skip honge):</p>
+                      <ul className="space-y-0.5 max-h-24 overflow-y-auto">
+                        {itemsImportPreview.invalidRows.map((e) => (
+                          <li key={e.row} className="text-xs text-red-600">Row {e.row}: {e.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Preview table - first 10 */}
+                  {itemsImportPreview.toCreateSample?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 mb-1">
+                        Preview (first {Math.min(itemsImportPreview.toCreateSample.length, 10)} items):
+                      </p>
+                      <div className="max-h-44 overflow-y-auto border border-slate-200 rounded-md">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200">
+                              <th className="px-2 py-1.5 text-left text-slate-500 font-medium">Item</th>
+                              <th className="px-2 py-1.5 text-left text-slate-500 font-medium">Category</th>
+                              <th className="px-2 py-1.5 text-left text-slate-500 font-medium">Sub Cat</th>
+                              <th className="px-2 py-1.5 text-left text-slate-500 font-medium">Type</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {itemsImportPreview.toCreateSample.slice(0, 10).map((item) => (
+                              <tr key={`${item.rowNum}-${item.name}`}>
+                                <td className="px-2 py-1.5 text-slate-800 font-medium">{item.name}</td>
+                                <td className="px-2 py-1.5 text-slate-600">{item.category}</td>
+                                <td className="px-2 py-1.5 text-slate-600">{item.subcategory}</td>
+                                <td className="px-2 py-1.5">
+                                  <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${item.itemType === 'fixed asset' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'}`}>
+                                    {item.itemType}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {itemsImportPreview.toCreate > 10 && (
+                        <p className="text-xs text-slate-400 mt-1">...aur {itemsImportPreview.toCreate - 10} items</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Result after import */}
+              {itemsImportResult && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-3 text-center">
+                      <p className="text-xs text-green-600">✅ Create ho gaye</p>
+                      <p className="text-2xl font-bold text-green-800">{itemsImportResult.created}</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-3 text-center">
+                      <p className="text-xs text-amber-600">⏭ Skip (duplicate)</p>
+                      <p className="text-2xl font-bold text-amber-700">{itemsImportResult.skipped}</p>
+                    </div>
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-3 text-center">
+                      <p className="text-xs text-red-600">❌ Errors</p>
+                      <p className="text-2xl font-bold text-red-700">{itemsImportResult.errors?.length || 0}</p>
+                    </div>
+                  </div>
+                  {itemsImportResult.errors?.length > 0 && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+                      <p className="text-xs font-semibold text-red-700 mb-1">Errors detail:</p>
+                      <ul className="space-y-0.5 max-h-32 overflow-y-auto">
+                        {itemsImportResult.errors.map((e, idx) => (
+                          <li key={idx} className="text-xs text-red-600">Row {e.row}: {e.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-200 shrink-0">
+              <Button label="Cancel" variant="secondary" onClick={closeItemsImportModal} />
+              {!itemsImportResult && itemsImportPreview && itemsImportPreview.toCreate > 0 && (
+                <Button
+                  label={itemsImporting ? 'Importing...' : `Import ${itemsImportPreview.toCreate} Items`}
+                  onClick={handleConfirmItemsImport}
+                  disabled={itemsImporting}
+                />
+              )}
+              {itemsImportResult && (
+                <Button label="Done" onClick={closeItemsImportModal} />
+              )}
+            </div>
           </div>
         </div>
       )}

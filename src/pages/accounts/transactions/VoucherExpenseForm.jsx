@@ -1028,6 +1028,7 @@ export default function VoucherExpenseForm() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             mode, bankId: selectedBankId || null,
+            date, // backdated Date field on the form — draft posts under THIS day (see saveDraftExpenseEntry), not always today
             mainGlId:      e.mainGlId,      mainGlName:    e.mainGlName    || '',
             subGlId:       e.subGlId,       subGlName:     e.subGlName     || '',
             mainAccountId: e.mainAccountId, accountCode:   e.accountCode   || '',

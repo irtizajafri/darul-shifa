@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Pencil, Trash2, PlugZap, Building2, Flame, BarChart3, TrendingUp, Receipt } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, PlugZap, Building2, Flame, BarChart3, TrendingUp, Receipt, Printer, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { useUtilitiesStore } from '../../store/useUtilitiesStore';
 import MeterReport from './MeterReport';
+import { printUtilityBill } from '../../utils/printUtilityBill';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const fmtNum = (n) => (n != null && n !== '') ? Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
@@ -44,6 +45,19 @@ export default function MeterDetail({ meter, onBack }) {
   const [showBillForm, setShowBillForm] = useState(false);
   const [billForm, setBillForm] = useState(EMPTY_BILL);
   const [savingBill, setSavingBill] = useState(false);
+
+  // Print Bill modal
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printForm, setPrintForm] = useState({
+    fromDate: '',
+    toDate: '',
+    tariff: 'A-1R',
+    outstanding: '',
+    surcharge: '1000',
+    note: '',
+    remarks: '',
+    dueDate: '',
+  });
 
   const loadReadings = () => {
     fetchReadings({ meterId: meter.id }).then(setReadings).catch((e) => toast.error(e.message));
@@ -167,6 +181,42 @@ export default function MeterDetail({ meter, onBack }) {
     } catch (err) { toast.error(err.message); }
   };
 
+  // ── Print Bill ───────────────────────────────────────────────────────────
+  const openPrintModal = () => {
+    // Default: current month
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    const today    = now.toISOString().slice(0, 10);
+    const dueDate  = new Date(now.getFullYear(), now.getMonth() + 1, 10).toISOString().slice(0, 10);
+    setPrintForm({
+      fromDate: firstDay,
+      toDate: today,
+      tariff: 'A-1R',
+      outstanding: '',
+      surcharge: '1000',
+      note: '',
+      remarks: '',
+      dueDate,
+    });
+    setShowPrintModal(true);
+  };
+
+  const handlePrint = () => {
+    printUtilityBill({
+      meter,
+      fromDate: printForm.fromDate,
+      toDate:   printForm.toDate,
+      readings,          // all readings — function handles period filtering + history
+      rates,             // sorted DESC by effectiveFrom
+      tariff:      printForm.tariff,
+      outstanding: Number(printForm.outstanding || 0),
+      dueDate:     printForm.dueDate,
+      surcharge:   Number(printForm.surcharge || 0),
+      note:        printForm.note,
+      remarks:     printForm.remarks,
+    });
+  };
+
   if (showReport) {
     return <MeterReport meter={meter} onBack={() => setShowReport(false)} />;
   }
@@ -193,6 +243,7 @@ export default function MeterDetail({ meter, onBack }) {
             {meter.location || (isGas ? 'Gas Meter' : (isBilling ? 'Billing Meter' : 'Department Meter'))}
           </p>
         </div>
+        <Button label="Print Bill" icon={Printer} size="sm" variant="outline" onClick={openPrintModal} />
         <Button label="Report" icon={BarChart3} size="sm" variant="outline" onClick={() => setShowReport(true)} />
       </div>
 
@@ -448,7 +499,7 @@ export default function MeterDetail({ meter, onBack }) {
                       <td className="px-4 py-3 text-right">{fmtNum(b.fixedCharges)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-800">{fmtNum(b.amount)}</td>
                       <td className="px-4 py-3">
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-1">
                           <button onClick={() => handleDeleteBill(b.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       </td>
@@ -460,6 +511,130 @@ export default function MeterDetail({ meter, onBack }) {
           </div>
           <p className="text-xs text-slate-400 mt-3">Estimated vs Actual comparison ke liye "Report" button use karein aur usi period ki From/To date select karein.</p>
         </>
+      )}
+
+      {/* ── Print Bill Modal ─────────────────────────────────────────────── */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div>
+                <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                  <Printer className="w-4 h-4 text-blue-600" />
+                  Print Bill
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {isBilling ? meter.meterNo : meter.departmentName}
+                </p>
+              </div>
+              <button onClick={() => setShowPrintModal(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="p-5 space-y-4">
+              {/* Billing Period */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Billing From *</label>
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={printForm.fromDate}
+                    onChange={(e) => setPrintForm((p) => ({ ...p, fromDate: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Billing To *</label>
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={printForm.toDate}
+                    onChange={(e) => setPrintForm((p) => ({ ...p, toDate: e.target.value }))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Tariff Code</label>
+                  <input
+                    className={inputCls}
+                    value={printForm.tariff}
+                    onChange={(e) => setPrintForm((p) => ({ ...p, tariff: e.target.value }))}
+                    placeholder="e.g. A-1R"
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Due Date</label>
+                  <input
+                    type="date"
+                    className={inputCls}
+                    value={printForm.dueDate}
+                    onChange={(e) => setPrintForm((p) => ({ ...p, dueDate: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>Outstanding Amount (Rs)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className={inputCls}
+                    value={printForm.outstanding}
+                    onChange={(e) => setPrintForm((p) => ({ ...p, outstanding: e.target.value }))}
+                    placeholder="0 = NIL"
+                  />
+                </div>
+                <div>
+                  <label className={labelCls}>After Due Date Surcharge (Rs)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className={inputCls}
+                    value={printForm.surcharge}
+                    onChange={(e) => setPrintForm((p) => ({ ...p, surcharge: e.target.value }))}
+                    placeholder="e.g. 1000"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>Note (optional)</label>
+                <textarea
+                  rows={2}
+                  className={`${inputCls} resize-none`}
+                  value={printForm.note}
+                  onChange={(e) => setPrintForm((p) => ({ ...p, note: e.target.value }))}
+                  placeholder="Bill ke saath note..."
+                />
+              </div>
+              <div>
+                <label className={labelCls}>Remarks (Pay Stub)</label>
+                <input
+                  className={inputCls}
+                  value={printForm.remarks}
+                  onChange={(e) => setPrintForm((p) => ({ ...p, remarks: e.target.value }))}
+                  placeholder="Optional..."
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-200">
+              <Button label="Cancel" variant="secondary" onClick={() => setShowPrintModal(false)} />
+              <Button
+                label="Print Bill"
+                icon={Printer}
+                onClick={() => { handlePrint(); setShowPrintModal(false); }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -77,14 +77,19 @@ export default function DraftExpenses() {
     }
   };
 
-  // Group drafts by Main GL
+  // Group by (businessDate + Main GL) — matches flashDraftsToVouchers exactly,
+  // so "N vouchers will create" here is never wrong: a backdated draft (Date
+  // field earlier than today) becomes its own group/voucher, dated
+  // correctly, instead of getting silently lumped into today's Main GL group.
   const groups = drafts.reduce((acc, d) => {
-    const key = d.mainGlName || `GL-${d.mainGlId}`;
-    if (!acc[key]) acc[key] = { mainGlName: key, items: [], total: 0 };
+    const key = `${d.businessDate}|${d.mainGlName || `GL-${d.mainGlId}`}`;
+    if (!acc[key]) acc[key] = { businessDate: d.businessDate, mainGlName: d.mainGlName || `GL-${d.mainGlId}`, items: [], total: 0 };
     acc[key].items.push(d);
     acc[key].total += Number(d.amount);
     return acc;
   }, {});
+
+  const todayBiz = (() => { const n = new Date(); if (n.getHours() < 8) n.setDate(n.getDate() - 1); return n.toISOString().slice(0, 10); })();
 
   const grandTotal = drafts.reduce((s, d) => s + Number(d.amount), 0);
 
@@ -117,7 +122,7 @@ export default function DraftExpenses() {
             Pending Expense Drafts
           </h2>
           <p className="drafts__sub">
-            Today's drafts — auto-post hogi subah 8:00 AM pe (Main GL wise grouping)
+            Sab pending drafts (backdated bhi) — auto-post hogi subah 8:00 AM pe, apni-apni date pe (Date + Main GL wise grouping)
           </p>
         </div>
         <div className="drafts__header-right">
@@ -170,18 +175,23 @@ export default function DraftExpenses() {
       ) : drafts.length === 0 ? (
         <div className="drafts__empty">
           <FileText size={36} />
-          <p>Aaj koi pending draft nahi hai</p>
+          <p>Koi pending draft nahi hai</p>
           <span>Voucher Expense form mein "Save as Draft" use karein</span>
         </div>
       ) : (
         <div className="drafts__groups">
           {Object.values(groups).map((group) => (
-            <div key={group.mainGlName} className="drafts__group">
+            <div key={`${group.businessDate}|${group.mainGlName}`} className="drafts__group">
               {/* Group header */}
               <div className="drafts__group-head">
                 <div className="drafts__group-title">
                   <span className="drafts__group-badge">GL</span>
                   {group.mainGlName}
+                  {group.businessDate !== todayBiz && (
+                    <span className="drafts__group-backdated" title="Aaj ki date nahi — backdated entry, apni hi date pe post hogi">
+                      📅 {fmtDate(group.businessDate)}
+                    </span>
+                  )}
                 </div>
                 <div className="drafts__group-meta">
                   <span>{group.items.length} entr{group.items.length > 1 ? 'ies' : 'y'}</span>
