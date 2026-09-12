@@ -2138,7 +2138,7 @@ async function bulkCreatePatientVisits(req, res, next) {
 async function generateAdmissionsFromVisits(req, res, next) {
   try {
     const result = await service.generateAdmissionsFromVisits();
-    success(res, result, `${result.created} admission(s) created, ${result.skipped} already existed`);
+    success(res, result, `${result.created} admission(s) created, ${result.skipped} already existed — ${result.diagnosticLinked} diagnostic visit(s) linked, ${result.diagnosticSkipped} skipped (no matching doctor/sub-department)`);
   } catch (err) { next(err); }
 }
 

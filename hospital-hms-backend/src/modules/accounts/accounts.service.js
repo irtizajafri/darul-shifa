@@ -1309,9 +1309,13 @@ async function getVoucherExpenses(entityType) {
   });
 }
 
-// Voucher # is never reassigned on edit — only the date/mode/bank/entries can
-// change. Entries are replaced wholesale (delete + recreate) since there's no
-// stable per-entry id coming back from the form.
+// Voucher # embeds its date (VE-YYYYMMDD-NNN) and generateVoucherNo scopes
+// the running count to that same date — so changing the Voucher Date on edit
+// must re-slot the voucher under its new date's next free number, exactly as
+// if it had been created there in the first place (e.g. edit to a date that
+// already has 6 vouchers → this one becomes #7). Only regenerates when the
+// date-part actually changed; saving mode/bank/entries with the date left
+// alone keeps the existing number, so it isn't reassigned on every edit.
 async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) {
   const existing = await prisma.accVoucherExpense.findUnique({ where: { id: Number(id) } });
   if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
@@ -1321,6 +1325,15 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
 
   const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+
+  const dateKey = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, '0')}${String(dt.getDate()).padStart(2, '0')}`;
+  };
+  const dateChanged = dateKey(voucherDate) !== dateKey(existing.voucherDate);
+  const voucherNo = dateChanged
+    ? await generateVoucherNo(existing.entityType, voucherDate)
+    : existing.voucherNo;
 
   // Entries get wholesale deleted/recreated below — any Const Fee rows this
   // voucher had previously marked isPaid must go back to unpaid first, or
@@ -1341,6 +1354,7 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
   const voucher = await prisma.accVoucherExpense.update({
     where: { id: Number(id) },
     data: {
+      voucherNo,
       voucherType,
       voucherDate: new Date(voucherDate),
       mode,
@@ -1370,6 +1384,27 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
   await linkConsultantFeeItems(entries, voucher.entries);
 
   return voucher;
+}
+
+async function deleteVoucherExpense(id) {
+  const existing = await prisma.accVoucherExpense.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
+
+  // Reset isPaid on any consultant-fee discharge bill items this voucher had paid
+  const oldLinks = await prisma.accVoucherExpenseEntryConsultantFee.findMany({
+    where: { voucherExpenseEntry: { voucherId: Number(id) } },
+    select: { dischargeBillItemId: true },
+  });
+  if (oldLinks.length) {
+    await prisma.clinicDischargeBillItem.updateMany({
+      where: { id: { in: oldLinks.map((l) => l.dischargeBillItemId) } },
+      data: { isPaid: false },
+    });
+  }
+
+  // AccVoucherExpenseEntry (and its children) cascade-delete automatically
+  await prisma.accVoucherExpense.delete({ where: { id: Number(id) } });
+  return { deleted: true, id: Number(id) };
 }
 
 async function getIncomeCategories(entityType) {
@@ -1491,6 +1526,9 @@ async function getVoucherIncomes(entityType) {
 
 // Auto-generated (Day Close) vouchers are meant to stay frozen — reject the
 // edit outright rather than silently letting one drift from what was booked.
+// Voucher # embeds its date (VI-YYYYMMDD-NNN, see generateIncomeVoucherNo) —
+// changing the Voucher Date on edit re-slots it under the new date's next
+// free number, same reasoning as updateVoucherExpense.
 async function updateVoucherIncome(id, { mode, bankId, voucherDate, entries }) {
   const existing = await prisma.accVoucherIncome.findUnique({ where: { id: Number(id) } });
   if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
@@ -1504,11 +1542,21 @@ async function updateVoucherIncome(id, { mode, bankId, voucherDate, entries }) {
   const voucherType = mode === 'cash' ? 'CASH' : mode === 'card' ? 'CARD' : 'BANK';
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
 
+  const dateKey = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}${String(dt.getMonth() + 1).padStart(2, '0')}${String(dt.getDate()).padStart(2, '0')}`;
+  };
+  const dateChanged = dateKey(voucherDate) !== dateKey(existing.voucherDate);
+  const voucherNo = dateChanged
+    ? await generateIncomeVoucherNo(existing.entityType, voucherDate)
+    : existing.voucherNo;
+
   await prisma.accVoucherIncomeEntry.deleteMany({ where: { voucherId: Number(id) } });
 
   return prisma.accVoucherIncome.update({
     where: { id: Number(id) },
     data: {
+      voucherNo,
       voucherType,
       voucherDate: new Date(voucherDate),
       mode,
@@ -2017,7 +2065,7 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
-  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,

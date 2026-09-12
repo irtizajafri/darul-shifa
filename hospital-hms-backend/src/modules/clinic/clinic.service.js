@@ -6592,7 +6592,141 @@ async function generateAdmissionsFromVisits() {
     created++;
   }
 
-  return { created, skipped };
+  // Second pass — the same legacy export's Laboratory/Radiology/Ultrasound
+  // rows for these admissions are still plain, unlinked PatientVisit rows
+  // (they don't say "Admission", so the loop above never touches them) —
+  // Provisional Bill's Diagnostic Bill tab only reads real, admission-linked
+  // ClinicOpdVisit/ClinicOpdVisitDoctor rows, so without this they'd never
+  // show up there even though the admission itself now exists. Converts
+  // every such row — for EVERY real admission, not just ones just created
+  // above — into a real ClinicOpdVisit, but ONLY when both the Doctor name
+  // and Sub-Department name in the row exactly match (case-insensitive) a
+  // real record already in the system; no fuzzy/best-guess matching — a row
+  // that doesn't match is left as a plain PatientVisit (still visible in
+  // Patients List, just not linked to any admission's Provisional Bill).
+  // Safe to re-run: each converted row is tagged with a unique
+  // "LEGACY-<PatientVisit id>" serialNo, checked before creating again.
+  const diagLinked = await linkDiagnosticVisitsForAdmissions();
+
+  return { created, skipped, diagnosticLinked: diagLinked.linked, diagnosticSkipped: diagLinked.skipped };
+}
+
+const DIAGNOSTIC_IMPORT_DEPTS = ['Laboratory', 'Radiology', 'Ultra Sound, Echo & Color Doppler'];
+
+// Best-guess fallback for Doctor/Sub-Department name matching — legacy
+// exports carry the same test under slightly different punctuation/spacing
+// from one row to the next (e.g. "S.G.P.T ( S.G.P.T. / ALT)" vs the real
+// "S.G.P.T (S.G.P.T. / ALT)" — one stray space). An exact (case-insensitive)
+// match is always tried FIRST; this normalized form is only the fallback
+// when that fails, and even then it must still match exactly after
+// normalizing — never a partial/similarity guess, so it can't misfile one
+// real test as a different one.
+function normalizeForFuzzyMatch(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[.,()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function linkDiagnosticVisitsForAdmissions() {
+  const candidateRows = await prisma.patientVisit.findMany({
+    where: {
+      admitNo: { not: null },
+      department: { in: DIAGNOSTIC_IMPORT_DEPTS, mode: 'insensitive' },
+    },
+    orderBy: { id: 'asc' },
+  });
+  if (!candidateRows.length) return { linked: 0, skipped: 0 };
+
+  // Fetched once, matched in JS per row below — cheaper than a fuzzy-fallback
+  // query per row, and the exact-match fast path below still covers most rows.
+  const allDoctors = await prisma.clinicDoctor.findMany({ select: { id: true, name: true } });
+  const allSubDepts = await prisma.clinicSubDepartment.findMany({
+    select: { id: true, name: true, department: { select: { name: true } } },
+  });
+
+  let linked = 0;
+  let skipped = 0;
+  for (const row of candidateRows) {
+    // Idempotent by construction, not by a lookup-and-skip check — the
+    // source PatientVisit row is deleted in the same transaction as the
+    // ClinicOpdVisit it becomes (see below), so a converted row can never
+    // reappear as a candidate on a later run.
+    const serialNo = `LEGACY-${row.id}`;
+    const admissionNo = String(row.admitNo);
+    const admission = await prisma.clinicAdmission.findFirst({ where: { admissionNo } });
+    const dept = DIAGNOSTIC_IMPORT_DEPTS.find((d) => d.toLowerCase() === String(row.department || '').trim().toLowerCase());
+
+    let doctor = row.doctor
+      ? await prisma.clinicDoctor.findFirst({ where: { name: { equals: row.doctor.trim(), mode: 'insensitive' } } })
+      : null;
+    if (!doctor && row.doctor) {
+      const target = normalizeForFuzzyMatch(row.doctor);
+      doctor = allDoctors.find((d) => normalizeForFuzzyMatch(d.name) === target) || null;
+    }
+
+    let subDept = row.subDepartment && dept
+      ? await prisma.clinicSubDepartment.findFirst({
+          where: { name: { equals: row.subDepartment.trim(), mode: 'insensitive' }, department: { name: { equals: dept, mode: 'insensitive' } } },
+        })
+      : null;
+    if (!subDept && row.subDepartment && dept) {
+      const target = normalizeForFuzzyMatch(row.subDepartment);
+      const deptTarget = dept.toLowerCase();
+      subDept = allSubDepts.find((sd) => sd.department?.name?.toLowerCase() === deptTarget && normalizeForFuzzyMatch(sd.name) === target) || null;
+    }
+
+    if (!admission || !dept || !doctor || !subDept) { skipped++; continue; }
+
+    const visitDateTime = row.visitTime
+      ? new Date(`${row.visitDate.toISOString().slice(0, 10)}T${row.visitTime}:00`)
+      : row.visitDate;
+    // The legacy row's own "received" is what was actually collected at the
+    // counter — for Panel that's routinely 0 (company settles later), which
+    // would otherwise make every Panel diagnostic import show a Rs. 0 bill.
+    // Use the real system price instead — Cash and Panel both bill off the
+    // same ClinicDoctorSubDept.normalCharges (no separate per-panel-company
+    // rate lookup, by the user's own call) — falling back to whatever was
+    // actually received only if this doctor/sub-dept pairing was never
+    // priced at all.
+    const docSubDept = await prisma.clinicDoctorSubDept.findFirst({
+      where: { doctorId: doctor.id, subDeptId: subDept.id },
+      select: { normalCharges: true },
+    });
+    const amount = docSubDept?.normalCharges || Number(row.received) || 0;
+    const paymentType = (row.paymentType || 'cash').trim().toLowerCase().replace('complem.', 'complementary');
+
+    // Both in one transaction — the old PatientVisit row is deleted once
+    // converted (not just left in place), otherwise this same amount would
+    // double-count: once via the legacy row (Revenue Dashboard/Patients
+    // List already read PatientVisit directly) and again via the new
+    // ClinicOpdVisit row this creates.
+    await prisma.$transaction([
+      prisma.clinicOpdVisit.create({
+        data: {
+          serialNo,
+          patientName: row.patientName,
+          admitPatient: true,
+          admitNo: admissionNo,
+          adjustPayment: true,
+          paymentType,
+          department: dept,
+          totalAmount: amount,
+          receive: amount,
+          discount: Number(row.discount) || 0,
+          createdAt: isNaN(visitDateTime?.getTime()) ? row.visitDate : visitDateTime,
+          doctors: {
+            create: [{ doctorId: doctor.id, subDeptId: subDept.id, amount, quantity: 1 }],
+          },
+        },
+      }),
+      prisma.patientVisit.delete({ where: { id: row.id } }),
+    ]);
+    linked++;
+  }
+
+  return { linked, skipped };
 }
 
 async function getAllConsultantRates() {

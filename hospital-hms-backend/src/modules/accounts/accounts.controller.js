@@ -63,6 +63,10 @@ async function updateVoucherExpense(req, res, next) {
   try { success(res, await svc.updateVoucherExpense(req.params.id, req.body), 'updated'); }
   catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
 }
+async function deleteVoucherExpense(req, res, next) {
+  try { success(res, await svc.deleteVoucherExpense(req.params.id), 'deleted'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
 
 async function getIncomeCategories(req, res, next) { try { success(res, await svc.getIncomeCategories(et(req))); } catch (e) { next(e); } }
 async function createIncomeCategory(req, res, next) { try { success(res, await svc.createIncomeCategory(req.body), 'created'); } catch (e) { next(e); } }
@@ -237,7 +241,7 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
-  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,

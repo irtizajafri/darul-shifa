@@ -410,6 +410,10 @@ export default function VoucherExpenseForm() {
   const [utilBillLoading, setUtilBillLoading]   = useState(false);
   const [checkedUtilBills, setCheckedUtilBills] = useState({});
 
+  // ── Delete voucher (super admin only) ────────────────────────────────────
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting]                   = useState(false);
+
   // ── Pending GRN queue (auto-popup) ──────────────────────────────────────
   // Every still-unpaid GRN under a "Vendors / Suppliers" or "Inventory" List
   // Attachment head, fetched once on load and re-offered after every entry
@@ -1110,6 +1114,21 @@ export default function VoucherExpenseForm() {
 
   const total = entries.reduce((s, e) => s + Number(e.amount), 0);
 
+  const handleDeleteVoucher = async () => {
+    if (!editingVoucher?.id) return;
+    setDeleting(true);
+    try {
+      await fetch(`${API}/voucher-expense/${editingVoucher.id}`, { method: 'DELETE' });
+      toast.success(`Voucher ${editingVoucher.voucherNo} deleted`);
+      navigate(-1);
+    } catch (err) {
+      toast.error('Delete failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  };
+
   const handleConfirm = async () => {
     if (entries.length === 0) { toast.error('Add at least one entry'); return; }
     setSaving(true);
@@ -1131,7 +1150,11 @@ export default function VoucherExpenseForm() {
       try {
         printExpenseVoucher({
           voucherNo:   savedNo,
-          voucherDate: new Date().toISOString(),
+          // The form's own Voucher Date field (possibly just backdated/
+          // corrected via this edit) — not "now". Printing today's real date
+          // here would silently ignore whatever date the user actually set,
+          // same bug class as VoucherReprint.jsx's card (see its fix).
+          voucherDate: date,
           mode,
           entries,
           printBy: user?.name || 'System',
@@ -1475,6 +1498,16 @@ export default function VoucherExpenseForm() {
             >
               {savingDraft ? 'Saving…' : '🖨️ Save as Draft & Print'}
             </button>
+            {isEditMode && user?.isSuperAdmin && (
+              <button
+                className="ve-form__delete-btn"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={deleting}
+                title="Delete this voucher (Super Admin only)"
+              >
+                <Trash2 size={14} /> Delete Voucher
+              </button>
+            )}
           </>
         )}
       </div>
@@ -2029,6 +2062,41 @@ export default function VoucherExpenseForm() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirm Modal (super admin only) ── */}
+      {deleteConfirmOpen && (
+        <div className="ve-form__overlay" onClick={() => !deleting && setDeleteConfirmOpen(false)}>
+          <div className="ve-form__del-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ve-form__del-modal-hdr">
+              <Trash2 size={16} /> Delete Voucher
+            </div>
+            <div className="ve-form__del-modal-body">
+              <p>
+                Kya aap wakai <strong>{editingVoucher?.voucherNo}</strong> delete karna chahte hain?
+              </p>
+              <p className="ve-form__del-modal-warn">
+                ⚠️ Yeh action undo nahi ho sakta. Agar is voucher mein consultant fee payment thi toh woh entries bhi unpaid ho jaengi.
+              </p>
+            </div>
+            <div className="ve-form__del-modal-footer">
+              <button
+                className="ve-form__del-modal-confirm"
+                onClick={handleDeleteVoucher}
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting…' : 'Haan, Delete Karo'}
+              </button>
+              <button
+                className="ve-form__del-modal-cancel"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

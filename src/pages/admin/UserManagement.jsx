@@ -499,10 +499,22 @@ export default function UserManagement() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) =>
+      u.name?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      u.role?.toLowerCase().includes(q) ||
+      u.department?.toLowerCase().includes(q)
+    );
+  }, [users, search]);
 
   const openCreate = () => { setEditUser(null); setModalOpen(true); };
   const openEdit = (user) => { setEditUser(user); setModalOpen(true); };
@@ -589,6 +601,18 @@ export default function UserManagement() {
         </div>
       ) : (
         <>
+        {/* Search — filters the table below by name/email/role/department */}
+        <div className="mt-6 relative max-w-sm">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, email, role, department..."
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-500"
+          />
+        </div>
+
         {/* Online Users Summary */}
         {users.length > 0 && (() => {
           const onlineUsers = users.filter(u => isOnline(u.lastActivity));
@@ -630,7 +654,14 @@ export default function UserManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {users.map((user) => {
+              {filteredUsers.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-5 py-10 text-center text-gray-400">
+                    No users match "{search}"
+                  </td>
+                </tr>
+              )}
+              {filteredUsers.map((user) => {
                 const expired = isExpired(user.expiresAt);
                 return (
                   <tr key={user.id} className={`hover:bg-gray-50 transition-colors ${expired ? 'opacity-70' : ''}`}>

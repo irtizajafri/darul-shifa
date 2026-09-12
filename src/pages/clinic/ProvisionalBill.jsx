@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
@@ -218,7 +219,7 @@ function BalanceInfoModal({ detail, onClose }) {
 // ── Print Template ─────────────────────────────────────────────────────────────
 function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
-  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, balanceInfo } = detail;
+  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, pharmacyAmount, balanceInfo } = detail;
 
   const now = admission.createdAt ? new Date(admission.createdAt) : new Date();
   const dateStr = `${fmtDate(now)} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
@@ -266,9 +267,24 @@ function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
       amount: total,
     });
   });
-  // Pharmacy is intentionally excluded from the printed bill entirely (not
-  // even a summed line) and from Bill Amount / Balance — it's tracked only
-  // in-app on the Pharmacy tab, per explicit instruction.
+  // Pharmacy is intentionally excluded from the printed bill's line items —
+  // it's tracked only in-app on the Pharmacy tab, per explicit instruction —
+  // EXCEPT for Panel patients: Bill Amount/Balance already fold pharmacyAmount
+  // in (see getProvisionalBillDetail), and a Panel company needs its claim's
+  // Medicine cost visible on the printed bill, not silently baked into the
+  // total. Same "Other" bucket as the Diagnostic dept lines above (a
+  // Medicine-titled box repeating "Medicine" as its own row would read as a
+  // duplicate, same reasoning as the Laboratory case).
+  if (admission.patientCategory === 'panel' && pharmacyAmount > 0) {
+    if (!groups.Other) groups.Other = [];
+    groups.Other.push({
+      id: 'pharmacy-medicine',
+      billHead: { description: 'Medicine' },
+      qty: 1,
+      rate: pharmacyAmount,
+      amount: pharmacyAmount,
+    });
+  }
 
   const categoryLabel = { private: 'Private Patient', staff: 'Staff Patient', panel: 'Panel Patient', cc: 'CC Patient', complementary: 'Complementary Patient' }[admission.patientCategory] || 'Private Patient';
   const balanceWords = balanceInfo.balance > 0 ? numToWords(Math.floor(balanceInfo.balance)) : (balanceInfo.refund > 0 ? numToWords(Math.floor(balanceInfo.refund)) : 'zero');
@@ -983,10 +999,14 @@ export default function ProvisionalBill() {
                     <div className="pb-form-row">
                       <div className="pb-fg pb-fg--full">
                         <label>Heads</label>
-                        <select value={row.billHeadId} onChange={e => handleWardOrHeadChange('billHeadId', e.target.value)}>
-                          <option value="">— Select —</option>
-                          {provisionalHeads.map(h => <option key={h.id} value={h.id}>{h.headCode} — {h.description}</option>)}
-                        </select>
+                        <SearchableSelect
+                          options={provisionalHeads}
+                          value={row.billHeadId}
+                          onChange={val => handleWardOrHeadChange('billHeadId', val)}
+                          placeholder="— Select —"
+                          getLabel={h => `${h.headCode} — ${h.description}`}
+                          getKey={h => h.id}
+                        />
                       </div>
                     </div>
 

@@ -68,6 +68,7 @@ router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);
 router.post('/voucher-expense', ctrl.createVoucherExpense);
 router.put('/voucher-expense/:id', ctrl.updateVoucherExpense);
+router.delete('/voucher-expense/:id', ctrl.deleteVoucherExpense);
 
 router.get('/income-categories', ctrl.getIncomeCategories);
 router.post('/income-categories', ctrl.createIncomeCategory);

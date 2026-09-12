@@ -70,7 +70,12 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
         </div>
         <div className="vr-vc-meta-area">
           <div className="vr-vc-printby">PRINT BY: {printBy}</div>
-          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.createdAt || v.voucherDate)}</div>
+          {/* voucherDate is the one field an edit can actually change (see
+              updateVoucherExpense) — createdAt never moves, so it must only
+              be a fallback for old rows missing voucherDate, not the
+              preferred value, or an edited voucher's date-change would never
+              show up here. */}
+          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.voucherDate || v.createdAt)}</div>
           <div className="vr-vc-page">Page: {pageNum} of {totalPages}</div>
         </div>
       </div>

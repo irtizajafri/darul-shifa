@@ -44,8 +44,21 @@ export function useTabSessionGuard() {
   // Before the page unloads (refresh OR close), set the flag.
   // On close: tab dies → sessionStorage wiped → flag gone on next open.
   // On refresh: tab survives → sessionStorage preserved → flag present on reload.
+  // Same handler also asks the browser to show its native "Leave site?"
+  // confirmation — staff mid-entry on a bill/slip accidentally hitting the
+  // tab's ✕ or closing Chrome shouldn't lose work silently. The browser
+  // supplies its own generic wording (Chrome/Firefox/etc. all ignore any
+  // custom returnValue text) — setting it non-empty is what triggers the
+  // prompt at all. Only fires on a real browser-level unload (tab close,
+  // window close, hard refresh, typed URL) — normal in-app navigation
+  // between HMS pages is a React Router client-side transition, not a
+  // beforeunload, so it never prompts.
   useEffect(() => {
-    const mark = () => sessionStorage.setItem(REFRESH_FLAG, '1');
+    const mark = (e) => {
+      sessionStorage.setItem(REFRESH_FLAG, '1');
+      e.preventDefault();
+      e.returnValue = '';
+    };
     window.addEventListener('beforeunload', mark);
     return () => window.removeEventListener('beforeunload', mark);
   }, []);
