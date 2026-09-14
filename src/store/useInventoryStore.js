@@ -596,6 +596,21 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  shiftAsset: async (id, payload) => request(`/asset-instances/${id}/shift`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchShiftLogs: async (params = {}) => {
+    const qs = new URLSearchParams();
+    if (params.assetInstanceId) qs.set('assetInstanceId', params.assetInstanceId);
+    if (params.itemId)          qs.set('itemId', params.itemId);
+    if (params.search)          qs.set('search', params.search);
+    if (params.dateFrom)        qs.set('dateFrom', params.dateFrom);
+    if (params.dateTo)          qs.set('dateTo', params.dateTo);
+    return request(`/asset-shift-logs?${qs.toString()}`);
+  },
+
   // { [itemId]: "Loc A, Loc B" } — every item that currently has at least
   // one asset unit with a Location stamped via GD/GIN.
   fetchItemLocationMap: async () => request('/asset-instances/by-item-location'),

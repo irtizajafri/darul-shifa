@@ -95,6 +95,37 @@ async function getBankDepositAdjs(req, res, next) {
   try { success(res, await svc.getBankDepositAdjs(et(req))); } catch (e) { next(e); }
 }
 
+async function bulkImportBankStatement(req, res, next) {
+  try {
+    const { bankAccountId, rows } = req.body;
+    success(res, await svc.bulkImportBankStatement({ bankAccountId, entityType: et(req), rows }), 'imported');
+  } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+async function getBankStatementLines(req, res, next) {
+  try {
+    const { bankAccountId, dateFrom, dateTo } = req.query;
+    success(res, await svc.getBankStatementLines({ bankAccountId, entityType: et(req), dateFrom, dateTo }));
+  } catch (e) { next(e); }
+}
+
+async function getUnpresentedChequeList(req, res, next) {
+  try { success(res, await svc.getUnpresentedChequeList({ entityType: et(req) })); } catch (e) { next(e); }
+}
+async function confirmChequeMatch(req, res, next) {
+  try {
+    const { voucherExpenseEntryId, statementLineId } = req.body;
+    success(res, await svc.confirmChequeMatch({ voucherExpenseEntryId, statementLineId }), 'matched');
+  } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+
+async function getChequeWiseVoucherSummary(req, res, next) {
+  try {
+    const { entityType, dateFrom, dateTo } = req.query;
+    const modes = req.query.modes ? String(req.query.modes).split(',').filter(Boolean) : undefined;
+    success(res, await svc.getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo }));
+  } catch (e) { next(e); }
+}
+
 async function addHeadAccount(req, res, next) {
   try {
     const { headId, subAccountId } = req.body;
@@ -174,9 +205,52 @@ async function getVouchersForReprint(req, res, next) {
 
 async function getVoucherSummaryMatrix(req, res, next) {
   try {
-    const { entityType, dateFrom, dateTo } = req.query;
-    success(res, await svc.getVoucherSummaryMatrix({ entityType, dateFrom, dateTo }));
+    const { entityType, mainGlFrom, mainGlTo, dateFrom, dateTo } = req.query;
+    success(res, await svc.getVoucherSummaryMatrix({ entityType, mainGlFrom, mainGlTo, dateFrom, dateTo }));
   } catch (e) { next(e); }
+}
+
+async function getIncomeSummaryMatrix(req, res, next) {
+  try {
+    const { entityType, categoryFrom, categoryTo, dateFrom, dateTo } = req.query;
+    success(res, await svc.getIncomeSummaryMatrix({ entityType, categoryFrom, categoryTo, dateFrom, dateTo }));
+  } catch (e) { next(e); }
+}
+
+async function getConsultantPaymentHistory(req, res, next) {
+  try {
+    const { entityType, consultantFrom, consultantTo, dateFrom, dateTo, voucherFrom, voucherTo, reportType, opdIndoor, paymentType } = req.query;
+    success(res, await svc.getConsultantPaymentHistory({
+      entityType, consultantFrom, consultantTo, dateFrom, dateTo, voucherFrom, voucherTo, reportType, opdIndoor, paymentType,
+    }));
+  } catch (e) { next(e); }
+}
+
+async function getSupplierPaymentHistory(req, res, next) {
+  try {
+    const { entityType, supplierFrom, supplierTo, dateFrom, dateTo, voucherFrom, voucherTo, reportType, paymentType } = req.query;
+    success(res, await svc.getSupplierPaymentHistory({
+      entityType, supplierFrom, supplierTo, dateFrom, dateTo, voucherFrom, voucherTo, reportType, paymentType,
+    }));
+  } catch (e) { next(e); }
+}
+
+async function getGLBalanceReport(req, res, next) {
+  try {
+    const { entityType, mainGlId, subGlId, mainAccountId, subAccountId, payeeName, dateFrom, dateTo, reportType } = req.query;
+    success(res, await svc.getGLBalanceReport({ entityType, mainGlId, subGlId, mainAccountId, subAccountId, payeeName, dateFrom, dateTo, reportType }));
+  } catch (e) { next(e); }
+}
+
+async function getDistinctPayeeNames(req, res, next) {
+  try { success(res, await svc.getDistinctPayeeNames(et(req))); } catch (e) { next(e); }
+}
+
+async function bulkImportIncomeSummary(req, res, next) {
+  try {
+    const { entityType, rows } = req.body;
+    success(res, await svc.bulkImportIncomeSummary({ entityType, rows }), 'imported');
+  } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
 }
 
 async function getVoucherSummary(req, res, next) {
@@ -245,10 +319,12 @@ module.exports = {
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
-  getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix,
+  getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsNow,
   addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   createBankDeposit, getBankDeposits, getBankDepositForDate,
+  bulkImportBankStatement, getBankStatementLines,
+  getUnpresentedChequeList, confirmChequeMatch, getChequeWiseVoucherSummary,
   createBankDepositAdj, getBankDepositAdjs,
   getAccountsInquiryDashboard,
   getClinicRevenueForDate,

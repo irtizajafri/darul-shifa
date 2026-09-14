@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Search, Trash2, Plus } from 'lucide-react';
+import { Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useInventoryStore } from '../../store/useInventoryStore';
@@ -10,9 +11,11 @@ import './SurgeryInformation.scss';
 const API = 'http://localhost:5001/api/clinic';
 
 // ── Staff category keyword matching (same pattern as OtRegister) ─────────────
+// Surgeon shares the "Consultant" column — this hospital's Surgeon-category
+// doctors are operating-staff same as Consultants, not a separate list.
 function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
 const CAT_KEYWORDS = {
-  consultant:   ['consultant'],
+  consultant:   ['consultant', 'surgeon'],
   rmo:          ['rmo'],
   tech:         ['tech'],
   anesthesist:  ['anaesth', 'anesth'],
@@ -24,6 +27,10 @@ function doctorsForRole(doctors, role) {
     return keywords.some(k => cat.includes(k));
   });
 }
+
+// Request Items (GD) only ever goes to Operation Theater or Labour Room —
+// see gdDepartmentOptions below.
+const GD_DEPARTMENT_NAMES = ['operation theater', 'labour room'];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d) {
@@ -209,7 +216,6 @@ export default function SurgeryInformation() {
   const [gdItemSearch, setGdItemSearch] = useState('');
   const [gdDropdownOpen, setGdDropdownOpen] = useState(false);
   const [gdHighlighted, setGdHighlighted] = useState(-1);
-  const [gdSubmitting, setGdSubmitting] = useState(false);
   const gdSearchRef = useRef(null);
   const gdListRef = useRef(null);
   const gdQtyRefs = useRef({});
@@ -263,37 +269,16 @@ export default function SurgeryInformation() {
     else if (e.key === 'Escape') { setGdDropdownOpen(false); setGdHighlighted(-1); }
   }
 
-  async function handleRequestItems() {
-    if (!admission) return;
-    if (!gdDepartmentId) { toast.error('Department select karein'); return; }
-    if (gdSelectedItems.length === 0) { toast.error('Kam az kam ek item add karein'); return; }
-    const badQty = gdSelectedItems.find((i) => !i.quantityRequested || Number(i.quantityRequested) <= 0);
-    if (badQty) { toast.error(`Quantity darj karein: ${badQty.itemName}`); return; }
-    setGdSubmitting(true);
-    try {
-      await createGDBatch({
-        departmentId: Number(gdDepartmentId),
-        requestDate: new Date().toISOString(),
-        items: gdSelectedItems.map((i) => ({ itemId: i.itemId, quantityRequested: Number(i.quantityRequested) })),
-        admissionNumber: admission.admissionNo,
-        comment: `Surgery — ${admission.patientName}`,
-      });
-      toast.success('Items request ho gayi (GD ban gayi)');
-      setGdSelectedItems([]);
-      setGdItemSearch('');
-      await fetchGDHeaders({ admissionNumber: admission.admissionNo });
-    } catch (e) {
-      toast.error(e.message || 'GD create nahi hui');
-    } finally {
-      setGdSubmitting(false);
-    }
-  }
-
   // Filtered doctor lists by role
   const consultants   = doctorsForRole(allDoctors, 'consultant');
   const rmos          = doctorsForRole(allDoctors, 'rmo');
   const techs         = doctorsForRole(allDoctors, 'tech');
   const anesthesists  = doctorsForRole(allDoctors, 'anesthesist');
+
+  // Request Items (GD) only ever goes to one of these two places for a
+  // surgery/procedure — radio buttons, not the full Inventory department list.
+  const gdDepartmentOptions = (masterOptions.departments || [])
+    .filter(d => GD_DEPARTMENT_NAMES.includes(d.name.toLowerCase()));
 
   const set = useCallback((k, v) => setForm(f => ({ ...f, [k]: v })), []);
 
@@ -337,9 +322,17 @@ export default function SurgeryInformation() {
     setGdItemSearch('');
   }
 
-  // ── Save ──
+  // ── Save — also submits any staged Request Items in the same click, so
+  // filling the GD table and hitting Save (instead of a separate Request
+  // Items button that no longer exists) never silently drops those items. ──
   async function handleSave() {
     if (!admission) { toast.error('Pehle admission select karein'); return; }
+    if (gdSelectedItems.length > 0) {
+      if (!gdDepartmentId) { toast.error('Items request karne ke liye Department select karein'); return; }
+      const badQty = gdSelectedItems.find((i) => !i.quantityRequested || Number(i.quantityRequested) <= 0);
+      if (badQty) { toast.error(`Quantity darj karein: ${badQty.itemName}`); return; }
+    }
+
     setSaving(true);
     try {
       const res  = await fetch(`${API}/admission/surgery-information/${admission.id}/save`, {
@@ -355,7 +348,27 @@ export default function SurgeryInformation() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
-      toast.success('Surgery Information save ho gayi');
+
+      if (gdSelectedItems.length > 0) {
+        try {
+          await createGDBatch({
+            departmentId: Number(gdDepartmentId),
+            requestDate: new Date().toISOString(),
+            items: gdSelectedItems.map((i) => ({ itemId: i.itemId, quantityRequested: Number(i.quantityRequested) })),
+            admissionNumber: admission.admissionNo,
+            comment: `Surgery — ${admission.patientName}`,
+          });
+        } catch (gdErr) {
+          // Surgery Information is already saved at this point — say so
+          // plainly rather than a generic failure that implies nothing
+          // happened. Form stays open (no resetForm) so items can be retried.
+          toast.error(`Surgery Information save ho gayi, lekin items request nahi ho payi: ${gdErr.message || ''}`);
+          setSaving(false);
+          return;
+        }
+      }
+
+      toast.success(gdSelectedItems.length > 0 ? 'Surgery Information aur Items dono save ho gaye' : 'Surgery Information save ho gayi');
       resetForm();
     } catch (e) {
       toast.error(e.message || 'Error saving');
@@ -430,18 +443,14 @@ export default function SurgeryInformation() {
                 <div className="si-field-group">
                   <div className="si-field">
                     <label className="si-lbl">Procedure</label>
-                    <select
-                      className="si-input si-input--select"
+                    <SearchableSelect
+                      options={surgeryTypes}
                       value={form.surgeryTypeId}
-                      onChange={e => set('surgeryTypeId', e.target.value)}
-                    >
-                      <option value="">— Select —</option>
-                      {surgeryTypes.map(s => (
-                        <option key={s.id} value={s.id}>
-                          {s.code ? `${s.code} — ${s.name}` : s.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={v => set('surgeryTypeId', v)}
+                      placeholder="— Select —"
+                      getLabel={s => s.code ? `${s.code} — ${s.name}` : s.name}
+                      getKey={s => s.id}
+                    />
                   </div>
                   <div className="si-field si-field--anesthesia">
                     <label className="si-lbl">Anesthesia</label>
@@ -504,18 +513,22 @@ export default function SurgeryInformation() {
             {/* notification popup) — it's the same data, not a copy. */}
             <div className="si-items-card">
               <div className="si-items-title">Request Items (GD)</div>
+              <div className="si-items-hint">Items yahan add karein — neeche "Save" dabane par Surgery Information ke sath hi request ho jayengi.</div>
 
               <div className="si-gd-top-row">
-                <select
-                  className="si-input si-input--select"
-                  value={gdDepartmentId}
-                  onChange={e => setGdDepartmentId(e.target.value)}
-                >
-                  <option value="">— Select Department —</option>
-                  {(masterOptions.departments || []).map(d => (
-                    <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
+                <div className="si-gd-dept-radios">
+                  {gdDepartmentOptions.map(d => (
+                    <label key={d.id} className="si-radio-lbl">
+                      <input
+                        type="radio"
+                        name="gdDepartment"
+                        checked={String(gdDepartmentId) === String(d.id)}
+                        onChange={() => setGdDepartmentId(String(d.id))}
+                      />
+                      {d.name}
+                    </label>
                   ))}
-                </select>
+                </div>
 
                 <div className="si-gd-search">
                   <input
@@ -546,7 +559,9 @@ export default function SurgeryInformation() {
                 </div>
               </div>
 
-              {/* Pending batch (not yet submitted) */}
+              {/* Pending batch (not yet submitted) — table's own structure always
+                  shows, same as the Consultant/RMO/OT Technician columns
+                  above always show their full list regardless of selection. */}
               <table className="si-items-tbl">
                 <thead>
                   <tr>
@@ -557,13 +572,11 @@ export default function SurgeryInformation() {
                   </tr>
                 </thead>
                 <tbody>
-                  {gdSelectedItems.length === 0
-                    ? (
-                      <tr>
-                        <td colSpan={4} className="si-items-empty">No items added yet</td>
-                      </tr>
-                    )
-                    : gdSelectedItems.map(row => (
+                  {gdSelectedItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="si-items-empty">No items added yet</td>
+                    </tr>
+                  ) : gdSelectedItems.map(row => (
                       <tr key={row.itemId}>
                         <td>{row.itemName}</td>
                         <td>{row.itemCode}</td>
@@ -586,18 +599,9 @@ export default function SurgeryInformation() {
                           </button>
                         </td>
                       </tr>
-                    ))
-                  }
-                </tbody>
-              </table>
-
-              {gdSelectedItems.length > 0 && (
-                <div className="si-gd-submit-row">
-                  <button className="si-add-btn" onClick={handleRequestItems} disabled={gdSubmitting}>
-                    <Plus size={13} /> {gdSubmitting ? 'Requesting…' : 'Request Items'}
-                  </button>
-                </div>
-              )}
+                    ))}
+                  </tbody>
+                </table>
 
               {/* Already-requested GDs for this admission — same data Store sees */}
               {gdHeaders.length > 0 && (

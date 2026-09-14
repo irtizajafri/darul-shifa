@@ -1115,6 +1115,79 @@ async function updateAssetInstance(id, { condition, location, serialNumber, note
   });
 }
 
+// ── Asset Shifting ─────────────────────────────────────────────────────────────
+
+async function shiftAsset({ assetInstanceId, toLocation, reason, shiftedBy }) {
+  const id = Number(assetInstanceId);
+  if (!id) throw new Error('assetInstanceId is required');
+  if (!toLocation?.trim()) throw new Error('New location is required');
+
+  const instance = await prisma.assetInstance.findUnique({
+    where: { id },
+    include: { item: { select: { name: true } } },
+  });
+  if (!instance) throw new Error('Asset instance not found');
+
+  const fromLocation = instance.location || null;
+  const newLocation  = toLocation.trim();
+
+  return prisma.$transaction(async (tx) => {
+    await tx.assetInstance.update({
+      where: { id },
+      data: { location: newLocation },
+    });
+    return tx.assetShiftLog.create({
+      data: {
+        assetInstanceId: id,
+        assetTag:     instance.assetTag,
+        itemName:     instance.item?.name || '',
+        fromLocation,
+        toLocation:   newLocation,
+        reason:       reason?.trim()    || null,
+        shiftedBy:    shiftedBy?.trim() || null,
+      },
+    });
+  });
+}
+
+async function listShiftLogs({ assetInstanceId, itemId, search, dateFrom, dateTo } = {}) {
+  const where = {};
+
+  if (assetInstanceId) where.assetInstanceId = Number(assetInstanceId);
+
+  if (itemId) {
+    // filter via the assetInstance relation
+    where.assetInstance = { itemId: Number(itemId) };
+  }
+
+  if (search?.trim()) {
+    const s = search.trim();
+    where.OR = [
+      { assetTag:    { contains: s, mode: 'insensitive' } },
+      { itemName:    { contains: s, mode: 'insensitive' } },
+      { fromLocation:{ contains: s, mode: 'insensitive' } },
+      { toLocation:  { contains: s, mode: 'insensitive' } },
+      { shiftedBy:   { contains: s, mode: 'insensitive' } },
+    ];
+  }
+
+  if (dateFrom || dateTo) {
+    where.shiftedAt = {};
+    if (dateFrom) where.shiftedAt.gte = new Date(dateFrom);
+    if (dateTo) {
+      const d = new Date(dateTo);
+      d.setDate(d.getDate() + 1);
+      where.shiftedAt.lt = d;
+    }
+  }
+
+  return prisma.assetShiftLog.findMany({
+    where,
+    orderBy: { shiftedAt: 'desc' },
+    include: { assetInstance: { select: { id: true, condition: true, location: true } } },
+  });
+}
+
 async function listGDs({ search, departmentId, demandCategoryTypeId, categoryId, subcategoryId, status, dateFrom, dateTo }) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const parsedDemandCategoryTypeId = parsePositiveNumber(demandCategoryTypeId);
@@ -4279,6 +4352,8 @@ module.exports = {
   listAssetInstances,
   getItemLocationMap,
   updateAssetInstance,
+  shiftAsset,
+  listShiftLogs,
   listUnreadGdNotifications,
   markGdNotificationsRead,
   resyncAllItemCurrentStock,

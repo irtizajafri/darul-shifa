@@ -10,7 +10,7 @@ import './AccountsReports.scss';
 const REPORTS = [
   { key: 'voucher-reprint',              label: 'Voucher Reprint',              icon: Printer,       desc: 'Reprint expense or income vouchers by number or date range' },
   { key: 'voucher-summary',              label: 'Voucher Summary',              icon: FileText,      desc: 'Summarised view of all vouchers in a date range' },
-  { key: 'voucher-summary-matrix',       label: 'Voucher Summary Matrix',       icon: LayoutList,    desc: 'Matrix breakdown of voucher totals by account' },
+  { key: 'voucher-summary-matrix',       label: 'Expense Summary Matrix',       icon: LayoutList,    desc: 'Expense totals broken down by Main GL and period' },
   { key: 'cheque-wise-voucher-summary',  label: 'Cheque Wise Voucher Summary',  icon: CheckSquare,   desc: 'Vouchers grouped by cheque number' },
   { key: 'income-summary-matrix',        label: 'Income Summary Matrix',        icon: TrendingUp,    desc: 'Income totals broken down by category and period' },
   { key: 'gl-balance-report',            label: 'GL Balance Report',            icon: BookOpen,      desc: 'General ledger opening, movement and closing balances' },

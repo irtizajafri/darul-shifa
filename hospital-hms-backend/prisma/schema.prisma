@@ -450,6 +450,7 @@ model InventoryGRN {
   updatedAt        DateTime             @updatedAt
 
   assetInstances AssetInstance[]
+  voucherPayments AccVoucherExpenseEntryGrn[]
 
   @@index([receivedDate])
   @@index([supplierId])
@@ -698,10 +699,27 @@ model AssetInstance {
   notes         String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
+  shiftLogs     AssetShiftLog[]
 
   @@index([itemId])
   @@index([condition])
   @@index([ginItemId])
+}
+
+model AssetShiftLog {
+  id              Int           @id @default(autoincrement())
+  assetInstanceId Int
+  assetInstance   AssetInstance @relation(fields: [assetInstanceId], references: [id], onDelete: Cascade)
+  assetTag        String
+  itemName        String
+  fromLocation    String?
+  toLocation      String
+  reason          String?
+  shiftedBy       String?
+  shiftedAt       DateTime      @default(now())
+
+  @@index([assetInstanceId])
+  @@index([shiftedAt])
 }
 
 // ─── Clinic Module ────────────────────────────────────────────────────────────
@@ -2133,6 +2151,7 @@ model AccBankAccount {
   chequeSerials AccChequeSerial[]
   deposits      AccBankDeposit[]
   depositAdjs   AccBankDepositAdj[]
+  statementLines AccBankStatementLine[]
 }
 
 model AccBankDeposit {
@@ -2164,6 +2183,32 @@ model AccBankDepositAdj {
   entityType            String         @default("non-corporate")
   createdAt             DateTime       @default(now())
   bankAccount           AccBankAccount @relation(fields: [bankAccountId], references: [id])
+}
+
+// Upload Bank Statement — the bank's own statement rows as exported from
+// online banking (Date/Value Date/Instrument No./Particulars/Debit/Credit/
+// Balance), one row per uploaded line. uploadBatchId groups everything from
+// a single upload together (same file, same click). Feeds Bank
+// Reconciliation Statement later.
+model AccBankStatementLine {
+  id            Int            @id @default(autoincrement())
+  bankAccountId Int
+  bankAccount   AccBankAccount @relation(fields: [bankAccountId], references: [id])
+  date          DateTime
+  valueDate     DateTime?
+  instrumentNo  String?
+  particulars   String?
+  debit         Decimal        @db.Decimal(15, 2) @default(0)
+  credit        Decimal        @db.Decimal(15, 2) @default(0)
+  balance       Decimal?       @db.Decimal(15, 2)
+  entityType    String         @default("non-corporate")
+  uploadBatchId String?
+  createdAt     DateTime       @default(now())
+
+  matchedCheques AccVoucherExpenseEntry[]
+
+  @@index([bankAccountId, date])
+  @@index([uploadBatchId])
 }
 
 model AccChequeSerial {
@@ -2258,8 +2303,16 @@ model AccVoucherExpenseEntry {
   admissionNo   String?
   createdAt     DateTime          @default(now())
 
+  // Un-Presented Cheque List — a cheque-mode entry stays "Un-Presented"
+  // until its Bank Statement debit line is matched to it (auto-matched by
+  // amount+chequeDate when unambiguous, manually confirmed otherwise). Null
+  // = still un-presented. See matchBankStatementCheques.
+  matchedStatementLineId Int?
+  matchedStatementLine   AccBankStatementLine? @relation(fields: [matchedStatementLineId], references: [id])
+
   consultantFeeItems AccVoucherExpenseEntryConsultantFee[]
   opdDoctorFeeItems  AccVoucherExpenseEntryOpdDoctorFee[]
+  grnPayments        AccVoucherExpenseEntryGrn[]
 }
 
 // IPD Consultant Fee payee type (see AccPayeeHead.sourceType='ipd-consultant')
@@ -2297,6 +2350,24 @@ model AccVoucherExpenseEntryOpdDoctorFee {
 
   @@index([voucherExpenseEntryId])
   @@index([opdVisitDoctorId])
+}
+
+// Supplier/GRN payment picker's own link record — same idea as
+// AccVoucherExpenseEntryConsultantFee/OpdDoctorFee, this time against
+// InventoryGRN, so a "Paid" GRN can show which Voucher Number paid it
+// (Supplier Payment History report). Only covers payments made after
+// migration 015 — earlier ones flipped InventoryGRN.isPaid with no link.
+model AccVoucherExpenseEntryGrn {
+  id                    Int                    @id @default(autoincrement())
+  voucherExpenseEntryId Int
+  voucherExpenseEntry   AccVoucherExpenseEntry @relation(fields: [voucherExpenseEntryId], references: [id], onDelete: Cascade)
+  grnId                 Int
+  grn                   InventoryGRN           @relation(fields: [grnId], references: [id])
+  amount                Float
+  createdAt             DateTime               @default(now())
+
+  @@index([voucherExpenseEntryId])
+  @@index([grnId])
 }
 
 model AccVoucherIncome {

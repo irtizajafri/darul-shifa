@@ -1230,10 +1230,7 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
     await prisma.patientVisit.updateMany({ where: { id: { in: visitIds } }, data: { isPaid: true } });
   }
 
-  const grnIds = entries.flatMap((e) => Array.isArray(e.grnIds) ? e.grnIds.map(Number) : []).filter(Boolean);
-  if (grnIds.length > 0) {
-    await prisma.inventoryGRN.updateMany({ where: { id: { in: grnIds } }, data: { isPaid: true } });
-  }
+  await linkGrnPayments(entries, voucher.entries);
 
   for (const e of entries) {
     if (e.salaryEmpCode && e.salaryMonth && e.salaryYear) {
@@ -1298,6 +1295,29 @@ async function linkConsultantFeeItems(entries, createdEntries) {
       });
       await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: opdIds } }, data: { isPaid: true } });
     }
+  }
+}
+
+// Supplier/GRN payment picker — same idea as linkConsultantFeeItems above,
+// against InventoryGRN this time (see migration 015). Records exactly which
+// voucher entry paid which GRN(s), at each GRN's own totalAmount, then flips
+// isPaid so it stops showing as still-owed. Before this, the picker only
+// ever bulk-flipped isPaid with no link back to the voucher — see
+// getSupplierPaymentHistory's "Paid" side for why that mattered.
+async function linkGrnPayments(entries, createdEntries) {
+  for (let i = 0; i < entries.length; i++) {
+    const grnIds = Array.isArray(entries[i].grnIds) ? entries[i].grnIds.map(Number).filter(Boolean) : [];
+    if (!grnIds.length) continue;
+
+    const grns = await prisma.inventoryGRN.findMany({ where: { id: { in: grnIds } } });
+    await prisma.accVoucherExpenseEntryGrn.createMany({
+      data: grns.map((g) => ({
+        voucherExpenseEntryId: createdEntries[i].id,
+        grnId: g.id,
+        amount: Number(g.totalAmount) || 0,
+      })),
+    });
+    await prisma.inventoryGRN.updateMany({ where: { id: { in: grnIds } }, data: { isPaid: true } });
   }
 }
 
@@ -1398,6 +1418,20 @@ async function deleteVoucherExpense(id) {
   if (oldLinks.length) {
     await prisma.clinicDischargeBillItem.updateMany({
       where: { id: { in: oldLinks.map((l) => l.dischargeBillItemId) } },
+      data: { isPaid: false },
+    });
+  }
+
+  // Same reset for any GRNs this voucher had paid (see migration 015 /
+  // linkGrnPayments) — otherwise a deleted voucher would leave the GRN
+  // stuck "Paid" forever with no way to actually pay it again.
+  const oldGrnLinks = await prisma.accVoucherExpenseEntryGrn.findMany({
+    where: { voucherExpenseEntry: { voucherId: Number(id) } },
+    select: { grnId: true },
+  });
+  if (oldGrnLinks.length) {
+    await prisma.inventoryGRN.updateMany({
+      where: { id: { in: oldGrnLinks.map((l) => l.grnId) } },
       data: { isPaid: false },
     });
   }
@@ -1514,6 +1548,360 @@ async function createVoucherIncome({ entityType, mode, bankId, voucherDate, entr
     },
     include: { entries: true },
   });
+}
+
+// Reports > GL Balance Report — all 5 Report Types (Summary, Summary Sub,
+// Detail Voucher, Detail Summary, Account Level Summary) come off the same
+// Main GL > Sub GL > Payee tree; the type just controls how deep it renders
+// and whether individual vouchers stay separate or get summed per payee.
+// There is no per-payee "Account" row in this chart of accounts (see the
+// Payee Name filter's own comment above) — Payee Name is the leaf, always.
+async function getGLBalanceReport({ entityType, mainGlId, subGlId, mainAccountId, subAccountId, payeeName, dateFrom, dateTo, reportType }) {
+  const voucherFilter = { entityType };
+  if (dateFrom || dateTo) {
+    voucherFilter.voucherDate = {};
+    if (dateFrom) voucherFilter.voucherDate.gte = new Date(dateFrom);
+    if (dateTo) voucherFilter.voucherDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+  const entryWhere = { voucher: voucherFilter };
+  if (mainGlId) entryWhere.mainGlId = Number(mainGlId);
+  if (subGlId) entryWhere.subGlId = Number(subGlId);
+  if (mainAccountId) entryWhere.mainAccountId = Number(mainAccountId);
+  if (subAccountId) entryWhere.subAccountId = Number(subAccountId);
+  if (payeeName) entryWhere.payeeName = payeeName;
+
+  const entries = await prisma.accVoucherExpenseEntry.findMany({
+    where: entryWhere,
+    include: { voucher: { select: { voucherNo: true, voucherDate: true } } },
+    orderBy: { id: 'asc' },
+  });
+  if (!entries.length) return { reportType, groups: [], grandTotal: 0 };
+
+  const mainGlIds = [...new Set(entries.map((e) => e.mainGlId))];
+  const subGlIdsAll = [...new Set(entries.map((e) => e.subGlId))];
+  const [mainGLs, subGLs] = await Promise.all([
+    prisma.accMainGL.findMany({ where: { id: { in: mainGlIds } } }),
+    prisma.accSubGL.findMany({ where: { id: { in: subGlIdsAll } } }),
+  ]);
+  const mainGlById = new Map(mainGLs.map((g) => [g.id, g]));
+  const subGlById = new Map(subGLs.map((g) => [g.id, g]));
+
+  const wantsSubGl = reportType !== 'Summary';
+  const wantsPayeeRows = ['Detail Voucher', 'Detail Summary', 'Account Level Summary'].includes(reportType);
+  const wantsVoucherRows = reportType === 'Detail Voucher';
+
+  // Main GL -> Sub GL -> payeeName, each level's Map preserves first-seen
+  // (i.e. chronological voucher) order, which Account Level Summary then
+  // re-sorts at the payee level only.
+  const mainMap = new Map();
+  for (const e of entries) {
+    const amt = Number(e.amount);
+    if (!mainMap.has(e.mainGlId)) mainMap.set(e.mainGlId, { total: 0, subMap: new Map() });
+    const mg = mainMap.get(e.mainGlId);
+    mg.total += amt;
+    if (!wantsSubGl) continue;
+
+    if (!mg.subMap.has(e.subGlId)) mg.subMap.set(e.subGlId, { total: 0, payeeMap: new Map() });
+    const sg = mg.subMap.get(e.subGlId);
+    sg.total += amt;
+    if (!wantsPayeeRows) continue;
+
+    const key = e.payeeName || '(no name)';
+    if (!sg.payeeMap.has(key)) sg.payeeMap.set(key, { total: 0, rows: [] });
+    const p = sg.payeeMap.get(key);
+    p.total += amt;
+    if (wantsVoucherRows) {
+      p.rows.push({
+        payeeName: e.payeeName || '',
+        voucherNo: e.voucher.voucherNo,
+        voucherDate: e.voucher.voucherDate,
+        chequeNo: e.chequeNo || '',
+        amount: amt,
+      });
+    }
+  }
+
+  const groups = [...mainMap.entries()].map(([mgId, mg]) => {
+    const glInfo = mainGlById.get(mgId);
+    let subGroups = [];
+    if (wantsSubGl) {
+      subGroups = [...mg.subMap.entries()].map(([sgId, sg]) => {
+        const sgInfo = subGlById.get(sgId);
+        let payeeRows = [];
+        if (wantsPayeeRows) {
+          payeeRows = [...sg.payeeMap.entries()].map(([name, p]) => ({
+            payeeName: name, amount: p.total, rows: p.rows,
+          }));
+          if (reportType === 'Account Level Summary') {
+            payeeRows.sort((a, b) => a.payeeName.localeCompare(b.payeeName));
+          }
+        }
+        return { code: sgInfo?.code || '', name: sgInfo?.name || '', total: sg.total, payeeRows };
+      });
+    }
+    return { code: glInfo?.code || '', name: glInfo?.name || '', total: mg.total, subGroups };
+  });
+
+  const grandTotal = groups.reduce((s, g) => s + g.total, 0);
+  return { reportType, groups, grandTotal };
+}
+
+// Reports > GL Balance Report's 5th filter (Payee Name) — the chart of
+// accounts has no per-payee code (see e.g. every Salary entry sharing one
+// Sub Account, distinguished only by payeeName), so instead of a formal
+// lookup table this just surfaces every distinct payeeName actually used in
+// this entityType's Expense vouchers.
+async function getDistinctPayeeNames(entityType) {
+  const rows = await prisma.accVoucherExpenseEntry.findMany({
+    where: { payeeName: { not: null }, voucher: { entityType } },
+    select: { payeeName: true },
+    distinct: ['payeeName'],
+    orderBy: { payeeName: 'asc' },
+  });
+  return rows.map((r) => r.payeeName).filter(Boolean);
+}
+
+// Reports > Consultant Payment History — two status groups (Un-Paid/Payable,
+// Paid), each broken down by consultant. Un-Paid never has a real voucher
+// (nothing to pay it with yet), so per explicit decision it's exempt from
+// the Voucher Date/Voucher # filters entirely — only Paid rows, which do
+// have a real voucher behind them, get filtered by those.
+//   IPD  -> ClinicDischargeBillItem (Const Fee rows, doctorFee != null),
+//           paid via AccVoucherExpenseEntryConsultantFee.
+//   OPD  -> ClinicOpdVisitDoctor rows, paid via
+//           AccVoucherExpenseEntryOpdDoctorFee.
+// These names match the two Payee Head types this system already has
+// ("IPD Consultant Fee" / "OPD Doctor Fee") — not literally "is this
+// patient an OPD or Indoor patient".
+async function getConsultantPaymentHistory({
+  entityType, consultantFrom, consultantTo, dateFrom, dateTo, voucherFrom, voucherTo, reportType, opdIndoor, paymentType,
+}) {
+  const doctorWhere = {};
+  if (consultantFrom || consultantTo) {
+    doctorWhere.code = {};
+    if (consultantFrom) doctorWhere.code.gte = consultantFrom;
+    if (consultantTo) doctorWhere.code.lte = consultantTo;
+  }
+  const doctors = await prisma.clinicDoctor.findMany({ where: doctorWhere, select: { id: true, code: true, name: true } });
+  const doctorIds = doctors.map((d) => d.id);
+  const doctorById = new Map(doctors.map((d) => [d.id, d]));
+  if (!doctorIds.length) return { reportType, statusGroups: [], grandTotal: 0 };
+
+  const wantsUnpaid = paymentType !== 'Paid';
+  const wantsPaid = paymentType !== 'Payable';
+  const isIpd = opdIndoor === 'IPD';
+
+  const voucherFilter = { entityType };
+  if (dateFrom || dateTo) {
+    voucherFilter.voucherDate = {};
+    if (dateFrom) voucherFilter.voucherDate.gte = new Date(dateFrom);
+    if (dateTo) voucherFilter.voucherDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+  if (voucherFrom || voucherTo) {
+    voucherFilter.voucherNo = {};
+    if (voucherFrom) voucherFilter.voucherNo.gte = voucherFrom;
+    if (voucherTo) voucherFilter.voucherNo.lte = voucherTo;
+  }
+
+  let unpaidRows = [];
+  let paidRows = [];
+
+  if (isIpd) {
+    if (wantsUnpaid) {
+      const items = await prisma.clinicDischargeBillItem.findMany({
+        where: { doctorId: { in: doctorIds }, doctorFee: { not: null }, isPaid: false },
+        include: { admission: { select: { admissionNo: true, patientName: true, patientTitle: true, createdAt: true } } },
+      });
+      unpaidRows = items.map((i) => ({
+        doctorId: i.doctorId,
+        admitNo: i.admission?.admissionNo || '',
+        patName: `${i.admission?.patientTitle || ''} ${i.admission?.patientName || ''}`.trim(),
+        opDate: i.admission?.createdAt || null,
+        amount: Number(i.doctorFee || 0),
+        voucherNo: '',
+      }));
+    }
+    if (wantsPaid) {
+      const links = await prisma.accVoucherExpenseEntryConsultantFee.findMany({
+        where: {
+          dischargeBillItem: { doctorId: { in: doctorIds } },
+          voucherExpenseEntry: { voucher: voucherFilter },
+        },
+        include: {
+          dischargeBillItem: { include: { admission: { select: { admissionNo: true, patientName: true, patientTitle: true } } } },
+          voucherExpenseEntry: { include: { voucher: { select: { voucherNo: true, voucherDate: true } } } },
+        },
+      });
+      paidRows = links.map((l) => ({
+        doctorId: l.dischargeBillItem.doctorId,
+        admitNo: l.dischargeBillItem.admission?.admissionNo || '',
+        patName: `${l.dischargeBillItem.admission?.patientTitle || ''} ${l.dischargeBillItem.admission?.patientName || ''}`.trim(),
+        opDate: l.voucherExpenseEntry.voucher.voucherDate,
+        amount: Number(l.amount || 0),
+        voucherNo: l.voucherExpenseEntry.voucher.voucherNo,
+      }));
+    }
+  } else {
+    if (wantsUnpaid) {
+      const items = await prisma.clinicOpdVisitDoctor.findMany({
+        where: { doctorId: { in: doctorIds }, isPaid: false },
+        include: { visit: { select: { patientName: true, createdAt: true } } },
+      });
+      unpaidRows = items.map((i) => ({
+        doctorId: i.doctorId,
+        admitNo: '',
+        patName: i.visit?.patientName || '',
+        opDate: i.visit?.createdAt || null,
+        amount: Number(i.amount || 0),
+        voucherNo: '',
+      }));
+    }
+    if (wantsPaid) {
+      const links = await prisma.accVoucherExpenseEntryOpdDoctorFee.findMany({
+        where: {
+          opdVisitDoctor: { doctorId: { in: doctorIds } },
+          voucherExpenseEntry: { voucher: voucherFilter },
+        },
+        include: {
+          opdVisitDoctor: { include: { visit: { select: { patientName: true } } } },
+          voucherExpenseEntry: { include: { voucher: { select: { voucherNo: true, voucherDate: true } } } },
+        },
+      });
+      paidRows = links.map((l) => ({
+        doctorId: l.opdVisitDoctor.doctorId,
+        admitNo: '',
+        patName: l.opdVisitDoctor.visit?.patientName || '',
+        opDate: l.voucherExpenseEntry.voucher.voucherDate,
+        amount: Number(l.amount || 0),
+        voucherNo: l.voucherExpenseEntry.voucher.voucherNo,
+      }));
+    }
+  }
+
+  function buildGroup(status, label, rows) {
+    const byDoctor = new Map();
+    for (const r of rows) {
+      if (!byDoctor.has(r.doctorId)) byDoctor.set(r.doctorId, []);
+      byDoctor.get(r.doctorId).push(r);
+    }
+    const consultants = [...byDoctor.entries()].map(([docId, rws]) => {
+      const doc = doctorById.get(docId);
+      const total = rws.reduce((s, r) => s + r.amount, 0);
+      return {
+        code: doc?.code || '', name: doc?.name || '', count: rws.length, total,
+        rows: reportType === 'Detail' ? rws : [],
+      };
+    });
+    const total = consultants.reduce((s, c) => s + c.total, 0);
+    return { status, label, consultants, total };
+  }
+
+  const statusGroups = [];
+  if (wantsUnpaid) statusGroups.push(buildGroup('N', 'Un-Paid', unpaidRows));
+  if (wantsPaid) statusGroups.push(buildGroup('Y', 'Paid', paidRows));
+
+  const grandTotal = statusGroups.reduce((s, g) => s + g.total, 0);
+  return { reportType, statusGroups, grandTotal };
+}
+
+// Reports > Supplier Payment History — same shape as Consultant Payment
+// History (two status groups, Un-Paid exempt from the Voucher Date/# filters
+// since it has no real voucher yet). Source is InventoryGRN throughout:
+//   Un-Paid -> GRN rows with isPaid = false.
+//   Paid    -> AccVoucherExpenseEntryGrn links (see migration 015 /
+//              linkGrnPayments) — only covers GRNs paid from that point on;
+//              earlier ones have isPaid=true with no recoverable Voucher No.
+async function getSupplierPaymentHistory({
+  entityType, supplierFrom, supplierTo, dateFrom, dateTo, voucherFrom, voucherTo, reportType, paymentType,
+}) {
+  const supplierWhere = {};
+  if (supplierFrom || supplierTo) {
+    supplierWhere.code = {};
+    if (supplierFrom) supplierWhere.code.gte = supplierFrom;
+    if (supplierTo) supplierWhere.code.lte = supplierTo;
+  }
+  const suppliers = await prisma.inventorySupplier.findMany({ where: supplierWhere, select: { id: true, code: true, name: true } });
+  const supplierIds = suppliers.map((s) => s.id);
+  const supplierById = new Map(suppliers.map((s) => [s.id, s]));
+  if (!supplierIds.length) return { reportType, statusGroups: [], grandTotal: 0 };
+
+  const wantsUnpaid = paymentType !== 'Paid';
+  const wantsPaid = paymentType !== 'Payable';
+
+  const voucherFilter = { entityType };
+  if (dateFrom || dateTo) {
+    voucherFilter.voucherDate = {};
+    if (dateFrom) voucherFilter.voucherDate.gte = new Date(dateFrom);
+    if (dateTo) voucherFilter.voucherDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+  if (voucherFrom || voucherTo) {
+    voucherFilter.voucherNo = {};
+    if (voucherFrom) voucherFilter.voucherNo.gte = voucherFrom;
+    if (voucherTo) voucherFilter.voucherNo.lte = voucherTo;
+  }
+
+  let unpaidRows = [];
+  let paidRows = [];
+
+  if (wantsUnpaid) {
+    const grns = await prisma.inventoryGRN.findMany({
+      where: { supplierId: { in: supplierIds }, isPaid: false },
+      include: { item: { select: { name: true } } },
+    });
+    unpaidRows = grns.map((g) => ({
+      supplierId: g.supplierId,
+      grnCode: g.code,
+      itemName: g.item?.name || '',
+      opDate: g.billDate || g.receivedDate,
+      amount: Number(g.totalAmount || 0),
+      voucherNo: '',
+    }));
+  }
+  if (wantsPaid) {
+    const links = await prisma.accVoucherExpenseEntryGrn.findMany({
+      where: {
+        grn: { supplierId: { in: supplierIds } },
+        voucherExpenseEntry: { voucher: voucherFilter },
+      },
+      include: {
+        grn: { include: { item: { select: { name: true } } } },
+        voucherExpenseEntry: { include: { voucher: { select: { voucherNo: true, voucherDate: true } } } },
+      },
+    });
+    paidRows = links.map((l) => ({
+      supplierId: l.grn.supplierId,
+      grnCode: l.grn.code,
+      itemName: l.grn.item?.name || '',
+      opDate: l.voucherExpenseEntry.voucher.voucherDate,
+      amount: Number(l.amount || 0),
+      voucherNo: l.voucherExpenseEntry.voucher.voucherNo,
+    }));
+  }
+
+  function buildGroup(status, label, rows) {
+    const bySupplier = new Map();
+    for (const r of rows) {
+      if (!bySupplier.has(r.supplierId)) bySupplier.set(r.supplierId, []);
+      bySupplier.get(r.supplierId).push(r);
+    }
+    const items = [...bySupplier.entries()].map(([supId, rws]) => {
+      const sup = supplierById.get(supId);
+      const total = rws.reduce((s, r) => s + r.amount, 0);
+      return {
+        code: sup?.code || '', name: sup?.name || '', count: rws.length, total,
+        rows: reportType === 'Detail' ? rws : [],
+      };
+    });
+    const total = items.reduce((s, c) => s + c.total, 0);
+    return { status, label, suppliers: items, total };
+  }
+
+  const statusGroups = [];
+  if (wantsUnpaid) statusGroups.push(buildGroup('N', 'Un-Paid', unpaidRows));
+  if (wantsPaid) statusGroups.push(buildGroup('Y', 'Paid', paidRows));
+
+  const grandTotal = statusGroups.reduce((s, g) => s + g.total, 0);
+  return { reportType, statusGroups, grandTotal };
 }
 
 async function getVoucherIncomes(entityType) {
@@ -1686,41 +2074,186 @@ async function getBankDepositAdjs(entityType) {
   });
 }
 
-async function getVoucherSummaryMatrix({ entityType, dateFrom, dateTo }) {
+// Reports > Voucher (Expense) Summary Matrix — same crosstab shape as
+// getIncomeSummaryMatrix: one row per calendar day in the range, one column
+// per Main GL (instead of Account Category), cell = that day's Expense
+// total for that GL. Every calendar day is emitted, even zero-expense ones.
+async function getVoucherSummaryMatrix({ entityType, mainGlFrom, mainGlTo, dateFrom, dateTo }) {
+  const glWhere = { entityType };
+  if (mainGlFrom || mainGlTo) {
+    glWhere.code = {};
+    if (mainGlFrom) glWhere.code.gte = mainGlFrom;
+    if (mainGlTo) glWhere.code.lte = mainGlTo;
+  }
+  const mainGLs = await prisma.accMainGL.findMany({ where: glWhere, orderBy: { code: 'asc' } });
+  const glIds = new Set(mainGLs.map((g) => g.id));
+
   const where = { entityType };
-  if (dateFrom) where.voucherDate = { ...(where.voucherDate || {}), gte: new Date(dateFrom) };
-  if (dateTo)   where.voucherDate = { ...(where.voucherDate || {}), lte: new Date(dateTo + 'T23:59:59') };
+  if (dateFrom || dateTo) {
+    where.voucherDate = {};
+    if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
+    if (dateTo) where.voucherDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+  const vouchers = await prisma.accVoucherExpense.findMany({ where, include: { entries: true } });
 
-  const vouchers = await prisma.accVoucherExpense.findMany({
-    where,
-    include: { entries: true },
-    orderBy: { voucherDate: 'asc' },
-  });
-
-  const glMap = {};
-  const glNames = {};
-  for (const v of vouchers) {
-    const day = v.voucherDate.toISOString().slice(0, 10);
-    if (!glMap[day]) glMap[day] = {};
-    for (const e of v.entries) {
-      const glId = e.mainGlId;
-      if (!glId) continue;
-      if (!glMap[day][glId]) glMap[day][glId] = 0;
-      glMap[day][glId] += Number(e.amount);
-      if (!glNames[glId]) {
-        const gl = await prisma.accMainGL.findUnique({ where: { id: glId }, select: { name: true, code: true } });
-        glNames[glId] = gl ? `${gl.code} — ${gl.name}` : String(glId);
-      }
+  const byDate = {};
+  if (dateFrom && dateTo) {
+    const d = new Date(dateFrom);
+    const end = new Date(dateTo);
+    while (d <= end) {
+      byDate[d.toISOString().slice(0, 10)] = {};
+      d.setDate(d.getDate() + 1);
     }
   }
 
-  const rows = Object.entries(glMap).map(([date, heads]) => ({
-    date,
-    heads: Object.entries(heads).map(([glId, amount]) => ({ glId: Number(glId), glName: glNames[glId], amount })),
-    total: Object.values(heads).reduce((s, a) => s + a, 0),
-  }));
+  for (const v of vouchers) {
+    const day = v.voucherDate.toISOString().slice(0, 10);
+    if (!byDate[day]) byDate[day] = {};
+    for (const e of v.entries) {
+      if (!e.mainGlId || !glIds.has(e.mainGlId)) continue;
+      byDate[day][e.mainGlId] = (byDate[day][e.mainGlId] || 0) + Number(e.amount);
+    }
+  }
 
-  return { rows, glNames };
+  const rows = Object.keys(byDate).sort().map((date) => {
+    const amounts = byDate[date];
+    const total = Object.values(amounts).reduce((s, a) => s + a, 0);
+    return { date, amounts, total };
+  });
+
+  const columnTotals = {};
+  let grandTotal = 0;
+  for (const row of rows) {
+    for (const gl of mainGLs) {
+      const amt = row.amounts[gl.id] || 0;
+      columnTotals[gl.id] = (columnTotals[gl.id] || 0) + amt;
+    }
+    grandTotal += row.total;
+  }
+
+  return { mainGLs, rows, columnTotals, grandTotal };
+}
+
+// Reports > Income Summary Matrix — one row per calendar day in the range,
+// one column per Account Category (AccIncomeCategory), cell = that day's
+// income for that category (Auto day-close AND manual Voucher Income
+// entries both count — a category is a category regardless of how the
+// voucher behind it was created). Mirrors getVoucherSummaryMatrix's
+// day-then-dimension grouping shape, keyed by incomeCategoryId instead of
+// mainGlId, plus every calendar day is emitted (even zero-income ones) since
+// the legacy report this replaces always printed a full date range.
+async function getIncomeSummaryMatrix({ entityType, categoryFrom, categoryTo, dateFrom, dateTo }) {
+  const catWhere = { entityType };
+  if (categoryFrom || categoryTo) {
+    catWhere.name = {};
+    if (categoryFrom) catWhere.name.gte = categoryFrom;
+    if (categoryTo) catWhere.name.lte = categoryTo;
+  }
+  const categories = await prisma.accIncomeCategory.findMany({ where: catWhere, orderBy: { name: 'asc' } });
+  const categoryIds = new Set(categories.map((c) => c.id));
+
+  const where = { entityType };
+  if (dateFrom || dateTo) {
+    where.voucherDate = {};
+    if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
+    if (dateTo) where.voucherDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+  const vouchers = await prisma.accVoucherIncome.findMany({ where, include: { entries: true } });
+
+  // Seed every calendar day in [dateFrom, dateTo] up front so days with zero
+  // income still print a row (matches the legacy layout's blank/0.00 rows).
+  const byDate = {};
+  if (dateFrom && dateTo) {
+    const d = new Date(dateFrom);
+    const end = new Date(dateTo);
+    while (d <= end) {
+      byDate[d.toISOString().slice(0, 10)] = {};
+      d.setDate(d.getDate() + 1);
+    }
+  }
+
+  for (const v of vouchers) {
+    const day = v.voucherDate.toISOString().slice(0, 10);
+    if (!byDate[day]) byDate[day] = {};
+    for (const e of v.entries) {
+      if (!e.incomeCategoryId || !categoryIds.has(e.incomeCategoryId)) continue;
+      byDate[day][e.incomeCategoryId] = (byDate[day][e.incomeCategoryId] || 0) + Number(e.amount);
+    }
+  }
+
+  const rows = Object.keys(byDate).sort().map((date) => {
+    const amounts = byDate[date];
+    const total = Object.values(amounts).reduce((s, a) => s + a, 0);
+    return { date, amounts, total };
+  });
+
+  const columnTotals = {};
+  let grandTotal = 0;
+  for (const row of rows) {
+    for (const cat of categories) {
+      const amt = row.amounts[cat.id] || 0;
+      columnTotals[cat.id] = (columnTotals[cat.id] || 0) + amt;
+    }
+    grandTotal += row.total;
+  }
+
+  return { categories, rows, columnTotals, grandTotal };
+}
+
+// Reports > Income Summary Matrix > Import Excel — bulk-loads historical
+// data in the exact shape the matrix prints (one row per date, one column
+// per Account Category). One Voucher Income per date is created (same "one
+// line per category" shape as generateAutoIncomeVoucherForDate), tagged
+// source:'import' so it stays editable like any manual voucher but is still
+// distinguishable in the data from a real day-close or a hand-typed entry.
+// A date that already has ANY voucher for this entityType (auto, manual, or
+// a previous import) is skipped outright — re-importing the same file, or a
+// file overlapping a real day-close, must never double that day's total.
+// Unmatched category names in the file get a new AccIncomeCategory created
+// on the spot (ensureClinicIncomeCategories is generic despite its name —
+// see Day Close section above).
+async function bulkImportIncomeSummary({ entityType, rows }) {
+  if (!Array.isArray(rows) || !rows.length) {
+    throw Object.assign(new Error('No rows to import'), { status: 400 });
+  }
+
+  const allNames = [...new Set(rows.flatMap((r) => Object.keys(r.amounts || {})))];
+  const categories = await ensureClinicIncomeCategories(entityType, allNames);
+
+  let imported = 0;
+  const skipped = [];
+  for (const row of rows) {
+    const voucherDate = new Date(row.date);
+    if (isNaN(voucherDate.getTime())) { skipped.push({ date: row.date, reason: 'invalid date' }); continue; }
+
+    const existing = await prisma.accVoucherIncome.findFirst({
+      where: { entityType, voucherDate: { gte: new Date(row.date), lte: new Date(row.date + 'T23:59:59') } },
+    });
+    if (existing) { skipped.push({ date: row.date, reason: `already has ${existing.voucherNo}` }); continue; }
+
+    const entries = Object.entries(row.amounts || {})
+      .filter(([, amt]) => Number(amt) > 0)
+      .map(([name, amt]) => ({
+        incomeCategoryId: categories.get(name)?.id || null,
+        incomeCategoryName: name,
+        amount: Number(amt),
+        particulars: 'Bulk import — Income Summary Matrix',
+      }));
+    if (!entries.length) { skipped.push({ date: row.date, reason: 'no non-zero amounts' }); continue; }
+
+    const totalAmount = entries.reduce((s, e) => s + e.amount, 0);
+    const voucherNo = await generateIncomeVoucherNo(entityType, voucherDate);
+    await prisma.accVoucherIncome.create({
+      data: {
+        voucherNo, voucherType: 'CASH', voucherDate, mode: 'cash',
+        entityType, totalAmount, source: 'import',
+        entries: { create: entries },
+      },
+    });
+    imported++;
+  }
+
+  return { imported, skipped };
 }
 
 async function getBankDeposits(entityType) {
@@ -1728,6 +2261,214 @@ async function getBankDeposits(entityType) {
     where: { entityType },
     orderBy: { createdAt: 'desc' },
     include: { bankAccount: { select: { bankName: true, accountNumber: true } } },
+  });
+}
+
+// ─── Upload Bank Statement ─────────────────────────────────────────────────
+// Stores the bank's own statement exactly as exported (Date/Value Date/
+// Instrument No./Particulars/Debit/Credit/Balance) — no matching/
+// reconciliation logic yet, this is just the upload + a plain listing to
+// confirm what landed. Every upload gets a fresh uploadBatchId (timestamp-
+// based, good enough — not a real UUID lib dependency) so a bad upload can
+// be identified/removed as one unit without guessing which rows came from it.
+
+async function bulkImportBankStatement({ bankAccountId, entityType, rows }) {
+  if (!bankAccountId) throw Object.assign(new Error('Bank Account required'), { status: 400 });
+  if (!Array.isArray(rows) || !rows.length) {
+    throw Object.assign(new Error('No rows to import'), { status: 400 });
+  }
+  const uploadBatchId = `bsu-${Date.now()}`;
+  const data = rows
+    .filter((r) => r.date)
+    .map((r) => ({
+      bankAccountId: Number(bankAccountId),
+      entityType,
+      date: new Date(r.date),
+      valueDate: r.valueDate ? new Date(r.valueDate) : null,
+      instrumentNo: r.instrumentNo || null,
+      particulars: r.particulars || null,
+      debit: Number(r.debit) || 0,
+      credit: Number(r.credit) || 0,
+      balance: r.balance !== undefined && r.balance !== null && r.balance !== '' ? Number(r.balance) : null,
+      uploadBatchId,
+    }));
+  if (!data.length) throw Object.assign(new Error('No valid rows (missing Date) to import'), { status: 400 });
+
+  await prisma.accBankStatementLine.createMany({ data });
+  const { autoMatched } = await matchBankStatementCheques(entityType);
+  return { imported: data.length, uploadBatchId, autoMatched };
+}
+
+// ─── Un-Presented Cheque List ───────────────────────────────────────────────
+// A cheque-mode Voucher Expense entry is "Un-Presented" until its Bank
+// Statement debit line is matched to it. Matched by (Amount, Cheque Date)
+// only — no Instrument No. requirement, per explicit decision — and only
+// auto-linked when that (amount, date) pair is unambiguous on BOTH sides
+// (exactly one un-presented cheque AND exactly one un-matched statement
+// line share it); anything with 2+ on either side is surfaced instead for
+// manual confirmation rather than guessed.
+async function computeChequeMatchGroups(entityType) {
+  const entries = await prisma.accVoucherExpenseEntry.findMany({
+    where: {
+      matchedStatementLineId: null,
+      chequeNo: { not: null },
+      chequeDate: { not: null },
+      voucher: { entityType, mode: 'cheque' },
+    },
+    include: { voucher: { select: { voucherNo: true, voucherDate: true } } },
+    orderBy: { chequeDate: 'asc' },
+  });
+
+  const usedLineIdRows = await prisma.accVoucherExpenseEntry.findMany({
+    where: { matchedStatementLineId: { not: null } },
+    select: { matchedStatementLineId: true },
+  });
+  const usedSet = new Set(usedLineIdRows.map((r) => r.matchedStatementLineId));
+  const debitLines = await prisma.accBankStatementLine.findMany({ where: { entityType, debit: { gt: 0 } } });
+  const unmatchedLines = debitLines.filter((l) => !usedSet.has(l.id));
+
+  const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+  const groupKey = (amount, date) => `${Number(amount)}|${dayKey(date)}`;
+
+  const entriesByKey = new Map();
+  for (const e of entries) {
+    const k = groupKey(e.amount, e.chequeDate);
+    if (!entriesByKey.has(k)) entriesByKey.set(k, []);
+    entriesByKey.get(k).push(e);
+  }
+  const linesByKey = new Map();
+  for (const l of unmatchedLines) {
+    const k = groupKey(l.debit, l.date);
+    if (!linesByKey.has(k)) linesByKey.set(k, []);
+    linesByKey.get(k).push(l);
+  }
+
+  const autoMatchable = [];
+  const ambiguous = [];
+  for (const [k, es] of entriesByKey) {
+    const ls = linesByKey.get(k) || [];
+    if (!ls.length) continue; // no statement line yet — plain un-presented, nothing to review
+    if (es.length === 1 && ls.length === 1) {
+      autoMatchable.push({ entry: es[0], line: ls[0] });
+    } else {
+      ambiguous.push({ key: k, entries: es, lines: ls });
+    }
+  }
+
+  return { entries, autoMatchable, ambiguous };
+}
+
+async function matchBankStatementCheques(entityType) {
+  const { autoMatchable } = await computeChequeMatchGroups(entityType);
+  for (const { entry, line } of autoMatchable) {
+    await prisma.accVoucherExpenseEntry.update({ where: { id: entry.id }, data: { matchedStatementLineId: line.id } });
+  }
+  return { autoMatched: autoMatchable.length };
+}
+
+async function getUnpresentedChequeList({ entityType }) {
+  await matchBankStatementCheques(entityType);
+  const { entries, ambiguous } = await computeChequeMatchGroups(entityType);
+
+  return {
+    unpresented: entries.map((e) => ({
+      id: e.id,
+      voucherNo: e.voucher.voucherNo,
+      voucherDate: e.voucher.voucherDate,
+      chequeNo: e.chequeNo,
+      chequeDate: e.chequeDate,
+      payeeName: e.payeeName,
+      amount: Number(e.amount),
+    })),
+    needsReview: ambiguous.map((g) => ({
+      key: g.key,
+      candidateEntries: g.entries.map((e) => ({
+        id: e.id, voucherNo: e.voucher.voucherNo, chequeNo: e.chequeNo, chequeDate: e.chequeDate, payeeName: e.payeeName, amount: Number(e.amount),
+      })),
+      candidateLines: g.lines.map((l) => ({
+        id: l.id, date: l.date, instrumentNo: l.instrumentNo, particulars: l.particulars, debit: Number(l.debit),
+      })),
+    })),
+  };
+}
+
+async function confirmChequeMatch({ voucherExpenseEntryId, statementLineId }) {
+  if (!voucherExpenseEntryId || !statementLineId) {
+    throw Object.assign(new Error('voucherExpenseEntryId and statementLineId are required'), { status: 400 });
+  }
+  return prisma.accVoucherExpenseEntry.update({
+    where: { id: Number(voucherExpenseEntryId) },
+    data: { matchedStatementLineId: Number(statementLineId) },
+  });
+}
+
+// Reports > Cheque Wise Voucher Summary — every Expense entry in the date
+// range, across whichever modes are selected (Cash/Online/Cheque; all three
+// by default). Cash and Online rows always show — those modes have no
+// "presented" concept. Cheque rows are filtered to only the still
+// Un-Presented ones (matchedStatementLineId still null) — once a cheque
+// clears it drops off this list, same definition as Un-Presented Cheque
+// List, just folded into this wider report alongside Cash/Online.
+async function getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo }) {
+  const modeList = Array.isArray(modes) && modes.length ? modes : ['cash', 'online', 'cheque'];
+
+  const where = { entityType, mode: { in: modeList } };
+  if (dateFrom || dateTo) {
+    where.voucherDate = {};
+    if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
+    if (dateTo) where.voucherDate.lte = new Date(dateTo + 'T23:59:59');
+  }
+
+  const vouchers = await prisma.accVoucherExpense.findMany({
+    where,
+    include: { entries: true },
+    orderBy: [{ voucherDate: 'asc' }, { id: 'asc' }],
+  });
+
+  const bankIds = [...new Set(vouchers.map((v) => v.bankId).filter(Boolean))];
+  const bankAccounts = bankIds.length
+    ? await prisma.accBankAccount.findMany({ where: { id: { in: bankIds } } })
+    : [];
+  const bankById = new Map(bankAccounts.map((b) => [b.id, b]));
+
+  const rows = [];
+  for (const v of vouchers) {
+    const bankLabel = v.mode === 'cash' ? 'CASH' : v.mode === 'online' ? 'ONLINE' : (bankById.get(v.bankId)?.bankName || '');
+    for (const e of v.entries) {
+      if (v.mode === 'cheque' && e.matchedStatementLineId) continue; // already presented — drops off
+      // chequeNo doubles as a plain running serial for Cash entries too (see
+      // VoucherExpenseForm's cashSerial) — only a real Cheque # for
+      // mode:'cheque', so only show it there.
+      const isCheque = v.mode === 'cheque';
+      rows.push({
+        voucherDate: v.voucherDate,
+        voucherNo: v.voucherNo,
+        mode: v.mode,
+        chequeNo: isCheque ? (e.chequeNo || '') : '',
+        chequeDate: isCheque ? (e.chequeDate || null) : null,
+        bankAccount: bankLabel,
+        accountCode: e.accountCode,
+        description: e.particulars || '',
+        amount: Number(e.amount),
+      });
+    }
+  }
+
+  const grandTotal = rows.reduce((s, r) => s + r.amount, 0);
+  return { rows, grandTotal };
+}
+
+async function getBankStatementLines({ bankAccountId, entityType, dateFrom, dateTo }) {
+  const where = { entityType };
+  if (bankAccountId) where.bankAccountId = Number(bankAccountId);
+  if (dateFrom || dateTo) {
+    where.date = {};
+    if (dateFrom) where.date.gte = new Date(dateFrom);
+    if (dateTo) where.date.lte = new Date(dateTo + 'T23:59:59');
+  }
+  return prisma.accBankStatementLine.findMany({
+    where,
+    orderBy: [{ date: 'asc' }, { id: 'asc' }],
   });
 }
 
@@ -2070,8 +2811,10 @@ module.exports = {
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
-  getVouchersForReprint, getVoucherSummaryMatrix,
+  getVouchersForReprint, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,
   createBankDeposit, getBankDeposits, getBankDepositForDate,
+  bulkImportBankStatement, getBankStatementLines,
+  getUnpresentedChequeList, confirmChequeMatch, getChequeWiseVoucherSummary,
   createBankDepositAdj, getBankDepositAdjs,
   getVoucherSummary,
   getAccountsInquiryDashboard,

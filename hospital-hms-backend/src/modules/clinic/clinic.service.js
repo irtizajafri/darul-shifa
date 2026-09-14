@@ -1633,11 +1633,17 @@ async function searchAdmissionsForReceiving(q) {
   const where = term
     ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
     : {};
+  // The 100-row cap is only for the blank/browse case (most-recent 100,
+  // shared by all 5 screens using this search — see their own admission
+  // pickers). Once a real search term is typed, `where` already narrows the
+  // result set on its own — capping on top of that could hide the exact
+  // admission being searched for if it's an older record than the 100 most
+  // recent matches, so the cap is dropped entirely whenever term is set.
   const rows = await prisma.clinicAdmission.findMany({
     where,
     include: { payments: { select: { amount: true } } },
     orderBy: { id: 'desc' },
-    take: 100,
+    ...(term ? {} : { take: 100 }),
   });
   return rows.map(a => ({
     id: a.id,

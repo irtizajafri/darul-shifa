@@ -287,6 +287,12 @@ $white:   #fff;
   font-size: 12px;
 }
 
+.si-items-hint {
+  font-size: 11px;
+  color: #888;
+  margin-top: -2px;
+}
+
 .si-items-add-row {
   display: flex;
   align-items: center;
@@ -300,6 +306,11 @@ $white:   #fff;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+.si-gd-dept-radios {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
 .si-gd-search {

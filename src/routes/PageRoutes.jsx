@@ -40,6 +40,7 @@ import GoodsDiscard from '../pages/inventory/GoodsDiscard';
 import SalesInvoice from '../pages/inventory/SalesInvoice';
 import InventoryReports from '../pages/inventory/InventoryReports';
 import Maintenance from '../pages/inventory/Maintenance';
+import AssetShifting from '../pages/inventory/AssetShifting';
 import UserManagement from '../pages/admin/UserManagement';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
@@ -79,6 +80,7 @@ export default function PageRoutes() {
       <Route path="inventory/sales-invoice" element={<PermissionGuard module="inventory" subModule="sales-invoice"><SalesInvoice /></PermissionGuard>} />
       <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
       <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
+      <Route path="inventory/asset-shifting" element={<PermissionGuard module="inventory" subModule="asset-shifting"><AssetShifting /></PermissionGuard>} />
       <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
 
       <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />

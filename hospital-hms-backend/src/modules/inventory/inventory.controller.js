@@ -1094,6 +1094,8 @@ module.exports = {
   listAssetInstances,
   getItemLocationMap,
   updateAssetInstance,
+  shiftAsset,
+  listShiftLogs,
   listUnreadGdNotifications,
   markGdNotificationsRead,
   resyncAllItemCurrentStock,
@@ -1134,6 +1136,24 @@ async function updateAssetInstance(req, res, next) {
   try {
     const data = await service.updateAssetInstance(req.params.id, req.body);
     return success(res, data, 'asset instance updated');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function shiftAsset(req, res, next) {
+  try {
+    const data = await service.shiftAsset({ assetInstanceId: req.params.id, ...req.body });
+    return success(res, data, 'Asset shifted successfully');
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function listShiftLogs(req, res, next) {
+  try {
+    const data = await service.listShiftLogs(req.query || {});
+    return success(res, data);
   } catch (err) {
     next(err);
   }

@@ -23,11 +23,18 @@ import VoucherIncomeForm from '../pages/accounts/transactions/VoucherIncomeForm'
 import DraftExpenses from '../pages/accounts/transactions/DraftExpenses';
 import BankDeposit from '../pages/accounts/transactions/BankDeposit';
 import BankDepositAdj from '../pages/accounts/transactions/BankDepositAdj';
+import BankStatementUpload from '../pages/accounts/transactions/BankStatementUpload';
 import AccountsReports from '../pages/accounts/reports/AccountsReports';
 import AccountsInquiryDashboard from '../pages/accounts/inquiries/AccountsInquiryDashboard';
 import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
 import VoucherSummary from '../pages/accounts/reports/VoucherSummary';
 import VoucherSummaryMatrix from '../pages/accounts/reports/VoucherSummaryMatrix';
+import IncomeSummaryMatrix from '../pages/accounts/reports/IncomeSummaryMatrix';
+import GLBalanceReport from '../pages/accounts/reports/GLBalanceReport';
+import ConsultantPaymentHistory from '../pages/accounts/reports/ConsultantPaymentHistory';
+import SupplierPaymentHistory from '../pages/accounts/reports/SupplierPaymentHistory';
+import UnpresentedChequeList from '../pages/accounts/reports/UnpresentedChequeList';
+import ChequeWiseVoucherSummary from '../pages/accounts/reports/ChequeWiseVoucherSummary';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import ConsultantOPD from '../pages/clinic/ConsultantOPD';
 import EmergencyOPD from '../pages/clinic/EmergencyOPD';
@@ -138,6 +145,7 @@ import GoodsReturn from '../pages/inventory/GoodsReturn';
 import SalesInvoice from '../pages/inventory/SalesInvoice';
 import InventoryReports from '../pages/inventory/InventoryReports';
 import Maintenance from '../pages/inventory/Maintenance';
+import AssetShifting from '../pages/inventory/AssetShifting';
 import FuelManagement from '../pages/fuel/FuelManagement';
 import UtilitiesBillDashboard from '../pages/utilities/UtilitiesBillDashboard';
 import UserManagement from '../pages/admin/UserManagement';
@@ -186,6 +194,7 @@ export default function ProtectedRoutes() {
       <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
       <Route path="inventory/mrn" element={<PermissionGuard module="inventory" subModule="mrn"><GoodsReturn /></PermissionGuard>} />
       <Route path="inventory/maintenance" element={<PermissionGuard module="inventory" subModule="maintenance"><Maintenance /></PermissionGuard>} />
+      <Route path="inventory/asset-shifting" element={<PermissionGuard module="inventory" subModule="asset-shifting"><AssetShifting /></PermissionGuard>} />
       <Route path="inventory/reports" element={<PermissionGuard module="inventory" subModule="inventory-reports"><InventoryReports /></PermissionGuard>} />
       <Route path="inventory/fuel" element={<PermissionGuard module="inventory" subModule="fuel"><FuelManagement /></PermissionGuard>} />
       <Route path="inventory/utilities-bill" element={<PermissionGuard module="inventory" subModule="utilities-bill"><UtilitiesBillDashboard /></PermissionGuard>} />
@@ -209,11 +218,18 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts"><VoucherIncomeForm /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts"><BankDeposit /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts"><BankDepositAdj /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-statement" element={<PermissionGuard module="accounts"><BankStatementUpload /></PermissionGuard>} />
       <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts"><AccountsInquiryDashboard /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/voucher-summary" element={<PermissionGuard module="accounts"><VoucherSummary /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<PermissionGuard module="accounts"><VoucherSummaryMatrix /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/income-summary-matrix" element={<PermissionGuard module="accounts"><IncomeSummaryMatrix /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/gl-balance-report" element={<PermissionGuard module="accounts"><GLBalanceReport /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/consultant-payment-history" element={<PermissionGuard module="accounts"><ConsultantPaymentHistory /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/supplier-payment-history" element={<PermissionGuard module="accounts"><SupplierPaymentHistory /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts"><UnpresentedChequeList /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts"><ChequeWiseVoucherSummary /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts"><ComingSoon /></PermissionGuard>} />
 
       <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />

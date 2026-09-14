@@ -93,6 +93,8 @@ router.patch('/maintenance/:id/receive', controller.receiveMaintenance);
 router.get('/asset-instances', controller.listAssetInstances);
 router.get('/asset-instances/by-item-location', controller.getItemLocationMap);
 router.patch('/asset-instances/:id', controller.updateAssetInstance);
+router.post('/asset-instances/:id/shift', controller.shiftAsset);
+router.get('/asset-shift-logs', controller.listShiftLogs);
 
 router.get('/gd-notifications/unread', controller.listUnreadGdNotifications);
 router.patch('/gd-notifications/mark-read', controller.markGdNotificationsRead);

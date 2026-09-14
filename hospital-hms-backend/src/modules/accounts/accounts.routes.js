@@ -79,6 +79,12 @@ router.get('/next-voucher-no', ctrl.getNextVoucherNo);
 router.get('/voucher-reprint', ctrl.getVouchersForReprint);
 router.get('/voucher-summary', ctrl.getVoucherSummary);
 router.get('/voucher-summary-matrix', ctrl.getVoucherSummaryMatrix);
+router.get('/income-summary-matrix', ctrl.getIncomeSummaryMatrix);
+router.post('/income-summary-matrix/bulk-import', ctrl.bulkImportIncomeSummary);
+router.get('/payee-names', ctrl.getDistinctPayeeNames);
+router.get('/gl-balance-report', ctrl.getGLBalanceReport);
+router.get('/consultant-payment-history', ctrl.getConsultantPaymentHistory);
+router.get('/supplier-payment-history', ctrl.getSupplierPaymentHistory);
 
 router.get('/voucher-income', ctrl.getVoucherIncomes);
 router.post('/voucher-income', ctrl.createVoucherIncome);
@@ -100,6 +106,13 @@ router.post('/bank-deposits', ctrl.createBankDeposit);
 
 router.get('/bank-deposit-adjs', ctrl.getBankDepositAdjs);
 router.post('/bank-deposit-adjs', ctrl.createBankDepositAdj);
+
+router.get('/bank-statement', ctrl.getBankStatementLines);
+router.post('/bank-statement/bulk-import', ctrl.bulkImportBankStatement);
+
+router.get('/un-presented-cheques', ctrl.getUnpresentedChequeList);
+router.post('/un-presented-cheques/confirm-match', ctrl.confirmChequeMatch);
+router.get('/cheque-wise-voucher-summary', ctrl.getChequeWiseVoucherSummary);
 
 router.get('/inquiry/dashboard', ctrl.getAccountsInquiryDashboard);
 router.get('/inquiry/clinic-revenue', ctrl.getClinicRevenueForDate);
