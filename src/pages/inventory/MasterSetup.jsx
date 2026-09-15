@@ -385,7 +385,11 @@ export default function MasterSetup() {
       unit: row.unit || 'pieces',
       reorderLevel: row.reorderLevel ?? '',
       purchasePrice: row.purchasePrice ?? '',
-      currentStock: row.currentStock ?? 0,
+      // Editable Opening Stock (Fixed Asset only) needs the opening-specific
+      // figure, not the item's overall currentStock — that also folds in
+      // anything received later via GRN, and submitting it back as-is would
+      // make the backend think those GRN units were opening units too.
+      currentStock: row.itemType === 'fixed asset' ? (row.openingStock ?? 0) : (row.currentStock ?? 0),
       hasExpiry: row.hasExpiry || false,
       brand: row.brand || '',
       model: row.model || '',
@@ -523,7 +527,10 @@ export default function MasterSetup() {
         unit: formData.unit,
         reorderLevel: Number(formData.reorderLevel || 0),
         purchasePrice: formData.purchasePrice === '' ? undefined : Number(formData.purchasePrice),
-        ...(!editingRow && { currentStock: Number(formData.currentStock || 0) }),
+        // On create, opening stock always applies. On edit, it's only
+        // editable for Fixed Assets (see the guard in updateItem — current
+        // assets stay locked once set).
+        ...((!editingRow || formData.itemType === 'fixed asset') && { currentStock: Number(formData.currentStock || 0) }),
         hasExpiry: Boolean(formData.hasExpiry),
         status: formData.status,
         brand: formData.brand || undefined,
@@ -1261,15 +1268,22 @@ export default function MasterSetup() {
                       className="px-3 py-2 border border-slate-300 rounded-md text-sm"
                     />
 
-                    {!editingRow && (
-                      <input
-                        placeholder="Opening Stock"
-                        type="number"
-                        min="0"
-                        value={formData.currentStock}
-                        onChange={(e) => onFormChange('currentStock', e.target.value)}
-                        className="px-3 py-2 border border-slate-300 rounded-md text-sm"
-                      />
+                    {(!editingRow || formData.itemType === 'fixed asset') && (
+                      <div className="flex flex-col gap-1">
+                        <input
+                          placeholder="Opening Stock"
+                          type="number"
+                          min="0"
+                          value={formData.currentStock}
+                          onChange={(e) => onFormChange('currentStock', e.target.value)}
+                          className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                        />
+                        {editingRow && (
+                          <span className="text-xs text-slate-500">
+                            Increase karne se nayi units add ho jayengi; kam karne se sirf woh units hatengi jo abhi tak issue/shift nahi hui.
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     <label className="flex items-center gap-2 text-sm text-slate-700">

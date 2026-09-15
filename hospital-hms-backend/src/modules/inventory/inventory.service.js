@@ -608,7 +608,7 @@ async function listItems({ search, status, categoryId, supplierId, assetType }) 
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSupplierId = parsePositiveNumber(supplierId);
 
-  return prisma.inventoryItem.findMany({
+  const items = await prisma.inventoryItem.findMany({
     where: {
       ...buildStatusFilter(status),
       ...buildSearchFilter(search, ['code', 'name', 'itemType', 'unit']),
@@ -628,6 +628,17 @@ async function listItems({ search, status, categoryId, supplierId, assetType }) 
     },
     orderBy: { createdAt: 'desc' },
   });
+
+  // Opening-stock-specific quantity, separate from currentStock (which also
+  // folds in anything received later via GRN) — the Edit form needs this
+  // exact figure so editing opening stock never double-counts GRN receipts
+  // as if they were part of the original opening count.
+  const openingMovements = await prisma.inventoryStockMovement.findMany({
+    where: { itemId: { in: items.map((i) => i.id) }, referenceType: 'OPENING' },
+    select: { itemId: true, quantity: true },
+  });
+  const openingByItem = new Map(openingMovements.map((m) => [m.itemId, Number(m.quantity) || 0]));
+  return items.map((i) => ({ ...i, openingStock: openingByItem.get(i.id) || 0 }));
 }
 
 async function listPurchaseOrders({ search, status, supplierId, itemId, dateFrom, dateTo, assetType }) {
@@ -2354,8 +2365,37 @@ async function updateItem(itemId, payload) {
   const oldOpeningQty = existingOpeningMovement ? Number(existingOpeningMovement.quantity || 0) : 0;
   const openingDelta = openingStockProvided ? (newOpeningQty - oldOpeningQty) : 0;
 
-  if (openingDelta !== 0 && existingOpeningMovement) {
+  // Fixed assets can have their opening count adjusted after creation (each
+  // unit is a distinct AssetInstance the sync block below keeps in step);
+  // current assets stay locked once set — their stock is meant to move only
+  // through GRN/GIN after that, so silently reopening the opening figure
+  // there would be easy to lose track of against later transactions.
+  if (openingDelta !== 0 && existingOpeningMovement && itemType !== 'fixed asset') {
     throw new Error('Opening stock cannot be changed once it has already been set');
+  }
+
+  // Resolve (and validate) which AssetInstances a decrease would remove
+  // *before* writing anything — the whole edit below isn't wrapped in a
+  // transaction, so this must fail closed ahead of the item/movement writes,
+  // not mid-way through them.
+  let instancesToRemove = [];
+  if (openingDelta < 0 && itemType === 'fixed asset') {
+    const openingInstanceIds = (
+      await prisma.assetInstance.findMany({ where: { itemId: id, grnId: null }, select: { id: true } })
+    ).map((i) => i.id);
+    const removeCount = -openingDelta;
+    const untouched = await prisma.assetInstance.findMany({
+      where: { id: { in: openingInstanceIds }, ginItemId: null, location: null, shiftLogs: { none: {} } },
+      select: { id: true },
+      orderBy: { id: 'desc' },
+      take: removeCount,
+    });
+    if (untouched.length < removeCount) {
+      throw new Error(
+        `Opening stock ko sirf ${untouched.length} unit(s) tak kam kiya ja sakta hai — baqi units already issue/shift ho chuki hain, unhe hataya nahi ja sakta.`,
+      );
+    }
+    instancesToRemove = untouched.map((i) => i.id);
   }
 
   const updated = await prisma.inventoryItem.update({
@@ -2409,13 +2449,6 @@ async function updateItem(itemId, payload) {
 
     // Sync AssetInstance records for fixed assets
     if (updated.itemType === 'fixed asset') {
-      // Only touch instances that came from opening stock (no grnId)
-      const openingInstances = await prisma.assetInstance.findMany({
-        where: { itemId: id, grnId: null },
-        select: { id: true, assetTag: true },
-        orderBy: { id: 'asc' },
-      });
-
       if (openingDelta > 0) {
         // Add new instances
         const allTags = await prisma.assetInstance.findMany({
@@ -2440,12 +2473,10 @@ async function updateItem(itemId, payload) {
           });
         }
         if (newInstances.length > 0) await prisma.assetInstance.createMany({ data: newInstances });
-      } else if (openingDelta < 0) {
-        // Remove excess opening instances (from the end)
-        const toRemove = openingInstances.slice(openingDelta); // last N
-        if (toRemove.length > 0) {
-          await prisma.assetInstance.deleteMany({ where: { id: { in: toRemove.map((i) => i.id) } } });
-        }
+      } else if (openingDelta < 0 && instancesToRemove.length > 0) {
+        // Removable set (untouched — never issued/shifted) was already
+        // resolved and validated above, before any writes happened.
+        await prisma.assetInstance.deleteMany({ where: { id: { in: instancesToRemove } } });
       }
     }
   }
