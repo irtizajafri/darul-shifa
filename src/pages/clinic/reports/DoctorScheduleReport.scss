@@ -1,0 +1,54 @@
+.dsr-report-page {
+  max-width: 1000px;
+}
+
+.dsr-doc-block {
+  margin-bottom: 20px;
+  &:last-child { margin-bottom: 0; }
+}
+
+.dsr-doc-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 3px;
+  margin-bottom: 3px;
+}
+.dsr-doc-sub {
+  font-size: 0.74rem;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.dsr-inactive {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.dsr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.76rem;
+
+  th {
+    background: #1a3c6e;
+    color: #fff;
+    padding: 5px 8px;
+    text-align: left;
+    &.day { text-align: center; width: 34px; }
+  }
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #eee;
+    &.day { text-align: center; }
+  }
+}
+
+.dsr-tick {
+  color: #0a7a2a;
+  font-weight: 800;
+}
+.dsr-oncall {
+  color: #b45309;
+  font-weight: 600;
+  font-size: 0.72rem;
+}

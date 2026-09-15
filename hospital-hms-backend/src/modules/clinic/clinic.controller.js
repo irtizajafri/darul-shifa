@@ -2196,6 +2196,101 @@ async function getAdmissionWiseReport(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getStatementOfSurgery(req, res, next) {
+  try {
+    const { doctorFromCode, doctorToCode, fromDate, toDate, fromTime, toTime, patientType } = req.query;
+    const data = await service.getStatementOfSurgery({ doctorFromCode, doctorToCode, fromDate, toDate, fromTime, toTime, patientType });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getStatusWiseAdmission(req, res, next) {
+  try {
+    const {
+      dateFrom, dateTo, admissionFrom, admissionTo,
+      doctorFromCode, doctorToCode, surgeryFromCode, surgeryToCode,
+      patientTypes, admissionTypes, groupMode,
+    } = req.query;
+    const data = await service.getStatusWiseAdmission({
+      dateFrom, dateTo, admissionFrom, admissionTo,
+      doctorFromCode, doctorToCode, surgeryFromCode, surgeryToCode,
+      patientTypes: patientTypes ? patientTypes.split(',').filter(Boolean) : null,
+      admissionTypes: admissionTypes ? admissionTypes.split(',').filter(Boolean) : null,
+      groupMode,
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getAdmissionDistribution(req, res, next) {
+  try {
+    const { admissionFrom, admissionTo, billHeadFromCode, billHeadToCode, closingFrom, closingTo, reportStyle } = req.query;
+    const data = await service.getAdmissionDistribution({
+      admissionFrom, admissionTo, billHeadFromCode, billHeadToCode, closingFrom, closingTo, reportStyle,
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getWardWisePaymentDistribution(req, res, next) {
+  try {
+    const { admissionFrom, admissionTo, dateFrom, dateTo, wardIds, salary, sharePercent, otherAdd, otherLess } = req.query;
+    const data = await service.getWardWisePaymentDistribution({
+      admissionFrom, admissionTo, dateFrom, dateTo,
+      wardIds: wardIds ? wardIds.split(',').filter(Boolean) : [],
+      salary, sharePercent, otherAdd, otherLess,
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getDepartmentMonthlyComparison(req, res, next) {
+  try {
+    const { deptFromCode, deptToCode, months } = req.query;
+    const data = await service.getDepartmentMonthlyComparison({
+      deptFromCode, deptToCode,
+      months: months ? months.split(',').filter(Boolean) : [],
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getCancelRefundHistory(req, res, next) {
+  try {
+    const { type, dateFrom, dateTo, search } = req.query;
+    const data = await service.getCancelRefundHistory({ type, dateFrom, dateTo, search });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getDoctorScheduleReport(req, res, next) {
+  try {
+    const { doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly } = req.query;
+    const data = await service.getDoctorScheduleReport({
+      doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly: activeOnly === '1',
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
+async function getWardWiseBillReport(req, res, next) {
+  try {
+    const { billType, withSummary, patientTypes, dateMode, fromDate, toDate, ward, billHeads, consultants } = req.query;
+    const data = await service.getWardWiseBillReport({
+      billType,
+      withSummary: withSummary !== '0',
+      patientTypes: patientTypes && patientTypes !== 'ALL' ? patientTypes.split(',').filter(Boolean) : null,
+      dateMode,
+      fromDate,
+      toDate,
+      wardId: ward,
+      billHeadIds: billHeads && billHeads !== 'ALL' ? billHeads.split(',').filter(Boolean) : null,
+      consultantIds: consultants && consultants !== 'ALL' ? consultants.split(',').filter(Boolean) : null,
+    });
+    success(res, data);
+  } catch (err) { next(err); }
+}
+
 async function getUserDateSummary(req, res, next) {
   try {
     const { userId, date, shift } = req.query;
@@ -2444,6 +2539,14 @@ module.exports = {
   getDailyDepartmentStatement,
   getDepartmentDoctorPerformance,
   getAdmissionWiseReport,
+  getWardWiseBillReport,
+  getStatementOfSurgery,
+  getStatusWiseAdmission,
+  getAdmissionDistribution,
+  getWardWisePaymentDistribution,
+  getDepartmentMonthlyComparison,
+  getCancelRefundHistory,
+  getDoctorScheduleReport,
   getUserDateSummary,
   getBalanceSlips,
   receiveBalancePayment,

@@ -1,0 +1,45 @@
+.wpr-report-page {
+  max-width: 1200px;
+}
+
+.wpr-ward-block {
+  margin-bottom: 24px;
+  &:last-child { margin-bottom: 0; }
+}
+
+.wpr-ward-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.wpr-table th, .wpr-table td {
+  white-space: nowrap;
+}
+
+.wpr-total-row td {
+  font-weight: 800;
+  border-top: 2px solid #000;
+}
+
+.wpr-summary {
+  margin-top: 20px;
+  border-top: 2px solid #1e293b;
+  padding-top: 10px;
+  max-width: 360px;
+  font-size: 0.82rem;
+
+  div {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    color: #334155;
+  }
+  .wpr-net {
+    font-weight: 800;
+    color: #1e293b;
+    border-top: 1px solid #cbd5e1;
+    margin-top: 4px;
+    padding-top: 6px;
+  }
+}

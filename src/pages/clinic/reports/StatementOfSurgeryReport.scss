@@ -1,0 +1,98 @@
+// Extends the shared .ddp-* report shell with the per-doctor "statement"
+// block this report repeats once per doctor in the selected code range —
+// each one page-broken on print, matching the legacy Crystal Reports
+// "1 of 4" per-doctor pagination.
+
+.sos-report-page {
+  max-width: 820px;
+}
+
+.sos-doc-block {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px dashed #cbd5e1;
+
+  &:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+  }
+}
+
+.sos-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: underline;
+  margin-bottom: 10px;
+}
+
+.sos-doc-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-bottom: 3px double #1e293b;
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+}
+
+.sos-period {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: #334155;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 5px;
+  margin-bottom: 4px;
+}
+
+.sos-report-page table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+
+  th {
+    text-align: left;
+    border-bottom: 1px solid #1e293b;
+    padding: 4px 6px;
+    &.num { text-align: right; }
+  }
+  td {
+    padding: 3px 6px;
+  }
+  .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.sos-group-row td {
+  font-weight: 700;
+  background: #f4f6fa;
+  border-top: 1px solid #94a3b8;
+  padding-top: 5px;
+}
+
+.sos-footer-row td {
+  font-weight: 700;
+  border-top: 1px solid #1e293b;
+  padding-top: 5px;
+}
+
+.sos-words {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  font-style: italic;
+  color: #334155;
+}
+
+.sos-sign-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 48px;
+  text-align: center;
+}
+.sos-sign-block {
+  width: 30%;
+}
+.sos-sign-line {
+  border-top: 1px solid #1e293b;
+  padding-top: 4px;
+  font-size: 0.72rem;
+  color: #475569;
+}

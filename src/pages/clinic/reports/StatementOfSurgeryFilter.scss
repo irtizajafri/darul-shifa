@@ -1,0 +1,29 @@
+// Extends ConsultantWiseFilter.scss's shared .cwf-* window chrome with the
+// pieces unique to this filter: the top-right "Active Consultants" row and
+// the From/To column labels sitting above the Doctor row.
+
+.sos-window {
+  width: 560px;
+}
+
+.sos-active-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.sos-fromto-labels {
+  display: flex;
+  padding-left: 90px;
+  gap: 0;
+}
+.sos-fromto-lbl {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1a6e1a;
+}
+
+.sos-doctor-select {
+  flex: 1;
+  width: auto;
+}

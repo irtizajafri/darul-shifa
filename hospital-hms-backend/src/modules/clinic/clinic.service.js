@@ -7969,6 +7969,830 @@ async function getAdmissionWiseReport({ fromDate, toDate, statusMode, patientTyp
   return { rows, bucketCodes, total };
 }
 
+// ─── Ward Wise Bill Report ────────────────────────────────────────────────────
+// Groups Provisional/Final bill line items by the admission's Ward (Room
+// Category), then by Bill Head within each ward — matching the legacy
+// "Ward wise Provisonal Bill Report" Crystal Reports layout. Each line's
+// gross ("Total Amount") is recomputed as qty*rate; the stored amount is the
+// net figure after whatever manual adjustment was made when the line was
+// entered/finalized, so Discount = TotalAmount - Amount is derived here
+// rather than read off a dedicated column (neither bill-item table has one).
+async function getWardWiseBillReport({
+  billType = 'provisional', withSummary = true, patientTypes, dateMode = 'discharge',
+  fromDate, toDate, wardId, billHeadIds, consultantIds,
+}) {
+  const admissionWhere = {};
+  if (wardId && wardId !== 'ALL') admissionWhere.roomCategoryId = Number(wardId);
+  if (consultantIds && consultantIds.length) admissionWhere.consultantId = { in: consultantIds.map(Number) };
+  if (patientTypes && patientTypes.length) admissionWhere.patientCategory = { in: patientTypes };
+  // "Discharge Date" only means anything for admissions that have actually
+  // been discharged — same restriction getAdmissionWiseReport applies for
+  // its own Discharge status-mode.
+  if (dateMode === 'discharge') admissionWhere.status = { in: ['discharge', 'closed'] };
+
+  const admissions = await prisma.clinicAdmission.findMany({
+    where: admissionWhere,
+    include: { dischargeCertificate: { select: { dischargeDate: true } } },
+  });
+
+  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
+  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+  const filtered = admissions.filter(a => {
+    const d = dateMode === 'admit' ? a.createdAt : a.dischargeCertificate?.dischargeDate;
+    if (!d) return false;
+    if (fromDt && new Date(d) < fromDt) return false;
+    if (toDt && new Date(d) > toDt) return false;
+    return true;
+  });
+  if (!filtered.length) return { billType, withSummary, wards: [], grandTotal: { totalAmount: 0, discount: 0, amount: 0 } };
+
+  const admissionById = new Map(filtered.map(a => [a.id, a]));
+  const itemWhere = { admissionId: { in: filtered.map(a => a.id) } };
+  if (billHeadIds && billHeadIds.length) itemWhere.billHeadId = { in: billHeadIds.map(Number) };
+
+  const items = billType === 'final'
+    ? await prisma.clinicDischargeBillItem.findMany({ where: itemWhere })
+    : await prisma.clinicProvisionalBillItem.findMany({ where: itemWhere });
+
+  const [rooms, heads, doctors] = await Promise.all([
+    prisma.clinicRoomCategory.findMany(),
+    prisma.clinicBillHead.findMany(),
+    prisma.clinicDoctor.findMany(),
+  ]);
+  const roomById  = new Map(rooms.map(r => [r.id, r]));
+  const headById  = new Map(heads.map(h => [h.id, h]));
+  const doctorById = new Map(doctors.map(d => [d.id, d]));
+
+  const wardMap = new Map(); // roomCategoryId (0 = none) -> group
+  for (const it of items) {
+    const adm = admissionById.get(it.admissionId);
+    if (!adm) continue;
+    const wId = adm.roomCategoryId || 0;
+    if (!wardMap.has(wId)) {
+      const w = roomById.get(wId);
+      wardMap.set(wId, {
+        id: wId, name: w ? w.name : 'No Ward', code: w ? w.code : '',
+        heads: new Map(), totalAmount: 0, discount: 0, amount: 0,
+      });
+    }
+    const wg = wardMap.get(wId);
+    const hId = it.billHeadId || 0;
+    if (!wg.heads.has(hId)) {
+      const h = headById.get(hId);
+      wg.heads.set(hId, {
+        id: hId, description: h ? h.description : 'Unspecified', headCode: h ? h.headCode : '',
+        qty: 0, totalAmount: 0, discount: 0, amount: 0, lines: [],
+      });
+    }
+    const hg = wg.heads.get(hId);
+    const lineTotal  = (Number(it.qty) || 0) * (Number(it.rate) || 0);
+    const lineAmount = Number(it.amount) || 0;
+    const lineDiscount = lineTotal - lineAmount;
+
+    hg.qty += Number(it.qty) || 0;
+    hg.totalAmount += lineTotal;
+    hg.amount += lineAmount;
+    hg.discount += lineDiscount;
+    wg.totalAmount += lineTotal;
+    wg.amount += lineAmount;
+    wg.discount += lineDiscount;
+
+    if (!withSummary) {
+      hg.lines.push({
+        admissionNo: adm.admissionNo,
+        slipNo: adm.arrivedSlipNo || adm.serialNo || '—',
+        date: it.createdAt,
+        patientName: adm.patientName,
+        consultantName: doctorById.get(adm.consultantId)?.name || '',
+        patientType: adm.patientCategory,
+        rate: Number(it.rate) || 0,
+        qty: Number(it.qty) || 0,
+        totalAmount: lineTotal,
+        discount: lineDiscount,
+        amount: lineAmount,
+      });
+    }
+  }
+
+  const wards = [...wardMap.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(w => ({
+      ...w,
+      heads: [...w.heads.values()].sort((a, b) => a.description.localeCompare(b.description)),
+    }));
+
+  const grandTotal = wards.reduce((acc, w) => ({
+    totalAmount: acc.totalAmount + w.totalAmount,
+    discount: acc.discount + w.discount,
+    amount: acc.amount + w.amount,
+  }), { totalAmount: 0, discount: 0, amount: 0 });
+
+  return { billType, withSummary, wards, grandTotal };
+}
+
+// ─── Statement of Surgery ("Statement of Consultant for Indoor Files") ───────
+// Per-doctor statement of the Consultant Fee this doctor earned on IPD
+// (admission) discharge bills within a date/time range — sourced from
+// ClinicDischargeBillItem rows that carry a doctorId (only Consultant-Fee-
+// category heads ever set one, alongside doctorFee/subDeptId). Amount shown
+// is the doctor's own cut (doctorFee), not the full bill line amount — this
+// report is really a payment statement for what the hospital owes the
+// doctor, matching the legacy printout's "Total For Doctor" + signature
+// lines. The "Surgery" column reuses this same screen for plain IPD visits:
+// it shows the real Surgery Type + Op. Date when the admission actually has
+// a Surgery Information record, falling back to a generic "Indoor Visit"
+// label for the (majority) of rows that are just routine ward rounds.
+async function getStatementOfSurgery({
+  doctorFromCode, doctorToCode, fromDate, toDate, fromTime, toTime, patientType = 'cash',
+}) {
+  const doctorWhere = {};
+  if (doctorFromCode || doctorToCode) {
+    doctorWhere.code = {};
+    if (doctorFromCode) doctorWhere.code.gte = doctorFromCode;
+    if (doctorToCode) doctorWhere.code.lte = doctorToCode;
+  }
+  const doctors = await prisma.clinicDoctor.findMany({ where: doctorWhere, orderBy: { code: 'asc' } });
+  if (!doctors.length) return { patientType, fromDate, toDate, doctors: [] };
+  const doctorIds = doctors.map((d) => d.id);
+
+  // Date+Time range combine into a single from/to instant — same "hospital
+  // day" idea ConsultantStatementFilter already uses (08:00 -> next 07:59).
+  const fromDt = fromDate ? new Date(`${fromDate}T${fromTime || '00:00'}:00`) : null;
+  const toDt   = toDate   ? new Date(`${toDate}T${toTime || '23:59'}:59`)     : null;
+
+  const itemWhere = { doctorId: { in: doctorIds } };
+  if (fromDt || toDt) {
+    itemWhere.createdAt = {};
+    if (fromDt) itemWhere.createdAt.gte = fromDt;
+    if (toDt) itemWhere.createdAt.lte = toDt;
+  }
+
+  const items = await prisma.clinicDischargeBillItem.findMany({
+    where: itemWhere,
+    include: { admission: { select: {
+      id: true, admissionNo: true, patientName: true, patientCategory: true,
+      panelCompanyId: true,
+    } } },
+  });
+
+  const wantedCategory = patientType === 'panel' ? 'panel' : 'private';
+  const filtered = items.filter((it) => it.admission && it.admission.patientCategory === wantedCategory);
+  if (!filtered.length) return { patientType, fromDate, toDate, doctors: [] };
+
+  const admissionIds = [...new Set(filtered.map((it) => it.admission.id))];
+  const [surgeryInfos, surgeryTypes, panelCompanies] = await Promise.all([
+    prisma.clinicSurgeryInformation.findMany({ where: { admissionId: { in: admissionIds } } }),
+    prisma.clinicSurgeryType.findMany(),
+    patientType === 'panel' ? prisma.clinicPanelCompany.findMany() : Promise.resolve([]),
+  ]);
+  const surgeryTypeById = new Map(surgeryTypes.map((s) => [s.id, s.name]));
+  const surgeryByAdmission = new Map(surgeryInfos.map((s) => [s.admissionId, s]));
+  const companyById = new Map(panelCompanies.map((c) => [c.id, c]));
+
+  const byDoctor = new Map(doctorIds.map((id) => [id, []]));
+  for (const it of filtered) {
+    const surg = surgeryByAdmission.get(it.admission.id);
+    byDoctor.get(it.doctorId)?.push({
+      admissionNo: it.admission.admissionNo,
+      patientName: it.admission.patientName,
+      surgery: surg?.surgeryTypeId ? (surgeryTypeById.get(surg.surgeryTypeId) || 'Indoor Visit') : 'Indoor Visit',
+      opDate: surg?.operationDateTime || null,
+      amount: Number(it.doctorFee ?? it.amount) || 0,
+      panelCompanyId: it.admission.panelCompanyId,
+    });
+  }
+
+  const result = doctors
+    .map((d) => {
+      const rows = (byDoctor.get(d.id) || []).sort((a, b) => a.admissionNo.localeCompare(b.admissionNo));
+      if (!rows.length) return null;
+      const totalPatients = rows.length;
+      const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
+
+      if (patientType !== 'panel') {
+        return { code: d.code, name: d.name, rows, totalPatients, totalAmount };
+      }
+
+      const groupMap = new Map();
+      for (const r of rows) {
+        const cId = r.panelCompanyId || 0;
+        if (!groupMap.has(cId)) {
+          const c = companyById.get(cId);
+          groupMap.set(cId, { code: c ? c.code : 'N/A', name: c ? c.name : 'Unassigned', rows: [] });
+        }
+        groupMap.get(cId).rows.push(r);
+      }
+      const groups = [...groupMap.values()]
+        .sort((a, b) => a.code.localeCompare(b.code))
+        .map((g) => ({
+          ...g,
+          totalPatients: g.rows.length,
+          totalAmount: g.rows.reduce((s, r) => s + r.amount, 0),
+        }));
+      return { code: d.code, name: d.name, groups, totalPatients, totalAmount };
+    })
+    .filter(Boolean);
+
+  return { patientType, fromDate, toDate, doctors: result };
+}
+
+// ─── Status Wise Admission ────────────────────────────────────────────────────
+const PAT_STATUS_LABEL = { private: 'Private', staff: 'Staff', panel: 'Panel', complementary: 'Complementary', cc: 'CC' };
+const ADMISSION_STATUS_LABEL = { active: 'Active', discharge: 'Discharge', closed: 'Closed' };
+
+async function getStatusWiseAdmission({
+  dateFrom, dateTo, admissionFrom, admissionTo,
+  doctorFromCode, doctorToCode, surgeryFromCode, surgeryToCode,
+  patientTypes, admissionTypes, groupMode = 'normal',
+}) {
+  const where = {};
+  if (dateFrom || dateTo) {
+    where.createdAt = {};
+    if (dateFrom) where.createdAt.gte = new Date(`${dateFrom}T00:00:00`);
+    if (dateTo) where.createdAt.lte = new Date(`${dateTo}T23:59:59`);
+  }
+  if (admissionFrom || admissionTo) {
+    where.admissionNo = {};
+    if (admissionFrom) where.admissionNo.gte = admissionFrom;
+    if (admissionTo) where.admissionNo.lte = admissionTo;
+  }
+  if (patientTypes && patientTypes.length) where.patientCategory = { in: patientTypes };
+  if (admissionTypes && admissionTypes.length) where.status = { in: admissionTypes };
+
+  if (doctorFromCode || doctorToCode) {
+    const doctorWhere = { code: {} };
+    if (doctorFromCode) doctorWhere.code.gte = doctorFromCode;
+    if (doctorToCode) doctorWhere.code.lte = doctorToCode;
+    const doctorsInRange = await prisma.clinicDoctor.findMany({ where: doctorWhere, select: { id: true } });
+    where.consultantId = { in: doctorsInRange.map((d) => d.id) };
+  }
+  if (surgeryFromCode || surgeryToCode) {
+    const surgeryWhere = { code: {} };
+    if (surgeryFromCode) surgeryWhere.code.gte = surgeryFromCode;
+    if (surgeryToCode) surgeryWhere.code.lte = surgeryToCode;
+    const surgeriesInRange = await prisma.clinicSurgeryType.findMany({ where: surgeryWhere, select: { id: true } });
+    where.surgeryTypeId = { in: surgeriesInRange.map((s) => s.id) };
+  }
+
+  const admissions = await prisma.clinicAdmission.findMany({
+    where,
+    include: { dischargeCertificate: { select: { dischargeDate: true } } },
+    orderBy: { admissionNo: 'asc' },
+  });
+  if (!admissions.length) return { groupMode, rows: [], groups: [], grandTotal: emptyStatusTotal() };
+
+  const admissionIds = admissions.map((a) => a.id);
+  const [provItems, finalItems, doctors] = await Promise.all([
+    prisma.clinicProvisionalBillItem.findMany({ where: { admissionId: { in: admissionIds } }, select: { admissionId: true, amount: true } }),
+    prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: admissionIds } }, select: { admissionId: true, amount: true } }),
+    prisma.clinicDoctor.findMany({ select: { id: true, code: true, name: true } }),
+  ]);
+  const provByAdm = new Map();
+  provItems.forEach((i) => provByAdm.set(i.admissionId, (provByAdm.get(i.admissionId) || 0) + (Number(i.amount) || 0)));
+  const finalByAdm = new Map();
+  finalItems.forEach((i) => finalByAdm.set(i.admissionId, (finalByAdm.get(i.admissionId) || 0) + (Number(i.amount) || 0)));
+  const doctorById = new Map(doctors.map((d) => [d.id, d]));
+
+  const rows = admissions.map((a) => ({
+    admissionNo: a.admissionNo,
+    admitDate: a.createdAt,
+    patientName: a.patientName,
+    patStatus: PAT_STATUS_LABEL[a.patientCategory] || a.patientCategory,
+    preSNo: a.serialNo || '',
+    advance: Number(a.advancePayment) || 0,
+    provisionalBillAmount: provByAdm.get(a.id) || 0,
+    finalBillAmount: finalByAdm.get(a.id) || 0,
+    discount: Number(a.dischargeDiscount) || 0,
+    refundDisDate: a.dischargeCertificate?.dischargeDate || null,
+    status: ADMISSION_STATUS_LABEL[a.status] || a.status,
+    lastUpdate: a.updatedAt,
+    consultantId: a.consultantId,
+  }));
+
+  const grandTotal = sumStatusRows(rows);
+
+  if (groupMode !== 'group') return { groupMode, rows, groups: [], grandTotal };
+
+  const groupsMap = new Map();
+  rows.forEach((r) => {
+    const key = r.consultantId || 0;
+    if (!groupsMap.has(key)) {
+      const doc = doctorById.get(key);
+      groupsMap.set(key, { code: doc ? doc.code : 'N/A', name: doc ? doc.name : 'Unassigned', rows: [] });
+    }
+    groupsMap.get(key).rows.push(r);
+  });
+  const groups = [...groupsMap.values()]
+    .sort((a, b) => a.code.localeCompare(b.code))
+    .map((g) => ({ ...g, total: sumStatusRows(g.rows) }));
+
+  return { groupMode, rows: [], groups, grandTotal };
+}
+
+function emptyStatusTotal() {
+  return { advance: 0, provisionalBillAmount: 0, finalBillAmount: 0, discount: 0 };
+}
+function sumStatusRows(rows) {
+  return rows.reduce((acc, r) => ({
+    advance: acc.advance + r.advance,
+    provisionalBillAmount: acc.provisionalBillAmount + r.provisionalBillAmount,
+    finalBillAmount: acc.finalBillAmount + r.finalBillAmount,
+    discount: acc.discount + r.discount,
+  }), emptyStatusTotal());
+}
+
+// ─── Admission Distribution ───────────────────────────────────────────────────
+// Scoped to Closed admissions — "Closing Date" is a distinct, later lifecycle
+// event than Discharge (active -> discharge -> closed, per
+// ClinicAdmissionStatusLog), so it's read off that log's latest ->closed
+// transition rather than reused from the Discharge Certificate. Bill Head
+// range filter narrows both the per-admission breakdown AND its Bill Amount
+// together (not just the breakdown) — an admission with zero items in the
+// selected head range shouldn't show a Bill Amount from outside that range.
+async function getAdmissionDistribution({
+  admissionFrom, admissionTo, billHeadFromCode, billHeadToCode, closingFrom, closingTo, reportStyle = 'pageLayout',
+}) {
+  const admissionWhere = { status: 'closed' };
+  if (admissionFrom || admissionTo) {
+    admissionWhere.admissionNo = {};
+    if (admissionFrom) admissionWhere.admissionNo.gte = admissionFrom;
+    if (admissionTo) admissionWhere.admissionNo.lte = admissionTo;
+  }
+
+  const admissions = await prisma.clinicAdmission.findMany({ where: admissionWhere, orderBy: { admissionNo: 'asc' } });
+  if (!admissions.length) return emptyDistribution(reportStyle);
+  const admissionIds = admissions.map((a) => a.id);
+
+  const closingLogs = await prisma.clinicAdmissionStatusLog.findMany({
+    where: { admissionId: { in: admissionIds }, toStatus: 'closed' },
+    orderBy: { changedAt: 'desc' },
+  });
+  const closingDateByAdm = new Map();
+  closingLogs.forEach((l) => { if (!closingDateByAdm.has(l.admissionId)) closingDateByAdm.set(l.admissionId, l.changedAt); });
+
+  const closingFromDt = closingFrom ? new Date(`${closingFrom}T00:00:00`) : null;
+  const closingToDt   = closingTo   ? new Date(`${closingTo}T23:59:59`)   : null;
+  const scoped = admissions.filter((a) => {
+    const cd = closingDateByAdm.get(a.id) || a.updatedAt;
+    if (closingFromDt && new Date(cd) < closingFromDt) return false;
+    if (closingToDt && new Date(cd) > closingToDt) return false;
+    return true;
+  });
+  if (!scoped.length) return emptyDistribution(reportStyle);
+  const scopedIds = scoped.map((a) => a.id);
+
+  let billHeadIdFilter = null;
+  if (billHeadFromCode || billHeadToCode) {
+    const headWhere = { headCode: {} };
+    if (billHeadFromCode) headWhere.headCode.gte = billHeadFromCode;
+    if (billHeadToCode) headWhere.headCode.lte = billHeadToCode;
+    const headsInRange = await prisma.clinicBillHead.findMany({ where: headWhere, select: { id: true } });
+    billHeadIdFilter = headsInRange.map((h) => h.id);
+  }
+
+  const itemWhere = { admissionId: { in: scopedIds } };
+  if (billHeadIdFilter) itemWhere.billHeadId = { in: billHeadIdFilter };
+
+  const [items, billHeads] = await Promise.all([
+    prisma.clinicDischargeBillItem.findMany({ where: itemWhere, orderBy: { id: 'asc' } }),
+    prisma.clinicBillHead.findMany(),
+  ]);
+  const headById = new Map(billHeads.map((h) => [h.id, h]));
+  const itemsByAdm = new Map();
+  items.forEach((it) => {
+    if (!itemsByAdm.has(it.admissionId)) itemsByAdm.set(it.admissionId, []);
+    itemsByAdm.get(it.admissionId).push(it);
+  });
+
+  // Only admissions that actually have >=1 item in the (possibly Bill-Head-
+  // filtered) set — an empty admission has nothing to distribute.
+  const admWithItems = scoped.filter((a) => (itemsByAdm.get(a.id) || []).length > 0);
+  if (!admWithItems.length) return emptyDistribution(reportStyle);
+
+  const admInfo = (a) => ({
+    admissionNo: a.admissionNo,
+    admitDate: a.createdAt,
+    closingDate: closingDateByAdm.get(a.id) || a.updatedAt,
+    status: 'Closed',
+  });
+
+  if (reportStyle === 'summary') {
+    const rows = admWithItems.map((a) => {
+      const rowItems = itemsByAdm.get(a.id) || [];
+      const billAmount = rowItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      return {
+        admissionNo: a.admissionNo,
+        dateTime: a.createdAt,
+        advAmount: Number(a.advancePayment) || 0,
+        billAmount,
+        discount: Number(a.dischargeDiscount) || 0,
+      };
+    });
+    return { reportStyle, rows };
+  }
+
+  if (reportStyle === 'billHeadWise') {
+    const groupMap = new Map();
+    admWithItems.forEach((a) => {
+      (itemsByAdm.get(a.id) || []).forEach((it) => {
+        const hId = it.billHeadId || 0;
+        if (!groupMap.has(hId)) {
+          const h = headById.get(hId);
+          groupMap.set(hId, { description: h ? h.description : 'Unspecified', rows: [] });
+        }
+        groupMap.get(hId).rows.push({ ...admInfo(a), amount: Number(it.amount) || 0 });
+      });
+    });
+    const groups = [...groupMap.values()]
+      .sort((a, b) => a.description.localeCompare(b.description))
+      .map((g) => ({
+        description: g.description,
+        headTotal: g.rows.reduce((s, r) => s + r.amount, 0),
+        count: g.rows.length,
+        rows: g.rows,
+      }));
+    return { reportStyle, groups };
+  }
+
+  if (reportStyle === 'matrix') {
+    const headIdsUsed = [...new Set(items.map((it) => it.billHeadId || 0))];
+    const heads = headIdsUsed
+      .map((id) => ({ id, description: id ? (headById.get(id)?.description || 'Unspecified') : 'Unspecified' }))
+      .sort((a, b) => a.description.localeCompare(b.description));
+    const rows = admWithItems.map((a) => {
+      const cells = {};
+      (itemsByAdm.get(a.id) || []).forEach((it) => {
+        const hId = it.billHeadId || 0;
+        cells[hId] = (cells[hId] || 0) + (Number(it.amount) || 0);
+      });
+      const rowTotal = Object.values(cells).reduce((s, v) => s + v, 0);
+      return { admissionNo: a.admissionNo, cells, rowTotal };
+    });
+    return { reportStyle, heads, rows };
+  }
+
+  // pageLayout (default)
+  const admissionsOut = admWithItems.map((a) => {
+    const rowItems = itemsByAdm.get(a.id) || [];
+    const billAmount = rowItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+    return {
+      ...admInfo(a),
+      billAmount,
+      items: rowItems.map((it) => ({
+        description: headById.get(it.billHeadId)?.description || 'Unspecified',
+        amount: Number(it.amount) || 0,
+      })),
+    };
+  });
+  return { reportStyle, admissions: admissionsOut };
+}
+
+function emptyDistribution(reportStyle) {
+  if (reportStyle === 'summary') return { reportStyle, rows: [] };
+  if (reportStyle === 'billHeadWise') return { reportStyle, groups: [] };
+  if (reportStyle === 'matrix') return { reportStyle, heads: [], rows: [] };
+  return { reportStyle, admissions: [] };
+}
+
+// ─── Ward Wise Payment Distribution ───────────────────────────────────────────
+// One "Statement" section per selected Ward, each admission's bill peeled
+// down to TAFD ("Total Amount For Doctor") — confirmed against the legacy
+// printout: NetAmt = DepBilAmt - Discount - OtherWards; TAFD = NetAmt -
+// DaAmt(advance) - PharmAmt - ConsRmoAmt - Procedure. Known gaps, called out
+// here rather than silently guessed:
+//   - OtherWards (charges from a mid-stay shift to a *different* ward) is
+//     always 0 — every sample row in the reference screenshot was 0 too, so
+//     there's nothing to verify a real computation against yet.
+//   - Pharm Amt is exact (ClinicDischargeBillItem.source === 'pharmacy',
+//     see importProvisionalDataIntoDischargeBill). Cons/Rmo Amt and
+//     Procedure are keyword-matched against the Bill Head's own description
+//     (no dedicated flag exists on ClinicBillHead for either) — adjust the
+//     keyword lists below if a real head doesn't get picked up.
+//   - Include Emergency has no signal to filter on (no emergency-origin
+//     field anywhere on ClinicAdmission) — accepted as a no-op for now.
+const CONS_RMO_KEYWORDS = ['consultant', 'rmo', 'r.m.o'];
+const PROCEDURE_KEYWORDS = ['operation theater', 'surgeon fee', 'procedure'];
+
+async function getWardWisePaymentDistribution({
+  admissionFrom, admissionTo, dateFrom, dateTo, wardIds,
+  salary, sharePercent, otherAdd, otherLess,
+}) {
+  if (!wardIds || !wardIds.length) return { wards: [], summary: null };
+
+  const dateFromDt = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+  const dateToDt   = dateTo   ? new Date(`${dateTo}T23:59:59`)   : null;
+
+  const [rooms, billHeads] = await Promise.all([
+    prisma.clinicRoomCategory.findMany({ where: { id: { in: wardIds.map(Number) } } }),
+    prisma.clinicBillHead.findMany(),
+  ]);
+  const headById = new Map(billHeads.map((h) => [h.id, h]));
+  const isConsRmoHead = (id) => {
+    const desc = (headById.get(id)?.description || '').toLowerCase();
+    return CONS_RMO_KEYWORDS.some((k) => desc.includes(k));
+  };
+  const isProcedureHead = (id) => {
+    const desc = (headById.get(id)?.description || '').toLowerCase();
+    return PROCEDURE_KEYWORDS.some((k) => desc.includes(k));
+  };
+
+  const wardsOut = [];
+  const grand = emptyPaymentTotal();
+
+  for (const room of rooms) {
+    const admissionWhere = { roomCategoryId: room.id, status: { in: ['discharge', 'closed'] } };
+    if (admissionFrom || admissionTo) {
+      admissionWhere.admissionNo = {};
+      if (admissionFrom) admissionWhere.admissionNo.gte = admissionFrom;
+      if (admissionTo) admissionWhere.admissionNo.lte = admissionTo;
+    }
+    const admissions = await prisma.clinicAdmission.findMany({
+      where: admissionWhere,
+      include: { dischargeCertificate: { select: { dischargeDate: true } } },
+      orderBy: { admissionNo: 'asc' },
+    });
+    const scoped = admissions.filter((a) => {
+      const d = a.dischargeCertificate?.dischargeDate || a.updatedAt;
+      if (!d) return false;
+      if (dateFromDt && new Date(d) < dateFromDt) return false;
+      if (dateToDt && new Date(d) > dateToDt) return false;
+      return true;
+    });
+    if (!scoped.length) continue;
+
+    const items = await prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: scoped.map((a) => a.id) } } });
+    const itemsByAdm = new Map();
+    items.forEach((it) => {
+      if (!itemsByAdm.has(it.admissionId)) itemsByAdm.set(it.admissionId, []);
+      itemsByAdm.get(it.admissionId).push(it);
+    });
+
+    const rows = scoped.map((a) => {
+      const rowItems = itemsByAdm.get(a.id) || [];
+      const depBilAmt = rowItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      const discount = Number(a.dischargeDiscount) || 0;
+      const otherWards = 0; // see header note — no verified computation yet
+      const netAmt = depBilAmt - discount - otherWards;
+      const daAmt = Number(a.advancePayment) || 0;
+      const pharmAmt = rowItems.filter((it) => it.source === 'pharmacy').reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      const consRmoAmt = rowItems.filter((it) => isConsRmoHead(it.billHeadId)).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      const procedureAmt = rowItems.filter((it) => isProcedureHead(it.billHeadId)).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+      const tafd = netAmt - daAmt - pharmAmt - consRmoAmt - procedureAmt;
+      return {
+        admissionNo: a.admissionNo, patientName: a.patientName,
+        depBilAmt, discount, otherWards, netAmt, daAmt, pharmAmt, consRmoAmt, procedureAmt, tafd,
+      };
+    });
+
+    const wardTotal = sumPaymentRows(rows);
+    Object.keys(grand).forEach((k) => { grand[k] += wardTotal[k]; });
+
+    wardsOut.push({ id: room.id, code: room.code, name: room.name, rows, total: wardTotal });
+  }
+
+  const salaryN = Number(salary) || 0;
+  const shareN = Number(sharePercent) || 0;
+  const addN = Number(otherAdd) || 0;
+  const lessN = Number(otherLess) || 0;
+  // Not confirmed against a real printout (no summary/footer visible in the
+  // reference screenshot) — Salary/Share%/Other Add/Other Less are applied
+  // once, against the grand TAFD across every selected ward.
+  const netPayable = (grand.tafd * shareN) / 100 + salaryN + addN - lessN;
+
+  return {
+    wards: wardsOut,
+    grandTotal: grand,
+    summary: { salary: salaryN, sharePercent: shareN, otherAdd: addN, otherLess: lessN, netPayable },
+  };
+}
+
+function emptyPaymentTotal() {
+  return { depBilAmt: 0, discount: 0, otherWards: 0, netAmt: 0, daAmt: 0, pharmAmt: 0, consRmoAmt: 0, procedureAmt: 0, tafd: 0 };
+}
+function sumPaymentRows(rows) {
+  return rows.reduce((acc, r) => {
+    Object.keys(acc).forEach((k) => { acc[k] += r[k]; });
+    return acc;
+  }, emptyPaymentTotal());
+}
+
+// ─── Department wise Monthly Comparison ───────────────────────────────────────
+// Rows = ClinicDepartment (Bill Heads-style code range filter), columns = the
+// individual months picked in the filter (not a continuous range — a
+// scattered pick-list, so the query spans min->max month once and then
+// buckets in JS rather than querying per month).
+//
+// Counts come from the same two "Patient List" sources getPatientVisits
+// already merges (legacy PatientVisit rows + new ClinicOpdVisit rows),
+// matched to a ClinicDepartment by case-insensitive name — PLUS
+// ClinicAdmission rows counted directly into the "ADMISSION" department,
+// since that department already exists as real data in PatientVisit
+// (confirmed: `department='ADMISSION'` rows exist there) but new
+// ClinicAdmission-sourced admissions have no PatientVisit/ClinicOpdVisit row
+// at all, so they'd be invisible without this. Known gap: a handful of
+// legacy PatientVisit department strings don't match a ClinicDepartment name
+// exactly (typos like "ECO" vs "Echo", or a slightly reworded Emergency
+// variant) — those rows won't land in any department bucket.
+async function getDepartmentMonthlyComparison({ deptFromCode, deptToCode, months }) {
+  if (!months || !months.length) return { departments: [], months: [], columnTotals: {}, grandTotal: 0 };
+  const sortedMonths = [...months].sort();
+
+  const rangeFrom = new Date(`${sortedMonths[0]}-01T00:00:00`);
+  const [ly, lm] = sortedMonths[sortedMonths.length - 1].split('-').map(Number);
+  const rangeTo = new Date(ly, lm, 0, 23, 59, 59);
+
+  const deptWhere = {};
+  if (deptFromCode || deptToCode) {
+    deptWhere.code = {};
+    if (deptFromCode) deptWhere.code.gte = deptFromCode;
+    if (deptToCode) deptWhere.code.lte = deptToCode;
+  }
+  const departments = await prisma.clinicDepartment.findMany({ where: deptWhere, orderBy: { name: 'asc' } });
+  if (!departments.length) return { departments: [], months: sortedMonths, columnTotals: {}, grandTotal: 0 };
+
+  const [oldVisits, opdVisits, admissions] = await Promise.all([
+    prisma.patientVisit.findMany({ where: { visitDate: { gte: rangeFrom, lte: rangeTo } }, select: { department: true, visitDate: true } }),
+    prisma.clinicOpdVisit.findMany({ where: { createdAt: { gte: rangeFrom, lte: rangeTo } }, select: { department: true, createdAt: true } }),
+    prisma.clinicAdmission.findMany({ where: { createdAt: { gte: rangeFrom, lte: rangeTo } }, select: { createdAt: true } }),
+  ]);
+
+  const monthKey = (d) => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
+  const norm = (s) => (s || '').trim().toLowerCase();
+
+  const counts = new Map(); // normalized dept name -> Map(monthKey -> count)
+  const bump = (deptName, mKey) => {
+    const key = norm(deptName);
+    if (!key) return;
+    if (!counts.has(key)) counts.set(key, new Map());
+    const m = counts.get(key);
+    m.set(mKey, (m.get(mKey) || 0) + 1);
+  };
+  oldVisits.forEach((v) => bump(v.department, monthKey(v.visitDate)));
+  opdVisits.forEach((v) => bump(v.department, monthKey(v.createdAt)));
+  admissions.forEach((a) => bump('ADMISSION', monthKey(a.createdAt)));
+
+  const rows = departments.map((d) => {
+    const m = counts.get(norm(d.name)) || new Map();
+    const cells = {};
+    sortedMonths.forEach((mo) => { cells[mo] = m.get(mo) || 0; });
+    const rowTotal = Object.values(cells).reduce((s, v) => s + v, 0);
+    return { id: d.id, code: d.code, name: d.name, cells, rowTotal };
+  });
+
+  const columnTotals = {};
+  sortedMonths.forEach((mo) => { columnTotals[mo] = rows.reduce((s, r) => s + r.cells[mo], 0); });
+  const grandTotal = Object.values(columnTotals).reduce((s, v) => s + v, 0);
+
+  return { departments: rows, months: sortedMonths, columnTotals, grandTotal };
+}
+
+// ─── Cancel & Refund Slip History ─────────────────────────────────────────────
+// Self-designed (no legacy screenshot) — a straightforward audit trail over
+// the cancel/refund fields Cancel Slip and Slip Refund already write:
+//   Cancelled -> ClinicOpdVisit only (cancelReason/cancelledAt/cancelledBy;
+//     PatientVisit, the legacy bulk-imported table, has no cancel fields at
+//     all — cancellation is a new-system-only feature).
+//   Refunded -> both ClinicOpdVisit and PatientVisit (refundReason/
+//     refundedAt/refundedBy exist on both, mirroring searchVisitsForRefund's
+//     own two-source merge).
+// A visit can appear as BOTH a Cancelled row and a Refunded row (cancelling
+// a slip doesn't auto-refund it) — that's intentional, not a duplicate.
+// refund/refundReason/refundedAt are single fields, not a log, so a
+// multi-part refund only ever shows its latest reason/amount-to-date here.
+async function getCancelRefundHistory({ type = 'all', dateFrom, dateTo, search }) {
+  const fromDt = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
+  const toDt   = dateTo   ? new Date(`${dateTo}T23:59:59`)   : null;
+  const inRange = (d) => {
+    if (!d) return false;
+    const dt = new Date(d);
+    if (fromDt && dt < fromDt) return false;
+    if (toDt && dt > toDt) return false;
+    return true;
+  };
+  const term = (search || '').trim().toLowerCase();
+  const matches = (name, slip) => !term || (name || '').toLowerCase().includes(term) || String(slip || '').toLowerCase().includes(term);
+
+  const rows = [];
+
+  if (type === 'all' || type === 'cancelled') {
+    const cancelled = await prisma.clinicOpdVisit.findMany({
+      where: { status: 'cancelled' },
+      select: { id: true, serialNo: true, patientName: true, department: true, receive: true, cancelReason: true, cancelNote: true, cancelledAt: true, cancelledBy: true },
+    });
+    cancelled.forEach((v) => {
+      if (!inRange(v.cancelledAt)) return;
+      if (!matches(v.patientName, v.serialNo)) return;
+      rows.push({
+        source: 'opd', id: v.id, slipNo: v.serialNo, patientName: v.patientName, department: v.department,
+        type: 'Cancelled', amount: Number(v.receive) || 0,
+        reason: v.cancelReason || '', note: v.cancelNote || '',
+        doneBy: v.cancelledBy || '', doneAt: v.cancelledAt,
+      });
+    });
+  }
+
+  if (type === 'all' || type === 'refunded') {
+    const [opdRefunded, pvRefunded] = await Promise.all([
+      prisma.clinicOpdVisit.findMany({
+        where: { refundedAt: { not: null } },
+        select: { id: true, serialNo: true, patientName: true, department: true, refund: true, refundReason: true, refundNote: true, refundedAt: true, refundedBy: true },
+      }),
+      prisma.patientVisit.findMany({
+        where: { refundedAt: { not: null } },
+        select: { id: true, serialNo: true, patientName: true, department: true, refund: true, refundReason: true, refundNote: true, refundedAt: true, refundedBy: true },
+      }),
+    ]);
+    opdRefunded.forEach((v) => {
+      if (!inRange(v.refundedAt)) return;
+      if (!matches(v.patientName, v.serialNo)) return;
+      rows.push({
+        source: 'opd', id: v.id, slipNo: v.serialNo, patientName: v.patientName, department: v.department,
+        type: 'Refunded', amount: Number(v.refund) || 0,
+        reason: v.refundReason || '', note: v.refundNote || '',
+        doneBy: v.refundedBy || '', doneAt: v.refundedAt,
+      });
+    });
+    pvRefunded.forEach((v) => {
+      if (!inRange(v.refundedAt)) return;
+      if (!matches(v.patientName, v.serialNo)) return;
+      rows.push({
+        source: 'pv', id: v.id, slipNo: String(v.serialNo ?? ''), patientName: v.patientName, department: v.department,
+        type: 'Refunded', amount: Number(v.refund) || 0,
+        reason: v.refundReason || '', note: v.refundNote || '',
+        doneBy: v.refundedBy || '', doneAt: v.refundedAt,
+      });
+    });
+  }
+
+  rows.sort((a, b) => new Date(b.doneAt) - new Date(a.doneAt));
+
+  const summary = {
+    cancelledCount: 0, cancelledAmount: 0,
+    refundedCount: 0, refundedAmount: 0,
+  };
+  rows.forEach((r) => {
+    if (r.type === 'Cancelled') { summary.cancelledCount += 1; summary.cancelledAmount += r.amount; }
+    else { summary.refundedCount += 1; summary.refundedAmount += r.amount; }
+  });
+
+  return { rows, summary };
+}
+
+// ─── Doctor Schedule Report ────────────────────────────────────────────────────
+// Self-designed (no legacy screenshot) — the Doctors/Consultant parameter
+// screen already carries everything a schedule needs (per ClinicDoctorSubDept
+// pairing: department, sub-department, consultantDays, from/toTime, onCall),
+// this just filters and shapes that same data as a report. Only doctors with
+// >=1 sub-dept assignment show up — a doctor with none (e.g. a payee-type
+// placeholder like "Admission Deposit") has no schedule to report.
+async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly }) {
+  const doctorWhere = {};
+  if (doctorFromCode || doctorToCode) {
+    doctorWhere.code = {};
+    if (doctorFromCode) doctorWhere.code.gte = doctorFromCode;
+    if (doctorToCode) doctorWhere.code.lte = doctorToCode;
+  }
+  if (activeOnly) doctorWhere.status = 'active';
+
+  const doctors = await prisma.clinicDoctor.findMany({
+    where: doctorWhere,
+    include: {
+      staffCategory: { select: { name: true } },
+      subDepts: {
+        include: { subDept: { include: { department: { select: { code: true, name: true } } } } },
+        orderBy: { id: 'asc' },
+      },
+    },
+    orderBy: { code: 'asc' },
+  });
+
+  const deptInRange = (code) => {
+    if (!deptFromCode && !deptToCode) return true;
+    if (deptFromCode && code < deptFromCode) return false;
+    if (deptToCode && code > deptToCode) return false;
+    return true;
+  };
+
+  const result = doctors
+    .map((d) => {
+      const schedules = d.subDepts
+        .filter((sd) => deptInRange(sd.subDept?.department?.code || ''))
+        .map((sd) => ({
+          department: sd.subDept?.department?.name || 'Unspecified',
+          subDept: sd.subDept?.name || 'Unspecified',
+          days: sd.consultantDays || [],
+          fromTime: sd.fromTime || null,
+          toTime: sd.toTime || null,
+          onCall: sd.onCall,
+        }));
+      if (!schedules.length) return null;
+      return { code: d.code, name: d.name, speciality: d.speciality, staffCategory: d.staffCategory?.name || null, status: d.status, schedules };
+    })
+    .filter(Boolean);
+
+  return { doctors: result };
+}
+
 // ─── User (by Date) Summary ──────────────────────────────────────────────────
 // "User" here = the logged-in User Management account that created the visit
 // (createdByUserId/createdByName, tagged automatically since the Shift
@@ -8380,6 +9204,14 @@ module.exports = {
   receiveBalancePayment,
   getDepartmentDoctorPerformance,
   getAdmissionWiseReport,
+  getWardWiseBillReport,
+  getStatementOfSurgery,
+  getStatusWiseAdmission,
+  getAdmissionDistribution,
+  getWardWisePaymentDistribution,
+  getDepartmentMonthlyComparison,
+  getCancelRefundHistory,
+  getDoctorScheduleReport,
   getUserDateSummary,
   importPanelBillingDetail,
   getPanelBillingDetails,

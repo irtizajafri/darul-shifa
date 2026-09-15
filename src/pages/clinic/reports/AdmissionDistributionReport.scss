@@ -1,0 +1,97 @@
+.adr-report-page {
+  max-width: 900px;
+
+  &.adr-report-page--matrix {
+    max-width: 100%;
+  }
+}
+
+.adr-hdr {
+  margin-bottom: 10px;
+}
+.adr-hosp {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #1e293b;
+}
+.adr-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 2px 0 0;
+}
+
+.adr-table th, .adr-table td {
+  white-space: nowrap;
+}
+
+.adr-adm-header td {
+  font-weight: 700;
+  border-top: 1px solid #94a3b8;
+  padding-top: 6px;
+  background: #f8fafc;
+}
+.adr-item-row td {
+  padding-left: 26px;
+  color: #334155;
+  font-size: 0.73rem;
+}
+
+.adr-group-row td {
+  font-weight: 700;
+  background: #ece4c4;
+  border-top: 1px solid #b8ab7a;
+  padding-top: 5px;
+}
+.adr-group-footer td {
+  color: #475569;
+  font-size: 0.73rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.adr-matrix-scroll {
+  overflow-x: auto;
+}
+// Proper spreadsheet-style grid (every cell bordered) — matches the Income
+// Summary Matrix crosstab convention, not the shared .ddp-table look (dark
+// header, bottom-border-only rows) the other report styles here use.
+.adr-matrix-table {
+  min-width: max-content;
+  border: 1px solid #999;
+
+  th, td {
+    border: 1px solid #999;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  th {
+    background: #f2f2f2 !important;
+    color: #1e293b !important;
+    text-align: center;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  td.td-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .adr-matrix-total-col {
+    font-weight: 700;
+  }
+  .adr-matrix-total-row td {
+    font-weight: 800;
+    background: #f2f2f2;
+    border-top: 2px solid #000;
+  }
+}
+
+.adr-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  font-size: 0.72rem;
+  color: #64748b;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 6px;
+}

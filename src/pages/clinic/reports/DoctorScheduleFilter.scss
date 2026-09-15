@@ -1,0 +1,28 @@
+// Extends ConsultantWiseFilter.scss's shared .cwf-* window chrome.
+
+.dsf-window {
+  width: 640px;
+}
+
+.dsf-active-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dsf-fromto-labels {
+  display: flex;
+  padding-left: 100px;
+  gap: 8px;
+}
+.dsf-fromto-lbl {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1a6e1a;
+}
+
+.dsf-half {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}

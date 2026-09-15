@@ -1,0 +1,22 @@
+// Extends ConsultantWiseFilter.scss's shared .cwf-* window chrome.
+
+.adf-window {
+  width: 600px;
+}
+
+.adf-fromto-labels {
+  display: flex;
+  padding-left: 100px;
+  gap: 8px;
+}
+.adf-fromto-lbl {
+  flex: 1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #1a6e1a;
+}
+
+.adf-half {
+  flex: 1;
+  width: auto;
+}

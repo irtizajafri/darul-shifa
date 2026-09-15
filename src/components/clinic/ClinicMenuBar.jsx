@@ -8,29 +8,8 @@ import './ClinicMenuBar.scss';
 // perm: { sub, tab } — sub = subModule key, tab = optional tab key
 // Items with no perm are always visible (e.g. cross-module links)
 const menuItems = [
-  {
-    label: 'Report',
-    items: [
-      { label: 'Reprint',                          path: '/clinic/reports/reprint',                          perm: { sub: 'reports', tab: 'reprint' } },
-      { label: 'Departmental Performance',          path: '/clinic/reports/department-performance',           perm: { sub: 'reports', tab: 'departmental-performance' } },
-      { label: 'Doctor Departmental Performance',   path: '/clinic/reports/doctor-departmental-performance',  perm: { sub: 'reports', tab: 'doctor-departmental-performance' } },
-      { label: 'Admission Report',                  path: '/clinic/reports/admission-wise',                   perm: { sub: 'reports', tab: 'admission-wise' } },
-      { label: 'OT Register',                       path: '/clinic/reports/ot-register',                     perm: { sub: 'reports', tab: 'ot-register' } },
-      { label: 'Birth Certificate',                 path: '/clinic/reports/birth-certificate',               perm: { sub: 'reports', tab: 'birth-certificate' } },
-      { label: 'Appointment Register',              path: '/clinic/reports/appointment',                     perm: { sub: 'reports', tab: 'appointment' } },
-      { label: 'Department wise Patients',          path: '/clinic/reports/department-patients',             perm: { sub: 'reports', tab: 'department-patients' } },
-      { label: 'User by Date Summary',              path: '/clinic/reports/user-date-summary',               perm: { sub: 'reports', tab: 'user-date-summary' } },
-      { label: 'Patients List',                     path: '/clinic/reports/patients-list',                   perm: { sub: 'reports', tab: 'patients-list' } },
-      { label: 'Consultant Wise Patients',          path: '/clinic/reports/consultant-wise',                 perm: { sub: 'reports', tab: 'consultant-wise' } },
-      { label: 'Death Certificate Report',          path: '/clinic/reports/death-certificate',               perm: { sub: 'reports', tab: 'death-certificate' } },
-      { label: 'Discharge Certificate Report',      path: '/clinic/reports/discharge-certificate',           perm: { sub: 'reports', tab: 'discharge-certificate' } },
-      { label: 'Antenatal Report',                  path: '/clinic/reports/antenatal',                      perm: { sub: 'reports', tab: 'antenatal' } },
-      { label: 'Admission Status Change Report',    path: '/clinic/reports/admission-status-change',         perm: { sub: 'reports', tab: 'admission-status-change' } },
-      { label: 'Status Change History Report',      path: '/clinic/reports/status-change-history',           perm: { sub: 'reports', tab: 'status-change-history' } },
-      { label: 'Medicine List',                     path: '/clinic/reports/medicine-list',                   perm: { sub: 'reports', tab: 'medicine-list' } },
-    ],
-  },
-  { label: 'File', items: [] },
+  
+  // { label: 'File', items: [] },
   {
     label: 'Parameters',
     items: [
@@ -97,7 +76,7 @@ const menuItems = [
       {
         label: 'Transaction',
         subItems: [
-          { label: 'Provisional Bill', path: '/clinic/panels/provisional-bill', perm: { sub: 'panels', tab: 'provisional-bill' } },
+          // { label: 'Provisional Bill', path: '/clinic/panels/provisional-bill', perm: { sub: 'panels', tab: 'provisional-bill' } },
           { label: 'Billing',          path: '/clinic/panels/billing',          perm: { sub: 'panels', tab: 'billing' } },
         ],
       },
@@ -121,6 +100,36 @@ const menuItems = [
     items: [
       { label: 'Revenue Dashboard', path: '/clinic/inquiries/revenue-dashboard', perm: { sub: 'inquiries', tab: 'revenue-dashboard' } },
       { label: 'Patient Documents', path: '/clinic/inquiries/patient-documents', perm: { sub: 'inquiries', tab: 'patient-documents' } },
+    ],
+  },
+  {
+    label: 'Report',
+    items: [
+      { label: 'Reprint',                          path: '/clinic/reports/reprint',                          perm: { sub: 'reports', tab: 'reprint' } },
+      { label: 'Departmental Performance',          path: '/clinic/reports/department-performance',           perm: { sub: 'reports', tab: 'departmental-performance' } },
+      { label: 'Doctor Departmental Performance',   path: '/clinic/reports/doctor-departmental-performance',  perm: { sub: 'reports', tab: 'doctor-departmental-performance' } },
+      { label: 'Admission Report',                  path: '/clinic/reports/admission-wise',                   perm: { sub: 'reports', tab: 'admission-wise' } },
+      { label: 'OT Register',                       path: '/clinic/reports/ot-register',                     perm: { sub: 'reports', tab: 'ot-register' } },
+      { label: 'Birth Certificate',                 path: '/clinic/reports/birth-certificate',               perm: { sub: 'reports', tab: 'birth-certificate' } },
+      { label: 'Appointment Register',              path: '/clinic/reports/appointment',                     perm: { sub: 'reports', tab: 'appointment' } },
+      { label: 'Department wise Patients',          path: '/clinic/reports/department-patients',             perm: { sub: 'reports', tab: 'department-patients' } },
+      { label: 'User by Date Summary',              path: '/clinic/reports/user-date-summary',               perm: { sub: 'reports', tab: 'user-date-summary' } },
+      { label: 'Patients List',                     path: '/clinic/reports/patients-list',                   perm: { sub: 'reports', tab: 'patients-list' } },
+      { label: 'Consultant Wise Patients',          path: '/clinic/reports/consultant-wise',                 perm: { sub: 'reports', tab: 'consultant-wise' } },
+      { label: 'Death Certificate Report',          path: '/clinic/reports/death-certificate',               perm: { sub: 'reports', tab: 'death-certificate' } },
+      { label: 'Discharge Certificate Report',      path: '/clinic/reports/discharge-certificate',           perm: { sub: 'reports', tab: 'discharge-certificate' } },
+      { label: 'Antenatal Report',                  path: '/clinic/reports/antenatal',                      perm: { sub: 'reports', tab: 'antenatal' } },
+      { label: 'Admission Status Change Report',    path: '/clinic/reports/admission-status-change',         perm: { sub: 'reports', tab: 'admission-status-change' } },
+      { label: 'Status Change History Report',      path: '/clinic/reports/status-change-history',           perm: { sub: 'reports', tab: 'status-change-history' } },
+      { label: 'Medicine List',                     path: '/clinic/reports/medicine-list',                   perm: { sub: 'reports', tab: 'medicine-list' } },
+      { label: 'Ward Wise Bill Report',             path: '/clinic/reports/ward-wise-bill',                  perm: { sub: 'reports', tab: 'ward-wise-bill' } },
+      { label: 'Statement of Surgery',              path: '/clinic/reports/statement-of-surgery',            perm: { sub: 'reports', tab: 'statement-of-surgery' } },
+      { label: 'Status Wise Admission',             path: '/clinic/reports/status-wise-admission',           perm: { sub: 'reports', tab: 'status-wise-admission' } },
+      { label: 'Admission Distribution',            path: '/clinic/reports/admission-distribution',          perm: { sub: 'reports', tab: 'admission-distribution' } },
+      { label: 'Ward Wise Payment Distribution',    path: '/clinic/reports/ward-wise-payment-distribution',  perm: { sub: 'reports', tab: 'ward-wise-payment-distribution' } },
+      { label: 'Department wise Monthly Comparison', path: '/clinic/reports/department-monthly-comparison',  perm: { sub: 'reports', tab: 'department-monthly-comparison' } },
+      { label: 'Cancel & Refund Slip History',      path: '/clinic/reports/cancel-refund-history',           perm: { sub: 'reports', tab: 'cancel-refund-history' } },
+      { label: 'Doctor Schedule Report',            path: '/clinic/reports/doctor-schedule',                 perm: { sub: 'reports', tab: 'doctor-schedule' } },
     ],
   },
   {

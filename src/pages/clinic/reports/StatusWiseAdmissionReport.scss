@@ -1,0 +1,29 @@
+// Extends the shared .ddp-* report shell with the group header/subtotal rows
+// this report needs in "Group wise" mode (grouped by consultant).
+
+.swa-report-page {
+  max-width: 1200px;
+}
+
+.swa-table th, .swa-table td {
+  white-space: nowrap;
+}
+
+.swa-group-row td {
+  font-weight: 700;
+  background: #eef2f8;
+  border-top: 1px solid #94a3b8;
+  padding-top: 6px;
+}
+
+.swa-group-total-row td {
+  font-weight: 700;
+  border-top: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.swa-grand-row td {
+  font-weight: 800;
+  border-top: 2px solid #000;
+  padding-top: 6px;
+}

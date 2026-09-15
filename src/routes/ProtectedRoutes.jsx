@@ -113,6 +113,22 @@ import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
 import AdmissionStatusChangeReport from '../pages/clinic/reports/AdmissionStatusChangeReport';
 import MedicineListReport from '../pages/clinic/reports/MedicineListReport';
 import AdmissionStatusChangeHistoryReport from '../pages/clinic/reports/AdmissionStatusChangeHistoryReport';
+import WardWiseBillFilter from '../pages/clinic/reports/WardWiseBillFilter';
+import WardWiseBillReport from '../pages/clinic/reports/WardWiseBillReport';
+import StatementOfSurgeryFilter from '../pages/clinic/reports/StatementOfSurgeryFilter';
+import StatementOfSurgeryReport from '../pages/clinic/reports/StatementOfSurgeryReport';
+import StatusWiseAdmissionFilter from '../pages/clinic/reports/StatusWiseAdmissionFilter';
+import StatusWiseAdmissionReport from '../pages/clinic/reports/StatusWiseAdmissionReport';
+import AdmissionDistributionFilter from '../pages/clinic/reports/AdmissionDistributionFilter';
+import AdmissionDistributionReport from '../pages/clinic/reports/AdmissionDistributionReport';
+import WardWisePaymentDistributionFilter from '../pages/clinic/reports/WardWisePaymentDistributionFilter';
+import WardWisePaymentDistributionReport from '../pages/clinic/reports/WardWisePaymentDistributionReport';
+import DepartmentMonthlyComparisonFilter from '../pages/clinic/reports/DepartmentMonthlyComparisonFilter';
+import DepartmentMonthlyComparisonReport from '../pages/clinic/reports/DepartmentMonthlyComparisonReport';
+import CancelRefundHistoryFilter from '../pages/clinic/reports/CancelRefundHistoryFilter';
+import CancelRefundHistoryReport from '../pages/clinic/reports/CancelRefundHistoryReport';
+import DoctorScheduleFilter from '../pages/clinic/reports/DoctorScheduleFilter';
+import DoctorScheduleReport from '../pages/clinic/reports/DoctorScheduleReport';
 import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
 import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTypePage';
@@ -314,6 +330,22 @@ export default function ProtectedRoutes() {
       <Route path="clinic/reports/admission-status-change"        element={<PermissionGuard module="clinic" subModule="reports" tab="admission-status-change"><AdmissionStatusChangeReport /></PermissionGuard>} />
       <Route path="clinic/reports/status-change-history"          element={<PermissionGuard module="clinic" subModule="reports" tab="status-change-history"><AdmissionStatusChangeHistoryReport /></PermissionGuard>} />
       <Route path="clinic/reports/medicine-list"                  element={<PermissionGuard module="clinic" subModule="reports" tab="medicine-list"><MedicineListReport /></PermissionGuard>} />
+      <Route path="clinic/reports/ward-wise-bill"                 element={<PermissionGuard module="clinic" subModule="reports" tab="ward-wise-bill"><WardWiseBillFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/ward-wise-bill/view"            element={<PermissionGuard module="clinic" subModule="reports"><WardWiseBillReport /></PermissionGuard>} />
+      <Route path="clinic/reports/statement-of-surgery"           element={<PermissionGuard module="clinic" subModule="reports" tab="statement-of-surgery"><StatementOfSurgeryFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/statement-of-surgery/view"      element={<PermissionGuard module="clinic" subModule="reports"><StatementOfSurgeryReport /></PermissionGuard>} />
+      <Route path="clinic/reports/status-wise-admission"          element={<PermissionGuard module="clinic" subModule="reports" tab="status-wise-admission"><StatusWiseAdmissionFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/status-wise-admission/view"     element={<PermissionGuard module="clinic" subModule="reports"><StatusWiseAdmissionReport /></PermissionGuard>} />
+      <Route path="clinic/reports/admission-distribution"         element={<PermissionGuard module="clinic" subModule="reports" tab="admission-distribution"><AdmissionDistributionFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/admission-distribution/view"    element={<PermissionGuard module="clinic" subModule="reports"><AdmissionDistributionReport /></PermissionGuard>} />
+      <Route path="clinic/reports/ward-wise-payment-distribution" element={<PermissionGuard module="clinic" subModule="reports" tab="ward-wise-payment-distribution"><WardWisePaymentDistributionFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/ward-wise-payment-distribution/view" element={<PermissionGuard module="clinic" subModule="reports"><WardWisePaymentDistributionReport /></PermissionGuard>} />
+      <Route path="clinic/reports/department-monthly-comparison"  element={<PermissionGuard module="clinic" subModule="reports" tab="department-monthly-comparison"><DepartmentMonthlyComparisonFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/department-monthly-comparison/view" element={<PermissionGuard module="clinic" subModule="reports"><DepartmentMonthlyComparisonReport /></PermissionGuard>} />
+      <Route path="clinic/reports/cancel-refund-history"          element={<PermissionGuard module="clinic" subModule="reports" tab="cancel-refund-history"><CancelRefundHistoryFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/cancel-refund-history/view"     element={<PermissionGuard module="clinic" subModule="reports"><CancelRefundHistoryReport /></PermissionGuard>} />
+      <Route path="clinic/reports/doctor-schedule"                 element={<PermissionGuard module="clinic" subModule="reports" tab="doctor-schedule"><DoctorScheduleFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/doctor-schedule/view"            element={<PermissionGuard module="clinic" subModule="reports"><DoctorScheduleReport /></PermissionGuard>} />
 
       {/* ── Clinic Inquiries ── */}
       <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic" subModule="inquiries" tab="revenue-dashboard"><RevenueDashboard /></PermissionGuard>} />

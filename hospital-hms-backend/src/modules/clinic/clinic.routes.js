@@ -341,6 +341,14 @@ router.get('/inquiries/daily-department-statement', controller.getDailyDepartmen
 // Reports
 router.get('/reports/department-doctor-performance', controller.getDepartmentDoctorPerformance);
 router.get('/reports/admission-wise', controller.getAdmissionWiseReport);
+router.get('/reports/ward-wise-bill', controller.getWardWiseBillReport);
+router.get('/reports/statement-of-surgery', controller.getStatementOfSurgery);
+router.get('/reports/status-wise-admission', controller.getStatusWiseAdmission);
+router.get('/reports/admission-distribution', controller.getAdmissionDistribution);
+router.get('/reports/ward-wise-payment-distribution', controller.getWardWisePaymentDistribution);
+router.get('/reports/department-monthly-comparison', controller.getDepartmentMonthlyComparison);
+router.get('/reports/cancel-refund-history', controller.getCancelRefundHistory);
+router.get('/reports/doctor-schedule', controller.getDoctorScheduleReport);
 router.get('/reports/ot-register', controller.getOtRegisterReport);
 router.post('/reports/ot-register/import', controller.importOtRegister);
 router.get('/reports/user-date-summary', controller.getUserDateSummary);
