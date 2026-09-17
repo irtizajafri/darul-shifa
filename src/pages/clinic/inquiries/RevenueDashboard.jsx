@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -48,7 +49,7 @@ const fmtStmtDate = (dateStr) => {
 // ── Daily Department Statement Modal (double-click a calendar day) ────────────
 // Same underlying data as the "Department wise Patients" report — just this
 // one day, grouped by department, so the numbers reconcile with the cell.
-function DailyStatementModal({ date, onClose }) {
+function DailyStatementModal({ date, onClose, onDeptClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -85,7 +86,12 @@ function DailyStatementModal({ date, onClose }) {
               </thead>
               <tbody>
                 {data.rows.map(r => (
-                  <tr key={r.department}>
+                  <tr
+                    key={r.department}
+                    className="rd-stmt-dept-row"
+                    onClick={() => onDeptClick(r.department)}
+                    title={`Open ${r.department} patients for ${fmtStmtDate(date)}`}
+                  >
                     <td>{r.department.toUpperCase()}</td>
                     <td className="td-num">{fmtN(r.count)}</td>
                     <td className="td-num">{fmtA(r.amount)}</td>
@@ -119,6 +125,7 @@ function DailyStatementModal({ date, onClose }) {
 
 export default function RevenueDashboard() {
   const now = new Date();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
 
   const [period,     setPeriod]     = useState('monthly_daily');
@@ -162,6 +169,28 @@ export default function RevenueDashboard() {
       setLoading(false);
     }
   }, [period, year, month, dept, subDept, consultant, payType]);
+
+  // Daily Statement modal row click -> jump straight into the full
+  // Department wise Patients report, pre-filtered to that exact department
+  // and that single business day, instead of leaving the user to re-enter
+  // the same filters manually on the report's own filter screen.
+  //
+  // toDate must be the NEXT calendar day, not the same day: the business
+  // day runs 08:00 that day -> 07:59 the next, so fromDate===toDate would
+  // build an inverted (empty) window (e.g. "08:00" to the SAME day's
+  // "07:59", which is before it) and silently return zero rows.
+  const openDeptReport = (date, deptName) => {
+    const next = new Date(`${date}T00:00:00`);
+    next.setDate(next.getDate() + 1);
+    const nextDateStr = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
+    const q = new URLSearchParams({
+      fromDate: date, toDate: nextDateStr,
+      fromDept: deptName, toDept: deptName,
+      fromTime: '08:00', toTime: '07:59',
+      reportType: 'detail',
+    });
+    navigate(`/clinic/reports/department-patients/view?${q}`);
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -535,7 +564,11 @@ export default function RevenueDashboard() {
       </div>
 
       {statementDate && (
-        <DailyStatementModal date={statementDate} onClose={() => setStatementDate(null)} />
+        <DailyStatementModal
+          date={statementDate}
+          onClose={() => setStatementDate(null)}
+          onDeptClick={(deptName) => openDeptReport(statementDate, deptName)}
+        />
       )}
     </div>
   );

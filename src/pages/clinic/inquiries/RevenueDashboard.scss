@@ -536,6 +536,11 @@ $ora:   #e65100;
 
   tbody tr:nth-child(even) { background: #f9f9f9; }
 
+  .rd-stmt-dept-row {
+    cursor: pointer;
+    &:hover td { background: #dce6f7; }
+  }
+
   .rd-stmt-total-row td {
     font-weight: 700;
     color: $blue;
