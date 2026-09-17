@@ -7241,12 +7241,19 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   const ovWhere = ovConds.length > 0 ? ovConds.join(' AND ') : 'TRUE';
 
   // ── ClinicAdmission WHERE ─────────────────────────────────────────────────
-  // Advance payment taken at admission is real revenue but previously wasn't
-  // included here at all. Admission rows have no real department/sub-dept —
-  // they're always treated as the "Admission" department; paymentType maps
-  // onto patientCategory (private=Cash, cc=C Card, etc.).
+  // Advance payment taken at admission is real revenue — but for any
+  // admission that was migrated from the legacy system, that same money is
+  // *already* sitting in PatientVisit as a department='ADMISSION' row (the
+  // legacy import synced it there). Counting it again here double-counts —
+  // confirmed on 2-Jul-2026: 44 of 47 same-day admissions had a matching
+  // PatientVisit ADMISSION row for the exact same amount. Only admissions
+  // with NO such PatientVisit row (created directly in the new system, never
+  // migrated) genuinely need this table as their revenue source.
+  // Admission rows have no real department/sub-dept — they're always treated
+  // as the "Admission" department; paymentType maps onto patientCategory
+  // (private=Cash, cc=C Card, etc.).
   const ADM_PAYTYPE_MAP = { cash: 'private', staff: 'staff', panel: 'panel', complementary: 'complementary', 'c card': 'cc' };
-  const admConds  = [];
+  const admConds  = [`NOT EXISTS (SELECT 1 FROM "PatientVisit" pv WHERE pv."admitNo"::text = "ClinicAdmission"."admissionNo" AND pv.department ILIKE 'admission')`];
   const admParams = [];
   if (department && department !== 'ALL') { admParams.push(department);           admConds.push(`'Admission' ILIKE $${admParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { admConds.push('FALSE'); } // admission has no sub-department
@@ -7256,13 +7263,16 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     if (mapped) { admParams.push(mapped); admConds.push(`"patientCategory" = $${admParams.length}`); }
     else { admConds.push('FALSE'); }
   }
-  const admWhere = admConds.length > 0 ? admConds.join(' AND ') : 'TRUE';
+  const admWhere = admConds.join(' AND ');
 
   // ── ClinicAdmissionPayment WHERE (Receiving against Admission) ───────────
   // Later top-up payments count as revenue on the day they're actually
   // RECEIVED (not the original admission day) — but don't count as an extra
-  // "patient" since it's the same admission, not a new one.
-  const admPayConds  = [];
+  // "patient" since it's the same admission, not a new one. Same
+  // double-count guard as above: skip payments for admissions that already
+  // have a PatientVisit ADMISSION row (that later payment is one of
+  // PatientVisit's own rows for the same admitNo too, per the 2-Jul check).
+  const admPayConds  = [`NOT EXISTS (SELECT 1 FROM "ClinicAdmission" a2 JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission' WHERE a2.id = "ClinicAdmissionPayment"."admissionId")`];
   const admPayParams = [];
   if (department && department !== 'ALL') { admPayParams.push(department); admPayConds.push(`'Admission' ILIKE $${admPayParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { admPayConds.push('FALSE'); }
@@ -7273,7 +7283,7 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     if (mapped) { admPayParams.push(mapped); admPayConds.push(`"paymentType" = $${admPayParams.length}`); }
     else { admPayConds.push('FALSE'); }
   }
-  const admPayWhere = admPayConds.length > 0 ? admPayConds.join(' AND ') : 'TRUE';
+  const admPayWhere = admPayConds.join(' AND ');
 
   // ── Business day (hospital day) ───────────────────────────────────────────
   // Hospital ka din subah 8:00 AM se shuru ho kar agle din 7:59:59 AM tak chalta hai,
@@ -7626,6 +7636,16 @@ async function getDailyDepartmentStatement(date) {
   // Cancelled ClinicOpdVisit rows: patient + cancel count still increment, amount/discount don't.
   const OV_CANCELLED = `LOWER(COALESCE(status,'')) IN ('canceled','cancelled')`;
 
+  // Same double-count guard as getRevenueDashboard: a legacy-migrated
+  // admission's advance/top-up payments are already sitting in PatientVisit
+  // as department='ADMISSION' rows (both the count AND the amount) —
+  // confirmed on 2-Jul-2026 (44 of 47 same-day admissions had a matching
+  // PatientVisit row for the exact same amount). Skip both COUNT and SUM for
+  // any admission that already has one, so this modal doesn't count the same
+  // patient/amount twice.
+  const ADM_NOT_MIGRATED = `NOT EXISTS (SELECT 1 FROM "PatientVisit" pv WHERE pv."admitNo"::text = "ClinicAdmission"."admissionNo" AND pv.department ILIKE 'admission')`;
+  const ADM_PAY_NOT_MIGRATED = `NOT EXISTS (SELECT 1 FROM "ClinicAdmission" a2 JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission' WHERE a2.id = "ClinicAdmissionPayment"."admissionId")`;
+
   const [pvRows, ovRows, admRow, admPayRow, antRow] = await Promise.all([
     prisma.$queryRawUnsafe(`
       SELECT department,
@@ -7653,12 +7673,12 @@ async function getDailyDepartmentStatement(date) {
         COALESCE(SUM("advancePayment"),0) AS amount,
         COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancel
       FROM "ClinicAdmission"
-      WHERE ${ADM_BIZ} = $1::date
+      WHERE ${ADM_BIZ} = $1::date AND ${ADM_NOT_MIGRATED}
     `, date),
     prisma.$queryRawUnsafe(`
       SELECT COALESCE(SUM(amount),0) AS amount
       FROM "ClinicAdmissionPayment"
-      WHERE ${ADM_PAY_BIZ} = $1::date
+      WHERE ${ADM_PAY_BIZ} = $1::date AND ${ADM_PAY_NOT_MIGRATED}
     `, date),
     prisma.$queryRawUnsafe(`
       SELECT
