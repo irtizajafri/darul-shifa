@@ -407,7 +407,7 @@ export default function GoodsIssue() {
     if (ginUnitOptions[gdItem.id]) return;
     setGinUnitLoading(true);
     try {
-      const rows = await fetchAssetInstances({ itemId: gdItem.itemId, condition: 'working' });
+      const rows = await fetchAssetInstances({ itemId: gdItem.itemId, condition: 'working', availableOnly: true });
       setGinUnitOptions((prev) => ({ ...prev, [gdItem.id]: Array.isArray(rows) ? rows : [] }));
     } catch {
       setGinUnitOptions((prev) => ({ ...prev, [gdItem.id]: [] }));

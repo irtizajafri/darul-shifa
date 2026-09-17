@@ -1079,12 +1079,21 @@ async function updateGIN(id, payload) {
   });
 }
 
-async function listAssetInstances({ itemId, condition } = {}) {
+async function listAssetInstances({ itemId, condition, availableOnly } = {}) {
   const parsedItemId = parsePositiveNumber(itemId);
+  // availableOnly is opt-in — Asset Shifting and Maintenance call this same
+  // endpoint to find already-issued/deployed units (that's the whole point
+  // of those two screens), so this can't default to filtering ginItemId.
+  // Only the GIN unit picker (GoodsIssue.jsx) passes availableOnly=true,
+  // since a unit already tied to a GIN must disappear from future GINs —
+  // matches the ginItemId:null "available/untouched" convention already
+  // used by the opening-stock-decrease safety check elsewhere in this file.
+  const wantsAvailableOnly = String(availableOnly).toLowerCase() === 'true';
   return prisma.assetInstance.findMany({
     where: {
       ...(parsedItemId ? { itemId: parsedItemId } : {}),
       ...(condition ? { condition: String(condition) } : {}),
+      ...(wantsAvailableOnly ? { ginItemId: null } : {}),
     },
     include: { item: { select: { name: true, code: true } } },
     orderBy: { assetTag: 'asc' },
@@ -1601,6 +1610,10 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
         for (const inst of pickedInstances) {
           if (inst.itemId !== gdItem.itemId) throw new Error(`Asset unit ${inst.assetTag} does not belong to this item`);
           if (inst.condition !== 'working') throw new Error(`Asset unit ${inst.assetTag} is not available (currently "${inst.condition}")`);
+          // Safety net independent of the picker's own filtering (which can
+          // be bypassed by calling this endpoint directly) — a unit already
+          // tied to a prior GIN must not be silently re-issued/overwritten.
+          if (inst.ginItemId) throw new Error(`Asset unit ${inst.assetTag} is already issued on another GIN`);
         }
         await tx.assetInstance.updateMany({
           where: { id: { in: pickedInstanceIds } },
