@@ -2,6 +2,8 @@ require('dotenv').config();
 const app = require('./src/app');
 const prisma = require('./src/config/db');
 const { scheduleDayClose } = require('./src/jobs/dayClose.job');
+const { scheduleWhatsAppPunchNotifier } = require('./src/jobs/whatsappPunchNotifier.job');
+const { initWhatsApp } = require('./src/services/whatsapp.service');
 
 async function backfillOpeningStockMovements() {
   // First delete wrong backfill records that used currentStock directly
@@ -79,4 +81,6 @@ app.listen(PORT, async () => {
   await backfillOpeningStockMovements().catch((err) => console.error('Backfill error:', err));
   await ensureLeaveEncashmentEmployee();
   scheduleDayClose();
+  initWhatsApp();
+  scheduleWhatsAppPunchNotifier();
 });

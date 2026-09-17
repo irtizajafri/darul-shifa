@@ -781,6 +781,10 @@ module.exports = {
   testRawPunches,
   syncAttendance,
   syncPunches,
+  // Exported (route-handler-free) so the WhatsApp Punch Notifier job can pull
+  // fresh punches on its own timer, the same way syncPunches' route handler
+  // already calls it — see src/jobs/whatsappPunchNotifier.job.js.
+  syncPunchesToDB,
   listOverrides,
   upsertOverride,
   bulkUpsertOverrides,

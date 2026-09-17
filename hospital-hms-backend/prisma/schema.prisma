@@ -120,11 +120,15 @@ model EmployeeDependent {
 // Cloud API se aye raw timestamps yahan store hote hain.
 // testPairing pehle yahan se padhta hai — cloud se nahi.
 model PunchLog {
-  id          Int      @id @default(autoincrement())
-  empCode     String
-  punchTime   DateTime // PKT mein store hoga (UTC+5 converted)
-  punchDate   String   // "YYYY-MM-DD" — fast filtering ke liye
-  createdAt   DateTime @default(now())
+  id                 Int       @id @default(autoincrement())
+  empCode            String
+  punchTime          DateTime // PKT mein store hoga (UTC+5 converted)
+  punchDate          String   // "YYYY-MM-DD" — fast filtering ke liye
+  createdAt          DateTime  @default(now())
+  // Set once the WhatsApp Punch Notifier job has alerted the dedicated
+  // number for this punch — null means "not yet alerted", the job's own
+  // idempotency marker.
+  whatsappNotifiedAt DateTime?
 
   @@unique([empCode, punchTime]) // duplicate sync se bacho
   @@index([empCode, punchDate])  // fast query

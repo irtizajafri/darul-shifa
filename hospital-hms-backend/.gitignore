@@ -7,3 +7,7 @@ node_modules
 # Uploaded patient documents (files live on this server's disk, not in git)
 /uploads/*
 !/uploads/.gitkeep
+
+# WhatsApp Punch Notifier's linked-session state — effectively a login
+# credential, never commit it.
+/.wwebjs_auth
