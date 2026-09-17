@@ -6846,16 +6846,34 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   }
 
   // Also fetch from ClinicOpdVisit (new General OPD)
+  //
+  // IMPORTANT: createdAt is a Postgres "timestamp without time zone" column
+  // holding naive PKT wall-clock values (no tz info stored). Prisma converts
+  // a JS Date passed into `where: { createdAt: { gte/lte } }` to its UTC
+  // instant before sending it — which then gets compared directly against
+  // those naive PKT values with NO offset correction, silently shifting the
+  // window by the server's UTC offset (5h in PKT). Confirmed live: filtering
+  // for "2026-07-02 08:00" -> "2026-07-03 07:59" this way wrongly pulled in
+  // rows stored as "2026-07-02 07:44" (which belong to the PREVIOUS business
+  // day). This also means results depend on the Node process's OS timezone —
+  // works out fine on a machine already set to Asia/Karachi, breaks
+  // differently wherever the server's default timezone is something else.
+  // Fix: fetch a generously-buffered candidate set via Prisma (safe even
+  // with the skew, since 1 full day >> the few hours of possible drift),
+  // then narrow to the exact window with a raw SQL comparison against plain
+  // date/time strings — that goes straight to Postgres as literal text, so
+  // it's compared as the same naive value with no JS-Date/UTC conversion
+  // involved at all.
   const opdWhere = {};
   if (fromDate && toDate) {
-    const from = new Date(`${fromDate}T${fromT}`);
-    const to   = new Date(`${toDate}T${toT}`);
-    opdWhere.createdAt = { gte: from, lte: to };
+    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
+    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
+    opdWhere.createdAt = { gte: bufFrom, lte: bufTo };
   }
   if (typeVariants) {
     opdWhere.paymentType = { in: typeVariants };
   }
-  const opdVisits = await prisma.clinicOpdVisit.findMany({
+  let opdVisits = await prisma.clinicOpdVisit.findMany({
     where: opdWhere,
     include: {
       doctors: {
@@ -6867,6 +6885,13 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     },
     orderBy: { createdAt: 'asc' },
   });
+  if (fromDate && toDate) {
+    const preciseOpdIds = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "ClinicOpdVisit" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
+    const idSet = new Set(preciseOpdIds.map((r) => r.id));
+    opdVisits = opdVisits.filter((v) => idSet.has(v.id));
+  }
 
   const toHHMM = (dt) => {
     const d = new Date(dt);
@@ -6875,6 +6900,11 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
 
   const mapped = opdVisits.map((v) => {
     const firstDoc = v.doctors[0];
+    // A cancelled booking never actually earned any money — same treatment
+    // as getRevenueDashboard/getDailyDepartmentStatement (OV_CANCELLED):
+    // patient still shows in the list, but received/discount/balance read 0
+    // instead of whatever the visit's original figures were.
+    const isCancelled = ['canceled', 'cancelled'].includes(String(v.status || '').toLowerCase());
     return {
       id:            `opd_${v.id}`,
       serialNo:      v.serialNo,
@@ -6886,22 +6916,23 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       subDepartment: firstDoc?.subDept?.name || null,
       doctor:        firstDoc?.doctor?.name  || null,
       paymentType:   v.paymentType,
-      received:      v.receive,
-      balance:       v.totalAmount - v.receive,
-      discount:      v.discount,
+      received:      isCancelled ? 0 : v.receive,
+      balance:       isCancelled ? 0 : (v.totalAmount - v.receive),
+      discount:      isCancelled ? 0 : v.discount,
+      cancelled:     isCancelled,
       shiftName:     v.shiftName || null,
       createdByName: v.createdByName || null,
       _source:       'opd',
     };
   });
 
-  // Also fetch from ClinicAdmission
+  // Also fetch from ClinicAdmission — same naive-timestamp skew as
+  // ClinicOpdVisit above, same buffer-then-raw-SQL-narrow fix.
   const admWhere = {};
   if (fromDate && toDate) {
-    admWhere.createdAt = {
-      gte: new Date(`${fromDate}T${fromT}`),
-      lte: new Date(`${toDate}T${toT}`),
-    };
+    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
+    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
+    admWhere.createdAt = { gte: bufFrom, lte: bufTo };
   }
   if (typeVariants) {
     // Map filter types to admission patientCategory values
@@ -6917,23 +6948,32 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   }
   // Admissions generated from a legacy "Admission Deposit" visit (see
   // generateAdmissionsFromVisits) are already represented by that PatientVisit
-  // row above — skip them here so the same event doesn't show twice.
+  // row above — skip them here so the same event doesn't show twice. Exact
+  // department match (not "contains"), same guard as getRevenueDashboard /
+  // getDailyDepartmentStatement's `pv.department ILIKE 'admission'` — a loose
+  // "contains" also matched unrelated subDepartment text and could wrongly
+  // exclude a real new admission.
   const legacyAdmissionVisits = await prisma.patientVisit.findMany({
     where: {
       admitNo: { not: null },
-      OR: [
-        { department:    { contains: 'admission', mode: 'insensitive' } },
-        { subDepartment: { contains: 'admission', mode: 'insensitive' } },
-      ],
+      department: { equals: 'admission', mode: 'insensitive' },
     },
     select: { admitNo: true },
   });
   const legacyAdmitNoSet = new Set(legacyAdmissionVisits.map((v) => String(v.admitNo)));
 
-  const admissions = (await prisma.clinicAdmission.findMany({
+  let admissions = await prisma.clinicAdmission.findMany({
     where: admWhere,
     orderBy: { createdAt: 'asc' },
-  })).filter((a) => !legacyAdmitNoSet.has(String(a.admissionNo)));
+  });
+  if (fromDate && toDate) {
+    const preciseAdmIds = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "ClinicAdmission" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
+    const idSet = new Set(preciseAdmIds.map((r) => r.id));
+    admissions = admissions.filter((a) => idSet.has(a.id));
+  }
+  admissions = admissions.filter((a) => !legacyAdmitNoSet.has(String(a.admissionNo)));
 
   // Fetch consultant names for admissions
   const consultantIds = [...new Set(admissions.map(a => a.consultantId).filter(Boolean))];
@@ -6968,10 +7008,9 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // screen never showed up anywhere in the Patients List.
   const admPayWhere = {};
   if (fromDate && toDate) {
-    admPayWhere.receivedAt = {
-      gte: new Date(`${fromDate}T${fromT}`),
-      lte: new Date(`${toDate}T${toT}`),
-    };
+    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
+    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
+    admPayWhere.receivedAt = { gte: bufFrom, lte: bufTo };
   }
   if (typeVariants) {
     const wantsCash = typeVariants.some(t => t.toLowerCase() === 'cash');
@@ -6979,11 +7018,23 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     const allowed = [...(wantsCash ? ['cash'] : []), ...(wantsCc ? ['cc'] : [])];
     admPayWhere.paymentType = { in: allowed.length ? allowed : ['__none__'] };
   }
-  const admPayments = await prisma.clinicAdmissionPayment.findMany({
+  let admPaymentsRaw = await prisma.clinicAdmissionPayment.findMany({
     where: admPayWhere,
     include: { admission: { select: { admissionNo: true, patientTitle: true, patientName: true } } },
     orderBy: { receivedAt: 'asc' },
   });
+  if (fromDate && toDate) {
+    const preciseAdmPayIds = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "ClinicAdmissionPayment" WHERE "receivedAt" BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
+    const idSet = new Set(preciseAdmPayIds.map((r) => r.id));
+    admPaymentsRaw = admPaymentsRaw.filter((p) => idSet.has(p.id));
+  }
+  // Same legacy-migrated guard as above (ADM_PAY_NOT_MIGRATED in
+  // getRevenueDashboard/getDailyDepartmentStatement) — a top-up payment
+  // against an admission that's already represented in PatientVisit would
+  // otherwise double-count that admission's money a second time here.
+  const admPayments = admPaymentsRaw.filter((p) => !legacyAdmitNoSet.has(String(p.admission?.admissionNo)));
 
   const mappedAdmPay = admPayments.map((p) => ({
     id:            `admpay_${p.id}`,
@@ -7002,10 +7053,51 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     _source:       'admission-payment',
   }));
 
+  // Also fetch ClinicAntenatal — the 5th revenue source getRevenueDashboard/
+  // getDailyDepartmentStatement include (ANT_BIZ) that this list was missing,
+  // so a period's patient list/department breakdown reconciles with the
+  // dashboard's own total for the same dates.
+  const antWhere = {};
+  if (fromDate && toDate) {
+    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
+    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
+    antWhere.createdAt = { gte: bufFrom, lte: bufTo };
+  }
+  if (typeVariants) {
+    antWhere.paymentType = { in: typeVariants };
+  }
+  let antenatalVisits = await prisma.clinicAntenatal.findMany({
+    where: antWhere,
+    orderBy: { createdAt: 'asc' },
+  });
+  if (fromDate && toDate) {
+    const preciseAntIds = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "ClinicAntenatal" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
+    const idSet = new Set(preciseAntIds.map((r) => r.id));
+    antenatalVisits = antenatalVisits.filter((v) => idSet.has(v.id));
+  }
+  const mappedAnt = antenatalVisits.map((v) => ({
+    id:            `ant_${v.id}`,
+    serialNo:      v.serialNo,
+    admitNo:       null,
+    visitDate:     v.createdAt,
+    visitTime:     toHHMM(v.createdAt),
+    patientName:   v.patientName,
+    department:    'Antenatal',
+    subDepartment: null,
+    doctor:        null,
+    paymentType:   v.paymentType,
+    received:      Number(v.amount) || 0,
+    balance:       0,
+    discount:      0,
+    _source:       'antenatal',
+  }));
+
   // Merge all sources and sort chronologically (date + time) instead of
   // stacking them as separate blocks — otherwise the list reads as "source-wise"
   // even when each block is individually date-sorted.
-  const merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay];
+  const merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay, ...mappedAnt];
   const sortMs = (v) => {
     const d = new Date(v.visitDate);
     const [h, m] = String(v.visitTime || '00:00').split(':').map((n) => Number(n) || 0);

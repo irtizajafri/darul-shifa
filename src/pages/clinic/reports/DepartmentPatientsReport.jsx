@@ -11,29 +11,35 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 const DEPT_CODE = {
-  'General OPD': 'GOPD', 'Consultant OPD': 'COPD', 'Emergency': 'EMR',
+  'General OPD': 'GOPD', 'Consultant OPD': 'COPD', 'EMR & Chest Pain Clinic': 'EMR',
   'Laboratory': 'LAB', 'Miscellaneous': 'MISC',
-  'Ultra Sound, Echo & Color Doppler': 'US', 'Radiology': 'XRAY',
+  'Ultrasound': 'US', 'X-Ray & C.T. Scan/M.R.I': 'XRAY',
   'Dental OPD': 'DENTAL', 'Therapy': 'THERAPY', 'Blood Bank': 'BB',
-  'Ambulance': 'AMB', 'Admission': 'ADMIT',
+  'Ambulance': 'AMB', 'Admission': 'ADMIT', 'Antenatal': 'ANTE',
 };
 
+// Kept identical to canonicalRevenueDept() in the backend's
+// getRevenueDashboard/getDailyDepartmentStatement (clinic.service.js) — this
+// report and the Revenue Dashboard must show the same department label for
+// the same raw data, otherwise the two never visually reconcile even when
+// the underlying totals actually match.
 function canonicalDept(raw) {
   const u = (raw || '').trim().toUpperCase();
   if (!u) return 'Unknown';
-  if (u.includes('EMERGENCY')) return 'Emergency';
+  if (u.includes('EMERGENCY') || u.includes('CHEST PAIN')) return 'EMR & Chest Pain Clinic';
   if (u.includes('CONSULTANT')) return 'Consultant OPD';
   if (u.includes('GENERAL OPD')) return 'General OPD';
   if (u.includes('LAB')) return 'Laboratory';
-  if (u.includes('ULTRA') || u === 'US') return 'Ultra Sound, Echo & Color Doppler';
-  if (u.includes('X-RAY') || u.includes('XRAY') || u.includes('RADIOLOGY')) return 'Radiology';
+  if (u.includes('ULTRA') || u === 'US') return 'Ultrasound';
+  if (u.includes('X-RAY') || u.includes('XRAY') || u.includes('RADIOLOGY') || u.includes('C.T.') || u.includes('MRI')) return 'X-Ray & C.T. Scan/M.R.I';
   if (u.includes('BLOOD')) return 'Blood Bank';
   if (u.includes('MISC')) return 'Miscellaneous';
   if (u.includes('DENTAL')) return 'Dental OPD';
   if (u.includes('THERAPY')) return 'Therapy';
   if (u.includes('AMBULANCE')) return 'Ambulance';
   if (u.includes('ADMISSION')) return 'Admission';
-  return raw;
+  if (u.includes('ANTENATAL')) return 'Antenatal';
+  return raw.trim();
 }
 
 const fmtDate = (d) => {
@@ -78,11 +84,17 @@ export default function DepartmentPatientsReport() {
   const toSubDept   = params.get('toSubDept') || '';
   const typesParam  = params.get('types') || '';
   const reportType  = params.get('reportType') || 'detail';
+  // The filter screen collects these (default 08:00 -> 07:59, the hospital's
+  // business day) — read them through instead of hardcoding a plain
+  // calendar day, otherwise this report never reconciles with the Revenue
+  // Dashboard for the same date range.
+  const fromTime    = params.get('fromTime') || '08:00';
+  const toTime      = params.get('toTime')   || '07:59';
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ fromDate, toDate, fromTime: '00:00', toTime: '23:59' });
+      const q = new URLSearchParams({ fromDate, toDate, fromTime, toTime });
       if (typesParam) q.set('paymentTypes', typesParam);
       const [visitsRes, docsRes, subDeptRes, shiftsRes] = await Promise.all([
         fetch(`${API}/patient-visits?${q}`).then(r => r.json()),
