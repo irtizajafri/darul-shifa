@@ -6787,6 +6787,12 @@ async function getDoctorSubDeptRates() {
 }
 
 async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTypes, fromConsultant, toConsultant }) {
+  // fromTime/toTime narrow the window within fromDate/toDate (e.g. the UI's
+  // default 08:00:00 -> 07:59:59 hospital business day). Fall back to a full
+  // calendar day for any caller that only passes fromDate/toDate.
+  const fromT = fromTime || '00:00:00';
+  const toT   = toTime   || '23:59:59';
+
   const where = {};
 
   if (fromDate && toDate) {
@@ -6818,16 +6824,32 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     where.doctor = { lte: toConsultant };
   }
 
-  const oldVisits = await prisma.patientVisit.findMany({
+  let oldVisits = await prisma.patientVisit.findMany({
     where,
     orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
   });
 
+  // PatientVisit stores visitTime as free text (not a real timestamp), so the
+  // fromTime/toTime narrowing can't go into the Prisma `where` above — do it
+  // as a precise second pass here, reusing the same visitDate+visitTime
+  // combination formula used elsewhere in this file for business-day math.
+  // Blank visitTime defaults to noon so legacy rows with no recorded time
+  // aren't dropped by a tight morning/evening window.
+  if (fromDate && toDate) {
+    const preciseRows = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "PatientVisit"
+      WHERE ("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time))
+            BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
+    const preciseIdSet = new Set(preciseRows.map((r) => r.id));
+    oldVisits = oldVisits.filter((v) => preciseIdSet.has(v.id));
+  }
+
   // Also fetch from ClinicOpdVisit (new General OPD)
   const opdWhere = {};
   if (fromDate && toDate) {
-    const from = new Date(fromDate + 'T00:00:00');
-    const to   = new Date(toDate   + 'T23:59:59');
+    const from = new Date(`${fromDate}T${fromT}`);
+    const to   = new Date(`${toDate}T${toT}`);
     opdWhere.createdAt = { gte: from, lte: to };
   }
   if (typeVariants) {
@@ -6877,8 +6899,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   const admWhere = {};
   if (fromDate && toDate) {
     admWhere.createdAt = {
-      gte: new Date(fromDate + 'T00:00:00'),
-      lte: new Date(toDate   + 'T23:59:59'),
+      gte: new Date(`${fromDate}T${fromT}`),
+      lte: new Date(`${toDate}T${toT}`),
     };
   }
   if (typeVariants) {
@@ -6947,8 +6969,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   const admPayWhere = {};
   if (fromDate && toDate) {
     admPayWhere.receivedAt = {
-      gte: new Date(fromDate + 'T00:00:00'),
-      lte: new Date(toDate   + 'T23:59:59'),
+      gte: new Date(`${fromDate}T${fromT}`),
+      lte: new Date(`${toDate}T${toT}`),
     };
   }
   if (typeVariants) {
