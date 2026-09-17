@@ -90,7 +90,7 @@ function groupVouchers(vouchers) {
 
 // ── Print CSS ──────────────────────────────────────────────────────────────────
 const SUMMARY_CSS = `
-  @page { size: landscape; margin: 8mm; }
+  @page { size: portrait; margin: 8mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:9px; color:#000; background:#fff; }
   .vs-page { padding:12px 16px; }
