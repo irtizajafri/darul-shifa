@@ -8016,10 +8016,35 @@ async function getAdmissionWiseReport({ fromDate, toDate, statusMode, patientTyp
   where.status = statusMode === 'admit' ? 'active' : { in: ['discharge', 'closed'] };
   if (patientType && patientType !== 'ALL') where.patientCategory = patientType;
 
-  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
-  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
-  const dateField = statusMode === 'admit' ? 'createdAt' : 'updatedAt';
-  if (fromDt && toDt) where[dateField] = { gte: fromDt, lte: toDt };
+  // Admit mode filters by when the admission was created; Discharge mode
+  // must filter by the actual Discharge Certificate date — NOT
+  // ClinicAdmission.updatedAt, which is just "last time this row was
+  // touched" (a bulk job once stamped hundreds of closed admissions with
+  // the exact same updatedAt, silently breaking any discharge-date-range
+  // filter). This matches the field the report itself displays as "Dis
+  // Date" a few lines below (a.dischargeCertificate?.dischargeDate).
+  //
+  // Both createdAt and dischargeDate are Postgres "timestamp without time
+  // zone" columns (naive PKT wall-clock values) — filtering them via
+  // Prisma `where: { field: { gte/lte: new Date(...) } } }` silently shifts
+  // the window by the Node process's UTC offset (see the same issue fixed
+  // in getPatientVisits). Sidestepped here with a raw SQL query comparing
+  // plain date/time strings directly, then narrowing by id.
+  if (fromDate && toDate) {
+    const fromStr = `${fromDate} 00:00:00`;
+    const toStr   = `${toDate} 23:59:59`;
+    let idRows;
+    if (statusMode === 'admit') {
+      idRows = await prisma.$queryRawUnsafe(`
+        SELECT id FROM "ClinicAdmission" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
+      `, fromStr, toStr);
+    } else {
+      idRows = await prisma.$queryRawUnsafe(`
+        SELECT "admissionId" AS id FROM "ClinicDischargeCertificate" WHERE "dischargeDate" BETWEEN $1::timestamp AND $2::timestamp
+      `, fromStr, toStr);
+    }
+    where.id = { in: idRows.map((r) => r.id) };
+  }
 
   const admissions = await prisma.clinicAdmission.findMany({
     where,
