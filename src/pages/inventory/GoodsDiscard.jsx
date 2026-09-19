@@ -279,6 +279,7 @@ const mkLine = () => ({
   itemLabel: '',
   quantity: '',
   scrapValue: '',
+  assetInstanceIds: [],
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -299,7 +300,16 @@ export default function GoodsDiscard() {
   const allowBackDating = canBackDate(user);
   const today = new Date().toISOString().slice(0, 10);
 
-  const { loading, items, gdns, fetchItems, fetchGDNs, createGDN } = useInventoryStore();
+  const { loading, items, gdns, fetchItems, fetchGDNs, createGDN, fetchAssetInstances } = useInventoryStore();
+
+  // Fixed-asset "Select Asset Units" picker — one entry per line (keyed by
+  // line.uid), mirrors the same tag/chip picker Maintenance.jsx and
+  // GoodsIssue.jsx already use for this. Units already discarded are
+  // excluded (excludeDiscarded); units currently issued/deployed elsewhere
+  // are still shown — that's the normal case for a discard (a unit breaks
+  // while in use and gets discarded from wherever it was deployed).
+  const [assetOptionsByLine, setAssetOptionsByLine] = useState({});
+  const [assetLoadingByLine, setAssetLoadingByLine] = useState({});
 
   useEffect(() => {
     Promise.all([fetchItems({ status: 'active' }), fetchGDNs()]).catch(
@@ -364,12 +374,53 @@ export default function GoodsDiscard() {
       return { ...p, lines };
     });
 
-  const resetForm = () =>
+  // Item picked/changed on a line -> if it's a fixed asset, load its
+  // discardable units; otherwise clear any stale picker state from a
+  // previously-selected fixed asset on this same row.
+  const handleLineItemChange = async (idx, itemId, lbl) => {
+    const line = form.lines[idx];
+    updateLine(idx, 'itemId', itemId || '', lbl || '');
+    setForm((p) => {
+      const lines = [...p.lines];
+      lines[idx] = { ...lines[idx], assetInstanceIds: [] };
+      return { ...p, lines };
+    });
+    setAssetOptionsByLine((p) => ({ ...p, [line.uid]: [] }));
+
+    const item = (items || []).find((i) => i.id === itemId);
+    if (!itemId || item?.itemType !== 'fixed asset') return;
+
+    setAssetLoadingByLine((p) => ({ ...p, [line.uid]: true }));
+    try {
+      const rows = await fetchAssetInstances({ itemId, excludeDiscarded: true });
+      setAssetOptionsByLine((p) => ({ ...p, [line.uid]: Array.isArray(rows) ? rows : [] }));
+    } catch {
+      setAssetOptionsByLine((p) => ({ ...p, [line.uid]: [] }));
+    } finally {
+      setAssetLoadingByLine((p) => ({ ...p, [line.uid]: false }));
+    }
+  };
+
+  const toggleLineInstance = (idx, instanceId) =>
+    setForm((p) => {
+      const lines = [...p.lines];
+      const current = lines[idx].assetInstanceIds || [];
+      const next = current.includes(instanceId)
+        ? current.filter((id) => id !== instanceId)
+        : [...current, instanceId];
+      lines[idx] = { ...lines[idx], assetInstanceIds: next };
+      return { ...p, lines };
+    });
+
+  const resetForm = () => {
     setForm({
       lines: [mkLine()],
       reason: '',
       discardedDate: new Date().toISOString().slice(0, 10),
     });
+    setAssetOptionsByLine({});
+    setAssetLoadingByLine({});
+  };
 
   useEffect(() => {
     if (location.state?.openForm) { resetForm(); setShowForm(true); }
@@ -403,6 +454,15 @@ export default function GoodsDiscard() {
         toast.error('Enter a valid quantity for all rows');
         return;
       }
+      // Only enforced when this item actually has trackable asset units
+      // (excludeDiscarded list came back non-empty) — many fixed assets
+      // predate per-unit instance tracking and have none, and that's fine.
+      const options = assetOptionsByLine[line.uid] || [];
+      const picked = (line.assetInstanceIds || []).length;
+      if (options.length > 0 && picked !== Number(line.quantity)) {
+        toast.error(`${line.itemLabel || 'Item'}: select exactly ${line.quantity} asset unit(s) (${picked} selected)`);
+        return;
+      }
     }
 
     try {
@@ -414,6 +474,7 @@ export default function GoodsDiscard() {
           reason: form.reason,
           scrapValue: line.scrapValue !== '' ? Number(line.scrapValue) : null,
           discardedDate: form.discardedDate,
+          ...(line.assetInstanceIds?.length ? { assetInstanceIds: line.assetInstanceIds } : {}),
         });
         created.push(gdn);
       }
@@ -520,9 +581,7 @@ export default function GoodsDiscard() {
                       items={items || []}
                       value={line.itemId}
                       label={line.itemLabel}
-                      onChange={(id, lbl) =>
-                        updateLine(idx, 'itemId', id || '', lbl || '')
-                      }
+                      onChange={(id, lbl) => handleLineItemChange(idx, id || '', lbl || '')}
                     />
 
                     <input
@@ -556,6 +615,37 @@ export default function GoodsDiscard() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
+
+                  {/* Fixed-asset unit tags — same picker style as Maintenance/GIN */}
+                  {assetLoadingByLine[line.uid] && (
+                    <div className="text-xs text-slate-400 mt-2">Loading asset units…</div>
+                  )}
+                  {!assetLoadingByLine[line.uid] && (assetOptionsByLine[line.uid] || []).length > 0 && (
+                    <div className="mt-2">
+                      <label className="text-xs font-semibold text-slate-600 mb-1 block">
+                        Select Asset Units to Discard ({(line.assetInstanceIds || []).length} selected)
+                      </label>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-3">
+                        {assetOptionsByLine[line.uid].map((inst) => (
+                          <label key={inst.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(line.assetInstanceIds || []).includes(inst.id)}
+                              onChange={() => toggleLineInstance(idx, inst.id)}
+                            />
+                            <span className="font-mono text-xs">{inst.assetTag}</span>
+                            {inst.location ? (
+                              <span className="text-xs px-1 rounded text-indigo-700 bg-indigo-50">{inst.location}</span>
+                            ) : (
+                              <span className={`text-xs px-1 rounded ${inst.condition === 'working' ? 'text-green-700 bg-green-50' : 'text-amber-700 bg-amber-50'}`}>
+                                {inst.condition}
+                              </span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

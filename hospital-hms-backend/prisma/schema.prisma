@@ -642,6 +642,7 @@ model InventoryGDN {
   discardedDate   DateTime              @default(now())
   maintenanceId   Int?
   maintenance     InventoryMaintenance? @relation(fields: [maintenanceId], references: [id])
+  assetInstances  AssetInstance[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -697,6 +698,10 @@ model AssetInstance {
   // wherever it was actually issued to, not just a free-text GD note.
   ginItemId     Int?
   ginItem       InventoryGINItem?     @relation(fields: [ginItemId], references: [id])
+  // Set when this unit is picked in a GDN's "Select Asset Units" list
+  // (Goods Discard, fixed-asset items only) — mirrors ginItemId/maintenanceId.
+  gdnId         Int?
+  gdn           InventoryGDN?         @relation(fields: [gdnId], references: [id])
   condition     String                @default("working")
   location      String?
   serialNumber  String?
@@ -708,6 +713,7 @@ model AssetInstance {
   @@index([itemId])
   @@index([condition])
   @@index([ginItemId])
+  @@index([gdnId])
 }
 
 model AssetShiftLog {

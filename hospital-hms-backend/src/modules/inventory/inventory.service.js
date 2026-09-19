@@ -1079,7 +1079,7 @@ async function updateGIN(id, payload) {
   });
 }
 
-async function listAssetInstances({ itemId, condition, availableOnly } = {}) {
+async function listAssetInstances({ itemId, condition, availableOnly, excludeDiscarded } = {}) {
   const parsedItemId = parsePositiveNumber(itemId);
   // availableOnly is opt-in — Asset Shifting and Maintenance call this same
   // endpoint to find already-issued/deployed units (that's the whole point
@@ -1089,11 +1089,17 @@ async function listAssetInstances({ itemId, condition, availableOnly } = {}) {
   // matches the ginItemId:null "available/untouched" convention already
   // used by the opening-stock-decrease safety check elsewhere in this file.
   const wantsAvailableOnly = String(availableOnly).toLowerCase() === 'true';
+  // excludeDiscarded is opt-in for the Goods Discard picker — unlike GIN, a
+  // unit already issued/deployed (has a ginItemId/location) is normally
+  // EXACTLY what gets discarded (it broke while in use), so this must not
+  // filter on ginItemId — only already-discarded units should disappear.
+  const wantsExcludeDiscarded = String(excludeDiscarded).toLowerCase() === 'true';
   return prisma.assetInstance.findMany({
     where: {
       ...(parsedItemId ? { itemId: parsedItemId } : {}),
       ...(condition ? { condition: String(condition) } : {}),
       ...(wantsAvailableOnly ? { ginItemId: null } : {}),
+      ...(wantsExcludeDiscarded ? { condition: { not: 'discarded' } } : {}),
     },
     include: { item: { select: { name: true, code: true } } },
     orderBy: { assetTag: 'asc' },
@@ -2106,6 +2112,9 @@ async function createGDN(payload) {
   const itemId = Number(payload.itemId);
   const quantity = parsePositiveNumber(payload.quantity);
   const reason = String(payload.reason || '').trim();
+  const assetInstanceIds = Array.isArray(payload.assetInstanceIds)
+    ? payload.assetInstanceIds.map(Number).filter((n) => Number.isFinite(n))
+    : [];
 
   if (!Number.isFinite(quantity) || quantity <= 0) {
     throw new Error('quantity must be a positive number');
@@ -2125,6 +2134,26 @@ async function createGDN(payload) {
     const previousStock = Number(item.currentStock || 0);
     if (quantity > previousStock) throw new Error('Insufficient stock for discard');
 
+    // Fixed-asset items may name exactly which units are being discarded —
+    // same "Select Asset Units" pattern as GIN/Maintenance. Validated and
+    // re-fetched inside the transaction (not trusted from the picker) so a
+    // stale selection can't discard a unit that's meanwhile been
+    // re-tagged/already discarded by another request.
+    let pickedInstances = [];
+    if (assetInstanceIds.length > 0) {
+      if (assetInstanceIds.length !== quantity) {
+        throw new Error(`Select exactly ${quantity} asset unit(s) for ${item.name}`);
+      }
+      pickedInstances = await tx.assetInstance.findMany({ where: { id: { in: assetInstanceIds } } });
+      if (pickedInstances.length !== assetInstanceIds.length) {
+        throw new Error('One or more selected asset units were not found');
+      }
+      for (const inst of pickedInstances) {
+        if (inst.itemId !== itemId) throw new Error(`Asset unit ${inst.assetTag} does not belong to this item`);
+        if (inst.condition === 'discarded') throw new Error(`Asset unit ${inst.assetTag} is already discarded`);
+      }
+    }
+
     const code = String(payload.code || '').trim() || await generateDocCode('inventoryGDN', 'gdn');
 
     const gdn = await tx.inventoryGDN.create({
@@ -2140,6 +2169,13 @@ async function createGDN(payload) {
         item: { include: { category: true, subcategory: true } },
       },
     });
+
+    if (pickedInstances.length > 0) {
+      await tx.assetInstance.updateMany({
+        where: { id: { in: pickedInstances.map((i) => i.id) } },
+        data: { condition: 'discarded', gdnId: gdn.id },
+      });
+    }
 
     const newStock = previousStock - quantity;
 

@@ -584,11 +584,12 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
-  fetchAssetInstances: async ({ itemId = '', condition = '', availableOnly = false } = {}) => {
+  fetchAssetInstances: async ({ itemId = '', condition = '', availableOnly = false, excludeDiscarded = false } = {}) => {
     const qs = new URLSearchParams();
     if (itemId) qs.set('itemId', String(itemId));
     if (condition) qs.set('condition', condition);
     if (availableOnly) qs.set('availableOnly', 'true');
+    if (excludeDiscarded) qs.set('excludeDiscarded', 'true');
     return request(`/asset-instances?${qs.toString()}`);
   },
 

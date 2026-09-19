@@ -780,7 +780,8 @@ async function createGDN(req, res, next) {
     const data = await service.createGDN(req.body || {});
     return success(res, data, 'gdn created');
   } catch (err) {
-    if (String(err.message).includes('required') || String(err.message).includes('must') || String(err.message).includes('Insufficient') || String(err.message).includes('not found')) {
+    if (String(err.message).includes('required') || String(err.message).includes('must') || String(err.message).includes('Insufficient') || String(err.message).includes('not found')
+      || String(err.message).includes('Select exactly') || String(err.message).includes('does not belong') || String(err.message).includes('already discarded')) {
       return fail(res, 400, err.message);
     }
     if (String(err.message).toLowerCase().includes('unique')) return fail(res, 409, 'GDN code must be unique');
