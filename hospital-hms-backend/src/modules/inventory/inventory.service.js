@@ -4515,7 +4515,7 @@ async function createMaintenance({ itemId, supplierId, employeeId, natureOfRepai
       item: { include: { category: true, subcategory: true } },
       supplier: true,
       employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
-      assetInstances: { select: { id: true, assetTag: true, condition: true } },
+      assetInstances: { select: { id: true, assetTag: true, condition: true, location: true } },
       gdns: true,
     },
   });
@@ -4524,6 +4524,16 @@ async function createMaintenance({ itemId, supplierId, employeeId, natureOfRepai
     await prisma.assetInstance.updateMany({
       where: { id: { in: instanceIds } },
       data: { condition: 'under repair', maintenanceId: record.id },
+    });
+    // `record.assetInstances` above was captured by the create()'s own
+    // `include` — BEFORE this updateMany runs, so it's always empty at this
+    // point despite the units being linked correctly in the DB a moment
+    // later. Re-fetch them so the object this function returns (used
+    // directly for the Bill 1 auto-print right after creation) actually
+    // carries the linked units instead of printing no asset tags at all.
+    record.assetInstances = await prisma.assetInstance.findMany({
+      where: { id: { in: instanceIds } },
+      select: { id: true, assetTag: true, condition: true, location: true },
     });
   }
 
@@ -4560,7 +4570,7 @@ async function receiveMaintenance({ id, receivedDate, checkedBy, action, scrapVa
         item: { include: { category: true, subcategory: true } },
         supplier: true,
         employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
-        assetInstances: { select: { id: true, assetTag: true, condition: true } },
+        assetInstances: { select: { id: true, assetTag: true, condition: true, location: true } },
         gdns: true,
       },
     });
@@ -4594,7 +4604,7 @@ async function receiveMaintenance({ id, receivedDate, checkedBy, action, scrapVa
         include: {
           item: { include: { category: true, subcategory: true } },
           supplier: true,
-          assetInstances: { select: { id: true, assetTag: true, condition: true } },
+          assetInstances: { select: { id: true, assetTag: true, condition: true, location: true } },
         },
       });
 

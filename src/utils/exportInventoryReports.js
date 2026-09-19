@@ -491,9 +491,12 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
   const receivedDate = record.receivedDate
     ? new Date(record.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '-';
+  // Location shown inline per tag (matches the on-screen "Select Asset
+  // Units" picker, which shows a Location chip when the unit has one) —
+  // units without a recorded location just show their bare tag.
   const assetTags =
     Array.isArray(record.assetInstances) && record.assetInstances.length > 0
-      ? record.assetInstances.map((a) => a.assetTag).join(', ')
+      ? record.assetInstances.map((a) => (a.location ? `${a.assetTag} [${a.location}]` : a.assetTag)).join(', ')
       : '-';
   const employeeName = record.employee
     ? `${record.employee.firstName || ''} ${record.employee.lastName || ''}`.trim()
