@@ -258,6 +258,13 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
 
   const tableRows = ginItems.map((gi, idx) => {
     const itemName   = gi.item?.name || '-';
+    // Fixed-asset lines carry the specific serialized units picked at issue
+    // time (Select Asset Units) — without this, a printed GIN gives no way
+    // to tell which physical unit actually went out, only the item + qty.
+    // Same "TAG [Location]" format as the (already-fixed) Maintenance print.
+    const assetTags = Array.isArray(gi.assetInstances) && gi.assetInstances.length > 0
+      ? gi.assetInstances.map((a) => (a.location ? `${a.assetTag} [${a.location}]` : a.assetTag)).join(', ')
+      : '';
     const qtyDemand  = gi.gdItem?.quantityRequested ?? gi.quantityRequested ?? '-';
     const qtyIssued  = gi.issuedQuantity ?? '-';
     const status     = gi.gdItem?.status ?? gi.status ?? '-';
@@ -267,7 +274,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
       : reqDateFallback;
     return `<tr>
       <td>${idx + 1}</td>
-      <td class="desc">${itemName}</td>
+      <td class="desc">${itemName}${assetTags ? `<div class="asset-tags">Tags: ${assetTags}</div>` : ''}</td>
       <td>${qtyDemand}</td>
       <td>${qtyIssued}</td>
       <td>${location}</td>
@@ -302,6 +309,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
     th { padding: 3px 2px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 6.8pt; line-height: 1.3; word-wrap: break-word; }
     tbody tr td { border: 1px solid #ddd; padding: 3px 2px; text-align: center; font-size: 6.8pt; word-wrap: break-word; }
     tbody tr td.desc { text-align: left; padding-left: 4px; }
+    .asset-tags { font-size: 6pt; color: #666; margin-top: 1px; font-style: italic; }
     tbody tr:nth-child(even) { background: #f9f9f9; }
     .status-badge { padding: 1px 6px; border-radius: 10px; font-size: 7pt; font-weight: 600; }
     .status-open    { background: #dbeafe; color: #1d4ed8; }
@@ -419,12 +427,15 @@ export function printAllGINs(rows) {
       const reqDate   = gi.gdItem?.requestDate
         ? new Date(gi.gdItem.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'short', day: 'numeric' })
         : reqDateFallback;
+      const assetTags = Array.isArray(gi.assetInstances) && gi.assetInstances.length > 0
+        ? gi.assetInstances.map((a) => (a.location ? `${a.assetTag} [${a.location}]` : a.assetTag)).join(', ')
+        : '';
       return `<tr>
         <td>${sno}</td>
         <td>${ginCode}</td>
         <td>${gdRef}</td>
         <td>${department}</td>
-        <td class="desc">${gi.item?.name || '-'}</td>
+        <td class="desc">${gi.item?.name || '-'}${assetTags ? `<div class="asset-tags">Tags: ${assetTags}</div>` : ''}</td>
         <td>${qtyDemand}</td>
         <td>${qtyIssued}</td>
         <td><span class="status-badge status-${String(status).toLowerCase()}">${status}</span></td>
@@ -453,6 +464,7 @@ export function printAllGINs(rows) {
     th { padding: 5px 4px; font-weight: 600; text-align: center; border: 1px solid #bbb; font-size: 7.5pt; line-height: 1.4; }
     tbody tr td { border: 1px solid #ddd; padding: 4px 3px; text-align: center; font-size: 7.5pt; }
     tbody tr td.desc { text-align: left; padding-left: 5px; }
+    .asset-tags { font-size: 6pt; color: #666; margin-top: 1px; font-style: italic; }
     tbody tr:nth-child(even) { background: #f9f9f9; }
     .status-badge { padding: 1px 6px; border-radius: 10px; font-size: 6.5pt; font-weight: 600; }
     .status-open    { background: #dbeafe; color: #1d4ed8; }
