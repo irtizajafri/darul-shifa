@@ -21,14 +21,17 @@ function entityTypeFromPatientCategory(patientCategory) {
 // refund' head isn't linked to a Sub Account yet for that book (List
 // Attachments) — the refund record itself is never blocked by this; front
 // desk/accounts can still process it, Accounts just needs to finish setup.
-async function tryCreateRefundVoucher({ entityType, payeeName, amount, particulars }) {
+async function tryCreateRefundVoucher({ entityType, payeeName, amount, particulars, voucherDate: requestedDate }) {
   try {
     const chain = await accountsService.getRefundVoucherAccountChain(entityType);
     if (!chain) {
       const book = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
       return { warning: `Refund save ho gaya, lekin voucher nahi bana — Accounts → ${book} → Parameters → List Attachments mein "Slip/Admission Refund" head ko pehle kisi account se link karein.` };
     }
-    const voucherDate = new Date().toISOString().slice(0, 10);
+    // Back-dated voucher (permission-gated, see canBackDate in both refund
+    // screens) — falls back to today when the caller doesn't pass one, same
+    // as before this option existed.
+    const voucherDate = requestedDate ? String(requestedDate).slice(0, 10) : new Date().toISOString().slice(0, 10);
     const voucher = await accountsService.createVoucherExpense({
       entityType,
       mode: 'cash',

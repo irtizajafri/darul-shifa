@@ -1393,13 +1393,16 @@ async function deletePanelBillHeadItem(req, res, next) {
 
 async function addAdmissionDiscountRefund(req, res, next) {
   try {
-    const { billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName } = req.body;
+    const { billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName, voucherDate } = req.body;
     const data = await service.addAdmissionDiscountRefund(req.params.admissionId, {
       billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName,
     });
     // Auto Voucher Expense — only for an actual Refund amount, never for a
     // plain Discount (that's a waiver, not cash going back out). Never
     // blocks the save above even if this fails — see tryCreateRefundVoucher.
+    // voucherDate is optional (Back Date, gated client-side by
+    // canBackDate) — falls back to today when not sent. The
+    // ClinicAdmissionDiscountRefund row's own createdAt always stays "now".
     if (Number(refundAmount) > 0) {
       const entityType = refundVoucherSvc.entityTypeFromPatientCategory(data.admission.patientCategory);
       const result = await refundVoucherSvc.tryCreateRefundVoucher({
@@ -1407,6 +1410,7 @@ async function addAdmissionDiscountRefund(req, res, next) {
         payeeName: data.admission.patientName,
         amount: Number(refundAmount),
         particulars: `Admission Refund — ${data.admission.patientName} (${data.admission.admissionNo})`,
+        voucherDate,
       });
       if (result.voucherNo) data.voucherNo = result.voucherNo;
       else if (result.warning) data.voucherWarning = result.warning;
@@ -2003,16 +2007,22 @@ async function getVisitForRefund(req, res, next) {
 
 async function refundVisit(req, res, next) {
   try {
-    const { amount, reason, note, refundedBy } = req.body;
+    const { amount, reason, note, refundedBy, voucherDate } = req.body;
     const data = await service.refundVisit(req.params.source, req.params.id, { amount, reason, note, refundedBy });
     // Auto Voucher Expense — never blocks the refund save above even if
-    // this fails, see tryCreateRefundVoucher.
+    // this fails, see tryCreateRefundVoucher. voucherDate is optional
+    // (Back Date, gated client-side by canBackDate) — falls back to today
+    // inside tryCreateRefundVoucher when not sent. The refund record itself
+    // (refundedAt, above) always stays "now" — that's an activity log of
+    // when the front desk processed it, separate from the voucher's
+    // accounting date.
     const entityType = refundVoucherSvc.entityTypeFromPaymentType(data.paymentType);
     const result = await refundVoucherSvc.tryCreateRefundVoucher({
       entityType,
       payeeName: data.patientName,
       amount: Number(amount),
       particulars: `Slip Refund — ${data.patientName} (${data.serialNo || ''})`,
+      voucherDate,
     });
     if (result.voucherNo) data.voucherNo = result.voucherNo;
     else if (result.warning) data.voucherWarning = result.warning;

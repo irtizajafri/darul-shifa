@@ -4,9 +4,11 @@ import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer } from 'luci
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
+import { canBackDate } from '../../utils/permissions';
 import './SlipRefund.scss';
 
 const API = 'http://localhost:5001/api/clinic';
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
 const REASONS = [
   'Payment Refunded',
@@ -32,6 +34,7 @@ function fmt2(n) { return Number(n || 0).toFixed(2); }
 export default function SlipRefund() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const allowBackDating = canBackDate(user);
 
   // Search — full list is accessible (no date restriction), but nothing loads
   // until the user actually searches.
@@ -49,6 +52,11 @@ export default function SlipRefund() {
   const [amount,        setAmount]        = useState('');
   const [reason,        setReason]        = useState('');
   const [note,          setNote]          = useState('');
+  // Accounts voucher date — defaults to today; only users with the Back
+  // Date permission (canBackDate) can pick an earlier date. This is the
+  // ACCOUNTING date the auto-voucher lands on — the refund record itself
+  // is always stamped with the actual processing time, separately.
+  const [voucherDate,   setVoucherDate]   = useState(todayStr());
 
   async function handleSearch() {
     setSearching(true);
@@ -90,6 +98,7 @@ export default function SlipRefund() {
     setAmount('');
     setReason('');
     setNote('');
+    setVoucherDate(todayStr());
     setSearchTerm('');
     setSearched(false);
     setResults([]);
@@ -114,6 +123,7 @@ export default function SlipRefund() {
           reason,
           note,
           refundedBy: user?.name || user?.username || user?.email || '',
+          voucherDate,
         }),
       });
       const json = await res.json();
@@ -317,6 +327,19 @@ export default function SlipRefund() {
                   <option value="">— Select Reason —</option>
                   {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
+              </div>
+
+              <div className="sref-form-row">
+                <label className="sref-label">Voucher Date</label>
+                <input
+                  className="sref-input"
+                  type="date"
+                  value={voucherDate}
+                  min={allowBackDating ? undefined : todayStr()}
+                  max={allowBackDating ? undefined : todayStr()}
+                  onChange={e => setVoucherDate(e.target.value)}
+                  title="Accounts mein voucher isi date pe reflect hoga"
+                />
               </div>
 
               <textarea

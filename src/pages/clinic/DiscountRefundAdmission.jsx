@@ -5,9 +5,11 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
+import { canBackDate } from '../../utils/permissions';
 import './DiscountRefundAdmission.scss';
 
 const API = 'http://localhost:5001/api/clinic';
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -316,6 +318,7 @@ function DischargeCertificatePrintTemplate({ data }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DiscountRefundAdmission() {
   const { user } = useAuthStore();
+  const allowBackDating = canBackDate(user);
   const [searchParams] = useSearchParams();
   const { diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes } = useClinicStore();
 
@@ -349,6 +352,12 @@ export default function DiscountRefundAdmission() {
   const [permissionBy, setPermissionBy] = useState('');
   const [refundOverride, setRefundOverride] = useState('');
   const [saving, setSaving] = useState(false);
+  // Accounts voucher date — defaults to today; only users with the Back
+  // Date permission (canBackDate) can pick an earlier date. Only matters
+  // when there's an actual Refund amount (a Discount alone never creates a
+  // voucher). The ClinicAdmissionDiscountRefund history row itself always
+  // stays stamped with the real processing time.
+  const [voucherDate, setVoucherDate] = useState(todayStr());
 
   const [dcOpen, setDcOpen] = useState(false);
   const [dcHeader, setDcHeader] = useState(null);
@@ -395,6 +404,7 @@ export default function DiscountRefundAdmission() {
     setDiscountType('amount');
     setPermissionBy('');
     setRefundOverride('');
+    setVoucherDate(todayStr());
     setDcHeader(null);
     setDcForm(null);
     return json.data;
@@ -427,6 +437,7 @@ export default function DiscountRefundAdmission() {
           refundAmount: refundAmt,
           createdByUserId: user?.id != null ? String(user.id) : null,
           createdByName: user?.name || user?.username || user?.email || null,
+          voucherDate,
         }),
       });
       const json = await res.json();
@@ -643,6 +654,21 @@ export default function DiscountRefundAdmission() {
                   <span className="dra-disc-calc">(auto: {fmt2(autoRefundAmt)})</span>
                 )}
               </div>
+
+              {refundAmt > 0 && (
+                <div className="dra-form-row">
+                  <label className="dra-label">Voucher Date</label>
+                  <input
+                    className="dra-input"
+                    type="date"
+                    value={voucherDate}
+                    min={allowBackDating ? undefined : todayStr()}
+                    max={allowBackDating ? undefined : todayStr()}
+                    onChange={e => setVoucherDate(e.target.value)}
+                    title="Accounts mein refund voucher isi date pe reflect hoga"
+                  />
+                </div>
+              )}
 
               {/* Panel patients: company pays later, so Balance being non-zero
                   never blocks the certificate — everyone else still needs
