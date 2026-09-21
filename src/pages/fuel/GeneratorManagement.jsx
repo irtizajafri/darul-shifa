@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Plus, Trash2, Pencil } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil, Fuel } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { useFuelStore } from '../../store/useFuelStore';
 import FuelEntryForm from './FuelEntryForm';
-import FuelBalanceCard from './FuelBalanceCard';
 import FuelTransferModal from './FuelTransferModal';
 
 const TABS = ['Fuel', 'Oil', 'Daily Sheets'];
@@ -50,7 +49,9 @@ export default function GeneratorManagement({ generator, onBack }) {
   useEffect(() => {
     fetchFuelBalance();
     fetchTanks().catch(() => {});
-  }, []);
+    // Always load generator-specific balance so the card is correct from the start
+    fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => setGenFuelBal(null));
+  }, [gid]);
 
   useEffect(() => {
     if (activeTab === 'Daily Sheets') {
@@ -128,10 +129,21 @@ export default function GeneratorManagement({ generator, onBack }) {
 
   const openAddSheet = async () => {
     const last = await fetchLastDailySheet(gid).catch(() => null);
-    // Prefer last sheet's remaining fuel; if unavailable, use total generator fuel balance
-    const gaugeOn = last?.fuelGaugeOff != null
-      ? String(last.fuelGaugeOff)
-      : fuelBalance?.totalGenerator != null ? String(fuelBalance.totalGenerator) : '';
+    // Always refresh generator fuel balance before opening the form so it
+    // includes any transfers done after the last daily sheet
+    const freshBal = await fetchGeneratorFuelBalance(gid).catch(() => null);
+    if (freshBal) setGenFuelBal(freshBal);
+
+    // Use generator's ACTUAL available diesel (totalTransferred − totalConsumed)
+    // This automatically includes new tank→generator transfers done after the
+    // last sheet, so the gauge is always accurate.
+    const available = freshBal?.available ?? genFuelBal?.available;
+    const gaugeOn = available != null
+      ? String(Number(available).toFixed(2))
+      : last?.fuelGaugeOff != null
+        ? String(last.fuelGaugeOff)
+        : '';
+
     setSheetForm({
       ...EMPTY_SHEET,
       date: nowDate(),
@@ -223,7 +235,33 @@ export default function GeneratorManagement({ generator, onBack }) {
         )}
       </div>
 
-      <FuelBalanceCard balance={fuelBalance} />
+      {/* Generator-specific fuel balance — only shows THIS generator's data */}
+      {genFuelBal !== null ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-center gap-4 mb-5">
+          <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
+            <Fuel className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Fuel Balance — {generator?.name}</p>
+            <p className="text-2xl font-bold text-emerald-700 leading-tight">
+              {Number(genFuelBal.available || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
+            </p>
+            <p className="text-xs text-emerald-600 mt-0.5">
+              Transferred In: {Number(genFuelBal.totalTransferred || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
+              &nbsp;|&nbsp;
+              Consumed: {Number(genFuelBal.totalConsumed || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} L
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 flex items-center gap-3 mb-5 animate-pulse">
+          <div className="w-10 h-10 rounded-lg bg-slate-200" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3 bg-slate-200 rounded w-24" />
+            <div className="h-5 bg-slate-200 rounded w-32" />
+          </div>
+        </div>
+      )}
 
       {activeTab === 'Fuel' && !tanks.length && (
         <p className="text-xs text-amber-600 -mt-3 mb-4">Koi Fuel Tank nahi mila — pehle "Fuel Tanks" section mein ek tank banayein.</p>
@@ -479,6 +517,8 @@ export default function GeneratorManagement({ generator, onBack }) {
             fetchLastGeneratorEntry({ generatorId: gid, entryType: 'fuel' }).then(setLastEntry).catch(() => {});
             fetchFuelBalance();
             fetchTanks().catch(() => {});
+            // Refresh this generator's specific balance so the card and gauge are up-to-date
+            fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => {});
           }}
         />
       )}
