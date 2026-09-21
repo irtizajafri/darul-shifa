@@ -3011,9 +3011,27 @@ function opdVisitConsultantNames(visit) {
 
 async function searchSlipsForAppointment(q) {
   const term = String(q || '').trim();
-  const where = term
-    ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
-    : {};
+  // Only the last 5 days' slips are ever shown for Appointment booking —
+  // narrows an otherwise unbounded search and, as a side effect, keeps old
+  // legacy-migrated ClinicOpdVisit rows (serialNo = "LEGACY-<id>", stamped
+  // with their original historical visitDate, not today) out of the
+  // picker without needing to touch that data. Applies even when
+  // searching by name/slip# — an appointment is only ever booked against a
+  // recent slip.
+  //
+  // createdAt is a Postgres "timestamp without time zone" column (naive
+  // PKT wall-clock value) — computing the cutoff with a raw SQL interval
+  // instead of a JS Date avoids the Prisma/JS-Date-vs-naive-column skew
+  // already found and fixed elsewhere in this file (see getPatientVisits).
+  const recentRows = await prisma.$queryRawUnsafe(`
+    SELECT id FROM "ClinicOpdVisit" WHERE "createdAt" >= (NOW() - INTERVAL '5 days')
+  `);
+  const recentIds = recentRows.map((r) => r.id);
+
+  const where = {
+    id: { in: recentIds },
+    ...(term ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] } : {}),
+  };
   const rows = await prisma.clinicOpdVisit.findMany({
     where,
     select: { id: true, serialNo: true, patientName: true, department: true, createdAt: true },
