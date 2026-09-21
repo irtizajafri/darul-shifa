@@ -409,6 +409,8 @@ export default function VoucherExpenseForm() {
   const [utilBillModal, setUtilBillModal]       = useState(null);
   const [utilBillLoading, setUtilBillLoading]   = useState(false);
   const [checkedUtilBills, setCheckedUtilBills] = useState({});
+  const [checkedQueue, setCheckedQueue]         = useState({});
+  const [addingSelectedQueue, setAddingSelectedQueue] = useState(false);
 
   // ── Delete voucher (super admin only) ────────────────────────────────────
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -504,6 +506,83 @@ export default function VoucherExpenseForm() {
       amount: String(item.amount),
       grnIds: [item.grnId],
     }));
+  };
+
+  // Batch-add version of the single-item quick-fill above — builds a
+  // COMPLETE, ready-to-push entry object straight from the item's own fetch
+  // responses (never touching the shared `entry`/subGLs/mainAccs/subAccs
+  // component state), so N of these can be resolved and appended to
+  // `entries[]` in one go without the staleness risk of looping
+  // fillFromQueueItem + handleAddEntry back to back (each read/write
+  // component state that only reflects the LAST-filled item until React
+  // re-renders in between).
+  const buildEntryFromQueueItem = async (item, chequeNo) => {
+    const { chain } = item;
+    const [subGlJ, mainAccJ, subAccJ] = await Promise.all([
+      fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${chain.mainGlId}`).then((r) => r.json()),
+      fetch(`${API}/main-account?entityType=${entityType}&subGlId=${chain.subGlId}`).then((r) => r.json()),
+      fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${chain.mainAccountId}`).then((r) => r.json()),
+    ]);
+    const subGlList   = Array.isArray(subGlJ?.data)   ? subGlJ.data   : [];
+    const mainAccList = Array.isArray(mainAccJ?.data) ? mainAccJ.data : [];
+    const subAccList  = Array.isArray(subAccJ?.data)  ? subAccJ.data  : [];
+    const mainGl  = mainGLs.find((g) => String(g.id) === String(chain.mainGlId));
+    const subGl   = subGlList.find((g) => String(g.id) === String(chain.subGlId));
+    const mainAcc = mainAccList.find((a) => String(a.id) === String(chain.mainAccountId));
+    const subAcc  = subAccList.find((a) => String(a.id) === String(chain.subAccountId));
+
+    // Same narration template as the single-entry auto-narration effect
+    // above (entry.admissionNo/subAccount branch) — GRN queue items never
+    // carry an admissionNo, so only the subAcc/no-subAcc branches apply.
+    const particulars = subAcc
+      ? `Amount paid to ${mainGl?.name || ''} ${item.supplierName} in account of ${subGl?.name || ''} and ${mainAcc?.name || ''} for ${subAcc.name} ${item.supplierName}`
+      : `Amount paid to ${mainGl?.name || ''} ${item.supplierName} in account of ${subGl?.name || ''} and ${mainAcc?.name || ''} for ${item.supplierName}`;
+
+    return {
+      ...emptyEntry(),
+      mainGlId: String(chain.mainGlId),
+      subGlId: String(chain.subGlId),
+      mainAccountId: String(chain.mainAccountId),
+      subAccountId: String(chain.subAccountId),
+      accountCode: subAcc?.code || mainAcc?.code || '',
+      accountName: subAcc?.name || mainAcc?.name || '',
+      payeeName: item.supplierName,
+      amount: String(item.amount),
+      grnIds: [item.grnId],
+      chequeNo,
+      particulars: particulars.trim(),
+      mainGlName:      mainGl?.name  || '',
+      subGlName:       subGl?.name   || '',
+      mainAccountName: mainAcc?.name || '',
+      subAccountName:  subAcc?.name  || item.supplierName || '',
+    };
+  };
+
+  // "Add Selected" — Cash Voucher only. Cheque/Bank vouchers need a real,
+  // distinct cheque/transfer number per entry that the accountant has to
+  // type in themselves, so those still go through the one-row-at-a-time
+  // flow (row click -> fill -> Add Entry) instead of this batch path.
+  const handleAddSelectedQueueItems = async () => {
+    const items = visibleQueue.filter((q) => checkedQueue[q.id]);
+    if (!items.length) return;
+    setAddingSelectedQueue(true);
+    try {
+      let serial = cashSerial;
+      const built = [];
+      for (const item of items) {
+        built.push(await buildEntryFromQueueItem(item, String(serial).padStart(2, '0')));
+        serial += 1;
+      }
+      setEntries((es) => [...es, ...built]);
+      setCashSerial(serial);
+      setCheckedQueue({});
+      setQueueModalOpen(false);
+      toast.success(`${built.length} ${built.length === 1 ? 'entry' : 'entries'} add ho gayi${built.length === 1 ? '' : 'n'}`);
+    } catch {
+      toast.error('Kuch entries add nahi ho payin — dobara try karein');
+    } finally {
+      setAddingSelectedQueue(false);
+    }
   };
 
   // Fetch global next cash serial from backend on mount (cash mode only)
@@ -1598,6 +1677,19 @@ export default function VoucherExpenseForm() {
                 <table className="ve-grn-modal__table">
                   <thead>
                     <tr>
+                      {mode === 'cash' && (
+                        <th>
+                          <input
+                            type="checkbox"
+                            checked={visibleQueue.length > 0 && visibleQueue.every((q) => checkedQueue[q.id])}
+                            onChange={(e) => {
+                              const all = {};
+                              if (e.target.checked) visibleQueue.forEach((q) => { all[q.id] = true; });
+                              setCheckedQueue(all);
+                            }}
+                          />
+                        </th>
+                      )}
                       <th>Date</th>
                       <th>GRN #</th>
                       <th>Item</th>
@@ -1608,7 +1700,20 @@ export default function VoucherExpenseForm() {
                   </thead>
                   <tbody>
                     {visibleQueue.map((q) => (
-                      <tr key={q.id} onClick={() => fillFromQueueItem(q)}>
+                      <tr
+                        key={q.id}
+                        className={checkedQueue[q.id] ? 've-grn-modal__row--checked' : ''}
+                        onClick={() => fillFromQueueItem(q)}
+                      >
+                        {mode === 'cash' && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={!!checkedQueue[q.id]}
+                              onChange={() => setCheckedQueue((prev) => ({ ...prev, [q.id]: !prev[q.id] }))}
+                            />
+                          </td>
+                        )}
                         <td>{new Date(q.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td className="ve-grn-modal__code">{q.code}</td>
                         <td>{q.itemName}</td>
@@ -1623,9 +1728,32 @@ export default function VoucherExpenseForm() {
             )}
 
             <div className="ve-grn-modal__footer">
-              <span className="ve-sal-modal__sub">Row pe click karke form fill karo, phir neeche Confirm karke agla pending item mil jayega.</span>
+              {mode === 'cash' ? (
+                <>
+                  <span className="ve-sal-modal__sub">
+                    Checkbox se multiple select karo aur ek sath add karo — ya row pe click karke ek-ek fill karo.
+                  </span>
+                  <div className="ve-grn-modal__total">
+                    <span>Selected Total</span>
+                    <span className="ve-grn-modal__total-val">
+                      PKR {visibleQueue.filter((q) => checkedQueue[q.id]).reduce((s, q) => s + Number(q.amount), 0).toLocaleString()}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <span className="ve-sal-modal__sub">Row pe click karke form fill karo, phir neeche Confirm karke agla pending item mil jayega.</span>
+              )}
               <div className="ve-grn-modal__actions">
                 <button className="ve-sal-modal__cancel" onClick={() => setQueueModalOpen(false)}>Close</button>
+                {mode === 'cash' && (
+                  <button
+                    className="ve-sal-modal__verify"
+                    disabled={addingSelectedQueue || !visibleQueue.some((q) => checkedQueue[q.id])}
+                    onClick={handleAddSelectedQueueItems}
+                  >
+                    {addingSelectedQueue ? 'Adding…' : `Add Selected (${visibleQueue.filter((q) => checkedQueue[q.id]).length})`}
+                  </button>
+                )}
               </div>
             </div>
           </div>

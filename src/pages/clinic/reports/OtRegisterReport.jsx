@@ -205,13 +205,13 @@ export default function OtRegisterReport() {
 
   const handleExportExcel = () => {
     const aoa = [['OT Register Report'], [`Date: ${fmtDate(fromDate)} To ${fmtDate(toDate)}`], []];
-    aoa.push(['AdmitNo', 'PatName', 'Description', 'OPDate', 'Anaesthetic', 'Surgeon1', 'Surgeon2', 'Tech1', 'Tech2', 'Entry Date/Time']);
+    aoa.push(['AdmitNo', 'PatName', 'Description', 'OPDate', 'Anaesthetic', 'Surgeon1', 'Surgeon2', 'RMO', 'Tech1', 'Tech2', 'Entry Date/Time']);
     for (const g of groups) {
       aoa.push([CAT_LABEL[g.category] || g.category]);
       for (const r of g.rows) {
-        aoa.push([r.admissionNo, r.patientName, r.description, fmtDate(r.surgeryDate), r.anaesthesiologist || '', r.surgeon1 || '', r.surgeon2 || '', r.tech1 || '', r.tech2 || '', fmtDateTime(r.createdAt)]);
+        aoa.push([r.admissionNo, r.patientName, r.description, fmtDate(r.surgeryDate), r.anaesthesiologist || '', r.surgeon1 || '', r.surgeon2 || '', r.rmo || '', r.tech1 || '', r.tech2 || '', fmtDateTime(r.createdAt)]);
       }
-      aoa.push(['', '', '', '', '', '', '', '', `${CAT_LABEL[g.category] || g.category} No of Admission:`, g.count]);
+      aoa.push(['', '', '', '', '', '', '', '', '', `${CAT_LABEL[g.category] || g.category} No of Admission:`, g.count]);
     }
     if (total) aoa.push([], ['TOTAL', total.count]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -264,6 +264,7 @@ export default function OtRegisterReport() {
                   <th>Anaesthetic:</th>
                   <th>Surgeon1:</th>
                   <th>Surgeon2:</th>
+                  <th>RMO:</th>
                   <th>Tech1:</th>
                   <th>Tech2:</th>
                   <th>Entry Date/Time</th>
@@ -272,7 +273,7 @@ export default function OtRegisterReport() {
               <tbody>
                 {groups.map(g => (
                   <Fragment key={g.category}>
-                    <tr className="otr-group-hdr"><td colSpan={10}>{CAT_LABEL[g.category] || g.category}</td></tr>
+                    <tr className="otr-group-hdr"><td colSpan={11}>{CAT_LABEL[g.category] || g.category}</td></tr>
                     {g.rows.map(r => (
                       <tr key={r.id}>
                         <td>{r.admissionNo}</td>
@@ -282,13 +283,14 @@ export default function OtRegisterReport() {
                         <td>{r.anaesthesiologist || ''}</td>
                         <td>{r.surgeon1 || ''}</td>
                         <td>{r.surgeon2 || ''}</td>
+                        <td>{r.rmo || ''}</td>
                         <td>{r.tech1 || ''}</td>
                         <td>{r.tech2 || ''}</td>
                         <td>{fmtDateTime(r.createdAt)}</td>
                       </tr>
                     ))}
                     <tr className="otr-group-ftr">
-                      <td colSpan={8} style={{ textAlign: 'right' }}>{CAT_LABEL[g.category] || g.category}&nbsp;&nbsp;No of Admission:</td>
+                      <td colSpan={9} style={{ textAlign: 'right' }}>{CAT_LABEL[g.category] || g.category}&nbsp;&nbsp;No of Admission:</td>
                       <td colSpan={2}>{g.count}</td>
                     </tr>
                   </Fragment>

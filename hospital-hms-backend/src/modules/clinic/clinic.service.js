@@ -1633,17 +1633,16 @@ async function searchAdmissionsForReceiving(q) {
   const where = term
     ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
     : {};
-  // The 100-row cap is only for the blank/browse case (most-recent 100,
-  // shared by all 5 screens using this search — see their own admission
-  // pickers). Once a real search term is typed, `where` already narrows the
-  // result set on its own — capping on top of that could hide the exact
-  // admission being searched for if it's an older record than the 100 most
-  // recent matches, so the cap is dropped entirely whenever term is set.
+  // No cap, blank search or not — shared by all 5 screens using this search
+  // (their own admission pickers). Used to cap the blank/browse case at the
+  // most-recent 100, which silently hid any admission not among those 100
+  // (with no on-screen indication it was hidden) unless the user already
+  // knew to type a search term. Removed per explicit request — the picker
+  // must always show every admission.
   const rows = await prisma.clinicAdmission.findMany({
     where,
     include: { payments: { select: { amount: true } } },
     orderBy: { id: 'desc' },
-    ...(term ? {} : { take: 100 }),
   });
   return rows.map(a => ({
     id: a.id,
@@ -3310,13 +3309,24 @@ async function saveOtRegister(admissionId, payload) {
 const OT_CATEGORY_ORDER = ['private', 'panel', 'staff', 'cc', 'complementary'];
 
 async function getOtRegisterReport({ fromDate, toDate, patientType, anaesthesiologistId, surgeonId, techId, surgeryTypeId }) {
+  // surgeryDateTime/operationDateTime are Postgres "timestamp without time
+  // zone" columns (naive PKT wall-clock values) — filtering them via Prisma
+  // `where: { field: { gte/lte: new Date(...) } } }` silently shifts the
+  // window by the Node process's UTC offset (5h on a PKT-timezone machine),
+  // the same class of bug already fixed in getPatientVisits/
+  // getAdmissionWiseReport this session. Fixed here the same way: fetch a
+  // generously-buffered candidate set via Prisma, then narrow to the exact
+  // window with a raw SQL comparison against plain date strings (no JS Date
+  // involved).
   const where = {};
   const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
   const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
   if (fromDt || toDt) {
-    where.surgeryDateTime = {};
-    if (fromDt) where.surgeryDateTime.gte = fromDt;
-    if (toDt)   where.surgeryDateTime.lte = toDt;
+    const bufFrom = fromDt ? new Date(fromDt) : new Date(toDt);
+    bufFrom.setDate(bufFrom.getDate() - 1);
+    const bufTo = toDt ? new Date(toDt) : new Date(fromDt);
+    bufTo.setDate(bufTo.getDate() + 1);
+    where.surgeryDateTime = { gte: bufFrom, lte: bufTo };
   }
 
   // Each lookup filters independently (AND across fields); Surgeon/Tech each
@@ -3329,11 +3339,65 @@ async function getOtRegisterReport({ fromDate, toDate, patientType, anaesthesiol
   if (andConditions.length) where.AND = andConditions;
   if (patientType && patientType !== 'ALL') where.patientCategory = patientType;
 
-  const otRows = await prisma.clinicOtRegister.findMany({ where, orderBy: { surgeryDateTime: 'asc' } });
-  if (!otRows.length) return { groups: [], total: { count: 0 } };
+  let otRows = await prisma.clinicOtRegister.findMany({ where, orderBy: { surgeryDateTime: 'asc' } });
+  if (fromDate && toDate) {
+    const preciseOtIds = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "ClinicOtRegister" WHERE "surgeryDateTime" BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} 00:00:00`, `${toDate} 23:59:59`);
+    const idSet = new Set(preciseOtIds.map((r) => r.id));
+    otRows = otRows.filter((r) => idSet.has(r.id));
+  }
 
-  const doctorIds      = [...new Set(otRows.flatMap(r => [r.anaesthesiologistId, r.surgeon1Id, r.surgeon2Id, r.tech1Id, r.tech2Id]).filter(Boolean))];
-  const surgeryTypeIds = [...new Set(otRows.map(r => r.surgeryTypeId).filter(Boolean))];
+  // Also pull staffing (Anaesthesiologist/Consultant/RMO/Tech) entered via
+  // Surgery/Procedure Information — that screen never creates a
+  // ClinicOtRegister row of its own (its "items" side is a separate GD/GIN
+  // requisition flow, deliberately untouched here), so without this an
+  // admission's OT staffing would only ever show up if someone ALSO
+  // manually filled the OT Register form for the same surgery. Skips any
+  // admission that already has a real ClinicOtRegister row, so the same
+  // surgery never lists twice.
+  const siWhere = {};
+  if (fromDt || toDt) {
+    const bufFrom = fromDt ? new Date(fromDt) : new Date(toDt);
+    bufFrom.setDate(bufFrom.getDate() - 1);
+    const bufTo = toDt ? new Date(toDt) : new Date(fromDt);
+    bufTo.setDate(bufTo.getDate() + 1);
+    siWhere.operationDateTime = { gte: bufFrom, lte: bufTo };
+  }
+  if (surgeryTypeId) siWhere.surgeryTypeId = Number(surgeryTypeId);
+  if (anaesthesiologistId) siWhere.anesthesistId = Number(anaesthesiologistId);
+  if (surgeonId) siWhere.consultantIds = { has: Number(surgeonId) };
+  if (techId) siWhere.techIds = { has: Number(techId) };
+  const alreadyRegisteredAdmissionIds = new Set(otRows.map(r => r.admissionId).filter(Boolean));
+
+  let surgInfoRows = await prisma.clinicSurgeryInformation.findMany({
+    where: siWhere,
+    include: { admission: { select: { admissionNo: true, patientTitle: true, patientName: true, patientCategory: true } } },
+    orderBy: { operationDateTime: 'asc' },
+  });
+  if (fromDate && toDate) {
+    const preciseSiIds = await prisma.$queryRawUnsafe(`
+      SELECT id FROM "ClinicSurgeryInformation" WHERE "operationDateTime" BETWEEN $1::timestamp AND $2::timestamp
+    `, `${fromDate} 00:00:00`, `${toDate} 23:59:59`);
+    const siIdSet = new Set(preciseSiIds.map((r) => r.id));
+    surgInfoRows = surgInfoRows.filter((r) => siIdSet.has(r.id));
+  }
+  const surgInfoFiltered = surgInfoRows.filter(r =>
+    r.admission &&
+    !alreadyRegisteredAdmissionIds.has(r.admissionId) &&
+    (!patientType || patientType === 'ALL' || r.admission.patientCategory === patientType)
+  );
+
+  if (!otRows.length && !surgInfoFiltered.length) return { groups: [], total: { count: 0 } };
+
+  const doctorIds = [...new Set([
+    ...otRows.flatMap(r => [r.anaesthesiologistId, r.surgeon1Id, r.surgeon2Id, r.tech1Id, r.tech2Id]),
+    ...surgInfoFiltered.flatMap(r => [r.anesthesistId, ...r.consultantIds, ...r.rmoIds, ...r.techIds]),
+  ].filter(Boolean))];
+  const surgeryTypeIds = [...new Set([
+    ...otRows.map(r => r.surgeryTypeId),
+    ...surgInfoFiltered.map(r => r.surgeryTypeId),
+  ].filter(Boolean))];
 
   const [doctors, surgeryTypes] = await Promise.all([
     doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, name: true } }) : [],
@@ -3341,21 +3405,53 @@ async function getOtRegisterReport({ fromDate, toDate, patientType, anaesthesiol
   ]);
   const docById = Object.fromEntries(doctors.map(d => [d.id, d]));
   const stById  = Object.fromEntries(surgeryTypes.map(s => [s.id, s]));
+  const nameOf = (id) => (id ? (docById[id]?.name || null) : null);
+  const namesOf = (ids) => (ids || []).map(nameOf).filter(Boolean).join(', ') || null;
 
-  const rows = otRows.map(r => ({
+  const otMapped = otRows.map(r => ({
     id: r.id,
+    source: 'ot-register',
     admissionNo: r.admissionNo,
     patientName: r.patientName,
     patientCategory: r.patientCategory,
     description: r.surgeryTypeId ? (stById[r.surgeryTypeId]?.name || '') : '',
     surgeryDate: r.surgeryDateTime,
-    anaesthesiologist: r.anaesthesiologistId ? (docById[r.anaesthesiologistId]?.name || null) : null,
-    surgeon1: r.surgeon1Id ? (docById[r.surgeon1Id]?.name || null) : null,
-    surgeon2: r.surgeon2Id ? (docById[r.surgeon2Id]?.name || null) : null,
-    tech1: r.tech1Id ? (docById[r.tech1Id]?.name || null) : null,
-    tech2: r.tech2Id ? (docById[r.tech2Id]?.name || null) : null,
+    anaesthesiologist: nameOf(r.anaesthesiologistId),
+    surgeon1: nameOf(r.surgeon1Id),
+    surgeon2: nameOf(r.surgeon2Id),
+    rmo: null,
+    tech1: nameOf(r.tech1Id),
+    tech2: nameOf(r.tech2Id),
     createdAt: r.createdAt,
   }));
+
+  // Surgery/Procedure Information stores consultants/RMOs/techs as arrays
+  // (no fixed "1st/2nd" slots like OT Register) — first two consultants/
+  // techs fill the surgeon1/2 and tech1/2 display slots to match the OT
+  // Register table's own column layout; any beyond that get folded into
+  // slot 2 as extra comma-joined names rather than silently dropped.
+  const siMapped = surgInfoFiltered.map(r => {
+    const consultantNames = (r.consultantIds || []).map(nameOf).filter(Boolean);
+    const techNames = (r.techIds || []).map(nameOf).filter(Boolean);
+    return {
+      id: `si_${r.id}`,
+      source: 'surgery-info',
+      admissionNo: r.admission.admissionNo,
+      patientName: `${r.admission.patientTitle || ''} ${r.admission.patientName}`.trim(),
+      patientCategory: r.admission.patientCategory,
+      description: r.surgeryTypeId ? (stById[r.surgeryTypeId]?.name || '') : '',
+      surgeryDate: r.operationDateTime,
+      anaesthesiologist: nameOf(r.anesthesistId),
+      surgeon1: consultantNames[0] || null,
+      surgeon2: consultantNames.slice(1).join(', ') || null,
+      rmo: namesOf(r.rmoIds),
+      tech1: techNames[0] || null,
+      tech2: techNames.slice(1).join(', ') || null,
+      createdAt: r.createdAt,
+    };
+  });
+
+  const rows = [...otMapped, ...siMapped].sort((a, b) => new Date(a.surgeryDate) - new Date(b.surgeryDate));
 
   const groups = [];
   const seenCats = new Set(rows.map(r => r.patientCategory));
