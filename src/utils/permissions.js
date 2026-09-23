@@ -133,6 +133,8 @@ export const PERMISSIONS_MAP = {
           { key: 'bed-status',                  label: 'Bed Status' },
           { key: 'upload-patient-document',     label: 'Upload Patient Document' },
           { key: 'surgery-information',         label: 'Surgery / Procedure Information' },
+          { key: 'handover',                    label: 'Handover' },
+          { key: 'reception-assets',            label: 'Reception Assets' },
         ],
       },
 
@@ -353,4 +355,17 @@ export function canBackDate(user) {
   if (!user) return false;
   if (user.isSuperAdmin) return true;
   return user.permissions?.allowBackDating === true;
+}
+
+/**
+ * Returns true if this user must submit a Cashier Handover for the current
+ * business day before they're allowed to log out. SuperAdmin is never
+ * gated. Others need requiresHandover flag in their permissions (set via
+ * User Management, same "boolean sitting in the permissions JSON blob"
+ * pattern as allowBackDating).
+ */
+export function requiresHandover(user) {
+  if (!user) return false;
+  if (user.isSuperAdmin) return false;
+  return user.permissions?.requiresHandover === true;
 }

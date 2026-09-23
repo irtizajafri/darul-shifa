@@ -178,7 +178,7 @@ async function removePayeeHeadStaffCategory(req, res, next) {
 }
 
 async function saveDraftExpenseEntry(req, res, next) { try { success(res, await svc.saveDraftExpenseEntry({ ...req.body, entityType: et(req) }), 'Draft saved'); } catch (e) { next(e); } }
-async function getDraftExpenses(req, res, next) { try { success(res, await svc.getDraftExpenses(et(req))); } catch (e) { next(e); } }
+async function getDraftExpenses(req, res, next) { try { success(res, await svc.getDraftExpenses(et(req), req.query.userId)); } catch (e) { next(e); } }
 async function deleteDraftExpense(req, res, next) { try { await svc.deleteDraftExpense(req.params.id); success(res, null, 'Draft deleted'); } catch (e) { next(e); } }
 async function flashDraftsNow(req, res, next) {
   try {

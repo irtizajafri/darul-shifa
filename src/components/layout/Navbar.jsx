@@ -3,8 +3,11 @@ import { Menu, LogOut, User, KeyRound, X, Eye, EyeOff, Phone, MapPin, Graduation
 import ceoPhoto from '../../assets/ceo.JPG';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { requiresHandover } from '../../utils/permissions';
 import TabBar from './TabBar';
 import toast from 'react-hot-toast';
+
+const API = 'http://localhost:5001/api/clinic';
 
 function ChangePasswordModal({ user, onClose }) {
   const { logout } = useAuthStore();
@@ -102,13 +105,39 @@ export default function Navbar({ onMenuClick }) {
   const { employees, fetchEmployees } = useEmployeeStore();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showChangePwd, setShowChangePwd] = useState(false);
+  const [checkingHandover, setCheckingHandover] = useState(false);
   const dropdownRef = useRef(null);
 
   // logout() flips isAuthenticated; AppRoutes reacts to that and swaps to
   // the Login screen on its own — no navigate() call needed (or available:
   // Navbar lives outside any router now, see AppRoutes.jsx).
-  const handleLogout = () => {
-    logout();
+  //
+  // Users with permissions.requiresHandover (e.g. Cashiers, set via User
+  // Management) can't log out until they've submitted today's Cashier
+  // Handover (Clinic → Transactions → Handover) — checked fresh on every
+  // logout attempt rather than cached, since it can flip true mid-session.
+  const handleLogout = async () => {
+    if (!requiresHandover(user)) {
+      logout();
+      return;
+    }
+    setCheckingHandover(true);
+    try {
+      const res = await fetch(`${API}/handover/status-today?userId=${encodeURIComponent(user.id)}`);
+      const json = await res.json();
+      if (json?.data?.done) {
+        logout();
+      } else {
+        toast.error('Logout se pehle aaj ka Handover submit karein (Clinic → Transactions → Handover).', { duration: 6000 });
+      }
+    } catch {
+      // Fails closed (logout stays blocked) on a network hiccup — matches
+      // the whole point of this gate: never let uncertainty be a way to
+      // slip past submitting the day's cash handover.
+      toast.error('Handover status check nahi ho saka — dobara try karein.');
+    } finally {
+      setCheckingHandover(false);
+    }
   };
 
   useEffect(() => {
@@ -238,10 +267,11 @@ export default function Navbar({ onMenuClick }) {
 
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-[#64748B] hover:text-[#EF4444] hover:bg-[#FEF2F2] rounded-lg transition-colors"
+            disabled={checkingHandover}
+            className="flex items-center gap-2 px-3 py-2 text-sm text-[#64748B] hover:text-[#EF4444] hover:bg-[#FEF2F2] rounded-lg transition-colors disabled:opacity-50"
           >
             <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Logout</span>
+            <span className="hidden sm:inline">{checkingHandover ? 'Checking…' : 'Logout'}</span>
           </button>
         </div>
       </header>

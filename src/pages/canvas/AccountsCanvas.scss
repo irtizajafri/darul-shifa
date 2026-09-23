@@ -1,0 +1,314 @@
+@use '../../styles/variables' as *;
+
+.accounts-canvas {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px); // navbar height ke neeche poori jagah
+  padding: 1.25rem 1.5rem 0;
+
+  .ac-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    margin-bottom: 1rem;
+
+    .ac-back-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: $text-muted;
+      background: $primary-light;
+      border: 1px solid $border;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+
+      &:hover {
+        color: $primary;
+        background: darken(#EFF6FF, 3%);
+      }
+    }
+
+    .ac-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: $dark-blue;
+
+      h2 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: $text-main;
+        margin: 0;
+      }
+    }
+
+    .ac-subtitle {
+      font-size: 0.8rem;
+      color: $text-muted;
+      margin: 0;
+      flex: 1;
+    }
+
+    .ac-excel-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #14532d;
+      background: #dcfce7;
+      border: 1px solid #bbf7d0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+
+      &:hover { background: #bbf7d0; }
+    }
+  }
+
+  .ac-canvas-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    border: 1px solid $border;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+    background: #f8fafc;
+  }
+}
+
+// ── Custom tree node card (Accounts / Corporate / Parameters / Main GL) ──
+.ac-node {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.9rem;
+  background: #fff;
+  border: 1.5px solid $border;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  min-width: 150px;
+  max-width: 210px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+
+  .ac-node__icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: $primary-light;
+    color: $primary;
+  }
+
+  .ac-node__text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    min-width: 0;
+  }
+
+  .ac-node__title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: $text-main;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .ac-node__hint {
+    font-size: 0.68rem;
+    color: $text-muted;
+  }
+
+  .ac-node__chevron {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    color: $text-muted;
+    transition: transform 0.15s ease;
+
+    &--open {
+      transform: rotate(90deg);
+    }
+  }
+
+  &--root {
+    background: $dark-blue;
+    border-color: $dark-blue;
+    cursor: pointer;
+
+    .ac-node__icon { background: rgba(255, 255, 255, 0.15); color: #fff; }
+    .ac-node__title { color: #fff; }
+    .ac-node__hint { color: rgba(255, 255, 255, 0.65); }
+    .ac-node__chevron { color: rgba(255, 255, 255, 0.7); }
+  }
+
+  &--type {
+    background: #b8cce4;
+    border-color: #9db8d6;
+    cursor: pointer;
+
+    .ac-node__icon { background: rgba(255, 255, 255, 0.55); color: $dark-blue; }
+    .ac-node__hint { color: #2d4a6e; }
+  }
+
+  &--leaf,
+  &--hub {
+    cursor: pointer;
+
+    &:hover {
+      transform: translateY(-2px);
+      border-color: $primary;
+      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.18);
+    }
+  }
+
+  // Hub nodes (Parameters/Transactions/Reports) apni hi ek asal screen
+  // bhi hain (click hoti hai) AUR aage aur screens ka source bhi — thora
+  // alag rang taky leaf se farq nazar aaye.
+  &--hub {
+    background: #eef4ff;
+    border-color: #c7d9fb;
+  }
+
+  // Jo leaf abhi khuli hai, usko canvas pe bhi highlight kar dete hain —
+  // pata chalta rahe "yeh wali screen active hai".
+  &--is-open {
+    border-color: $primary;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  }
+}
+
+// ── Open screen / Excel node — ab ReactFlow ka asal node hai, isliye
+// canvas ke pan/zoom (Figma/Canva jaisa) ke sath hi move/scale hota hai.
+.react-flow__node-window {
+  user-select: auto; // form/report ka text select-copy ho sake
+}
+
+.ac-screen-node {
+  width: 100%;
+  height: 100%;
+  background: #fff;
+  border: 1px solid $border;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  opacity: 0.88;
+
+  &--active {
+    opacity: 1;
+    border-color: #93c5fd;
+    box-shadow: 0 16px 40px rgba(37, 99, 235, 0.22);
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.7rem;
+    background: #f8fafc;
+    border-bottom: 1px solid $border;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: $text-main;
+    cursor: grab;
+    flex-shrink: 0;
+    user-select: none;
+
+    span {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &:active { cursor: grabbing; }
+  }
+
+  &__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: $text-muted;
+    cursor: pointer;
+    flex-shrink: 0;
+
+    &:hover {
+      color: #fff;
+      background: $danger;
+    }
+  }
+
+  &__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    cursor: default;
+  }
+
+  &__placeholder {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    color: $text-muted;
+    background: #f8fafc;
+    cursor: pointer;
+
+    p {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: $text-main;
+      margin: 0;
+    }
+
+    span {
+      font-size: 0.75rem;
+      color: $primary;
+    }
+  }
+}
+
+// React Flow ke apne default chrome ko app ke look se match karna
+.accounts-canvas {
+  .react-flow__attribution { display: none; }
+
+  .react-flow__controls {
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+
+    button {
+      border-bottom-color: $border;
+    }
+  }
+
+  .react-flow__minimap {
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
+  }
+
+  .react-flow__edge-path {
+    stroke: #94a3b8;
+    stroke-width: 1.6;
+  }
+}

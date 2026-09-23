@@ -59,6 +59,8 @@ const menuItems = [
       { label: 'Bed Status',                            path: '/clinic/transactions/bed-status',               perm: { sub: 'transactions', tab: 'bed-status' } },
       { label: 'Upload Patient Document',               path: '/clinic/transactions/upload-patient-document',  perm: { sub: 'transactions', tab: 'upload-patient-document' } },
       { label: 'Surgery / Procedure Information',       path: '/clinic/transactions/surgery-information',       perm: { sub: 'transactions', tab: 'surgery-information' } },
+      { label: 'Handover',                              path: '/clinic/transactions/handover',                  perm: { sub: 'transactions', tab: 'handover' } },
+      { label: 'Reception Assets',                      path: '/clinic/transactions/reception-assets',          perm: { sub: 'transactions', tab: 'reception-assets' } },
     ],
   },
   {

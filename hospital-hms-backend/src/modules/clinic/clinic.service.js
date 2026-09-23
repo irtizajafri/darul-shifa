@@ -9258,6 +9258,219 @@ async function confirmMedicineImport(rows) {
   return { created, updated, skipped };
 }
 
+// ─── Cashier Handover ───────────────────────────────────────────────────────
+// Reception items list — deliberately independent of Inventory's
+// AssetInstance/GRN/GIN tracking (per explicit request): a Handover only
+// ever READS this list (snapshots it into assetsJson), never writes to it —
+// managing the list itself is a separate CRUD screen.
+async function listReceptionAssets() {
+  return prisma.clinicReceptionAsset.findMany({ orderBy: { name: 'asc' } });
+}
+
+async function createReceptionAsset({ name, quantity, condition, notes }) {
+  if (!name || !String(name).trim()) throw Object.assign(new Error('Item name zaroori hai'), { status: 400 });
+  return prisma.clinicReceptionAsset.create({
+    data: {
+      name: String(name).trim(),
+      quantity: Number(quantity) || 0,
+      condition: condition || 'working',
+      notes: notes || null,
+    },
+  });
+}
+
+async function updateReceptionAsset(id, { name, quantity, condition, notes }) {
+  const existing = await prisma.clinicReceptionAsset.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw Object.assign(new Error('Item not found'), { status: 404 });
+  return prisma.clinicReceptionAsset.update({
+    where: { id: Number(id) },
+    data: {
+      ...(name !== undefined ? { name: String(name).trim() } : {}),
+      ...(quantity !== undefined ? { quantity: Number(quantity) || 0 } : {}),
+      ...(condition !== undefined ? { condition } : {}),
+      ...(notes !== undefined ? { notes: notes || null } : {}),
+    },
+  });
+}
+
+async function deleteReceptionAsset(id) {
+  const existing = await prisma.clinicReceptionAsset.findUnique({ where: { id: Number(id) } });
+  if (!existing) throw Object.assign(new Error('Item not found'), { status: 404 });
+  return prisma.clinicReceptionAsset.delete({ where: { id: Number(id) } });
+}
+
+// Hospital business day: 8AM to 7:59:59AM next day — same convention used
+// throughout this file and accounts.service.js's own getBusinessDate().
+function handoverBusinessDate() {
+  const now = new Date();
+  if (now.getHours() < 8) now.setDate(now.getDate() - 1);
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+// Everything a cashier needs to see BEFORE submitting a handover: the
+// current Reception assets (reference only — this call never modifies
+// them), and today's Cash Handover numbers computed fresh from THEIR OWN
+// data only:
+//   Total Cash  = their own cash-paymentType ClinicOpdVisit slips created
+//                 today (business day) — cancelled visits excluded, that
+//                 money was never actually kept (same convention as
+//                 getRevenueDashboard/getPatientVisits' OV_CANCELLED).
+//   Draft Payments = their own still-pending Voucher Expense drafts saved
+//                 today.
+//   Net Cash    = Total Cash − Draft Payments.
+// ClinicOpdVisit.createdAt is a naive "timestamp without time zone" column
+// (see getPatientVisits comment on this same skew class) — compared here
+// via raw SQL string literals, not a JS Date passed through Prisma's
+// `where`, to avoid the UTC-offset shift bug already fixed elsewhere.
+async function getHandoverSummary(userId) {
+  if (!userId) throw Object.assign(new Error('userId zaroori hai'), { status: 400 });
+  const businessDate = handoverBusinessDate();
+  const uid = String(userId);
+
+  const assets = await prisma.clinicReceptionAsset.findMany({ orderBy: { name: 'asc' } });
+
+  const toDt = new Date(`${businessDate}T08:00:00`);
+  toDt.setDate(toDt.getDate() + 1);
+  const dayStart = `${businessDate} 08:00:00`;
+  const toDateTime = `${toDt.getFullYear()}-${String(toDt.getMonth() + 1).padStart(2, '0')}-${String(toDt.getDate()).padStart(2, '0')} 07:59:59`;
+
+  // If this cashier already submitted a handover earlier TODAY, a new one
+  // must only cover what's happened SINCE that handover — otherwise the
+  // same already-handed-over slips/drafts show up again and get counted a
+  // second time. Multiple handovers in one business day (shift changes)
+  // are expected; each one's window starts right after the previous
+  // handover's own createdAt instead of always the 8AM business-day start.
+  const lastHandover = await prisma.clinicHandover.findFirst({
+    where: { fromUserId: uid, businessDate },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  const fromDateTime = lastHandover
+    ? `${lastHandover.createdAt.getFullYear()}-${String(lastHandover.createdAt.getMonth() + 1).padStart(2, '0')}-${String(lastHandover.createdAt.getDate()).padStart(2, '0')} ${String(lastHandover.createdAt.getHours()).padStart(2, '0')}:${String(lastHandover.createdAt.getMinutes()).padStart(2, '0')}:${String(lastHandover.createdAt.getSeconds()).padStart(2, '0')}`
+    : dayStart;
+
+  const cashRows = await prisma.$queryRawUnsafe(`
+    SELECT COALESCE(SUM(receive), 0) AS total, COUNT(*)::int AS count
+    FROM "ClinicOpdVisit"
+    WHERE "createdByUserId" = $1
+      AND LOWER("paymentType") = 'cash'
+      AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+      AND "createdAt" BETWEEN $2::timestamp AND $3::timestamp
+  `, uid, fromDateTime, toDateTime);
+  const totalCash  = Number(cashRows?.[0]?.total || 0);
+  const slipCount  = Number(cashRows?.[0]?.count || 0);
+
+  // Slip serial range — the first and last slip (chronologically, by
+  // createdAt) this cashier processed in the window, so the print can show
+  // "worked from slip # X to slip # Y" like the paper sheet's two scan
+  // references at the top.
+  let firstSlipSerial = null, firstSlipTime = null, lastSlipSerial = null, lastSlipTime = null;
+  if (slipCount > 0) {
+    const [firstRow, lastRow] = await Promise.all([
+      prisma.$queryRawUnsafe(`
+        SELECT "serialNo", "createdAt" FROM "ClinicOpdVisit"
+        WHERE "createdByUserId" = $1 AND LOWER("paymentType") = 'cash'
+          AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+          AND "createdAt" BETWEEN $2::timestamp AND $3::timestamp
+        ORDER BY "createdAt" ASC LIMIT 1
+      `, uid, fromDateTime, toDateTime),
+      prisma.$queryRawUnsafe(`
+        SELECT "serialNo", "createdAt" FROM "ClinicOpdVisit"
+        WHERE "createdByUserId" = $1 AND LOWER("paymentType") = 'cash'
+          AND LOWER(COALESCE(status, '')) NOT IN ('cancelled', 'canceled')
+          AND "createdAt" BETWEEN $2::timestamp AND $3::timestamp
+        ORDER BY "createdAt" DESC LIMIT 1
+      `, uid, fromDateTime, toDateTime),
+    ]);
+    firstSlipSerial = firstRow?.[0]?.serialNo || null;
+    firstSlipTime   = firstRow?.[0]?.createdAt || null;
+    lastSlipSerial  = lastRow?.[0]?.serialNo || null;
+    lastSlipTime    = lastRow?.[0]?.createdAt || null;
+  }
+
+  // Same "since last handover" narrowing as the cash slips above — an
+  // already-handed-over draft must not reappear (and get counted again as
+  // an expense) in the next handover the same day. createdAt is compared
+  // via raw SQL string literals (not a JS Date through Prisma's `where`) to
+  // avoid the naive-timestamp skew bug already fixed elsewhere.
+  const draftsBroad = await prisma.accVoucherExpenseDraft.findMany({
+    where: { createdByUserId: uid, status: 'pending', businessDate },
+    orderBy: { createdAt: 'asc' },
+  });
+  const preciseDraftIds = await prisma.$queryRawUnsafe(`
+    SELECT id FROM "AccVoucherExpenseDraft" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
+  `, fromDateTime, toDateTime);
+  const draftIdSet = new Set(preciseDraftIds.map((r) => r.id));
+  const drafts = draftsBroad.filter((d) => draftIdSet.has(d.id));
+  const draftPaymentsTotal = drafts.reduce((s, d) => s + Number(d.amount), 0);
+
+  return {
+    businessDate,
+    assets,
+    totalCash, slipCount,
+    firstSlipSerial, firstSlipTime, lastSlipSerial, lastSlipTime,
+    draftPaymentsTotal,
+    drafts: drafts.map((d) => ({
+      id: d.id, amount: Number(d.amount), payeeName: d.payeeName,
+      particulars: d.particulars, mainGlName: d.mainGlName,
+    })),
+    netCash: totalCash - draftPaymentsTotal,
+  };
+}
+
+// Used to gate logout for users with permissions.requiresHandover === true
+// (see canBackDate-style helper in permissions.js) — has THIS user already
+// submitted a handover for today's business day?
+async function getHandoverStatusToday(userId) {
+  if (!userId) throw Object.assign(new Error('userId zaroori hai'), { status: 400 });
+  const businessDate = handoverBusinessDate();
+  const existing = await prisma.clinicHandover.findFirst({
+    where: { fromUserId: String(userId), businessDate },
+    orderBy: { id: 'desc' },
+  });
+  return { businessDate, done: !!existing, handover: existing || null };
+}
+
+async function createHandover({ fromUserId, fromUserName, assetToUserId, assetToUserName, cashToUserId, cashToUserName, pettyCash, assets, totalCash, draftPaymentsTotal, drafts, otherExpense, denominations, slipCount, firstSlipSerial, firstSlipTime, lastSlipSerial, lastSlipTime, netCash, notes }) {
+  if (!fromUserId || !fromUserName) throw Object.assign(new Error('From user required'), { status: 400 });
+  // Asset Handover and Cash Handover can go to two different employees —
+  // each needs its own receiving user selected, independently.
+  if (!assetToUserId || !assetToUserName) throw Object.assign(new Error('Asset Handover kis employee ko de rahe hain, select karein'), { status: 400 });
+  if (!cashToUserId || !cashToUserName) throw Object.assign(new Error('Cash Handover kis employee ko de rahe hain, select karein'), { status: 400 });
+  const businessDate = handoverBusinessDate();
+  return prisma.clinicHandover.create({
+    data: {
+      businessDate,
+      fromUserId: String(fromUserId), fromUserName,
+      assetToUserId: String(assetToUserId), assetToUserName,
+      cashToUserId: String(cashToUserId), cashToUserName,
+      pettyCash: (pettyCash != null && pettyCash !== '') ? Number(pettyCash) : null,
+      assetsJson: Array.isArray(assets) ? assets : undefined,
+      totalCash: totalCash != null ? Number(totalCash) : null,
+      draftPaymentsTotal: draftPaymentsTotal != null ? Number(draftPaymentsTotal) : null,
+      draftsJson: Array.isArray(drafts) ? drafts : undefined,
+      otherExpense: (otherExpense != null && otherExpense !== '') ? Number(otherExpense) : null,
+      denominationsJson: Array.isArray(denominations) ? denominations : undefined,
+      slipCount: slipCount != null ? Number(slipCount) : null,
+      firstSlipSerial: firstSlipSerial || null,
+      firstSlipTime: firstSlipTime ? new Date(firstSlipTime) : null,
+      lastSlipSerial: lastSlipSerial || null,
+      lastSlipTime: lastSlipTime ? new Date(lastSlipTime) : null,
+      netCash: netCash != null ? Number(netCash) : null,
+      notes: notes || null,
+    },
+  });
+}
+
+// History/review list — any combination of date range and/or a specific
+// cashier (fromUserId).
+async function listHandovers({ fromDate, toDate, userId } = {}) {
+  const where = {};
+  if (userId) where.fromUserId = String(userId);
+  if (fromDate && toDate) where.businessDate = { gte: fromDate, lte: toDate };
+  return prisma.clinicHandover.findMany({ where, orderBy: { id: 'desc' } });
+}
+
 module.exports = {
   calcFeeSplit,
   getAllDepartments,
@@ -9504,6 +9717,14 @@ module.exports = {
   deleteMedicine,
   previewMedicineImport,
   confirmMedicineImport,
+  listReceptionAssets,
+  createReceptionAsset,
+  updateReceptionAsset,
+  deleteReceptionAsset,
+  getHandoverSummary,
+  getHandoverStatusToday,
+  createHandover,
+  listHandovers,
 };
 
 // ─── Panel Billing Detail (bill-head wise) ───────────────────────────────────

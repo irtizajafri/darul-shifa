@@ -423,6 +423,21 @@ export const useInventoryStore = create((set) => ({
     }
   },
 
+  // Toggle isIgnored on a GD header.
+  // isIgnored=true  → hides the GD from the GIN creation dropdown (but still visible in reports & reprint)
+  // isIgnored=false → restores it
+  ignoreGDHeader: async (id, isIgnored = true) => {
+    const data = await request(`/gd/headers/${id}/ignore`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isIgnored }),
+    });
+    // Update the header in the local gdHeaders list so UI reflects immediately
+    set((s) => ({
+      gdHeaders: s.gdHeaders.map((h) => (h.id === data.id ? { ...h, isIgnored: data.isIgnored } : h)),
+    }));
+    return data;
+  },
+
   fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '', issuedById = '' } = {}) => {
     set({ loading: true, error: null });
     try {

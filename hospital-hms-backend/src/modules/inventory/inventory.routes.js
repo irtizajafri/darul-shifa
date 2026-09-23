@@ -60,6 +60,7 @@ router.patch('/grn/:id', controller.updateGRN);
 
 router.get('/gd', controller.listGDs);
 router.get('/gd/headers', controller.listGDHeaders);
+router.patch('/gd/headers/:id/ignore', controller.ignoreGDHeader);
 router.post('/gd', controller.createGD);
 router.post('/gd/batch', controller.createGDBatch);
 

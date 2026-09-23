@@ -1094,7 +1094,7 @@ function getBusinessDate() {
 // the draft now posts under THAT day instead of always today's business
 // date. A blank/invalid/future date falls back to today's business date
 // (never post something dated ahead of when it was actually entered).
-async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date }) {
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName }) {
   const today = getBusinessDate();
   const businessDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today) ? date : today;
   return prisma.accVoucherExpenseDraft.create({
@@ -1109,16 +1109,20 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
       amount: Number(amount),
       chequeNo: chequeNo || null, chequeDate: chequeDate ? new Date(chequeDate) : null, chequeType: chequeType || null,
       particulars: particulars || null,
+      createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
+      createdByName: createdByName || null,
     },
   });
 }
 
 // Every still-pending draft, not just today's — a backdated one must stay
 // visible/manageable here until it's actually posted, not disappear from
-// view just because its date isn't today.
-async function getDraftExpenses(entityType) {
+// view just because its date isn't today. userId narrows to "my own"
+// drafts — used by Cashier Handover to total up one cashier's pending
+// payments for the day; omitted everywhere else (unscoped, as before).
+async function getDraftExpenses(entityType, userId) {
   return prisma.accVoucherExpenseDraft.findMany({
-    where: { entityType, status: 'pending' },
+    where: { entityType, status: 'pending', ...(userId ? { createdByUserId: String(userId) } : {}) },
     orderBy: [{ businessDate: 'asc' }, { mainGlName: 'asc' }, { createdAt: 'asc' }],
   });
 }

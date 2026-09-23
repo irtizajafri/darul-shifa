@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, Package, FlaskConical, Wallet } from 'lucide-react';
+import { Stethoscope, Package, FlaskConical, Wallet, Workflow } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
@@ -22,6 +22,15 @@ const ALL_MODULES = [
     path: '/employee-module',
   },
   { id: 'lab', permModule: null, icon: FlaskConical, title: 'Laboratories', desc: 'Lab tests, results & reporting', active: false },
+  {
+    id: 'canvas',
+    permModule: 'accounts',
+    icon: Workflow,
+    title: 'Module Canvas',
+    desc: 'Visual node map of the hospital modules — starting with Accounts',
+    active: true,
+    path: '/canvas',
+  },
   {
     id: 'inventory',
     permModule: 'inventory',

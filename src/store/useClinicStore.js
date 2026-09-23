@@ -139,6 +139,60 @@ export const useClinicStore = create((set) => ({
     set((s) => ({ symptoms: s.symptoms.filter((c) => c.id !== id) }));
   },
 
+  // ── Reception Assets (Cashier Handover — independent of Inventory) ───────────
+  receptionAssets: [],
+
+  fetchReceptionAssets: async () => {
+    set({ loading: true, error: null });
+    try {
+      const receptionAssets = await request('/reception-assets');
+      set({ receptionAssets, loading: false });
+    } catch (err) {
+      set({ error: err.message, loading: false });
+    }
+  },
+
+  createReceptionAsset: async (payload) => {
+    const data = await request('/reception-assets', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ receptionAssets: [...s.receptionAssets, data].sort((a, b) => a.name.localeCompare(b.name)) }));
+    return data;
+  },
+
+  updateReceptionAsset: async (id, payload) => {
+    const data = await request(`/reception-assets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+    set((s) => ({ receptionAssets: s.receptionAssets.map((c) => (c.id === id ? data : c)) }));
+    return data;
+  },
+
+  deleteReceptionAsset: async (id) => {
+    await request(`/reception-assets/${id}`, { method: 'DELETE' });
+    set((s) => ({ receptionAssets: s.receptionAssets.filter((c) => c.id !== id) }));
+  },
+
+  // ── Cashier Handover ───────────────────────────────────────────────────────
+  fetchHandoverSummary: async (userId) => request(`/handover/summary?userId=${encodeURIComponent(userId)}`),
+
+  fetchHandoverStatusToday: async (userId) => request(`/handover/status-today?userId=${encodeURIComponent(userId)}`),
+
+  createHandover: async (payload) => request('/handover', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+
+  fetchHandovers: async ({ fromDate = '', toDate = '', userId = '' } = {}) => {
+    const qs = new URLSearchParams();
+    if (fromDate) qs.set('fromDate', fromDate);
+    if (toDate) qs.set('toDate', toDate);
+    if (userId) qs.set('userId', userId);
+    return request(`/handover?${qs.toString()}`);
+  },
+
   // ── Disease ──────────────────────────────────────────────────────────────────
   diseases: [],
 

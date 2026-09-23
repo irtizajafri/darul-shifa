@@ -1271,6 +1271,22 @@ async function listGDHeaders({ departmentId, status, dateFrom, dateTo, admission
   });
 }
 
+// Toggle the isIgnored flag on a GD header.
+// When ignored the GD is hidden from the GIN creation dropdown but still
+// visible in all reports, the Reprint panel, and can be un-ignored at any time.
+async function ignoreGDHeader({ id, isIgnored }) {
+  const headerId = parsePositiveNumber(id);
+  if (!headerId) throw new Error('Invalid GD header id');
+  return prisma.inventoryGDHeader.update({
+    where: { id: headerId },
+    data: { isIgnored: Boolean(isIgnored) },
+    include: {
+      department: true,
+      gdItems: { include: { item: { include: { category: true, subcategory: true } } } },
+    },
+  });
+}
+
 async function createGD(payload) {
   const itemId = Number(payload.itemId);
   const departmentId = Number(payload.departmentId);
@@ -4408,6 +4424,7 @@ module.exports = {
   createGD,
   createGDBatch,
   listGDHeaders,
+  ignoreGDHeader,
   listGINs,
   createGIN,
   updateGIN,

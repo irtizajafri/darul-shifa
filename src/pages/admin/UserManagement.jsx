@@ -234,6 +234,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
     hasExpiry: false,
     expiresAt: '',
     allowBackDating: false,
+    requiresHandover: false,
     permissions: {},
   });
 
@@ -250,12 +251,13 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
         hasExpiry: !!editUser.expiresAt,
         expiresAt: editUser.expiresAt ? editUser.expiresAt.slice(0, 10) : '',
         allowBackDating: editUser.permissions?.allowBackDating === true,
+        requiresHandover: editUser.permissions?.requiresHandover === true,
         permissions: normalizePermissions(editUser.permissions || {}),
       });
       setNameSearch(editUser.name || '');
       setDeptSearch(editUser.department || '');
     } else {
-      setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', department: '', hasExpiry: false, expiresAt: '', allowBackDating: false, permissions: {} });
+      setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', department: '', hasExpiry: false, expiresAt: '', allowBackDating: false, requiresHandover: false, permissions: {} });
       setNameSearch('');
       setDeptSearch('');
     }
@@ -287,7 +289,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
       email: form.email.trim().toLowerCase(),
       role: form.role.trim(),
       department: form.department.trim() || null,
-      permissions: { ...form.permissions, allowBackDating: form.allowBackDating },
+      permissions: { ...form.permissions, allowBackDating: form.allowBackDating, requiresHandover: form.requiresHandover },
       expiresAt: form.hasExpiry && form.expiresAt ? form.expiresAt : null,
     };
     if (!isEdit || form.password) payload.password = form.password;
@@ -470,6 +472,22 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
             <div>
               <p className="text-sm font-semibold text-gray-700">Allow Back Dating</p>
               <p className="text-xs text-gray-400 mt-0.5">Agar enable karo toh yeh user GRN, GIN, GD aur PO mein past dates enter kar sakta hai. Disable hone par sirf aaj ki date select ho sakti hai.</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Requires Handover */}
+        <div className="border border-gray-200 rounded-lg p-4">
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={form.requiresHandover}
+              onChange={(e) => set('requiresHandover', e.target.checked)}
+              className="w-4 h-4 accent-blue-600 cursor-pointer"
+            />
+            <div>
+              <p className="text-sm font-semibold text-gray-700">Requires Handover</p>
+              <p className="text-xs text-gray-400 mt-0.5">Agar enable karo toh yeh user (jaise Cashier) tab tak apni ID se logout nahi kar sakta jab tak us din ka Handover (Clinic → Transactions → Handover) submit na kar de.</p>
             </div>
           </label>
         </div>

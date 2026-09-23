@@ -138,6 +138,16 @@ router.put('/opd/slip-transfer/:source/:id', controller.transferSlipAdmission);
 router.get('/opd/balance-slips', controller.getBalanceSlips);
 router.post('/opd/:id/receive-balance', controller.receiveBalancePayment);
 
+// Cashier Handover
+router.get('/reception-assets', controller.listReceptionAssets);
+router.post('/reception-assets', controller.createReceptionAsset);
+router.put('/reception-assets/:id', controller.updateReceptionAsset);
+router.delete('/reception-assets/:id', controller.deleteReceptionAsset);
+router.get('/handover/summary', controller.getHandoverSummary);
+router.get('/handover/status-today', controller.getHandoverStatusToday);
+router.post('/handover', controller.createHandover);
+router.get('/handover', controller.listHandovers);
+
 // Room Category
 router.get('/room-categories', controller.getRoomCategories);
 router.post('/room-categories', controller.createRoomCategory);

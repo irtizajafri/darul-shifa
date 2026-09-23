@@ -640,6 +640,17 @@ async function listGDHeaders(req, res, next) {
   }
 }
 
+async function ignoreGDHeader(req, res, next) {
+  try {
+    const id = req.params.id;
+    const isIgnored = req.body?.isIgnored !== undefined ? Boolean(req.body.isIgnored) : true;
+    const data = await service.ignoreGDHeader({ id, isIgnored });
+    return success(res, data);
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function createGD(req, res, next) {
   try {
     const required = ['itemId', 'departmentId', 'quantityRequested'];
@@ -1069,6 +1080,7 @@ module.exports = {
   updateGRN,
   listGDs,
   listGDHeaders,
+  ignoreGDHeader,
   createGD,
   createGDBatch,
   listGINs,

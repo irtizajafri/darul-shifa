@@ -2309,6 +2309,70 @@ async function getUserDateSummary(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// ─── Cashier Handover ───────────────────────────────────────────────────────
+async function listReceptionAssets(req, res, next) {
+  try { success(res, await service.listReceptionAssets()); } catch (err) { next(err); }
+}
+async function createReceptionAsset(req, res, next) {
+  try {
+    const { name, quantity, condition, notes } = req.body;
+    success(res, await service.createReceptionAsset({ name, quantity, condition, notes }), 'Item added');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function updateReceptionAsset(req, res, next) {
+  try {
+    const { name, quantity, condition, notes } = req.body;
+    success(res, await service.updateReceptionAsset(req.params.id, { name, quantity, condition, notes }), 'Item updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function deleteReceptionAsset(req, res, next) {
+  try {
+    await service.deleteReceptionAsset(req.params.id);
+    success(res, null, 'Item deleted');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function getHandoverSummary(req, res, next) {
+  try {
+    success(res, await service.getHandoverSummary(req.query.userId));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function getHandoverStatusToday(req, res, next) {
+  try {
+    success(res, await service.getHandoverStatusToday(req.query.userId));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function createHandover(req, res, next) {
+  try {
+    const { fromUserId, fromUserName, assetToUserId, assetToUserName, cashToUserId, cashToUserName, pettyCash, assets, totalCash, draftPaymentsTotal, drafts, otherExpense, denominations, slipCount, firstSlipSerial, firstSlipTime, lastSlipSerial, lastSlipTime, netCash, notes } = req.body;
+    const data = await service.createHandover({ fromUserId, fromUserName, assetToUserId, assetToUserName, cashToUserId, cashToUserName, pettyCash, assets, totalCash, draftPaymentsTotal, drafts, otherExpense, denominations, slipCount, firstSlipSerial, firstSlipTime, lastSlipSerial, lastSlipTime, netCash, notes });
+    success(res, data, 'Handover save ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function listHandovers(req, res, next) {
+  try {
+    const { fromDate, toDate, userId } = req.query;
+    success(res, await service.listHandovers({ fromDate, toDate, userId }));
+  } catch (err) { next(err); }
+}
+
 async function getBalanceSlips(req, res, next) {
   try {
     success(res, await service.getBalanceSlips());
@@ -2572,6 +2636,14 @@ module.exports = {
   bulkImportDeathCertificates,
   getSurgeryInformationForAdmission,
   saveSurgeryInformation,
+  listReceptionAssets,
+  createReceptionAsset,
+  updateReceptionAsset,
+  deleteReceptionAsset,
+  getHandoverSummary,
+  getHandoverStatusToday,
+  createHandover,
+  listHandovers,
 };
 
 async function importBillComparison(req, res, next) {

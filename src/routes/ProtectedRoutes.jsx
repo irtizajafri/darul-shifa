@@ -6,6 +6,7 @@ import EmployeeModuleDashboard from '../pages/dashboard/EmployeeModuleDashboard'
 import InventoryModuleDashboard from '../pages/dashboard/InventoryModuleDashboard';
 import ClinicModuleDashboard from '../pages/dashboard/ClinicModuleDashboard';
 import AccountsModuleDashboard from '../pages/dashboard/AccountsModuleDashboard';
+import AccountsCanvas from '../pages/canvas/AccountsCanvas';
 import AccountsParameters from '../pages/accounts/parameters/AccountsParameters';
 import MainGL from '../pages/accounts/parameters/MainGL';
 import SubGL from '../pages/accounts/parameters/SubGL';
@@ -107,6 +108,8 @@ import ReceivingAgainstAdmission from '../pages/clinic/ReceivingAgainstAdmission
 import DiscountRefundAdmission from '../pages/clinic/DiscountRefundAdmission';
 import Appointment from '../pages/clinic/Appointment';
 import OtRegister from '../pages/clinic/OtRegister';
+import Handover from '../pages/clinic/Handover';
+import ReceptionAssets from '../pages/clinic/ReceptionAssets';
 import BirthCertificate from '../pages/clinic/BirthCertificate';
 import AdmissionAdjustment from '../pages/clinic/AdmissionAdjustment';
 import AdmissionStatusChange from '../pages/clinic/AdmissionStatusChange';
@@ -216,6 +219,49 @@ export default function ProtectedRoutes() {
       <Route path="inventory/utilities-bill" element={<PermissionGuard module="inventory" subModule="utilities-bill"><UtilitiesBillDashboard /></PermissionGuard>} />
 
       <Route path="accounts-module" element={<PermissionGuard module="accounts"><AccountsModuleDashboard /></PermissionGuard>} />
+      {/* Canvas ek layout route hai — AccountsCanvas hamesha mount rehta hai
+          (<Outlet/> ke sath), aur neeche wale child routes match hote hi
+          unka page Outlet ke andar (slide-in panel) render ho jata hai. Yeh
+          isi outer <Routes> ka hissa hai — koi doosra <Router> nest nahi kiya
+          gaya (React Router "<Router> inside <Router>" par crash karta hai),
+          isliye asal AccountsParameters/AccountsTransactions/etc. components
+          bilkul normal route ki tarah hi kaam karte hain (useParams,
+          useNavigate sab real hain). */}
+      <Route path="canvas" element={<PermissionGuard module="accounts"><AccountsCanvas /></PermissionGuard>}>
+        <Route path="accounts/:entityType/parameters" element={<AccountsParameters />} />
+        <Route path="accounts/:entityType/parameters/main-gl" element={<MainGL />} />
+        <Route path="accounts/:entityType/parameters/sub-gl" element={<SubGL />} />
+        <Route path="accounts/:entityType/parameters/main-account" element={<MainAccount />} />
+        <Route path="accounts/:entityType/parameters/sub-account" element={<SubAccount />} />
+        <Route path="accounts/:entityType/parameters/list-attachments" element={<ListAttachments />} />
+        <Route path="accounts/:entityType/parameters/bank-accounts" element={<BankAccounts />} />
+        <Route path="accounts/:entityType/parameters/cheque-serial" element={<ChequeSerial />} />
+        <Route path="accounts/:entityType/parameters/income-category" element={<IncomeCategory />} />
+
+        <Route path="accounts/:entityType/transactions" element={<AccountsTransactions />} />
+        <Route path="accounts/:entityType/transactions/voucher-expense" element={<VoucherExpense />} />
+        <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<VoucherExpenseForm />} />
+        <Route path="accounts/:entityType/transactions/expense-drafts" element={<DraftExpenses />} />
+        <Route path="accounts/:entityType/transactions/voucher-income" element={<VoucherIncome />} />
+        <Route path="accounts/:entityType/transactions/voucher-income/form" element={<VoucherIncomeForm />} />
+        <Route path="accounts/:entityType/transactions/bank-deposit" element={<BankDeposit />} />
+        <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<BankDepositAdj />} />
+        <Route path="accounts/:entityType/transactions/bank-statement" element={<BankStatementUpload />} />
+
+        <Route path="accounts/:entityType/inquiry" element={<AccountsInquiryDashboard />} />
+
+        <Route path="accounts/:entityType/reports" element={<AccountsReports />} />
+        <Route path="accounts/:entityType/reports/voucher-reprint" element={<VoucherReprint />} />
+        <Route path="accounts/:entityType/reports/voucher-summary" element={<VoucherSummary />} />
+        <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<VoucherSummaryMatrix />} />
+        <Route path="accounts/:entityType/reports/income-summary-matrix" element={<IncomeSummaryMatrix />} />
+        <Route path="accounts/:entityType/reports/gl-balance-report" element={<GLBalanceReport />} />
+        <Route path="accounts/:entityType/reports/consultant-payment-history" element={<ConsultantPaymentHistory />} />
+        <Route path="accounts/:entityType/reports/supplier-payment-history" element={<SupplierPaymentHistory />} />
+        <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<UnpresentedChequeList />} />
+        <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<ChequeWiseVoucherSummary />} />
+        <Route path="accounts/:entityType/reports/*" element={<ComingSoon />} />
+      </Route>
       <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />
       <Route path="accounts/:entityType/parameters/main-gl" element={<PermissionGuard module="accounts"><MainGL /></PermissionGuard>} />
       <Route path="accounts/:entityType/parameters/sub-gl" element={<PermissionGuard module="accounts"><SubGL /></PermissionGuard>} />
@@ -360,6 +406,8 @@ export default function ProtectedRoutes() {
       <Route path="clinic/transactions/receiving-against-admission" element={<PermissionGuard module="clinic" subModule="transactions" tab="receiving-against-admission"><ReceivingAgainstAdmission /></PermissionGuard>} />
       <Route path="clinic/transactions/discount-refund-admission"   element={<PermissionGuard module="clinic" subModule="transactions" tab="discount-refund-admission"><DiscountRefundAdmission /></PermissionGuard>} />
       <Route path="clinic/transactions/ot-register"                 element={<PermissionGuard module="clinic" subModule="transactions" tab="ot-register"><OtRegister /></PermissionGuard>} />
+      <Route path="clinic/transactions/handover"                    element={<PermissionGuard module="clinic" subModule="transactions" tab="handover"><Handover /></PermissionGuard>} />
+      <Route path="clinic/transactions/reception-assets"             element={<PermissionGuard module="clinic" subModule="transactions" tab="reception-assets"><ReceptionAssets /></PermissionGuard>} />
       <Route path="clinic/transactions/birth-certificate"           element={<PermissionGuard module="clinic" subModule="transactions" tab="birth-certificate"><BirthCertificate /></PermissionGuard>} />
       <Route path="clinic/transactions/appointment"                 element={<PermissionGuard module="clinic" subModule="transactions" tab="appointment"><Appointment /></PermissionGuard>} />
       <Route path="clinic/transactions/admission-adjustment"        element={<PermissionGuard module="clinic" subModule="transactions" tab="admission-adjustment"><AdmissionAdjustment /></PermissionGuard>} />

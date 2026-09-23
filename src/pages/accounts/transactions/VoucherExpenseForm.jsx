@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Plus, Trash2, ChevronRight, Printer, Pencil } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, ChevronRight, Printer, Pencil, Lock } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import toast from 'react-hot-toast';
@@ -332,6 +332,12 @@ const emptyEntry = () => ({
   consultantFeeItemIds: [],
   salaryEmpCode: '', salaryMonth: '', salaryYear: '',
   admissionNo: '',
+  // Set true the moment "Fill Amount" (GRN/Utility Bill/Consultant Visit/
+  // Consultant Fee/Salary/pending-queue) writes a number in here — the
+  // Amount field goes read-only right after, so the linked module's own
+  // figure can never be silently overwritten in Accounts. Clears back to
+  // false on the next emptyEntry() (after Add Entry, or starting fresh).
+  amountLocked: false,
 });
 
 export default function VoucherExpenseForm() {
@@ -505,6 +511,7 @@ export default function VoucherExpenseForm() {
       payeeName: item.supplierName,
       amount: String(item.amount),
       grnIds: [item.grnId],
+      amountLocked: true,
     }));
   };
 
@@ -549,6 +556,7 @@ export default function VoucherExpenseForm() {
       payeeName: item.supplierName,
       amount: String(item.amount),
       grnIds: [item.grnId],
+      amountLocked: true,
       chequeNo,
       particulars: particulars.trim(),
       mainGlName:      mainGl?.name  || '',
@@ -1124,6 +1132,8 @@ export default function VoucherExpenseForm() {
             chequeDate:    e.chequeDate    || null,
             chequeType:    e.chequeType    || null,
             particulars:   e.particulars   || null,
+            createdByUserId: user?.id != null ? String(user.id) : null,
+            createdByName:   user?.name || user?.username || user?.email || null,
           }),
         });
         const j = await r.json();
@@ -1496,12 +1506,21 @@ export default function VoucherExpenseForm() {
               </div>
 
               <div className="ve-form__field">
-                <label>Amount</label>
+                <label>
+                  Amount
+                  {entry.amountLocked && (
+                    <span title="Yeh amount linked module (GRN/Consultant/Salary/etc) se auto-fill hui hai — Accounts mein edit nahi ho sakti.">
+                      {' '}<Lock size={11} style={{ display: 'inline', verticalAlign: 'middle', color: '#64748b' }} />
+                    </span>
+                  )}
+                </label>
                 <input
                   type="number" min="0" step="0.01"
                   value={entry.amount}
                   onChange={upd('amount')}
+                  readOnly={entry.amountLocked}
                   placeholder="0.00"
+                  style={entry.amountLocked ? { background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' } : undefined}
                 />
               </div>
             </div>
@@ -1828,7 +1847,7 @@ export default function VoucherExpenseForm() {
                       disabled={grnCheckedTotal === 0}
                       onClick={() => {
                         const ids = (grnModal.grns || []).filter((g) => checkedGrns[g.id]).map((g) => g.id);
-                        setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)), grnIds: ids }));
+                        setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)), grnIds: ids, amountLocked: true }));
                         setGrnModal(null);
                       }}
                     >
@@ -1911,7 +1930,7 @@ export default function VoucherExpenseForm() {
                       className="ve-sal-modal__verify"
                       disabled={utilBillCheckedTotal === 0}
                       onClick={() => {
-                        setEntry((f) => ({ ...f, amount: String(Math.round(utilBillCheckedTotal)) }));
+                        setEntry((f) => ({ ...f, amount: String(Math.round(utilBillCheckedTotal)), amountLocked: true }));
                         setUtilBillModal(null);
                       }}
                     >
@@ -2016,7 +2035,7 @@ export default function VoucherExpenseForm() {
                       disabled={cvCheckedTotal === 0}
                       onClick={() => {
                         const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map(Number);
-                        setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)), visitIds: ids }));
+                        setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)), visitIds: ids, amountLocked: true }));
                         setConsultantModal(null);
                       }}
                     >
@@ -2121,7 +2140,7 @@ export default function VoucherExpenseForm() {
                         // (see getPendingConsultantFees), so keep them as
                         // strings rather than coercing to Number.
                         const ids = Object.keys(checkedFees).filter((k) => checkedFees[k]);
-                        setEntry((f) => ({ ...f, amount: String(pfCheckedTotal), consultantFeeItemIds: ids }));
+                        setEntry((f) => ({ ...f, amount: String(pfCheckedTotal), consultantFeeItemIds: ids, amountLocked: true }));
                         setPendingFeesModal(null);
                       }}
                     >
@@ -2171,7 +2190,7 @@ export default function VoucherExpenseForm() {
                   <button
                     className="ve-sal-modal__verify"
                     onClick={() => {
-                      setEntry((f) => ({ ...f, amount: String(Math.round(salaryModal.netSalary ?? 0)), salaryEmpCode: salaryModal.empCode, salaryMonth: salaryModal.month, salaryYear: salaryModal.year }));
+                      setEntry((f) => ({ ...f, amount: String(Math.round(salaryModal.netSalary ?? 0)), salaryEmpCode: salaryModal.empCode, salaryMonth: salaryModal.month, salaryYear: salaryModal.year, amountLocked: true }));
                       setSalaryModal(null);
                     }}
                   >
