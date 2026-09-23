@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble } from 'lucide-react';
+import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
@@ -111,15 +111,36 @@ function parseExcelFile(file) {
 const fmt = (n) => Number(n || 0).toLocaleString('en-PK');
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '';
 
+// Filter screen ka default bhi "aaj -> kal" hai (08:00 -> 07:59 ke sath
+// milke ek poora "hospital business day" banata hai — aadhi raat cross
+// karta hua). Yeh screen agar kabhi seedha (bina poore query-params ke)
+// khule, tw uska apna fallback bhi WAHI convention follow kare — pehle
+// yahan "toDate = fromDate" (same day) tha, jo Time ke 08:00->07:59 ke
+// sath combine hoke ek ULTA (from > to) range banata, matlab koi data
+// hi nahi milta.
+function tomorrowOf(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().split('T')[0];
+}
+
+const GROUP_LABELS = {
+  without_users:      'Without users',
+  user_wise:          'User wise',
+  user_shift_wise:    'User shift wise',
+  user_shift_summary: 'User shift wise summary',
+};
+
 export default function PatientsListReport() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
   const fromDate = searchParams.get('fromDate') || new Date().toISOString().split('T')[0];
-  const toDate   = searchParams.get('toDate')   || fromDate;
+  const toDate   = searchParams.get('toDate')   || tomorrowOf(fromDate);
   const fromTime = searchParams.get('fromTime') || '08:00:00';
   const toTime   = searchParams.get('toTime')   || '07:59:59';
   const types    = searchParams.get('types')?.split(',').filter(Boolean) || [];
+  const groupBy  = searchParams.get('groupBy') || 'without_users';
 
   const [visits, setVisits]       = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -127,6 +148,19 @@ export default function PatientsListReport() {
   const [generating, setGenerating] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Quick client-side search — poora matching set already load ho chuka
+  // hota hai (server-side sirf date/time/type filter karta hai), isliye
+  // yahan naam/MR#/department/doctor se turant narrow karna bina kisi
+  // naye round-trip ke ho sakta hai.
+  const [nameSearch, setNameSearch]   = useState('');
+  const [mrSearch, setMrSearch]       = useState('');
+  const [deptSearch, setDeptSearch]   = useState('');
+  const [doctorSearch, setDoctorSearch] = useState('');
+  const hasSearch = !!(nameSearch || mrSearch || deptSearch || doctorSearch);
+  const clearSearch = () => { setNameSearch(''); setMrSearch(''); setDeptSearch(''); setDoctorSearch(''); };
+
+  const busy = loading || uploading || generating;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -145,6 +179,47 @@ export default function PatientsListReport() {
   }, [fromDate, toDate, fromTime, toTime, types.join(',')]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const filteredVisits = useMemo(() => {
+    if (!hasSearch) return visits;
+    const nameQ = nameSearch.trim().toLowerCase();
+    const mrQ = mrSearch.trim().toLowerCase();
+    const deptQ = deptSearch.trim().toLowerCase();
+    const docQ = doctorSearch.trim().toLowerCase();
+    return visits.filter((v) => {
+      if (nameQ && !String(v.patientName || '').toLowerCase().includes(nameQ)) return false;
+      if (mrQ && !String(v.mrNo || '').toLowerCase().includes(mrQ)) return false;
+      if (deptQ && !String(v.department || '').toLowerCase().includes(deptQ)) return false;
+      if (docQ && !String(v.doctor || '').toLowerCase().includes(docQ)) return false;
+      return true;
+    });
+  }, [visits, hasSearch, nameSearch, mrSearch, deptSearch, doctorSearch]);
+
+  // "User wise" / "User shift wise" / "User shift wise summary" — pehle
+  // yeh radio buttons filter screen se URL me "groupBy" bhej dete the
+  // lekin yeh screen kabhi padhti hi nahi thi (dead control, koi asar
+  // nahi hota tha). Ab groupBy se real grouping ban rahi hai.
+  //
+  // Data ka reality: "user"/"shift" sirf General/Emergency OPD (ClinicOpdVisit)
+  // se aane wale rows ke paas hai (createdByName/shiftName). Legacy Excel
+  // import, Admission, Admission-Payment aur Antenatal — in 4 sources me
+  // koi user/shift record hi nahi hota, is liye unke rows "Not Recorded"
+  // bucket me chale jaate hain — yeh data ki asal limitation hai, banayi
+  // hui nahi.
+  const groups = useMemo(() => {
+    if (groupBy === 'without_users') return null;
+    const map = new Map();
+    for (const v of filteredVisits) {
+      const user = v.createdByName || 'Not Recorded';
+      const shift = groupBy === 'user_wise' ? null : (v.shiftName || 'Not Recorded');
+      const key = shift === null ? user : `${user} ${shift}`;
+      if (!map.has(key)) map.set(key, { user, shift, rows: [] });
+      map.get(key).rows.push(v);
+    }
+    return [...map.values()].sort((a, b) =>
+      a.user.localeCompare(b.user) || String(a.shift || '').localeCompare(String(b.shift || ''))
+    );
+  }, [filteredVisits, groupBy]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
@@ -166,7 +241,10 @@ export default function PatientsListReport() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
       toast.success(`${json.data.inserted} records imported`);
-      fetchData();
+      // Import ke turant baad refresh ka apna spinner chalta rahi bina
+      // "Importing..." khatam hue — ab dono ek hi "busy" state se chalte
+      // hain, isliye button states overlap nahi karte.
+      await fetchData();
     } catch (err) {
       toast.error(err.message || 'Upload failed');
     } finally {
@@ -189,13 +267,16 @@ export default function PatientsListReport() {
     }
   };
 
-  const totalReceived = visits.reduce((s, v) => s + Number(v.received || 0), 0);
-  const totalDiscount = visits.reduce((s, v) => s + Number(v.discount  || 0), 0);
+  const totalReceived = filteredVisits.reduce((s, v) => s + Number(v.received || 0), 0);
+  const totalDiscount = filteredVisits.reduce((s, v) => s + Number(v.discount  || 0), 0);
 
   const fmtDisplayDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '';
 
+  // Note: Excel export abhi bhi flat list export karta hai (grouping sirf
+  // on-screen/print ke liye hai) — grouped multi-sheet export alag, bara
+  // scope hoga, filhal isko chhoda hai.
   const handleExportExcel = () => {
-    if (!visits.length) { toast.error('Koi data nahi export karne ke liye'); return; }
+    if (!filteredVisits.length) { toast.error('Koi data nahi export karne ke liye'); return; }
 
     const header = [
       ['DARUL SHIFA IMAM KHOMEINI (q.s.)'],
@@ -207,7 +288,7 @@ export default function PatientsListReport() {
       ['S.No.', 'Admit No', 'Date', 'Time', 'Patient Name', 'Department', 'Sub Department', 'Doctor / Consultant', 'Type', 'Received', 'Bal.', 'Dis.'],
     ];
 
-    const dataRows = visits.map((v) => [
+    const dataRows = filteredVisits.map((v) => [
       v.serialNo,
       v.admitNo || '',
       fmtDate(v.visitDate),
@@ -224,7 +305,7 @@ export default function PatientsListReport() {
 
     const footer = [
       [],
-      ['Total Patients:', visits.length, '', '', '', '', 'Grand Total:', '', totalReceived, '', totalDiscount],
+      ['Total Patients:', filteredVisits.length, '', '', '', '', 'Grand Total:', '', totalReceived, '', totalDiscount],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([...header, ...dataRows, ...footer]);
@@ -269,6 +350,8 @@ export default function PatientsListReport() {
         .plr-td-name { font-weight: 500; }
         .plr-rpt-footer { display: flex; justify-content: space-between; margin-top: 12px; font-size: 9px; color: #777; border-top: 1px solid #ccc; padding-top: 6px; }
         .plr-badge { font-size: 9px; padding: 1px 4px; border-radius: 8px; }
+        .plr-group-header { background: #eef2f8; font-weight: 700; padding: 6px 4px; color: #1a3c6e; font-size: 11px; margin-top: 10px; }
+        .plr-group-subtotal td { background: #f4f6fa; font-weight: 700; border-top: 1px solid #1a3c6e; }
       </style></head><body>
       ${content.innerHTML}
       </body></html>
@@ -277,6 +360,56 @@ export default function PatientsListReport() {
     win.focus();
     setTimeout(() => { win.print(); win.close(); }, 400);
   };
+
+  const columns = (
+    <tr>
+      <th className="plr-col-sno">S.No.</th>
+      <th className="plr-col-admit">Admit No</th>
+      <th className="plr-col-date">Date</th>
+      <th className="plr-col-time">Time</th>
+      <th className="plr-col-name">Patient Name</th>
+      <th className="plr-col-dept">Department</th>
+      <th className="plr-col-subdept">Sub Department</th>
+      <th className="plr-col-doc">Doctor / Consultant</th>
+      <th className="plr-col-type">Type</th>
+      <th className="plr-col-num">Received</th>
+      <th className="plr-col-num">Bal.</th>
+      <th className="plr-col-num">Dis.</th>
+    </tr>
+  );
+
+  const renderRows = (rows) => rows.map((v, i) => (
+    <tr key={v.id} className={i % 2 === 0 ? 'plr-row-even' : ''}>
+      <td>{v.serialNo}</td>
+      <td>{v.admitNo || ''}</td>
+      <td>{fmtDate(v.visitDate)}</td>
+      <td>{v.visitTime || ''}</td>
+      <td className="plr-td-name">{v.patientName}</td>
+      <td>{v.department || ''}</td>
+      <td>{v.subDepartment || ''}</td>
+      <td>{v.doctor || ''}</td>
+      <td><span className={`plr-badge plr-badge--${(v.paymentType||'').toLowerCase().replace('.','')}`}>{v.paymentType}</span></td>
+      <td className="plr-td-num">{fmt(v.received)}</td>
+      <td className="plr-td-num">{fmt(v.balance)}</td>
+      <td className="plr-td-num">{fmt(v.discount)}</td>
+    </tr>
+  ));
+
+  const renderSubtotal = (rows) => {
+    const rec = rows.reduce((s, v) => s + Number(v.received || 0), 0);
+    const dis = rows.reduce((s, v) => s + Number(v.discount || 0), 0);
+    return (
+      <tr className="plr-group-subtotal">
+        <td colSpan={3} className="plr-tf-label">Patients: {rows.length}</td>
+        <td colSpan={6} className="plr-tf-label">Subtotal:</td>
+        <td className="plr-td-num plr-tf-val">{fmt(rec)}</td>
+        <td className="plr-td-num" />
+        <td className="plr-td-num plr-tf-val">{fmt(dis)}</td>
+      </tr>
+    );
+  };
+
+  const noData = filteredVisits.length === 0;
 
   return (
     <div className="plr-page">
@@ -296,22 +429,50 @@ export default function PatientsListReport() {
             <FileDown size={14} /> <span>Export Excel</span>
           </button>
           <div className="plr-tool-sep" />
-          <button className="plr-tool-btn" onClick={fetchData} disabled={loading} title="Refresh">
+          <button className="plr-tool-btn" onClick={fetchData} disabled={busy} title="Refresh">
             <RefreshCw size={14} className={loading ? 'plr-spin' : ''} />
             <span>Refresh</span>
           </button>
-          <button className="plr-tool-btn plr-tool-btn--upload" onClick={() => fileInputRef.current?.click()} disabled={uploading} title="Import Excel">
+          <button className="plr-tool-btn plr-tool-btn--upload" onClick={() => fileInputRef.current?.click()} disabled={busy} title="Import Excel">
             <Upload size={14} />
             <span>{uploading ? 'Importing...' : 'Import Excel'}</span>
           </button>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={handleUpload} />
-          <button className="plr-tool-btn plr-tool-btn--upload" onClick={handleGenerateAdmissions} disabled={generating} title="Create Admission records from imported Admission visits">
+          <button className="plr-tool-btn plr-tool-btn--upload" onClick={handleGenerateAdmissions} disabled={busy} title="Create Admission records from imported Admission visits">
             <BedDouble size={14} />
             <span>{generating ? 'Generating...' : 'Generate Admissions'}</span>
           </button>
         </div>
         <div className="plr-toolbar-right">
+          {groupBy !== 'without_users' && <span className="plr-last-refresh">Grouping: {GROUP_LABELS[groupBy]}</span>}
           {lastRefresh && <span className="plr-last-refresh">Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+        </div>
+      </div>
+
+      {/* ── Quick search (client-side, sirf abhi laaya hua data narrow karta hai) ── */}
+      <div className="plr-filters no-print">
+        <div className="plr-filter-row">
+          <div className="plr-filter-group">
+            <label>Name</label>
+            <input type="text" value={nameSearch} onChange={(e) => setNameSearch(e.target.value)} placeholder="Patient name..." />
+          </div>
+          <div className="plr-filter-group">
+            <label>MR#</label>
+            <input type="text" value={mrSearch} onChange={(e) => setMrSearch(e.target.value)} placeholder="MR number..." />
+          </div>
+          <div className="plr-filter-group">
+            <label>Department</label>
+            <input type="text" value={deptSearch} onChange={(e) => setDeptSearch(e.target.value)} placeholder="Department..." />
+          </div>
+          <div className="plr-filter-group">
+            <label>Doctor</label>
+            <input type="text" value={doctorSearch} onChange={(e) => setDoctorSearch(e.target.value)} placeholder="Doctor..." />
+          </div>
+          {hasSearch && (
+            <button className="plr-toggle-btn" onClick={clearSearch} title="Clear search">
+              <X size={12} /> Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -336,53 +497,22 @@ export default function PatientsListReport() {
               <span>Date: {fmtDisplayDate(fromDate)} — {fmtDisplayDate(toDate)}</span>
               <span>Time: {fromTime} — {toTime}</span>
               {types.length > 0 && <span>Type: {types.join(', ')}</span>}
+              {groupBy !== 'without_users' && <span>Grouping: {GROUP_LABELS[groupBy]}</span>}
             </div>
           </div>
 
-          {/* Table */}
-          {visits.length === 0 ? (
+          {/* Table(s) */}
+          {noData ? (
             <div className="plr-empty">
-              {loading ? 'Loading data...' : 'No data — upload Excel or apply filters and click Refresh'}
+              {loading ? 'Loading data...' : hasSearch ? 'Search se koi match nahi mila' : 'No data — upload Excel or apply filters and click Refresh'}
             </div>
-          ) : (
+          ) : groupBy === 'without_users' ? (
             <table className="plr-rpt-table">
-              <thead>
-                <tr>
-                  <th className="plr-col-sno">S.No.</th>
-                  <th className="plr-col-admit">Admit No</th>
-                  <th className="plr-col-date">Date</th>
-                  <th className="plr-col-time">Time</th>
-                  <th className="plr-col-name">Patient Name</th>
-                  <th className="plr-col-dept">Department</th>
-                  <th className="plr-col-subdept">Sub Department</th>
-                  <th className="plr-col-doc">Doctor / Consultant</th>
-                  <th className="plr-col-type">Type</th>
-                  <th className="plr-col-num">Received</th>
-                  <th className="plr-col-num">Bal.</th>
-                  <th className="plr-col-num">Dis.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visits.map((v, i) => (
-                  <tr key={v.id} className={i % 2 === 0 ? 'plr-row-even' : ''}>
-                    <td>{v.serialNo}</td>
-                    <td>{v.admitNo || ''}</td>
-                    <td>{fmtDate(v.visitDate)}</td>
-                    <td>{v.visitTime || ''}</td>
-                    <td className="plr-td-name">{v.patientName}</td>
-                    <td>{v.department || ''}</td>
-                    <td>{v.subDepartment || ''}</td>
-                    <td>{v.doctor || ''}</td>
-                    <td><span className={`plr-badge plr-badge--${(v.paymentType||'').toLowerCase().replace('.','')}`}>{v.paymentType}</span></td>
-                    <td className="plr-td-num">{fmt(v.received)}</td>
-                    <td className="plr-td-num">{fmt(v.balance)}</td>
-                    <td className="plr-td-num">{fmt(v.discount)}</td>
-                  </tr>
-                ))}
-              </tbody>
+              <thead>{columns}</thead>
+              <tbody>{renderRows(filteredVisits)}</tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} className="plr-tf-label">Total Patients: {visits.length}</td>
+                  <td colSpan={3} className="plr-tf-label">Total Patients: {filteredVisits.length}</td>
                   <td colSpan={6} className="plr-tf-label">Grand Total:</td>
                   <td className="plr-td-num plr-tf-val">{fmt(totalReceived)}</td>
                   <td className="plr-td-num" />
@@ -390,10 +520,61 @@ export default function PatientsListReport() {
                 </tr>
               </tfoot>
             </table>
+          ) : groupBy === 'user_shift_summary' ? (
+            // Sirf totals — koi individual patient row nahi.
+            <table className="plr-rpt-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Shift</th>
+                  <th className="plr-col-num">Patients</th>
+                  <th className="plr-col-num">Received</th>
+                  <th className="plr-col-num">Dis.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((g, i) => {
+                  const rec = g.rows.reduce((s, v) => s + Number(v.received || 0), 0);
+                  const dis = g.rows.reduce((s, v) => s + Number(v.discount || 0), 0);
+                  return (
+                    <tr key={`${g.user}-${g.shift}`} className={i % 2 === 0 ? 'plr-row-even' : ''}>
+                      <td className="plr-td-name">{g.user}</td>
+                      <td>{g.shift}</td>
+                      <td className="plr-td-num">{g.rows.length}</td>
+                      <td className="plr-td-num">{fmt(rec)}</td>
+                      <td className="plr-td-num">{fmt(dis)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2} className="plr-tf-label">Total Patients: {filteredVisits.length}</td>
+                  <td className="plr-td-num plr-tf-val">{filteredVisits.length}</td>
+                  <td className="plr-td-num plr-tf-val">{fmt(totalReceived)}</td>
+                  <td className="plr-td-num plr-tf-val">{fmt(totalDiscount)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          ) : (
+            // user_wise / user_shift_wise — har group ki apni mini-table +
+            // subtotal, header me group ka naam.
+            groups.map((g) => (
+              <div key={`${g.user}-${g.shift}`} className="plr-group">
+                <div className="plr-group-header">
+                  {g.shift ? `${g.user} — Shift: ${g.shift}` : g.user}
+                </div>
+                <table className="plr-rpt-table">
+                  <thead>{columns}</thead>
+                  <tbody>{renderRows(g.rows)}</tbody>
+                  <tfoot>{renderSubtotal(g.rows)}</tfoot>
+                </table>
+              </div>
+            ))
           )}
 
           {/* Report footer */}
-          {visits.length > 0 && (
+          {!noData && (
             <div className="plr-rpt-footer">
               <span>Printed: {new Date().toLocaleString()}</span>
               <span>Page 1 of 1</span>

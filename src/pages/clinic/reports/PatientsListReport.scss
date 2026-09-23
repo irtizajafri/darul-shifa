@@ -140,7 +140,8 @@
   }
 
   input[type="date"],
-  input[type="time"] {
+  input[type="time"],
+  input[type="text"] {
     padding: 2px 6px;
     border: 1px solid #8a8780;
     border-top-color: #555;
@@ -149,6 +150,10 @@
     font-size: 0.78rem;
     outline: none;
     &:focus { border-color: #1a5c8c; }
+  }
+
+  input[type="text"] {
+    width: 130px;
   }
 }
 
@@ -288,6 +293,29 @@
 }
 
 .plr-row-even td { background: #f7f9fc; }
+
+// ── Grouped view (User wise / User shift wise) ────────────────────────────────
+.plr-group {
+  margin-bottom: 18px;
+
+  &:last-child { margin-bottom: 0; }
+}
+
+.plr-group-header {
+  background: #eef2f8;
+  color: #1a3c6e;
+  font-weight: 700;
+  font-size: 0.82rem;
+  padding: 6px 8px;
+  border-left: 3px solid #1a3c6e;
+  margin-bottom: 2px;
+}
+
+.plr-group-subtotal td {
+  background: #f4f6fa !important;
+  border-top: 1px solid #1a3c6e;
+  font-weight: 700;
+}
 
 .plr-col-sno     { width: 65px; }
 .plr-col-admit   { width: 65px; }

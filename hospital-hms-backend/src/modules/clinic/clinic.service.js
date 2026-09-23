@@ -6900,6 +6900,66 @@ async function getDoctorSubDeptRates() {
   }));
 }
 
+// Patients List (getPatientVisits) ka ek hi, saare 5 sources (PatientVisit,
+// ClinicOpdVisit, ClinicAdmission, ClinicAdmissionPayment, ClinicAntenatal)
+// me shared payment-type alias set — pehle har source apni alag (aur
+// aapas me mismatched) alias-list bana raha tha, isliye "CC" checkbox
+// PatientVisit ke legacy "C Card" rows ko miss kar deta tha, aur "Cash"
+// checkbox Antenatal/Admission ke "private" wale rows ko miss kar deta tha.
+// Ab expansion ek hi jagah, ek hi tarah se hoti hai.
+function expandPaymentTypeVariants(paymentTypes) {
+  if (!paymentTypes || paymentTypes.length === 0) return null;
+  const variants = new Set();
+  for (const raw of paymentTypes) {
+    const t = String(raw);
+    const lower = t.toLowerCase();
+    variants.add(t);
+    variants.add(lower);
+    if (lower === 'complem.' || lower === 'complementary') {
+      variants.add('complem.');
+      variants.add('complementary');
+    }
+    if (lower === 'cc' || lower === 'c card' || lower === 'credit card') {
+      variants.add('cc');
+      variants.add('c card');
+      variants.add('C Card');
+      variants.add('credit card');
+      variants.add('Credit Card');
+    }
+    // "Cash" aur "private" is app me alag-alag jagah wahi ek cheez ke liye
+    // use hote hain (Admission/Antenatal me non-staff/panel/complementary
+    // payer ko "private" kehte hain, jabke OPD/legacy me seedha "cash") —
+    // Cash checkbox dono ko cover kare.
+    if (lower === 'cash' || lower === 'private') {
+      variants.add('cash');
+      variants.add('private');
+    }
+  }
+  return [...variants];
+}
+
+// Naive-PKT-timestamp skew (see comment block below) se bachne ke liye:
+// pehle Prisma se ek generously-buffered (±1 din) candidate set nikalo
+// (skew se bhi safe), phir is helper se raw-SQL string-comparison ke
+// zariye exact window tak narrow karo. Yeh pattern pehle 4 alag jagah
+// (OPD/Admission/AdmissionPayment/Antenatal) hoobahu copy-paste tha —
+// ab ek hi jagah hai, isliye future me sirf ek hi jagah maintain karni hai.
+function bufferedTimestampWindow(fromDate, toDate, fromT, toT) {
+  const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
+  const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
+  return { gte: bufFrom, lte: bufTo };
+}
+
+async function narrowToPreciseWindow(tableName, dateField, rows, fromDate, toDate, fromT, toT) {
+  if (!fromDate || !toDate) return rows;
+  const preciseRows = await prisma.$queryRawUnsafe(
+    `SELECT id FROM "${tableName}" WHERE "${dateField}" BETWEEN $1::timestamp AND $2::timestamp`,
+    `${fromDate} ${fromT}`, `${toDate} ${toT}`
+  );
+  const idSet = new Set(preciseRows.map((r) => r.id));
+  return rows.filter((r) => idSet.has(r.id));
+}
+
 async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTypes, fromConsultant, toConsultant }) {
   // fromTime/toTime narrow the window within fromDate/toDate (e.g. the UI's
   // default 08:00:00 -> 07:59:59 hospital business day). Fall back to a full
@@ -6916,17 +6976,11 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     };
   }
 
-  // Build case-insensitive variants + map Complem. ↔ complementary
-  let typeVariants = null;
-  if (paymentTypes && paymentTypes.length > 0) {
-    const variants = new Set();
-    for (const t of paymentTypes) {
-      variants.add(t);
-      variants.add(t.toLowerCase());
-      if (t.toLowerCase() === 'complem.') variants.add('complementary');
-      if (t.toLowerCase() === 'complementary') variants.add('complem.');
-    }
-    typeVariants = [...variants];
+  // Case-insensitive variants + Complem./complementary, CC/C Card,
+  // Cash/private aliases — ek hi shared helper, saare sources isi ko
+  // use karte hain (pehle har source ki apni, aapas me mismatched list thi).
+  const typeVariants = expandPaymentTypeVariants(paymentTypes);
+  if (typeVariants) {
     where.paymentType = { in: typeVariants };
   }
 
@@ -6980,9 +7034,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // involved at all.
   const opdWhere = {};
   if (fromDate && toDate) {
-    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
-    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
-    opdWhere.createdAt = { gte: bufFrom, lte: bufTo };
+    opdWhere.createdAt = bufferedTimestampWindow(fromDate, toDate, fromT, toT);
   }
   if (typeVariants) {
     opdWhere.paymentType = { in: typeVariants };
@@ -6999,13 +7051,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     },
     orderBy: { createdAt: 'asc' },
   });
-  if (fromDate && toDate) {
-    const preciseOpdIds = await prisma.$queryRawUnsafe(`
-      SELECT id FROM "ClinicOpdVisit" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
-    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
-    const idSet = new Set(preciseOpdIds.map((r) => r.id));
-    opdVisits = opdVisits.filter((v) => idSet.has(v.id));
-  }
+  opdVisits = await narrowToPreciseWindow('ClinicOpdVisit', 'createdAt', opdVisits, fromDate, toDate, fromT, toT);
 
   const toHHMM = (dt) => {
     const d = new Date(dt);
@@ -7023,6 +7069,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       id:            `opd_${v.id}`,
       serialNo:      v.serialNo,
       admitNo:       null,
+      mrNo:          v.mrNo || null,
       visitDate:     v.createdAt,
       visitTime:     toHHMM(v.createdAt),
       patientName:   v.patientName,
@@ -7044,21 +7091,13 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // ClinicOpdVisit above, same buffer-then-raw-SQL-narrow fix.
   const admWhere = {};
   if (fromDate && toDate) {
-    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
-    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
-    admWhere.createdAt = { gte: bufFrom, lte: bufTo };
+    admWhere.createdAt = bufferedTimestampWindow(fromDate, toDate, fromT, toT);
   }
   if (typeVariants) {
-    // Map filter types to admission patientCategory values
-    const admCats = new Set();
-    for (const t of typeVariants) {
-      const lower = t.toLowerCase();
-      admCats.add(lower);
-      admCats.add(t);
-      if (lower === 'cash') admCats.add('private');
-      if (lower === 'private') admCats.add('private');
-    }
-    admWhere.patientCategory = { in: [...admCats] };
+    // ClinicAdmission.patientCategory sirf 'panel'/'private' hota hai — Cash
+    // checkbox ke liye 'private' pehle se hi typeVariants me shamil hai
+    // (expandPaymentTypeVariants ka shared cash/private alias).
+    admWhere.patientCategory = { in: typeVariants };
   }
   // Admissions generated from a legacy "Admission Deposit" visit (see
   // generateAdmissionsFromVisits) are already represented by that PatientVisit
@@ -7080,13 +7119,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     where: admWhere,
     orderBy: { createdAt: 'asc' },
   });
-  if (fromDate && toDate) {
-    const preciseAdmIds = await prisma.$queryRawUnsafe(`
-      SELECT id FROM "ClinicAdmission" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
-    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
-    const idSet = new Set(preciseAdmIds.map((r) => r.id));
-    admissions = admissions.filter((a) => idSet.has(a.id));
-  }
+  admissions = await narrowToPreciseWindow('ClinicAdmission', 'createdAt', admissions, fromDate, toDate, fromT, toT);
   admissions = admissions.filter((a) => !legacyAdmitNoSet.has(String(a.admissionNo)));
 
   // Fetch consultant names for admissions
@@ -7103,6 +7136,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     // Admission # so the row isn't blank. Admit No is always the Admission #.
     serialNo:      v.serialNo || v.admissionNo,
     admitNo:       v.admissionNo || null,
+    mrNo:          v.mrNo || null,
     visitDate:     v.createdAt,
     visitTime:     toHHMM(v.createdAt),
     patientName:   `${v.patientTitle || ''} ${v.patientName}`.trim(),
@@ -7122,13 +7156,15 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // screen never showed up anywhere in the Patients List.
   const admPayWhere = {};
   if (fromDate && toDate) {
-    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
-    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
-    admPayWhere.receivedAt = { gte: bufFrom, lte: bufTo };
+    admPayWhere.receivedAt = bufferedTimestampWindow(fromDate, toDate, fromT, toT);
   }
   if (typeVariants) {
-    const wantsCash = typeVariants.some(t => t.toLowerCase() === 'cash');
-    const wantsCc   = typeVariants.some(t => ['c card', 'cc', 'credit card'].includes(t.toLowerCase()));
+    // ReceivingAgainstAdmission ka form sirf Cash/Credit Card offer karta hai
+    // — koi doosra paymentType is table me ban hi nahi sakta, is liye yahan
+    // sirf inhi 2 ko dekhna hai (Staff/Panel/Complem./JazzCash select hone
+    // par is source se kabhi kuch nahi aayega, jo sahi hai).
+    const wantsCash = typeVariants.includes('cash');
+    const wantsCc   = typeVariants.includes('cc') || typeVariants.some((t) => t.toLowerCase() === 'c card' || t.toLowerCase() === 'credit card');
     const allowed = [...(wantsCash ? ['cash'] : []), ...(wantsCc ? ['cc'] : [])];
     admPayWhere.paymentType = { in: allowed.length ? allowed : ['__none__'] };
   }
@@ -7137,13 +7173,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     include: { admission: { select: { admissionNo: true, patientTitle: true, patientName: true } } },
     orderBy: { receivedAt: 'asc' },
   });
-  if (fromDate && toDate) {
-    const preciseAdmPayIds = await prisma.$queryRawUnsafe(`
-      SELECT id FROM "ClinicAdmissionPayment" WHERE "receivedAt" BETWEEN $1::timestamp AND $2::timestamp
-    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
-    const idSet = new Set(preciseAdmPayIds.map((r) => r.id));
-    admPaymentsRaw = admPaymentsRaw.filter((p) => idSet.has(p.id));
-  }
+  admPaymentsRaw = await narrowToPreciseWindow('ClinicAdmissionPayment', 'receivedAt', admPaymentsRaw, fromDate, toDate, fromT, toT);
   // Same legacy-migrated guard as above (ADM_PAY_NOT_MIGRATED in
   // getRevenueDashboard/getDailyDepartmentStatement) — a top-up payment
   // against an admission that's already represented in PatientVisit would
@@ -7173,9 +7203,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // dashboard's own total for the same dates.
   const antWhere = {};
   if (fromDate && toDate) {
-    const bufFrom = new Date(`${fromDate}T${fromT}`); bufFrom.setDate(bufFrom.getDate() - 1);
-    const bufTo   = new Date(`${toDate}T${toT}`);     bufTo.setDate(bufTo.getDate() + 1);
-    antWhere.createdAt = { gte: bufFrom, lte: bufTo };
+    antWhere.createdAt = bufferedTimestampWindow(fromDate, toDate, fromT, toT);
   }
   if (typeVariants) {
     antWhere.paymentType = { in: typeVariants };
@@ -7184,17 +7212,12 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     where: antWhere,
     orderBy: { createdAt: 'asc' },
   });
-  if (fromDate && toDate) {
-    const preciseAntIds = await prisma.$queryRawUnsafe(`
-      SELECT id FROM "ClinicAntenatal" WHERE "createdAt" BETWEEN $1::timestamp AND $2::timestamp
-    `, `${fromDate} ${fromT}`, `${toDate} ${toT}`);
-    const idSet = new Set(preciseAntIds.map((r) => r.id));
-    antenatalVisits = antenatalVisits.filter((v) => idSet.has(v.id));
-  }
+  antenatalVisits = await narrowToPreciseWindow('ClinicAntenatal', 'createdAt', antenatalVisits, fromDate, toDate, fromT, toT);
   const mappedAnt = antenatalVisits.map((v) => ({
     id:            `ant_${v.id}`,
     serialNo:      v.serialNo,
     admitNo:       null,
+    mrNo:          v.mrNo || null,
     visitDate:     v.createdAt,
     visitTime:     toHHMM(v.createdAt),
     patientName:   v.patientName,
