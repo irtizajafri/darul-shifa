@@ -415,7 +415,7 @@ export default function AmbulanceSlip() {
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
             <span className="gopd-serial-lbl">Serial #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} readOnly />
+            <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Date &amp; Time</span>
             <input className="gopd-serial-input gopd-mr-input" style={{ width: 160 }} value={dateTime} readOnly />
           </div>

@@ -873,7 +873,7 @@ export default function ConsultantOPD() {
               {mrLookupLoading ? '…' : <Search size={12} />}
             </button>
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} readOnly />
+            <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
             <input
               className="gopd-serial-input gopd-mr-input"

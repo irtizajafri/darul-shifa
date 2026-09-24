@@ -238,6 +238,7 @@ export const PERMISSIONS_MAP = {
     label: 'Accounts',
     dashboardRoute: '/accounts-module',
     subModules: [
+      { key: 'canvas', label: 'Module Canvas' },
       {
         key: 'parameters',
         label: 'Parameters',

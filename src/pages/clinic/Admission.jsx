@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Printer, Save, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -9,7 +9,7 @@ import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
-import { validatePhoneNo, validateAge } from './opdValidation';
+import { validatePhoneNo, validateAge, validateAdmissionNo } from './opdValidation';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './Admission.scss';
 import './Antenatal.scss';
@@ -576,6 +576,9 @@ function validateAdmissionForm(form) {
     if (!String(form[key] || '').trim()) return `${label} is required`;
   }
 
+  const admissionNoErr = validateAdmissionNo(form.admissionNo);
+  if (admissionNoErr) return admissionNoErr;
+
   const phoneErr = validatePhoneNo(form.phoneNo);
   if (phoneErr) return phoneErr;
 
@@ -592,6 +595,13 @@ function validateAdmissionForm(form) {
 
   return null;
 }
+
+// "Arrived under RMO" ke liye doctors list ko unki Staff Category se RMO
+// tak narrow karna — SurgeryInformation.jsx me already isi tarah ka matching
+// use ho raha hai (category name me "rmo" substring dhoondhna, punctuation/
+// case ignore karke), yahan wahi convention follow kiya hai taky dono
+// screens same Doctor Parameters data ko ek hi tarah samjhein.
+function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function Admission() {
@@ -620,6 +630,13 @@ export default function Admission() {
   const [barcodeDataUrl, setBarcodeDataUrl] = useState('');
   const mrRef = useRef(null);
   const [searchParams] = useSearchParams();
+
+  // Doctor Parameters me jis doctor ki Staff Category ke naam me "rmo"
+  // aata ho, wahi is dropdown me dikhta hai.
+  const rmoDoctors = useMemo(
+    () => doctors.filter(d => d.status === 'active' && normCat(d.staffCategory?.name).includes('rmo')),
+    [doctors]
+  );
 
   useEffect(() => {
     fetchDoctors();
@@ -802,6 +819,14 @@ export default function Admission() {
       panelEmployeeId:  rec.panelEmployeeId || f.panelEmployeeId,
       panelDependentId: rec.panelDependentId || f.panelDependentId,
       panelLabel:       rec.panelLabel      || f.panelLabel,
+      // Slip pe SIRF EK doctor attached tha tw backend uski Staff Category
+      // dekh ke bata deta hai RMO tha ya Consultant (dono ek sath kabhi
+      // nahi aate) — jo mila wahi field fill hoti hai, doosri khaali hi
+      // rehti hai taky user khud select kar sake. 0 ya 2+ doctors (jaisa
+      // Laboratory/Ultrasound slips) attached hon tw dono null aate hain —
+      // is case me kuch bhi nahi badalte.
+      arrivedUnderRmo:  rec.arrivedUnderRmo || f.arrivedUnderRmo,
+      consultantId:     rec.arrivedConsultantId != null ? String(rec.arrivedConsultantId) : f.consultantId,
     }));
   }
 
@@ -841,7 +866,8 @@ export default function Admission() {
   }
 
   async function handleSave() {
-    if (!form.admissionNo.trim()) return toast.error('Admission # is required');
+    const admissionNoErr = validateAdmissionNo(form.admissionNo);
+    if (admissionNoErr) return toast.error(admissionNoErr);
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
     const formErr = validateAdmissionForm(form);
     if (formErr) return toast.error(formErr);
@@ -892,7 +918,8 @@ export default function Admission() {
   }
 
   async function handleSaveAndPrint() {
-    if (!form.admissionNo.trim()) return toast.error('Admission # is required');
+    const admissionNoErr = validateAdmissionNo(form.admissionNo);
+    if (admissionNoErr) return toast.error(admissionNoErr);
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
     const formErr = validateAdmissionForm(form);
     if (formErr) return toast.error(formErr);
@@ -945,7 +972,7 @@ export default function Admission() {
               <div className="adm-row">
                 <div className="adm-field">
                   <label>Serial #</label>
-                  <input type="text" value={form.serialNo} readOnly className="adm-serial-input" title="Auto-generated — same running sequence as OPD slips" />
+                  <input type="text" value={form.serialNo} onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))} className="adm-serial-input" title="Auto-generated — same running sequence as OPD slips, but editable" />
                 </div>
                 <div className="adm-field">
                   <label>Admission #</label>
@@ -1172,7 +1199,14 @@ export default function Admission() {
               <div className="adm-row">
                 <div className="adm-field">
                   <label>Arrived under RMO</label>
-                  <input type="text" value={form.arrivedUnderRmo} onChange={e => set('arrivedUnderRmo', e.target.value)} placeholder="NA - Not Applicable" />
+                  <SearchableSelect
+                    options={rmoDoctors}
+                    value={form.arrivedUnderRmo}
+                    onChange={val => set('arrivedUnderRmo', val)}
+                    placeholder="NA - Not Applicable"
+                    getLabel={d => d.name}
+                    getKey={d => d.name}
+                  />
                 </div>
                 <div className="adm-field">
                   <label>Referred By</label>

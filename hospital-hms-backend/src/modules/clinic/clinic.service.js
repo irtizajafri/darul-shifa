@@ -394,6 +394,26 @@ async function getNextSerialNo() {
   return String(n);
 }
 
+// The Serial # field is user-editable (not just auto-filled), so a manually
+// typed number can collide with one already used anywhere in the shared
+// sequence. Checked before every create that accepts a client-supplied
+// serialNo, so a collision surfaces as a clear message instead of a raw
+// Prisma unique-constraint error.
+async function assertSerialNoAvailable(serialNo) {
+  const no = serialNo?.trim();
+  if (!no) return;
+  const [opd, adm, admPay, pbi, antenatal] = await Promise.all([
+    prisma.clinicOpdVisit.findUnique({ where: { serialNo: no }, select: { id: true } }),
+    prisma.clinicAdmission.findFirst({ where: { serialNo: no }, select: { id: true } }),
+    prisma.clinicAdmissionPayment.findUnique({ where: { serialNo: no }, select: { id: true } }),
+    prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: no }, select: { id: true } }),
+    prisma.clinicAntenatal.findFirst({ where: { serialNo: no }, select: { id: true } }),
+  ]);
+  if (opd || adm || admPay || pbi || antenatal) {
+    throw Object.assign(new Error(`Slip # ${no} pehle se istemal ho chuka hai — koi doosra number likhein.`), { status: 409 });
+  }
+}
+
 async function searchEmployees(q) {
   const term = (q || '').trim();
   if (!term) return [];
@@ -441,6 +461,7 @@ async function createOpdVisit({
   createdByUserId, createdByName,
   doctors = [],
 }) {
+  await assertSerialNoAvailable(serialNo);
   const now = new Date();
   const shift = await resolveShiftForTime(now);
   return prisma.clinicOpdVisit.create({
@@ -512,7 +533,25 @@ async function enrichOpdPatient(visit) {
       : null;
     panelLabel = [company?.code, employee?.empCode].filter(Boolean).join(' / ');
   }
-  return { ...visit, patientCategory, panelLabel };
+
+  // Arrived Slip -> Admission auto-fill: agar is OPD visit pe SIRF EK
+  // doctor attached hai, uski Staff Category se pata chalta hai RMO hai ya
+  // Consultant (wahi 'rmo' substring-match convention jo Admission.jsx ke
+  // apne RMO dropdown me hai). 0 ya 2+ doctors attached hon (jaisa
+  // Laboratory/Ultrasound slips me aksar hota hai) tw ambiguous hai —
+  // kuch bhi decide nahi karte, dono field khaali rehti hain, user khud
+  // select kare.
+  let arrivedUnderRmo = null;
+  let arrivedConsultantId = null;
+  const { doctors, ...rest } = visit;
+  if (Array.isArray(doctors) && doctors.length === 1 && doctors[0].doctor) {
+    const doc = doctors[0].doctor;
+    const cat = String(doc.staffCategory?.name || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (cat.includes('rmo')) arrivedUnderRmo = doc.name;
+    else arrivedConsultantId = doc.id;
+  }
+
+  return { ...rest, patientCategory, panelLabel, arrivedUnderRmo, arrivedConsultantId };
 }
 
 async function getOpdPatientByMrNo(mrNo) {
@@ -566,6 +605,7 @@ async function searchOpdVisitsForAdmission(query) {
       age: true, ageMonths: true, ageDays: true, gender: true, phoneNo: true,
       referredBy: true, department: true, createdAt: true,
       employeeId: true, panelCompanyId: true, panelEmployeeId: true, panelDependentId: true,
+      doctors: { select: { doctor: { select: { id: true, name: true, staffCategory: { select: { name: true } } } } } },
     },
   });
   const enriched = await Promise.all(visits.map(enrichOpdPatient));
@@ -606,7 +646,10 @@ async function getOpdVisitBySerial(serialNo) {
   const no = serialNo.trim();
   const visit = await prisma.clinicOpdVisit.findFirst({
     where: { serialNo: { equals: no, mode: 'insensitive' } },
-    select: { serialNo: true, mrNo: true, patientName: true, age: true, ageMonths: true, ageDays: true, gender: true, phoneNo: true, referredBy: true, employeeId: true, panelCompanyId: true, panelEmployeeId: true, panelDependentId: true },
+    select: {
+      serialNo: true, mrNo: true, patientName: true, age: true, ageMonths: true, ageDays: true, gender: true, phoneNo: true, referredBy: true, employeeId: true, panelCompanyId: true, panelEmployeeId: true, panelDependentId: true,
+      doctors: { select: { doctor: { select: { id: true, name: true, staffCategory: { select: { name: true } } } } } },
+    },
   });
   if (visit) return enrichOpdPatient(visit);
 
@@ -1104,6 +1147,7 @@ async function createAntenatal({
   lmpDate, edd, underTreatmentId, para, gravidia, amount,
   employeeId, panelCompanyId, panelEmployeeId, panelDependentId,
 }) {
+  await assertSerialNoAvailable(serialNo);
   return prisma.clinicAntenatal.create({
     data: {
       serialNo:         serialNo || null,
@@ -1671,6 +1715,7 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
   const no = serialNo?.trim() || await getNextSerialNo();
+  if (serialNo?.trim()) await assertSerialNoAvailable(no);
   const payment = await prisma.clinicAdmissionPayment.create({
     data: {
       serialNo: no,
@@ -3556,6 +3601,7 @@ async function importOtRegister(rows) {
 }
 
 async function createAdmission(data) {
+  await assertSerialNoAvailable(data.serialNo);
   const admission = await prisma.clinicAdmission.create({
     data: {
       serialNo:          data.serialNo?.trim() || null,
@@ -6498,7 +6544,11 @@ async function finalizeDischarge(admissionId, { discountAmount, changedBy }) {
 
 // ─── Patient Visits ───────────────────────────────────────────────────────────
 
-async function bulkCreatePatientVisits(rows) {
+// dates already in the file are shown to the user for confirmation before
+// import (see getPatientVisitDateCounts); replaceDates carries the dates the
+// user chose to wipe and re-import, deleted in the same transaction as the
+// insert so a crash mid-import never leaves a date with no data at all.
+async function bulkCreatePatientVisits(rows, replaceDates) {
   const data = rows.map((r) => ({
     serialNo:       r.serialNo       ? Number(r.serialNo)           : null,
     admitNo:        r.admitNo        ? Number(r.admitNo)            : null,
@@ -6514,7 +6564,19 @@ async function bulkCreatePatientVisits(rows) {
     discount:       Number(r.discount)  || 0,
   }));
 
-  const result = await prisma.patientVisit.createMany({ data });
+  const dates = Array.isArray(replaceDates) ? replaceDates.filter(Boolean).map(d => new Date(d)) : [];
+  let deletedCount = 0;
+  let result;
+  if (dates.length) {
+    const [delRes, insRes] = await prisma.$transaction([
+      prisma.patientVisit.deleteMany({ where: { visitDate: { in: dates } } }),
+      prisma.patientVisit.createMany({ data }),
+    ]);
+    deletedCount = delRes.count;
+    result = insRes;
+  } else {
+    result = await prisma.patientVisit.createMany({ data });
+  }
 
   // Auto-create new doctors in ClinicDoctor from imported doctor names
   const uniqueDoctorNames = [...new Set(
@@ -6566,7 +6628,17 @@ async function bulkCreatePatientVisits(rows) {
     }
   }
 
-  return result;
+  return { count: result.count, deleted: deletedCount };
+}
+
+async function getPatientVisitDateCounts(dates) {
+  const counts = await Promise.all(
+    dates.map(async (d) => ({
+      date:  d,
+      count: await prisma.patientVisit.count({ where: { visitDate: new Date(d) } }),
+    }))
+  );
+  return counts.reduce((acc, { date, count }) => { acc[date] = count; return acc; }, {});
 }
 
 // Legacy patient names carry the title inline ("MRS. SHAHEEN", "BABY /O MEHREEN")
@@ -6952,9 +7024,13 @@ function bufferedTimestampWindow(fromDate, toDate, fromT, toT) {
 
 async function narrowToPreciseWindow(tableName, dateField, rows, fromDate, toDate, fromT, toT) {
   if (!fromDate || !toDate) return rows;
+  // createdAt stores UTC (Prisma converts JS Date to UTC before writing to
+  // timestamp-without-timezone). fromT/toT are PKT wall-clock strings, so
+  // subtract 5 h before the literal SQL comparison.
+  const pktToUtc = (d, t) => new Date(`${d}T${t}+05:00`).toISOString().replace('T', ' ').slice(0, 19);
   const preciseRows = await prisma.$queryRawUnsafe(
     `SELECT id FROM "${tableName}" WHERE "${dateField}" BETWEEN $1::timestamp AND $2::timestamp`,
-    `${fromDate} ${fromT}`, `${toDate} ${toT}`
+    pktToUtc(fromDate, fromT), pktToUtc(toDate, toT)
   );
   const idSet = new Set(preciseRows.map((r) => r.id));
   return rows.filter((r) => idSet.has(r.id));
@@ -9695,6 +9771,7 @@ module.exports = {
   shiftAdmissionBed,
   setBedStatus,
   bulkCreatePatientVisits,
+  getPatientVisitDateCounts,
   generateAdmissionsFromVisits,
   getAllConsultantRates,
   upsertConsultantRate,

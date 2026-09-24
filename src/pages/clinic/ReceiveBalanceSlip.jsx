@@ -164,7 +164,7 @@ export default function ReceiveBalanceSlip() {
           {/* Serial # row */}
           <div className="rbs-form-row">
             <label className="rbs-label rbs-label--serial">Serial #</label>
-            <input className="rbs-input rbs-input--serial" value={serial} readOnly />
+            <input className="rbs-input rbs-input--serial" value={serial} onChange={e => setSerial(e.target.value)} />
             {slip && (
               <span className="rbs-dept-badge">{(slip.department || 'GENERAL OPD').toUpperCase()}</span>
             )}

@@ -25,6 +25,7 @@ const ALL_MODULES = [
   {
     id: 'canvas',
     permModule: 'accounts',
+    permSubModule: 'canvas',
     icon: Workflow,
     title: 'Module Canvas',
     desc: 'Visual node map of the hospital modules — starting with Accounts',
@@ -53,7 +54,7 @@ export default function MainDashboard() {
   // Sirf wahi modules dikho jis ki permission hai
   const modules = user?.isSuperAdmin
     ? ALL_MODULES
-    : ALL_MODULES.filter((m) => !m.permModule || hasPermission(user, m.permModule));
+    : ALL_MODULES.filter((m) => !m.permModule || hasPermission(user, m.permModule, m.permSubModule));
 
   useEffect(() => {
     clearModule();

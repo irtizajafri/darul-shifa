@@ -227,7 +227,7 @@ export default function ProtectedRoutes() {
           isliye asal AccountsParameters/AccountsTransactions/etc. components
           bilkul normal route ki tarah hi kaam karte hain (useParams,
           useNavigate sab real hain). */}
-      <Route path="canvas" element={<PermissionGuard module="accounts"><AccountsCanvas /></PermissionGuard>}>
+      <Route path="canvas" element={<PermissionGuard module="accounts" subModule="canvas"><AccountsCanvas /></PermissionGuard>}>
         <Route path="accounts/:entityType/parameters" element={<AccountsParameters />} />
         <Route path="accounts/:entityType/parameters/main-gl" element={<MainGL />} />
         <Route path="accounts/:entityType/parameters/sub-gl" element={<SubGL />} />

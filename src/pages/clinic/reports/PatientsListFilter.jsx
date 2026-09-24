@@ -29,6 +29,10 @@ function excelFractionToTime(serial) {
   const mins = Math.round(frac * 24 * 60);
   return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
 }
+function formatDateDisplay(dateStr) {
+  const [y, m, d] = dateStr.split('-');
+  return `${d}-${m}-${y}`;
+}
 
 // Header text can vary in wording/casing/extra spaces/extra blank spacer columns
 // between exports — so columns are located by matching the actual header row
@@ -151,14 +155,40 @@ export default function PatientsListFilter() {
     try {
       const rows = await parseExcelFile(file);
       if (!rows.length) { toast.error('File mein valid data nahi mila'); return; }
+
+      const uniqueDates = [...new Set(rows.map(r => r.visitDate))].sort();
+      const dateLabel   = uniqueDates.map(formatDateDisplay).join(', ');
+      if (!window.confirm(`Excel file mein is date ka data mila hai: ${dateLabel}\n\nKya aap yeh data import karna chahte hain?`)) {
+        return;
+      }
+
+      const countsRes  = await fetch(`${API}/patient-visits/date-counts?dates=${uniqueDates.join(',')}`);
+      const countsJson = await countsRes.json();
+      if (!countsRes.ok) throw new Error(countsJson.message);
+      const datesWithData = uniqueDates.filter(d => countsJson.data[d] > 0);
+
+      let replaceDates = [];
+      if (datesWithData.length) {
+        const totalExisting = datesWithData.reduce((sum, d) => sum + countsJson.data[d], 0);
+        const label = datesWithData.map(formatDateDisplay).join(', ');
+        if (!window.confirm(`${label} ka data pehle se mojood hai (${totalExisting} records).\n\nPurana data delete karke naya data dalna chahte hain?`)) {
+          toast('Upload cancel kar diya, purana data waisa hi hai');
+          return;
+        }
+        replaceDates = datesWithData;
+      }
+
       const res  = await fetch(`${API}/patient-visits/bulk`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ rows }),
+        body:    JSON.stringify({ rows, replaceDates }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
-      toast.success(`${json.data.inserted} records imported successfully`);
+      const msg = json.data.deleted
+        ? `${json.data.deleted} purane records delete hue, ${json.data.inserted} naye records import hue`
+        : `${json.data.inserted} records imported successfully`;
+      toast.success(msg);
     } catch (err) {
       toast.error(err.message || 'Upload failed');
     } finally {

@@ -2,6 +2,13 @@
 // Therapy/Lab/etc, Consultant, Emergency, Ambulance) — one place so every
 // slip enforces the same rules instead of each page rolling its own.
 
+export function validateAdmissionNo(admissionNo) {
+  const a = String(admissionNo || '').trim();
+  if (!a) return 'Admission # is required';
+  if (!/^[0-9]{6}$/.test(a)) return 'Admission # sirf digits mein aur exactly 6 digits ka hona chahiye';
+  return null;
+}
+
 // Phone is required everywhere (including Emergency) — must look like a real
 // Pakistani number: digits only, 7-11 characters (covers both landline and
 // 03XXXXXXXXX mobile formats).

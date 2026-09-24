@@ -2137,11 +2137,23 @@ async function importDoctorSubDeptRates(req, res, next) {
 
 async function bulkCreatePatientVisits(req, res, next) {
   try {
-    const { rows } = req.body;
+    const { rows, replaceDates } = req.body;
     if (!Array.isArray(rows) || rows.length === 0)
       return fail(res, 400, 'rows array required');
-    const result = await service.bulkCreatePatientVisits(rows);
-    success(res, { inserted: result.count }, `${result.count} records imported`);
+    const result = await service.bulkCreatePatientVisits(rows, replaceDates);
+    success(res, { inserted: result.count, deleted: result.deleted }, `${result.count} records imported`);
+  } catch (err) { next(err); }
+}
+
+// Excel upload confirmation step — tells the frontend how many rows already
+// exist for each date detected in the file, so it can ask the user before
+// wiping and re-importing that date.
+async function getPatientVisitDateCounts(req, res, next) {
+  try {
+    const dates = String(req.query.dates || '').split(',').map(d => d.trim()).filter(Boolean);
+    if (!dates.length) return fail(res, 400, 'dates query param required');
+    const data = await service.getPatientVisitDateCounts(dates);
+    success(res, data);
   } catch (err) { next(err); }
 }
 
@@ -2597,6 +2609,7 @@ module.exports = {
   shiftAdmissionBed,
   setBedStatus,
   bulkCreatePatientVisits,
+  getPatientVisitDateCounts,
   generateAdmissionsFromVisits,
   getConsultantRates,
   upsertConsultantRate,

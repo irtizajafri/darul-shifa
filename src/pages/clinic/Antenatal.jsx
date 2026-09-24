@@ -464,7 +464,7 @@ export default function Antenatal() {
             <span className="ant-lbl" style={{ marginLeft: '1rem' }}>Date</span>
             <input className="ant-inp ant-inp--date" type="date" value={form.registrationDate} onChange={e => set('registrationDate', e.target.value)} />
             <span className="ant-lbl" style={{ marginLeft: '1rem' }}>Slip #</span>
-            <input className="ant-inp ant-inp--no" value={form.serialNo} readOnly />
+            <input className="ant-inp ant-inp--no" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
           </div>
           <div className="ant-title">Antenatal Registration</div>
         </div>
