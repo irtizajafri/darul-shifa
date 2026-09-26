@@ -217,6 +217,21 @@ export default function GoodsIssue() {
     if (location.state?.openGIN && canGIN) { setShowGINForm(true); setShowGDForm(false); setShowReprint(false); }
   }, [location.state, canGD, canGIN]);
 
+  // Portal-rendered item dropdown (createPortal to document.body) only closed
+  // on the input's own onBlur — if the window itself loses focus, or the page
+  // scrolls, while a re-render (e.g. an API response) swaps it out from under
+  // a stray mousedown, the portal can get stuck open and eat clicks.
+  useEffect(() => {
+    if (!gdItemDropdownOpen) return;
+    const closeDropdown = () => { setGdItemDropdownOpen(false); setGdItemHighlightedIndex(-1); };
+    window.addEventListener('blur', closeDropdown);
+    window.addEventListener('scroll', closeDropdown, true);
+    return () => {
+      window.removeEventListener('blur', closeDropdown);
+      window.removeEventListener('scroll', closeDropdown, true);
+    };
+  }, [gdItemDropdownOpen]);
+
   const fakeEvent = { preventDefault: () => {} };
 
   useModalKeys({

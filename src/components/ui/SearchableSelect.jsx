@@ -62,8 +62,14 @@ export default function SearchableSelect({
     };
 
     document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('blur', closeDropdown);
+    window.addEventListener('scroll', closeDropdown, true);
     setTimeout(() => inputRef.current?.focus(), 0);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('blur', closeDropdown);
+      window.removeEventListener('scroll', closeDropdown, true);
+    };
   }, [isOpen]);
 
   // Scroll highlighted item into view

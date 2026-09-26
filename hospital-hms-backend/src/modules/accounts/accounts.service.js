@@ -1229,9 +1229,14 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
     include: { entries: true },
   });
 
-  const visitIds = entries.flatMap((e) => Array.isArray(e.visitIds) ? e.visitIds.map(Number) : []).filter(Boolean);
-  if (visitIds.length > 0) {
-    await prisma.patientVisit.updateMany({ where: { id: { in: visitIds } }, data: { isPaid: true } });
+  const allVisitIds = entries.flatMap((e) => Array.isArray(e.visitIds) ? e.visitIds : []);
+  const oldVisitIds = allVisitIds.filter((id) => !String(id).startsWith('opd-')).map(Number).filter(Boolean);
+  const opdDoctorIds = allVisitIds.filter((id) => String(id).startsWith('opd-')).map((id) => Number(String(id).slice(4))).filter(Boolean);
+  if (oldVisitIds.length > 0) {
+    await prisma.patientVisit.updateMany({ where: { id: { in: oldVisitIds } }, data: { isPaid: true } });
+  }
+  if (opdDoctorIds.length > 0) {
+    await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: opdDoctorIds } }, data: { isPaid: true } });
   }
 
   await linkGrnPayments(entries, voucher.entries);
@@ -1474,11 +1479,38 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   if (dateFrom) where.visitDate = { ...(where.visitDate || {}), gte: new Date(dateFrom) };
   if (dateTo)   where.visitDate = { ...(where.visitDate || {}), lte: new Date(dateTo) };
 
-  const [visits, rateRows] = await Promise.all([
+  // Older visits live on PatientVisit (the legacy bulk-imported table above);
+  // newer ones are recorded per-doctor on ClinicOpdVisitDoctor against a live
+  // ClinicOpdVisit — both feed this same payable-visits list so a consultant's
+  // pending fee voucher covers visits from either source.
+  const opdVisitWhere = {
+    isPaid: false,
+    doctor: { name: { equals: doctorName, mode: 'insensitive' } },
+    visit: { status: 'active' },
+  };
+  if (dateFrom) {
+    const from = new Date(dateFrom + 'T00:00:00+05:00');
+    opdVisitWhere.visit = { ...opdVisitWhere.visit, createdAt: { ...(opdVisitWhere.visit.createdAt || {}), gte: from } };
+  }
+  if (dateTo) {
+    const to = new Date(dateTo + 'T23:59:59+05:00');
+    opdVisitWhere.visit = { ...opdVisitWhere.visit, createdAt: { ...(opdVisitWhere.visit.createdAt || {}), lte: to } };
+  }
+
+  const [visits, opdDoctorRows, rateRows] = await Promise.all([
     prisma.patientVisit.findMany({
       where,
       orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
       select: { id: true, serialNo: true, visitDate: true, visitTime: true, patientName: true, subDepartment: true, paymentType: true, received: true },
+    }),
+    prisma.clinicOpdVisitDoctor.findMany({
+      where: opdVisitWhere,
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true, amount: true,
+        subDept: { select: { name: true } },
+        visit: { select: { serialNo: true, patientName: true, paymentType: true, createdAt: true } },
+      },
     }),
     // Same doctor/sub-department fee-share table the Consultant Wise Report
     // uses (Clinic → Doctors → Sub-Department Rates) — reused here so the
@@ -1497,7 +1529,7 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     if (!firstRate) firstRate = r;
   }
 
-  return visits.map((v) => {
+  const oldRows = visits.map((v) => {
     const received = Number(v.received || 0);
     const rate = bySubDept[normDoctorRateName(v.subDepartment)] || firstRate;
     const hasRate = !!(rate && rate.normalFees);
@@ -1506,6 +1538,30 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
       : received;
     return { ...v, received, payableAmount, hasRate, ratePercent: hasRate && rate.paymentType === 'percent' ? rate.normalFees : null };
   });
+
+  const newRows = opdDoctorRows.filter((d) => String(d.visit.paymentType || '').toLowerCase() !== 'panel').map((d) => {
+    const received = Number(d.amount || 0);
+    const subDept = d.subDept?.name || '';
+    const rate = bySubDept[normDoctorRateName(subDept)] || firstRate;
+    const hasRate = !!(rate && rate.normalFees);
+    const payableAmount = hasRate
+      ? (rate.paymentType === 'percent' ? received * rate.normalFees / 100 : rate.normalFees)
+      : received;
+    const pkt = new Date(new Date(d.visit.createdAt).getTime() + 5 * 60 * 60 * 1000);
+    return {
+      id: `opd-${d.id}`,
+      serialNo: d.visit.serialNo,
+      visitDate: pkt,
+      visitTime: `${String(pkt.getHours()).padStart(2, '0')}:${String(pkt.getMinutes()).padStart(2, '0')}`,
+      patientName: d.visit.patientName,
+      subDepartment: subDept,
+      paymentType: d.visit.paymentType,
+      received, payableAmount, hasRate,
+      ratePercent: hasRate && rate.paymentType === 'percent' ? rate.normalFees : null,
+    };
+  });
+
+  return [...oldRows, ...newRows];
 }
 
 async function getSupplierGRNs(supplierId, entityType) {

@@ -51,8 +51,15 @@ function SearchableSelect({ options, value, onChange, placeholder, getLabel, get
         setHighlightedIndex(-1);
       }
     };
+    const closeDropdown = () => { setOpen(false); setSearch(''); setHighlightedIndex(-1); };
     document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    window.addEventListener('blur', closeDropdown);
+    window.addEventListener('scroll', closeDropdown, true);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      window.removeEventListener('blur', closeDropdown);
+      window.removeEventListener('scroll', closeDropdown, true);
+    };
   }, []);
 
   useEffect(() => {

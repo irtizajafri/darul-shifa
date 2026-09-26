@@ -85,8 +85,15 @@ function ItemSearchInput({ items, value, label, onChange }) {
       if (containerRef.current && !containerRef.current.contains(e.target))
         setOpen(false);
     };
+    const closeDropdown = () => setOpen(false);
     document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    window.addEventListener('blur', closeDropdown);
+    window.addEventListener('scroll', closeDropdown, true);
+    return () => {
+      document.removeEventListener('mousedown', h);
+      window.removeEventListener('blur', closeDropdown);
+      window.removeEventListener('scroll', closeDropdown, true);
+    };
   }, []);
 
   const selectItem = (item) => {
@@ -192,8 +199,15 @@ function FilterItemSearch({ items, value, onChange }) {
       if (containerRef.current && !containerRef.current.contains(e.target))
         setOpen(false);
     };
+    const closeDropdown = () => setOpen(false);
     document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    window.addEventListener('blur', closeDropdown);
+    window.addEventListener('scroll', closeDropdown, true);
+    return () => {
+      document.removeEventListener('mousedown', h);
+      window.removeEventListener('blur', closeDropdown);
+      window.removeEventListener('scroll', closeDropdown, true);
+    };
   }, []);
 
   const clear = () => { setText(''); onChange(''); };

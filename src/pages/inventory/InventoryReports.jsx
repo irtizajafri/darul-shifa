@@ -210,6 +210,21 @@ export default function InventoryReports() {
     fetchItemLocationMap().then(setItemLocationMap).catch(() => setItemLocationMap({}));
   }, [fetchItems, fetchReorderAlerts, fetchMastersOptions, fetchEmployees, fetchItemLocationMap]);
 
+  // Portal-rendered supplier dropdown (createPortal to document.body) only
+  // closed on the input's own onBlur — if the window itself loses focus, or
+  // the page scrolls, while a re-render (e.g. an API response) swaps it out
+  // from under a stray mousedown, the portal can get stuck open and eat clicks.
+  useEffect(() => {
+    if (!supplierDropdownOpen) return;
+    const closeDropdown = () => setSupplierDropdownOpen(false);
+    window.addEventListener('blur', closeDropdown);
+    window.addEventListener('scroll', closeDropdown, true);
+    return () => {
+      window.removeEventListener('blur', closeDropdown);
+      window.removeEventListener('scroll', closeDropdown, true);
+    };
+  }, [supplierDropdownOpen]);
+
   useEffect(() => {
     if (activeReport !== 'Item Ledger') return;
 

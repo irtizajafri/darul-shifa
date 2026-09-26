@@ -5532,6 +5532,14 @@ async function setBedStatus(bedId, status) {
   }
   const bed = await prisma.clinicBed.findUnique({ where: { id: Number(bedId) } });
   if (!bed) throw Object.assign(new Error('Bed not found'), { status: 404 });
+
+  if (status === 'available' || status === 'not_working') {
+    await prisma.clinicAdmission.updateMany({
+      where: { bedId: Number(bedId), status: 'active' },
+      data: { bedId: null },
+    });
+  }
+
   return prisma.clinicBed.update({ where: { id: Number(bedId) }, data: { status } });
 }
 
