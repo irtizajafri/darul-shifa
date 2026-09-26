@@ -195,7 +195,7 @@ function ArrivedSlipModal({ onSelect, onClose, searchOpdVisitsForAdmission }) {
 
   return (
     <div className="ant-modal-overlay" onMouseDown={onClose}>
-      <div className="ant-modal" onMouseDown={e => e.stopPropagation()}>
+      <div className="ant-modal ant-modal--wide" onMouseDown={e => e.stopPropagation()}>
         <div className="ant-modal-header">
           <div className="ant-modal-title"><Search size={16}/> Find Arrived Slip</div>
           <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
@@ -210,13 +210,14 @@ function ArrivedSlipModal({ onSelect, onClose, searchOpdVisitsForAdmission }) {
             <div className="ant-modal-empty">{q.trim() ? 'No matching OPD slips found' : 'Type patient name or phone to search'}</div>
           )}
           {results.length > 0 && (
-            <table className="ant-modal-table">
-              <thead><tr><th>Slip #</th><th>Patient</th><th>Phone</th><th>Date</th></tr></thead>
+            <table className="ant-modal-table ant-modal-table--slip">
+              <thead><tr><th>Slip #</th><th>Patient</th><th>Department</th><th>Phone</th><th>Date</th></tr></thead>
               <tbody>
                 {results.map(r => (
                   <tr key={r.serialNo} onClick={() => onSelect(r)}>
                     <td>{r.serialNo}</td>
                     <td>{r.patientType} {r.patientName}</td>
+                    <td>{r.department || '–'}</td>
                     <td>{r.phoneNo || '–'}</td>
                     <td>{r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '–'}</td>
                   </tr>
@@ -241,7 +242,7 @@ function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, 
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   const admitDateTime = `${dateStr.replace(',', '')} ${timeStr}`;
 
-  const statusLabel = { private: 'Private', staff: 'Staff', panel: 'Panel', cc: 'CC', complementary: 'Complementary' }[form.patientCategory] || 'Private';
+  const statusLabel = { private: 'Private', staff: 'Staff', panel: 'Panel', cc: 'CC', complementary: 'Complementary', jazzcash: 'JazzCash' }[form.patientCategory] || 'Private';
 
   const ageStr = `${form.ageYears || 0} Year(s) ${form.ageMonths || 0} Month(s) ${form.ageDays || 0} Day(s)`;
 
@@ -518,6 +519,7 @@ const CATEGORIES = [
   { value: 'complementary', label: 'Compl.' },
   { value: 'private',       label: 'Private' },
   { value: 'cc',            label: 'CC' },
+  { value: 'jazzcash',      label: 'JazzCash' },
 ];
 
 const EMPTY = {
@@ -616,6 +618,7 @@ export default function Admission() {
     fetchAvailableBeds,
     fetchNextSerialNo,
     createAdmission,
+    checkAdmissionNoDuplicate,
   } = useClinicStore();
   const { user } = useAuthStore();
   const printedBy = user?.name || user?.username || user?.email || '';
@@ -626,6 +629,7 @@ export default function Admission() {
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
   const [showArrivedSlipModal, setShowArrivedSlipModal] = useState(false);
+  const [admissionNoDup, setAdmissionNoDup] = useState(null); // { patientName } | null
   const [reprintReady, setReprintReady] = useState(false);
   const [barcodeDataUrl, setBarcodeDataUrl] = useState('');
   const mrRef = useRef(null);
@@ -642,7 +646,11 @@ export default function Admission() {
     fetchDoctors();
     fetchRoomCategories();
     fetchSurgeryTypes();
-    fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // this line once legacy and new system are back on the same numbering.
+    // fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
     mrRef.current?.focus();
   }, [fetchDoctors, fetchRoomCategories, fetchSurgeryTypes, fetchNextSerialNo]);
 
@@ -659,6 +667,24 @@ export default function Admission() {
       setBarcodeDataUrl('');
     }
   }, [form.admissionNo]);
+
+  // Real-time "this admission # is already used" warning as the user types —
+  // createAdmission itself also rejects the duplicate at save time, this is
+  // just the early heads-up so staff don't fill the whole form first.
+  useEffect(() => {
+    const no = form.admissionNo?.trim();
+    if (!no) { setAdmissionNoDup(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkAdmissionNoDuplicate(no);
+        if (!cancelled) setAdmissionNoDup(res?.exists ? { patientName: res.patientName } : null);
+      } catch {
+        if (!cancelled) setAdmissionNoDup(null);
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [form.admissionNo, checkAdmissionNoDuplicate]);
 
   // Reprint (Report > Reprint > Admission): reload an existing admission by its
   // number and print it — does NOT call createAdmission, so no duplicate record.
@@ -868,6 +894,7 @@ export default function Admission() {
   async function handleSave() {
     const admissionNoErr = validateAdmissionNo(form.admissionNo);
     if (admissionNoErr) return toast.error(admissionNoErr);
+    if (admissionNoDup) return toast.error(`Admission # ${form.admissionNo.trim()} pehle se exist karta hai (Patient: ${admissionNoDup.patientName})`);
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
     const formErr = validateAdmissionForm(form);
     if (formErr) return toast.error(formErr);
@@ -877,7 +904,8 @@ export default function Admission() {
       toast.success('Admission saved successfully');
       setForm(EMPTY);
       setAvailableBeds([]);
-      fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
+      // Serial No auto-fill temporarily disabled — see note above.
+      // fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
     } catch (err) {
       toast.error(err.message || 'Failed to save admission');
     } finally {
@@ -920,6 +948,7 @@ export default function Admission() {
   async function handleSaveAndPrint() {
     const admissionNoErr = validateAdmissionNo(form.admissionNo);
     if (admissionNoErr) return toast.error(admissionNoErr);
+    if (admissionNoDup) return toast.error(`Admission # ${form.admissionNo.trim()} pehle se exist karta hai (Patient: ${admissionNoDup.patientName})`);
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
     const formErr = validateAdmissionForm(form);
     if (formErr) return toast.error(formErr);
@@ -931,7 +960,8 @@ export default function Admission() {
       printAdmissionForm();
       setForm(EMPTY);
       setAvailableBeds([]);
-      fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
+      // Serial No auto-fill temporarily disabled — see note above.
+      // fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
     } catch (err) {
       toast.error(err.message || 'Failed to save admission');
     } finally {
@@ -986,6 +1016,11 @@ export default function Admission() {
                     />
                     <button className="adm-lookup-btn" onClick={handleAdmissionLookup} title="Lookup">↵</button>
                   </div>
+                  {admissionNoDup && (
+                    <span className="adm-dup-warning">
+                      Admission # {form.admissionNo.trim()} pehle se exist karta hai (Patient: {admissionNoDup.patientName})
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1291,13 +1326,13 @@ export default function Admission() {
             {/* Actions */}
             <div className="adm-actions">
               <button
-                className="adm-btn adm-btn--save-print" data-enter-submit onClick={handleSaveAndPrint} disabled={saving}
+                className="adm-btn adm-btn--save-print" data-enter-submit onClick={handleSaveAndPrint} disabled={saving || !!admissionNoDup}
                 title="Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
               >
                 <Printer size={16} />
                 {saving ? 'Saving...' : 'Save & Print'}
               </button>
-              <button className="adm-btn adm-btn--save" onClick={handleSave} disabled={saving}>
+              <button className="adm-btn adm-btn--save" onClick={handleSave} disabled={saving || !!admissionNoDup}>
                 <Save size={16} />
                 {saving ? 'Saving...' : 'Save'}
               </button>

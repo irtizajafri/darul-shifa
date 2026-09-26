@@ -200,6 +200,10 @@
   box-shadow: 0 8px 32px rgba(0,0,0,0.18);
 
   &--panel { width: 420px; max-height: unset; }
+  // Arrived Slip lookup has 5 columns (Slip #/Patient/Department/Phone/Date) —
+  // the base 480px width squeezed them together, so this widens just that
+  // modal without affecting the other 3-column search modals sharing .ant-modal.
+  &--wide { width: 680px; }
 }
 
 .ant-modal-header {
@@ -308,6 +312,23 @@
   }
 
   tr:hover td { background: #dbeafe; cursor: pointer; }
+
+  // Arrived Slip lookup — Patient names can run long, so give that column
+  // room to truncate with an ellipsis instead of forcing Department/Phone/
+  // Date into a squeeze (or wrapping the row to two lines).
+  &--slip {
+    table-layout: fixed;
+    th:nth-child(1), td:nth-child(1) { width: 15%; }
+    th:nth-child(2), td:nth-child(2) {
+      width: 32%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    th:nth-child(3), td:nth-child(3) { width: 25%; }
+    th:nth-child(4), td:nth-child(4) { width: 15%; }
+    th:nth-child(5), td:nth-child(5) { width: 13%; }
+  }
 }
 
 .ant-dep-badge {

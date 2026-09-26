@@ -110,6 +110,10 @@ export function buildAntenatalReceiptHtml({ antenatal, doctor, isDuplicate, barc
     <span><span class="lbl">W/o:</span> ${doc.husbandName || '—'}</span>
     <span><span class="lbl">Para:</span> ${doc.para ?? 0}</span>
     <span><span class="lbl">Gravida:</span> ${doc.gravidia ?? 0}</span>
+
+    ${doc.panelCompanyName ? `<span><span class="lbl">Company:</span> ${doc.panelCompanyName}</span>` : '<span></span>'}
+    ${doc.panelEmployeeName ? `<span><span class="lbl">Employee:</span> ${doc.panelEmployeeName}</span>` : '<span></span>'}
+    <span></span>
   </div>
 
   <div class="divider"></div>

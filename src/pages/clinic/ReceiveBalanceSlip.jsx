@@ -107,10 +107,14 @@ export default function ReceiveBalanceSlip() {
   const [saving,      setSaving]      = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/opd/next-serial`)
-      .then(r => r.json())
-      .then(res => setSerial(res.data?.serialNo || res.data || ''))
-      .catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // once legacy and new system are back on the same numbering.
+    // fetch(`${API}/opd/next-serial`)
+    //   .then(r => r.json())
+    //   .then(res => setSerial(res.data?.serialNo || res.data || ''))
+    //   .catch(() => {});
     setReceiveDate(fmtDateTime(new Date()));
   }, []);
 
@@ -141,8 +145,10 @@ export default function ReceiveBalanceSlip() {
       setSlip(null);
       setReceiveAmt('');
       setReceiveDate(fmtDateTime(new Date()));
-      const sRes = await fetch(`${API}/opd/next-serial`).then(r => r.json());
-      setSerial(sRes.data?.serialNo || sRes.data || '');
+      // Serial No auto-fill temporarily disabled — see note above.
+      // const sRes = await fetch(`${API}/opd/next-serial`).then(r => r.json());
+      // setSerial(sRes.data?.serialNo || sRes.data || '');
+      setSerial('');
     } catch (e) {
       toast.error(e.message || 'Error saving');
     } finally {

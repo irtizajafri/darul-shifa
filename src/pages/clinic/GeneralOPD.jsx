@@ -3,11 +3,11 @@ import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import { useClinicStore } from '../../store/useClinicStore';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildReceiptHtml } from './receiptUtils';
 import { buildThermalReceiptHtml } from './thermalReceiptUtils';
-import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
-import ECGReportForm from './ECGReportForm';
-import { validatePhoneNo, validateAge } from './opdValidation';
+import { buildCrfPrintDocument, buildEcgPrintDocument, buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
+import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
@@ -69,7 +69,7 @@ function MiscQtyPriceModal({ item, onConfirm, onClose }) {
 // the "E C G" item under Miscellaneous is stored with spaces between letters.
 const normDeptName = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
+const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 // Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
 // map it onto the OPD slip's patientType options when auto-filling from an
 // admitted patient's record.
@@ -322,28 +322,28 @@ function PanelModal({ onSelect, onClose }) {
             {/* Company */}
             <div className="gopd-panel-field">
               <label className="gopd-panel-label">Company</label>
-              <select className="gopd-panel-select" value={companyId} onChange={e => handleCompanyChange(e.target.value)}>
-                <option value="">— Select Company —</option>
-                {panelCompanies.filter(c => c.status === 'active').map(c => (
-                  <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={panelCompanies.filter(c => c.status === 'active')}
+                value={companyId}
+                onChange={handleCompanyChange}
+                getKey={c => c.id}
+                getLabel={c => `${c.code} — ${c.name}`}
+                placeholder="Select Company"
+              />
             </div>
 
             {/* Employee */}
             <div className="gopd-panel-field">
               <label className="gopd-panel-label">Employee</label>
-              <select
-                className="gopd-panel-select"
+              <SearchableSelect
+                options={companyEmployees}
                 value={employeeId}
-                onChange={e => handleEmployeeChange(e.target.value)}
+                onChange={handleEmployeeChange}
+                getKey={e => e.id}
+                getLabel={e => `${e.empCode} — ${e.title} ${e.name}`}
+                placeholder="Select Employee"
                 disabled={!companyId}
-              >
-                <option value="">— Select Employee —</option>
-                {companyEmployees.map(e => (
-                  <option key={e.id} value={e.id}>{e.empCode} — {e.title} {e.name}</option>
-                ))}
-              </select>
+              />
               {companyId && companyEmployees.length === 0 && (
                 <span className="gopd-panel-hint">No active employees for this company</span>
               )}
@@ -515,7 +515,7 @@ function DoctorSearchInput({ value, onChange }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor', showDoctorColumn = true }) {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -541,15 +541,6 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const [mrLookupLoading, setMrLookupLoading] = useState(false);
   const [phoneLookupLoading, setPhoneLookupLoading] = useState(false);
 
-  // Clinical Record Form — printed in-page after the slip (General OPD / Dental
-  // OPD only, see CRF_DEPTS); holds the data for whichever visit was just saved.
-  const [crfVisit, setCrfVisit] = useState(null);
-  const [crfConsultantName, setCrfConsultantName] = useState('');
-  const [crfBarcodeDataUrl, setCrfBarcodeDataUrl] = useState('');
-  const [crfPrintedBy, setCrfPrintedBy] = useState('');
-  const [crfReady, setCrfReady] = useState(false);
-  const [crfFormType, setCrfFormType] = useState('crf'); // 'crf' | 'ecg'
-
   // Temporary manual switch until QZ Tray auto-routing is wired up — staff
   // picks which slip format to print, then picks the matching printer
   // themselves in the OS print dialog.
@@ -571,20 +562,16 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // this line once legacy and new system are back on the same numbering.
+    // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch(() => {});
     loadDoctors(false);
     fetchCcConfig().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Wait one render cycle after crfVisit/etc are set so the hidden print area
-  // actually has the new data in the DOM before we call window.print().
-  useEffect(() => {
-    if (!crfReady) return;
-    const t = setTimeout(() => { printClinicalRecordForm(); setCrfReady(false); }, 300);
-    return () => clearTimeout(t);
-  }, [crfReady]);
 
   useEffect(() => {
     loadDoctors(form.onCall);
@@ -855,8 +842,10 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
       setReceive('');
       setDiscount('');
       setDiscountType('amount');
-      const [next, nextMr] = await Promise.all([fetchNextSerialNo(), fetchNextMrNo()]);
-      set('serialNo', next);
+      // Serial No auto-fill temporarily disabled — see note above.
+      // const next = await fetchNextSerialNo();
+      // set('serialNo', next);
+      const nextMr = await fetchNextMrNo();
       set('mrNo', String(nextMr).padStart(3, '0'));
       loadDoctors(false);
       if (newId) {
@@ -871,25 +860,23 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         const html = thermalPrint
           ? buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy })
           : buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
-        w.document.write(html);
-        w.document.close();
 
         const isEcg = departmentName === 'Miscellaneous' &&
           rightDoctors.some(r => normDeptName(r.subDept?.name) === 'ecg');
 
+        // CRF/ECG print as a second, separate print job in this SAME popup —
+        // see clinicalRecordPrintUtils (buildSequentialPrintHtml) for why:
+        // two distinct prints/dialogs like before, but never a second popup,
+        // never a window.print() on the main window, and the window stays
+        // open afterward instead of closing itself.
+        let extraDoc = null;
         if (isEcg) {
-          setCrfFormType('ecg');
-          setCrfVisit(visit);
-          setCrfBarcodeDataUrl(barcodeDataUrl);
-          setCrfPrintedBy(printedBy);
-          setCrfReady(true);
+          extraDoc = buildEcgPrintDocument({ visit, barcodeDataUrl, printedBy });
         } else if (CRF_DEPTS.includes(departmentName)) {
-          setCrfFormType('crf');
-          setCrfVisit(visit);
-          setCrfConsultantName(consultantName);
-          setCrfBarcodeDataUrl(barcodeDataUrl);
-          setCrfReady(true);
+          extraDoc = buildCrfPrintDocument({ visit, consultantName, barcodeDataUrl, formTitle: `${departmentName.toUpperCase()} FORM` });
         }
+        w.document.write(buildSequentialPrintHtml(html, extraDoc));
+        w.document.close();
       } else {
         w.close();
       }
@@ -1062,7 +1049,11 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
           <div className="gopd-row gopd-row-1">
             <div className="gopd-name-grp">
               <span className="gopd-lbl">Patient Name</span>
-              <select className="gopd-sel-type" value={form.patientType} onChange={e => set('patientType', e.target.value)}>
+              <select className="gopd-sel-type" value={form.patientType} onChange={e => {
+                const v = e.target.value;
+                const g = genderForPatientType(v);
+                setForm(f => ({ ...f, patientType: v, ...(g ? { gender: g } : {}) }));
+              }}>
                 {PATIENT_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
               <input
@@ -1463,20 +1454,6 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         </div>
       </div>
 
-      {(CRF_DEPTS.includes(departmentName) || departmentName === 'Miscellaneous') && (
-        <div className="copd-crf-print-area">
-          {crfFormType === 'ecg' ? (
-            <ECGReportForm visit={crfVisit} barcodeDataUrl={crfBarcodeDataUrl} printedBy={crfPrintedBy} />
-          ) : (
-            <ClinicalRecordPrintTemplate
-              visit={crfVisit}
-              consultantName={crfConsultantName}
-              barcodeDataUrl={crfBarcodeDataUrl}
-              formTitle={`${departmentName.toUpperCase()} FORM`}
-            />
-          )}
-        </div>
-      )}
     </>
   );
 }

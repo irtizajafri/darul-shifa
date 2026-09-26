@@ -3,9 +3,10 @@ import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import { useClinicStore } from '../../store/useClinicStore';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildConsultantReceiptHtml } from './consultantReceiptUtils';
-import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
-import { validatePhoneNo, validateAge } from './opdValidation';
+import { buildCrfPrintDocument, buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
+import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './ConsultantOPD.scss';
@@ -13,7 +14,7 @@ import './ConsultantOPD.scss';
 const departmentName = 'Consultant OPD';
 const layout = 'doctor';
 
-const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
+const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 // Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
 // map it onto the OPD slip's patientType options when auto-filling from an
 // admitted patient's record.
@@ -266,28 +267,28 @@ function PanelModal({ onSelect, onClose }) {
             {/* Company */}
             <div className="gopd-panel-field">
               <label className="gopd-panel-label">Company</label>
-              <select className="gopd-panel-select" value={companyId} onChange={e => handleCompanyChange(e.target.value)}>
-                <option value="">— Select Company —</option>
-                {panelCompanies.filter(c => c.status === 'active').map(c => (
-                  <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={panelCompanies.filter(c => c.status === 'active')}
+                value={companyId}
+                onChange={handleCompanyChange}
+                getKey={c => c.id}
+                getLabel={c => `${c.code} — ${c.name}`}
+                placeholder="Select Company"
+              />
             </div>
 
             {/* Employee */}
             <div className="gopd-panel-field">
               <label className="gopd-panel-label">Employee</label>
-              <select
-                className="gopd-panel-select"
+              <SearchableSelect
+                options={companyEmployees}
                 value={employeeId}
-                onChange={e => handleEmployeeChange(e.target.value)}
+                onChange={handleEmployeeChange}
+                getKey={e => e.id}
+                getLabel={e => `${e.empCode} — ${e.title} ${e.name}`}
+                placeholder="Select Employee"
                 disabled={!companyId}
-              >
-                <option value="">— Select Employee —</option>
-                {companyEmployees.map(e => (
-                  <option key={e.id} value={e.id}>{e.empCode} — {e.title} {e.name}</option>
-                ))}
-              </select>
+              />
               {companyId && companyEmployees.length === 0 && (
                 <span className="gopd-panel-hint">No active employees for this company</span>
               )}
@@ -392,7 +393,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ConsultantOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -417,30 +418,19 @@ export default function ConsultantOPD() {
   const [mrLookupLoading, setMrLookupLoading] = useState(false);
   const [phoneLookupLoading, setPhoneLookupLoading] = useState(false);
 
-  // Clinical Record Form — printed in-page after the slip; this holds the
-  // data for whichever visit was just saved.
-  const [crfVisit, setCrfVisit] = useState(null);
-  const [crfConsultantName, setCrfConsultantName] = useState('');
-  const [crfBarcodeDataUrl, setCrfBarcodeDataUrl] = useState('');
-  const [crfReady, setCrfReady] = useState(false);
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // this line once legacy and new system are back on the same numbering.
+    // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch(() => {});
     loadDoctors(false);
     fetchCcConfig().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Wait one render cycle after crfVisit/etc are set so the hidden print area
-  // actually has the new data in the DOM before we call window.print().
-  useEffect(() => {
-    if (!crfReady) return;
-    const t = setTimeout(() => { printClinicalRecordForm(); setCrfReady(false); }, 300);
-    return () => clearTimeout(t);
-  }, [crfReady]);
 
   useEffect(() => {
     loadDoctors(form.onCall);
@@ -678,9 +668,10 @@ export default function ConsultantOPD() {
     if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
     // Chrome blocks a SECOND popup opened from the same click/gesture (treated
     // as spam), even when opened synchronously — so the Clinical Record Form
-    // can't use its own window. Instead we reuse this one popup: print the
-    // slip first, and once that print dialog closes (`afterprint`), rewrite
-    // the same window with the Clinical Record Form and print it too.
+    // can't use its own window. It reuses this SAME popup instead, printed as
+    // its own separate print job right after the slip's (see
+    // clinicalRecordPrintUtils's buildSequentialPrintHtml) — nothing for a
+    // popup blocker to block, and no window.print() on the main window to freeze it.
     const w = window.open('', '_blank', 'width=420,height=680,left=60,top=60');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
     setBusy(true);
@@ -712,8 +703,10 @@ export default function ConsultantOPD() {
       setReceive('');
       setDiscount('');
       setDiscountType('amount');
-      const [next, nextMr] = await Promise.all([fetchNextSerialNo(), fetchNextMrNo()]);
-      set('serialNo', next);
+      // Serial No auto-fill temporarily disabled — see note above.
+      // const next = await fetchNextSerialNo();
+      // set('serialNo', next);
+      const nextMr = await fetchNextMrNo();
       set('mrNo', String(nextMr).padStart(3, '0'));
       loadDoctors(false);
       if (newId) {
@@ -726,15 +719,11 @@ export default function ConsultantOPD() {
         const barcodeDataUrl = canvas.toDataURL('image/png');
         const printedBy = user?.name || user?.username || user?.email || '';
         const html = buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
-        w.document.write(html);
+        // CRF prints as its own separate print job in this SAME popup, right
+        // after the slip's — see clinicalRecordPrintUtils's buildSequentialPrintHtml.
+        const crfDoc = buildCrfPrintDocument({ visit, consultantName, barcodeDataUrl, formTitle: `${departmentName.toUpperCase()} FORM` });
+        w.document.write(buildSequentialPrintHtml(html, crfDoc));
         w.document.close();
-
-        // Clinical Record Form prints in-page (see printClinicalRecordForm) —
-        // set its data now, the effect above waits a render tick then prints.
-        setCrfVisit(visit);
-        setCrfConsultantName(consultantName);
-        setCrfBarcodeDataUrl(barcodeDataUrl);
-        setCrfReady(true);
       } else {
         w.close();
       }
@@ -899,7 +888,11 @@ export default function ConsultantOPD() {
           <div className="gopd-row gopd-row-1">
             <div className="gopd-name-grp">
               <span className="gopd-lbl">Patient Name</span>
-              <select className="gopd-sel-type" value={form.patientType} onChange={e => set('patientType', e.target.value)}>
+              <select className="gopd-sel-type" value={form.patientType} onChange={e => {
+                const v = e.target.value;
+                const g = genderForPatientType(v);
+                setForm(f => ({ ...f, patientType: v, ...(g ? { gender: g } : {}) }));
+              }}>
                 {PATIENT_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
               <input
@@ -1270,10 +1263,6 @@ export default function ConsultantOPD() {
         </div>
       </div>
 
-      {/* Clinical Record Form — hidden on screen, printed in-page after the slip */}
-      <div className="copd-crf-print-area">
-        <ClinicalRecordPrintTemplate visit={crfVisit} consultantName={crfConsultantName} barcodeDataUrl={crfBarcodeDataUrl} formTitle={`${departmentName.toUpperCase()} FORM`} />
-      </div>
     </>
   );
 }

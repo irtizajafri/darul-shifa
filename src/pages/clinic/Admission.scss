@@ -157,6 +157,13 @@
   input { flex: 1; }
 }
 
+/* ── Admission # already-used warning ── */
+.adm-dup-warning {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #dc2626;
+}
+
 .adm-lookup-btn {
   padding: 6px 10px;
   background: #3b82f6;

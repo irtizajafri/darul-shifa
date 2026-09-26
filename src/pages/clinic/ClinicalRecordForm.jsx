@@ -2,31 +2,14 @@ import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import './ClinicalRecordForm.scss';
 
 // Shared by Consultant OPD, General OPD, Dental OPD and Emergency — each saves
-// its own visit, then prints this same A4 Clinical Record Form in-page right
-// after the slip. Built once here so none of those pages have to duplicate it.
-
-// The slip prints via its own popup (unchanged, proven reliable). The Clinical
-// Record Form prints in-page instead — a second popup from the same click
-// gets silently blocked by Chrome, and sequencing two popups off the
-// `afterprint` event turned out not to fire reliably either. In-page print
-// (same technique as Admission.jsx) has neither problem: no second window,
-// so nothing for a popup blocker or event timing to interfere with.
-export function printClinicalRecordForm() {
-  const styleId = 'copd-crf-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  style.textContent = '@page { size: A4 portrait !important; margin: 8mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
-}
+// its own visit, then prints this same A4 Clinical Record Form right after
+// the slip. Rendered to a static HTML fragment (see clinicalRecordPrintUtils)
+// and written into the SAME popup window the slip itself prints from, as a
+// second page — window.print() is only ever called once, from the popup's
+// own script, never on the main window. (An earlier in-page-on-the-main-
+// window version called window.print() there directly, which on Windows
+// opens a MODAL print dialog that blocks the entire browser window, not
+// just the tab — that's what clinicalRecordPrintUtils.jsx now avoids.)
 
 function blankLines(n) {
   return Array.from({ length: n }, (_, i) => <div key={i} className="copd-crf-line" />);

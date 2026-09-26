@@ -201,8 +201,8 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
     <span></span>
 
     ${doc.antenatalNo && String(doc.antenatalNo).trim().toUpperCase() !== 'NA' ? `<span><span class="lbl">Antenatal #:</span> ${doc.antenatalNo}</span>` : '<span></span>'}
-    <span></span>
-    <span></span>
+    ${doc.panelCompanyName ? `<span><span class="lbl">Company:</span> ${doc.panelCompanyName}</span>` : '<span></span>'}
+    ${doc.panelEmployeeName ? `<span><span class="lbl">Employee:</span> ${doc.panelEmployeeName}</span>` : '<span></span>'}
   </div>
 
   <div class="divider"></div>

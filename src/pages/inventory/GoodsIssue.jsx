@@ -1237,7 +1237,7 @@ export default function GoodsIssue() {
                 <option value="">Select GD (by header code)</option>
                 {(gdHeaders || []).filter((h) => h.status === 'open' && !h.isIgnored).map((h) => (
                   <option key={h.id} value={h.id}>
-                    {h.code} — {h.department?.name || '-'} [{h.status}] ({h.gdItems?.length || 0} items){h.admissionNumber ? ` — Adm# ${h.admissionNumber}` : ''}{h.patientName ? ` (${h.patientName})` : ''}
+                    {h.code} — {h.department?.name || '-'} [{h.status}] ({h.gdItems?.length || 0} items){h.admissionNumber ? ` — Adm# ${h.admissionNumber}` : ''}{h.patientName ? ` (${h.patientName})` : ''}{h.createdByName ? ` — by ${h.createdByName}` : ''}
                   </option>
                 ))}
               </select>

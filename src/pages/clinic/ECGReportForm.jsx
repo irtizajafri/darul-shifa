@@ -3,9 +3,9 @@ import { invoiceLabel } from './receiptUtils';
 import './ECGReportForm.scss';
 
 // Exact replica of the hospital's paper "E C G Report" (Department of
-// Cardiology) — prints in-page after the slip, same technique as
-// ClinicalRecordForm (see printClinicalRecordForm), triggered only when the
-// Miscellaneous slip includes the "E C G" sub-department item.
+// Cardiology) — rendered to a static HTML fragment and printed as a second
+// page in the slip's own popup (see clinicalRecordPrintUtils.jsx), triggered
+// only when the Miscellaneous slip includes the "E C G" sub-department item.
 function blankLines(n) {
   return Array.from({ length: n }, (_, i) => <div key={i} className="ecg-rpt-line" />);
 }

@@ -234,6 +234,13 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
       <td><span class="lbl">Attend By:</span></td>
       <td>${drName || '—'}</td>
     </tr>
+    ${doc.panelCompanyName ? `
+    <tr>
+      <td><span class="lbl">Company:</span></td>
+      <td colspan="3">${doc.panelCompanyName}</td>
+      <td><span class="lbl">Employee:</span></td>
+      <td>${doc.panelEmployeeName || '—'}</td>
+    </tr>` : ''}
   </table>
 
   <!-- Title bar -->

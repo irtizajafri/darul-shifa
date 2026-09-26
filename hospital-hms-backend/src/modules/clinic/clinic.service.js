@@ -278,7 +278,7 @@ function mapSubDept(s) {
   };
 }
 
-async function createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts = [] }) {
+async function createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, antenatalRate, subDepts = [] }) {
   return prisma.clinicDoctor.create({
     data: {
       code: code.trim(),
@@ -290,13 +290,14 @@ async function createDoctor({ code, name, speciality, qualification, staffCatego
       consultantDays: consultantDays || [],
       administrativeExpenseEnabled: Boolean(administrativeExpenseEnabled),
       administrativeExpenseRate: administrativeExpenseEnabled ? (Number(administrativeExpenseRate) || 0) : 0,
+      antenatalRate: Number(antenatalRate) || 0,
       subDepts: { create: subDepts.map(mapSubDept) },
     },
     include: DOCTOR_INCLUDE,
   });
 }
 
-async function updateDoctor(id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts = [] }) {
+async function updateDoctor(id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, antenatalRate, subDepts = [] }) {
   return prisma.$transaction(async (tx) => {
     await tx.clinicDoctorSubDept.deleteMany({ where: { doctorId: Number(id) } });
     return tx.clinicDoctor.update({
@@ -311,10 +312,22 @@ async function updateDoctor(id, { code, name, speciality, qualification, staffCa
         consultantDays: consultantDays || [],
         administrativeExpenseEnabled: Boolean(administrativeExpenseEnabled),
         administrativeExpenseRate: administrativeExpenseEnabled ? (Number(administrativeExpenseRate) || 0) : 0,
+        antenatalRate: Number(antenatalRate) || 0,
         subDepts: { create: subDepts.map(mapSubDept) },
       },
       include: DOCTOR_INCLUDE,
     });
+  });
+}
+
+// Doctor Parameters list's "Antenatal" quick-rate button — updates ONLY this
+// one field (not the full updateDoctor, which would need the doctor's whole
+// subDepts array re-sent too, risking wiping it if the caller doesn't have
+// it loaded).
+async function updateDoctorAntenatalRate(id, antenatalRate) {
+  return prisma.clinicDoctor.update({
+    where: { id: Number(id) },
+    data: { antenatalRate: Number(antenatalRate) || 0 },
   });
 }
 
@@ -402,14 +415,13 @@ async function getNextSerialNo() {
 async function assertSerialNoAvailable(serialNo) {
   const no = serialNo?.trim();
   if (!no) return;
-  const [opd, adm, admPay, pbi, antenatal] = await Promise.all([
+  const [opd, adm, admPay, antenatal] = await Promise.all([
     prisma.clinicOpdVisit.findUnique({ where: { serialNo: no }, select: { id: true } }),
     prisma.clinicAdmission.findFirst({ where: { serialNo: no }, select: { id: true } }),
     prisma.clinicAdmissionPayment.findUnique({ where: { serialNo: no }, select: { id: true } }),
-    prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: no }, select: { id: true } }),
     prisma.clinicAntenatal.findFirst({ where: { serialNo: no }, select: { id: true } }),
   ]);
-  if (opd || adm || admPay || pbi || antenatal) {
+  if (opd || adm || admPay || antenatal) {
     throw Object.assign(new Error(`Slip # ${no} pehle se istemal ho chuka hai — koi doosra number likhein.`), { status: 409 });
   }
 }
@@ -585,12 +597,19 @@ async function getOpdPatientsByPhone(phoneNo) {
 // Admission > "Arrived Slip #" lookup modal — search recent OPD visits by
 // patient name, phone, MR # or Slip # so staff can pick the right slip
 // instead of having to already know its exact serial number.
+//
+// A patient can only "arrive" at admission from General OPD, Consultant OPD
+// or Emergency — a Laboratory/Ultrasound/etc. test slip is never the visit
+// that led to an admission, so those departments are excluded here (they
+// were showing up in this list before, confusing staff picking the right slip).
+const ARRIVED_SLIP_DEPTS = ['General OPD', 'Consultant OPD', 'Emergency'];
 async function searchOpdVisitsForAdmission(query) {
   const q = (query || '').trim();
   if (!q) return [];
   const mrNoNum = /^\d+$/.test(q) ? parseInt(q, 10) : null;
   const visits = await prisma.clinicOpdVisit.findMany({
     where: {
+      department: { in: ARRIVED_SLIP_DEPTS },
       OR: [
         { patientName: { contains: q, mode: 'insensitive' } },
         { phoneNo: { contains: q, mode: 'insensitive' } },
@@ -613,10 +632,27 @@ async function searchOpdVisitsForAdmission(query) {
   // Also search the old bulk-imported "Patients List" (PatientVisit) — it only
   // ever captured patientName + serialNo (no phone/MR#/age/gender), so it can
   // only match on those two.
+  //
+  // Legacy department text is free-form/messy (e.g. "EMERGENCY & CHEST PAIN
+  // CLINIC", "GENERAL CONSULTANT OPD", "GENERAL OPD NIGHT" — confirmed via a
+  // DB spot-check), not the 3 clean fixed strings the new system writes, so
+  // the same General OPD/Consultant OPD/Emergency restriction is applied here
+  // as a best-effort "contains" match instead of an exact one.
   const pvWhere = {
-    OR: [
-      { patientName: { contains: q, mode: 'insensitive' } },
-      ...(mrNoNum != null ? [{ serialNo: mrNoNum }] : []),
+    AND: [
+      {
+        OR: [
+          { department: { contains: 'emergency', mode: 'insensitive' } },
+          { department: { contains: 'consultant', mode: 'insensitive' } },
+          { department: { contains: 'general opd', mode: 'insensitive' } },
+        ],
+      },
+      {
+        OR: [
+          { patientName: { contains: q, mode: 'insensitive' } },
+          ...(mrNoNum != null ? [{ serialNo: mrNoNum }] : []),
+        ],
+      },
     ],
   };
   const pvVisits = await prisma.patientVisit.findMany({
@@ -1179,10 +1215,11 @@ async function getAntenatalList() {
 }
 
 async function getAntenatalByNo(antenatalNo) {
-  return prisma.clinicAntenatal.findFirst({
+  const antenatal = await prisma.clinicAntenatal.findFirst({
     where: { antenatalNo: { equals: antenatalNo, mode: 'insensitive' } },
     orderBy: { id: 'desc' },
   });
+  return attachPanelNames(antenatal);
 }
 
 // dateField picks which date the From/To range filters on — mirrors the
@@ -1229,8 +1266,29 @@ async function getAntenatalReport({ fromDate, toDate, dateField, doctorId }) {
 
 // ─── Receipt ─────────────────────────────────────────────────────────────────
 
+// panelCompanyId/panelEmployeeId on ClinicOpdVisit are plain soft-linked ids
+// (no Prisma @relation, same convention used elsewhere in this codebase), so
+// an `include` can't pull the names — resolved here with a couple of extra
+// lookups so General/Consultant/Emergency OPD and Ambulance slips (all of
+// which share this one print function) can show which panel company/employee
+// the visit was billed against, not just "CREDIT INVOICE".
+async function attachPanelNames(visit) {
+  if (!visit?.panelCompanyId) return visit;
+  const [company, employee] = await Promise.all([
+    prisma.clinicPanelCompany.findUnique({ where: { id: visit.panelCompanyId }, select: { name: true } }),
+    visit.panelEmployeeId
+      ? prisma.clinicPanelEmployee.findUnique({ where: { id: visit.panelEmployeeId }, select: { title: true, name: true } })
+      : null,
+  ]);
+  return {
+    ...visit,
+    panelCompanyName: company?.name || null,
+    panelEmployeeName: employee ? `${employee.title} ${employee.name}`.trim() : null,
+  };
+}
+
 async function getOpdVisitForReceipt(id) {
-  return prisma.clinicOpdVisit.findUnique({
+  const visit = await prisma.clinicOpdVisit.findUnique({
     where: { id: Number(id) },
     include: {
       doctors: {
@@ -1241,6 +1299,7 @@ async function getOpdVisitForReceipt(id) {
       },
     },
   });
+  return attachPanelNames(visit);
 }
 
 async function getTokenNumber(doctorId, dateStr) {
@@ -1570,7 +1629,7 @@ async function reprintOpdVisitBySerial(serialNo) {
     const tokenNo = doctorId
       ? await getTokenNumber(doctorId, new Date().toISOString().slice(0, 10))
       : 0;
-    return { visit, tokenNo, isDuplicate: true, source: 'opd' };
+    return { visit: await attachPanelNames(visit), tokenNo, isDuplicate: true, source: 'opd' };
   }
 
   const pvSerial = Number(no);
@@ -3600,8 +3659,34 @@ async function importOtRegister(rows) {
   return result;
 }
 
+// Admission form's Admission # field — real-time duplicate check as the user
+// types, before they even hit Save (createAdmission below rejects the actual
+// duplicate at save time; this is just the early warning for the UI).
+async function checkAdmissionNoDuplicate(admissionNo) {
+  const no = String(admissionNo || '').trim();
+  if (!no) return { exists: false };
+  const existing = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: no },
+    select: { patientName: true },
+  });
+  return existing ? { exists: true, patientName: existing.patientName } : { exists: false };
+}
+
 async function createAdmission(data) {
   await assertSerialNoAvailable(data.serialNo);
+  const admissionNo = data.admissionNo?.trim();
+  if (admissionNo) {
+    const existing = await prisma.clinicAdmission.findFirst({
+      where: { admissionNo },
+      select: { patientName: true },
+    });
+    if (existing) {
+      throw Object.assign(
+        new Error(`Admission # ${admissionNo} pehle se exist karta hai (Patient: ${existing.patientName})`),
+        { status: 400 }
+      );
+    }
+  }
   const admission = await prisma.clinicAdmission.create({
     data: {
       serialNo:          data.serialNo?.trim() || null,
@@ -5947,9 +6032,9 @@ async function getProvisionalBillDetail(admissionId) {
 
   const paymentHistory = [];
   if (Number(admission.advancePayment) > 0) {
-    paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
+    paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo || '—', amount: Number(admission.advancePayment) });
   }
-  payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
+  payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo || '—', amount: Number(p.amount) }));
   // Raw payment ledger total — patientInfo keeps this as-is (a true record of
   // what was actually receipted), separate from the "effective" figure below.
   const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
@@ -7142,15 +7227,21 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
-  const mapped = opdVisits.map((v) => {
-    const firstDoc = v.doctors[0];
+  // A single OPD visit can carry multiple tests/doctors (e.g. Laboratory:
+  // Dengue NS1 + MPICT PV-PF on one slip) — v.doctors[] holds one entry per
+  // test. Previously only v.doctors[0] was read here, so any 2nd/3rd test on
+  // the same visit silently never appeared in the Patient List (though the
+  // slip/reprint itself was always correct, since that reads v.doctors in
+  // full separately). Expand each visit into one row per doctor/test instead
+  // of collapsing to a single row.
+  const mapped = [];
+  for (const v of opdVisits) {
     // A cancelled booking never actually earned any money — same treatment
     // as getRevenueDashboard/getDailyDepartmentStatement (OV_CANCELLED):
     // patient still shows in the list, but received/discount/balance read 0
     // instead of whatever the visit's original figures were.
     const isCancelled = ['canceled', 'cancelled'].includes(String(v.status || '').toLowerCase());
-    return {
-      id:            `opd_${v.id}`,
+    const baseRow = {
       serialNo:      v.serialNo,
       admitNo:       null,
       mrNo:          v.mrNo || null,
@@ -7158,18 +7249,40 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       visitTime:     toHHMM(v.createdAt),
       patientName:   v.patientName,
       department:    v.department || 'General OPD',
-      subDepartment: firstDoc?.subDept?.name || null,
-      doctor:        firstDoc?.doctor?.name  || null,
       paymentType:   v.paymentType,
-      received:      isCancelled ? 0 : v.receive,
-      balance:       isCancelled ? 0 : (v.totalAmount - v.receive),
-      discount:      isCancelled ? 0 : v.discount,
       cancelled:     isCancelled,
       shiftName:     v.shiftName || null,
       createdByName: v.createdByName || null,
       _source:       'opd',
     };
-  });
+
+    if (!v.doctors || v.doctors.length === 0) {
+      mapped.push({
+        ...baseRow,
+        id:            `opd_${v.id}_0`,
+        subDepartment: null,
+        doctor:        null,
+        received:      isCancelled ? 0 : v.receive,
+        balance:       isCancelled ? 0 : (v.totalAmount - v.receive),
+        discount:      isCancelled ? 0 : v.discount,
+      });
+    } else {
+      v.doctors.forEach((d, idx) => {
+        mapped.push({
+          ...baseRow,
+          id:            `opd_${v.id}_${idx}`,
+          subDepartment: d.subDept?.name || null,
+          doctor:        d.doctor?.name  || null,
+          // Per-test amount for that row's own received; visit-level
+          // discount/balance are only meaningful once (first row) so they
+          // aren't repeated/multiplied across rows for the same visit.
+          received:      isCancelled ? 0 : Number(d.amount || 0),
+          balance:       idx === 0 ? (isCancelled ? 0 : (v.totalAmount - v.receive)) : 0,
+          discount:      idx === 0 ? (isCancelled ? 0 : v.discount) : 0,
+        });
+      });
+    }
+  }
 
   // Also fetch from ClinicAdmission — same naive-timestamp skew as
   // ClinicOpdVisit above, same buffer-then-raw-SQL-narrow fix.
@@ -9646,6 +9759,7 @@ module.exports = {
   getDoctorById,
   createDoctor,
   updateDoctor,
+  updateDoctorAntenatalRate,
   deleteDoctor,
   getAvailableDoctors,
   getNextMrNo,
@@ -9766,6 +9880,7 @@ module.exports = {
   saveAppointment,
   getAppointmentReport,
   createAdmission,
+  checkAdmissionNoDuplicate,
   getAvailableBeds,
   searchAdmissionsForAdjustment,
   searchAdmissionsForProvisionalBill,

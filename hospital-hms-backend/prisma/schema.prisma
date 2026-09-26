@@ -913,6 +913,10 @@ model ClinicDoctor {
   // separate, later change.
   administrativeExpenseEnabled Boolean  @default(false)
   administrativeExpenseRate    Float    @default(0)
+  // Flat Antenatal registration fee for this doctor — quick-set from the
+  // doctor list (Doctor Parameters), auto-filled into Antenatal.jsx's
+  // registration amount when this doctor is picked as "Under Treatment".
+  antenatalRate                Float    @default(0)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1087,7 +1091,7 @@ model ClinicBedShiftHistory {
 model ClinicAdmission {
   id                 Int      @id @default(autoincrement())
   serialNo           String?  @unique
-  admissionNo        String
+  admissionNo        String   @unique
   mrNo               Int?
   arrivedSlipNo      String?
   patientTitle       String   @default("Mr")

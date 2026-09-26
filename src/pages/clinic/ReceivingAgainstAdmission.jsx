@@ -109,7 +109,12 @@ export default function ReceivingAgainstAdmission() {
   const [saving, setSaving] = useState(false);
 
   function loadNextSerial() {
-    fetch(`${API}/opd/next-serial`).then(r => r.json()).then(j => setSerialNo(j.data?.serialNo || '')).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // once legacy and new system are back on the same numbering.
+    // fetch(`${API}/opd/next-serial`).then(r => r.json()).then(j => setSerialNo(j.data?.serialNo || '')).catch(() => {});
+    setSerialNo('');
   }
 
   useEffect(() => { loadNextSerial(); }, []);
@@ -216,7 +221,7 @@ export default function ReceivingAgainstAdmission() {
 
           <div className="raa-form-row">
             <label className="raa-label raa-label--serial">Serial #</label>
-            <input className="raa-input raa-input--serial" value={serialNo} readOnly />
+            <input className="raa-input raa-input--serial" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
           </div>
 
           <div className="raa-separator" />

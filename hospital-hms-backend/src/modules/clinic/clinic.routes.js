@@ -109,6 +109,7 @@ router.delete('/staff-categories/:id', controller.deleteStaffCategory);
 router.get('/doctors', controller.getDoctors);
 router.post('/doctors', controller.createDoctor);
 router.put('/doctors/:id', controller.updateDoctor);
+router.patch('/doctors/:id/antenatal-rate', controller.updateDoctorAntenatalRate);
 router.delete('/doctors/:id', controller.deleteDoctor);
 router.post('/doctors/:id/import-rates', controller.importDoctorSubDeptRates);
 
@@ -286,6 +287,7 @@ router.get('/appointment/by-slip/:slipNo', controller.getAppointmentForSlip);
 router.post('/appointment/save', controller.saveAppointment);
 router.get('/reports/appointment', controller.getAppointmentReport);
 router.post('/admission', controller.createAdmission);
+router.get('/admission/check-duplicate', controller.checkAdmissionNoDuplicate);
 router.get('/opd/by-serial/:serialNo', controller.getOpdVisitBySerial);
 router.get('/opd/search-for-admission', controller.searchOpdVisitsForAdmission);
 

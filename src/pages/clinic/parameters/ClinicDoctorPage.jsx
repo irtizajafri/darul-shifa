@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Plus, Pencil, Trash2, Search, PlusCircle, X, Upload } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, PlusCircle, X, Upload, Baby } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
@@ -82,7 +82,7 @@ export default function ClinicDoctorPage() {
   const {
     doctors, departments, subDepartments, staffCategories, loading,
     fetchDoctors, fetchDepartments, fetchSubDepartments, fetchStaffCategories,
-    createDoctor, updateDoctor, deleteDoctor,
+    createDoctor, updateDoctor, deleteDoctor, updateDoctorAntenatalRate,
   } = useClinicStore();
 
   const [query, setQuery] = useState('');
@@ -95,6 +95,9 @@ export default function ClinicDoctorPage() {
   const [editingRowIdx, setEditingRowIdx] = useState(null); // null = adding new; index = editing that row (double-click)
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [antenatalRateDoctor, setAntenatalRateDoctor] = useState(null);
+  const [antenatalRateValue, setAntenatalRateValue] = useState('');
+  const [savingAntenatalRate, setSavingAntenatalRate] = useState(false);
   const [bulkRate, setBulkRate] = useState('');
   const [selectedRows, setSelectedRows] = useState([]);
 
@@ -416,6 +419,27 @@ export default function ClinicDoctorPage() {
     }
   }
 
+  // Quick "Antenatal" rate — a flat per-doctor fee, editable straight from
+  // the doctor list instead of the full Sub Dept tab (auto-fills Antenatal
+  // registration's amount when this doctor is picked as Under Treatment).
+  function openAntenatalRate(doc) {
+    setAntenatalRateDoctor(doc);
+    setAntenatalRateValue(String(doc.antenatalRate || 0));
+  }
+
+  async function saveAntenatalRate() {
+    setSavingAntenatalRate(true);
+    try {
+      await updateDoctorAntenatalRate(antenatalRateDoctor.id, Number(antenatalRateValue) || 0);
+      toast.success('Antenatal rate updated');
+      setAntenatalRateDoctor(null);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update rate');
+    } finally {
+      setSavingAntenatalRate(false);
+    }
+  }
+
   return (
     <div className="clinic-parameter-page">
       <ClinicMenuBar />
@@ -488,6 +512,9 @@ export default function ClinicDoctorPage() {
                       </button>
                       <button className="cpp-btn-icon cdp-upload-row-btn" onClick={() => openUploadForDoctor(doc)} title="Upload Excel">
                         <Upload className="w-3.5 h-3.5" />
+                      </button>
+                      <button className="cpp-btn-icon" onClick={() => openAntenatalRate(doc)} title="Antenatal Rate">
+                        <Baby className="w-3.5 h-3.5" />
                       </button>
                       <button className="cpp-btn-icon cpp-delete" onClick={() => setConfirmDelete(doc)} title="Delete">
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1026,6 +1053,22 @@ export default function ClinicDoctorPage() {
         <div className="flex justify-end gap-2">
           <Button label="Cancel" variant="secondary" onClick={() => setConfirmDelete(null)} />
           <Button label="Delete" variant="danger" onClick={() => handleDelete(confirmDelete)} />
+        </div>
+      </Modal>
+
+      {/* Antenatal rate quick-edit */}
+      <Modal isOpen={!!antenatalRateDoctor} onClose={() => setAntenatalRateDoctor(null)} title={`Antenatal Rate — ${antenatalRateDoctor?.name || ''}`} size="sm">
+        <Input
+          label="Rate"
+          type="number"
+          min="0"
+          value={antenatalRateValue}
+          onChange={(e) => setAntenatalRateValue(e.target.value)}
+          placeholder="e.g. 2000"
+        />
+        <div className="flex justify-end gap-2 mt-4">
+          <Button label="Cancel" variant="secondary" onClick={() => setAntenatalRateDoctor(null)} />
+          <Button label={savingAntenatalRate ? 'Saving...' : 'Save'} onClick={saveAntenatalRate} disabled={savingAntenatalRate} />
         </div>
       </Modal>
     </div>

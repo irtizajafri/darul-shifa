@@ -2,14 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildEmergencyReceiptHtml } from './emergencyReceiptUtils';
-import { printClinicalRecordForm, ClinicalRecordPrintTemplate } from './ClinicalRecordForm';
-import { validatePhoneNo, validateAge } from './opdValidation';
+import { buildCrfPrintDocument, buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
+import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
 
-const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
+const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 // Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
 // map it onto the OPD slip's patientType options when auto-filling from an
 // admitted patient's record.
@@ -137,18 +138,26 @@ function PanelModal({ onSelect, onClose }) {
         <div className="gopd-modal-body">
           <div className="gopd-modal-row-field">
             <label>Company</label>
-            <select value={companyId} onChange={e => { setCompanyId(e.target.value); setEmpId(''); setDepIdx(''); }}>
-              <option value="">— Select —</option>
-              {panelCompanies.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={panelCompanies}
+              value={companyId}
+              onChange={v => { setCompanyId(v); setEmpId(''); setDepIdx(''); }}
+              getKey={c => c.id}
+              getLabel={c => `${c.code} — ${c.name}`}
+              placeholder="Select Company"
+            />
           </div>
           {companyId && (
             <div className="gopd-modal-row-field">
               <label>Employee</label>
-              <select value={empId} onChange={e => { setEmpId(e.target.value); setDepIdx(''); }}>
-                <option value="">— Select (optional) —</option>
-                {employees.map(e => <option key={e.id} value={e.id}>{e.empCode} — {e.firstName} {e.lastName}</option>)}
-              </select>
+              <SearchableSelect
+                options={employees}
+                value={empId}
+                onChange={v => { setEmpId(v); setDepIdx(''); }}
+                getKey={e => e.id}
+                getLabel={e => `${e.empCode} — ${e.firstName} ${e.lastName}`}
+                placeholder="Select Employee (optional)"
+              />
             </div>
           )}
           {dependents.length > 0 && (
@@ -241,7 +250,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EmergencyOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore();
+  const { fetchAvailableDoctors, fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -260,29 +269,18 @@ export default function EmergencyOPD() {
   const [showPanelModal, setShowPanelModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
 
-  // Clinical Record Form — printed in-page after the slip; holds the data for
-  // whichever visit was just saved.
-  const [crfVisit, setCrfVisit] = useState(null);
-  const [crfConsultantName, setCrfConsultantName] = useState('');
-  const [crfBarcodeDataUrl, setCrfBarcodeDataUrl] = useState('');
-  const [crfReady, setCrfReady] = useState(false);
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // this line once legacy and new system are back on the same numbering.
+    // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     loadDoctors(false);
     fetchCcConfig().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Wait one render cycle after crfVisit/etc are set so the hidden print area
-  // actually has the new data in the DOM before we call window.print().
-  useEffect(() => {
-    if (!crfReady) return;
-    const t = setTimeout(() => { printClinicalRecordForm(); setCrfReady(false); }, 300);
-    return () => clearTimeout(t);
-  }, [crfReady]);
 
   useEffect(() => {
     loadDoctors(form.onCall);
@@ -465,20 +463,19 @@ export default function EmergencyOPD() {
       setReceive('');
       setDiscount('');
       setDiscountType('amount');
-      const next = await fetchNextSerialNo();
-      set('serialNo', next);
+      // Serial No auto-fill temporarily disabled — see note above.
+      // const next = await fetchNextSerialNo();
+      // set('serialNo', next);
       loadDoctors(false);
       if (newId) {
         const { visit, tokenNo, isDuplicate } = await printOpdVisit(newId);
         const printedBy = user?.name || user?.username || user?.email || '';
         const html = buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
-        w.document.write(html);
+        // CRF prints as its own separate print job in this SAME popup, right
+        // after the slip's — see clinicalRecordPrintUtils's buildSequentialPrintHtml.
+        const crfDoc = buildCrfPrintDocument({ visit, consultantName, barcodeDataUrl: '', formTitle: 'EMERGENCY FORM' });
+        w.document.write(buildSequentialPrintHtml(html, crfDoc));
         w.document.close();
-
-        setCrfVisit(visit);
-        setCrfConsultantName(consultantName);
-        setCrfBarcodeDataUrl('');
-        setCrfReady(true);
       } else {
         w.close();
       }
@@ -524,7 +521,11 @@ export default function EmergencyOPD() {
           <div className="gopd-row gopd-row-1">
             <div className="gopd-name-grp">
               <span className="gopd-lbl">Patient Name</span>
-              <select className="gopd-sel-type" value={form.patientType} onChange={e => set('patientType', e.target.value)}>
+              <select className="gopd-sel-type" value={form.patientType} onChange={e => {
+                const v = e.target.value;
+                const g = genderForPatientType(v);
+                setForm(f => ({ ...f, patientType: v, ...(g ? { gender: g } : {}) }));
+              }}>
                 {PATIENT_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
               <input
@@ -772,14 +773,6 @@ export default function EmergencyOPD() {
         </div>
       </div>
 
-      <div className="copd-crf-print-area">
-        <ClinicalRecordPrintTemplate
-          visit={crfVisit}
-          consultantName={crfConsultantName}
-          barcodeDataUrl={crfBarcodeDataUrl}
-          formTitle="EMERGENCY FORM"
-        />
-      </div>
     </>
   );
 }

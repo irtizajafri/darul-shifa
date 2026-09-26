@@ -4,6 +4,7 @@ import { Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import { useClinicStore } from '../../store/useClinicStore';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import { buildAntenatalReceiptHtml, buildAntenatalCardHtml } from './antenatalReceiptUtils';
 import './Antenatal.scss';
@@ -175,12 +176,15 @@ function PanelModal({ onSelect, onClose }) {
     if (!companyId) return toast.error('Select a company');
     if (!employeeId) return toast.error('Select an employee');
     const dep = dependentIdx !== '' ? deps[Number(dependentIdx)] : null;
+    const company = panelCompanies.find(c => c.id === Number(companyId));
     onSelect({
       panelCompanyId: Number(companyId),
       panelEmployeeId: Number(employeeId),
       panelDependentId: dep?.id || null,
       patientName: dep ? `${dep.title} ${dep.name}` : `${selEmp.title} ${selEmp.name}`,
-      panelLabel: `${panelCompanies.find(c => c.id === Number(companyId))?.code} / ${selEmp.empCode}${dep ? ` / ${dep.code}` : ''}`,
+      panelLabel: `${company?.code} / ${selEmp.empCode}${dep ? ` / ${dep.code}` : ''}`,
+      panelCompanyName: company?.name || '',
+      panelEmployeeName: `${selEmp.title} ${selEmp.name}`,
       dob: dep ? formatDob(dep.dob) : formatDob(selEmp.dob),
     });
   }
@@ -196,19 +200,26 @@ function PanelModal({ onSelect, onClose }) {
           <div className="ant-panel-body">
             <div className="ant-panel-field">
               <label>Company</label>
-              <select value={companyId} onChange={e => { setCompanyId(e.target.value); setEmployeeId(''); setDependentIdx(''); }}>
-                <option value="">— Select Company —</option>
-                {panelCompanies.filter(c => c.status === 'active').map(c => (
-                  <option key={c.id} value={c.id}>{c.code} — {c.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={panelCompanies.filter(c => c.status === 'active')}
+                value={companyId}
+                onChange={v => { setCompanyId(v); setEmployeeId(''); setDependentIdx(''); }}
+                getKey={c => c.id}
+                getLabel={c => `${c.code} — ${c.name}`}
+                placeholder="Select Company"
+              />
             </div>
             <div className="ant-panel-field">
               <label>Employee</label>
-              <select value={employeeId} onChange={e => { setEmployeeId(e.target.value); setDependentIdx(''); }} disabled={!companyId}>
-                <option value="">— Select Employee —</option>
-                {companyEmps.map(e => <option key={e.id} value={e.id}>{e.empCode} — {e.title} {e.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={companyEmps}
+                value={employeeId}
+                onChange={v => { setEmployeeId(v); setDependentIdx(''); }}
+                getKey={e => e.id}
+                getLabel={e => `${e.empCode} — ${e.title} ${e.name}`}
+                placeholder="Select Employee"
+                disabled={!companyId}
+              />
             </div>
             {selEmp && deps.length > 0 && (
               <div className="ant-panel-field">
@@ -251,11 +262,11 @@ const EMPTY = {
   amount: '',
   employeeId: null,
   panelCompanyId: null, panelEmployeeId: null, panelDependentId: null,
-  panelLabel: '',
+  panelLabel: '', panelCompanyName: '', panelEmployeeName: '',
 };
 
 export default function Antenatal() {
-  const { doctors, fetchDoctors, searchEmployees, createAntenatal, fetchOpdPatientByMrNo, fetchNextSerialNo, fetchAntenatalByNo } = useClinicStore();
+  const { doctors, fetchDoctors, searchEmployees, createAntenatal, fetchOpdPatientByMrNo, fetchNextSerialNo, fetchAntenatalByNo } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
   const [form, setForm] = useState(EMPTY);
@@ -267,27 +278,35 @@ export default function Antenatal() {
 
   useEffect(() => {
     if (doctors.length === 0) fetchDoctors().catch(() => {});
-    fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // this line once legacy and new system are back on the same numbering.
+    // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // "Under Treatment" only shows doctors linked to the Antenatal department
-  // (previously matched any department with "gyn" in the name — too loose,
-  // could both miss the real Antenatal doctors and include unrelated ones).
+  // "Under Treatment" shows doctors linked to the Antenatal department via
+  // the Sub Dept tab (older setup) OR who have the newer, quicker per-doctor
+  // "Antenatal Rate" set from Doctor Parameters' doctor-list button (no Sub
+  // Dept assignment needed for that one).
   const antenatalDoctors = doctors.filter(d =>
     d.status === 'active' &&
-    d.subDepts?.some(s => s.subDept?.department?.name?.trim().toLowerCase() === 'antenatal')
+    (d.subDepts?.some(s => s.subDept?.department?.name?.trim().toLowerCase() === 'antenatal') || d.antenatalRate > 0)
   );
 
   function handleUnderTreatmentChange(doctorId) {
     const doc = antenatalDoctors.find(d => String(d.id) === String(doctorId));
     const sd = doc?.subDepts?.find(s => s.subDept?.department?.name?.trim().toLowerCase() === 'antenatal');
+    // The doctor-list "Antenatal Rate" quick-set takes priority when present;
+    // otherwise fall back to the Sub Dept tab's Antenatal rate (older setup).
+    const rate = doc?.antenatalRate > 0 ? doc.antenatalRate : (sd ? sd.normalCharges : null);
     setForm(f => ({
       ...f,
       underTreatmentId: doctorId,
       // Selecting a doctor loads their Antenatal rate as the default Amount
       // — staff can still adjust it manually afterward if needed.
-      amount: sd ? String(sd.normalCharges || 0) : f.amount,
+      amount: rate != null ? String(rate || 0) : f.amount,
     }));
   }
 
@@ -352,13 +371,13 @@ export default function Antenatal() {
 
   function handleCategoryChange(v) {
     if (v === 'staff') {
-      setForm(f => ({ ...f, patientCategory: v, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '' }));
+      setForm(f => ({ ...f, patientCategory: v, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '', panelCompanyName: '', panelEmployeeName: '' }));
       setShowEmpModal(true);
     } else if (v === 'panel') {
       setForm(f => ({ ...f, patientCategory: v, employeeId: null }));
       setShowPanelModal(true);
     } else {
-      setForm(f => ({ ...f, patientCategory: v, employeeId: null, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '', patientName: v === 'private' ? '' : f.patientName }));
+      setForm(f => ({ ...f, patientCategory: v, employeeId: null, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '', panelCompanyName: '', panelEmployeeName: '', patientName: v === 'private' ? '' : f.patientName }));
     }
   }
 
@@ -368,8 +387,8 @@ export default function Antenatal() {
     setShowEmpModal(false);
   }
 
-  function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }) {
-    setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }));
+  function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel, panelCompanyName, panelEmployeeName }) {
+    setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel, panelCompanyName, panelEmployeeName }));
     setShowPanelModal(false);
   }
 
@@ -430,7 +449,8 @@ export default function Antenatal() {
       printHtmlInHiddenIframe(buildAntenatalCardHtml({ antenatal: antenatalForPrint, doctor, barcodeDataUrl }));
 
       setForm({ ...EMPTY, registrationDate: todayStr() });
-      fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+      // Serial No auto-fill temporarily disabled — see note above.
+      // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     } catch (err) {
       w.close();
       toast.error(err.message || 'Failed to save');

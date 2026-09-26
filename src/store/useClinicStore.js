@@ -476,6 +476,15 @@ export const useClinicStore = create((set) => ({
     set((s) => ({ doctors: s.doctors.filter((d) => d.id !== id) }));
   },
 
+  updateDoctorAntenatalRate: async (id, antenatalRate) => {
+    const data = await request(`/doctors/${id}/antenatal-rate`, {
+      method: 'PATCH',
+      body: JSON.stringify({ antenatalRate }),
+    });
+    set((s) => ({ doctors: s.doctors.map((d) => (d.id === id ? data : d)) }));
+    return data;
+  },
+
   // ── Panel Company ────────────────────────────────────────────────────────────
   panelCompanies: [],
 
@@ -582,6 +591,10 @@ export const useClinicStore = create((set) => ({
 
   createAdmission: async (payload) => {
     return request('/admission', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  checkAdmissionNoDuplicate: async (admissionNo) => {
+    return request(`/admission/check-duplicate?admissionNo=${encodeURIComponent(admissionNo || '')}`);
   },
 
   searchAdmissionsForAdjustment: async (q) => {

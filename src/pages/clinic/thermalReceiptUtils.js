@@ -117,6 +117,8 @@ export function buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDa
   ${doc.mrNo ? `<div class="th-row"><span class="lbl">MR #:</span><span>${doc.mrNo}</span></div>` : ''}
   ${doc.referredBy && String(doc.referredBy).trim() ? `<div class="th-row"><span class="lbl">Ref. By:</span><span>${doc.referredBy}</span></div>` : ''}
   ${doc.antenatalNo && String(doc.antenatalNo).trim().toUpperCase() !== 'NA' ? `<div class="th-row"><span class="lbl">Antenatal #:</span><span>${doc.antenatalNo}</span></div>` : ''}
+  ${doc.panelCompanyName ? `<div class="th-row"><span class="lbl">Company:</span><span>${doc.panelCompanyName}</span></div>` : ''}
+  ${doc.panelEmployeeName ? `<div class="th-row"><span class="lbl">Employee:</span><span>${doc.panelEmployeeName}</span></div>` : ''}
 
   ${doctorRowsHtml}
 

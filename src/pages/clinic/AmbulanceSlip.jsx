@@ -2,14 +2,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildReceiptHtml } from './receiptUtils';
 import { printThermalReceipt, ThermalReceiptPrintTemplate } from './ThermalReceiptPrintTemplate';
-import { validatePhoneNo, validateAge } from './opdValidation';
+import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
 
-const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
+const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 const ADMISSION_TITLE_MAP = { Mr: 'MR', Mrs: 'MRS', Ms: 'MS', Master: 'MAST', Baby: 'BABY' };
 
 function fullName(emp) {
@@ -133,18 +134,26 @@ function PanelModal({ onSelect, onClose }) {
         <div className="gopd-modal-body">
           <div className="gopd-modal-row-field">
             <label>Company</label>
-            <select value={companyId} onChange={e => { setCompanyId(e.target.value); setEmpId(''); setDepIdx(''); }}>
-              <option value="">— Select —</option>
-              {panelCompanies.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={panelCompanies}
+              value={companyId}
+              onChange={v => { setCompanyId(v); setEmpId(''); setDepIdx(''); }}
+              getKey={c => c.id}
+              getLabel={c => `${c.code} — ${c.name}`}
+              placeholder="Select Company"
+            />
           </div>
           {companyId && (
             <div className="gopd-modal-row-field">
               <label>Employee</label>
-              <select value={empId} onChange={e => { setEmpId(e.target.value); setDepIdx(''); }}>
-                <option value="">— Select (optional) —</option>
-                {employees.map(e => <option key={e.id} value={e.id}>{e.empCode} — {e.firstName} {e.lastName}</option>)}
-              </select>
+              <SearchableSelect
+                options={employees}
+                value={empId}
+                onChange={v => { setEmpId(v); setDepIdx(''); }}
+                getKey={e => e.id}
+                getLabel={e => `${e.empCode} — ${e.firstName} ${e.lastName}`}
+                placeholder="Select Employee (optional)"
+              />
             </div>
           )}
           {dependents.length > 0 && (
@@ -237,7 +246,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AmbulanceSlip() {
-  const { fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, doctors, fetchDoctors } = useClinicStore();
+  const { fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, doctors, fetchDoctors } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -260,7 +269,11 @@ export default function AmbulanceSlip() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+    // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
+    // it in manually to match the legacy system's numbering while the two
+    // systems' sequences are out of sync. Logic kept, not deleted — re-enable
+    // this line once legacy and new system are back on the same numbering.
+    // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
     if (doctors.length === 0) fetchDoctors().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -368,8 +381,9 @@ export default function AmbulanceSlip() {
       setForm(EMPTY);
       setReceive('');
       setAmount('');
-      const next = await fetchNextSerialNo();
-      set('serialNo', next);
+      // Serial No auto-fill temporarily disabled — see note above.
+      // const next = await fetchNextSerialNo();
+      // set('serialNo', next);
       setDateTime(formatDateTime(new Date()));
       if (newId) {
         const { visit, tokenNo, isDuplicate } = await printOpdVisit(newId);
@@ -453,7 +467,11 @@ export default function AmbulanceSlip() {
           <div className="gopd-row gopd-row-1">
             <div className="gopd-name-grp">
               <span className="gopd-lbl">Patient Name</span>
-              <select className="gopd-sel-type" value={form.patientType} onChange={e => set('patientType', e.target.value)}>
+              <select className="gopd-sel-type" value={form.patientType} onChange={e => {
+                const v = e.target.value;
+                const g = genderForPatientType(v);
+                setForm(f => ({ ...f, patientType: v, ...(g ? { gender: g } : {}) }));
+              }}>
                 {PATIENT_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
               <input

@@ -687,10 +687,10 @@ async function getDoctors(req, res, next) {
 
 async function createDoctor(req, res, next) {
   try {
-    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts } = req.body;
+    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, antenatalRate, subDepts } = req.body;
     if (!code?.trim()) return fail(res, 400, 'Code is required');
     if (!name?.trim()) return fail(res, 400, 'Name is required');
-    const data = await service.createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts });
+    const data = await service.createDoctor({ code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, antenatalRate, subDepts });
     success(res, data, 'Doctor created');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Doctor code already exists');
@@ -700,13 +700,23 @@ async function createDoctor(req, res, next) {
 
 async function updateDoctor(req, res, next) {
   try {
-    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts } = req.body;
+    const { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, antenatalRate, subDepts } = req.body;
     if (!code?.trim()) return fail(res, 400, 'Code is required');
     if (!name?.trim()) return fail(res, 400, 'Name is required');
-    const data = await service.updateDoctor(req.params.id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, subDepts });
+    const data = await service.updateDoctor(req.params.id, { code, name, speciality, qualification, staffCategoryId, status, consultantDays, administrativeExpenseEnabled, administrativeExpenseRate, antenatalRate, subDepts });
     success(res, data, 'Doctor updated');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Doctor code already exists');
+    if (err.code === 'P2025') return fail(res, 404, 'Doctor not found');
+    next(err);
+  }
+}
+
+async function updateDoctorAntenatalRate(req, res, next) {
+  try {
+    const data = await service.updateDoctorAntenatalRate(req.params.id, req.body.antenatalRate);
+    success(res, data, 'Antenatal rate updated');
+  } catch (err) {
     if (err.code === 'P2025') return fail(res, 404, 'Doctor not found');
     next(err);
   }
@@ -1580,6 +1590,18 @@ async function createAdmission(req, res, next) {
     if (!req.body.patientName?.trim()) return fail(res, 400, 'Patient Name is required');
     const data = await service.createAdmission(req.body);
     success(res, data, 'Admission saved');
+  } catch (err) {
+    // Belt-and-suspenders alongside the explicit pre-check in
+    // service.createAdmission — this only fires if two saves for the same
+    // admissionNo race past that check at the same instant.
+    if (err.code === 'P2002') return fail(res, 409, `Admission # ${req.body.admissionNo} pehle se exist karta hai`);
+    next(err);
+  }
+}
+
+async function checkAdmissionNoDuplicate(req, res, next) {
+  try {
+    success(res, await service.checkAdmissionNoDuplicate(req.query.admissionNo));
   } catch (err) { next(err); }
 }
 
@@ -2471,6 +2493,7 @@ module.exports = {
   getDoctors,
   createDoctor,
   updateDoctor,
+  updateDoctorAntenatalRate,
   deleteDoctor,
   getAvailableDoctors,
   getNextMrNo,
@@ -2596,6 +2619,7 @@ module.exports = {
   saveAppointment,
   getAppointmentReport,
   createAdmission,
+  checkAdmissionNoDuplicate,
   getAvailableBeds,
   searchAdmissionsForAdjustment,
   searchAdmissionsForProvisionalBill,

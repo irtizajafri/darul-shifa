@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import { genderForPatientType } from './opdValidation';
 import './SlipAdjustment.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
-const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'INFANT'];
+const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -246,7 +247,11 @@ export default function SlipAdjustment() {
                   <label className="sadj-label">Patient Name</label>
                   <div className="sadj-name-edit">
                     {visit.source === 'opd' && (
-                      <select className="sadj-select sadj-select--type" value={form.patientType} onChange={e => setForm(f => ({ ...f, patientType: e.target.value }))}>
+                      <select className="sadj-select sadj-select--type" value={form.patientType} onChange={e => {
+                        const v = e.target.value;
+                        const g = genderForPatientType(v);
+                        setForm(f => ({ ...f, patientType: v, ...(g ? { gender: g } : {}) }));
+                      }}>
                         {PATIENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                     )}
