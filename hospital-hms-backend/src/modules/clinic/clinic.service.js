@@ -6026,7 +6026,13 @@ async function getProvisionalBillDetail(admissionId) {
   // importProvisionalDataIntoDischargeBill already folds the same pharmacyRows
   // total into the Final Bill, so Provisional and Discharge agree.
   const pharmacyAmount = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  const billAmount = provisionalAmount + wardAmount + diagnosticAmount + pharmacyAmount;
+  // Either total can be excluded from the bill via setPharmacyBillExcluded/
+  // setDiagnosticBillExcluded (e.g. a panel company billing its own pharmacy
+  // separately) — the rows themselves stay visible/untouched either way,
+  // only whether they count toward billAmount changes.
+  const billAmount = provisionalAmount + wardAmount
+    + (admission.diagnosticBillExcluded ? 0 : diagnosticAmount)
+    + (admission.pharmacyBillExcluded ? 0 : pharmacyAmount);
   const discountAmount = Number(latestDiscountRefund?.discountAmount) || 0;
   const netBillAmount = Math.max(0, billAmount - discountAmount);
 
@@ -6056,10 +6062,13 @@ async function getProvisionalBillDetail(admissionId) {
     wardHistory,
     wardAmount,
     diagnosticRows,
+    diagnosticAmount,
+    diagnosticBillExcluded: !!admission.diagnosticBillExcluded,
     pendingSlips,
     pendingDiagnosticSlips,
     pharmacyRows,
     pharmacyAmount,
+    pharmacyBillExcluded: !!admission.pharmacyBillExcluded,
     patientInfo: { paymentHistory, amountReceived },
     balanceInfo: {
       billAmount,
@@ -6071,6 +6080,28 @@ async function getProvisionalBillDetail(admissionId) {
       refund: Math.max(0, netAmountReceived - netBillAmount),
     },
   };
+}
+
+// Provisional Bill's auto "Medicine (Pharmacy)" row — remove/restore toggle.
+// The underlying sales invoices/outside-store items are never touched, only
+// whether their total counts toward this admission's Bill Amount.
+async function setPharmacyBillExcluded(admissionId, excluded) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  return prisma.clinicAdmission.update({
+    where: { id: Number(admissionId) },
+    data: { pharmacyBillExcluded: excluded },
+  });
+}
+
+// Same as setPharmacyBillExcluded above, for the auto "Diagnostic" row.
+async function setDiagnosticBillExcluded(admissionId, excluded) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  return prisma.clinicAdmission.update({
+    where: { id: Number(admissionId) },
+    data: { diagnosticBillExcluded: excluded },
+  });
 }
 
 // Ward History rate is otherwise fully derived (see computeWardHistory) — this
@@ -9731,6 +9762,8 @@ module.exports = {
   getPatientDocuments,
   createPatientDocument,
   getProvisionalBillDetail,
+  setPharmacyBillExcluded,
+  setDiagnosticBillExcluded,
   addProvisionalBillItem,
   addProvisionalBillItemFromVisit,
   deleteProvisionalBillItem,

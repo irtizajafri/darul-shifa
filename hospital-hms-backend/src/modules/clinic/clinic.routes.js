@@ -89,6 +89,8 @@ router.delete('/pharmacy-stores/:id', controller.deletePharmacyStore);
 router.get('/provisional-bill/:admissionId/pharmacy-items', controller.listProvisionalPharmacyItems);
 router.post('/provisional-bill/:admissionId/pharmacy-items', controller.addProvisionalPharmacyItem);
 router.delete('/provisional-bill/pharmacy-items/:itemId', controller.deleteProvisionalPharmacyItem);
+router.patch('/provisional-bill/:admissionId/pharmacy-excluded', controller.setPharmacyBillExcluded);
+router.patch('/provisional-bill/:admissionId/diagnostic-excluded', controller.setDiagnosticBillExcluded);
 
 // Discharge and Refund
 router.get('/discharge-bill/search', controller.searchAdmissionsForDischargeRefund);

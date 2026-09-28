@@ -1129,6 +1129,12 @@ model ClinicAdmission {
   panelEmployeeId    Int?
   panelDependentId   Int?
   status             String   @default("active")
+  // Provisional Bill: Pharmacy/Diagnostic amounts auto-fold into Bill Amount
+  // — these let staff toggle either one out of the total independently
+  // (e.g. a panel company billing its own pharmacy separately) without
+  // deleting the underlying sales invoices / OPD visits.
+  pharmacyBillExcluded   Boolean  @default(false)
+  diagnosticBillExcluded Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

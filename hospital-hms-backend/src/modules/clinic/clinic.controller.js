@@ -431,6 +431,28 @@ async function getProvisionalBillDetail(req, res, next) {
   }
 }
 
+async function setPharmacyBillExcluded(req, res, next) {
+  try {
+    const { excluded } = req.body;
+    const data = await service.setPharmacyBillExcluded(req.params.admissionId, !!excluded);
+    success(res, data, 'Updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
+async function setDiagnosticBillExcluded(req, res, next) {
+  try {
+    const { excluded } = req.body;
+    const data = await service.setDiagnosticBillExcluded(req.params.admissionId, !!excluded);
+    success(res, data, 'Updated');
+  } catch (err) {
+    if (err.status === 404) return fail(res, 404, err.message);
+    next(err);
+  }
+}
+
 async function updateWardHistoryRate(req, res, next) {
   try {
     const { enteredAt, rate } = req.body;
@@ -2466,6 +2488,8 @@ module.exports = {
   uploadPatientDocument,
   getPatientDocumentsReport,
   getProvisionalBillDetail,
+  setPharmacyBillExcluded,
+  setDiagnosticBillExcluded,
   updateWardHistoryRate,
   addProvisionalBillItem,
   addProvisionalBillItemFromVisit,

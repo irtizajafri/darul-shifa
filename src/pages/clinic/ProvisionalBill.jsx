@@ -328,6 +328,8 @@ export default function ProvisionalBill() {
     pharmacyStores, fetchPharmacyStores, createPharmacyStore,
     addProvisionalPharmacyItem,
     deleteProvisionalPharmacyItem,
+    setPharmacyBillExcluded,
+    setDiagnosticBillExcluded,
   } = useClinicStore();
 
   const [admissionId, setAdmissionId] = useState(null);
@@ -613,6 +615,37 @@ export default function ProvisionalBill() {
     } catch (e) {
       toast.error(e.message || 'Row delete nahi hui');
     }
+  }
+
+  // Auto "Medicine (Pharmacy)" / "Diagnostic" rows on the Bill Heads table —
+  // remove/restore toggles Bill Amount without touching the underlying sales
+  // invoices / OPD visits those totals are computed from.
+  async function handleExcludePharmacy() {
+    try {
+      await setPharmacyBillExcluded(admissionId, true);
+      await loadDetail(admissionId);
+    } catch (e) { toast.error(e.message || 'Failed'); }
+  }
+
+  async function handleRestorePharmacy() {
+    try {
+      await setPharmacyBillExcluded(admissionId, false);
+      await loadDetail(admissionId);
+    } catch (e) { toast.error(e.message || 'Failed'); }
+  }
+
+  async function handleExcludeDiagnostic() {
+    try {
+      await setDiagnosticBillExcluded(admissionId, true);
+      await loadDetail(admissionId);
+    } catch (e) { toast.error(e.message || 'Failed'); }
+  }
+
+  async function handleRestoreDiagnostic() {
+    try {
+      await setDiagnosticBillExcluded(admissionId, false);
+      await loadDetail(admissionId);
+    } catch (e) { toast.error(e.message || 'Failed'); }
   }
 
   async function handleAddStore() {
@@ -903,8 +936,50 @@ export default function ProvisionalBill() {
                           </td>
                         </tr>
                       ))}
-                      {!detail.billItems.length && (
+                      {!detail.billItems.length && !detail.pharmacyAmount && !detail.diagnosticAmount && (
                         <tr><td colSpan={8} className="pb-empty">Koi row add nahi hui</td></tr>
+                      )}
+                      {detail.diagnosticAmount > 0 && !detail.diagnosticBillExcluded && (
+                        <tr className="pb-row--auto">
+                          <td>—</td>
+                          <td>Diagnostic</td>
+                          <td className="r">1</td>
+                          <td className="r">{fmt2(detail.diagnosticAmount)}</td>
+                          <td className="r">{fmt2(detail.diagnosticAmount)}</td>
+                          <td></td><td></td>
+                          <td className="pb-row-actions">
+                            <button className="pb-del" onClick={handleExcludeDiagnostic} title="Remove from Bill">✕</button>
+                          </td>
+                        </tr>
+                      )}
+                      {detail.diagnosticAmount > 0 && detail.diagnosticBillExcluded && (
+                        <tr className="pb-row--auto-excluded">
+                          <td colSpan={7}>Diagnostic — excluded from bill</td>
+                          <td className="pb-row-actions">
+                            <button className="pb-restore-btn" onClick={handleRestoreDiagnostic} title="Add to Bill">+</button>
+                          </td>
+                        </tr>
+                      )}
+                      {detail.pharmacyAmount > 0 && !detail.pharmacyBillExcluded && (
+                        <tr className="pb-row--auto">
+                          <td>—</td>
+                          <td>Medicine (Pharmacy)</td>
+                          <td className="r">1</td>
+                          <td className="r">{fmt2(detail.pharmacyAmount)}</td>
+                          <td className="r">{fmt2(detail.pharmacyAmount)}</td>
+                          <td></td><td></td>
+                          <td className="pb-row-actions">
+                            <button className="pb-del" onClick={handleExcludePharmacy} title="Remove from Bill">✕</button>
+                          </td>
+                        </tr>
+                      )}
+                      {detail.pharmacyAmount > 0 && detail.pharmacyBillExcluded && (
+                        <tr className="pb-row--auto-excluded">
+                          <td colSpan={7}>Medicine (Pharmacy) — excluded from bill</td>
+                          <td className="pb-row-actions">
+                            <button className="pb-restore-btn" onClick={handleRestorePharmacy} title="Add to Bill">+</button>
+                          </td>
+                        </tr>
                       )}
                     </tbody>
                   </table>
@@ -950,6 +1025,9 @@ export default function ProvisionalBill() {
                         <tr><td colSpan={5} className="pb-empty">Koi diagnostic test admit no se link nahi hua</td></tr>
                       )}
                     </tbody>
+                    <tfoot>
+                      <tr><td colSpan={4} className="pb-tf-label">Diagnostic Total</td><td className="r">{fmt2(detail.diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0))}</td></tr>
+                    </tfoot>
                   </table>
                 </>
               )}
@@ -975,6 +1053,9 @@ export default function ProvisionalBill() {
                         <tr><td colSpan={5} className="pb-empty">Is admission # ke against koi Sales Invoice nahi mili</td></tr>
                       )}
                     </tbody>
+                    <tfoot>
+                      <tr><td colSpan={4} className="pb-tf-label">Hospital Store Total</td><td className="r">{fmt2(detail.pharmacyRows.filter(r => r.source === 'hospital').reduce((s, r) => s + Number(r.amount || 0), 0))}</td></tr>
+                    </tfoot>
                   </table>
 
                   <div className="pb-pharmacy-manual-title">Outside Hospital Store</div>
@@ -1064,6 +1145,9 @@ export default function ProvisionalBill() {
                         <tr><td colSpan={8} className="pb-empty">Koi outside-store medicine add nahi hui</td></tr>
                       )}
                     </tbody>
+                    <tfoot>
+                      <tr><td colSpan={6} className="pb-tf-label">Outside Store Total</td><td className="r">{fmt2(detail.pharmacyRows.filter(r => r.source === 'outside').reduce((s, r) => s + Number(r.amount || 0), 0))}</td><td></td></tr>
+                    </tfoot>
                   </table>
                 </>
               )}

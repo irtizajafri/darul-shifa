@@ -1088,6 +1088,20 @@ export const useClinicStore = create((set) => ({
     return request(`/provisional-bill/pharmacy-items/${itemId}`, { method: 'DELETE' });
   },
 
+  setPharmacyBillExcluded: async (admissionId, excluded) => {
+    return request(`/provisional-bill/${admissionId}/pharmacy-excluded`, {
+      method: 'PATCH',
+      body: JSON.stringify({ excluded }),
+    });
+  },
+
+  setDiagnosticBillExcluded: async (admissionId, excluded) => {
+    return request(`/provisional-bill/${admissionId}/diagnostic-excluded`, {
+      method: 'PATCH',
+      body: JSON.stringify({ excluded }),
+    });
+  },
+
   // ── Discharge and Refund ─────────────────────────────────────────────────────
   // Only ever operates on admissions already in 'discharge' status — the
   // patient is discharged by saving the Discharge Certificate, not here.

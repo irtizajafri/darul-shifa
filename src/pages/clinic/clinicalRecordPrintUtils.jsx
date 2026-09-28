@@ -17,14 +17,19 @@ import ECGReportForm from './ECGReportForm';
 // when called synchronously right alongside the first.
 //
 // Current approach: still only ONE popup (so nothing is there for the popup
-// blocker to block) loading ONE document ONCE, but it prints TWICE — the
-// slip first, and then, once that print dialog is dismissed (the popup's own
-// `afterprint` event), a CSS class toggle swaps which half of that same
-// document is visible and prints again for the CRF/ECG. Two distinct print
-// jobs/dialogs, like before, never a window.print() on the main app window,
-// and — since the document is never replaced/reloaded — no risk of the
-// popup closing itself early the way replacing it with document.open()/
-// write() a second time did (see buildSequentialPrintHtml below).
+// blocker to block) loading ONE document ONCE — it prints the slip first,
+// and once that print dialog is dismissed (the popup's own `afterprint`
+// event), a CSS class toggle swaps which half of that same document is
+// visible. It does NOT auto-call window.print() again at that point though —
+// `afterprint` fires on Cancel just as much as on an actual print, and
+// auto-printing from inside that handler meant clicking Cancel on the slip
+// silently opened a SECOND print dialog, which froze the main window the
+// same way the original bug did. Instead a blue bar appears with its own
+// "Print Form"/"Band Karein" buttons, so the second print only ever starts
+// from a fresh, real user click — never automatically. Since the document is
+// never replaced/reloaded either, there's no risk of the popup closing
+// itself early the way replacing it with document.open()/write() a second
+// time did (see buildSequentialPrintHtml below).
 //
 // That popup is a bare about:blank document (window.open('', ...)) with
 // none of the app's own stylesheets loaded, so every rule these two
@@ -205,9 +210,26 @@ ${extra.css}
 #seq-print-extra { display: none; }
 body.seq-print-stage-2 #seq-print-slip { display: none; }
 body.seq-print-stage-2 #seq-print-extra { display: block; }
+#seq-next-bar {
+  display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+  background: #1e40af; color: #fff; align-items: center; justify-content: center;
+  gap: 12px; padding: 10px 16px; font-family: Arial, sans-serif; font-size: 13px;
+}
+#seq-next-bar button {
+  padding: 6px 18px; border: none; border-radius: 4px; cursor: pointer;
+  font-size: 13px; font-weight: 600;
+}
+#seq-btn-print { background: #fff; color: #1e40af; }
+#seq-btn-close { background: #475569; color: #fff; }
+@media print { #seq-next-bar { display: none !important; } }
 </style>
 </head>
 <body>
+<div id="seq-next-bar">
+  <span>Form tayar hai — print karein ya band karein</span>
+  <button id="seq-btn-print" onclick="document.getElementById('seq-next-bar').style.display='none'; window.print();">Print Form</button>
+  <button id="seq-btn-close" onclick="window.close();">Band Karein</button>
+</div>
 <div id="seq-print-slip">${slip.body}</div>
 <div id="seq-print-extra">${extra.body}</div>
 <script>
@@ -217,7 +239,7 @@ body.seq-print-stage-2 #seq-print-extra { display: block; }
     if (seqPrintedExtra) return;
     seqPrintedExtra = true;
     document.body.className = 'seq-print-stage-2';
-    window.print();
+    document.getElementById('seq-next-bar').style.display = 'flex';
   };
 </script>
 </body>
