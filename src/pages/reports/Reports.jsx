@@ -992,7 +992,12 @@ export default function Reports() {
     return sorted;
   }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
 
-  const effectiveAttendanceWithOverrides = liveAttendanceWithOverrides;
+  // A past month's payslip must stay locked to whatever was saved when it
+  // was generated (savedPayslipRows) — recalculating from live attendance
+  // here would silently drift the displayed salary away from what HR
+  // actually saved, even if nobody touched attendance since. Only the
+  // current, not-yet-saved month falls through to live data.
+  const effectiveAttendanceWithOverrides = savedPayslipRows ?? liveAttendanceWithOverrides;
 
   const minutesBetween = useCallback((start, end) => {
     if (!start || !end) return 0;
@@ -2968,9 +2973,19 @@ export default function Reports() {
             >
               {isSaving ? '⏳ Saving...' : '💾 Save Payslip'}
             </button>
-            {payslipSavedAt && (
-              <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 500 }}>
-                ✓ Last saved: {new Date(payslipSavedAt).toLocaleString()}
+            {payslipSavedAt ? (
+              <span
+                title="Yeh salary saved snapshot se aa rahi hai — attendance baad mein edit ho bhi jaye, yeh figure nahi badlega jab tak dobara Save Payslip na dabayein."
+                style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, padding: '3px 8px', borderRadius: '4px', background: '#dcfce7' }}
+              >
+                📌 Showing SAVED salary — {new Date(payslipSavedAt).toLocaleString()} (locked)
+              </span>
+            ) : (
+              <span
+                title="Is mahine ka koi saved snapshot nahi hai — salary live attendance se calculate ho rahi hai, attendance change hote hi yeh figure bhi badlega."
+                style={{ fontSize: '11px', color: '#b45309', fontWeight: 600, padding: '3px 8px', borderRadius: '4px', background: '#fef3c7' }}
+              >
+                🔴 Live — not saved yet
               </span>
             )}
             <Button label="Print" variant="outline" onClick={() => handleExport("print", "payslip")} />

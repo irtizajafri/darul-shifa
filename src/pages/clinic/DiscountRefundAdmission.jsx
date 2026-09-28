@@ -6,6 +6,7 @@ import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { canBackDate } from '../../utils/permissions';
+import { buildDischargeCertificatePrintHtml } from './dischargeCertificatePrintUtils';
 import './DiscountRefundAdmission.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -23,12 +24,6 @@ function fmtDateTime(d) {
 
 function fmt2(n) { return Number(n || 0).toFixed(2); }
 
-function fmtDate(d) {
-  if (!d) return '';
-  const dt = new Date(d);
-  return `${String(dt.getDate()).padStart(2, '0')}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()}`;
-}
-
 // `<input type="date">`'s own value format — used both to default the field
 // to today and to preload an already-saved certificate's date into it.
 function toDateInputValue(d) {
@@ -43,32 +38,6 @@ const REASON_OPTIONS = [
   { value: 'expired', label: 'Patient Expired' },
   { value: 'discharge_on_request', label: 'Discharge on Request' },
 ];
-const REASON_LABELS = Object.fromEntries(REASON_OPTIONS.map(r => [r.value, r.label]));
-const DISCHARGE_MED_LINES = Array.from({ length: 8 });
-
-// `@page` is a document-level rule shared across the whole bundled app — inject
-// an override right before printing so this page's print isn't silently
-// overridden by whichever other page's `@page` rule happens to load last.
-function printDischargeCertificate() {
-  const styleId = 'dc-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  // Prints on pre-printed hospital letterhead — top margin left generous on
-  // purpose so the certificate content starts below the letterhead artwork
-  // instead of overlapping it.
-  style.textContent = '@page { size: A5 portrait !important; margin: 40mm 9mm 8mm 9mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
-}
-
 // ── Admission Lookup Modal ─────────────────────────────────────────────────────
 function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
   const [rows, setRows] = useState([]);
@@ -228,93 +197,6 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
   );
 }
 
-// ── Discharge Certificate Print Template ────────────────────────────────────────
-// Sample hand-written duplicate bill used bordered boxes for every field; this
-// print instead fills each label with an underline — data is already
-// system-typed, so a "write here" box no longer serves a purpose.
-function DischargeCertificatePrintTemplate({ data }) {
-  if (!data) return null;
-  const { admission, roomCategory, bed, consultant, certificate, printedBy } = data;
-  const ageStr = [
-    admission.ageYears ? `${admission.ageYears}y` : null,
-    admission.ageMonths ? `${admission.ageMonths}m` : null,
-    admission.ageDays ? `${admission.ageDays}d` : null,
-  ].filter(Boolean).join(' ') || '—';
-
-  return (
-    <div className="dc-print">
-      <div className="dc-print-title">DISCHARGE CERTIFICATE</div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--wide"><label>Printed by:</label><span className="dc-print-line">{printedBy}</span></span>
-        <span className="dc-print-field"><label>Status:</label><span className="dc-print-line">{admission.status}</span></span>
-        <span className="dc-print-field"><label>File #</label><span className="dc-print-line">{admission.admissionNo}</span></span>
-      </div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--full"><label>Pat. Name:</label><span className="dc-print-line">{admission.patientTitle} {admission.patientName}</span></span>
-      </div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field"><label>Age:</label><span className="dc-print-line">{ageStr}</span></span>
-        <span className="dc-print-field"><label>Gender:</label><span className="dc-print-line">{admission.gender}</span></span>
-      </div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field"><label>Room:</label><span className="dc-print-line">{roomCategory?.name || '—'}</span></span>
-        <span className="dc-print-field"><label>Bed:</label><span className="dc-print-line">{bed?.name || '—'}</span></span>
-      </div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--wide"><label>Consultant:</label><span className="dc-print-line">{consultant?.name || '—'}</span></span>
-        <span className="dc-print-field"><label>Ad Date:</label><span className="dc-print-line">{fmtDate(admission.createdAt)}</span></span>
-        <span className="dc-print-field"><label>Di Date:</label><span className="dc-print-line">{fmtDate(certificate?.dischargeDate)}</span></span>
-      </div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--full"><label>Diagnosis:</label><span className="dc-print-line">{certificate?.diagnosis || ''}</span></span>
-      </div>
-
-      <div className="dc-print-reason">
-        <label>Reason of Discharge:</label>
-        <span className="dc-print-reason-val">{REASON_LABELS[certificate?.reasonOfDischarge] || '—'}</span>
-      </div>
-
-      <div className="dc-print-yn-row">
-        <label>Further Treatment Needed:</label>
-        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.furtherTreatmentNeeded === 'yes' ? ' checked' : ''}`} />Yes</span>
-        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.furtherTreatmentNeeded === 'no' ? ' checked' : ''}`} />No</span>
-      </div>
-      <div className="dc-print-yn-row">
-        <label>Medicine prescribed:</label>
-        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.medicinePrescribed === 'yes' ? ' checked' : ''}`} />Yes</span>
-        <span className="dc-print-yn"><i className={`dc-print-box${certificate?.medicinePrescribed === 'no' ? ' checked' : ''}`} />No</span>
-      </div>
-
-      <div className="dc-print-med-block">
-        <div className="dc-print-med-hdr">Discharge Medicine</div>
-        {/* Left blank on purpose — the doctor fills this in by hand on the
-            printed copy, so it's just a ruled box, no data-bound text. Real
-            bordered line elements instead of a CSS background pattern — a
-            background-image silently disappears unless the browser's print
-            dialog has "Background graphics" checked, borders always print. */}
-        <div className="dc-print-med-body">
-          {DISCHARGE_MED_LINES.map((_, i) => <div key={i} className="dc-print-med-line" />)}
-        </div>
-      </div>
-
-      <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--full"><label>Follow Up:</label><span className="dc-print-line">{certificate?.followUp || ''}</span></span>
-      </div>
-
-      <div className="dc-print-sig">
-        <span>Medical Officer:</span>
-        <span className="dc-print-sig-line">{certificate?.medicalOfficer || ''}</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DiscountRefundAdmission() {
   const { user } = useAuthStore();
@@ -363,7 +245,15 @@ export default function DiscountRefundAdmission() {
   const [dcHeader, setDcHeader] = useState(null);
   const [dcForm, setDcForm] = useState(null);
   const [dcSaving, setDcSaving] = useState(false);
-  const [dcPrintData, setDcPrintData] = useState(null);
+
+  // Popup-based print (never window.print() on the main window — see
+  // dischargeCertificatePrintUtils for why that used to freeze the whole app).
+  function openDischargeCertificatePopup(data) {
+    const w = window.open('', '_blank', 'width=700,height=900');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    w.document.write(buildDischargeCertificatePrintHtml(data));
+    w.document.close();
+  }
 
   const discountAmt = discountType === 'percent'
     ? Math.round((billAmount * (Number(discount) || 0)) / 100)
@@ -503,8 +393,7 @@ export default function DiscountRefundAdmission() {
 
       if (certificate) {
         const printedBy = user?.name || user?.username || user?.email || '';
-        setDcPrintData({ ...header, certificate, printedBy });
-        setTimeout(() => printDischargeCertificate(), 300);
+        openDischargeCertificatePopup({ ...header, certificate, printedBy });
       } else {
         toast.error('Is admission ka Discharge Certificate abhi tak nahi bana — pehle bana lein');
         setDcForm({
@@ -546,8 +435,7 @@ export default function DiscountRefundAdmission() {
       // flips admission status to 'discharge' and frees the bed.
       toast.success('Discharge Certificate save ho gaya — patient discharge ho gaya, bed free ho gaya');
       setDcOpen(false);
-      setDcPrintData({ ...dcHeader, certificate: json.data, printedBy });
-      setTimeout(() => printDischargeCertificate(), 200);
+      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy });
     } catch (e) {
       toast.error(e.message || 'Error saving');
     } finally {
@@ -733,10 +621,6 @@ export default function DiscountRefundAdmission() {
           diagnosisOptions={diagnosisOptions}
         />
       )}
-
-      <div className="dc-print-area">
-        <DischargeCertificatePrintTemplate data={dcPrintData} />
-      </div>
     </div>
   );
 }

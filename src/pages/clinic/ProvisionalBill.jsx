@@ -6,7 +6,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
-import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
+import { buildProvisionalBillPrintHtml } from './provisionalBillPrintUtils';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import './ProvisionalBill.scss';
@@ -28,42 +28,6 @@ function fmtDate(d) {
 function fmt2(n) { return Number(n || 0).toFixed(2); }
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 
-function numToWords(n) {
-  if (n === 0) return 'zero';
-  const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
-    'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
-  const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-  function cvt(num) {
-    if (num === 0) return '';
-    if (num < 20) return ones[num] + ' ';
-    if (num < 100) return tens[Math.floor(num / 10)] + (num % 10 ? '-' + ones[num % 10] : '') + ' ';
-    if (num < 1000) return ones[Math.floor(num / 100)] + ' hundred ' + cvt(num % 100);
-    if (num < 100000) return cvt(Math.floor(num / 1000)) + 'thousand ' + cvt(num % 1000);
-    return cvt(Math.floor(num / 100000)) + 'lakh ' + cvt(num % 100000);
-  }
-  return cvt(Math.abs(Math.floor(n))).trim();
-}
-
-// `@page` is a document-level rule shared across the whole bundled app (see
-// Admission.jsx / ConsultantOPD.jsx for the same issue) — inject an override
-// right before printing so this page's print isn't silently overridden by
-// whichever other page's `@page` rule happens to load last.
-function printProvisionalBill() {
-  const styleId = 'pb-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  style.textContent = '@page { size: A5 portrait !important; margin: 8mm 7mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
-}
 
 // ── Admission Lookup Modal — active/admitted patients only ────────────────────
 // "Panel" toggle re-runs the same search with patientCategory restricted to
@@ -211,199 +175,6 @@ function BalanceInfoModal({ detail, onClose }) {
           <div className="pb-balance-row pb-balance-row--em"><label>Balance</label><span>{fmt2(balanceInfo.balance)}</span></div>
           <div className="pb-balance-row pb-balance-row--em"><label>Refund</label><span>{fmt2(balanceInfo.refund)}</span></div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Print Template ─────────────────────────────────────────────────────────────
-function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
-  if (!detail) return null;
-  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, pharmacyAmount, balanceInfo } = detail;
-
-  const now = admission.createdAt ? new Date(admission.createdAt) : new Date();
-  const dateStr = `${fmtDate(now)} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-
-  const groups = {};
-  // Ward History is computed/read-only (not a billItems row) — synthesized
-  // into the same "Amount Distribution" grouping the existing bill format
-  // already uses, exactly like Diagnostic/Pharmacy below, so the printed
-  // layout itself never changes.
-  (wardHistory || []).forEach((seg, idx) => {
-    const label = seg.roomCategory?.name || 'Ward';
-    if (!groups[label]) groups[label] = [];
-    groups[label].push({
-      id: `ward-${idx}`,
-      billHead: { description: `Ward Stay${seg.transferredAt ? '' : ' (Current)'} — ${seg.days} day${seg.days !== 1 ? 's' : ''}` },
-      qty: seg.days,
-      rate: seg.rate,
-      amount: seg.charges,
-    });
-  });
-  billItems.forEach((item) => {
-    const label = item.roomCategory?.name || 'Other';
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(item);
-  });
-  // Print keeps only one summed line per diagnostic department (e.g. a single
-  // "Laboratory" row for 4785) — the individual test/particular breakdown is
-  // intentionally not shown on the printed bill, only in-app. These land in
-  // the "Other" bucket (same as room-category-less bill items, e.g. NG TUBE)
-  // rather than each getting its own box — a Laboratory-only box would repeat
-  // "Laboratory" as both the box title and its single row's head, which reads
-  // as a duplicate.
-  const diagTotalsByDept = {};
-  diagnosticRows.forEach((row) => {
-    const dept = row.department || 'Diagnostic';
-    diagTotalsByDept[dept] = (diagTotalsByDept[dept] || 0) + Number(row.amount || 0);
-  });
-  Object.entries(diagTotalsByDept).forEach(([dept, total]) => {
-    if (!groups.Other) groups.Other = [];
-    groups.Other.push({
-      id: `diag-${dept}`,
-      billHead: { description: dept },
-      qty: 1,
-      rate: total,
-      amount: total,
-    });
-  });
-  // Pharmacy is intentionally excluded from the printed bill's line items —
-  // it's tracked only in-app on the Pharmacy tab, per explicit instruction —
-  // EXCEPT for Panel patients: Bill Amount/Balance already fold pharmacyAmount
-  // in (see getProvisionalBillDetail), and a Panel company needs its claim's
-  // Medicine cost visible on the printed bill, not silently baked into the
-  // total. Same "Other" bucket as the Diagnostic dept lines above (a
-  // Medicine-titled box repeating "Medicine" as its own row would read as a
-  // duplicate, same reasoning as the Laboratory case).
-  if (admission.patientCategory === 'panel' && pharmacyAmount > 0) {
-    if (!groups.Other) groups.Other = [];
-    groups.Other.push({
-      id: 'pharmacy-medicine',
-      billHead: { description: 'Medicine' },
-      qty: 1,
-      rate: pharmacyAmount,
-      amount: pharmacyAmount,
-    });
-  }
-
-  const categoryLabel = { private: 'Private Patient', staff: 'Staff Patient', panel: 'Panel Patient', cc: 'CC Patient', complementary: 'Complementary Patient' }[admission.patientCategory] || 'Private Patient';
-  const balanceWords = balanceInfo.balance > 0 ? numToWords(Math.floor(balanceInfo.balance)) : (balanceInfo.refund > 0 ? numToWords(Math.floor(balanceInfo.refund)) : 'zero');
-
-  return (
-    <div className="pb-print">
-      <div className="pb-print-logo-box">
-        <img src={RECEIPT_LOGO_DATA_URI} alt="Darul Shifa" className="pb-print-logo" />
-      </div>
-
-      <div className="pb-print-title-row">
-        <span className="pb-print-title">MEDICAL BILL</span>
-        {isDuplicate && <span className="pb-print-duplicate">Duplicate</span>}
-      </div>
-
-      <table className="pb-print-hdr-tbl">
-        <tbody>
-          <tr>
-            <td className="l">Patient:</td>
-            <td className="v">{admission.patientTitle} {admission.patientName}</td>
-            <td className="l">Admission #:</td>
-            <td className="v">{admission.admissionNo}</td>
-            <td className="l">Date:</td>
-            <td className="v">{dateStr}</td>
-          </tr>
-          <tr>
-            <td className="l">S/o.</td>
-            <td className="v">{admission.responsibleParty || '—'}</td>
-            <td className="l">Surgery:</td>
-            <td className="v">{admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission'}</td>
-          </tr>
-          <tr>
-            <td className="l">Category:</td>
-            <td className="v">{roomCategory?.name || '—'}</td>
-            <td className="l">Room#:</td>
-            <td className="v">{bed?.name || '—'}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div className="pb-print-box">
-        <div className="pb-print-box-hdr">Payment History</div>
-        <table className="pb-print-pay-tbl">
-          <thead><tr><th>Date &amp; Time</th><th>Slip#</th><th className="r">Amount</th></tr></thead>
-          <tbody>
-            {detail.patientInfo.paymentHistory.map((p, i) => (
-              <tr key={i}><td>{fmtDateTime(p.date)}</td><td>{p.slipNo}</td><td className="r">{fmt2(p.amount)}</td></tr>
-            ))}
-            <tr className="pb-print-grand"><td colSpan={2}>Grand Total:</td><td className="r">{fmt2(detail.patientInfo.amountReceived)}</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div className="pb-print-box">
-        <div className="pb-print-box-hdr">Amount Distribution</div>
-        {Object.entries(groups).map(([label, items]) => {
-          const subtotal = items.reduce((s, i) => s + Number(i.amount || 0), 0);
-          return (
-            <div key={label} className="pb-print-ward-block">
-              <div className="pb-print-ward-name">{label}</div>
-              <table className="pb-print-items-tbl">
-                <thead><tr><th>Head</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th></tr></thead>
-                <tbody>
-                  {items.map((i) => (
-                    <tr key={i.id}>
-                      <td>{(i.billHead?.description || i.billHead?.headCode || '—').toString().toUpperCase()}</td>
-                      <td className="r">{i.qty}</td>
-                      <td className="r">{fmt2(i.rate)}</td>
-                      <td className="r">{fmt2(i.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="pb-print-subtotal"><td colSpan={3}>Total for This Ward:</td><td className="r">{fmt2(subtotal)}</td></tr>
-                </tfoot>
-              </table>
-            </div>
-          );
-        })}
-        {!Object.keys(groups).length && <div className="pb-print-no-items">Koi bill item nahi hai</div>}
-
-        <table className="pb-print-summary-tbl">
-          <tbody>
-            <tr>
-              <td className="l">{categoryLabel}</td>
-              <td className="l">Bill Amount:</td>
-              <td className="r">{fmt2(balanceInfo.billAmount)}</td>
-            </tr>
-            <tr>
-              <td></td>
-              <td className="l">Discount{balanceInfo.discountPermissionBy ? ` (${balanceInfo.discountPermissionBy})` : ''}:</td>
-              <td className="r">-{fmt2(balanceInfo.discount)}</td>
-            </tr>
-            <tr>
-              <td></td>
-              <td className="l">Received Amount:</td>
-              <td className="r">{fmt2(balanceInfo.amountReceived)}</td>
-            </tr>
-            <tr>
-              <td className="l"><strong>Admitted</strong></td>
-              <td className="l">Refund Amount:</td>
-              <td className="r">{fmt2(balanceInfo.refund)}</td>
-            </tr>
-            <tr className="pb-print-balance-row">
-              <td></td>
-              <td className="l"><strong>Balance Amount:</strong></td>
-              <td className="r"><strong>{fmt2(balanceInfo.balance)}</strong></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div className="pb-print-words">
-        {balanceInfo.balance > 0 ? 'Balance' : 'Refund'} Amount: RS. {balanceWords.toUpperCase()} ONLY.
-      </div>
-
-      <div className="pb-print-sig">
-        <span className="pb-print-sig-name">{printedBy || ''}</span>
-        <span className="pb-print-sig-lbl">Prepared By</span>
       </div>
     </div>
   );
@@ -699,10 +470,20 @@ export default function ProvisionalBill() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  // Popup-based print (never window.print() on the main window — see
+  // provisionalBillPrintUtils for why that used to freeze the whole app).
+  function printProvisionalBillPopup() {
+    const w = window.open('', '_blank', 'width=700,height=900');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    w.document.write(buildProvisionalBillPrintHtml({ detail, isDuplicate, printedBy }));
+    w.document.close();
+  }
+
   useEffect(() => {
     if (!reprintReady) return;
-    const t = setTimeout(() => { printProvisionalBill(); setReprintReady(false); }, 300);
+    const t = setTimeout(() => { printProvisionalBillPopup(); setReprintReady(false); }, 300);
     return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reprintReady]);
 
   function resetToLookup() {
@@ -886,7 +667,13 @@ export default function ProvisionalBill() {
               <DoorOpen size={16} />
             </button>
             <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
-            <button className="aa-tbtn" onClick={() => { setIsDuplicate(true); printProvisionalBill(); }} disabled={!detail} title="Print">
+            <button className="aa-tbtn" onClick={() => {
+              setIsDuplicate(true);
+              const w = window.open('', '_blank', 'width=700,height=900');
+              if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+              w.document.write(buildProvisionalBillPrintHtml({ detail, isDuplicate: true, printedBy }));
+              w.document.close();
+            }} disabled={!detail} title="Print">
               <Printer size={16} />
             </button>
           </div>
@@ -1368,9 +1155,6 @@ export default function ProvisionalBill() {
         )}
       </div>
 
-      <div className="pb-print-area">
-        <ProvisionalBillPrintTemplate detail={detail} isDuplicate={isDuplicate} printedBy={printedBy} />
-      </div>
     </>
   );
 }

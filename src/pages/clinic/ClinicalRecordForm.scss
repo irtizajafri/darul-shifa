@@ -2,24 +2,6 @@
    CLINICAL RECORD FORM (print-only)
    Shared by Consultant OPD, General OPD, Dental OPD and Emergency.
    ════════════════════════════════════════════ */
-.copd-crf-print-area { display: none; }
-
-@media print {
-  @page { size: A4 portrait; margin: 8mm; }
-
-  body * { visibility: hidden; }
-  .copd-crf-print-area,
-  .copd-crf-print-area * { visibility: visible !important; }
-
-  .copd-crf-print-area {
-    display: block !important;
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    background: #fff;
-  }
-}
-
 .copd-crf {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9.5pt;

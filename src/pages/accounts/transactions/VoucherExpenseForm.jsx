@@ -104,6 +104,7 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
         <div class="vr-cell-top">${e.mainAccountName || e.accountName || '—'}</div>
         <div class="vr-cell-sub">${e.subAccountName  || '—'}</div>
       </td>
+      <td>${e.payeeName || '—'}</td>
       <td>${e.particulars || '—'}</td>
       <td>${e.chequeDate ? fmtDate(e.chequeDate) : '—'}</td>
       <td>${e.chequeNo || '—'}</td>
@@ -140,17 +141,19 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
       </div>
       <table>
         <colgroup>
+          <col style="width:12%" />
           <col style="width:13%" />
-          <col style="width:16%" />
-          <col style="width:48%" />
-          <col style="width:6%"  />
-          <col style="width:4%"  />
-          <col style="width:13%" />
+          <col style="width:14%" />
+          <col style="width:32%" />
+          <col style="width:7%"  />
+          <col style="width:5%"  />
+          <col style="width:17%" />
         </colgroup>
         <thead>
           <tr>
             <th>GL</th>
             <th>ACCOUNT</th>
+            <th>PAYEE</th>
             <th>PARTICULAR</th>
             <th>CHEQ DT</th>
             <th>CHQ #</th>
@@ -160,7 +163,7 @@ function printExpenseVoucher({ voucherNo, voucherDate, mode, entries, printBy })
         <tbody>${rowsHTML}</tbody>
         <tfoot>
           <tr>
-            <td colspan="4" class="vr-tfoot-words">${amountInWords(total)}</td>
+            <td colspan="5" class="vr-tfoot-words">${amountInWords(total)}</td>
             <td class="vr-tfoot-label">TOTAL</td>
             <td class="vr-td-r vr-tfoot-amt">${fmt2(total)}</td>
           </tr>
@@ -1163,7 +1166,7 @@ export default function VoucherExpenseForm() {
     if (!entry.subGlId)       { toast.error('Select Sub GL'); return; }
     if (!entry.mainAccountId) { toast.error('Select Main Account'); return; }
     if (isSurgeryAcc && !entry.admissionNo) { toast.error('Select an Admission'); return; }
-    if (!entry.amount || Number(entry.amount) <= 0) { toast.error('Enter a valid amount'); return; }
+    if (!entry.amount || Number(entry.amount) === 0 || isNaN(Number(entry.amount))) { toast.error('Enter a valid amount'); return; }
     if (isCheque && !entry.chequeNo.trim()) { toast.error('Enter cheque number'); return; }
 
     const serial = mode === 'cash'
@@ -1515,7 +1518,7 @@ export default function VoucherExpenseForm() {
                   )}
                 </label>
                 <input
-                  type="number" min="0" step="0.01"
+                  type="number" step="0.01"
                   value={entry.amount}
                   onChange={upd('amount')}
                   readOnly={entry.amountLocked}

@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildReceiptHtml } from './receiptUtils';
-import { printThermalReceipt, ThermalReceiptPrintTemplate } from './ThermalReceiptPrintTemplate';
+import { buildThermalReceiptHtml } from './thermalReceiptUtils';
+import { buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
 import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
@@ -258,14 +259,6 @@ export default function AmbulanceSlip() {
   const [showPanelModal, setShowPanelModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
 
-  // Thermal (80mm) receipt — printed in-page right after the A6 slip's own
-  // popup, so both come out of the same "Save & Print" click.
-  const [thermalVisit, setThermalVisit] = useState(null);
-  const [thermalTokenNo, setThermalTokenNo] = useState(0);
-  const [thermalIsDuplicate, setThermalIsDuplicate] = useState(false);
-  const [thermalPrintedBy, setThermalPrintedBy] = useState('');
-  const [thermalReady, setThermalReady] = useState(false);
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -277,14 +270,6 @@ export default function AmbulanceSlip() {
     if (doctors.length === 0) fetchDoctors().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Wait one render cycle after thermal* state is set so the hidden print
-  // area actually has the new data in the DOM before window.print() runs.
-  useEffect(() => {
-    if (!thermalReady) return;
-    const t = setTimeout(() => { printThermalReceipt(); setThermalReady(false); }, 300);
-    return () => clearTimeout(t);
-  }, [thermalReady]);
 
   function handleBillingTypeChange(v) {
     if (v === 'staff') {
@@ -389,14 +374,15 @@ export default function AmbulanceSlip() {
         const { visit, tokenNo, isDuplicate } = await printOpdVisit(newId);
         const printedBy = user?.name || user?.username || user?.email || '';
         const html = buildReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
-        w.document.write(html);
+        // Thermal (80mm) copy prints as its own separate print job right
+        // after the A6 slip's, in this SAME popup — see
+        // clinicalRecordPrintUtils's buildSequentialPrintHtml. A second
+        // popup opened from the same click gets silently blocked by Chrome,
+        // and printing it on the main window (the old approach) could
+        // freeze the whole app on Windows.
+        const thermalHtml = buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
+        w.document.write(buildSequentialPrintHtml(html, thermalHtml));
         w.document.close();
-
-        setThermalVisit(visit);
-        setThermalTokenNo(tokenNo);
-        setThermalIsDuplicate(isDuplicate);
-        setThermalPrintedBy(printedBy);
-        setThermalReady(true);
       } else {
         w.close();
       }
@@ -615,14 +601,6 @@ export default function AmbulanceSlip() {
         </div>
       </div>
 
-      <div className="th-print-area">
-        <ThermalReceiptPrintTemplate
-          visit={thermalVisit}
-          tokenNo={thermalTokenNo}
-          isDuplicate={thermalIsDuplicate}
-          printedBy={thermalPrintedBy}
-        />
-      </div>
     </>
   );
 }

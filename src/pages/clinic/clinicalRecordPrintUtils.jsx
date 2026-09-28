@@ -163,13 +163,17 @@ export function buildEcgPrintDocument({ visit, barcodeDataUrl, printedBy }) {
 }
 
 // Pulls the <style> and <body> content back out of one of this app's
-// self-contained print documents (every builder — buildReceiptHtml,
+// self-contained print documents. Most builders (buildReceiptHtml,
 // buildThermalReceiptHtml, buildConsultantReceiptHtml,
-// buildEmergencyReceiptHtml, and the two build*PrintDocument above — follows
-// the exact same shape: one <style> block, then <body>...<script>window.onload).
+// buildEmergencyReceiptHtml, and the two build*PrintDocument above) end with
+// <body>...<script>window.onload — but a few (e.g.
+// buildAdmissionPaymentReceiptHtml) never had an auto-print script and just
+// end at </body>. Matching only the window.onload shape silently produced an
+// EMPTY body for those — a blank first print page — so this tries that
+// anchor first and falls back to plain </body> when it's not there.
 function extractStyleAndBody(fullHtml) {
   const styleMatch = fullHtml.match(/<style>([\s\S]*?)<\/style>/);
-  const bodyMatch = fullHtml.match(/<body>([\s\S]*?)<script>window\.onload/);
+  const bodyMatch = fullHtml.match(/<body>([\s\S]*?)<script>window\.onload/) || fullHtml.match(/<body>([\s\S]*?)<\/body>/);
   return { css: styleMatch ? styleMatch[1] : '', body: bodyMatch ? bodyMatch[1] : '' };
 }
 
