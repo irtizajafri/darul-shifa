@@ -727,14 +727,16 @@ async function getAllRoomCategories() {
   return prisma.clinicRoomCategory.findMany({ orderBy: { name: 'asc' } });
 }
 
-async function createRoomCategory({ code, name, rate }) {
-  return prisma.clinicRoomCategory.create({ data: { code: code.trim().toUpperCase(), name: name.trim(), rate: Number(rate) || 0 } });
+async function createRoomCategory({ code, name, rate, autoReleaseEnabled }) {
+  return prisma.clinicRoomCategory.create({
+    data: { code: code.trim().toUpperCase(), name: name.trim(), rate: Number(rate) || 0, autoReleaseEnabled: Boolean(autoReleaseEnabled) },
+  });
 }
 
-async function updateRoomCategory(id, { code, name, rate }) {
+async function updateRoomCategory(id, { code, name, rate, autoReleaseEnabled }) {
   return prisma.clinicRoomCategory.update({
     where: { id: Number(id) },
-    data: { code: code.trim().toUpperCase(), name: name.trim(), rate: Number(rate) || 0 },
+    data: { code: code.trim().toUpperCase(), name: name.trim(), rate: Number(rate) || 0, autoReleaseEnabled: Boolean(autoReleaseEnabled) },
   });
 }
 
@@ -781,6 +783,24 @@ async function deleteBed(id) {
   return prisma.clinicBed.delete({ where: { id: Number(id) } });
 }
 
+// A bed normally flips straight to "available" the instant it's vacated.
+// If its Room Category has autoReleaseEnabled on, instead stamp vacatedAt
+// and leave status as-is — bedAutoRelease.job.js flips it to available
+// once 6 hours have passed (housekeeping/turnover buffer). Used at every
+// place a bed becomes vacant (admission adjustment, discharge/status
+// change, bed shift) instead of writing status: 'available' directly.
+async function releaseBedOrDelay(bedId) {
+  const bed = await prisma.clinicBed.findUnique({
+    where: { id: Number(bedId) },
+    include: { roomCategory: { select: { autoReleaseEnabled: true } } },
+  });
+  if (!bed) return null;
+  if (bed.roomCategory?.autoReleaseEnabled) {
+    return prisma.clinicBed.update({ where: { id: Number(bedId) }, data: { vacatedAt: new Date() } });
+  }
+  return prisma.clinicBed.update({ where: { id: Number(bedId) }, data: { status: 'available', vacatedAt: null } });
+}
+
 // ─── Bill Head ────────────────────────────────────────────────────────────────
 
 const BILL_HEAD_INCLUDE = {
@@ -815,7 +835,7 @@ function mapWardRate(w) {
   };
 }
 
-async function createBillHead({ headCode, accountReceivable, description, type, refDepartmentId, staffCategoryRequired, discountApply, discountSeq, status, wardRates = [], staffCategoryIds = [] }) {
+async function createBillHead({ headCode, accountReceivable, description, type, refDepartmentId, staffCategoryRequired, discountApply, discountSeq, panelSortOrder, status, wardRates = [], staffCategoryIds = [] }) {
   return prisma.clinicBillHead.create({
     data: {
       headCode: headCode.trim(),
@@ -826,6 +846,7 @@ async function createBillHead({ headCode, accountReceivable, description, type, 
       staffCategoryRequired: Boolean(staffCategoryRequired),
       discountApply: Boolean(discountApply),
       discountSeq: Number(discountSeq) || 0,
+      panelSortOrder: panelSortOrder != null && panelSortOrder !== '' ? Number(panelSortOrder) : null,
       status: status || 'active',
       wardRates: { create: wardRates.map(mapWardRate) },
       staffCategories: staffCategoryIds.length > 0
@@ -836,7 +857,7 @@ async function createBillHead({ headCode, accountReceivable, description, type, 
   });
 }
 
-async function updateBillHead(id, { headCode, accountReceivable, description, type, refDepartmentId, staffCategoryRequired, discountApply, discountSeq, status, wardRates = [], staffCategoryIds = [] }) {
+async function updateBillHead(id, { headCode, accountReceivable, description, type, refDepartmentId, staffCategoryRequired, discountApply, discountSeq, panelSortOrder, status, wardRates = [], staffCategoryIds = [] }) {
   return prisma.$transaction(async (tx) => {
     await tx.clinicBillHeadWard.deleteMany({ where: { billHeadId: Number(id) } });
     await tx.clinicBillHeadStaffCat.deleteMany({ where: { billHeadId: Number(id) } });
@@ -851,6 +872,7 @@ async function updateBillHead(id, { headCode, accountReceivable, description, ty
         staffCategoryRequired: Boolean(staffCategoryRequired),
         discountApply: Boolean(discountApply),
         discountSeq: Number(discountSeq) || 0,
+        panelSortOrder: panelSortOrder != null && panelSortOrder !== '' ? Number(panelSortOrder) : null,
         status: status || 'active',
         wardRates: { create: wardRates.map(mapWardRate) },
         staffCategories: staffCategoryIds.length > 0
@@ -1851,15 +1873,16 @@ async function getPanelAdmissionBilling(admissionNo) {
     admission.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: admission.panelEmployeeId } }) : null,
   ]);
 
-  // Panel Billing's fixed row sequence — matches the legacy system's 37-row
-  // Sno order (see migration 011). Keyed by description so it applies
-  // uniformly to ClinicBillHead rows, ClinicPanelBillHead rows and the two
-  // synthetic diagnostic rows below alike; applied at read time (not baked
-  // into the snapshot's own sortOrder) so it takes effect for every already-
-  // seeded admission too, not just newly-opened ones. Radiology / Ultra
-  // Sound, Echo & Color Doppler have no legacy Sno of their own — slotted in
-  // right after Laboratory (180).
-  const sortOrderByDesc = { Radiology: 181, 'Ultra Sound, Echo & Color Doppler': 182 };
+  // Panel Billing's fixed row sequence — renumbered to plain 1, 2, 3, ...
+  // (see migration 030; was the legacy system's raw Sno x10 scheme, which
+  // read as an odd 10/20/30 gap to staff). Keyed by description so it
+  // applies uniformly to ClinicBillHead rows, ClinicPanelBillHead rows and
+  // the two synthetic diagnostic rows below alike; applied at read time (not
+  // baked into the snapshot's own sortOrder) so it takes effect for every
+  // already-seeded admission too, not just newly-opened ones. Radiology /
+  // Ultra Sound, Echo & Color Doppler have no head row of their own to store
+  // a number on — slotted in right after Laboratory (18).
+  const sortOrderByDesc = { Radiology: 19, 'Ultra Sound, Echo & Color Doppler': 19 };
   billHeads.forEach((h) => { if (h.panelSortOrder != null) sortOrderByDesc[h.description] = h.panelSortOrder; });
   panelHeadOrders.forEach((h) => { sortOrderByDesc[h.description] = h.panelSortOrder; });
 
@@ -2190,11 +2213,18 @@ async function assertDateWithinHeader(admissionId, date) {
   const header = await prisma.clinicPanelBillingHeader.findUnique({ where: { admissionId: Number(admissionId) } });
   if (!header) return; // seeded on first Billing load — always present by the time items exist
   const d = new Date(date);
-  if (header.admitDate && d < new Date(header.admitDate)) {
-    throw Object.assign(new Error('Date, Admit Date se pehle nahi ho sakti'), { status: 400 });
+  // admitDate/dischargeDate are full datetimes (e.g. 2026-09-17 14:19:00),
+  // but the date input only ever supplies a bare date (midnight) — comparing
+  // full timestamps wrongly rejected the SAME calendar day as the admit date
+  // (00:00 < 14:19). Compare calendar days only.
+  const dDay = new Date(d); dDay.setHours(0, 0, 0, 0);
+  if (header.admitDate) {
+    const admitDay = new Date(header.admitDate); admitDay.setHours(0, 0, 0, 0);
+    if (dDay < admitDay) throw Object.assign(new Error('Date, Admit Date se pehle nahi ho sakti'), { status: 400 });
   }
-  if (header.dischargeDate && d > new Date(header.dischargeDate)) {
-    throw Object.assign(new Error('Date, Discharge Date ke baad nahi ho sakti'), { status: 400 });
+  if (header.dischargeDate) {
+    const dischargeDay = new Date(header.dischargeDate); dischargeDay.setHours(0, 0, 0, 0);
+    if (dDay > dischargeDay) throw Object.assign(new Error('Date, Discharge Date ke baad nahi ho sakti'), { status: 400 });
   }
 }
 
@@ -2671,11 +2701,17 @@ async function assertOpdDateWithinHeader(opdVisitId, date) {
   const header = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: Number(opdVisitId) } });
   if (!header) return;
   const d = new Date(date);
-  if (header.visitDate && d < new Date(header.visitDate)) {
-    throw Object.assign(new Error('Date, Visit Date se pehle nahi ho sakti'), { status: 400 });
+  // visitDate/billingDate are full datetimes, but date inputs only ever
+  // supply a bare date (midnight) — same fix as assertDateWithinHeader
+  // (Admission side): compare calendar days only, not full timestamps.
+  const dDay = new Date(d); dDay.setHours(0, 0, 0, 0);
+  if (header.visitDate) {
+    const visitDay = new Date(header.visitDate); visitDay.setHours(0, 0, 0, 0);
+    if (dDay < visitDay) throw Object.assign(new Error('Date, Visit Date se pehle nahi ho sakti'), { status: 400 });
   }
-  if (header.billingDate && d > new Date(header.billingDate)) {
-    throw Object.assign(new Error('Date, Billing Date ke baad nahi ho sakti'), { status: 400 });
+  if (header.billingDate) {
+    const billingDay = new Date(header.billingDate); billingDay.setHours(0, 0, 0, 0);
+    if (dDay > billingDay) throw Object.assign(new Error('Date, Billing Date ke baad nahi ho sakti'), { status: 400 });
   }
 }
 
@@ -3727,7 +3763,7 @@ async function createAdmission(data) {
   if (admission.bedId) {
     await prisma.clinicBed.update({
       where: { id: admission.bedId },
-      data: { status: 'occupied' },
+      data: { status: 'occupied', vacatedAt: null },
     });
   }
   return admission;
@@ -5448,10 +5484,10 @@ async function updateAdmissionAdjustment(id, data) {
 
   if (newBedId !== oldBedId) {
     if (oldBedId) {
-      await prisma.clinicBed.update({ where: { id: oldBedId }, data: { status: 'available' } }).catch(() => {});
+      await releaseBedOrDelay(oldBedId).catch(() => {});
     }
     if (newBedId) {
-      await prisma.clinicBed.update({ where: { id: newBedId }, data: { status: 'occupied' } }).catch(() => {});
+      await prisma.clinicBed.update({ where: { id: newBedId }, data: { status: 'occupied', vacatedAt: null } }).catch(() => {});
     }
   }
 
@@ -5515,7 +5551,7 @@ async function updateAdmissionStatus(id, { status, reason, changedBy }) {
     });
 
     if (admission.bedId) {
-      await prisma.clinicBed.update({ where: { id: admission.bedId }, data: { status: 'available' } }).catch(() => {});
+      await releaseBedOrDelay(admission.bedId).catch(() => {});
     }
     await prisma.clinicAdmission.delete({ where: { id: Number(id) } });
     return { wiped: true };
@@ -5550,10 +5586,11 @@ async function updateAdmissionStatus(id, { status, reason, changedBy }) {
   });
 
   if (admission.bedId) {
-    await prisma.clinicBed.update({
-      where: { id: admission.bedId },
-      data: { status: status === 'active' ? 'occupied' : 'available' },
-    }).catch(() => {});
+    if (status === 'active') {
+      await prisma.clinicBed.update({ where: { id: admission.bedId }, data: { status: 'occupied', vacatedAt: null } }).catch(() => {});
+    } else {
+      await releaseBedOrDelay(admission.bedId).catch(() => {});
+    }
   }
 
   return updated;
@@ -5602,9 +5639,9 @@ async function shiftAdmissionBed(admissionId, { newBedId, shiftedBy }) {
   });
 
   if (oldBedId) {
-    await prisma.clinicBed.update({ where: { id: oldBedId }, data: { status: 'available' } }).catch(() => {});
+    await releaseBedOrDelay(oldBedId).catch(() => {});
   }
-  await prisma.clinicBed.update({ where: { id: newBed.id }, data: { status: 'occupied' } }).catch(() => {});
+  await prisma.clinicBed.update({ where: { id: newBed.id }, data: { status: 'occupied', vacatedAt: null } }).catch(() => {});
 
   return updated;
 }
@@ -5625,7 +5662,9 @@ async function setBedStatus(bedId, status) {
     });
   }
 
-  return prisma.clinicBed.update({ where: { id: Number(bedId) }, data: { status } });
+  // Manual override always wins — clear any pending auto-release timer so
+  // a stale vacatedAt can't later flip this bed against staff's own choice.
+  return prisma.clinicBed.update({ where: { id: Number(bedId) }, data: { status, vacatedAt: null } });
 }
 
 // ─── Transactions > Upload Patient Document ──────────────────────────────────
@@ -6322,6 +6361,12 @@ async function searchAdmissionsForDischargeRefund(q) {
 // it. Only runs once per admission (guarded by the caller checking for any
 // non-manual row already existing) so re-opening this page later doesn't
 // duplicate rows on top of whatever staff already edited/deleted here.
+
+// Only one in-house pharmacy exists in this system and Sales Invoices carry
+// no store field of their own — so unlike Outside Store (ClinicPharmacyStore),
+// this name has nowhere to come from except a fixed constant.
+const HOSPITAL_PHARMACY_STORE_NAME = 'Fair Medical Store';
+
 async function importProvisionalDataIntoDischargeBill(admissionId) {
   const detail = await getProvisionalBillDetail(admissionId);
   const rows = [];
@@ -6373,19 +6418,47 @@ async function importProvisionalDataIntoDischargeBill(admissionId) {
     });
   });
 
-  const pharmacyTotal = (detail.pharmacyRows || []).reduce((s, r) => s + Number(r.amount || 0), 0);
-  if (pharmacyTotal > 0) {
+  // Pharmacy splits into one row per store instead of a single combined
+  // total — Hospital Store (the in-house pharmacy; only one exists in this
+  // system, so its name is a fixed constant — Sales Invoices carry no store
+  // field to read it from) and one row per Outside Store actually used
+  // (from ClinicPharmacyStore.name, via each outside item's storeId).
+  const hospitalPharmacyTotal = (detail.pharmacyRows || [])
+    .filter((r) => r.source === 'hospital')
+    .reduce((s, r) => s + Number(r.amount || 0), 0);
+  if (hospitalPharmacyTotal > 0) {
     rows.push({
       admissionId: Number(admissionId),
       billHeadId: null,
       doctorId: null,
-      description: 'Pharmacy',
+      description: HOSPITAL_PHARMACY_STORE_NAME,
       qty: 1,
-      rate: pharmacyTotal,
-      amount: pharmacyTotal,
+      rate: hospitalPharmacyTotal,
+      amount: hospitalPharmacyTotal,
       source: 'pharmacy',
     });
   }
+
+  const outsidePharmacyTotalsByStore = {};
+  (detail.pharmacyRows || [])
+    .filter((r) => r.source === 'outside')
+    .forEach((r) => {
+      const label = r.storeName || 'Outside Store';
+      outsidePharmacyTotalsByStore[label] = (outsidePharmacyTotalsByStore[label] || 0) + Number(r.amount || 0);
+    });
+  Object.entries(outsidePharmacyTotalsByStore).forEach(([storeName, total]) => {
+    if (total <= 0) return;
+    rows.push({
+      admissionId: Number(admissionId),
+      billHeadId: null,
+      doctorId: null,
+      description: storeName,
+      qty: 1,
+      rate: total,
+      amount: total,
+      source: 'pharmacy',
+    });
+  });
 
   if (rows.length) {
     await prisma.clinicDischargeBillItem.createMany({ data: rows });

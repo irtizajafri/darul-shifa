@@ -518,10 +518,18 @@
   .pnbr-print-area,
   .pnbr-print-area * { visibility: visible !important; }
 
+  // position: fixed pinned this to ONE page's viewport bounds — content
+  // taller than a page (a long Medicine Bill, or Covering Page with its
+  // extra-tall 48mm top margin) got clipped instead of flowing onto page 2.
+  // position: absolute (with no `bottom`, so height stays content-driven)
+  // still starts the report at the page's top-left regardless of where this
+  // div actually sits in the DOM, but lets it paginate normally past page 1.
   .pnbr-print-area {
     display: block !important;
-    position: fixed;
-    inset: 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     width: 100%;
     background: #fff;
   }
@@ -529,7 +537,7 @@
 
 .pnbr-cov, .pnbr-diag, .pnbr-med {
   font-family: 'Tahoma', Arial, sans-serif;
-  font-size: 12px;
+  font-size: 11px;
   color: #111;
   padding: 6mm;
 
@@ -571,7 +579,7 @@
   .l, .v { padding: 4px 10px; }
 }
 
-.pnbr-cov-org { font-size: 13px; font-weight: 700; }
+.pnbr-cov-org { font-size: 13px; font-weight: normal; }
 
 // Items list — horizontal hairline under each row (and the header); the
 // only vertical rules are right after the # column and right before Amount.
@@ -580,7 +588,7 @@
 .pnbr-cov-items {
   border-top: 1px solid #333;
   th, td { border: none; padding: 4px 10px; }
-  th { border-bottom: 1px solid #333; font-weight: 700; text-align: left; &.r { text-align: right; } }
+  th { border-bottom: 1px solid #333; font-weight: normal; text-align: left; &.r { text-align: right; } }
   tbody tr td { border-bottom: 1px solid #ccc; }
   th:first-child, td:first-child { border-right: 1px solid #333; padding-right: 10px; }
   th:last-child, td:last-child { border-left: 1px solid #333; padding-left: 10px; }
@@ -595,7 +603,7 @@
   border-top: 1px solid #333;
 }
 .pnbr-cov-words { font-style: italic; text-transform: capitalize; font-size: 11px; }
-.pnbr-cov-total { font-weight: 700; span { font-size: 14px; margin-left: 6px; } }
+.pnbr-cov-total { font-weight: normal; span { font-size: 14px; margin-left: 6px; } }
 
 .pnbr-cov-sign {
   margin: 30px 10px 4px;
@@ -622,11 +630,11 @@
 .pnbr-diag-grand { text-align: right; font-weight: 700; font-size: 13px; margin-top: 14px; span { margin-left: 8px; } }
 
 /* ── Medicine Bill (print) ── */
-.pnbr-med-title { text-align: center; font-weight: 700; text-decoration: underline; margin-bottom: 14px; font-size: 14px; }
+.pnbr-med-title { text-align: center; font-weight: normal; text-decoration: underline; margin-bottom: 14px; font-size: 14px; }
 .pnbr-med-hdr { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; td { vertical-align: top; padding: 2px 14px 2px 0; } }
 .pnbr-med-tbl {
   th, td { border: none; border-bottom: 1px solid #ddd; padding: 4px 10px 4px 0; }
-  thead th { border-bottom: 1px solid #333; font-weight: 700; text-align: left; &.r { text-align: right; } }
+  thead th { border-bottom: 1px solid #333; font-weight: normal; text-align: left; &.r { text-align: right; } }
 }
 .pnbr-med-empty { text-align: center; color: #666; padding: 12px 0; }
 .pnbr-med-total { text-align: right; font-weight: 700; font-size: 13px; margin-top: 10px; padding-top: 6px; border-top: 1px solid #333; span { margin-left: 8px; } }

@@ -4,6 +4,7 @@ const prisma = require('./src/config/db');
 const { scheduleDayClose } = require('./src/jobs/dayClose.job');
 const { scheduleWhatsAppPunchNotifier } = require('./src/jobs/whatsappPunchNotifier.job');
 const { initWhatsApp } = require('./src/services/whatsapp.service');
+const { scheduleBedAutoRelease } = require('./src/jobs/bedAutoRelease.job');
 
 async function backfillOpeningStockMovements() {
   // First delete wrong backfill records that used currentStock directly
@@ -83,4 +84,5 @@ app.listen(PORT, async () => {
   scheduleDayClose();
   initWhatsApp();
   scheduleWhatsAppPunchNotifier();
+  scheduleBedAutoRelease();
 });

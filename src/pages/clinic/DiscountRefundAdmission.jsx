@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import DischargeCertificateButton from '../../components/clinic/DischargeCertificateButton';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { canBackDate } from '../../utils/permissions';
@@ -349,29 +350,6 @@ export default function DiscountRefundAdmission() {
     }
   }
 
-  async function openDischargeCertificate() {
-    if (!admission) return;
-    try {
-      const res = await fetch(`${API}/admission/discharge-certificate/${admission.id}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Load failed');
-      const { certificate, ...header } = json.data;
-      setDcHeader(header);
-      setDcForm({
-        dischargeDate: toDateInputValue(certificate?.dischargeDate),
-        reasonOfDischarge: certificate?.reasonOfDischarge || '',
-        diagnosis: certificate?.diagnosis || '',
-        furtherTreatmentNeeded: certificate?.furtherTreatmentNeeded || '',
-        medicinePrescribed: certificate?.medicinePrescribed || '',
-        followUp: certificate?.followUp || '',
-        medicalOfficer: certificate?.medicalOfficer || '',
-      });
-      setDcOpen(true);
-    } catch (e) {
-      toast.error(e.message || 'Discharge Certificate load nahi hui');
-    }
-  }
-
   function updateDcForm(field, value) {
     setDcForm(f => ({ ...f, [field]: value }));
   }
@@ -561,13 +539,11 @@ export default function DiscountRefundAdmission() {
               {/* Panel patients: company pays later, so Balance being non-zero
                   never blocks the certificate — everyone else still needs
                   Net Balance cleared to 0 first. */}
-              {(netBalance === 0 || admission?.patientCategory === 'panel') && (
-                <div className="dc-trigger-row">
-                  <button className="dc-trigger-btn" onClick={openDischargeCertificate}>
-                    Discharge Certificate
-                  </button>
-                </div>
-              )}
+              <DischargeCertificateButton
+                admissionId={admission?.id}
+                visible={netBalance === 0 || admission?.patientCategory === 'panel'}
+                onDischarged={() => loadAdmissionByNo(admission.admissionNo)}
+              />
 
               {history.length > 0 && (
                 <>

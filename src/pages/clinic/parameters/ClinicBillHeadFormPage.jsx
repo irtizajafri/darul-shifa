@@ -21,6 +21,7 @@ const EMPTY_FORM = {
   refDepartmentId: '',
   staffCategoryRequired: false,
   status: 'active',
+  panelSortOrder: '',
 };
 
 function buildWardRows(roomCategories, existing = []) {
@@ -82,6 +83,7 @@ export default function ClinicBillHeadFormPage() {
         refDepartmentId: bh.refDepartmentId ? String(bh.refDepartmentId) : '',
         staffCategoryRequired: bh.staffCategoryRequired,
         status: bh.status || 'active',
+        panelSortOrder: bh.panelSortOrder != null ? String(bh.panelSortOrder) : '',
       });
       setSelectedStaffCats(bh.staffCategories?.map((sc) => sc.staffCategoryId) || []);
       setWardRows(buildWardRows(roomCategories, bh.wardRates || []));
@@ -146,6 +148,7 @@ export default function ClinicBillHeadFormPage() {
       discountApply: false,
       discountSeq: 0,
       refDepartmentId: form.refDepartmentId || null,
+      panelSortOrder: form.panelSortOrder !== '' ? Number(form.panelSortOrder) : null,
       wardRates: wardRows.map((r) => ({
         roomCategoryId: r.roomCategoryId,
         enabled: r.enabled,
@@ -227,6 +230,16 @@ export default function ClinicBillHeadFormPage() {
                 <option value="">NA - Not Applicable</option>
                 {departments.map((d) => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
               </select>
+            </div>
+            <div className="bh-field bh-field--sm">
+              <label className="bh-label" title="Panel Billing screen mein is row ka number — chhota number pehle aata hai. Khaali chhodein to woh sabse aakhir mein aayega.">Panel Sequence</label>
+              <input
+                className="bh-input"
+                type="number"
+                value={form.panelSortOrder}
+                onChange={(e) => setF('panelSortOrder', e.target.value)}
+                placeholder="e.g. 10"
+              />
             </div>
           </div>
 

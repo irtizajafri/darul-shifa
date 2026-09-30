@@ -17,10 +17,15 @@ export default function ClinicBillHeadListPage() {
 
   useEffect(() => { fetchBillHeads(); }, [fetchBillHeads]);
 
-  const filtered = billHeads.filter((b) =>
-    b.headCode.toLowerCase().includes(query.toLowerCase()) ||
-    b.description?.toLowerCase().includes(query.toLowerCase())
-  );
+  // Sorted the same way Panel Billing displays these rows (panelSortOrder
+  // ascending, nulls last) so staff can see — and fix — the actual order at
+  // a glance, instead of guessing from an unordered list.
+  const filtered = billHeads
+    .filter((b) =>
+      b.headCode.toLowerCase().includes(query.toLowerCase()) ||
+      b.description?.toLowerCase().includes(query.toLowerCase())
+    )
+    .sort((a, b) => (a.panelSortOrder ?? Infinity) - (b.panelSortOrder ?? Infinity));
 
   async function handleDelete(bh) {
     try {
@@ -77,6 +82,7 @@ export default function ClinicBillHeadListPage() {
                   <th>Description</th>
                   <th>Type</th>
                   <th>Ref. Department</th>
+                  <th title="Panel Billing screen par is row ka order">Panel Seq</th>
                   <th>Status</th>
                   <th className="cpp-actions-col">Actions</th>
                 </tr>
@@ -89,6 +95,7 @@ export default function ClinicBillHeadListPage() {
                     <td>{bh.description}</td>
                     <td style={{ textTransform: 'capitalize' }}>{bh.type === 'both' ? 'Both' : bh.type === 'provisional' ? 'Provisional Bill' : 'Final Bill'}</td>
                     <td>{bh.refDepartment?.name || '—'}</td>
+                    <td>{bh.panelSortOrder ?? '—'}</td>
                     <td>
                       <span style={{
                         fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20,

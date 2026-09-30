@@ -16,7 +16,7 @@ export default function ClinicRoomCategoryPage() {
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ code: '', name: '', rate: '' });
+  const [form, setForm] = useState({ code: '', name: '', rate: '', autoReleaseEnabled: false });
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
@@ -28,20 +28,20 @@ export default function ClinicRoomCategoryPage() {
 
   function openAdd() {
     setEditing(null);
-    setForm({ code: '', name: '', rate: '' });
+    setForm({ code: '', name: '', rate: '', autoReleaseEnabled: false });
     setShowModal(true);
   }
 
   function openEdit(rc) {
     setEditing(rc);
-    setForm({ code: rc.code || '', name: rc.name, rate: rc.rate ?? '' });
+    setForm({ code: rc.code || '', name: rc.name, rate: rc.rate ?? '', autoReleaseEnabled: !!rc.autoReleaseEnabled });
     setShowModal(true);
   }
 
   function closeModal() {
     setShowModal(false);
     setEditing(null);
-    setForm({ code: '', name: '', rate: '' });
+    setForm({ code: '', name: '', rate: '', autoReleaseEnabled: false });
   }
 
   async function handleSave() {
@@ -119,6 +119,7 @@ export default function ClinicRoomCategoryPage() {
                   <th>Code</th>
                   <th>Name</th>
                   <th>Rate (Rs.)</th>
+                  <th title="Bed vacate hone ke 6 ghante baad khud available">Auto-Release</th>
                   <th className="cpp-actions-col">Actions</th>
                 </tr>
               </thead>
@@ -129,6 +130,7 @@ export default function ClinicRoomCategoryPage() {
                     <td><strong>{rc.code}</strong></td>
                     <td>{rc.name}</td>
                     <td>{rc.rate > 0 ? `${rc.rate.toLocaleString()}` : '—'}</td>
+                    <td>{rc.autoReleaseEnabled ? 'On' : '—'}</td>
                     <td className="cpp-actions">
                       <button className="cpp-btn-icon cpp-edit" onClick={() => openEdit(rc)} title="Edit">
                         <Pencil className="w-3.5 h-3.5" />
@@ -169,6 +171,14 @@ export default function ClinicRoomCategoryPage() {
             placeholder="e.g. 5000"
             onKeyDown={(e) => e.key === 'Enter' && handleSave()}
           />
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={form.autoReleaseEnabled}
+              onChange={(e) => setForm((f) => ({ ...f, autoReleaseEnabled: e.target.checked }))}
+            />
+            Auto-available after 6 hours (is category ke beds vacate hone ke 6 ghante baad khud available ho jayen)
+          </label>
           <div className="flex justify-end gap-2">
             <Button label="Cancel" variant="secondary" onClick={closeModal} />
             <Button label={editing ? 'Update' : 'Save'} onClick={handleSave} loading={saving} />

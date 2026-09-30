@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import DischargeCertificateButton from '../../components/clinic/DischargeCertificateButton';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildProvisionalBillPrintHtml } from './provisionalBillPrintUtils';
 import './Admission.scss';
@@ -1227,6 +1228,16 @@ export default function ProvisionalBill() {
                 </div>
               </div>
             )}
+
+            {/* Panel patients: company pays later, so Balance being non-zero
+                never blocks the certificate — everyone else still needs
+                Balance cleared to 0 first. Only offered while still admitted
+                — an already-discharged/closed file has nothing to discharge. */}
+            <DischargeCertificateButton
+              admissionId={detail.admission.id}
+              visible={detail.admission.status === 'active' && (detail.balanceInfo.balance === 0 || detail.admission.patientCategory === 'panel')}
+              onDischarged={() => loadDetail(admissionId)}
+            />
 
             <div className="pb-footer">
               <div className="pb-footer-amt">Bill Amount <span>{fmt2(detail.balanceInfo.billAmount)}</span></div>

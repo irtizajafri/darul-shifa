@@ -822,10 +822,10 @@ async function getRoomCategories(req, res, next) {
 
 async function createRoomCategory(req, res, next) {
   try {
-    const { code, name, rate } = req.body;
+    const { code, name, rate, autoReleaseEnabled } = req.body;
     if (!code?.trim()) return fail(res, 400, 'Code is required');
     if (!name?.trim()) return fail(res, 400, 'Name is required');
-    const data = await service.createRoomCategory({ code, name, rate });
+    const data = await service.createRoomCategory({ code, name, rate, autoReleaseEnabled });
     success(res, data, 'Room Category created');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Code or Name already exists');
@@ -835,10 +835,10 @@ async function createRoomCategory(req, res, next) {
 
 async function updateRoomCategory(req, res, next) {
   try {
-    const { code, name, rate } = req.body;
+    const { code, name, rate, autoReleaseEnabled } = req.body;
     if (!code?.trim()) return fail(res, 400, 'Code is required');
     if (!name?.trim()) return fail(res, 400, 'Name is required');
-    const data = await service.updateRoomCategory(req.params.id, { code, name, rate });
+    const data = await service.updateRoomCategory(req.params.id, { code, name, rate, autoReleaseEnabled });
     success(res, data, 'Room Category updated');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Code or Name already exists');

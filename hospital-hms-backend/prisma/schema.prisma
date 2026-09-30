@@ -1052,6 +1052,11 @@ model ClinicRoomCategory {
   code      String      @unique @default("")
   name      String      @unique
   rate      Float       @default(0)
+  // When true, beds in this category don't flip back to "available" the
+  // instant they're vacated — vacatedAt is stamped on the bed instead, and
+  // a background job flips it to available once 6 hours have passed
+  // (housekeeping/turnover buffer).
+  autoReleaseEnabled Boolean @default(false)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -1067,6 +1072,10 @@ model ClinicBed {
   roomCategoryId Int
   roomCategory   ClinicRoomCategory @relation(fields: [roomCategoryId], references: [id], onDelete: Cascade)
   status         String             @default("available")
+  // Stamped when this bed becomes vacant AND its room category has
+  // autoReleaseEnabled — a background job flips status back to available
+  // once 6 hours have passed. Null the rest of the time.
+  vacatedAt      DateTime?
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 

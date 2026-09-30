@@ -19,17 +19,18 @@ function fmtDdMmYyyyNum(d) {
   const dt = new Date(d);
   return `${pad2(dt.getDate())}-${pad2(dt.getMonth() + 1)}-${dt.getFullYear()}`;
 }
-// 21-Jun-2026 00:00 — Medicine Bill's "Discharge date".
-function fmtDdMonYyyyHm(d) {
+// 21-Jun-2026 — Medicine Bill's "Discharge date" (no time — was showing
+// 00:00 on every row, which just read as noise, not real information).
+function fmtDdMonYyyy(d) {
   if (!d) return '';
   const dt = new Date(d);
-  return `${pad2(dt.getDate())}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+  return `${pad2(dt.getDate())}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()}`;
 }
-// Jun-19-2026 00:00 — Medicine Bill's per-row "Medicine Date".
-function fmtMonDdYyyyHm(d) {
+// Jun-19-2026 — Medicine Bill's per-row "Medicine Date" (no time, same reason).
+function fmtMonDdYyyy(d) {
   if (!d) return '';
   const dt = new Date(d);
-  return `${dt.toLocaleString('en-GB', { month: 'short' })}-${pad2(dt.getDate())}-${dt.getFullYear()} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+  return `${dt.toLocaleString('en-GB', { month: 'short' })}-${pad2(dt.getDate())}-${dt.getFullYear()}`;
 }
 
 // Manual-add types — same lists already used elsewhere in Clinic (Sub
@@ -313,6 +314,11 @@ export default function PanelBilling() {
   const [customQty, setCustomQty] = useState('1');
   const [customRate, setCustomRate] = useState('');
   const [customDose, setCustomDose] = useState(''); // Medicine only
+  // Blank until touched — the visible field still shows Admit Date as a
+  // sensible starting point (see the date input's value below), but this
+  // stays '' so we can tell "never touched" apart from "explicitly picked
+  // the same date as Admit Date" when deciding what to send on Add.
+  const [customDate, setCustomDate] = useState('');
   const [addingCustom, setAddingCustom] = useState(false);
   const customSearchTimer = useRef(null);
   const [showAddMedicine, setShowAddMedicine] = useState(false); // quick-add straight into the Medicine List
@@ -469,10 +475,11 @@ export default function PanelBilling() {
     if (!Number.isFinite(rate) || rate < 0) return toast.error('Rate valid honi chahiye');
     const mergeInto = CUSTOM_TYPES.find((t) => t.key === customType)?.mergeInto;
     const dosage = customType === 'medicine' ? customDose.trim() || undefined : undefined;
+    const date = customDate || toInputDate(data.admission.admitDate) || undefined;
     setAddingCustom(true);
     try {
       const addFn = isOpd ? addPanelOpdBillingItem : addPanelBillingItem;
-      const row = await addFn(data.admission.id, { description, qty, rate, mergeInto, dosage });
+      const row = await addFn(data.admission.id, { description, qty, rate, mergeInto, dosage, date });
       if (mergeInto) {
         // Grouped adds fold into their head row (and feed that head's detail
         // popup) server-side — reload so the grid shows the recomputed
@@ -485,6 +492,7 @@ export default function PanelBilling() {
       setCustomQty('1');
       setCustomRate('');
       setCustomDose('');
+      setCustomDate('');
     } catch (e) {
       toast.error(e.message || 'Add nahi hua');
     } finally {
@@ -1050,6 +1058,17 @@ export default function PanelBilling() {
               <div className="pnb-fg pnb-fg--sm">
                 <label>Rate</label>
                 <input value={customRate} onChange={(e) => setCustomRate(e.target.value)} placeholder="apni rate" />
+              </div>
+              <div className="pnb-fg pnb-fg--sm">
+                <label>Date</label>
+                <input
+                  type="date"
+                  className="pnb-date-input"
+                  value={customDate || toInputDate(data.admission.admitDate)}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                  min={toInputDate(data.admission.admitDate) || undefined}
+                  max={toInputDate(data.admission.dischargeDate) || undefined}
+                />
               </div>
               <button className="pnb-add-btn" onClick={handleAddCustom} disabled={addingCustom}>
                 <Plus size={14} /> Add
@@ -1812,6 +1831,7 @@ function DiagnosticBillPrintTemplate({ data }) {
   const { admission } = data;
   const byDept = {};
   data.diagnosticRows.forEach((r) => { (byDept[r.department] ||= []).push(r); });
+  Object.values(byDept).forEach((rows) => rows.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)));
   const grandTotal = data.diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
   return (
@@ -1880,7 +1900,7 @@ function MedicineBillPrintTemplate({ data }) {
             </tr>
             <tr>
               <td className="l">Admission date</td><td className="v">{fmtDdMmYyyyNum(admission.admitDate)}</td>
-              <td className="l">Discharge date</td><td className="v">{admission.dischargeDate ? fmtDdMonYyyyHm(admission.dischargeDate) : '—'}</td>
+              <td className="l">Discharge date</td><td className="v">{admission.dischargeDate ? fmtDdMonYyyy(admission.dischargeDate) : '—'}</td>
             </tr>
           </tbody>
         </table>
@@ -1894,7 +1914,7 @@ function MedicineBillPrintTemplate({ data }) {
               <tr><td colSpan={6} className="pnbr-med-empty">Koi medicine/store item nahi mila</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id}>
-                <td>{fmtMonDdYyyyHm(r.date)}</td>
+                <td>{fmtMonDdYyyy(r.date)}</td>
                 <td>{r.code ? `${r.code} - ${r.medicine}` : r.medicine}</td>
                 <td>{r.dosage || ''}</td>
                 <td className="r">{fmt2(r.qty)}</td>
