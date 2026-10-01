@@ -49,8 +49,8 @@ function calcUnits(sortedReadings) {
   const first = sortedReadings[0];
   const last  = sortedReadings[sortedReadings.length - 1];
 
-  const startReading = first.dayStart ?? first.nightStart ?? null;
-  const endReading   = last.dayEnd   ?? last.nightEnd    ?? last.dayStart ?? null;
+  const startReading = first.dayStart  ?? first.nightStart ?? null;
+  const endReading   = last.nightEnd  ?? last.dayEnd      ?? last.dayStart ?? null;
 
   if (startReading != null && endReading != null && endReading >= startReading) {
     return { startReading, endReading, billedUnits: endReading - startReading };
