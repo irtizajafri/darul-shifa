@@ -1022,8 +1022,25 @@ model ClinicOpdVisit {
   doctors         ClinicOpdVisitDoctor[]
   panelBillingItems  ClinicPanelOpdBillingItem[]
   panelBillingHeader ClinicPanelOpdBillingHeader?
+  balancePayments    ClinicOpdBalancePayment[]
 
   @@index([createdAt])
+}
+
+// Dated record of a later balance top-up collected against an already-created
+// OPD slip (clinic/transactions/receive-balance-slip) — the slip's own
+// `receive` field still gets the amount added (so "balance owed" stays
+// correct), but this row is what lets reports show the money on the day it
+// was actually collected instead of retroactively on the slip's original day.
+model ClinicOpdBalancePayment {
+  id         Int            @id @default(autoincrement())
+  visitId    Int
+  visit      ClinicOpdVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  amount     Decimal        @db.Decimal(10, 2)
+  receivedAt DateTime       @default(now())
+  createdAt  DateTime       @default(now())
+
+  @@index([visitId])
 }
 
 model ClinicOpdVisitDoctor {

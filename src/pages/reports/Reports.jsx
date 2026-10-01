@@ -1338,7 +1338,9 @@ export default function Reports() {
     (manualDeductionTotal || 0) + (gatepassDeduction || 0) + (advanceDeduction || 0) + (loanDeduction || 0) + (shortLeaveDeduction || 0)
   );
 
-  const overtimeAddition = Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
+  // Fixed salary employee ko attendance-based overtime bhi nahi lagta —
+  // same isFixed gate jo deductions ke liye upar use hota hai.
+  const overtimeAddition = isFixed ? 0 : Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
     const scheduledMinutes = getScheduledMinutes(r);
     const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
     return sum + (getAllocatedOvertimeMinutes(r) * perMinuteRate);
@@ -1576,12 +1578,14 @@ export default function Reports() {
             : (rowDutyMinutes / 60).toFixed(2),
           wrkHrs:  wrkHrsDisplay,
           ot:      isFuture ? "0.00" : otHrs,
-          otAmt:   isFuture ? '0' : String(Math.max(0, otVal)),
+          // Fixed salary employee ko overtime ka paisa nahi milta — hours
+          // dikhte hain (upar) lekin Amount/Total mein count nahi hota.
+          otAmt:   (isFixed || isFuture) ? '0' : String(Math.max(0, otVal)),
           late:    (isFixed || isAvailOff || isWorkedExtra || effectiveOffDay || isFuture || actStatus === 'absent' || actStatus === 'leave' || isMissedOut) ? "N" : isLate,
           status:  displayStatus,
           salary:  isFixed ? (isFuture ? '0' : String(Math.round(effectiveDayRate))) : String(grossPerDay),
           ded:     isFixed ? '0' : String(ded),
-          total:   isFixed ? (isFuture ? '0' : String(Math.max(0, Math.round(effectiveDayRate) + Math.max(0, otVal)))) : String(Math.max(0, grossPerDay - ded + otVal)),
+          total:   isFixed ? (isFuture ? '0' : String(Math.round(effectiveDayRate))) : String(Math.max(0, grossPerDay - ded + otVal)),
           isManuallyEdited: Boolean(record?.isManuallyEdited),
         };
 
@@ -1635,12 +1639,12 @@ export default function Reports() {
             dutyHrs: shouldHideDutyHours ? '0.00' : (extraDutyMinutes / 60).toFixed(2),
             wrkHrs: workedHoursFromPair(extraIn, extraOut),
             ot: isFuture ? '0.00' : (extraOvertimeMinutes / 60).toFixed(2),
-            otAmt: String(extraOtVal),
+            otAmt: isFixed ? '0' : String(extraOtVal),
             late: 'N',
             status: displayStatus,
             salary: isFixed ? '0' : String(extraTotal),
             ded: '0',
-            total: isFixed ? String(extraOtVal) : String(extraTotal),
+            total: isFixed ? '0' : String(extraTotal),
           });
         }
 

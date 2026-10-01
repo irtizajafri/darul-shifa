@@ -6825,17 +6825,86 @@ async function bulkCreatePatientVisits(rows, replaceDates) {
     }
   }
 
-  return { count: result.count, deleted: deletedCount };
+  // Cross-source duplicates (this same visit already exists as a new-system
+  // OPD slip) only ever involve the dates actually present in this upload —
+  // scope the auto-dedup pass to that range instead of the whole table.
+  let autoDeduped = 0;
+  const visitDates = data.map((r) => r.visitDate).filter(Boolean);
+  if (visitDates.length) {
+    const minDate = new Date(Math.min(...visitDates.map((d) => d.getTime())));
+    const maxDate = new Date(Math.max(...visitDates.map((d) => d.getTime())));
+    const dedupResult = await deleteDuplicatePatientVisits({
+      fromDate: minDate.toISOString().slice(0, 10),
+      toDate:   maxDate.toISOString().slice(0, 10),
+    });
+    autoDeduped = dedupResult.deleted;
+  }
+
+  return { count: result.count, deleted: deletedCount, autoDeduped };
 }
 
 async function getPatientVisitDateCounts(dates) {
   const counts = await Promise.all(
-    dates.map(async (d) => ({
-      date:  d,
-      count: await prisma.patientVisit.count({ where: { visitDate: new Date(d) } }),
-    }))
+    dates.map(async (d) => {
+      // Exact-timestamp match against a DATE column can miss the stored row
+      // over a millisecond/timezone rounding difference — use a full-day
+      // range instead so replaceDates always finds what's really there.
+      const start = new Date(`${d}T00:00:00.000Z`);
+      const end   = new Date(`${d}T23:59:59.999Z`);
+      return {
+        date:  d,
+        count: await prisma.patientVisit.count({ where: { visitDate: { gte: start, lte: end } } }),
+      };
+    })
   );
   return counts.reduce((acc, { date, count }) => { acc[date] = count; return acc; }, {});
+}
+
+// Patient List Report can show the same patient twice: once imported from a
+// legacy Excel sheet (PatientVisit, _source: 'old') and once from a slip
+// created in the new system (ClinicOpdVisit, _source: 'opd') for that same
+// visit, or twice from an Excel sheet uploaded more than once. Matched by
+// serialNo + department + subDepartment + patientName (case-insensitive) —
+// serialNo is required on both sides since that's the only field guaranteed
+// unique per real visit across both sources.
+async function findDuplicatePatientVisits({ fromDate, toDate }) {
+  const visits = await getPatientVisits({ fromDate, toDate });
+  const norm = (s) => String(s || '').trim().toLowerCase();
+
+  const groups = new Map();
+  for (const v of visits) {
+    if (v._source !== 'old' && v._source !== 'opd') continue;
+    if (v.serialNo == null || v.serialNo === '') continue;
+    const key = [Number(v.serialNo), norm(v.department), norm(v.subDepartment), norm(v.patientName)].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(v);
+  }
+
+  const idsToDelete = [];
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    const oldRows = rows.filter((r) => r._source === 'old');
+    const opdRows = rows.filter((r) => r._source === 'opd');
+
+    if (oldRows.length && opdRows.length) {
+      // Cross-source duplicate — the legacy row is the stale one, the OPD
+      // slip is the real record going forward.
+      for (const r of oldRows) idsToDelete.push(r.id);
+    } else if (oldRows.length > 1) {
+      // Same Excel sheet imported more than once — keep the earliest row.
+      const sorted = [...oldRows].sort((a, b) => a.id - b.id);
+      for (const r of sorted.slice(1)) idsToDelete.push(r.id);
+    }
+  }
+
+  return { duplicatesFound: idsToDelete.length, ids: idsToDelete };
+}
+
+async function deleteDuplicatePatientVisits({ fromDate, toDate }) {
+  const { duplicatesFound, ids } = await findDuplicatePatientVisits({ fromDate, toDate });
+  if (!ids.length) return { duplicatesFound: 0, deleted: 0 };
+  const result = await prisma.patientVisit.deleteMany({ where: { id: { in: ids } } });
+  return { duplicatesFound, deleted: result.count };
 }
 
 // Legacy patient names carry the title inline ("MRS. SHAHEEN", "BABY /O MEHREEN")
@@ -7321,6 +7390,11 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
           subDept: { select: { name: true } },
         },
       },
+      // Needed to subtract later balance top-ups back out of this visit's own
+      // row below — otherwise that money would be counted twice (once here
+      // on the slip's original day, again on its own row on the day it was
+      // actually collected via Receive Balance Slip).
+      balancePayments: { select: { amount: true } },
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -7345,6 +7419,12 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     // patient still shows in the list, but received/discount/balance read 0
     // instead of whatever the visit's original figures were.
     const isCancelled = ['canceled', 'cancelled'].includes(String(v.status || '').toLowerCase());
+    // v.receive already includes any later Receive Balance Slip top-ups —
+    // subtract those back out so this row only shows what was actually
+    // collected when the slip itself was created; the top-up has its own row
+    // (mappedOpdBalPay) dated to when it was really received.
+    const balancePaidLater = (v.balancePayments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+    const receivedAtCreation = Math.max(0, Number(v.receive || 0) - balancePaidLater);
     const baseRow = {
       serialNo:      v.serialNo,
       admitNo:       null,
@@ -7366,7 +7446,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
         id:            `opd_${v.id}_0`,
         subDepartment: null,
         doctor:        null,
-        received:      isCancelled ? 0 : v.receive,
+        received:      isCancelled ? 0 : receivedAtCreation,
         balance:       isCancelled ? 0 : (v.totalAmount - v.receive),
         discount:      isCancelled ? 0 : v.discount,
       });
@@ -7377,10 +7457,13 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
           id:            `opd_${v.id}_${idx}`,
           subDepartment: d.subDept?.name || null,
           doctor:        d.doctor?.name  || null,
-          // Per-test amount for that row's own received; visit-level
-          // discount/balance are only meaningful once (first row) so they
-          // aren't repeated/multiplied across rows for the same visit.
-          received:      isCancelled ? 0 : Number(d.amount || 0),
+          // d.amount is each test's listed rate (gross, pre-discount) — not
+          // what was actually collected. Money actually received only exists
+          // once per visit (v.receive), same as discount/balance — all three
+          // only go on the first row so a multi-test visit doesn't sum to
+          // more than what was really taken (and a Panel visit, where
+          // v.receive is always 0, doesn't show a phantom received amount).
+          received:      idx === 0 ? (isCancelled ? 0 : receivedAtCreation) : 0,
           balance:       idx === 0 ? (isCancelled ? 0 : (v.totalAmount - v.receive)) : 0,
           discount:      idx === 0 ? (isCancelled ? 0 : v.discount) : 0,
         });
@@ -7412,9 +7495,20 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       admitNo: { not: null },
       department: { equals: 'admission', mode: 'insensitive' },
     },
-    select: { admitNo: true },
+    select: { admitNo: true, visitDate: true, received: true },
   });
   const legacyAdmitNoSet = new Set(legacyAdmissionVisits.map((v) => String(v.admitNo)));
+  // Keyed map (not just the Set above) for the admission-payments guard below
+  // — that one needs to tell a genuine duplicate (same admission, same day,
+  // same amount as the legacy row) apart from a later top-up that merely
+  // shares the admission number but is real, separate money.
+  const legacyAdmissionByAdmitNo = new Map();
+  for (const v of legacyAdmissionVisits) {
+    const key = String(v.admitNo);
+    const list = legacyAdmissionByAdmitNo.get(key) || [];
+    list.push({ date: new Date(v.visitDate).toISOString().slice(0, 10), received: Number(v.received) });
+    legacyAdmissionByAdmitNo.set(key, list);
+  }
 
   let admissions = await prisma.clinicAdmission.findMany({
     where: admWhere,
@@ -7475,11 +7569,19 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     orderBy: { receivedAt: 'asc' },
   });
   admPaymentsRaw = await narrowToPreciseWindow('ClinicAdmissionPayment', 'receivedAt', admPaymentsRaw, fromDate, toDate, fromT, toT);
-  // Same legacy-migrated guard as above (ADM_PAY_NOT_MIGRATED in
-  // getRevenueDashboard/getDailyDepartmentStatement) — a top-up payment
-  // against an admission that's already represented in PatientVisit would
-  // otherwise double-count that admission's money a second time here.
-  const admPayments = admPaymentsRaw.filter((p) => !legacyAdmitNoSet.has(String(p.admission?.admissionNo)));
+  // A payment only double-counts the legacy row's money if it's actually the
+  // SAME transaction — same admission, same calendar day, same amount. Any
+  // admitNo match alone used to exclude every later top-up payment too (any
+  // admission ever touched by the legacy import lost ALL its real payments
+  // from this list — confirmed live: 73 of 82 recorded payments were wrongly
+  // excluded this way, only 51 of those were genuine same-day/same-amount
+  // duplicates of the legacy row).
+  const admPayments = admPaymentsRaw.filter((p) => {
+    const matches = legacyAdmissionByAdmitNo.get(String(p.admission?.admissionNo || '')) || [];
+    const pDate = new Date(p.receivedAt).toISOString().slice(0, 10);
+    const pAmt  = Number(p.amount);
+    return !matches.some((m) => m.date === pDate && Math.abs(m.received - pAmt) < 1);
+  });
 
   const mappedAdmPay = admPayments.map((p) => ({
     id:            `admpay_${p.id}`,
@@ -7532,17 +7634,68 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     _source:       'antenatal',
   }));
 
-  // Merge all sources and sort chronologically (date + time) instead of
-  // stacking them as separate blocks — otherwise the list reads as "source-wise"
-  // even when each block is individually date-sorted.
-  const merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay, ...mappedAnt];
+  // Also fetch OPD Balance payments (clinic/transactions/receive-balance-slip)
+  // — a later top-up against an already-created OPD slip, counted on the day
+  // it was actually collected (receivedAt), not the slip's original day. No
+  // Serial # of its own (it's a top-up against an existing slip, not a new
+  // visit) — falls back to date+time ordering like any other serial-less row.
+  const opdBalPayWhere = {};
+  if (fromDate && toDate) {
+    opdBalPayWhere.receivedAt = bufferedTimestampWindow(fromDate, toDate, fromT, toT);
+  }
+  let opdBalPaymentsRaw = await prisma.clinicOpdBalancePayment.findMany({
+    where: opdBalPayWhere,
+    include: { visit: { select: { patientName: true, department: true, paymentType: true } } },
+    orderBy: { receivedAt: 'asc' },
+  });
+  opdBalPaymentsRaw = await narrowToPreciseWindow('ClinicOpdBalancePayment', 'receivedAt', opdBalPaymentsRaw, fromDate, toDate, fromT, toT);
+  const opdBalPayments = typeVariants
+    ? opdBalPaymentsRaw.filter((p) => typeVariants.includes(String(p.visit?.paymentType || '').toLowerCase()))
+    : opdBalPaymentsRaw;
+  const mappedOpdBalPay = opdBalPayments.map((p) => ({
+    id:            `opdbalpay_${p.id}`,
+    serialNo:      null,
+    admitNo:       null,
+    mrNo:          null,
+    visitDate:     p.receivedAt,
+    visitTime:     toHHMM(p.receivedAt),
+    patientName:   p.visit?.patientName || '',
+    department:    p.visit?.department || null,
+    subDepartment: null,
+    doctor:        null,
+    paymentType:   p.visit?.paymentType || null,
+    received:      Number(p.amount) || 0,
+    balance:       0,
+    discount:      0,
+    _source:       'opd-balance-payment',
+  }));
+
+  // Merge all sources, uppercase every patient name regardless of how the
+  // source data was typed/imported (legacy Excel rows in particular carry
+  // whatever casing the original sheet had), and order by Serial # ascending
+  // — the shared running sequence across every source, so the list reads in
+  // the same order it was actually issued instead of by source block.
+  let merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay, ...mappedAnt, ...mappedOpdBalPay];
+  merged = merged.map((v) => ({ ...v, patientName: String(v.patientName || '').toUpperCase() }));
   const sortMs = (v) => {
     const d = new Date(v.visitDate);
     const [h, m] = String(v.visitTime || '00:00').split(':').map((n) => Number(n) || 0);
     d.setHours(h, m, 0, 0);
     return d.getTime();
   };
-  merged.sort((a, b) => sortMs(a) - sortMs(b));
+  // A handful of rows (older legacy imports) have no serialNo at all — those
+  // fall back to date+time so they don't all collapse to the same position.
+  const serialNum = (v) => {
+    const n = Number(v.serialNo);
+    return Number.isFinite(n) && v.serialNo !== null && v.serialNo !== '' ? n : null;
+  };
+  merged.sort((a, b) => {
+    const sa = serialNum(a), sb = serialNum(b);
+    if (sa != null && sb != null) return sa - sb || sortMs(a) - sortMs(b);
+    if (sa != null) return -1;
+    if (sb != null) return 1;
+    return sortMs(a) - sortMs(b);
+  });
   return merged;
 }
 
@@ -7820,11 +7973,19 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   // ── ClinicAdmissionPayment WHERE (Receiving against Admission) ───────────
   // Later top-up payments count as revenue on the day they're actually
   // RECEIVED (not the original admission day) — but don't count as an extra
-  // "patient" since it's the same admission, not a new one. Same
-  // double-count guard as above: skip payments for admissions that already
-  // have a PatientVisit ADMISSION row (that later payment is one of
-  // PatientVisit's own rows for the same admitNo too, per the 2-Jul check).
-  const admPayConds  = [`NOT EXISTS (SELECT 1 FROM "ClinicAdmission" a2 JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission' WHERE a2.id = "ClinicAdmissionPayment"."admissionId")`];
+  // "patient" since it's the same admission, not a new one. Only skip a
+  // payment when it's a genuine duplicate of the legacy row itself — same
+  // admission, same calendar day, same amount. An admitNo-only match (no
+  // date/amount check) wrongly excluded every later top-up payment against
+  // any legacy-era admission too — confirmed live: 73 of 82 recorded
+  // payments were being dropped this way, only 51 were real duplicates.
+  const admPayConds  = [`NOT EXISTS (
+    SELECT 1 FROM "ClinicAdmission" a2
+    JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission'
+    WHERE a2.id = "ClinicAdmissionPayment"."admissionId"
+      AND pv."visitDate"::date = "ClinicAdmissionPayment"."receivedAt"::date
+      AND ABS(pv.received - "ClinicAdmissionPayment".amount) < 1
+  )`];
   const admPayParams = [];
   if (department && department !== 'ALL') { admPayParams.push(department); admPayConds.push(`'Admission' ILIKE $${admPayParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { admPayConds.push('FALSE'); }
@@ -8196,7 +8357,16 @@ async function getDailyDepartmentStatement(date) {
   // any admission that already has one, so this modal doesn't count the same
   // patient/amount twice.
   const ADM_NOT_MIGRATED = `NOT EXISTS (SELECT 1 FROM "PatientVisit" pv WHERE pv."admitNo"::text = "ClinicAdmission"."admissionNo" AND pv.department ILIKE 'admission')`;
-  const ADM_PAY_NOT_MIGRATED = `NOT EXISTS (SELECT 1 FROM "ClinicAdmission" a2 JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission' WHERE a2.id = "ClinicAdmissionPayment"."admissionId")`;
+  // Same date+amount precision as getRevenueDashboard/getPatientVisits —
+  // an admitNo-only match wrongly skipped every later top-up payment too,
+  // not just the one row that's a genuine duplicate of the legacy import.
+  const ADM_PAY_NOT_MIGRATED = `NOT EXISTS (
+    SELECT 1 FROM "ClinicAdmission" a2
+    JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission'
+    WHERE a2.id = "ClinicAdmissionPayment"."admissionId"
+      AND pv."visitDate"::date = "ClinicAdmissionPayment"."receivedAt"::date
+      AND ABS(pv.received - "ClinicAdmissionPayment".amount) < 1
+  )`;
 
   const [pvRows, ovRows, admRow, admPayRow, antRow] = await Promise.all([
     prisma.$queryRawUnsafe(`
@@ -9445,11 +9615,22 @@ async function receiveBalancePayment(id, amount) {
   if (!visit) throw new Error('Visit not found');
   const balance = visit.totalAmount - visit.receive;
   if (amount <= 0 || amount > balance + 0.01) throw new Error('Invalid amount');
-  return prisma.clinicOpdVisit.update({
-    where: { id: Number(id) },
-    data:  { receive: visit.receive + amount },
-    select: { id: true, serialNo: true, patientName: true, totalAmount: true, receive: true },
-  });
+  // The slip's own `receive` still gets the top-up (getBalanceSlips/every
+  // other screen reads "balance owed" as totalAmount - receive) — but a
+  // ClinicOpdBalancePayment row is what lets Patient List/revenue reports
+  // show this money on the day it was actually collected, same as
+  // ClinicAdmissionPayment does for admission top-ups.
+  const [updated] = await prisma.$transaction([
+    prisma.clinicOpdVisit.update({
+      where: { id: Number(id) },
+      data:  { receive: visit.receive + amount },
+      select: { id: true, serialNo: true, patientName: true, totalAmount: true, receive: true },
+    }),
+    prisma.clinicOpdBalancePayment.create({
+      data: { visitId: Number(id), amount },
+    }),
+  ]);
+  return updated;
 }
 
 // ─── Medicine List (Pharmacy Price List) ─────────────────────────────────────
@@ -10001,6 +10182,8 @@ module.exports = {
   setBedStatus,
   bulkCreatePatientVisits,
   getPatientVisitDateCounts,
+  findDuplicatePatientVisits,
+  deleteDuplicatePatientVisits,
   generateAdmissionsFromVisits,
   getAllConsultantRates,
   upsertConsultantRate,

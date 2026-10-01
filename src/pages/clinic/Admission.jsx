@@ -367,8 +367,12 @@ function validateAdmissionForm(form) {
   const ageErr = validateAge(form.ageYears, form.ageMonths, form.ageDays);
   if (ageErr) return ageErr;
 
-  if (form.advancePayment === '' || form.advancePayment == null || Number(form.advancePayment) < 1) {
-    return 'Advance Payment kam se kam Rs. 1 honi chahiye';
+  // Panel: company bills later, patient never pays an advance — 0 is correct,
+  // not a missing value. Every other category still requires a real advance.
+  if (form.patientCategory !== 'panel') {
+    if (form.advancePayment === '' || form.advancePayment == null || Number(form.advancePayment) < 1) {
+      return 'Advance Payment kam se kam Rs. 1 honi chahiye';
+    }
   }
 
   if (form.surgery && !form.surgeryTypeId) return 'Surgery Type select karo';
@@ -543,7 +547,10 @@ export default function Admission() {
       setForm(f => ({ ...f, patientCategory: v, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '' }));
       setShowEmpModal(true);
     } else if (v === 'panel') {
-      setForm(f => ({ ...f, patientCategory: v, employeeId: null }));
+      // Panel company pays later, so nothing is ever collected as an advance
+      // at admission time — force 0 here instead of letting the Rs. 1 minimum
+      // force staff to type a fake amount just to get past validation.
+      setForm(f => ({ ...f, patientCategory: v, employeeId: null, advancePayment: '0' }));
       setShowPanelModal(true);
     } else {
       setForm(f => ({ ...f, patientCategory: v, employeeId: null, panelCompanyId: null, panelEmployeeId: null, panelDependentId: null, panelLabel: '' }));
@@ -1074,7 +1081,7 @@ export default function Admission() {
                 </div>
                 <div className="adm-field">
                   <label>Advance Payment</label>
-                  <input type="number" min="0" value={form.advancePayment} onChange={e => set('advancePayment', e.target.value)} placeholder="0.00" />
+                  <input type="number" min="0" value={form.advancePayment} onChange={e => set('advancePayment', e.target.value)} placeholder="0.00" disabled={form.patientCategory === 'panel'} />
                 </div>
               </div>
             </div>

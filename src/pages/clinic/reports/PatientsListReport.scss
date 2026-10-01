@@ -75,6 +75,14 @@
     background: #e8e4dc;
     &:hover:not(:disabled) { background: #dcd8d0; }
   }
+
+  &--danger {
+    background: #f6dede;
+    border-color: #a84a4a;
+    color: #6a1a1a;
+    font-weight: 600;
+    &:hover:not(:disabled) { background: #f0c8c8; }
+  }
 }
 
 .plr-tool-sep {
@@ -87,6 +95,20 @@
 .plr-last-refresh {
   font-size: 0.72rem;
   color: #666;
+}
+
+.plr-dup-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #fbe8c8;
+  border: 1px solid #c88a2a;
+  border-radius: 10px;
+  color: #6a4a0a;
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .plr-toggle-btn {

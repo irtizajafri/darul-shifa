@@ -322,6 +322,8 @@ router.delete('/consultant-rates/:id', controller.deleteConsultantRate);
 
 // Patient Visits
 router.get('/patient-visits/date-counts', controller.getPatientVisitDateCounts);
+router.get('/patient-visits/duplicates', controller.findDuplicatePatientVisits);
+router.delete('/patient-visits/duplicates', controller.deleteDuplicatePatientVisits);
 router.post('/patient-visits/bulk', controller.bulkCreatePatientVisits);
 router.post('/admission/generate-from-visits', controller.generateAdmissionsFromVisits);
 router.get('/patient-visits/consultants', controller.getConsultantNames);

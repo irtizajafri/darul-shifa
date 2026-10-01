@@ -2185,7 +2185,26 @@ async function bulkCreatePatientVisits(req, res, next) {
     if (!Array.isArray(rows) || rows.length === 0)
       return fail(res, 400, 'rows array required');
     const result = await service.bulkCreatePatientVisits(rows, replaceDates);
-    success(res, { inserted: result.count, deleted: result.deleted }, `${result.count} records imported`);
+    const dedupNote = result.autoDeduped ? `, ${result.autoDeduped} duplicate(s) auto-removed` : '';
+    success(res, { inserted: result.count, deleted: result.deleted, autoDeduped: result.autoDeduped }, `${result.count} records imported${dedupNote}`);
+  } catch (err) { next(err); }
+}
+
+// Preview — how many duplicate Patient List rows exist in this range, without
+// deleting anything yet (frontend shows a badge/confirm before calling delete).
+async function findDuplicatePatientVisits(req, res, next) {
+  try {
+    const { fromDate, toDate } = req.query;
+    const result = await service.findDuplicatePatientVisits({ fromDate, toDate });
+    success(res, { duplicatesFound: result.duplicatesFound });
+  } catch (err) { next(err); }
+}
+
+async function deleteDuplicatePatientVisits(req, res, next) {
+  try {
+    const { fromDate, toDate } = req.query;
+    const result = await service.deleteDuplicatePatientVisits({ fromDate, toDate });
+    success(res, result, `${result.deleted} duplicate record(s) removed`);
   } catch (err) { next(err); }
 }
 
@@ -2658,6 +2677,8 @@ module.exports = {
   setBedStatus,
   bulkCreatePatientVisits,
   getPatientVisitDateCounts,
+  findDuplicatePatientVisits,
+  deleteDuplicatePatientVisits,
   generateAdmissionsFromVisits,
   getConsultantRates,
   upsertConsultantRate,

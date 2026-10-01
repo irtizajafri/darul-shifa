@@ -42,7 +42,7 @@ function dobToAge(dobStr) {
 }
 
 const EMPTY = {
-  serialNo: '', patientType: 'MAST', patientName: '',
+  mrNo: '', serialNo: '', patientType: 'MAST', patientName: '',
   admitPatient: false, admitNo: '', adjustPayment: false,
   age: '', ageMonths: 0, ageDays: 0, dob: '', gender: 'male',
   phoneNo: '', referredBy: '',
@@ -250,7 +250,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EmergencyOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -268,6 +268,11 @@ export default function EmergencyOPD() {
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
   const [showAdmitModal, setShowAdmitModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneResults, setPhoneResults] = useState([]);
+  const [mrConfirm, setMrConfirm] = useState(null);
+  const [mrLookupLoading, setMrLookupLoading] = useState(false);
+  const [phoneLookupLoading, setPhoneLookupLoading] = useState(false);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -277,6 +282,7 @@ export default function EmergencyOPD() {
     // systems' sequences are out of sync. Logic kept, not deleted — re-enable
     // this line once legacy and new system are back on the same numbering.
     // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
+    fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch(() => {});
     loadDoctors(false);
     fetchCcConfig().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -409,9 +415,70 @@ export default function EmergencyOPD() {
         ageDays: adm.ageDays != null ? Number(adm.ageDays) : f.ageDays,
         gender: adm.gender || f.gender,
         phoneNo: adm.phoneNo || f.phoneNo,
+        mrNo: adm.mrNo != null ? String(adm.mrNo) : f.mrNo,
       }));
     } catch {
       // admitNo is already set; auto-fill is best-effort
+    }
+  }
+
+  function applyPatientData(patient, useNewMr) {
+    if (useNewMr) {
+      // New MR: just close modal, keep form as-is (phone stays, rest is blank)
+      setMrConfirm(null);
+      setShowPhoneModal(false);
+      setPhoneResults([]);
+      return;
+    }
+    setForm(f => ({
+      ...f,
+      patientName: patient.patientName || '',
+      patientType: patient.patientType || 'MAST',
+      age: patient.age != null ? String(patient.age) : '',
+      ageMonths: Number(patient.ageMonths) || 0,
+      ageDays: Number(patient.ageDays) || 0,
+      gender: patient.gender || 'male',
+      phoneNo: patient.phoneNo || f.phoneNo,
+      referredBy: patient.referredBy || '',
+      mrNo: patient.mrNo != null ? String(patient.mrNo).padStart(3, '0') : f.mrNo,
+    }));
+    setMrConfirm(null);
+    setShowPhoneModal(false);
+    setPhoneResults([]);
+  }
+
+  async function handleMrLookup() {
+    const mr = form.mrNo?.trim();
+    if (!mr) return;
+    setMrLookupLoading(true);
+    try {
+      const patient = await fetchOpdPatientByMrNo(mr);
+      applyPatientData(patient, false);
+      toast.success(`Patient found: ${patient.patientName}`);
+    } catch {
+      toast.error('No patient found with MR# ' + mr);
+    } finally {
+      setMrLookupLoading(false);
+    }
+  }
+
+  async function handlePhoneLookup() {
+    const phone = form.phoneNo?.trim();
+    if (!phone || phone.length < 7) return;
+    setPhoneLookupLoading(true);
+    try {
+      const results = await fetchOpdPatientsByPhone(phone);
+      if (results.length === 0) return;
+      if (results.length === 1) {
+        setMrConfirm({ patient: results[0] });
+      } else {
+        setPhoneResults(results);
+        setShowPhoneModal(true);
+      }
+    } catch {
+      // silent — no match is fine
+    } finally {
+      setPhoneLookupLoading(false);
     }
   }
 
@@ -421,6 +488,8 @@ export default function EmergencyOPD() {
     setShowEmpModal(false);
     setShowPanelModal(false);
     setShowAdmitModal(false);
+    setShowPhoneModal(false);
+    setMrConfirm(null);
   }
 
   async function handleSaveAndPrint() {
@@ -437,7 +506,6 @@ export default function EmergencyOPD() {
     try {
       const created = await createOpdVisit({
         ...form,
-        mrNo: null,
         department: 'Emergency',
         paymentType: effectivePaymentType,
         totalAmount: grandTotal,
@@ -503,14 +571,126 @@ export default function EmergencyOPD() {
         />
       )}
 
+      {/* ── MR Confirm Dialog (1 phone match) ─────────────────────────── */}
+      {mrConfirm && (
+        <div className="gopd-overlay">
+          <div className="gopd-mr-confirm">
+            <div className="gopd-mr-confirm-title">Patient Found</div>
+            <div className="gopd-mr-confirm-body">
+              <strong>{mrConfirm.patient.patientName}</strong>
+              {mrConfirm.patient.mrNo != null && (
+                <span className="gopd-mr-confirm-mr"> — MR# {String(mrConfirm.patient.mrNo).padStart(3, '0')}</span>
+              )}
+              {mrConfirm.patient.age != null && (
+                <span className="gopd-mr-confirm-age"> | Age: {mrConfirm.patient.age}</span>
+              )}
+              <span className="gopd-mr-confirm-gender"> | {mrConfirm.patient.gender}</span>
+            </div>
+            <div className="gopd-mr-confirm-q">Do you want to use the existing MR# or allot a new one?</div>
+            <div className="gopd-mr-confirm-actions">
+              {mrConfirm.patient.mrNo != null && (
+                <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--use" onClick={() => applyPatientData(mrConfirm.patient, false)}>
+                  Use MR# {String(mrConfirm.patient.mrNo).padStart(3, '0')}
+                </button>
+              )}
+              <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--new" onClick={() => applyPatientData(mrConfirm.patient, true)}>
+                Allot New MR
+              </button>
+              <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--cancel" onClick={() => setMrConfirm(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Phone Results Modal (multiple matches) ─────────────────────── */}
+      {showPhoneModal && (
+        <div className="gopd-overlay">
+          <div className="gopd-phone-modal">
+            <div className="gopd-phone-modal-title">
+              Patients with this Phone Number
+              <button className="gopd-phone-modal-close" onClick={() => setShowPhoneModal(false)}><X size={14} /></button>
+            </div>
+            <table className="gopd-phone-modal-table">
+              <thead>
+                <tr>
+                  <th>MR#</th>
+                  <th>Name</th>
+                  <th>Age</th>
+                  <th>Gender</th>
+                  <th>Phone</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {phoneResults.map((p, i) => (
+                  <tr key={i}>
+                    <td>{p.mrNo != null ? String(p.mrNo).padStart(3, '0') : '—'}</td>
+                    <td>{p.patientName}</td>
+                    <td>{p.age != null ? p.age : '—'}</td>
+                    <td>{p.gender}</td>
+                    <td>{p.phoneNo}</td>
+                    <td className="gopd-phone-modal-actions-cell">
+                      {p.mrNo != null && (
+                        <button
+                          className="gopd-phone-modal-sel"
+                          onClick={() => applyPatientData(p, false)}
+                        >
+                          Use MR# {String(p.mrNo).padStart(3, '0')}
+                        </button>
+                      )}
+                      <button
+                        className="gopd-phone-modal-sel gopd-phone-modal-sel--new"
+                        onClick={() => applyPatientData(p, true)}
+                      >
+                        New MR
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="gopd" onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
         {/* ── Header ── */}
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
-            <span className="gopd-serial-lbl">Serial #</span>
+            <span className="gopd-serial-lbl">MR #</span>
+            <input
+              className="gopd-serial-input gopd-mr-input"
+              value={form.mrNo}
+              onChange={e => set('mrNo', e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleMrLookup()}
+            />
+            <button
+              className="gopd-mr-lookup-btn"
+              onClick={handleMrLookup}
+              disabled={mrLookupLoading}
+              title="Search patient by MR#"
+            >
+              {mrLookupLoading ? '…' : <Search size={12} />}
+            </button>
+            <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.phoneNo} onChange={e => set('phoneNo', e.target.value)} />
+            <input
+              className="gopd-serial-input gopd-mr-input"
+              value={form.phoneNo}
+              onChange={e => set('phoneNo', e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handlePhoneLookup()}
+            />
+            <button
+              className="gopd-mr-lookup-btn"
+              onClick={handlePhoneLookup}
+              disabled={phoneLookupLoading}
+              title="Search patient by Phone#"
+            >
+              {phoneLookupLoading ? '…' : <Search size={12} />}
+            </button>
           </div>
           <div className="gopd-title">Emergency OPD</div>
         </div>

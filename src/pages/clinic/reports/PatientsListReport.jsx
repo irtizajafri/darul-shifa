@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X } from 'lucide-react';
+import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X, AlertTriangle } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
@@ -147,6 +147,8 @@ export default function PatientsListReport() {
   const [uploading, setUploading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [duplicatesFound, setDuplicatesFound] = useState(0);
+  const [dedupBusy, setDedupBusy] = useState(false);
   const fileInputRef = useRef(null);
 
   // Quick client-side search — poora matching set already load ho chuka
@@ -160,7 +162,7 @@ export default function PatientsListReport() {
   const hasSearch = !!(nameSearch || mrSearch || deptSearch || doctorSearch);
   const clearSearch = () => { setNameSearch(''); setMrSearch(''); setDeptSearch(''); setDoctorSearch(''); };
 
-  const busy = loading || uploading || generating;
+  const busy = loading || uploading || generating || dedupBusy;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -178,7 +180,38 @@ export default function PatientsListReport() {
     }
   }, [fromDate, toDate, fromTime, toTime, types.join(',')]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Separate from fetchData — a failed duplicate-count check shouldn't block
+  // the actual patient list from loading, so it's its own silent call.
+  const checkDuplicates = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ fromDate, toDate });
+      const res  = await fetch(`${API}/patient-visits/duplicates?${params}`);
+      const json = await res.json();
+      setDuplicatesFound(res.ok ? (json.data?.duplicatesFound || 0) : 0);
+    } catch {
+      setDuplicatesFound(0);
+    }
+  }, [fromDate, toDate]);
+
+  useEffect(() => { fetchData(); checkDuplicates(); }, [fetchData, checkDuplicates]);
+
+  const handleRemoveDuplicates = async () => {
+    if (!window.confirm(`${duplicatesFound} duplicate record(s) mil gaye hain. Inhein permanently delete karein?`)) return;
+    setDedupBusy(true);
+    try {
+      const params = new URLSearchParams({ fromDate, toDate });
+      const res  = await fetch(`${API}/patient-visits/duplicates?${params}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
+      toast.success(`${json.data.deleted} duplicate record(s) removed`);
+      setDuplicatesFound(0);
+      await fetchData();
+    } catch (err) {
+      toast.error(err.message || 'Remove duplicates failed');
+    } finally {
+      setDedupBusy(false);
+    }
+  };
 
   const filteredVisits = useMemo(() => {
     if (!hasSearch) return visits;
@@ -442,6 +475,17 @@ export default function PatientsListReport() {
             <BedDouble size={14} />
             <span>{generating ? 'Generating...' : 'Generate Admissions'}</span>
           </button>
+          {duplicatesFound > 0 && (
+            <>
+              <div className="plr-tool-sep" />
+              <span className="plr-dup-badge" title="Same visit legacy Excel import aur new system slip, dono mein mila">
+                <AlertTriangle size={13} /> {duplicatesFound} duplicate{duplicatesFound > 1 ? 's' : ''} found
+              </span>
+              <button className="plr-tool-btn plr-tool-btn--danger" onClick={handleRemoveDuplicates} disabled={busy} title="Remove duplicate rows">
+                <span>{dedupBusy ? 'Removing...' : 'Remove Duplicates'}</span>
+              </button>
+            </>
+          )}
         </div>
         <div className="plr-toolbar-right">
           {groupBy !== 'without_users' && <span className="plr-last-refresh">Grouping: {GROUP_LABELS[groupBy]}</span>}
