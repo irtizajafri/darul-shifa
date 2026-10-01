@@ -861,8 +861,8 @@ export default function Reports() {
 
           let modifiedRecord = {
             ...record,
-            actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : record.actualIn,
-            actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : record.actualOut,
+            actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : (override.timeIn === '' ? null : record.actualIn),
+            actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : (override.timeOut === '' ? null : record.actualOut),
             status: override.status || record.status,
             manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,
             waiveDeduction: normalizeWaiveDeductionFlag(override.waiveDeduction),
@@ -941,6 +941,8 @@ export default function Reports() {
         scheduledOut: scheduledOutTime,
         actualIn: override.timeIn ? new Date(`${dateStr}T${override.timeIn}`) : null,
         actualOut: override.timeOut ? new Date(`${dateStr}T${override.timeOut}`) : null,
+        // Note: this is a manual-only record (no machine punch baseline), so empty timeIn/Out
+        // correctly stay null — no fallback to original needed here.
         status: override.status || (isOffDay ? 'off_not_avail' : 'present'),
         rosterScheduledMinutes: rosterScheduledMinutes,
         manualDeduction: Number.isFinite(overrideManualDeduction) ? overrideManualDeduction : null,

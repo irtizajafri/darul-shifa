@@ -137,6 +137,16 @@ async function deleteSubAccount(id) {
 async function getPendingGrnQueue(entityType) {
   const paymentMode = entityType === 'corporate' ? 'panel' : 'cash';
 
+  // A GRN already staged into a saved-but-not-yet-posted Draft shouldn't
+  // reappear here either — it's already queued to be marked paid once the
+  // draft posts (see flashDraftsToVouchers), reappearing here would just
+  // invite staff to pay it a second time before that happens.
+  const pendingDraftGrnLinks = await prisma.accVoucherExpenseDraftGrn.findMany({
+    where: { draft: { status: 'pending' } },
+    select: { grnId: true },
+  });
+  const pendingDraftGrnIds = pendingDraftGrnLinks.map((l) => l.grnId);
+
   const heads = await prisma.accPayeeHead.findMany({
     where: { entityType, sourceType: { in: ['vendor', 'inventory'] } },
     include: {
@@ -179,6 +189,7 @@ async function getPendingGrnQueue(entityType) {
     const grns = await prisma.inventoryGRN.findMany({
       where: {
         isPaid: false,
+        id: { notIn: pendingDraftGrnIds },
         paymentMode,
         ...(head.sourceType === 'inventory' ? { subcategoryId: head.inventorySubcategoryId } : {}),
       },
@@ -1094,10 +1105,10 @@ function getBusinessDate() {
 // the draft now posts under THAT day instead of always today's business
 // date. A blank/invalid/future date falls back to today's business date
 // (never post something dated ahead of when it was actually entered).
-async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName }) {
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds }) {
   const today = getBusinessDate();
   const businessDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today) ? date : today;
-  return prisma.accVoucherExpenseDraft.create({
+  const draft = await prisma.accVoucherExpenseDraft.create({
     data: {
       businessDate, entityType, mode: mode || 'cash',
       bankId: bankId ? Number(bankId) : null,
@@ -1113,6 +1124,20 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
       createdByName: createdByName || null,
     },
   });
+
+  // Record which GRN(s) this draft is paying off — isPaid doesn't flip yet
+  // (that only happens once the draft actually becomes a real voucher, see
+  // flashDraftsToVouchers) so a deleted-before-posting draft never leaves a
+  // GRN wrongly marked paid.
+  const cleanGrnIds = Array.isArray(grnIds) ? grnIds.map(Number).filter(Boolean) : [];
+  if (cleanGrnIds.length) {
+    const grns = await prisma.inventoryGRN.findMany({ where: { id: { in: cleanGrnIds } } });
+    await prisma.accVoucherExpenseDraftGrn.createMany({
+      data: grns.map((g) => ({ draftId: draft.id, grnId: g.id, amount: Number(g.totalAmount) || 0 })),
+    });
+  }
+
+  return draft;
 }
 
 // Every still-pending draft, not just today's — a backdated one must stay
@@ -1177,15 +1202,48 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
           })),
         },
       },
+      include: { entries: true },
     });
     // Mark all group's drafts as posted
     await prisma.accVoucherExpenseDraft.updateMany({
       where: { id: { in: entries.map((e) => e.id) } },
       data:  { status: 'posted', postedVoucherId: voucher.id },
     });
+    // Now that a real voucher actually exists, move each draft's recorded
+    // GRN(s) onto its new entry and flip isPaid — see migration 034.
+    await linkDraftGrnPayments(entries, voucher.entries);
     vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: entries[0].mainGlName, businessDate: groupDate, entriesCount: entries.length, totalAmount });
   }
   return vouchers;
+}
+
+// Draft-side equivalent of linkGrnPayments (below) — `drafts[i]` and
+// `createdEntries[i]` line up positionally, same assumption that function
+// already relies on for the direct voucher-creation path.
+async function linkDraftGrnPayments(drafts, createdEntries) {
+  const draftGrnLinks = await prisma.accVoucherExpenseDraftGrn.findMany({
+    where: { draftId: { in: drafts.map((d) => d.id) } },
+  });
+  if (!draftGrnLinks.length) return;
+
+  const byDraftId = new Map();
+  for (const link of draftGrnLinks) {
+    if (!byDraftId.has(link.draftId)) byDraftId.set(link.draftId, []);
+    byDraftId.get(link.draftId).push(link);
+  }
+
+  const entryRows = [];
+  const grnIdsToMark = [];
+  for (let i = 0; i < drafts.length; i++) {
+    for (const link of (byDraftId.get(drafts[i].id) || [])) {
+      entryRows.push({ voucherExpenseEntryId: createdEntries[i].id, grnId: link.grnId, amount: link.amount });
+      grnIdsToMark.push(link.grnId);
+    }
+  }
+  if (!entryRows.length) return;
+
+  await prisma.accVoucherExpenseEntryGrn.createMany({ data: entryRows });
+  await prisma.inventoryGRN.updateMany({ where: { id: { in: grnIdsToMark } }, data: { isPaid: true } });
 }
 
 async function generateVoucherNo(entityType, voucherDate) {

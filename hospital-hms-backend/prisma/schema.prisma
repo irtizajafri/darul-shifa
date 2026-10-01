@@ -455,6 +455,7 @@ model InventoryGRN {
 
   assetInstances AssetInstance[]
   voucherPayments AccVoucherExpenseEntryGrn[]
+  draftPayments   AccVoucherExpenseDraftGrn[]
 
   @@index([receivedDate])
   @@index([supplierId])
@@ -2330,9 +2331,28 @@ model AccVoucherExpenseDraft {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
+  grnPayments    AccVoucherExpenseDraftGrn[]
+
   @@index([businessDate, entityType, status])
   @@index([status])
   @@index([createdByUserId])
+}
+
+// Draft-side equivalent of AccVoucherExpenseEntryGrn — see migration 034 for
+// why this exists (the draft flow silently dropped GRN linkage, so
+// InventoryGRN.isPaid never flipped for anything paid through the Voucher
+// Expense form's only Save button).
+model AccVoucherExpenseDraftGrn {
+  id        Int                     @id @default(autoincrement())
+  draftId   Int
+  draft     AccVoucherExpenseDraft  @relation(fields: [draftId], references: [id], onDelete: Cascade)
+  grnId     Int
+  grn       InventoryGRN            @relation(fields: [grnId], references: [id])
+  amount    Float
+  createdAt DateTime                @default(now())
+
+  @@index([draftId])
+  @@index([grnId])
 }
 
 // ─── Cashier Handover ─────────────────────────────────────────────────────────

@@ -347,7 +347,7 @@ export default function VoucherExpenseForm() {
   const { entityType } = useParams();
   const { state } = useLocation();
   const navigate = useNavigate();
-  const { mainGLs, fetchMainGLs } = useAccountsStore();
+  const { mainGLs, fetchMainGLs, createMainGL, createSubGL, createMainAccount, createSubAccount } = useAccountsStore();
   const { user } = useAuthStore();
 
   const editingVoucher = state?.editVoucher || null;
@@ -365,6 +365,55 @@ export default function VoucherExpenseForm() {
   const [savingDraft, setSavingDraft]   = useState(false);
   const [voucherNo, setVoucherNo]       = useState(editingVoucher?.voucherNo || '');
   const [savedVoucherNo, setSavedVoucherNo] = useState(null);
+
+  // ── Quick-add GL/Account modal (super admin only) ────────────────────────
+  const [qaModal, setQaModal]   = useState(null); // { level: 'mainGl'|'subGl'|'mainAcc'|'subAcc' }
+  const [qaName, setQaName]     = useState('');
+  const [qaSaving, setQaSaving] = useState(false);
+
+  const openQa = (level) => { setQaName(''); setQaModal({ level }); };
+  const closeQa = () => setQaModal(null);
+
+  const qaLabel = { mainGl: 'Main GL', subGl: 'Sub GL', mainAcc: 'Main Account', subAcc: 'Sub Account' };
+
+  const handleQaSave = async () => {
+    if (!qaName.trim()) return toast.error('Name is required');
+    setQaSaving(true);
+    try {
+      if (qaModal.level === 'mainGl') {
+        const created = await createMainGL({ name: qaName.trim(), entityType });
+        toast.success('Main GL created');
+        handleMainGlChange(String(created.id));
+      } else if (qaModal.level === 'subGl') {
+        const created = await createSubGL({ name: qaName.trim(), entityType, mainGlId: Number(entry.mainGlId) });
+        toast.success('Sub GL created');
+        // Re-fetch sub GLs and select new one
+        const r = await fetch(`${API}/sub-gl?entityType=${entityType}&mainGlId=${entry.mainGlId}`);
+        const j = await r.json();
+        setSubGLs(Array.isArray(j?.data) ? j.data : []);
+        handleSubGlChange(String(created.id));
+      } else if (qaModal.level === 'mainAcc') {
+        const created = await createMainAccount({ name: qaName.trim(), entityType, subGlId: Number(entry.subGlId) });
+        toast.success('Main Account created');
+        const r = await fetch(`${API}/main-account?entityType=${entityType}&subGlId=${entry.subGlId}`);
+        const j = await r.json();
+        setMainAccs(Array.isArray(j?.data) ? j.data : []);
+        handleMainAccChange(String(created.id));
+      } else if (qaModal.level === 'subAcc') {
+        const created = await createSubAccount({ name: qaName.trim(), entityType, mainAccountId: Number(entry.mainAccountId) });
+        toast.success('Sub Account created');
+        const r = await fetch(`${API}/sub-account?entityType=${entityType}&mainAccountId=${entry.mainAccountId}`);
+        const j = await r.json();
+        setSubAccs(Array.isArray(j?.data) ? j.data : []);
+        setEntry((e) => ({ ...e, subAccountId: String(created.id), accountCode: created.code || e.accountCode, accountName: created.name || e.accountName }));
+      }
+      closeQa();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setQaSaving(false);
+    }
+  };
 
   const [subGLs, setSubGLs]             = useState([]);
   const [mainAccs, setMainAccs]         = useState([]);
@@ -1135,6 +1184,7 @@ export default function VoucherExpenseForm() {
             chequeDate:    e.chequeDate    || null,
             chequeType:    e.chequeType    || null,
             particulars:   e.particulars   || null,
+            grnIds:        Array.isArray(e.grnIds) ? e.grnIds : [],
             createdByUserId: user?.id != null ? String(user.id) : null,
             createdByName:   user?.name || user?.username || user?.email || null,
           }),
@@ -1316,6 +1366,11 @@ export default function VoucherExpenseForm() {
               <option value="">— Select Main GL —</option>
               {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
             </select>
+            {user?.isSuperAdmin && (
+              <button type="button" className="ve-form__qa-btn" title="Add Main GL" onClick={() => openQa('mainGl')}>
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="ve-form__alloc-row">
@@ -1330,6 +1385,11 @@ export default function VoucherExpenseForm() {
               <option value="">— Select SUB GL —</option>
               {subGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
             </select>
+            {user?.isSuperAdmin && (
+              <button type="button" className="ve-form__qa-btn" title="Add Sub GL" disabled={!entry.mainGlId} onClick={() => openQa('subGl')}>
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="ve-form__alloc-row">
@@ -1344,6 +1404,11 @@ export default function VoucherExpenseForm() {
               <option value="">— Select Main Account —</option>
               {mainAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
             </select>
+            {user?.isSuperAdmin && (
+              <button type="button" className="ve-form__qa-btn" title="Add Main Account" disabled={!entry.subGlId} onClick={() => openQa('mainAcc')}>
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="ve-form__alloc-row">
@@ -1401,6 +1466,11 @@ export default function VoucherExpenseForm() {
                   </option>
                 ))}
               </select>
+            )}
+            {user?.isSuperAdmin && !isIpdConsultantAcc && !isSurgeryAcc && (
+              <button type="button" className="ve-form__qa-btn" title="Add Sub Account" disabled={!entry.mainAccountId} onClick={() => openQa('subAcc')}>
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
         </div>
@@ -2212,6 +2282,35 @@ export default function VoucherExpenseForm() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Quick-Add GL/Account Modal (super admin only) ── */}
+      {qaModal && (
+        <div className="ve-form__overlay" onClick={closeQa}>
+          <div className="ve-form__qa-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ve-form__qa-modal-hdr">
+              <Plus size={15} /> Add {qaLabel[qaModal.level]}
+            </div>
+            <div className="ve-form__qa-modal-body">
+              <label>Name</label>
+              <input
+                autoFocus
+                value={qaName}
+                onChange={(e) => setQaName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleQaSave(); if (e.key === 'Escape') closeQa(); }}
+                placeholder={`Enter ${qaLabel[qaModal.level]} name…`}
+              />
+            </div>
+            <div className="ve-form__qa-modal-footer">
+              <button className="ve-form__qa-modal-save" onClick={handleQaSave} disabled={qaSaving}>
+                {qaSaving ? 'Saving…' : 'Save'}
+              </button>
+              <button className="ve-form__qa-modal-cancel" onClick={closeQa} disabled={qaSaving}>
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
