@@ -168,20 +168,35 @@ export default function PatientsListFilter() {
       const datesWithData = uniqueDates.filter(d => countsJson.data[d] > 0);
 
       let replaceDates = [];
+      let mergeDates = [];
       if (datesWithData.length) {
         const totalExisting = datesWithData.reduce((sum, d) => sum + countsJson.data[d], 0);
         const label = datesWithData.map(formatDateDisplay).join(', ');
-        if (!window.confirm(`${label} ka data pehle se mojood hai (${totalExisting} records).\n\nPurana data delete karke naya data dalna chahte hain?`)) {
+        const choice = window.prompt(
+          `${label} ka data pehle se mojood hai (${totalExisting} records).\n\n` +
+          `Kya karna chahte hain?\n` +
+          `  R = Replace (purana delete, naya dalo)\n` +
+          `  M = Merge (existing raho, sirf naye serial add karo)\n` +
+          `  Cancel = kuch mat karo\n\nR ya M type karo:`
+        );
+        if (!choice) {
           toast('Upload cancel kar diya, purana data waisa hi hai');
           return;
         }
-        replaceDates = datesWithData;
+        if (choice.trim().toUpperCase() === 'R') {
+          replaceDates = datesWithData;
+        } else if (choice.trim().toUpperCase() === 'M') {
+          mergeDates = datesWithData;
+        } else {
+          toast('Invalid choice — upload cancel');
+          return;
+        }
       }
 
       const res  = await fetch(`${API}/patient-visits/bulk`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ rows, replaceDates }),
+        body:    JSON.stringify({ rows, replaceDates, mergeDates }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);

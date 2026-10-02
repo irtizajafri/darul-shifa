@@ -1557,11 +1557,12 @@ async function updateVisitPersonalInfo(source, id, fields) {
   throw Object.assign(new Error('Invalid source'), { status: 400 });
 }
 
-// Amount correction — the only field updateVisitPersonalInfo deliberately
-// refuses. Department/Sub Department/Doctor stay locked (that assignment is
-// never editable here), but the Amount itself can be fixed — and the whole
-// slip's totals shift by the same delta that changed, so Total Amount/
-// Received/Balance all stay self-consistent automatically.
+// Amount correction — one of the two fields updateVisitPersonalInfo
+// deliberately refuses (Doctor is the other, see updateVisitDoctor below).
+// Department/Sub Department stay locked (that assignment never changes
+// here), but Amount can be fixed — and the whole slip's totals shift by the
+// same delta that changed, so Total Amount/Received/Balance all stay
+// self-consistent automatically.
 async function updateVisitDoctorAmount(source, id, doctorRowId, newAmount) {
   const amt = Number(newAmount);
   if (!Number.isFinite(amt) || amt < 0) throw Object.assign(new Error('Valid amount daalein'), { status: 400 });
@@ -1594,6 +1595,39 @@ async function updateVisitDoctorAmount(source, id, doctorRowId, newAmount) {
     if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
     const updated = await prisma.patientVisit.update({ where: { id: pv.id }, data: { received: amt } });
     return { totalAmount: updated.received, receive: updated.received, amount: updated.received };
+  }
+
+  throw Object.assign(new Error('Invalid source'), { status: 400 });
+}
+
+// Doctor reassignment — a wrong-doctor correction never touches money, so
+// unlike updateVisitDoctorAmount this never needs to shift the visit's own
+// totals. New-system rows point at a real ClinicDoctor row (doctorId); the
+// legacy table never had a doctor FK at all, only a free-text name, so that
+// side just writes the picked doctor's name as text.
+async function updateVisitDoctor(source, id, doctorRowId, doctorId) {
+  if (source === 'opd') {
+    const row = await prisma.clinicOpdVisitDoctor.findUnique({ where: { id: Number(doctorRowId) } });
+    if (!row) throw Object.assign(new Error('Row not found'), { status: 404 });
+    const doctor = await prisma.clinicDoctor.findUnique({ where: { id: Number(doctorId) } });
+    if (!doctor) throw Object.assign(new Error('Doctor not found'), { status: 404 });
+
+    const updated = await prisma.clinicOpdVisitDoctor.update({
+      where: { id: row.id },
+      data: { doctorId: doctor.id },
+      include: { doctor: { select: { code: true, name: true } } },
+    });
+    return { doctor: updated.doctor };
+  }
+
+  if (source === 'pv') {
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    const doctor = await prisma.clinicDoctor.findUnique({ where: { id: Number(doctorId) } });
+    if (!doctor) throw Object.assign(new Error('Doctor not found'), { status: 404 });
+
+    await prisma.patientVisit.update({ where: { id: pv.id }, data: { doctor: doctor.name } });
+    return { doctor: { code: doctor.code, name: doctor.name } };
   }
 
   throw Object.assign(new Error('Invalid source'), { status: 400 });
@@ -6809,7 +6843,7 @@ async function finalizeDischarge(admissionId, { discountAmount, changedBy }) {
 // import (see getPatientVisitDateCounts); replaceDates carries the dates the
 // user chose to wipe and re-import, deleted in the same transaction as the
 // insert so a crash mid-import never leaves a date with no data at all.
-async function bulkCreatePatientVisits(rows, replaceDates) {
+async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
   const data = rows.map((r) => ({
     serialNo:       r.serialNo       ? Number(r.serialNo)           : null,
     admitNo:        r.admitNo        ? Number(r.admitNo)            : null,
@@ -6826,6 +6860,7 @@ async function bulkCreatePatientVisits(rows, replaceDates) {
   }));
 
   const dates = Array.isArray(replaceDates) ? replaceDates.filter(Boolean).map(d => new Date(d)) : [];
+  const mDates = Array.isArray(mergeDates) ? mergeDates.filter(Boolean) : [];
   let deletedCount = 0;
   let result;
   if (dates.length) {
@@ -6835,6 +6870,15 @@ async function bulkCreatePatientVisits(rows, replaceDates) {
     ]);
     deletedCount = delRes.count;
     result = insRes;
+  } else if (mDates.length) {
+    // Merge: existing serial numbers skip karo
+    const existing = await prisma.patientVisit.findMany({
+      where: { visitDate: { in: mDates.map(d => new Date(d)) } },
+      select: { serialNo: true },
+    });
+    const existingSerials = new Set(existing.map(e => Number(e.serialNo)).filter(Boolean));
+    const newRows = data.filter(r => !r.serialNo || !existingSerials.has(Number(r.serialNo)));
+    result = await prisma.patientVisit.createMany({ data: newRows });
   } else {
     result = await prisma.patientVisit.createMany({ data });
   }
@@ -10182,6 +10226,7 @@ module.exports = {
   getVisitForAdjustment,
   updateVisitPersonalInfo,
   updateVisitDoctorAmount,
+  updateVisitDoctor,
   searchVisitsForSlipTransfer,
   getVisitForSlipTransfer,
   transferSlipAdmission,

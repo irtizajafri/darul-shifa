@@ -302,6 +302,10 @@ export default function PatientsListReport() {
 
   const totalReceived = filteredVisits.reduce((s, v) => s + Number(v.received || 0), 0);
   const totalDiscount = filteredVisits.reduce((s, v) => s + Number(v.discount  || 0), 0);
+  // A visit with multiple doctors/tests expands into one row per test (see
+  // getPatientVisits), so filteredVisits.length over-counts "patients" by
+  // however many extra test-rows exist — count distinct slips instead.
+  const uniqueSlips = new Set(filteredVisits.map(v => v.serialNo || v.admitNo)).size;
 
   const fmtDisplayDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '';
 
@@ -338,7 +342,7 @@ export default function PatientsListReport() {
 
     const footer = [
       [],
-      ['Total Patients:', filteredVisits.length, '', '', '', '', 'Grand Total:', '', totalReceived, '', totalDiscount],
+      ['Total Patients:', uniqueSlips, '', '', '', '', 'Grand Total:', '', totalReceived, '', totalDiscount],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([...header, ...dataRows, ...footer]);
@@ -556,7 +560,7 @@ export default function PatientsListReport() {
               <tbody>{renderRows(filteredVisits)}</tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={3} className="plr-tf-label">Total Patients: {filteredVisits.length}</td>
+                  <td colSpan={3} className="plr-tf-label">Total Patients: {uniqueSlips}</td>
                   <td colSpan={6} className="plr-tf-label">Grand Total:</td>
                   <td className="plr-td-num plr-tf-val">{fmt(totalReceived)}</td>
                   <td className="plr-td-num" />
@@ -593,8 +597,8 @@ export default function PatientsListReport() {
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={2} className="plr-tf-label">Total Patients: {filteredVisits.length}</td>
-                  <td className="plr-td-num plr-tf-val">{filteredVisits.length}</td>
+                  <td colSpan={2} className="plr-tf-label">Total Patients: {uniqueSlips}</td>
+                  <td className="plr-td-num plr-tf-val">{uniqueSlips}</td>
                   <td className="plr-td-num plr-tf-val">{fmt(totalReceived)}</td>
                   <td className="plr-td-num plr-tf-val">{fmt(totalDiscount)}</td>
                 </tr>

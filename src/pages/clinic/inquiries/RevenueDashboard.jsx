@@ -154,14 +154,91 @@ export default function RevenueDashboard() {
     fetch(`${API}/doctors?minimal=true`).then(r=>r.json()).then(j=>setConsultants(j.data||[])).catch(()=>{});
   }, []);
 
+  // monthly_daily reuses Patient List's own endpoint + its own per-slip
+  // counting (one Set of serialNo/admitNo, same as PatientsListReport's
+  // uniqueSlips) instead of the backend's separate SQL aggregation — the two
+  // reports previously disagreed because they counted/business-dayed
+  // differently even when reading the same underlying data. Yearly/
+  // multi-year views still use the original backend aggregation (below).
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ period, year, month, department: dept, subDept, consultant, paymentType: payType });
-      const res  = await fetch(`${API}/inquiries/revenue-dashboard?${q}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Failed');
-      setDashData(json.data);
+      if (period === 'monthly_daily') {
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const fromDate = `${year}-${String(month).padStart(2,'0')}-01`;
+        const nm = month === 12 ? `${year+1}-01` : `${year}-${String(month+1).padStart(2,'0')}`;
+        const toDate = `${nm}-01`;
+        const params = new URLSearchParams({ fromDate, toDate, fromTime: '08:00:00', toTime: '07:59:59' });
+
+        const res  = await fetch(`${API}/patient-visits?${params}`);
+        const json = await res.json();
+        const rows = Array.isArray(json.data) ? json.data : [];
+
+        const filtered = rows.filter(r => {
+          if (dept !== 'ALL' && !(r.department || '').toLowerCase().includes(dept.toLowerCase())) return false;
+          if (subDept !== 'ALL' && !(r.subDepartment || '').toLowerCase().includes(subDept.toLowerCase())) return false;
+          if (consultant !== 'ALL' && !(r.doctor || '').toLowerCase().includes(consultant.toLowerCase())) return false;
+          if (payType !== 'ALL' && (r.paymentType || '').toLowerCase() !== payType.toLowerCase()) return false;
+          return true;
+        });
+
+        // Business day = 08:00 that day -> 07:59 next day, same convention
+        // as everywhere else in this report. Legacy rows (_source:'old')
+        // only carry a date + free-text time, not a real timestamp, so they
+        // get their own text-based cutoff instead of the millisecond-offset
+        // math the new-system rows use.
+        const bizDay = (r) => {
+          if (r._source === 'old') {
+            const datePart = String(r.visitDate).slice(0, 10);
+            const [h, m] = String(r.visitTime || '12:00').slice(0, 5).split(':').map(Number);
+            if ((h * 60 + m) >= 480) return datePart;
+            const d = new Date(datePart + 'T00:00:00Z');
+            d.setUTCDate(d.getUTCDate() - 1);
+            return d.toISOString().slice(0, 10);
+          }
+          const t = new Date(new Date(r.visitDate).getTime() - 8 * 3600 * 1000);
+          return t.toISOString().slice(0, 10);
+        };
+
+        const dayMap = {};
+        for (const r of filtered) {
+          if (!r.visitDate) continue;
+          const day = bizDay(r);
+          if (!dayMap[day]) dayMap[day] = { date: day, slips: new Set(), totalAmount:0, cashSlips: new Set(), cashAmount:0, panelSlips: new Set(), panelAmount:0, ccSlips: new Set(), ccAmount:0 };
+          const d   = dayMap[day];
+          const key = r.serialNo || r.admitNo;
+          const amt = Number(r.received || 0);
+          const pt  = (r.paymentType || '').toLowerCase();
+          if (key) d.slips.add(key);
+          d.totalAmount += amt;
+          if (pt === 'cash')                                   { if (key) d.cashSlips.add(key);  d.cashAmount  += amt; }
+          else if (pt === 'panel')                             { if (key) d.panelSlips.add(key); d.panelAmount += amt; }
+          else if (['c card','cc','credit card'].includes(pt)) { if (key) d.ccSlips.add(key);    d.ccAmount    += amt; }
+        }
+
+        const data = Object.values(dayMap).map(d => ({
+          date: d.date, totalPatients: d.slips.size, totalAmount: d.totalAmount,
+          cashPatients: d.cashSlips.size, cashAmount: d.cashAmount,
+          panelPatients: d.panelSlips.size, panelAmount: d.panelAmount,
+          ccPatients: d.ccSlips.size, ccAmount: d.ccAmount,
+        }));
+
+        const totalPatients = new Set(filtered.map(r => r.serialNo || r.admitNo).filter(Boolean)).size;
+        const totalAmount   = filtered.reduce((s, r) => s + Number(r.received || 0), 0);
+        const daysWithData  = data.filter(d => d.totalAmount > 0).length;
+        const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;
+        const now2          = new Date();
+        const dayOfMonth    = (now2.getFullYear() === year && now2.getMonth()+1 === month) ? now2.getDate() : daysInMonth;
+        const prognosis     = dayOfMonth > 0 ? (totalAmount / dayOfMonth) * daysInMonth : 0;
+
+        setDashData({ period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis, lastYearAmount: 0, daysWithData }, trendData: [] });
+      } else {
+        const q = new URLSearchParams({ period, year, month, department: dept, subDept, consultant, paymentType: payType });
+        const res  = await fetch(`${API}/inquiries/revenue-dashboard?${q}`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.message || 'Failed');
+        setDashData(json.data);
+      }
       setLastRun(new Date());
     } catch (e) {
       console.error(e);

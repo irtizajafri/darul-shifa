@@ -2112,6 +2112,17 @@ async function updateVisitDoctorAmount(req, res, next) {
   }
 }
 
+async function updateVisitDoctor(req, res, next) {
+  try {
+    const { doctorRowId, doctorId } = req.body;
+    const data = await service.updateVisitDoctor(req.params.source, req.params.id, doctorRowId, doctorId);
+    success(res, data, 'Doctor update ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 // ─── Slip Transfer ────────────────────────────────────────────────────────────
 
 async function searchVisitsForSlipTransfer(req, res, next) {
@@ -2192,10 +2203,10 @@ async function importDoctorSubDeptRates(req, res, next) {
 
 async function bulkCreatePatientVisits(req, res, next) {
   try {
-    const { rows, replaceDates } = req.body;
+    const { rows, replaceDates, mergeDates } = req.body;
     if (!Array.isArray(rows) || rows.length === 0)
       return fail(res, 400, 'rows array required');
-    const result = await service.bulkCreatePatientVisits(rows, replaceDates);
+    const result = await service.bulkCreatePatientVisits(rows, replaceDates, mergeDates);
     const dedupNote = result.autoDeduped ? `, ${result.autoDeduped} duplicate(s) auto-removed` : '';
     success(res, { inserted: result.count, deleted: result.deleted, autoDeduped: result.autoDeduped }, `${result.count} records imported${dedupNote}`);
   } catch (err) { next(err); }
@@ -2592,6 +2603,7 @@ module.exports = {
   getVisitForAdjustment,
   updateVisitPersonalInfo,
   updateVisitDoctorAmount,
+  updateVisitDoctor,
   searchVisitsForSlipTransfer,
   getVisitForSlipTransfer,
   transferSlipAdmission,

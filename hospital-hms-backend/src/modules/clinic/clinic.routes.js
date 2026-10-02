@@ -134,6 +134,7 @@ router.get('/opd/adjustment/search', controller.searchVisitsForAdjustment);
 router.get('/opd/adjustment/:source/:id', controller.getVisitForAdjustment);
 router.put('/opd/adjustment/:source/:id', controller.updateVisitPersonalInfo);
 router.put('/opd/adjustment/:source/:id/doctor-amount', controller.updateVisitDoctorAmount);
+router.put('/opd/adjustment/:source/:id/doctor', controller.updateVisitDoctor);
 
 // Slip Transfer
 router.get('/opd/slip-transfer/search', controller.searchVisitsForSlipTransfer);

@@ -1607,7 +1607,7 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
       select: {
         id: true, amount: true,
         subDept: { select: { name: true } },
-        visit: { select: { serialNo: true, patientName: true, paymentType: true, createdAt: true } },
+        visit: { select: { serialNo: true, patientName: true, paymentType: true, createdAt: true, totalAmount: true, discount: true } },
       },
     }),
     // Same doctor/sub-department fee-share table the Consultant Wise Report
@@ -1638,7 +1638,17 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   });
 
   const newRows = opdDoctorRows.filter((d) => String(d.visit.paymentType || '').toLowerCase() !== 'panel').map((d) => {
-    const received = Number(d.amount || 0);
+    // d.amount is the test's gross listed rate — discount applies at the
+    // whole-visit level, not per test (same fix already applied where the
+    // fee actually gets paid, linkConsultantFeeItems) — give this preview
+    // the same proportional post-discount share instead of the gross rate.
+    const grossAmount   = Number(d.amount || 0);
+    const visitNet      = Number(d.visit.totalAmount || 0);
+    const visitDiscount = Number(d.visit.discount || 0);
+    const visitGross    = visitNet + visitDiscount;
+    const received = visitGross > 0 && visitDiscount > 0
+      ? Math.max(0, grossAmount - (visitDiscount * grossAmount / visitGross))
+      : grossAmount;
     const subDept = d.subDept?.name || '';
     const rate = bySubDept[normDoctorRateName(subDept)] || firstRate;
     const hasRate = !!(rate && rate.normalFees);

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -44,19 +44,41 @@ export default function SlipAdjustment() {
   const [editing, setEditing] = useState(false);
   const [form,    setForm]    = useState(EMPTY_FORM);
 
-  // Amount — independent from the personal-info Edit/Save toggle above,
-  // since Department/Sub Department/Doctor stay locked regardless; only the
-  // Amount cell itself becomes click-to-edit.
+  // Amount & Doctor — independent from the personal-info Edit/Save toggle
+  // above, since Department/Sub Department stay locked regardless; only
+  // these two cells become click-to-edit (Doctor opens a dropdown).
   const [editingAmountId, setEditingAmountId] = useState(null);
   const [amountValue,     setAmountValue]     = useState('');
   const [savingAmount,    setSavingAmount]    = useState(false);
 
+  const [editingDoctorId, setEditingDoctorId] = useState(null);
+  const [doctorValue,     setDoctorValue]     = useState('');
+  const [savingDoctor,    setSavingDoctor]    = useState(false);
+  const [doctors,         setDoctors]         = useState([]);
+
+  useEffect(() => {
+    fetch(`${API}/doctors?minimal=true`)
+      .then(r => r.json())
+      .then(j => setDoctors((j.data || []).filter(d => d.status === 'active')))
+      .catch(() => {});
+  }, []);
+
   async function handleSearch() {
+    const term = searchTerm.trim();
     setSearching(true);
     try {
-      const res  = await fetch(`${API}/opd/adjustment/search?q=${encodeURIComponent(searchTerm.trim())}`);
+      const res  = await fetch(`${API}/opd/adjustment/search?q=${encodeURIComponent(term)}`);
       const json = await res.json();
-      setResults(json.data || []);
+      const rows = json.data || [];
+      // An exact Serial # match (not just a name that happens to be unique)
+      // skips straight to the edit screen — no need to pick it from a table
+      // of one.
+      const exact = term && rows.find((r) => String(r.serialNo) === term);
+      if (exact) {
+        await handleSelect(exact);
+        return;
+      }
+      setResults(rows);
       setSearched(true);
     } catch {
       toast.error('Search fail hui');
@@ -163,6 +185,36 @@ export default function SlipAdjustment() {
       toast.error(e.message || 'Error updating amount');
     } finally {
       setSavingAmount(false);
+    }
+  }
+
+  function startEditDoctor(row) {
+    setEditingDoctorId(row.id);
+    setDoctorValue('');
+  }
+
+  async function handleSaveDoctor(row, doctorId) {
+    if (!doctorId) { setEditingDoctorId(null); return; }
+
+    setSavingDoctor(true);
+    try {
+      const res = await fetch(`${API}/opd/adjustment/${visit.source}/${visit.id}/doctor`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ doctorRowId: row.id, doctorId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Doctor update nahi ho saka');
+      setVisit((v) => ({
+        ...v,
+        doctors: v.doctors.map((d) => (d.id === row.id ? { ...d, doctor: json.data.doctor } : d)),
+      }));
+      toast.success('Doctor update ho gaya');
+      setEditingDoctorId(null);
+    } catch (e) {
+      toast.error(e.message || 'Error updating doctor');
+    } finally {
+      setSavingDoctor(false);
     }
   }
 
@@ -330,7 +382,7 @@ export default function SlipAdjustment() {
 
             <div className="sadj-separator" />
 
-            <div className="sadj-readonly-note">Department, Sub Department aur Doctor yahan edit nahi ho sakte — sirf Amount (click karke).</div>
+            <div className="sadj-readonly-note">Department aur Sub Department yahan edit nahi ho sakte — Amount aur Doctor click karke edit ho sakte hain.</div>
 
             <table className="sadj-doc-tbl">
               <thead>
@@ -371,8 +423,33 @@ export default function SlipAdjustment() {
                         </span>
                       )}
                     </td>
-                    <td>{d.doctor?.code}</td>
-                    <td>{d.doctor?.name}</td>
+                    {editingDoctorId === d.id ? (
+                      <td colSpan={2} className="sadj-td-doctor">
+                        <select
+                          autoFocus
+                          className="sadj-doctor-select"
+                          value={doctorValue}
+                          disabled={savingDoctor}
+                          onChange={e => { setDoctorValue(e.target.value); handleSaveDoctor(d, e.target.value); }}
+                          onBlur={() => setEditingDoctorId(null)}
+                          onKeyDown={e => { if (e.key === 'Escape') setEditingDoctorId(null); }}
+                        >
+                          <option value="">— Select Doctor —</option>
+                          {doctors.map(doc => (
+                            <option key={doc.id} value={doc.id}>{doc.code} — {doc.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    ) : (
+                      <>
+                        <td>{d.doctor?.code}</td>
+                        <td className="sadj-td-doctor">
+                          <span className="sadj-amount-display" title="Click to change doctor" onClick={() => startEditDoctor(d)}>
+                            {d.doctor?.name}
+                          </span>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
