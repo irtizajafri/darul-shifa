@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
-import { useAuthStore } from '../../store/useAuthStore';
+import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../store/useAuthStore';
 import './CancelSlip.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -33,6 +33,7 @@ function fmt2(n) { return Number(n || 0).toFixed(2); }
 export default function CancelSlip() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const isMaster = Boolean(user?.isSuperAdmin) || user?.email === SUPER_ADMIN_EMAIL;
 
   // Search (nothing loads until the user actually searches)
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,6 +54,18 @@ export default function CancelSlip() {
   async function handleSearch() {
     setSearching(true);
     try {
+      // Superadmin isn't limited to today's business day — searches the
+      // whole ClinicOpdVisit table server-side instead of the client-cached
+      // today's-list (which would otherwise mean fetching every slip ever
+      // created just to filter it in the browser).
+      if (isMaster) {
+        const res  = await fetch(`${API}/opd/cancel/search?q=${encodeURIComponent(searchTerm.trim())}`);
+        const json = await res.json();
+        setResults(json.data || []);
+        setSearched(true);
+        return;
+      }
+
       let list = todaySlips;
       if (!list) {
         const res  = await fetch(`${API}/opd/cancel/today-list`);
@@ -199,7 +212,7 @@ export default function CancelSlip() {
                   {!results.length && (
                     <tr>
                       <td colSpan={6} className="cnsl-td-empty">
-                        Koi match nahi mila (aaj ki sab slips yahan aati hain)
+                        Koi match nahi mila {isMaster ? '(All Slips — kisi bhi date ki)' : '(aaj ki sab slips yahan aati hain)'}
                       </td>
                     </tr>
                   )}

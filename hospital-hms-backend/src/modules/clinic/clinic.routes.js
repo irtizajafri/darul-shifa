@@ -125,6 +125,7 @@ router.post('/opd', controller.createOpdVisit);
 router.post('/opd/:id/print', controller.printOpdVisit);
 router.get('/opd/reprint/:serialNo', controller.reprintOpdVisitBySerial);
 router.get('/opd/cancel/today-list', controller.getTodayOpdVisitsForCancel);
+router.get('/opd/cancel/search', controller.searchOpdVisitsForCancel);
 router.get('/opd/cancel/:id', controller.getOpdVisitForCancel);
 router.post('/opd/cancel/:id', controller.cancelOpdVisit);
 router.get('/opd/refund/search', controller.searchVisitsForRefund);

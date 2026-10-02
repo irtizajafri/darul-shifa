@@ -2014,6 +2014,10 @@ async function getTodayOpdVisitsForCancel(req, res, next) {
   try { success(res, await service.getTodayOpdVisitsForCancel()); } catch (err) { next(err); }
 }
 
+async function searchOpdVisitsForCancel(req, res, next) {
+  try { success(res, await service.searchOpdVisitsForCancel(req.query.q)); } catch (err) { next(err); }
+}
+
 async function getOpdVisitForCancel(req, res, next) {
   try {
     const data = await service.getOpdVisitForCancel(req.params.id);
@@ -2594,6 +2598,7 @@ module.exports = {
   printOpdVisit,
   reprintOpdVisitBySerial,
   getTodayOpdVisitsForCancel,
+  searchOpdVisitsForCancel,
   getOpdVisitForCancel,
   cancelOpdVisit,
   searchVisitsForRefund,

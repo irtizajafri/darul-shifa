@@ -1355,6 +1355,27 @@ async function getTodayOpdVisitsForCancel() {
   });
 }
 
+// Superadmin-only "All Slips" search — same idea as Slip Refund/Slip
+// Adjustment's own full-list search (no date restriction), but scoped to
+// ClinicOpdVisit only since Cancel Slip's status/cancel concept only exists
+// there, not on the legacy PatientVisit table. Regular staff still go
+// through getTodayOpdVisitsForCancel above, which stays today-only.
+async function searchOpdVisitsForCancel(q) {
+  const term = String(q || '').trim();
+  const where = term
+    ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
+    : {};
+  return prisma.clinicOpdVisit.findMany({
+    where,
+    select: {
+      id: true, serialNo: true, patientName: true, department: true,
+      totalAmount: true, paymentType: true, createdAt: true, status: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 150,
+  });
+}
+
 async function getOpdVisitForCancel(id) {
   const visit = await prisma.clinicOpdVisit.findUnique({
     where: { id: Number(id) },
@@ -10217,6 +10238,7 @@ module.exports = {
   printOpdVisit,
   reprintOpdVisitBySerial,
   getTodayOpdVisitsForCancel,
+  searchOpdVisitsForCancel,
   getOpdVisitForCancel,
   cancelOpdVisit,
   searchVisitsForRefund,
