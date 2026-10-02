@@ -274,7 +274,12 @@ export default function ProtectedRoutes() {
 
       <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts"><AccountsTransactions /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts"><VoucherExpense /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<PermissionGuard module="accounts"><VoucherExpenseForm /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/voucher-expense/form" element={
+        <PermissionGuard anyOf={[
+          { module: 'accounts', subModule: 'transactions', tab: 'voucher-expense' },
+          { module: 'clinic',   subModule: 'transactions',  tab: 'general-payment' },
+        ]}><VoucherExpenseForm /></PermissionGuard>
+      } />
       <Route path="accounts/:entityType/transactions/expense-drafts" element={<PermissionGuard module="accounts"><DraftExpenses /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/voucher-income" element={<PermissionGuard module="accounts"><VoucherIncome /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts"><VoucherIncomeForm /></PermissionGuard>} />

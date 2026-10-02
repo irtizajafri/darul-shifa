@@ -30,11 +30,12 @@ export default function DoctorScheduleReport() {
   const deptFromCode = params.get('deptFromCode') || '';
   const deptToCode = params.get('deptToCode') || '';
   const activeOnly = params.get('activeOnly') || '0';
+  const day = params.get('day') || '';
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly });
+      const q = new URLSearchParams({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly, day });
       const res = await fetch(`${API}/reports/doctor-schedule?${q}`).then(r => r.json());
       setData(res.data || null);
     } catch { toast.error('Data load failed'); }

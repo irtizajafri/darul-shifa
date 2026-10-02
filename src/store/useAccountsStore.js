@@ -35,6 +35,10 @@ export const useAccountsStore = create((set) => ({
   },
   copyChartToCorporate: async () => req('/copy-chart-to-corporate', { method: 'POST' }),
 
+  // Missing Salary Report — same "paid via a real Voucher Expense?" check
+  // Voucher Expense's own Employee payee list uses, for an arbitrary month/year.
+  fetchEmployeesDueForSalary: async (month, year) => req(`/employees-due-for-salary?month=${month}&year=${year}`),
+
   // Sub GL
   subGLs: [],
   fetchSubGLs: async (entityType, mainGlId) => {

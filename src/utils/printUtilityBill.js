@@ -17,7 +17,10 @@ const fmtMonthYear = (dateStr) => {
 };
 
 // Compare just the date part (YYYY-MM-DD) regardless of time / timezone
-const dateStr = (d) => new Date(d).toISOString().slice(0, 10);
+const dateStr = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
 
 // Filter readings to [from, to] inclusive using date-only comparison
 function filterByPeriod(readings, from, to) {

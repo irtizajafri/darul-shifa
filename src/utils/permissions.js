@@ -135,6 +135,11 @@ export const PERMISSIONS_MAP = {
           { key: 'surgery-information',         label: 'Surgery / Procedure Information' },
           { key: 'handover',                    label: 'Handover' },
           { key: 'reception-assets',            label: 'Reception Assets' },
+          // Shortcut to Accounts' Voucher Expense form (ClinicMenuBar's
+          // "General Payment" link) — granting this does NOT grant the rest
+          // of Accounts (dashboard, reports, etc.), see the route guard's
+          // anyOf check in ProtectedRoutes.jsx.
+          { key: 'general-payment',             label: 'General Payment' },
         ],
       },
 

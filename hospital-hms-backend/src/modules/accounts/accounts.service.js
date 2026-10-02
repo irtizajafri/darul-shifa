@@ -805,6 +805,24 @@ function getPrevMonthYear() {
   return { month, year };
 }
 
+// Missing Salary Report — same "paid via a real voucher?" check Voucher
+// Expense's own Employee payee list already uses (see sourceType==='employee'
+// below), just for an arbitrary month/year instead of always last month.
+async function getEmployeesDueForSalary(month, year) {
+  const [employees, paidRows] = await Promise.all([
+    prisma.employee.findMany({
+      where: { status: 'Active' },
+      orderBy: { firstName: 'asc' },
+    }),
+    prisma.employeeSalaryPayment.findMany({
+      where: { salaryMonth: String(month), salaryYear: String(year) },
+      select: { empCode: true },
+    }),
+  ]);
+  const paidCodes = new Set(paidRows.map((r) => r.empCode));
+  return employees.filter((e) => !paidCodes.has(e.empCode));
+}
+
 async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   const link = await prisma.accPayeeHeadAccount.findFirst({
     where: { subAccountId: Number(subAccountId), payeeHead: { entityType } },
@@ -1349,10 +1367,32 @@ async function linkConsultantFeeItems(entries, createdEntries) {
         where: { OR: rows.map((r) => ({ doctorId: r.doctorId, subDeptId: r.subDeptId })) },
       });
       const linkByKey = new Map(links.map((l) => [`${l.doctorId}-${l.subDeptId}`, l]));
+
+      // r.amount is each test's gross listed rate — discount applies at the
+      // whole-visit level, not per test, so a discounted slip's doctor fee
+      // was always being computed on money that was never actually
+      // collected. Give each row its proportional share of what the visit
+      // really received: (this row's gross ÷ visit's total gross) × receive
+      // — same share for every row on a single-test slip (receive itself),
+      // split proportionally across tests on a multi-test slip.
+      const visitIds = [...new Set(rows.map((r) => r.visitId))];
+      const [visits, allVisitDoctorRows] = await Promise.all([
+        prisma.clinicOpdVisit.findMany({ where: { id: { in: visitIds } }, select: { id: true, receive: true } }),
+        prisma.clinicOpdVisitDoctor.findMany({ where: { visitId: { in: visitIds } }, select: { visitId: true, amount: true } }),
+      ]);
+      const receiveByVisitId = new Map(visits.map((v) => [v.id, Number(v.receive) || 0]));
+      const grossTotalByVisitId = new Map();
+      for (const dr of allVisitDoctorRows) {
+        grossTotalByVisitId.set(dr.visitId, (grossTotalByVisitId.get(dr.visitId) || 0) + (Number(dr.amount) || 0));
+      }
+
       await prisma.accVoucherExpenseEntryOpdDoctorFee.createMany({
         data: rows.map((r) => {
           const link = linkByKey.get(`${r.doctorId}-${r.subDeptId}`);
-          const split = link ? clinicSvc.calcFeeSplit(Number(r.amount) || 0, link.paymentType, link.normalFees) : { doctorFee: 0 };
+          const grossTotal = grossTotalByVisitId.get(r.visitId) || 0;
+          const receive = receiveByVisitId.get(r.visitId) || 0;
+          const receivedShare = grossTotal > 0 ? (Number(r.amount) || 0) / grossTotal * receive : 0;
+          const split = link ? clinicSvc.calcFeeSplit(receivedShare, link.paymentType, link.normalFees) : { doctorFee: 0 };
           return {
             voucherExpenseEntryId: createdEntries[i].id,
             opdVisitDoctorId: r.id,
@@ -2549,6 +2589,15 @@ async function getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo
     : [];
   const bankById = new Map(bankAccounts.map((b) => [b.id, b]));
 
+  // Description column shows the Main Account name, not Particulars —
+  // e.accountCode/accountName fall back to Sub Account when one's picked, so
+  // the actual Main Account needs its own lookup via mainAccountId.
+  const mainAccountIds = [...new Set(vouchers.flatMap((v) => v.entries.map((e) => e.mainAccountId)).filter(Boolean))];
+  const mainAccounts = mainAccountIds.length
+    ? await prisma.accMainAccount.findMany({ where: { id: { in: mainAccountIds } } })
+    : [];
+  const mainAccountById = new Map(mainAccounts.map((a) => [a.id, a]));
+
   const rows = [];
   for (const v of vouchers) {
     const bankLabel = v.mode === 'cash' ? 'CASH' : v.mode === 'online' ? 'ONLINE' : (bankById.get(v.bankId)?.bankName || '');
@@ -2566,7 +2615,7 @@ async function getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo
         chequeDate: isCheque ? (e.chequeDate || null) : null,
         bankAccount: bankLabel,
         accountCode: e.accountCode,
-        description: e.particulars || '',
+        description: mainAccountById.get(e.mainAccountId)?.name || '',
         amount: Number(e.amount),
       });
     }
@@ -2916,7 +2965,7 @@ module.exports = {
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
-  copyChartToCorporate, getPendingGrnQueue,
+  copyChartToCorporate, getPendingGrnQueue, getEmployeesDueForSalary,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
   getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain, getRefundVoucherAccountChain,

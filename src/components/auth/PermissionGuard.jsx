@@ -50,9 +50,15 @@ function UnauthorizedModal() {
   );
 }
 
-export default function PermissionGuard({ module, subModule, subModules, tab, children }) {
+// anyOf lets a page be reachable via more than one permission path across
+// DIFFERENT modules (e.g. Clinic's "General Payment" shortcut into Accounts'
+// Voucher Expense form) — granting just one of them never implies the
+// others, unlike `subModules` below which only varies within one module.
+export default function PermissionGuard({ module, subModule, subModules, tab, anyOf, children }) {
   const { user } = useAuthStore();
-  const allowed = subModules
+  const allowed = anyOf
+    ? anyOf.some((p) => hasPermission(user, p.module, p.subModule ?? null, p.tab ?? null))
+    : subModules
     ? subModules.some((sm) => hasPermission(user, module, sm))
     : hasPermission(user, module, subModule, tab ?? null);
 

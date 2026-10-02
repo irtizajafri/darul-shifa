@@ -44,6 +44,13 @@ export default function SlipAdjustment() {
   const [editing, setEditing] = useState(false);
   const [form,    setForm]    = useState(EMPTY_FORM);
 
+  // Amount — independent from the personal-info Edit/Save toggle above,
+  // since Department/Sub Department/Doctor stay locked regardless; only the
+  // Amount cell itself becomes click-to-edit.
+  const [editingAmountId, setEditingAmountId] = useState(null);
+  const [amountValue,     setAmountValue]     = useState('');
+  const [savingAmount,    setSavingAmount]    = useState(false);
+
   async function handleSearch() {
     setSearching(true);
     try {
@@ -120,6 +127,42 @@ export default function SlipAdjustment() {
       toast.error(e.message || 'Error updating slip');
     } finally {
       setSaving(false);
+    }
+  }
+
+  function startEditAmount(row) {
+    setEditingAmountId(row.id);
+    setAmountValue(String(row.amount ?? 0));
+  }
+
+  async function handleSaveAmount(row) {
+    const amt = Number(amountValue);
+    if (!Number.isFinite(amt) || amt < 0) { toast.error('Valid amount daalein'); return; }
+    if (amt === Number(row.amount)) { setEditingAmountId(null); return; }
+
+    setSavingAmount(true);
+    try {
+      const res = await fetch(`${API}/opd/adjustment/${visit.source}/${visit.id}/doctor-amount`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ doctorRowId: row.id, amount: amt }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || 'Amount update nahi ho saka');
+      // Total Amount/Received shift by the same delta server-side — mirror
+      // that here so the summary below updates without a full reload.
+      setVisit((v) => ({
+        ...v,
+        totalAmount: json.data.totalAmount,
+        receive:     json.data.receive,
+        doctors: v.doctors.map((d) => (d.id === row.id ? { ...d, amount: json.data.amount } : d)),
+      }));
+      toast.success('Amount update ho gaya');
+      setEditingAmountId(null);
+    } catch (e) {
+      toast.error(e.message || 'Error updating amount');
+    } finally {
+      setSavingAmount(false);
     }
   }
 
@@ -287,7 +330,7 @@ export default function SlipAdjustment() {
 
             <div className="sadj-separator" />
 
-            <div className="sadj-readonly-note">Department, Sub Department, Doctor aur Rate yahan edit nahi ho sakte.</div>
+            <div className="sadj-readonly-note">Department, Sub Department aur Doctor yahan edit nahi ho sakte — sirf Amount (click karke).</div>
 
             <table className="sadj-doc-tbl">
               <thead>
@@ -304,13 +347,45 @@ export default function SlipAdjustment() {
                   <tr key={d.id}>
                     <td>{d.subDept?.code}</td>
                     <td>{d.subDept?.name}</td>
-                    <td className="sadj-td-r">{fmt2(d.amount)}</td>
+                    <td className="sadj-td-r sadj-td-amount">
+                      {editingAmountId === d.id ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="sadj-amount-input"
+                          value={amountValue}
+                          disabled={savingAmount}
+                          onChange={e => setAmountValue(e.target.value)}
+                          onFocus={e => e.target.select()}
+                          onBlur={() => handleSaveAmount(d)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleSaveAmount(d); }
+                            if (e.key === 'Escape') setEditingAmountId(null);
+                          }}
+                        />
+                      ) : (
+                        <span className="sadj-amount-display" title="Click to edit" onClick={() => startEditAmount(d)}>
+                          {fmt2(d.amount)}
+                        </span>
+                      )}
+                    </td>
                     <td>{d.doctor?.code}</td>
                     <td>{d.doctor?.name}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+
+            <div className="sadj-totals-row">
+              {/* Legacy (source='pv') slips have no separate Total Amount
+                  field of their own — Amount here IS received, so Balance
+                  is always 0 for them (see updateVisitDoctorAmount). */}
+              <span>Total Amount: <strong>{fmt2(visit.totalAmount ?? visit.receive)}</strong></span>
+              <span>Received: <strong>{fmt2(visit.receive)}</strong></span>
+              <span>Balance: <strong>{fmt2(Number(visit.totalAmount ?? visit.receive ?? 0) - Number(visit.receive || 0))}</strong></span>
+            </div>
           </div>
         )}
 

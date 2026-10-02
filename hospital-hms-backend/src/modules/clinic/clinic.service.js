@@ -1514,8 +1514,9 @@ async function getVisitForAdjustment(source, id) {
   return getVisitForRefund(source, id);
 }
 
-// Only patient-identity fields are editable here — department, sub-department,
-// doctor and amount/rate are intentionally never accepted, even if sent.
+// Only patient-identity fields are editable here — department, sub-department
+// and doctor stay intentionally locked (that assignment never changes here);
+// Amount has its own separate endpoint, see updateVisitDoctorAmount below.
 async function updateVisitPersonalInfo(source, id, fields) {
   if (source === 'opd') {
     const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
@@ -1551,6 +1552,48 @@ async function updateVisitPersonalInfo(source, id, fields) {
       where: { id: Number(id) },
       data: { patientName },
     });
+  }
+
+  throw Object.assign(new Error('Invalid source'), { status: 400 });
+}
+
+// Amount correction — the only field updateVisitPersonalInfo deliberately
+// refuses. Department/Sub Department/Doctor stay locked (that assignment is
+// never editable here), but the Amount itself can be fixed — and the whole
+// slip's totals shift by the same delta that changed, so Total Amount/
+// Received/Balance all stay self-consistent automatically.
+async function updateVisitDoctorAmount(source, id, doctorRowId, newAmount) {
+  const amt = Number(newAmount);
+  if (!Number.isFinite(amt) || amt < 0) throw Object.assign(new Error('Valid amount daalein'), { status: 400 });
+
+  if (source === 'opd') {
+    const row = await prisma.clinicOpdVisitDoctor.findUnique({ where: { id: Number(doctorRowId) } });
+    if (!row) throw Object.assign(new Error('Row not found'), { status: 404 });
+    const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: row.visitId } });
+    if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+
+    const delta = amt - Number(row.amount);
+    const [updatedRow, updatedVisit] = await prisma.$transaction([
+      prisma.clinicOpdVisitDoctor.update({ where: { id: row.id }, data: { amount: amt } }),
+      prisma.clinicOpdVisit.update({
+        where: { id: visit.id },
+        data: {
+          totalAmount: Number(visit.totalAmount) + delta,
+          receive: Number(visit.receive) + delta,
+        },
+      }),
+    ]);
+    return { totalAmount: updatedVisit.totalAmount, receive: updatedVisit.receive, amount: updatedRow.amount };
+  }
+
+  if (source === 'pv') {
+    // Legacy PatientVisit has no separate doctor-row/totalAmount structure —
+    // the Slip Adjustment screen's single synthetic "doctors[0]" row for
+    // this source is really just `received` itself (see getVisitForRefund).
+    const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
+    if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    const updated = await prisma.patientVisit.update({ where: { id: pv.id }, data: { received: amt } });
+    return { totalAmount: updated.received, receive: updated.received, amount: updated.received };
   }
 
   throw Object.assign(new Error('Invalid source'), { status: 400 });
@@ -6564,8 +6607,29 @@ async function getDischargeBillDetail(admissionId) {
 
   const allBillItems = [...resolvedBillItems, ...liveSurgeryRows, ...hospitalShareRow];
 
+  // A legacy-imported admission's REAL deposit history lives in PatientVisit
+  // (department='Admission' rows, one per payment the old Excel system
+  // recorded) — admission.advancePayment alone often doesn't reflect that.
+  // Any of those rows already re-entered into ClinicAdmissionPayment during
+  // migration share that same serialNo (confirmed live: 73 of 82
+  // ClinicAdmissionPayment rows carry a legacy serialNo) — skip only those,
+  // so a genuinely later top-up isn't dropped.
+  const pvAdmissionRows = await prisma.patientVisit.findMany({
+    where: { admitNo: Number(admission.admissionNo) || 0, department: { equals: 'admission', mode: 'insensitive' } },
+    orderBy: { serialNo: 'asc' },
+  });
+  const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
+  const pvOnlyRows = pvAdmissionRows.filter((pv) => !capSerialNos.has(String(pv.serialNo || '')));
+
   const paymentHistory = [];
-  if (Number(admission.advancePayment) > 0) {
+  if (pvOnlyRows.length > 0) {
+    pvOnlyRows.forEach((pv) => {
+      // pv.createdAt is the bulk-Excel-import timestamp (every row from the
+      // same upload shares one identical value) — pv.visitDate is the real
+      // payment date, confirmed live against actual imported rows.
+      paymentHistory.push({ date: pv.visitDate, slipNo: String(pv.serialNo || '—'), amount: Number(pv.received || 0) });
+    });
+  } else if (Number(admission.advancePayment) > 0) {
     paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
@@ -6875,7 +6939,13 @@ async function findDuplicatePatientVisits({ fromDate, toDate }) {
   for (const v of visits) {
     if (v._source !== 'old' && v._source !== 'opd') continue;
     if (v.serialNo == null || v.serialNo === '') continue;
-    const key = [Number(v.serialNo), norm(v.department), norm(v.subDepartment), norm(v.patientName)].join('|');
+    // Patient name deliberately NOT part of the key — a Serial Number is
+    // allotted to exactly one visit, so Serial + Department + Sub Department
+    // already proves it's the same real transaction. Requiring the name to
+    // match too was actually making this MISS real duplicates whenever the
+    // same Excel sheet was re-exported with slightly different spelling/
+    // spacing in the name column between the two uploads.
+    const key = [Number(v.serialNo), norm(v.department), norm(v.subDepartment)].join('|');
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(v);
   }
@@ -8558,13 +8628,55 @@ async function getDepartmentDoctorPerformance({
     where: ownOpdWhere,
     include: { doctors: { include: { doctor: { select: { name: true } } } } },
   });
+
+  // Admit/Not Admit used to read ClinicOpdVisit.admitPatient — that checkbox
+  // actually means "this slip is for an already-admitted inpatient" (used on
+  // Lab/Radiology test slips to bill an existing admission, confirmed live:
+  // 159 of 186 admitPatient=true rows are Laboratory, only 2 are GOPD/COPD),
+  // not "this visit turned into an admission" — so GOPD/COPD/EMR consultation
+  // visits almost never had it set and Admit stayed empty. Real signal: does
+  // a ClinicAdmission actually exist for this patient, created on/after the
+  // visit (within a week — long enough to cover the doctor deciding to admit
+  // a few days later, short enough not to match an unrelated past/future
+  // admission of someone with the same name/MR#).
+  const admitWindowEnd = new Date((toDt || new Date()).getTime() + 7 * 24 * 60 * 60 * 1000);
+  const admissionsForMatch = await prisma.clinicAdmission.findMany({
+    where: { createdAt: { gte: fromDt || new Date(0), lte: admitWindowEnd } },
+    select: { mrNo: true, patientName: true, createdAt: true, admissionNo: true },
+  });
+  const admByMrNo = new Map();
+  const admByName = new Map();
+  for (const a of admissionsForMatch) {
+    if (a.mrNo != null) {
+      if (!admByMrNo.has(a.mrNo)) admByMrNo.set(a.mrNo, []);
+      admByMrNo.get(a.mrNo).push(a);
+    }
+    const nameKey = (a.patientName || '').trim().toLowerCase();
+    if (nameKey) {
+      if (!admByName.has(nameKey)) admByName.set(nameKey, []);
+      admByName.get(nameKey).push(a);
+    }
+  }
+  const findAdmissionFor = (visit) => {
+    const candidates = (visit.mrNo != null ? admByMrNo.get(visit.mrNo) : null)
+      || admByName.get((visit.patientName || '').trim().toLowerCase())
+      || [];
+    const visitTime = new Date(visit.createdAt).getTime();
+    const windowEnd = visitTime + 7 * 24 * 60 * 60 * 1000;
+    return candidates.find((a) => {
+      const t = new Date(a.createdAt).getTime();
+      return t >= visitTime && t <= windowEnd;
+    }) || null;
+  };
+
   for (const v of ownOpdVisits) {
     const bucketKey = Object.entries(OWN_DEPT_BUCKETS).find(([, cfg]) => cfg.newName === v.department)?.[0];
     if (!bucketKey) continue;
-    const admitted = Boolean(v.admitPatient && v.admitNo);
+    const matchedAdmission = findAdmissionFor(v);
+    const admitted = Boolean(matchedAdmission);
     const row = {
       slipNo: v.serialNo, slipDate: v.createdAt, patientName: v.patientName,
-      admitted, admissionNo: admitted ? v.admitNo : null,
+      admitted, admissionNo: admitted ? matchedAdmission.admissionNo : null,
     };
     for (const d of v.doctors) {
       const nameLower = (d.doctor?.name || '').trim().toLowerCase();
@@ -9512,7 +9624,7 @@ async function getCancelRefundHistory({ type = 'all', dateFrom, dateTo, search }
 // this just filters and shapes that same data as a report. Only doctors with
 // >=1 sub-dept assignment show up — a doctor with none (e.g. a payee-type
 // placeholder like "Admission Deposit") has no schedule to report.
-async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly }) {
+async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly, day }) {
   const doctorWhere = {};
   if (doctorFromCode || doctorToCode) {
     doctorWhere.code = {};
@@ -9544,6 +9656,10 @@ async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromC
     .map((d) => {
       const schedules = d.subDepts
         .filter((sd) => deptInRange(sd.subDept?.department?.code || ''))
+        // Day filter — only schedule rows that actually run on the selected
+        // day; a doctor with no such row drops out entirely below (same
+        // !schedules.length guard already used for the dept-range filter).
+        .filter((sd) => !day || (sd.consultantDays || []).includes(day))
         .map((sd) => ({
           department: sd.subDept?.department?.name || 'Unspecified',
           subDept: sd.subDept?.name || 'Unspecified',
@@ -10065,6 +10181,7 @@ module.exports = {
   searchVisitsForAdjustment,
   getVisitForAdjustment,
   updateVisitPersonalInfo,
+  updateVisitDoctorAmount,
   searchVisitsForSlipTransfer,
   getVisitForSlipTransfer,
   transferSlipAdmission,

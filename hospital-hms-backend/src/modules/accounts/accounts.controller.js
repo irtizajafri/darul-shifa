@@ -24,6 +24,7 @@ async function updateSubAccount(req, res, next) { try { success(res, await svc.u
 async function deleteSubAccount(req, res, next) { try { await svc.deleteSubAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 async function copyChartToCorporate(req, res, next) { try { success(res, await svc.copyChartToCorporate(), 'copied'); } catch (e) { next(e); } }
 async function getPendingGrnQueue(req, res, next) { try { success(res, await svc.getPendingGrnQueue(et(req))); } catch (e) { next(e); } }
+async function getEmployeesDueForSalary(req, res, next) { try { success(res, await svc.getEmployeesDueForSalary(req.query.month, req.query.year)); } catch (e) { next(e); } }
 
 async function getPayeeHeads(req, res, next) { try { success(res, await svc.getPayeeHeads(et(req))); } catch (e) { next(e); } }
 async function createPayeeHead(req, res, next) { try { success(res, await svc.createPayeeHead(req.body), 'created'); } catch (e) { next(e); } }
@@ -307,7 +308,7 @@ module.exports = {
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
-  copyChartToCorporate, getPendingGrnQueue,
+  copyChartToCorporate, getPendingGrnQueue, getEmployeesDueForSalary,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getSurgeryHeadForMainAccount, getSurgeryPayeesForHead, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory,

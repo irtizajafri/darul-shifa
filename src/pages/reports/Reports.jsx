@@ -7,6 +7,7 @@ import { useEmployeeStore } from "../../store/useEmployeeStore";
 import { useAttendanceStore } from "../../store/useAttendanceStore";
 import { useGatePassStore } from "../../store/useGatePassStore";
 import { useAdvanceLoanStore } from "../../store/useAdvanceLoanStore";
+import { useAccountsStore } from "../../store/useAccountsStore";
 import PageLoader from "../../components/ui/PageLoader";
 import PageHeader from "../../components/shared/PageHeader";
 import Card from "../../components/ui/Card";
@@ -82,6 +83,8 @@ export default function Reports() {
   const { attendanceRecords, fetchAttendance, apiAttendanceCache, setApiAttendanceCache, clearApiAttendanceCache } = useAttendanceStore();
   const { gatepasses, fetchGatepasses } = useGatePassStore();
   const { records: advanceLoans, fetchAdvanceLoans } = useAdvanceLoanStore();
+  const { fetchEmployeesDueForSalary } = useAccountsStore();
+  const [dueSalaryEmployees, setDueSalaryEmployees] = useState([]);
   const [empRosterHistory, setEmpRosterHistory] = useState([]);
   const employeeSearchRef = useRef(null);
   const apiAttendanceReqRef = useRef(0);
@@ -177,6 +180,14 @@ export default function Reports() {
     setModule("employee");
     Promise.all([fetchEmployees(), fetchAttendance(), fetchGatepasses(), fetchAdvanceLoans()]).then(() => setLoading(false));
   }, [setModule, fetchEmployees, fetchAttendance, fetchGatepasses, fetchAdvanceLoans]);
+
+  // Missing Salary Report — which Active employees have NO real Voucher
+  // Expense salary payment recorded for the selected month/year.
+  useEffect(() => {
+    fetchEmployeesDueForSalary(month, year)
+      .then((rows) => setDueSalaryEmployees(Array.isArray(rows) ? rows : []))
+      .catch(() => setDueSalaryEmployees([]));
+  }, [month, year, fetchEmployeesDueForSalary]);
 
   const normalizeEmpCode = useCallback((value) =>
     String(value || '')
@@ -1827,18 +1838,21 @@ export default function Reports() {
     setRegisterEndDay(prev => (prev > lastDay ? lastDay : prev));
   }, [month, year]);
 
+  // Real data — same "paid via a Voucher Expense salary payment?" check
+  // Voucher Expense's own Employee payee list already uses, just read for
+  // the selected month/year instead of always last month. A row here means
+  // that employee has NO such voucher for this month yet (voucher stays
+  // blank by definition — if one existed, they wouldn't be on this list).
   const missingSalaryRows = useMemo(() => {
-    return employees.slice(0, 20).map((e, i) => ({
+    return dueSalaryEmployees.map((e) => ({
       code:    e.empCode,
       name:    `${e.firstName} ${e.lastName}`,
       active:  e.status === "Active" ? "Y" : "N",
-      ot:      i % 3 === 0 ? "Y" : "N",
       month:   `${year}-${month}`,
       amount:  `PKR ${(isSelectedMonthFuture ? 0 : getTotalSalary(e.basicSalary, e.allowances || [])).toLocaleString()}`,
-      flag:    i % 4 === 0 ? "Y" : "N",
-      voucher: i % 2 === 0 ? `V-${String(1000 + i)}` : "",
+      voucher: "",
     }));
-  }, [employees, month, year, isSelectedMonthFuture]);
+  }, [dueSalaryEmployees, month, year, isSelectedMonthFuture]);
 
   const payrollDetailedRows = useMemo(() => {
     return detailedAttendanceRows.map((r, idx) => ({
@@ -2595,8 +2609,8 @@ export default function Reports() {
     if (scope === "missing") {
       autoTable(pdf, {
         startY,
-        head: [["Code", "Name", "Active", "OT", "Month", "Amount", "Flag", "Voucher"]],
-        body: missingSalaryRows.map((r) => [r.code, r.name, r.active, r.ot, r.month, r.amount, r.flag, r.voucher || "-"]),
+        head: [["Code", "Name", "Active", "Month", "Amount", "Voucher"]],
+        body: missingSalaryRows.map((r) => [r.code, r.name, r.active, r.month, r.amount, r.voucher || "-"]),
         styles: { fontSize: 8 }, headStyles: { fillColor: [37, 99, 235] },
       });
     }
@@ -3654,11 +3668,14 @@ export default function Reports() {
           </div>
           <div className="table-wrap print-area">
             <table className="data-table">
-              <thead><tr><th>Code</th><th>Name</th><th>Active</th><th>OT</th><th>Month</th><th>Amount</th><th>Flag</th><th>Voucher</th></tr></thead>
+              <thead><tr><th>Code</th><th>Name</th><th>Active</th><th>Month</th><th>Amount</th><th>Voucher</th></tr></thead>
               <tbody>
                 {missingSalaryRows.map((r) => (
-                  <tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.active}</td><td>{r.ot}</td><td>{r.month}</td><td>{r.amount}</td><td>{r.flag}</td><td>{r.voucher || "-"}</td></tr>
+                  <tr key={r.code}><td>{r.code}</td><td>{r.name}</td><td>{r.active}</td><td>{r.month}</td><td>{r.amount}</td><td>{r.voucher || "-"}</td></tr>
                 ))}
+                {missingSalaryRows.length === 0 && (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#64748b' }}>Is month ki saari salaries paid ho chuki hain</td></tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -5,6 +5,7 @@ import './ConsultantWiseFilter.scss';
 import './DoctorScheduleFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
+const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function DoctorScheduleFilter() {
   const navigate = useNavigate();
@@ -17,6 +18,7 @@ export default function DoctorScheduleFilter() {
   const [doctorTo, setDoctorTo] = useState('');
   const [deptFrom, setDeptFrom] = useState('');
   const [deptTo, setDeptTo] = useState('');
+  const [day, setDay] = useState('');
 
   useEffect(() => {
     fetch(`${API}/doctors?minimal=true`)
@@ -43,6 +45,7 @@ export default function DoctorScheduleFilter() {
       deptFromCode: fromDept?.code || '',
       deptToCode: toDept?.code || '',
       activeOnly: activeOnly ? '1' : '0',
+      day,
     });
     navigate(`/clinic/reports/doctor-schedule/view?${params}`);
   };
@@ -93,6 +96,14 @@ export default function DoctorScheduleFilter() {
               <select className="cwf-input dsf-half" value={deptTo} onChange={e => setDeptTo(e.target.value)}>
                 <option value="">(last)</option>
                 {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </div>
+
+            <div className="cwf-row">
+              <label className="cwf-lbl">Day</label>
+              <select className="cwf-input" value={day} onChange={e => setDay(e.target.value)}>
+                <option value="">(all days)</option>
+                {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
 

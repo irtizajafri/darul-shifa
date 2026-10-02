@@ -274,7 +274,7 @@ $bg:     #dde3ea;
   margin: 2px 0 4px;
 }
 
-// ─── Doctor / Sub-Dept Grid (always read-only) ─────────────────────────────────
+// ─── Doctor / Sub-Dept Grid (Dept/Sub Dept/Doctor read-only, Amount editable) ──
 .sadj-doc-tbl {
   width: 100%;
   border-collapse: collapse;
@@ -303,6 +303,40 @@ $bg:     #dde3ea;
 
 .sadj-td-r { text-align: right; }
 .sadj-td-empty { text-align: center; color: #999; padding: 20px !important; }
+
+// Amount stays fully opaque (unlike the dimmed Dept/Doctor cells around it)
+// so it reads as the one editable field in an otherwise locked row.
+.sadj-td-amount { opacity: 1; }
+
+.sadj-amount-display {
+  cursor: pointer;
+  border-bottom: 1px dashed $amber;
+  &:hover { color: $amber; }
+}
+
+.sadj-amount-input {
+  font-family: inherit;
+  font-size: 11.5px;
+  text-align: right;
+  width: 90px;
+  border: 1px solid $amber;
+  border-radius: 3px;
+  padding: 3px 6px;
+  background: #fffdf6;
+  &:focus { outline: none; border-color: $blue; }
+  &:disabled { opacity: 0.6; }
+}
+
+.sadj-totals-row {
+  display: flex;
+  gap: 24px;
+  justify-content: flex-end;
+  padding: 8px 10px 2px;
+  font-size: 12px;
+  color: #333;
+
+  strong { color: $blue; }
+}
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
 .sadj-footer {

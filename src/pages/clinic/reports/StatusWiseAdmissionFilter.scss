@@ -24,4 +24,10 @@
 .swa-half {
   flex: 1;
   width: auto;
+  // A <select>'s intrinsic min-width defaults to its longest option text —
+  // without this, that overrides flex:1 and pushes the "To" column to a
+  // different start position on every row (worse the longer the dropdown's
+  // options are, e.g. Doctor/Surgery Type vs the plain Date/Admission#
+  // inputs above them).
+  min-width: 0;
 }

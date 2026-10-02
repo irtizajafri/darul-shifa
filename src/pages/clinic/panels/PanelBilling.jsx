@@ -739,7 +739,8 @@ export default function PanelBilling() {
     const val = Number(editCell.value);
     if (!Number.isFinite(val) || val < 0) { toast.error('Valid number daalo'); return; }
     const row = data.rows.find((r) => r.id === editCell.itemId);
-    const payload = editCell.field === 'rate' ? { qty: row.qty, rate: val } : { qty: val, rate: row.rate };
+    const editedField = editCell.field;
+    const payload = editedField === 'rate' ? { qty: row.qty, rate: val } : { qty: val, rate: row.rate };
     setSavingCell(true);
     try {
       const updated = await updateItemFn(editCell.itemId, payload);
@@ -748,7 +749,14 @@ export default function PanelBilling() {
         rows: d.rows.map((r) => (r.id === updated.id ? { ...r, qty: updated.qty, rate: updated.rate, amount: updated.amount } : r)),
         billingAmount: d.rows.reduce((s, r) => s + Number((r.id === updated.id ? updated.amount : r.amount) || 0), 0),
       }));
-      setEditCell(null);
+      // Rate ke baad seedha Qty edit mode mein chala jaye — Qty ke baad wapis
+      // Rate pe nahi (sirf ek direction, jaisa maanga gaya tha), warna infinite
+      // loop ka khatra hota.
+      if (editedField === 'rate') {
+        setEditCell({ itemId: updated.id, field: 'qty', value: String(updated.qty ?? 0) });
+      } else {
+        setEditCell(null);
+      }
     } catch (e) {
       toast.error(e.message || 'Save nahi hua');
     } finally {
@@ -1349,6 +1357,7 @@ function EditableCell({ row, field, editCell, savingCell, onStart, onChange, onS
           value={editCell.value}
           disabled={savingCell}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={(e) => e.target.select()}
           onBlur={onSave}
           onKeyDown={(e) => {
             if (e.key === 'Enter') { e.preventDefault(); onSave(); }

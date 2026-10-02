@@ -2101,6 +2101,17 @@ async function updateVisitPersonalInfo(req, res, next) {
   }
 }
 
+async function updateVisitDoctorAmount(req, res, next) {
+  try {
+    const { doctorRowId, amount } = req.body;
+    const data = await service.updateVisitDoctorAmount(req.params.source, req.params.id, doctorRowId, amount);
+    success(res, data, 'Amount update ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 // ─── Slip Transfer ────────────────────────────────────────────────────────────
 
 async function searchVisitsForSlipTransfer(req, res, next) {
@@ -2350,9 +2361,9 @@ async function getCancelRefundHistory(req, res, next) {
 
 async function getDoctorScheduleReport(req, res, next) {
   try {
-    const { doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly } = req.query;
+    const { doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly, day } = req.query;
     const data = await service.getDoctorScheduleReport({
-      doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly: activeOnly === '1',
+      doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly: activeOnly === '1', day: day || null,
     });
     success(res, data);
   } catch (err) { next(err); }
@@ -2580,6 +2591,7 @@ module.exports = {
   searchVisitsForAdjustment,
   getVisitForAdjustment,
   updateVisitPersonalInfo,
+  updateVisitDoctorAmount,
   searchVisitsForSlipTransfer,
   getVisitForSlipTransfer,
   transferSlipAdmission,
