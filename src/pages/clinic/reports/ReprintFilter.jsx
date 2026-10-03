@@ -5,7 +5,7 @@ import JsBarcode from 'jsbarcode';
 import { buildReceiptHtml } from '../receiptUtils';
 import { buildConsultantReceiptHtml } from '../consultantReceiptUtils';
 import { buildEmergencyReceiptHtml } from '../emergencyReceiptUtils';
-import { useAuthStore } from '../../../store/useAuthStore';
+import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../../store/useAuthStore';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ReprintFilter.scss';
 
@@ -14,14 +14,13 @@ const API = 'http://localhost:5001/api/clinic';
 const todayStr = () => new Date().toISOString().split('T')[0];
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; };
 
-// Birth Cert. still doesn't exist as a feature anywhere in the system (no
-// data model, no entry form, no print template), so it shows in the list to
-// match the legacy layout but isn't functional until built.
-const DOC_TYPES = [
+// Birth/Death Certificate reprint — superadmin only, per explicit request.
+const ALL_DOC_TYPES = [
   { value: 'slip',        label: 'Slip',                 enabled: true },
   { value: 'admission',   label: 'Admission',             enabled: true },
   { value: 'discharge',   label: 'Discharge Certificate', enabled: true },
-  { value: 'birth',       label: 'Birth Cert.',           enabled: false },
+  { value: 'birth',       label: 'Birth Cert.',           enabled: true, superAdminOnly: true },
+  { value: 'death',       label: 'Death Certificate',     enabled: true, superAdminOnly: true },
   { value: 'provisional', label: 'Provisional Bill',      enabled: true },
   { value: 'final',       label: 'Final Bill',            enabled: true },
   { value: 'antenatal',   label: 'Antenatal',             enabled: true },
@@ -30,6 +29,8 @@ const DOC_TYPES = [
 export default function ReprintFilter() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const isMaster = Boolean(user?.isSuperAdmin) || user?.email === SUPER_ADMIN_EMAIL;
+  const DOC_TYPES = ALL_DOC_TYPES.filter((t) => !t.superAdminOnly || isMaster);
 
   const [slipNo, setSlipNo] = useState('');
   const [fromDate, setFromDate] = useState(todayStr());
@@ -98,6 +99,16 @@ export default function ReprintFilter() {
 
     if (docType === 'discharge') {
       navigate(`/clinic/transactions/discount-refund-admission?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
+      return;
+    }
+
+    if (docType === 'birth') {
+      navigate(`/clinic/transactions/birth-certificate?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
+      return;
+    }
+
+    if (docType === 'death') {
+      navigate(`/clinic/parameters/death-certificate?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
       return;
     }
 

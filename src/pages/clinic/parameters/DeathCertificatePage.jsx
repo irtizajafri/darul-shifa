@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { buildDeathCertificatePrintHtml } from '../deathCertificatePrintUtils';
 import './DeathCertificatePage.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -24,6 +26,8 @@ function toLocalDatetimeInput(iso) {
 }
 
 export default function DeathCertificatePage() {
+  const [searchParams] = useSearchParams();
+  const [isAdmission, setIsAdmission] = useState(true);
   const [admissionNo, setAdmissionNo] = useState('');
   const [looking, setLooking] = useState(false);
   const [admission, setAdmission] = useState(null); // snapshot from ClinicAdmission
@@ -43,8 +47,44 @@ export default function DeathCertificatePage() {
   const debounceRef = useRef(null);
   const boxRef = useRef(null);
 
+  // Reprint (Report > Reprint > Death Certificate): ?admissionNo=...&autoprint=1
+  // — load the already-saved certificate and print it directly, same pattern
+  // as Birth/Discharge Certificate reprint. Doctors must be loaded first so
+  // the doctor name can be resolved for the print popup, so both run in one
+  // sequenced effect instead of two independent mount effects racing.
   useEffect(() => {
-    fetch(`${API}/doctors?minimal=true`).then((r) => r.json()).then((j) => setDoctors(j.data || [])).catch(() => {});
+    (async () => {
+      let doctorList = [];
+      try {
+        const r = await fetch(`${API}/doctors?minimal=true`);
+        const j = await r.json();
+        doctorList = j.data || [];
+        setDoctors(doctorList);
+      } catch { /* ignore */ }
+
+      const no = searchParams.get('admissionNo');
+      const autoprint = searchParams.get('autoprint');
+      if (!no || !autoprint) return;
+      try {
+        const res = await fetch(`${API}/admission/lookup/${encodeURIComponent(no)}?allSlips=1`);
+        const json = await res.json();
+        if (!res.ok || json.data?.source !== 'certificate') {
+          toast.error('Is admission/slip ke liye Death Certificate abhi tak save nahi hui');
+          return;
+        }
+        const d = json.data;
+        const doctorName = d.medicalOfficerId
+          ? (doctorList.find((x) => String(x.id) === String(d.medicalOfficerId)) || {}).name
+          : '';
+        const w = window.open('', '_blank', 'width=700,height=900');
+        if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+        w.document.write(buildDeathCertificatePrintHtml({ certificate: d, doctorName }));
+        w.document.close();
+      } catch {
+        toast.error('Reprint load nahi hua');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -55,14 +95,16 @@ export default function DeathCertificatePage() {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
-  function onAdmissionNoChange(v) {
+  function onAdmissionNoChange(v, admissionOverride) {
     setAdmissionNo(v);
     setShowSuggestions(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setSearchingList(true);
       try {
-        const res = await fetch(`${API}/admission/search?q=${encodeURIComponent(v.trim())}`);
+        const admissionFlag = admissionOverride ?? isAdmission;
+        const allSlips = admissionFlag ? '' : '&allSlips=1';
+        const res = await fetch(`${API}/admission/search?q=${encodeURIComponent(v.trim())}${allSlips}`);
         const json = await res.json();
         setSuggestions(json.data || []);
       } catch {
@@ -79,7 +121,8 @@ export default function DeathCertificatePage() {
     setLooking(true);
     setShowSuggestions(false);
     try {
-      const res = await fetch(`${API}/admission/lookup/${encodeURIComponent(no)}`);
+      const allSlips = isAdmission ? '' : '?allSlips=1';
+      const res = await fetch(`${API}/admission/lookup/${encodeURIComponent(no)}${allSlips}`);
       const json = await res.json();
       if (!res.ok) { toast.error(json.message || 'Admission nahi mili'); setAdmission(null); return; }
       const d = json.data;
@@ -127,6 +170,19 @@ export default function DeathCertificatePage() {
     setShowSuggestions(false);
   }
 
+  // Standalone popup + window.print() — never window.print() on the main
+  // window (freezes the whole app behind the print dialog on Windows), same
+  // fix already applied to the Discharge Certificate print.
+  function openDeathCertificatePopup(certificate) {
+    const doctorName = manual.medicalOfficerId
+      ? (doctors.find((d) => String(d.id) === String(manual.medicalOfficerId)) || {}).name
+      : '';
+    const w = window.open('', '_blank', 'width=700,height=900');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    w.document.write(buildDeathCertificatePrintHtml({ certificate, doctorName }));
+    w.document.close();
+  }
+
   async function handleAdd() {
     if (!admission) return;
     if (!manual.causeOfDeath.trim()) return toast.error('Cause of Death daalo');
@@ -160,6 +216,7 @@ export default function DeathCertificatePage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
       toast.success(existingCertificateId ? 'Death Certificate updated' : 'Death Certificate saved');
+      openDeathCertificatePopup(json.data);
       resetToSearch();
     } catch (err) {
       toast.error(err.message || 'Save failed');
@@ -219,7 +276,14 @@ export default function DeathCertificatePage() {
               <span className="dc-slip">{admission.arrivedSlipNo ? `${admission.arrivedSlipNo}/` : ''}{admission.admissionNo}</span>
             )}
             <label className="dc-admission-chk">
-              <input type="checkbox" checked readOnly /> Admission
+              <input
+                type="checkbox"
+                checked={isAdmission}
+                onChange={(e) => {
+                  setIsAdmission(e.target.checked);
+                  if (admissionNo.trim()) onAdmissionNoChange(admissionNo, e.target.checked);
+                }}
+              /> Admission
             </label>
           </div>
 
@@ -325,7 +389,7 @@ export default function DeathCertificatePage() {
               <div className="dc-actions">
                 <button className="dc-btn dc-btn--cancel" onClick={resetToSearch}>Cancel</button>
                 <button className="dc-btn dc-btn--add" onClick={handleAdd} disabled={saving}>
-                  {saving ? 'Saving…' : existingCertificateId ? 'Update' : 'Add'}
+                  {saving ? 'Saving…' : existingCertificateId ? 'Update & Print' : 'Save & Print'}
                 </button>
               </div>
             </div>

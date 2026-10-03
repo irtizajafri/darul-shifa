@@ -6173,8 +6173,25 @@ async function getProvisionalBillDetail(admissionId) {
   const discountAmount = Number(latestDiscountRefund?.discountAmount) || 0;
   const netBillAmount = Math.max(0, billAmount - discountAmount);
 
+  // A legacy-imported admission's REAL deposit history lives in PatientVisit
+  // (department='Admission'/'Admission Deposit' rows, one per payment the old
+  // Excel system recorded) — admission.advancePayment alone often doesn't
+  // reflect that. Any of those rows already re-entered into
+  // ClinicAdmissionPayment share that same serialNo — skip only those, so a
+  // genuinely later top-up isn't dropped. Same fallback as getDischargeBillDetail.
+  const pvAdmissionRows = await prisma.patientVisit.findMany({
+    where: { admitNo: Number(admission.admissionNo) || 0, department: { in: ['Admission', 'Admission Deposit'], mode: 'insensitive' } },
+    orderBy: { serialNo: 'asc' },
+  });
+  const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
+  const pvOnlyRows = pvAdmissionRows.filter((pv) => !capSerialNos.has(String(pv.serialNo || '')));
+
   const paymentHistory = [];
-  if (Number(admission.advancePayment) > 0) {
+  if (pvOnlyRows.length > 0) {
+    pvOnlyRows.forEach((pv) => {
+      paymentHistory.push({ date: pv.visitDate, slipNo: String(pv.serialNo || '—'), amount: Number(pv.received || 0) });
+    });
+  } else if (Number(admission.advancePayment) > 0) {
     paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo || '—', amount: Number(admission.advancePayment) });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo || '—', amount: Number(p.amount) }));
@@ -6670,7 +6687,7 @@ async function getDischargeBillDetail(admissionId) {
   // ClinicAdmissionPayment rows carry a legacy serialNo) — skip only those,
   // so a genuinely later top-up isn't dropped.
   const pvAdmissionRows = await prisma.patientVisit.findMany({
-    where: { admitNo: Number(admission.admissionNo) || 0, department: { equals: 'admission', mode: 'insensitive' } },
+    where: { admitNo: Number(admission.admissionNo) || 0, department: { in: ['Admission', 'Admission Deposit'], mode: 'insensitive' } },
     orderBy: { serialNo: 'asc' },
   });
   const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
@@ -10753,7 +10770,7 @@ async function getBillComparisons() {
 //   2. ClinicAdmission — new admissions created via the Admission screen.
 //   3. PatientVisit.admitNo — old bulk-imported patient list (no age/gender/slip#,
 //      those stay blank for manual entry).
-async function lookupAdmissionByNo(admissionNo) {
+async function lookupAdmissionByNo(admissionNo, allSlips) {
   const no = String(admissionNo).trim();
 
   // Many legacy "Brought Dead" certificates share a placeholder admissionNo ("1"),
@@ -10795,6 +10812,31 @@ async function lookupAdmissionByNo(admissionNo) {
       };
     }
   }
+
+  // "Admission" checkbox unchecked — not every death is an admitted inpatient
+  // (OPD / brought-dead cases only ever get a plain slip #, no admitNo), so
+  // fall back to matching ANY slip by its serial number instead of stopping here.
+  if (allSlips) {
+    const opd = await prisma.clinicOpdVisit.findFirst({ where: { serialNo: no }, orderBy: { id: 'desc' } });
+    if (opd) {
+      return {
+        admissionId: null, admissionNo: opd.serialNo, arrivedSlipNo: null,
+        patientName: opd.patientName, ageYears: opd.age || 0, ageMonths: opd.ageMonths || 0,
+        ageDays: opd.ageDays || 0, gender: opd.gender || 'male', source: 'opdVisit',
+      };
+    }
+    const bySerial = admitNoNum ? await prisma.patientVisit.findFirst({
+      where: { serialNo: admitNoNum },
+      orderBy: { id: 'asc' },
+    }) : null;
+    if (bySerial) {
+      return {
+        admissionId: null, admissionNo: no, arrivedSlipNo: null,
+        patientName: bySerial.patientName, ageYears: 0, ageMonths: 0, ageDays: 0,
+        gender: 'male', source: 'patientVisit',
+      };
+    }
+  }
   return null;
 }
 
@@ -10802,7 +10844,7 @@ async function lookupAdmissionByNo(admissionNo) {
 // ClinicDeathCertificate records (already on file), ClinicAdmission records,
 // and distinct PatientVisit.admitNo values, so the user can see & pick from
 // what actually exists instead of guessing a number.
-async function searchAdmissions(q) {
+async function searchAdmissions(q, allSlips) {
   const term = (q || '').trim();
   const LIMIT = 20;
 
@@ -10817,7 +10859,9 @@ async function searchAdmissions(q) {
     take: LIMIT,
   });
 
-  const admissions = await prisma.clinicAdmission.findMany({
+  // "Admission" checkbox unchecked — stop restricting to admitted-inpatient
+  // records and widen the pool to every slip (OPD/PatientVisit), admitted or not.
+  const admissions = allSlips ? [] : await prisma.clinicAdmission.findMany({
     where: term ? { OR: [
       { admissionNo: { contains: term, mode: 'insensitive' } },
       { patientName: { contains: term, mode: 'insensitive' } },
@@ -10827,16 +10871,29 @@ async function searchAdmissions(q) {
     take: LIMIT,
   });
 
-  const pvWhere = term
-    ? `WHERE "admitNo" IS NOT NULL AND (CAST("admitNo" AS TEXT) ILIKE $1 OR "patientName" ILIKE $1)`
-    : `WHERE "admitNo" IS NOT NULL`;
+  const pvWhere = allSlips
+    ? (term ? `WHERE CAST("serialNo" AS TEXT) ILIKE $1 OR "patientName" ILIKE $1` : '')
+    : (term
+        ? `WHERE "admitNo" IS NOT NULL AND (CAST("admitNo" AS TEXT) ILIKE $1 OR "patientName" ILIKE $1)`
+        : `WHERE "admitNo" IS NOT NULL`);
   const pvParams = term ? [`%${term}%`] : [];
+  const pvOrderCol = allSlips ? 'serialNo' : 'admitNo';
   const pvRows = await prisma.$queryRawUnsafe(`
-    SELECT DISTINCT ON ("admitNo") "admitNo", "patientName"
+    SELECT DISTINCT ON ("${pvOrderCol}") "serialNo", "admitNo", "patientName"
     FROM "PatientVisit" ${pvWhere}
-    ORDER BY "admitNo" DESC
+    ORDER BY "${pvOrderCol}" DESC
     LIMIT ${LIMIT}
   `, ...pvParams);
+
+  const opdRows = allSlips ? await prisma.clinicOpdVisit.findMany({
+    where: term ? { OR: [
+      { serialNo: { contains: term, mode: 'insensitive' } },
+      { patientName: { contains: term, mode: 'insensitive' } },
+    ] } : undefined,
+    select: { serialNo: true, patientName: true },
+    orderBy: { id: 'desc' },
+    take: LIMIT,
+  }) : [];
 
   const seen = new Set();
   const certSeen = new Set(); // separate dedup key: many legacy "Brought Dead" certs
@@ -10856,8 +10913,13 @@ async function searchAdmissions(q) {
     seen.add(a.admissionNo);
     results.push({ admissionNo: a.admissionNo, patientName: a.patientName, source: 'admission', lookupKey: a.admissionNo });
   }
+  for (const o of opdRows) {
+    if (seen.has(o.serialNo) || certSeen.has(o.serialNo)) continue;
+    seen.add(o.serialNo);
+    results.push({ admissionNo: o.serialNo, patientName: o.patientName, source: 'opdVisit', lookupKey: o.serialNo });
+  }
   for (const r of pvRows) {
-    const no = String(r.admitNo);
+    const no = String(allSlips ? r.serialNo : r.admitNo);
     if (seen.has(no) || certSeen.has(no)) continue;
     seen.add(no);
     results.push({ admissionNo: no, patientName: r.patientName, source: 'patientVisit', lookupKey: no });

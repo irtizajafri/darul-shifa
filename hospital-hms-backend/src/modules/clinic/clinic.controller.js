@@ -2801,15 +2801,17 @@ async function getPanelBillingByAdmit(req, res, next) {
 // ─── Death Certificate ────────────────────────────────────────────────────────
 async function lookupAdmissionByNo(req, res, next) {
   try {
-    const data = await service.lookupAdmissionByNo(req.params.admissionNo);
-    if (!data) return fail(res, 404, 'Is admission # ka koi record nahi mila');
+    const allSlips = req.query.allSlips === '1' || req.query.allSlips === 'true';
+    const data = await service.lookupAdmissionByNo(req.params.admissionNo, allSlips);
+    if (!data) return fail(res, 404, allSlips ? 'Is slip # ka koi record nahi mila' : 'Is admission # ka koi record nahi mila');
     success(res, data);
   } catch (err) { next(err); }
 }
 
 async function searchAdmissions(req, res, next) {
   try {
-    const data = await service.searchAdmissions(req.query.q);
+    const allSlips = req.query.allSlips === '1' || req.query.allSlips === 'true';
+    const data = await service.searchAdmissions(req.query.q, allSlips);
     success(res, data);
   } catch (err) { next(err); }
 }

@@ -8,28 +8,35 @@ import './DeathCertificateReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
-// `@page` is a document-level rule shared across the whole bundled app (Vite
-// bundles every page's SCSS into one stylesheet) — other pages (Admission,
-// Provisional Bill, etc.) each declare their own `@page`, so whichever one
-// loads last in the bundle silently wins for the WHOLE app's prints unless a
-// page protects itself. Inject a highest-priority override right before
-// printing so this report's landscape layout isn't overridden by whichever
-// other page's `@page` rule happens to come later in the build.
+// window.print() on the MAIN app window used to go white/blank on print —
+// same root cause already fixed for Discharge/Death/Birth Certificate prints
+// elsewhere in this codebase: the whole SPA bundle shares one stylesheet, so
+// another page's layout/@page rules (or the app shell's own height/overflow
+// handling) can collide with this report's at print time. Standalone popup
+// with its own flattened CSS instead (same pattern as BirthCertificateReport's
+// handlePrint), never window.print() on the main window.
 function printDeathCertificateReport() {
-  const styleId = 'dcr-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  style.textContent = '@page { size: A4 landscape !important; margin: 8mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
+  const content = document.getElementById('dcr-rep-printable')?.innerHTML || '';
+  const win = window.open('', '_blank');
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>Death Certificate Report</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; padding: 12px; }
+      .dcr-hdr { text-align: center; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 10px; }
+      .dcr-title { font-size: 14pt; font-weight: 700; text-decoration: underline; }
+      .dcr-sub { font-size: 9pt; margin-top: 4px; }
+      table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+      th, td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid #cbd5e1; text-align: left; }
+      thead th { font-weight: 700; border-bottom: 2px solid #1e293b; padding-bottom: 6px; }
+      .dcr-c { text-align: center; }
+      .dcr-nowrap { white-space: nowrap; }
+      .dcr-sub-line { margin-top: 2px; color: #333; }
+      @page { size: A4 landscape; margin: 8mm; }
+    </style></head><body>${content}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
 }
 
 const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -276,7 +283,7 @@ export default function DeathCertificateReport() {
           <button className="dcr-tool-btn dcr-tool-btn--pdf" onClick={printDeathCertificateReport} disabled={!rows.length}>Print / PDF</button>
         </div>
 
-        <div className="dcr-sheet">
+        <div className="dcr-sheet" id="dcr-rep-printable">
           <div className="dcr-hdr">
             <div className="dcr-title">Death Certificate Report</div>
             <div className="dcr-sub">From : {fmtDMY(fromDate)}&nbsp;&nbsp;To&nbsp;&nbsp;: {fmtDMY(toDate)}</div>

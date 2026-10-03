@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
+import { buildBirthCertificatePrintHtml } from './birthCertificatePrintUtils';
 import './BirthCertificate.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -104,6 +106,7 @@ const EMPTY_BC = {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function BirthCertificate() {
   const { user } = useAuthStore();
+  const [searchParams] = useSearchParams();
 
   const [showLookup, setShowLookup] = useState(false);
   const [admission, setAdmission] = useState(null);
@@ -112,7 +115,7 @@ export default function BirthCertificate() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  async function loadCertificate(admissionNo) {
+  async function loadCertificate(admissionNo, autoprint) {
     try {
       const res = await fetch(`${API}/admission/birth-certificate/by-number/${encodeURIComponent(admissionNo)}?sequenceNo=1`);
       const json = await res.json();
@@ -132,6 +135,7 @@ export default function BirthCertificate() {
           gender: bc.gender || 'baba',
           remarks: bc.remarks || '',
         });
+        if (autoprint) openBirthCertificatePopup(bc);
       } else {
         // Auto-fill from the admission: Patient Name -> Mother Name, the
         // relation name -> Father Name only when relation is "W/o" (wife of),
@@ -142,11 +146,22 @@ export default function BirthCertificate() {
           fatherName: adm.relationType === 'W/o' ? (adm.relationName || '') : '',
           address: adm.address || '',
         });
+        if (autoprint) toast.error('Is admission ke liye Birth Certificate abhi tak save nahi hui — pehle save karein');
       }
     } catch (e) {
       toast.error(e.message || 'Admission load nahi hui');
     }
   }
+
+  // Reprint (Report > Reprint > Birth Cert.): ?admissionNo=...&autoprint=1 —
+  // load the already-saved certificate and print it directly, same pattern
+  // as Discharge Certificate's reprint in DiscountRefundAdmission.jsx.
+  useEffect(() => {
+    const no = searchParams.get('admissionNo');
+    const autoprint = searchParams.get('autoprint');
+    if (no && autoprint) loadCertificate(no, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSelect(row) {
     setShowLookup(false);
@@ -156,6 +171,16 @@ export default function BirthCertificate() {
   function resetForm() {
     setAdmission(null);
     setForm(EMPTY_BC);
+  }
+
+  // Standalone popup + window.print() — never window.print() on the main
+  // window (freezes the whole app behind the print dialog on Windows), same
+  // fix already applied to Discharge/Death Certificate prints.
+  function openBirthCertificatePopup(certificate) {
+    const w = window.open('', '_blank', 'width=700,height=900');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    w.document.write(buildBirthCertificatePrintHtml({ certificate }));
+    w.document.close();
   }
 
   async function handleSave() {
@@ -176,6 +201,7 @@ export default function BirthCertificate() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
       toast.success('Birth Certificate save ho gaya');
+      openBirthCertificatePopup(json.data);
       resetForm();
     } catch (e) {
       toast.error(e.message || 'Error saving');
@@ -266,7 +292,7 @@ export default function BirthCertificate() {
 
         <div className="bc-footer">
           <button className="bc-save-btn" onClick={handleSave} disabled={saving || !admission}>
-            {form.id ? 'Update' : 'Save'}
+            {saving ? 'Saving…' : form.id ? 'Update & Print' : 'Save & Print'}
           </button>
         </div>
       </div>

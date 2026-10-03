@@ -12,10 +12,12 @@ import { DischargeCertificatePrintTemplate } from './DischargeCertificatePrintTe
 //
 // Prints on pre-printed hospital letterhead — top page margin left generous
 // on purpose so the certificate content starts below the letterhead artwork
-// instead of overlapping it (same as the original @page rule).
+// instead of overlapping it. No @page size on purpose — whichever paper size
+// gets picked in the print dialog (A4 or A5), content width stays fixed and
+// centered so it prints the same either way (same fix as Death/Birth Certificate).
 const DC_PRINT_CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #000; background: #fff; width: 138mm; margin: auto; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #000; background: #fff; width: 130mm; margin: 0 auto; }
 .dc-print-title { text-align: center; font-weight: 900; font-size: 13pt; text-decoration: underline; margin-bottom: 10px; }
 .dc-print-row { display: flex; gap: 14px; margin-bottom: 6px; }
 .dc-print-field { display: flex; align-items: flex-end; gap: 5px; flex: 1; min-width: 0; }
@@ -42,7 +44,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #000;
 .dc-print-med-line:last-child { border-bottom: none; }
 .dc-print-sig { display: flex; align-items: flex-end; gap: 6px; margin-top: 22px; font-weight: 700; }
 .dc-print-sig-line { border-bottom: 1px solid #000; min-width: 140px; padding-bottom: 1px; }
-@page { size: A5 portrait; margin: 40mm 9mm 8mm 9mm; }
+@page { margin: 40mm 9mm 8mm 9mm; }
 `;
 
 export function buildDischargeCertificatePrintHtml(data) {
