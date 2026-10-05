@@ -1546,9 +1546,14 @@ async function updateVisitPersonalInfo(source, id, fields) {
     const patientName = fields.patientName?.trim();
     if (!patientName) throw Object.assign(new Error('Patient Name khali nahi ho sakta'), { status: 400 });
 
+    const newSerialNo = fields.serialNo?.trim();
+    if (!newSerialNo) throw Object.assign(new Error('Serial # khali nahi ho sakta'), { status: 400 });
+    if (newSerialNo !== visit.serialNo) await assertSerialNoAvailable(newSerialNo);
+
     return prisma.clinicOpdVisit.update({
       where: { id: Number(id) },
       data: {
+        serialNo:    newSerialNo,
         patientName,
         patientType: fields.patientType?.trim() || visit.patientType,
         age:         fields.age === '' || fields.age == null ? null : Number(fields.age),
@@ -1558,6 +1563,7 @@ async function updateVisitPersonalInfo(source, id, fields) {
         phoneNo:     fields.phoneNo?.trim() || null,
         referredBy:  fields.referredBy?.trim() || null,
         antenatalNo: fields.antenatalNo?.trim() || null,
+        adjustedAt:  new Date(),
       },
     });
   }
@@ -1569,9 +1575,14 @@ async function updateVisitPersonalInfo(source, id, fields) {
     const patientName = fields.patientName?.trim();
     if (!patientName) throw Object.assign(new Error('Patient Name khali nahi ho sakta'), { status: 400 });
 
+    const newSerialNoRaw = fields.serialNo?.trim();
+    if (!newSerialNoRaw) throw Object.assign(new Error('Serial # khali nahi ho sakta'), { status: 400 });
+    const newSerialNo = Number(newSerialNoRaw);
+    if (!Number.isFinite(newSerialNo)) throw Object.assign(new Error('Serial # number hona chahiye'), { status: 400 });
+
     return prisma.patientVisit.update({
       where: { id: Number(id) },
-      data: { patientName },
+      data: { patientName, serialNo: newSerialNo, adjustedAt: new Date() },
     });
   }
 
@@ -1602,6 +1613,7 @@ async function updateVisitDoctorAmount(source, id, doctorRowId, newAmount) {
         data: {
           totalAmount: Number(visit.totalAmount) + delta,
           receive: Number(visit.receive) + delta,
+          adjustedAt: new Date(),
         },
       }),
     ]);
@@ -1614,7 +1626,7 @@ async function updateVisitDoctorAmount(source, id, doctorRowId, newAmount) {
     // this source is really just `received` itself (see getVisitForRefund).
     const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
     if (!pv) throw Object.assign(new Error('Slip not found'), { status: 404 });
-    const updated = await prisma.patientVisit.update({ where: { id: pv.id }, data: { received: amt } });
+    const updated = await prisma.patientVisit.update({ where: { id: pv.id }, data: { received: amt, adjustedAt: new Date() } });
     return { totalAmount: updated.received, receive: updated.received, amount: updated.received };
   }
 
@@ -1633,11 +1645,14 @@ async function updateVisitDoctor(source, id, doctorRowId, doctorId) {
     const doctor = await prisma.clinicDoctor.findUnique({ where: { id: Number(doctorId) } });
     if (!doctor) throw Object.assign(new Error('Doctor not found'), { status: 404 });
 
-    const updated = await prisma.clinicOpdVisitDoctor.update({
-      where: { id: row.id },
-      data: { doctorId: doctor.id },
-      include: { doctor: { select: { code: true, name: true } } },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.clinicOpdVisitDoctor.update({
+        where: { id: row.id },
+        data: { doctorId: doctor.id },
+        include: { doctor: { select: { code: true, name: true } } },
+      }),
+      prisma.clinicOpdVisit.update({ where: { id: row.visitId }, data: { adjustedAt: new Date() } }),
+    ]);
     return { doctor: updated.doctor };
   }
 
@@ -1647,7 +1662,7 @@ async function updateVisitDoctor(source, id, doctorRowId, doctorId) {
     const doctor = await prisma.clinicDoctor.findUnique({ where: { id: Number(doctorId) } });
     if (!doctor) throw Object.assign(new Error('Doctor not found'), { status: 404 });
 
-    await prisma.patientVisit.update({ where: { id: pv.id }, data: { doctor: doctor.name } });
+    await prisma.patientVisit.update({ where: { id: pv.id }, data: { doctor: doctor.name, adjustedAt: new Date() } });
     return { doctor: { code: doctor.code, name: doctor.name } };
   }
 
@@ -7601,6 +7616,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
       department:    v.department || 'General OPD',
       paymentType:   v.paymentType,
       cancelled:     isCancelled,
+      adjustedAt:    v.adjustedAt || null,
       shiftName:     v.shiftName || null,
       createdByName: v.createdByName || null,
       _source:       'opd',
@@ -7760,8 +7776,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     subDepartment: null,
     doctor:        null,
     paymentType:   p.paymentType,
-    received:      Number(p.amount) || 0,
-    balance:       0,
+    received:      isCcPaymentType(p.paymentType) ? 0 : (Number(p.amount) || 0),
+    balance:       isCcPaymentType(p.paymentType) ? (Number(p.amount) || 0) : 0,
     discount:      0,
     _source:       'admission-payment',
   }));

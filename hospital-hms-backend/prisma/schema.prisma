@@ -1018,6 +1018,7 @@ model ClinicOpdVisit {
   refundNote      String?
   refundedAt      DateTime?
   refundedBy      String?
+  adjustedAt      DateTime?
   createdAt       DateTime               @default(now())
   updatedAt       DateTime               @updatedAt
   doctors         ClinicOpdVisitDoctor[]
@@ -2566,6 +2567,7 @@ model PatientVisit {
   refundedAt     DateTime?
   refundedBy     String?
   isPaid         Boolean  @default(false)
+  adjustedAt     DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -23,7 +23,7 @@ function fmtDateTime(d) {
 function fmt2(n) { return Number(n || 0).toFixed(2); }
 
 const EMPTY_FORM = {
-  patientType: 'MAST', patientName: '', age: '', ageMonths: '0', ageDays: '0',
+  serialNo: '', patientType: 'MAST', patientName: '', age: '', ageMonths: '0', ageDays: '0',
   gender: 'male', phoneNo: '', referredBy: '', antenatalNo: '',
 };
 
@@ -103,6 +103,7 @@ export default function SlipAdjustment() {
 
   function startEdit() {
     setForm({
+      serialNo:    visit.serialNo || '',
       patientType: visit.patientType || 'MAST',
       patientName: visit.patientName || '',
       age:         visit.age ?? '',
@@ -131,6 +132,7 @@ export default function SlipAdjustment() {
   }
 
   async function handleSave() {
+    if (!form.serialNo.trim()) return toast.error('Serial # khali nahi ho sakta');
     if (!form.patientName.trim()) return toast.error('Patient Name khali nahi ho sakta');
 
     setSaving(true);
@@ -297,7 +299,15 @@ export default function SlipAdjustment() {
           <div className="sadj-form-card">
             <div className="sadj-form-row">
               <label className="sadj-label sadj-label--serial">Serial #</label>
-              <input className="sadj-input sadj-input--serial" value={visit.serialNo} readOnly />
+              {editing ? (
+                <input
+                  className="sadj-input sadj-input--serial sadj-edit-input"
+                  value={form.serialNo}
+                  onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))}
+                />
+              ) : (
+                <input className="sadj-input sadj-input--serial" value={visit.serialNo} readOnly />
+              )}
               <span className={`sadj-src-badge sadj-src-badge--${visit.source}`}>
                 {visit.source === 'opd' ? 'New System' : 'Patients List'}
               </span>

@@ -334,7 +334,7 @@ export default function PatientsListReport() {
       v.department || '',
       v.subDepartment || '',
       v.doctor || '',
-      v.paymentType || '',
+      v.cancelled ? 'Cancelled' : `${v.paymentType || ''}${v.adjustedAt ? '/Adj' : ''}`,
       Number(v.received),
       Number(v.balance),
       Number(v.discount),
@@ -425,7 +425,7 @@ export default function PatientsListReport() {
       <td>{v.department || ''}</td>
       <td>{v.subDepartment || ''}</td>
       <td>{v.doctor || ''}</td>
-      <td><span className={`plr-badge plr-badge--${(v.paymentType||'').toLowerCase().replace('.','')}`}>{v.paymentType}</span></td>
+      <td><span className={`plr-badge plr-badge--${v.cancelled ? 'cancelled' : (v.paymentType||'').toLowerCase().replace('.','')}`}>{v.cancelled ? 'Cancelled' : `${v.paymentType || ''}${v.adjustedAt ? '/Adj' : ''}`}</span></td>
       <td className="plr-td-num">{fmt(v.received)}</td>
       <td className="plr-td-num">{fmt(v.balance)}</td>
       <td className="plr-td-num">{fmt(v.discount)}</td>
