@@ -1500,6 +1500,11 @@ async function createGIN(payload) {
   const code = String(payload.code || '').trim() || await generateDocCode('inventoryGIN', 'gin');
 
   return prisma.$transaction(async (tx) => {
+    const item = await tx.inventoryItem.findUnique({ where: { id: gd.itemId } });
+
+    // Lock the rate in effect right now onto the GIN itself — Sales Invoice
+    // reads this instead of the item's live rate, so a later rate change
+    // never retroactively changes what an already-issued GIN is billed at.
     const gin = await tx.inventoryGIN.create({
       data: {
         code,
@@ -1507,13 +1512,13 @@ async function createGIN(payload) {
         itemId: gd.itemId,
         departmentId: gd.departmentId,
         issuedQuantity,
+        unitRate: Number(item?.lastGrnRate || item?.purchasePrice || 0),
         issueDate: payload.issueDate ? new Date(payload.issueDate) : new Date(),
         status: 'issued',
         createdByName: payload.createdByName ? String(payload.createdByName).trim() : null,
       },
     });
 
-    const item = await tx.inventoryItem.findUnique({ where: { id: gd.itemId } });
     const previousStock = Number(item?.currentStock || 0);
     const newStock = previousStock - issuedQuantity;
 
@@ -1617,6 +1622,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
           gdItemId: gdItem.id,
           itemId: gdItem.itemId,
           issuedQuantity: qty,
+          unitRate: Number(currentItem?.lastGrnRate || currentItem?.purchasePrice || 0),
         },
       });
 

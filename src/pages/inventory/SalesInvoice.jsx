@@ -297,11 +297,11 @@ export default function SalesInvoice() {
         if (gin.ginItems && gin.ginItems.length > 0) {
           gin.ginItems.forEach((gi) => {
             const code = gi.item?.code;
-            if (code && !(code in rateMap)) rateMap[code] = Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0);
+            if (code && !(code in rateMap)) rateMap[code] = Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0);
           });
         } else {
           const code = gin.item?.code;
-          if (code && !(code in rateMap)) rateMap[code] = Number(gin.item?.lastGrnRate || gin.item?.purchasePrice || 0);
+          if (code && !(code in rateMap)) rateMap[code] = Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0);
         }
       }
       setAdmRates(rateMap);
@@ -312,20 +312,28 @@ export default function SalesInvoice() {
     }
   };
 
-  // Aggregate same items across all GINs — one row per itemCode, qty summed
+  // Aggregate same items across all GINs — one row per item+rate, qty summed.
+  // Each GIN now carries its OWN locked-in rate (see createGIN/
+  // createGINFromHeader's unitRate) — a later rate change must not retroactively
+  // reprice an earlier GIN's quantity. Grouping by itemCode alone would merge
+  // e.g. "6 @ Rs2" and "7 @ Rs3" into one row and silently bill all 13 units
+  // at whichever GIN's rate happened to be encountered first — grouping by
+  // itemCode+rate instead keeps genuinely different-rate batches as separate
+  // rows (same-rate batches of the same item still merge into one, as before).
   const admRows = useMemo(() => {
     if (!admGINs) return [];
     const map = {};
     for (const gin of admGINs) {
       const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
       const entries = gin.ginItems && gin.ginItems.length > 0
-        ? gin.ginItems.map((gi) => ({ itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-', qty: Number(gi.issuedQuantity || 0), dept, defaultRate: Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0) }))
-        : [{ itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-', qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.item?.lastGrnRate || gin.item?.purchasePrice || 0) }];
+        ? gin.ginItems.map((gi) => ({ itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-', qty: Number(gi.issuedQuantity || 0), dept, defaultRate: Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0) }))
+        : [{ itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-', qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0) }];
       for (const e of entries) {
-        if (map[e.itemCode]) {
-          map[e.itemCode].qty += e.qty;
+        const rowKey = `${e.itemCode}::${e.defaultRate}`;
+        if (map[rowKey]) {
+          map[rowKey].qty += e.qty;
         } else {
-          map[e.itemCode] = { itemId: e.itemId, itemCode: e.itemCode, item: e.item, qty: e.qty, department: e.dept, defaultRate: e.defaultRate };
+          map[rowKey] = { rowKey, itemId: e.itemId, itemCode: e.itemCode, item: e.item, qty: e.qty, department: e.dept, defaultRate: e.defaultRate };
         }
       }
     }
@@ -336,7 +344,7 @@ export default function SalesInvoice() {
   }, [admGINs]);
 
   const admGrandTotal = useMemo(() =>
-    admRows.reduce((s, r) => s + r.qty * Number(admRates[r.itemCode] ?? r.defaultRate), 0),
+    admRows.reduce((s, r) => s + r.qty * Number(admRates[r.rowKey] ?? r.defaultRate), 0),
     [admRows, admRates]
   );
 
@@ -346,7 +354,7 @@ export default function SalesInvoice() {
     customerName: admQuery,
     invoiceDate: new Date().toISOString(),
     items: admRows.map((r) => {
-      const rate = Number(admRates[r.itemCode] ?? r.defaultRate);
+      const rate = Number(admRates[r.rowKey] ?? r.defaultRate);
       return { item: { name: r.item }, saleRate: rate, quantity: r.qty, totalAmount: r.qty * rate };
     }),
     subTotal: admGrandTotal,
@@ -376,7 +384,7 @@ export default function SalesInvoice() {
         items: admRows.map((r) => ({
           itemId: Number(r.itemId),
           quantity: r.qty,
-          saleRate: Number(admRates[r.itemCode] ?? r.defaultRate),
+          saleRate: Number(admRates[r.rowKey] ?? r.defaultRate),
         })),
       };
       const created = await createSalesInvoiceWithItems(payload);
@@ -648,9 +656,9 @@ export default function SalesInvoice() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {admRows.map((r) => {
-                    const rate = Number(admRates[r.itemCode] ?? r.defaultRate);
+                    const rate = Number(admRates[r.rowKey] ?? r.defaultRate);
                     return (
-                      <tr key={r.itemCode}>
+                      <tr key={r.rowKey}>
                         <td className="px-3 py-2 text-slate-500">{r.itemCode}</td>
                         <td className="px-3 py-2">{r.item}</td>
                         <td className="px-3 py-2">{r.department}</td>
@@ -660,8 +668,8 @@ export default function SalesInvoice() {
                             type="number"
                             min="0"
                             step="0.01"
-                            value={admRates[r.itemCode] ?? r.defaultRate}
-                            onChange={(e) => setAdmRates((prev) => ({ ...prev, [r.itemCode]: e.target.value }))}
+                            value={admRates[r.rowKey] ?? r.defaultRate}
+                            onChange={(e) => setAdmRates((prev) => ({ ...prev, [r.rowKey]: e.target.value }))}
                             className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right focus:outline-none focus:border-blue-500"
                           />
                         </td>

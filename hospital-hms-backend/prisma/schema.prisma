@@ -515,6 +515,7 @@ model InventoryGIN {
   issuedById      Int?
   issuedBy        Employee?            @relation(fields: [issuedById], references: [id])
   issuedQuantity  Float?
+  unitRate        Decimal?             @db.Decimal(12, 4)
   issueDate       DateTime
   admissionNumber String?
   patientName     String?
@@ -582,6 +583,7 @@ model InventoryGINItem {
   itemId         Int
   item           InventoryItem @relation(fields: [itemId], references: [id])
   issuedQuantity Float
+  unitRate       Decimal?      @db.Decimal(12, 4)
   createdAt      DateTime      @default(now())
 
   assetInstances AssetInstance[]
