@@ -7564,6 +7564,13 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // slip/reprint itself was always correct, since that reads v.doctors in
   // full separately). Expand each visit into one row per doctor/test instead
   // of collapsing to a single row.
+  // CC (credit card) money isn't hospital cash-in-hand until the bank
+  // settles it, and an Adjust Payment slip's cost is deferred onto the
+  // admission's own bill instead of being collected at the OPD counter —
+  // both cases must show in Patient List as still outstanding ("Balance"),
+  // never as "Received", per explicit request.
+  const isCcPaymentType = (pt) => ['cc', 'c card', 'credit card'].includes(String(pt || '').toLowerCase());
+
   const mapped = [];
   for (const v of opdVisits) {
     // A cancelled booking never actually earned any money — same treatment
@@ -7571,15 +7578,22 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     // patient still shows in the list, but received/discount/balance read 0
     // instead of whatever the visit's original figures were.
     const isCancelled = ['canceled', 'cancelled'].includes(String(v.status || '').toLowerCase());
+    const isDeferred = !isCancelled && (Boolean(v.adjustPayment) || isCcPaymentType(v.paymentType));
     // v.receive already includes any later Receive Balance Slip top-ups —
     // subtract those back out so this row only shows what was actually
     // collected when the slip itself was created; the top-up has its own row
     // (mappedOpdBalPay) dated to when it was really received.
     const balancePaidLater = (v.balancePayments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
     const receivedAtCreation = Math.max(0, Number(v.receive || 0) - balancePaidLater);
+    // Deferred rows (CC / Adjust Payment): nothing counts as actually
+    // received yet — the whole not-yet-truly-collected amount (totalAmount
+    // minus whatever later DID get collected via a Receive Balance Slip)
+    // shows as Balance instead.
+    const effReceived = isCancelled ? 0 : (isDeferred ? 0 : receivedAtCreation);
+    const effBalance  = isCancelled ? 0 : (isDeferred ? (v.totalAmount - balancePaidLater) : (v.totalAmount - v.receive));
     const baseRow = {
       serialNo:      v.serialNo,
-      admitNo:       null,
+      admitNo:       v.admitNo || null,
       mrNo:          v.mrNo || null,
       visitDate:     v.createdAt,
       visitTime:     toHHMM(v.createdAt),
@@ -7598,8 +7612,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
         id:            `opd_${v.id}_0`,
         subDepartment: null,
         doctor:        null,
-        received:      isCancelled ? 0 : receivedAtCreation,
-        balance:       isCancelled ? 0 : (v.totalAmount - v.receive),
+        received:      effReceived,
+        balance:       effBalance,
         discount:      isCancelled ? 0 : v.discount,
       });
     } else {
@@ -7615,8 +7629,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
           // only go on the first row so a multi-test visit doesn't sum to
           // more than what was really taken (and a Panel visit, where
           // v.receive is always 0, doesn't show a phantom received amount).
-          received:      idx === 0 ? (isCancelled ? 0 : receivedAtCreation) : 0,
-          balance:       idx === 0 ? (isCancelled ? 0 : (v.totalAmount - v.receive)) : 0,
+          received:      idx === 0 ? effReceived : 0,
+          balance:       idx === 0 ? effBalance : 0,
           discount:      idx === 0 ? (isCancelled ? 0 : v.discount) : 0,
         });
       });
