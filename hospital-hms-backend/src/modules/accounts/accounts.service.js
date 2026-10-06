@@ -1123,7 +1123,7 @@ function getBusinessDate() {
 // the draft now posts under THAT day instead of always today's business
 // date. A blank/invalid/future date falls back to today's business date
 // (never post something dated ahead of when it was actually entered).
-async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds }) {
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear }) {
   const today = getBusinessDate();
   const businessDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today) ? date : today;
   const draft = await prisma.accVoucherExpenseDraft.create({
@@ -1140,6 +1140,11 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
       particulars: particulars || null,
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
+      salaryEmpCode: salaryEmpCode || null,
+      salaryMonth: salaryMonth || null,
+      salaryYear: salaryYear || null,
+      visitIds: Array.isArray(visitIds) && visitIds.length ? visitIds : undefined,
+      consultantFeeItemIds: Array.isArray(consultantFeeItemIds) && consultantFeeItemIds.length ? consultantFeeItemIds : undefined,
     },
   });
 
@@ -1230,6 +1235,34 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
     // Now that a real voucher actually exists, move each draft's recorded
     // GRN(s) onto its new entry and flip isPaid — see migration 034.
     await linkDraftGrnPayments(entries, voucher.entries);
+
+    // Same for Employee salary / Doctor consultant-fee linkage (migration
+    // 037) — entries here are the draft rows themselves, which already carry
+    // visitIds/consultantFeeItemIds/salaryEmpCode etc. in the same shape
+    // createVoucherExpense's own `entries` param does, so the exact same
+    // linking logic/function applies unchanged.
+    const allVisitIds = entries.flatMap((e) => Array.isArray(e.visitIds) ? e.visitIds : []);
+    const oldVisitIds = allVisitIds.filter((id) => !String(id).startsWith('opd-')).map(Number).filter(Boolean);
+    const opdDoctorIds = allVisitIds.filter((id) => String(id).startsWith('opd-')).map((id) => Number(String(id).slice(4))).filter(Boolean);
+    if (oldVisitIds.length > 0) {
+      await prisma.patientVisit.updateMany({ where: { id: { in: oldVisitIds } }, data: { isPaid: true } });
+    }
+    if (opdDoctorIds.length > 0) {
+      await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: opdDoctorIds } }, data: { isPaid: true } });
+    }
+
+    for (const e of entries) {
+      if (e.salaryEmpCode && e.salaryMonth && e.salaryYear) {
+        await prisma.employeeSalaryPayment.upsert({
+          where: { empCode_salaryMonth_salaryYear: { empCode: e.salaryEmpCode, salaryMonth: e.salaryMonth, salaryYear: e.salaryYear } },
+          update: {},
+          create: { empCode: e.salaryEmpCode, salaryMonth: e.salaryMonth, salaryYear: e.salaryYear, voucherNo: voucher.voucherNo },
+        });
+      }
+    }
+
+    await linkConsultantFeeItems(entries, voucher.entries);
+
     vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: entries[0].mainGlName, businessDate: groupDate, entriesCount: entries.length, totalAmount });
   }
   return vouchers;

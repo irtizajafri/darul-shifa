@@ -2323,6 +2323,15 @@ model AccVoucherExpenseDraft {
   chequeDate     DateTime?
   chequeType     String?
   particulars    String?
+  // Linkage data the entries array itself carries for the direct "Save &
+  // Print" path (createVoucherExpense) — a draft previously dropped all of
+  // this, so Employee/Doctor entries never got flagged paid once posted
+  // (see migration 037).
+  salaryEmpCode  String?
+  salaryMonth    String?
+  salaryYear     String?
+  visitIds       Json?
+  consultantFeeItemIds Json?
   status         String            @default("pending") // 'pending' | 'posted'
   postedVoucherId Int?
   postedVoucher  AccVoucherExpense? @relation(fields: [postedVoucherId], references: [id], onDelete: SetNull)

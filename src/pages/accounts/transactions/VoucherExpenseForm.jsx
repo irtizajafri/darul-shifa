@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, ChevronRight, Printer, Pencil, Lock } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useAuthStore } from '../../../store/useAuthStore';
@@ -12,6 +12,9 @@ const UTIL_API = 'http://localhost:5001/api/utilities';
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+// Voucher Date defaults to yesterday, not today — most entries here are for
+// the previous business day's expenses, entered the morning after.
+const yesterdayStr = () => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); };
 
 // Matches a "Utility provider" payee entry's free-text name (k-electric,
 // ssgc, ptcl) to the Utilities Bill module's utility bucket — same matching
@@ -346,19 +349,24 @@ const emptyEntry = () => ({
 export default function VoucherExpenseForm() {
   const { entityType } = useParams();
   const { state } = useLocation();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { mainGLs, fetchMainGLs, createMainGL, createSubGL, createMainAccount, createSubAccount } = useAccountsStore();
   const { user } = useAuthStore();
 
   const editingVoucher = state?.editVoucher || null;
   const isEditMode = Boolean(editingVoucher);
+  // Clinic's "General Payment" shortcut opens this exact same form — the
+  // Pending GRN Queue popup below is an Accounts-only convenience (clearing
+  // the Inventory GRN backlog) and makes no sense in that context.
+  const skipGrnQueue = searchParams.get('skipGrnQueue') === '1';
 
   const mode   = state?.mode   || 'cash';
   const bankId = state?.bankId || null;
   const isCheque = mode === 'cheque';
   const isBank   = mode !== 'cash';
 
-  const [date, setDate]       = useState(() => editingVoucher ? editingVoucher.voucherDate.slice(0, 10) : todayStr());
+  const [date, setDate]       = useState(() => editingVoucher ? editingVoucher.voucherDate.slice(0, 10) : yesterdayStr());
   const [entry, setEntry]     = useState(emptyEntry());
   const [entries, setEntries] = useState(() => editingVoucher ? editingVoucher.entries.map((e) => ({ ...e, chequeDate: e.chequeDate ? e.chequeDate.slice(0, 10) : todayStr() })) : []);
   const [saving, setSaving]             = useState(false);
@@ -506,12 +514,12 @@ export default function VoucherExpenseForm() {
   };
 
   useEffect(() => {
-    if (isEditMode) return;
+    if (isEditMode || skipGrnQueue) return;
     fetchPendingQueue();
   }, [entityType]);
 
   useEffect(() => {
-    if (!isEditMode && pendingQueue.length > 0 && !queueLoading) setQueueModalOpen(true);
+    if (!isEditMode && !skipGrnQueue && pendingQueue.length > 0 && !queueLoading) setQueueModalOpen(true);
   }, [pendingQueue]);
 
   // A GRN already staged into the local `entries` list (added but not yet
@@ -1185,6 +1193,11 @@ export default function VoucherExpenseForm() {
             chequeType:    e.chequeType    || null,
             particulars:   e.particulars   || null,
             grnIds:        Array.isArray(e.grnIds) ? e.grnIds : [],
+            visitIds:      Array.isArray(e.visitIds) ? e.visitIds : [],
+            consultantFeeItemIds: Array.isArray(e.consultantFeeItemIds) ? e.consultantFeeItemIds : [],
+            salaryEmpCode: e.salaryEmpCode || null,
+            salaryMonth:   e.salaryMonth   || null,
+            salaryYear:    e.salaryYear    || null,
             createdByUserId: user?.id != null ? String(user.id) : null,
             createdByName:   user?.name || user?.username || user?.email || null,
           }),
@@ -1474,6 +1487,84 @@ export default function VoucherExpenseForm() {
             )}
           </div>
         </div>
+
+        {/* Payee — right below Sub Account, same label:value row style as
+            Main GL/Sub GL/Main Account/Sub Account above (not the generic
+            label-above-input .ve-form__field style — the two don't line up). */}
+        <div className="ve-form__alloc-row ve-form__alloc-row--payee">
+          <span className="ve-form__alloc-label">
+            Payee
+            {linkedHeadName && <span className="ve-form__head-tag">{linkedHeadName}</span>}
+          </span>
+          <span className="ve-form__alloc-sep">:</span>
+          <div className="ve-form__alloc-payee-content">
+            {!isSurgeryAcc && !entry.subAccountId && subAccs.length > 0 && !linkedPayees.length && (
+              <span className="ve-form__optional">Select Sub Account first</span>
+            )}
+            {isSurgeryAcc && surgeryCategories.length > 1 && (
+              <div className="ve-form__surg-type">
+                {surgeryCategories.map((c) => (
+                  <label key={c.id} className={`ve-form__surg-type-opt ${String(surgeryCategoryId) === String(c.id) ? 'active' : ''}`}>
+                    <input
+                      type="radio"
+                      name="surgery-type"
+                      checked={String(surgeryCategoryId) === String(c.id)}
+                      onChange={() => handleSurgeryCategorySelect(c.id)}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            )}
+            {isSurgeryAcc && !surgeryCategoryId ? (
+              <p className="ve-form__optional">Payee dekhne ke liye upar role (Surgeon/Anaesthetic) select karein</p>
+            ) : linkedPayees.length > 0 ? (
+              <div className="ve-form__payee-picker">
+                <input
+                  className="ve-form__payee-search"
+                  placeholder="Search by name or code…"
+                  value={payeeSearch}
+                  onChange={(e) => { setPayeeSearch(e.target.value); setEntry((f) => ({ ...f, payeeName: '' })); }}
+                />
+                {(payeeSearch || !entry.payeeName) && (
+                  <div className="ve-form__payee-list">
+                    {linkedPayees
+                      .filter((p) => {
+                        const q = payeeSearch.toLowerCase();
+                        return p.name.toLowerCase().includes(q) || (p.code || '').toLowerCase().includes(q);
+                      })
+                      .slice(0, 8)
+                      .map((p) => (
+                        <div
+                          key={p.id}
+                          className={`ve-form__payee-item ${entry.payeeName === p.name ? 'active' : ''}`}
+                          onClick={() => {
+                            if (linkedHeadType === 'employee') openSalaryModal(p);
+                            else if (linkedHeadType === 'vendor') openGrnModal(p);
+                            else if (linkedHeadType === 'doctor') openConsultantModal(p);
+                            else if (linkedHeadType === 'ipd-consultant') openPendingFeesModal(p);
+                            else if (linkedHeadType === 'manual' && linkedHeadName.toLowerCase().includes('utility') && matchUtility(p.name)) openUtilBillModal(p);
+                            else { setEntry((f) => ({ ...f, payeeName: p.name })); setPayeeSearch(p.name); }
+                          }}
+                        >
+                          {p.code && <span className="ve-form__payee-code">{p.code}</span>}
+                          <span>{p.name}{p.categoryName ? ` (${p.categoryName})` : ''}</span>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <input
+                className="ve-form__alloc-input"
+                value={entry.payeeName}
+                onChange={upd('payeeName')}
+                placeholder={entry.subAccountId ? 'No list linked — type manually' : 'Select Sub Account first'}
+                disabled={!entry.subAccountId}
+              />
+            )}
+          </div>
+        </div>
       </div>
 
       {/* ── Section 3: Cheque Details + Particulars ── */}
@@ -1505,97 +1596,24 @@ export default function VoucherExpenseForm() {
               </div>
             )}
 
-            {/* Payee + Amount */}
-            <div className="ve-form__row-2">
-              <div className="ve-form__field">
-                <label>
-                  Payee
-                  {linkedHeadName && <span className="ve-form__head-tag">{linkedHeadName}</span>}
-                  {!isSurgeryAcc && !entry.subAccountId && subAccs.length > 0 && !linkedPayees.length && (
-                    <span className="ve-form__optional"> (select Sub Account first)</span>
-                  )}
-                </label>
-                {isSurgeryAcc && surgeryCategories.length > 1 && (
-                  <div className="ve-form__surg-type">
-                    {surgeryCategories.map((c) => (
-                      <label key={c.id} className={`ve-form__surg-type-opt ${String(surgeryCategoryId) === String(c.id) ? 'active' : ''}`}>
-                        <input
-                          type="radio"
-                          name="surgery-type"
-                          checked={String(surgeryCategoryId) === String(c.id)}
-                          onChange={() => handleSurgeryCategorySelect(c.id)}
-                        />
-                        {c.name}
-                      </label>
-                    ))}
-                  </div>
+            {/* Amount (Payee moved below Sub Account, see Section 2) */}
+            <div className="ve-form__field" style={{ marginBottom: '0.85rem' }}>
+              <label>
+                Amount
+                {entry.amountLocked && (
+                  <span title="Yeh amount linked module (GRN/Consultant/Salary/etc) se auto-fill hui hai — Accounts mein edit nahi ho sakti.">
+                    {' '}<Lock size={11} style={{ display: 'inline', verticalAlign: 'middle', color: '#64748b' }} />
+                  </span>
                 )}
-                {isSurgeryAcc && !surgeryCategoryId ? (
-                  <p className="ve-form__optional">Payee dekhne ke liye upar role (Surgeon/Anaesthetic) select karein</p>
-                ) : linkedPayees.length > 0 ? (
-                  <div className="ve-form__payee-picker">
-                    <input
-                      className="ve-form__payee-search"
-                      placeholder="Search by name or code…"
-                      value={payeeSearch}
-                      onChange={(e) => { setPayeeSearch(e.target.value); setEntry((f) => ({ ...f, payeeName: '' })); }}
-                    />
-                    {(payeeSearch || !entry.payeeName) && (
-                      <div className="ve-form__payee-list">
-                        {linkedPayees
-                          .filter((p) => {
-                            const q = payeeSearch.toLowerCase();
-                            return p.name.toLowerCase().includes(q) || (p.code || '').toLowerCase().includes(q);
-                          })
-                          .slice(0, 8)
-                          .map((p) => (
-                            <div
-                              key={p.id}
-                              className={`ve-form__payee-item ${entry.payeeName === p.name ? 'active' : ''}`}
-                              onClick={() => {
-                                if (linkedHeadType === 'employee') openSalaryModal(p);
-                                else if (linkedHeadType === 'vendor') openGrnModal(p);
-                                else if (linkedHeadType === 'doctor') openConsultantModal(p);
-                                else if (linkedHeadType === 'ipd-consultant') openPendingFeesModal(p);
-                                else if (linkedHeadType === 'manual' && linkedHeadName.toLowerCase().includes('utility') && matchUtility(p.name)) openUtilBillModal(p);
-                                else { setEntry((f) => ({ ...f, payeeName: p.name })); setPayeeSearch(p.name); }
-                              }}
-                            >
-                              {p.code && <span className="ve-form__payee-code">{p.code}</span>}
-                              <span>{p.name}{p.categoryName ? ` (${p.categoryName})` : ''}</span>
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <input
-                    value={entry.payeeName}
-                    onChange={upd('payeeName')}
-                    placeholder={entry.subAccountId ? 'No list linked — type manually' : 'Select Sub Account first'}
-                    disabled={!entry.subAccountId}
-                  />
-                )}
-              </div>
-
-              <div className="ve-form__field">
-                <label>
-                  Amount
-                  {entry.amountLocked && (
-                    <span title="Yeh amount linked module (GRN/Consultant/Salary/etc) se auto-fill hui hai — Accounts mein edit nahi ho sakti.">
-                      {' '}<Lock size={11} style={{ display: 'inline', verticalAlign: 'middle', color: '#64748b' }} />
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="number" step="0.01"
-                  value={entry.amount}
-                  onChange={upd('amount')}
-                  readOnly={entry.amountLocked}
-                  placeholder="0.00"
-                  style={entry.amountLocked ? { background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' } : undefined}
-                />
-              </div>
+              </label>
+              <input
+                type="number" step="0.01"
+                value={entry.amount}
+                onChange={upd('amount')}
+                readOnly={entry.amountLocked}
+                placeholder="0.00"
+                style={entry.amountLocked ? { background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' } : undefined}
+              />
             </div>
 
             {/* Cheque / Transfer fields */}
@@ -1645,7 +1663,7 @@ export default function VoucherExpenseForm() {
             <button className="ve-form__submit-btn" onClick={() => navigate(`/accounts/${entityType}/transactions`)}>
               Done
             </button>
-            <button className="ve-form__add-btn" onClick={() => { setSavedVoucherNo(null); setEntries([]); setEntry(emptyEntry()); fetchPendingQueue(); }}>
+            <button className="ve-form__add-btn" onClick={() => { setSavedVoucherNo(null); setEntries([]); setEntry(emptyEntry()); if (!skipGrnQueue) fetchPendingQueue(); }}>
               New Voucher
             </button>
           </div>

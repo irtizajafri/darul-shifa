@@ -138,6 +138,19 @@
     &:disabled { opacity: 0.45; cursor: not-allowed; background: #f1f5f9; }
   }
 
+  // Payee row — same label:value layout as the rows above, but its content
+  // (search box + dropdown list, or radio buttons) can grow taller than a
+  // single select, so it's top-aligned instead of vertically centered.
+  &__alloc-row--payee {
+    align-items: flex-start;
+    .ve-form__alloc-label { padding-top: 0.5rem; }
+  }
+
+  &__alloc-payee-content {
+    flex: 1;
+    min-width: 0;
+  }
+
   // ── Generic field (label + input/select) ────────────────────────────────────
   &__field {
     display: flex;
@@ -533,6 +546,24 @@
     background: $primary-light;
     text-align: right;
     border-top: 2px solid #bfdbfe;
+  }
+
+  // ── Responsive — this form had no breakpoints at all before; the two side-
+  // by-side panels (Cheque Details / Particulars) and the 2-3 column grids
+  // just kept shrinking past usable width on a narrower window/tablet
+  // instead of stacking.
+  @media (max-width: 960px) {
+    &__dual-panels { flex-direction: column; }
+    &__section--grow { flex: 1 1 auto; }
+  }
+
+  @media (max-width: 700px) {
+    padding: 1rem 0.85rem;
+    &__row-2,
+    &__row-3 { grid-template-columns: 1fr; }
+    &__alloc-row { flex-wrap: wrap; row-gap: 0.4rem; }
+    &__alloc-label { width: auto; }
+    &__alloc-input { flex: 1 1 100%; }
   }
 }
 

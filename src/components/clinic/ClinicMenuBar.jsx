@@ -39,7 +39,10 @@ const menuItems = [
       { label: 'Slip - Ambulance', path: '/clinic/ambulance',     perm: { sub: 'general-opd' } },
       { label: 'Antenatal',        path: '/clinic/antenatal',     perm: { sub: 'antenatal' } },
       // Cross-module links — always visible if user has clinic access
-      { label: 'General Payment',  path: '/accounts/non-corporate/transactions/voucher-expense/form' },
+      // skipGrnQueue=1 — this shortcut is for a quick Clinic-side payment,
+      // not Accounts' own GRN-backlog workflow, so the Pending GRN Queue
+      // popup (irrelevant here) shouldn't auto-open (see VoucherExpenseForm).
+      { label: 'General Payment',  path: '/accounts/non-corporate/transactions/voucher-expense/form?skipGrnQueue=1' },
       { label: 'Mark Attendance',  path: '/attendance' },
       { label: 'Short Leave',      path: '/shortleave' },
       { label: 'Gate Pass',        path: '/gatepass' },

@@ -6195,7 +6195,16 @@ async function getProvisionalBillDetail(admissionId) {
   // ClinicAdmissionPayment share that same serialNo — skip only those, so a
   // genuinely later top-up isn't dropped. Same fallback as getDischargeBillDetail.
   const pvAdmissionRows = await prisma.patientVisit.findMany({
-    where: { admitNo: Number(admission.admissionNo) || 0, department: { in: ['Admission', 'Admission Deposit'], mode: 'insensitive' } },
+    where: {
+      admitNo: Number(admission.admissionNo) || 0,
+      OR: [
+        { department: { in: ['Admission', 'Admission Deposit'], mode: 'insensitive' } },
+        // Some legacy Excel rows have the department misspelled (e.g.
+        // "ADIMISSION") — anything starting "adm" still counts.
+        { department: { startsWith: 'adm', mode: 'insensitive' } },
+        { subDepartment: { equals: 'Admission Deposit', mode: 'insensitive' } },
+      ],
+    },
     orderBy: { serialNo: 'asc' },
   });
   const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
@@ -6702,7 +6711,16 @@ async function getDischargeBillDetail(admissionId) {
   // ClinicAdmissionPayment rows carry a legacy serialNo) — skip only those,
   // so a genuinely later top-up isn't dropped.
   const pvAdmissionRows = await prisma.patientVisit.findMany({
-    where: { admitNo: Number(admission.admissionNo) || 0, department: { in: ['Admission', 'Admission Deposit'], mode: 'insensitive' } },
+    where: {
+      admitNo: Number(admission.admissionNo) || 0,
+      OR: [
+        { department: { in: ['Admission', 'Admission Deposit'], mode: 'insensitive' } },
+        // Some legacy Excel rows have the department misspelled (e.g.
+        // "ADIMISSION") — anything starting "adm" still counts.
+        { department: { startsWith: 'adm', mode: 'insensitive' } },
+        { subDepartment: { equals: 'Admission Deposit', mode: 'insensitive' } },
+      ],
+    },
     orderBy: { serialNo: 'asc' },
   });
   const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
