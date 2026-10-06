@@ -154,12 +154,13 @@ export default function RevenueDashboard() {
     fetch(`${API}/doctors?minimal=true`).then(r=>r.json()).then(j=>setConsultants(j.data||[])).catch(()=>{});
   }, []);
 
-  // monthly_daily reuses Patient List's own endpoint + its own per-slip
-  // counting (one Set of serialNo/admitNo, same as PatientsListReport's
-  // uniqueSlips) instead of the backend's separate SQL aggregation — the two
-  // reports previously disagreed because they counted/business-dayed
-  // differently even when reading the same underlying data. Yearly/
-  // multi-year views still use the original backend aggregation (below).
+  // monthly_daily reuses Patient List's own endpoint + the same per-row
+  // counting as PatientsListReport's uniqueSlips (one count per row — a
+  // multi-test visit's extra test-rows each count as their own patient line)
+  // instead of the backend's separate SQL aggregation — the two reports
+  // previously disagreed because they counted/business-dayed differently even
+  // when reading the same underlying data. Yearly/multi-year views still use
+  // the original backend aggregation (below).
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -204,26 +205,25 @@ export default function RevenueDashboard() {
         for (const r of filtered) {
           if (!r.visitDate) continue;
           const day = bizDay(r);
-          if (!dayMap[day]) dayMap[day] = { date: day, slips: new Set(), totalAmount:0, cashSlips: new Set(), cashAmount:0, panelSlips: new Set(), panelAmount:0, ccSlips: new Set(), ccAmount:0 };
+          if (!dayMap[day]) dayMap[day] = { date: day, slips: 0, totalAmount:0, cashSlips: 0, cashAmount:0, panelSlips: 0, panelAmount:0, ccSlips: 0, ccAmount:0 };
           const d   = dayMap[day];
-          const key = r.serialNo || r.admitNo;
           const amt = Number(r.received || 0);
           const pt  = (r.paymentType || '').toLowerCase();
-          if (key) d.slips.add(key);
+          d.slips += 1;
           d.totalAmount += amt;
-          if (pt === 'cash')                                   { if (key) d.cashSlips.add(key);  d.cashAmount  += amt; }
-          else if (pt === 'panel')                             { if (key) d.panelSlips.add(key); d.panelAmount += amt; }
-          else if (['c card','cc','credit card'].includes(pt)) { if (key) d.ccSlips.add(key);    d.ccAmount    += amt; }
+          if (pt === 'cash')                                   { d.cashSlips += 1;  d.cashAmount  += amt; }
+          else if (pt === 'panel')                             { d.panelSlips += 1; d.panelAmount += amt; }
+          else if (['c card','cc','credit card'].includes(pt)) { d.ccSlips += 1;    d.ccAmount    += amt; }
         }
 
         const data = Object.values(dayMap).map(d => ({
-          date: d.date, totalPatients: d.slips.size, totalAmount: d.totalAmount,
-          cashPatients: d.cashSlips.size, cashAmount: d.cashAmount,
-          panelPatients: d.panelSlips.size, panelAmount: d.panelAmount,
-          ccPatients: d.ccSlips.size, ccAmount: d.ccAmount,
+          date: d.date, totalPatients: d.slips, totalAmount: d.totalAmount,
+          cashPatients: d.cashSlips, cashAmount: d.cashAmount,
+          panelPatients: d.panelSlips, panelAmount: d.panelAmount,
+          ccPatients: d.ccSlips, ccAmount: d.ccAmount,
         }));
 
-        const totalPatients = new Set(filtered.map(r => r.serialNo || r.admitNo).filter(Boolean)).size;
+        const totalPatients = filtered.length;
         const totalAmount   = filtered.reduce((s, r) => s + Number(r.received || 0), 0);
         const daysWithData  = data.filter(d => d.totalAmount > 0).length;
         const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;

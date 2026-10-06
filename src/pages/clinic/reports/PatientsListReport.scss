@@ -6,6 +6,30 @@
   background: #dde2e8;
   font-family: 'Segoe UI', Tahoma, sans-serif;
   font-size: 0.82rem;
+
+  // The real scroll container isn't the window — it's <main class="p-4
+  // lg:p-6 overflow-auto"> in MainLayout/TabsContainer, which wraps every
+  // page with its own padding. That padding sits OUTSIDE this page's content
+  // box, so a sticky child can never cover it — whatever's scrolled behind
+  // stays visible in that padding strip above the sticky bar. Pulling the
+  // page out by the same amount (and restoring it as this page's own
+  // left/right padding) lets the sticky header sit flush against <main>'s
+  // true top edge instead.
+  margin: -16px -16px 0;
+  padding: 0 16px;
+  @media (min-width: 1024px) {
+    margin: -24px -24px 0;
+    padding: 0 24px;
+  }
+}
+
+// Toolbar (Back/Print/Export/Refresh/...) + the Name/MR#/Department/Doctor
+// search row — stays visible while scrolling through a long patient list.
+.plr-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #dde2e8;
 }
 
 // ── Toolbar (Crystal Reports style) ───────────────────────────────────────────
@@ -214,7 +238,11 @@
 // ── Report area (the white paper) ─────────────────────────────────────────────
 .plr-report-area {
   flex: 1;
-  overflow-y: auto;
+  // No overflow-y:auto here on purpose — this used to be its own independent
+  // scroll container, which fought with .plr-sticky-header's position:sticky
+  // (a sibling outside this box, stuck relative to a DIFFERENT scroll
+  // context) and caused the table header to visually overlap/jump above the
+  // sticky toolbar. Letting the whole page scroll as one fixes it.
   padding: 20px;
   background: #dde2e8;
 }
@@ -379,6 +407,40 @@
   &--cc       { background: #ffe4e6; color: #be123c; }
   &--complem  { background: #f0fdf4; color: #166534; }
   &--cancelled { background: #f1f5f9; color: #64748b; text-decoration: line-through; }
+}
+
+// ── Pagination (shown above and below the table) ───────────────────────────────
+.plr-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 6px 0;
+}
+
+.plr-page-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 10px;
+  background: #e4e0d8;
+  border: 1px solid transparent;
+  border-bottom-color: #888;
+  border-right-color: #888;
+  border-top-color: #fff;
+  border-left-color: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: #1a1a1a;
+
+  &:hover:not(:disabled) { background: #d8d4cc; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+.plr-page-info {
+  font-size: 0.78rem;
+  color: #444;
+  font-weight: 600;
 }
 
 // ── Empty state ───────────────────────────────────────────────────────────────

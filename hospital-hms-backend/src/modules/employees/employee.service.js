@@ -592,6 +592,24 @@ async function update(id, payload) {
     }
 
     await saveRosterHistory(id, payload.dutyRoster, nightShift, newEffFrom);
+
+    // When user explicitly provides a custom effective-from date, propagate
+    // the new roster to all intermediate history entries up to today.
+    // Without this, auto-backfill entries created during the intervening
+    // period would override the backdated change.
+    if (payload.rosterEffectiveFrom) {
+      await ensureRosterHistoryTable();
+      const empIdInt = toIntId(id, 'employee id');
+      const rosterJson = JSON.stringify(Array.isArray(payload.dutyRoster) ? payload.dutyRoster : []);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      await prisma.$executeRawUnsafe(`
+        UPDATE employee_roster_history
+        SET duty_roster = $1::jsonb, is_night_shift = $2
+        WHERE employee_id = $3
+        AND effective_from > $4::date
+        AND effective_from <= $5::date
+      `, rosterJson, nightShift, empIdInt, newEffFrom, todayStr);
+    }
   }
 
   return mergeExtendedFields(updated, extended);

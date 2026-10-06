@@ -204,7 +204,12 @@ export default function Reports() {
     if (!emp?.id) { setEmpRosterHistory([]); return; }
     fetch(`http://localhost:5001/api/employees/${emp.id}/roster-history`)
       .then(r => r.json())
-      .then(json => { setEmpRosterHistory(Array.isArray(json.data) ? json.data : []); })
+      .then(json => {
+        setEmpRosterHistory(Array.isArray(json.data) ? json.data : []);
+        if (emp?.empCode && month && year) {
+          clearApiAttendanceCache(`${emp.empCode}-${month}-${year}`);
+        }
+      })
       .catch(() => setEmpRosterHistory([]));
   }, [emp?.id]);
 
