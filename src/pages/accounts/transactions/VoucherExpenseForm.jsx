@@ -1001,21 +1001,22 @@ export default function VoucherExpenseForm() {
     }
   };
 
-  const prevMonthInfo = () => {
-    const now = new Date();
-    const m = now.getMonth();
-    const month = String(m === 0 ? 12 : m).padStart(2, '0');
-    const year  = String(m === 0 ? now.getFullYear() - 1 : now.getFullYear());
-    const monthName = new Date(Number(year), Number(month) - 1, 1)
-      .toLocaleString('default', { month: 'long' });
-    return { month, year, monthName };
+  // Which month the Employee payee list is actually checking "paid?" against
+  // — normally last calendar month, but pinned to the oldest unpaid month
+  // while the global salary lock is active (see getSalaryCeilingMonth on the
+  // backend). The modal must pay out the SAME month the list filtered on,
+  // or a locked (backlogged) employee would get paid for the wrong month.
+  const fetchSalaryCeiling = async () => {
+    const r = await fetch(`${API}/salary-lock-status`);
+    const j = await r.json();
+    return j?.data || { month: '', year: '', monthName: '' };
   };
 
   const openSalaryModal = async (payee) => {
     setEntry((f) => ({ ...f, payeeName: payee.name }));
     setPayeeSearch(payee.name);
-    const { month, year, monthName } = prevMonthInfo();
-    setSalaryModal({ empName: payee.name, empCode: payee.code, month, year, monthName, rows: null, savedAt: null });
+    const { month, year, monthName, locked } = await fetchSalaryCeiling();
+    setSalaryModal({ empName: payee.name, empCode: payee.code, month, year, monthName, locked, rows: null, savedAt: null });
     setModalLoading(true);
     try {
       const r = await fetch(
@@ -2125,7 +2126,12 @@ export default function VoucherExpenseForm() {
                     <button className="ve-sal-modal__verify"
                       disabled={cvCheckedTotal === 0}
                       onClick={() => {
-                        const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map(Number);
+                        // New-system OPD visit IDs come prefixed ("opd-15") — Number()
+                        // on those silently produces NaN, which JSON.stringify drops
+                        // entirely, so the backend never received a valid id and that
+                        // visit's isPaid flag never flipped. Legacy (plain numeric) IDs
+                        // still convert normally.
+                        const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map((k) => k.startsWith('opd-') ? k : Number(k));
                         setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)), visitIds: ids, amountLocked: true }));
                         setConsultantModal(null);
                       }}
@@ -2259,6 +2265,11 @@ export default function VoucherExpenseForm() {
 
             <div className="ve-sal-modal__month-badge">
               {salaryModal.monthName} {salaryModal.year}
+              {salaryModal.locked && (
+                <span title="Global salary lock active — not every active employee is paid through this month yet, so the system hasn't moved forward.">
+                  {' '}🔒 Backlog
+                </span>
+              )}
             </div>
 
             {modalLoading ? (

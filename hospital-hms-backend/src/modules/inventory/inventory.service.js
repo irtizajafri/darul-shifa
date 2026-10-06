@@ -1527,6 +1527,7 @@ async function createGIN(payload) {
         itemId: gd.itemId,
         movementType: 'OUT',
         quantity: issuedQuantity,
+        unitRate: Number(item?.lastGrnRate || item?.purchasePrice || 0),
         previousStock,
         newStock,
         referenceType: 'GIN',
@@ -1605,8 +1606,12 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
         : parsePositiveNumber(gdItem.quantityRequested - (gdItem.gins || []).reduce((s, g) => s + (Number(g.issuedQuantity) || 0), 0));
 
       if (qty === 0 && userSubmitted) {
+        const zeroItem = await tx.inventoryItem.findUnique({ where: { id: gdItem.itemId } });
         await tx.inventoryGINItem.create({
-          data: { ginId: gin.id, gdItemId: gdItem.id, itemId: gdItem.itemId, issuedQuantity: 0 },
+          data: {
+            ginId: gin.id, gdItemId: gdItem.id, itemId: gdItem.itemId, issuedQuantity: 0,
+            unitRate: Number(zeroItem?.lastGrnRate || zeroItem?.purchasePrice || 0),
+          },
         });
         continue;
       }
@@ -1657,6 +1662,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
           itemId: gdItem.itemId,
           movementType: 'OUT',
           quantity: qty,
+          unitRate: Number(currentItem?.lastGrnRate || currentItem?.purchasePrice || 0),
           previousStock,
           newStock,
           referenceType: 'GIN',
@@ -1898,6 +1904,12 @@ async function createSalesInvoiceWithItems(payload) {
       });
     }
 
+    // Which GIN(s)/GINItem(s) each line's quantity came from (admission
+    // billing only) — flipped to isBilled below so Sales Invoice's
+    // admission-search picker never offers the same stock issuance twice.
+    const allGinIds = lineItems.flatMap((l) => Array.isArray(l.ginIds) ? l.ginIds.map(Number).filter(Boolean) : []);
+    const allGinItemIds = lineItems.flatMap((l) => Array.isArray(l.ginItemIds) ? l.ginItemIds.map(Number).filter(Boolean) : []);
+
     const discountAmount = subTotal * (discountPercent / 100);
     const grandTotal = subTotal - discountAmount;
 
@@ -1966,6 +1978,13 @@ async function createSalesInvoiceWithItems(payload) {
 
         await syncReorderAlert(tx, updatedItem);
       }
+    }
+
+    if (allGinIds.length) {
+      await tx.inventoryGIN.updateMany({ where: { id: { in: allGinIds } }, data: { isBilled: true } });
+    }
+    if (allGinItemIds.length) {
+      await tx.inventoryGINItem.updateMany({ where: { id: { in: allGinItemIds } }, data: { isBilled: true } });
     }
 
     return { ...header, items: invoiceLines };

@@ -325,15 +325,29 @@ export default function SalesInvoice() {
     const map = {};
     for (const gin of admGINs) {
       const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
+      // Already-billed entries (picked into an earlier Sales Invoice) must
+      // never be offered again here — otherwise the same GIN/GINItem could
+      // get billed a second time.
       const entries = gin.ginItems && gin.ginItems.length > 0
-        ? gin.ginItems.map((gi) => ({ itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-', qty: Number(gi.issuedQuantity || 0), dept, defaultRate: Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0) }))
-        : [{ itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-', qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0) }];
+        ? gin.ginItems.filter((gi) => !gi.isBilled).map((gi) => ({
+            ginItemId: gi.id, itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-',
+            qty: Number(gi.issuedQuantity || 0), dept, defaultRate: Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0),
+          }))
+        : gin.isBilled ? [] : [{
+            ginId: gin.id, itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-',
+            qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0),
+          }];
       for (const e of entries) {
         const rowKey = `${e.itemCode}::${e.defaultRate}`;
         if (map[rowKey]) {
           map[rowKey].qty += e.qty;
+          if (e.ginId) map[rowKey].ginIds.push(e.ginId);
+          if (e.ginItemId) map[rowKey].ginItemIds.push(e.ginItemId);
         } else {
-          map[rowKey] = { rowKey, itemId: e.itemId, itemCode: e.itemCode, item: e.item, qty: e.qty, department: e.dept, defaultRate: e.defaultRate };
+          map[rowKey] = {
+            rowKey, itemId: e.itemId, itemCode: e.itemCode, item: e.item, qty: e.qty, department: e.dept, defaultRate: e.defaultRate,
+            ginIds: e.ginId ? [e.ginId] : [], ginItemIds: e.ginItemId ? [e.ginItemId] : [],
+          };
         }
       }
     }
@@ -385,6 +399,10 @@ export default function SalesInvoice() {
           itemId: Number(r.itemId),
           quantity: r.qty,
           saleRate: Number(admRates[r.rowKey] ?? r.defaultRate),
+          // Which GIN(s)/GINItem(s) this row's quantity came from — flipped
+          // to isBilled server-side so they stop being offered again here.
+          ginIds: r.ginIds,
+          ginItemIds: r.ginItemIds,
         })),
       };
       const created = await createSalesInvoiceWithItems(payload);

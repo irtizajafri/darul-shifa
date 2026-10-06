@@ -588,7 +588,7 @@ async function getPendingConsultantFees(doctorId, fromDate, toDate, entityType) 
     : undefined;
 
   // ── Source 1: Discharge Bill rows ──────────────────────────────────────
-  const dbiWhere = { doctorId: docId, isPaid: false, doctorFee: { not: null } };
+  const dbiWhere = { doctorId: docId, isPaid: false };
   if (fromDate || toDate) dbiWhere.createdAt = dateRange;
   if (patientCategoryWhere) dbiWhere.admission = { patientCategory: patientCategoryWhere };
   const dbiRows = await prisma.clinicDischargeBillItem.findMany({
@@ -625,7 +625,7 @@ async function getPendingConsultantFees(doctorId, fromDate, toDate, entityType) 
     dischargeDate: r.admission?.dischargeCertificate?.dischargeDate || null,
     subDeptName: r.subDeptId ? (dbiSubDeptNameById.get(r.subDeptId) || null) : null,
     rate: Number(r.rate) || 0,
-    amount: Number(r.doctorFee) || 0,
+    amount: r.doctorFee !== null ? Number(r.doctorFee) : Number(r.amount) || 0,
   }));
 
   // ── Source 2: Laboratory/Radiology/Ultrasound OPD visit-doctor rows ────
@@ -805,6 +805,86 @@ function getPrevMonthYear() {
   return { month, year };
 }
 
+// ─── Global salary-month lock (per user's design, 2026-10-06) ────────────────
+// Voucher Expense's Employee payee list used to always check only "last
+// calendar month" (getPrevMonthYear) — an employee never paid for August
+// would quietly stop being flagged the moment September arrived, since the
+// check moved on with the calendar regardless of the actual backlog. The
+// lock makes the whole payroll cycle global: nobody's next month becomes
+// payable until EVERY active employee is settled for the oldest unpaid one.
+// A superadmin can flip isOverrideActive to temporarily bypass this and
+// fall back to the old last-calendar-month-only behavior.
+async function getSalaryLockSetting() {
+  let row = await prisma.accSalaryLockSetting.findUnique({ where: { id: 1 } });
+  if (!row) row = await prisma.accSalaryLockSetting.create({ data: { id: 1, isOverrideActive: false } });
+  return row;
+}
+
+async function setSalaryLockOverride(active, userId, userName) {
+  return prisma.accSalaryLockSetting.upsert({
+    where: { id: 1 },
+    update: { isOverrideActive: Boolean(active), updatedByUserId: userId || null, updatedByName: userName || null, updatedAt: new Date() },
+    create: { id: 1, isOverrideActive: Boolean(active), updatedByUserId: userId || null, updatedByName: userName || null },
+  });
+}
+
+// Walks backward month-by-month from today's last calendar month and
+// returns the OLDEST month where at least one active employee still has no
+// EmployeeSalaryPayment row. null means everyone's fully caught up through
+// last calendar month. Bounded to a short lookback (3 months) on purpose —
+// EmployeeSalaryPayment only exists for salaries actually paid through this
+// Voucher Expense flow, so scanning back further would treat every month
+// before this feature was adopted (or before an employee joined) as a fake
+// "unpaid" gap and lock the whole system on day one. The real use case this
+// guards against is a recent 1-2 month miss, not historical reconstruction.
+async function getGlobalOldestUnpaidSalaryMonth(lookbackMonths = 3) {
+  const employees = await prisma.employee.findMany({ where: { status: 'Active' }, select: { empCode: true } });
+  if (!employees.length) return null;
+  const empCodes = employees.map((e) => e.empCode);
+
+  const { month: lastMonth, year: lastYear } = getPrevMonthYear();
+  const cursor = new Date(Number(lastYear), Number(lastMonth) - 1, 1);
+
+  let oldestGap = null;
+  for (let i = 0; i < lookbackMonths; i++) {
+    const m = String(cursor.getMonth() + 1).padStart(2, '0');
+    const y = String(cursor.getFullYear());
+    const paidRows = await prisma.employeeSalaryPayment.findMany({
+      where: { salaryMonth: m, salaryYear: y, empCode: { in: empCodes } },
+      select: { empCode: true },
+    });
+    const paidSet = new Set(paidRows.map((r) => r.empCode));
+    if (empCodes.some((c) => !paidSet.has(c))) oldestGap = { month: m, year: y };
+    cursor.setMonth(cursor.getMonth() - 1);
+  }
+  return oldestGap;
+}
+
+// The single month Voucher Expense's Employee picker currently checks
+// against — normally last calendar month, but pinned to the oldest unpaid
+// month while the lock is active (and no override), so the picker can't
+// move past a backlog. Includes the raw setting/backlog info too, for the
+// superadmin status panel.
+async function getSalaryCeilingMonth() {
+  const [setting, last] = await Promise.all([getSalaryLockSetting(), Promise.resolve(getPrevMonthYear())]);
+  const monthName = (m, y) => new Date(Number(y), Number(m) - 1, 1).toLocaleString('default', { month: 'long' });
+
+  if (setting.isOverrideActive) {
+    return { month: last.month, year: last.year, monthName: monthName(last.month, last.year), locked: false, overrideActive: true, oldestUnpaid: null };
+  }
+
+  const oldest = await getGlobalOldestUnpaidSalaryMonth();
+  if (!oldest) {
+    return { month: last.month, year: last.year, monthName: monthName(last.month, last.year), locked: false, overrideActive: false, oldestUnpaid: null };
+  }
+  const oldestDate = new Date(Number(oldest.year), Number(oldest.month) - 1, 1);
+  const lastDate = new Date(Number(last.year), Number(last.month) - 1, 1);
+  if (oldestDate.getTime() < lastDate.getTime()) {
+    return { month: oldest.month, year: oldest.year, monthName: monthName(oldest.month, oldest.year), locked: true, overrideActive: false, oldestUnpaid: oldest };
+  }
+  return { month: last.month, year: last.year, monthName: monthName(last.month, last.year), locked: false, overrideActive: false, oldestUnpaid: null };
+}
+
 // Missing Salary Report — same "paid via a real voucher?" check Voucher
 // Expense's own Employee payee list already uses (see sourceType==='employee'
 // below), just for an arbitrary month/year instead of always last month.
@@ -843,12 +923,15 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       orderBy: { firstName: 'asc' },
     });
     const allEmps = rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode }));
-    // Once an employee's previous-month salary voucher has been paid, drop
-    // them from the pay-list — they only reappear once a new (unpaid) month
-    // rolls around, same idea as the isPaid gates below for vendor/doctor.
-    const { month: prevMonth, year: prevYear } = getPrevMonthYear();
+    // Once an employee's salary voucher for the current ceiling month has
+    // been paid, drop them from the pay-list — they only reappear once a new
+    // (unpaid) month rolls around, same idea as the isPaid gates below for
+    // vendor/doctor. The ceiling is normally last calendar month, but pinned
+    // to the oldest unpaid month while the global salary lock is active (see
+    // getSalaryCeilingMonth) — same month this head's Salary modal pays out.
+    const ceiling = await getSalaryCeilingMonth();
     const paidRows = await prisma.employeeSalaryPayment.findMany({
-      where: { salaryMonth: prevMonth, salaryYear: prevYear },
+      where: { salaryMonth: ceiling.month, salaryYear: ceiling.year },
       select: { empCode: true },
     });
     const paidCodes = new Set(paidRows.map((r) => r.empCode));
@@ -856,7 +939,7 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
     const filteredEntries = checkedNames.length > 0
       ? dueEmps.filter((e) => checkedNames.includes(e.name))
       : dueEmps;
-    return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueEmps, checkedNames };
+    return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueEmps, checkedNames, salaryCeiling: ceiling };
   }
 
   // Same employee source as above, but deliberately NOT gated by salary-paid
@@ -3009,6 +3092,7 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   copyChartToCorporate, getPendingGrnQueue, getEmployeesDueForSalary,
+  getSalaryCeilingMonth, getSalaryLockSetting, setSalaryLockOverride, getGlobalOldestUnpaidSalaryMonth,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
   getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain, getRefundVoucherAccountChain,

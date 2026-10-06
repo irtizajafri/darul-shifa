@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2, Link2, CheckCircle2, X } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useClinicStore } from '../../../store/useClinicStore';
+import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../../store/useAuthStore';
 import './ListAttachments.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -53,8 +54,43 @@ export default function ListAttachments() {
     addHeadAccount, removeHeadAccount,
   } = useAccountsStore();
   const { staffCategories, fetchStaffCategories } = useClinicStore();
+  const { user } = useAuthStore();
+  const isMaster = Boolean(user?.isSuperAdmin) || user?.email === SUPER_ADMIN_EMAIL;
 
   const [loading, setLoading] = useState(true);
+  // Global salary-month lock status/toggle — superadmin only (see
+  // getSalaryCeilingMonth in accounts.service.js).
+  const [salaryLock, setSalaryLock] = useState(null);
+  const [savingLock, setSavingLock] = useState(false);
+
+  const fetchSalaryLock = () => {
+    fetch(`${API}/salary-lock-status`).then((r) => r.json()).then((j) => setSalaryLock(j?.data || null)).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (isMaster) fetchSalaryLock();
+  }, [isMaster]);
+
+  const toggleSalaryLock = async (active) => {
+    setSavingLock(true);
+    try {
+      const res = await fetch(`${API}/salary-lock-override`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active, userId: user?.id != null ? String(user.id) : null, userName: user?.name || user?.username || user?.email || null }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message || 'Failed');
+      setSalaryLock(json.data);
+      toast.success(active
+        ? `Salary lock override ON — ${json.data.monthName} ${json.data.year} ab turant available hai`
+        : 'Salary lock override OFF — backlog wapas check hoga');
+    } catch (e) {
+      toast.error(e.message || 'Failed to update salary lock');
+    } finally {
+      setSavingLock(false);
+    }
+  };
   const [expandedHead, setExpandedHead] = useState(null);
   const [expandedLink, setExpandedLink] = useState(null);
   const [linkState, setLinkState] = useState({});
@@ -809,6 +845,36 @@ export default function ListAttachments() {
           </button>
         </div>
       </div>
+
+      {isMaster && salaryLock && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem',
+            padding: '0.75rem 1rem', marginBottom: '1rem', borderRadius: 8,
+            background: salaryLock.locked ? '#fef3c7' : '#ecfdf5',
+            border: `1px solid ${salaryLock.locked ? '#f59e0b' : '#10b981'}`,
+          }}
+        >
+          <div style={{ fontSize: '0.85rem' }}>
+            <strong>Salary Lock (superadmin):</strong>{' '}
+            {salaryLock.overrideActive ? (
+              <span>Override ON — checking <strong>{salaryLock.monthName} {salaryLock.year}</strong> only (backlog ignored for now)</span>
+            ) : salaryLock.locked ? (
+              <span>🔒 Locked — abhi tak sab employees ka <strong>{salaryLock.monthName} {salaryLock.year}</strong> paid nahi hua, September/agla month available nahi hoga jab tak yeh complete na ho</span>
+            ) : (
+              <span>✅ Sab caught up — abhi <strong>{salaryLock.monthName} {salaryLock.year}</strong> check ho raha hai</span>
+            )}
+          </div>
+          <button
+            className="acc-param-page__btn-save"
+            style={{ background: salaryLock.overrideActive ? '#64748b' : '#f59e0b', whiteSpace: 'nowrap' }}
+            disabled={savingLock}
+            onClick={() => toggleSalaryLock(!salaryLock.overrideActive)}
+          >
+            {savingLock ? 'Saving…' : salaryLock.overrideActive ? 'Turn Override OFF' : 'Turn Override ON'}
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <p className="list-attach__empty">Loading…</p>

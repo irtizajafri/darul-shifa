@@ -25,6 +25,8 @@ router.delete('/sub-account/:id', ctrl.deleteSubAccount);
 router.post('/copy-chart-to-corporate', ctrl.copyChartToCorporate);
 router.get('/pending-grn-queue', ctrl.getPendingGrnQueue);
 router.get('/employees-due-for-salary', ctrl.getEmployeesDueForSalary);
+router.get('/salary-lock-status', ctrl.getSalaryLockStatus);
+router.post('/salary-lock-override', ctrl.setSalaryLockOverride);
 
 router.get('/payee-heads', ctrl.getPayeeHeads);
 router.post('/payee-heads', ctrl.createPayeeHead);

@@ -25,6 +25,21 @@ async function deleteSubAccount(req, res, next) { try { await svc.deleteSubAccou
 async function copyChartToCorporate(req, res, next) { try { success(res, await svc.copyChartToCorporate(), 'copied'); } catch (e) { next(e); } }
 async function getPendingGrnQueue(req, res, next) { try { success(res, await svc.getPendingGrnQueue(et(req))); } catch (e) { next(e); } }
 async function getEmployeesDueForSalary(req, res, next) { try { success(res, await svc.getEmployeesDueForSalary(req.query.month, req.query.year)); } catch (e) { next(e); } }
+async function getSalaryLockStatus(req, res, next) {
+  try {
+    const [ceiling, setting] = await Promise.all([svc.getSalaryCeilingMonth(), svc.getSalaryLockSetting()]);
+    success(res, { ...ceiling, isOverrideActive: setting.isOverrideActive, updatedByName: setting.updatedByName, updatedAt: setting.updatedAt });
+  } catch (e) { next(e); }
+}
+async function setSalaryLockOverride(req, res, next) {
+  try {
+    const { active } = req.body || {};
+    const userId = req.body?.userId;
+    const userName = req.body?.userName;
+    await svc.setSalaryLockOverride(active, userId, userName);
+    success(res, await svc.getSalaryCeilingMonth(), active ? 'Salary lock override turned ON' : 'Salary lock override turned OFF');
+  } catch (e) { next(e); }
+}
 
 async function getPayeeHeads(req, res, next) { try { success(res, await svc.getPayeeHeads(et(req))); } catch (e) { next(e); } }
 async function createPayeeHead(req, res, next) { try { success(res, await svc.createPayeeHead(req.body), 'created'); } catch (e) { next(e); } }
@@ -309,6 +324,7 @@ module.exports = {
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
   getSubAccounts, createSubAccount, updateSubAccount, deleteSubAccount,
   copyChartToCorporate, getPendingGrnQueue, getEmployeesDueForSalary,
+  getSalaryLockStatus, setSalaryLockOverride,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getSurgeryHeadForMainAccount, getSurgeryPayeesForHead, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory,

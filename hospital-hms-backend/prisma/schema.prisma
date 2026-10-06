@@ -516,6 +516,10 @@ model InventoryGIN {
   issuedBy        Employee?            @relation(fields: [issuedById], references: [id])
   issuedQuantity  Float?
   unitRate        Decimal?             @db.Decimal(12, 4)
+  // Set once this (single-item) GIN has been picked into a Sales Invoice, so
+  // the admission-search picker stops offering it again (double-billing
+  // guard) — see migration 039.
+  isBilled        Boolean              @default(false)
   issueDate       DateTime
   admissionNumber String?
   patientName     String?
@@ -584,6 +588,8 @@ model InventoryGINItem {
   item           InventoryItem @relation(fields: [itemId], references: [id])
   issuedQuantity Float
   unitRate       Decimal?      @db.Decimal(12, 4)
+  // Set once this row has been picked into a Sales Invoice — see migration 039.
+  isBilled       Boolean       @default(false)
   createdAt      DateTime      @default(now())
 
   assetInstances AssetInstance[]
@@ -2297,6 +2303,15 @@ model AccVoucherExpense {
   draftItems  AccVoucherExpenseDraft[]
 
   @@unique([voucherNo, entityType])
+}
+
+// Global salary-month lock — singleton row (id always 1). See migration 038.
+model AccSalaryLockSetting {
+  id               Int      @id @default(autoincrement())
+  isOverrideActive Boolean  @default(false)
+  updatedByUserId  String?
+  updatedByName    String?
+  updatedAt        DateTime @default(now())
 }
 
 // ─── Expense Draft — individual clinic/reception payments saved throughout the
