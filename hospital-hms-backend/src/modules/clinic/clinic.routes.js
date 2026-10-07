@@ -136,6 +136,10 @@ router.get('/opd/adjustment/:source/:id', controller.getVisitForAdjustment);
 router.put('/opd/adjustment/:source/:id', controller.updateVisitPersonalInfo);
 router.put('/opd/adjustment/:source/:id/doctor-amount', controller.updateVisitDoctorAmount);
 router.put('/opd/adjustment/:source/:id/doctor', controller.updateVisitDoctor);
+// Superadmin Full Slip Edit (General OPD / Emergency) — UI is superadmin-only
+router.get('/opd/full-edit/:id', controller.getOpdVisitForFullEdit);
+router.put('/opd/full-edit/:id', controller.updateOpdVisitFull);
+router.get('/opd/full-edit/:id/logs', controller.getOpdVisitEditLogs);
 
 // Slip Transfer
 router.get('/opd/slip-transfer/search', controller.searchVisitsForSlipTransfer);

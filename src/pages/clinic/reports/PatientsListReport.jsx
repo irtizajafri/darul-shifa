@@ -11,6 +11,42 @@ import './PatientsListReport.scss';
 const API = 'http://localhost:5001/api/clinic';
 const PAGE_SIZE = 50;
 
+// A slip's Administrative Expense (Doctor Parameter toggle+rate) is folded
+// into the visit total, so the backend sends it as `adminExpense` on that
+// visit's first row (with the share of received/balance it accounts for).
+// Show it as its own line under the doctor's row: the doctor row keeps only
+// the doctor's part, the extra line carries the admin expense. Display-only —
+// the line is not a patient, so Total Patients and every total stay the same.
+function expandAdminExpense(rows) {
+  const out = [];
+  rows.forEach((v, parentIndex) => {
+    if (!(Number(v.adminExpense) > 0)) {
+      out.push({ row: v, parentIndex });
+      return;
+    }
+    const adminReceived = Number(v.adminReceived || 0);
+    const adminBalance = Number(v.adminBalance || 0);
+    out.push({
+      row: { ...v, received: Number(v.received || 0) - adminReceived, balance: Number(v.balance || 0) - adminBalance },
+      parentIndex,
+    });
+    out.push({
+      row: {
+        ...v,
+        id: `${v.id}_admin`,
+        _adminLine: true,
+        subDepartment: 'Administrative Expense',
+        doctor: v.adminExpenseDoctor || v.doctor,
+        received: adminReceived,
+        balance: adminBalance,
+        discount: 0,
+      },
+      parentIndex,
+    });
+  });
+  return out;
+}
+
 function excelSerialToDateStr(serial) {
   const d = new Date(Math.round((serial - 25569) * 86400 * 1000));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
@@ -360,7 +396,7 @@ export default function PatientsListReport() {
       ['S.No.', 'Admit No', 'Date', 'Time', 'Patient Name', 'Department', 'Sub Department', 'Doctor / Consultant', 'Type', 'Received', 'Bal.', 'Dis.'],
     ];
 
-    const dataRows = filteredVisits.map((v) => [
+    const dataRows = expandAdminExpense(filteredVisits).map(({ row: v }) => [
       v.serialNo,
       v.admitNo || '',
       fmtDate(v.visitDate),
@@ -457,8 +493,8 @@ export default function PatientsListReport() {
     </tr>
   );
 
-  const renderRows = (rows) => rows.map((v, i) => (
-    <tr key={v.id} className={i % 2 === 0 ? 'plr-row-even' : ''}>
+  const renderRows = (rows) => expandAdminExpense(rows).map(({ row: v, parentIndex: i }) => (
+    <tr key={v.id} className={`${i % 2 === 0 ? 'plr-row-even' : ''}${v._adminLine ? ' plr-row-admin' : ''}`}>
       <td>{v.serialNo}</td>
       <td>{v.admitNo || ''}</td>
       <td>{fmtDate(v.visitDate)}</td>

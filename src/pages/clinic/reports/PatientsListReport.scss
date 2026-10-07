@@ -343,6 +343,8 @@
 }
 
 .plr-row-even td { background: #f7f9fc; }
+// Administrative Expense line under its doctor's row (see expandAdminExpense)
+.plr-row-admin td { font-style: italic; color: #475569; }
 
 // ── Grouped view (User wise / User shift wise) ────────────────────────────────
 .plr-group {

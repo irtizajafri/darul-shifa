@@ -521,6 +521,22 @@ export const useInventoryStore = create((set) => ({
     body: JSON.stringify(payload),
   }),
 
+  // Saved invoices billed against one admission number (exact match). Does
+  // not touch the shared salesInvoiceHeaders list state.
+  fetchAdmissionInvoices: async (admissionNumber) => {
+    const admNo = String(admissionNumber || '').trim();
+    const qs = new URLSearchParams({ customerType: 'admission', search: admNo });
+    const data = await request(`/sales-invoice-headers?${qs.toString()}`);
+    return (Array.isArray(data) ? data : []).filter((h) => String(h.customerName || '').trim() === admNo);
+  },
+
+  // Changes only this invoice line's rate (and its invoice totals) — never the
+  // item master rate, the GIN rate or stock.
+  updateSalesInvoiceLineRate: async (lineId, saleRate) => request(`/sales-invoice-lines/${lineId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ saleRate }),
+  }),
+
   fetchGDNs: async ({ search = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });
     try {

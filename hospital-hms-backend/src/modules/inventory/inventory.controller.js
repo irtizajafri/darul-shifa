@@ -771,6 +771,16 @@ async function createSalesInvoiceWithItems(req, res, next) {
   }
 }
 
+async function updateSalesInvoiceLineRate(req, res, next) {
+  try {
+    const data = await service.updateSalesInvoiceLineRate(req.params.id, req.body || {});
+    return success(res, data, 'invoice rate updated');
+  } catch (err) {
+    if (/Invalid|must|not found/.test(String(err.message))) return fail(res, 400, err.message);
+    next(err);
+  }
+}
+
 async function listGDNs(req, res, next) {
   try {
     const data = await service.listGDNs(req.query || {});
@@ -1090,6 +1100,7 @@ module.exports = {
   createSalesInvoice,
   listSalesInvoiceHeaders,
   createSalesInvoiceWithItems,
+  updateSalesInvoiceLineRate,
   listGDNs,
   createGDN,
   addStockMovement,

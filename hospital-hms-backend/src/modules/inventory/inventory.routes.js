@@ -72,6 +72,7 @@ router.get('/sales-invoices', controller.listSalesInvoices);
 router.post('/sales-invoices', controller.createSalesInvoice);
 router.get('/sales-invoice-headers', controller.listSalesInvoiceHeaders);
 router.post('/sales-invoice-headers', controller.createSalesInvoiceWithItems);
+router.patch('/sales-invoice-lines/:id', controller.updateSalesInvoiceLineRate);
 
 router.get('/gdn', controller.listGDNs);
 router.post('/gdn', controller.createGDN);

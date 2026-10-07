@@ -50,6 +50,8 @@ const menuItems = [
       { label: 'Cancel Slip',                           path: '/clinic/transactions/cancel-slip',              perm: { sub: 'transactions', tab: 'cancel-slip' } },
       { label: 'Slip Refund',                           path: '/clinic/transactions/slip-refund',              perm: { sub: 'transactions', tab: 'slip-refund' } },
       { label: 'Slip Adjustment',                       path: '/clinic/transactions/slip-adjustment',          perm: { sub: 'transactions', tab: 'slip-adjustment' } },
+      // Superadmin only — '__superadmin__' is never a grantable permission key.
+      { label: 'Full Slip Edit',                        path: '/clinic/transactions/full-slip-edit',           perm: { sub: '__superadmin__' } },
       { label: 'Slip Transfer',                         path: '/clinic/transactions/slip-transfer',            perm: { sub: 'transactions', tab: 'slip-transfer' } },
       { label: 'Receiving against Admission',           path: '/clinic/transactions/receiving-against-admission', perm: { sub: 'transactions', tab: 'receiving-against-admission' } },
       { label: 'Discount & Refund Against Admission',   path: '/clinic/transactions/discount-refund-admission', perm: { sub: 'transactions', tab: 'discount-refund-admission' } },

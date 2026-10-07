@@ -140,6 +140,7 @@ export default function AttendanceList() {
   const [activeTab, setActiveTab] = useState(0);
   const [editModal, setEditModal] = useState(null);
   const [editRows, setEditRows] = useState([]); // Multiple rows for split shifts
+  const [paidMonthWarning, setPaidMonthWarning] = useState(null); // { month, year, voucherNo }
   const [addModal, setAddModal] = useState(false);
   const [overrides, setOverrides] = useState([]);
   const [apiDateUi, setApiDateUi] = useState(defaultApiDate);
@@ -743,6 +744,7 @@ export default function AttendanceList() {
     toast.success(`${editRows.length} attendance row(s) updated`);
     setEditModal(null);
     setEditRows([]);
+    setPaidMonthWarning(null);
     reset();
   };
 
@@ -1223,7 +1225,23 @@ export default function AttendanceList() {
                       />
                     </td>
                     <td>
-                      <button className="edit-btn" onClick={() => setEditModal(row)}>
+                      <button className="edit-btn" onClick={async () => {
+                        setPaidMonthWarning(null);
+                        setEditModal(row);
+                        // Check if this row's month salary is already paid
+                        const rowDate = toDateOnly(row.dateIn || row.date || row.dateOut);
+                        if (rowDate && row.empCode) {
+                          const d = new Date(rowDate);
+                          const m = String(d.getMonth() + 1).padStart(2, '0');
+                          const y = String(d.getFullYear());
+                          try {
+                            const r = await fetch(`${ATTENDANCE_API_URL}/salary-paid-months?empCode=${encodeURIComponent(row.empCode)}`);
+                            const j = await r.json();
+                            const paid = (j?.data || []).find(p => p.salaryMonth === m && p.salaryYear === y);
+                            if (paid) setPaidMonthWarning({ month: m, year: y, voucherNo: paid.voucherNo });
+                          } catch { /* silent */ }
+                        }
+                      }}>
                         Edit
                       </button>
                     </td>
@@ -1325,12 +1343,17 @@ export default function AttendanceList() {
       )}
 
 
-      <Modal isOpen={!!editModal} onClose={() => setEditModal(null)} title="Edit Attendance" size="lg">
+      <Modal isOpen={!!editModal} onClose={() => { setEditModal(null); setPaidMonthWarning(null); }} title="Edit Attendance" size="lg">
         {editModal && (
           <form onSubmit={handleSubmit(onEditSave)}>
             {editRows.some(r => r.isLocked) && !isMaster && (
               <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#b91c1c', fontWeight: 600, fontSize: 13 }}>
                 🔒 This record is locked. Only the master admin can edit it.
+              </div>
+            )}
+            {paidMonthWarning && (
+              <div style={{ background: '#fffbeb', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#92400e', fontWeight: 600, fontSize: 13 }}>
+                ⚠️ {(() => { const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return months[parseInt(paidMonthWarning.month,10)-1]; })()} {paidMonthWarning.year} ki salary already pay ho chuki hai ({paidMonthWarning.voucherNo}) — attendance edit karne ke baad payslip dobara save karna hoga.
               </div>
             )}
             <div className="form-group">

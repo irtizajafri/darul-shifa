@@ -2095,6 +2095,20 @@ async function getVisitForAdjustment(req, res, next) {
   }
 }
 
+// ── Superadmin Full Slip Edit ─────────────────────────────────────────────
+async function getOpdVisitForFullEdit(req, res, next) {
+  try { success(res, await service.getOpdVisitForFullEdit(req.params.id)); }
+  catch (err) { if (err.status) return fail(res, err.status, err.message); next(err); }
+}
+async function updateOpdVisitFull(req, res, next) {
+  try { success(res, await service.updateOpdVisitFull(req.params.id, req.body || {}), 'Slip update ho gayi'); }
+  catch (err) { if (err.status) return fail(res, err.status, err.message); next(err); }
+}
+async function getOpdVisitEditLogs(req, res, next) {
+  try { success(res, await service.getOpdVisitEditLogs(req.params.id)); }
+  catch (err) { next(err); }
+}
+
 async function updateVisitPersonalInfo(req, res, next) {
   try {
     const data = await service.updateVisitPersonalInfo(req.params.source, req.params.id, req.body);
@@ -2494,6 +2508,9 @@ async function receiveBalancePayment(req, res, next) {
 }
 
 module.exports = {
+  getOpdVisitForFullEdit,
+  updateOpdVisitFull,
+  getOpdVisitEditLogs,
   getDepartments,
   createDepartment,
   updateDepartment,

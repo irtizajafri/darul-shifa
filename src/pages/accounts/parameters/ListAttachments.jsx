@@ -14,6 +14,13 @@ const API = 'http://localhost:5001/api/accounts';
 const UTIL_API = 'http://localhost:5001/api/utilities';
 const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 
+// HR employee names can carry stray spaces / an empty last name. Ticks are
+// stored as name strings, so compare on a normalized key (same rule as the
+// backend's payeeNameKey) — otherwise such employees can never be ticked.
+const cleanName = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
+const nameKey = (s) => cleanName(s).replace(/\s+(null|undefined)$/i, '').toLowerCase();
+const empName = (emp) => emp.fullName || cleanName(`${emp.firstName ?? ''} ${emp.lastName ?? ''}`);
+
 // Matches a "Utility provider" payee entry's free-text name to the Utilities
 // Bill module's utility bucket, so we know which actual-bill date to show.
 function matchUtility(entryName) {
@@ -148,7 +155,7 @@ export default function ListAttachments() {
     if (head.sourceType === 'vendor') {
       const r = await fetch(`${API}/payee-entries?headId=${head.id}`);
       const j = await r.json();
-      const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((e) => e.name));
+      const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((e) => nameKey(e.name)));
       setSupplierModal({
         headId: head.id,
         headName: head.name,
@@ -177,7 +184,7 @@ export default function ListAttachments() {
       const r = await fetch(`${API}/payee-entries/bulk-save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payeeHeadId: supplierModal.headId, subAccountId: supplierModal.subAccountId, names: [...supplierModal.checked] }),
+        body: JSON.stringify({ payeeHeadId: supplierModal.headId, subAccountId: supplierModal.subAccountId, names: supplierModal.allSuppliers.filter((x) => supplierModal.checked.has(nameKey(x.name))).map((x) => cleanName(x.name)) }),
       });
       const j = await r.json();
       if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
@@ -194,7 +201,12 @@ export default function ListAttachments() {
       const r = await fetch(`${API}/payee-entries/bulk-save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payeeHeadId: employeeModal.headId, subAccountId: employeeModal.subAccountId, names: [...employeeModal.checked] }),
+        body: JSON.stringify({
+          payeeHeadId: employeeModal.headId,
+          subAccountId: employeeModal.subAccountId,
+          // checked holds normalized keys — send the clean display names.
+          names: employeeModal.allEmployees.filter((emp) => employeeModal.checked.has(nameKey(empName(emp)))).map(empName),
+        }),
       });
       const j = await r.json();
       if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
@@ -212,7 +224,7 @@ export default function ListAttachments() {
       const r = await fetch(`${API}/payee-entries/bulk-save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payeeHeadId: doctorModal.headId, subAccountId: doctorModal.subAccountId, names: [...doctorModal.checked] }),
+        body: JSON.stringify({ payeeHeadId: doctorModal.headId, subAccountId: doctorModal.subAccountId, names: doctorModal.allDoctors.filter((x) => doctorModal.checked.has(nameKey(x.name))).map((x) => cleanName(x.name)) }),
       });
       const j = await r.json();
       if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
@@ -432,7 +444,7 @@ export default function ListAttachments() {
     if (head.sourceType === 'employee' || head.sourceType === 'employee-manual') {
       if (linkedEmployees.length === 0) return <p className="list-attach__empty">No employees found in HR module</p>;
       return linkedEmployees.map((e) => (
-        <div key={e.id} className="list-attach__entry-row"><span>{e.firstName} {e.lastName}</span></div>
+        <div key={e.id} className="list-attach__entry-row"><span>{empName(e)}</span></div>
       ));
     }
     if (head.sourceType === 'vendor') {
@@ -762,19 +774,20 @@ export default function ListAttachments() {
                 if (head.sourceType === 'vendor' && v) {
                   const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${v}`);
                   const j = await r.json();
-                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
+                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => nameKey(en.name)));
                   setSupplierModal({ headId: head.id, subAccountId: v, headName: head.name, allSuppliers: linkedSuppliers, checked: checkedNames });
                 }
                 if ((head.sourceType === 'employee' || head.sourceType === 'employee-manual') && v) {
                   const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${v}`);
                   const j = await r.json();
-                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
-                  setEmployeeModal({ headId: head.id, subAccountId: v, headName: head.name, allEmployees: linkedEmployees, checked: checkedNames });
+                  // Employee ticks are kept as normalized name KEYS (see nameKey).
+                  const checkedKeys = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => nameKey(en.name)));
+                  setEmployeeModal({ headId: head.id, subAccountId: v, headName: head.name, allEmployees: linkedEmployees, checked: checkedKeys });
                 }
                 if (head.sourceType === 'doctor' && v) {
                   const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${v}`);
                   const j = await r.json();
-                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
+                  const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => nameKey(en.name)));
                   setDoctorModal({ headId: head.id, subAccountId: v, headName: head.name, allDoctors: linkedDoctors, checked: checkedNames });
                 }
               }}
@@ -1039,10 +1052,10 @@ export default function ListAttachments() {
               <label className="list-attach__check-label">
                 <input
                   type="checkbox"
-                  checked={supplierModal.allSuppliers.length > 0 && supplierModal.checked.size === supplierModal.allSuppliers.length}
+                  checked={supplierModal.allSuppliers.length > 0 && supplierModal.allSuppliers.every((s) => supplierModal.checked.has(nameKey(s.name)))}
                   onChange={(e) => {
                     const next = e.target.checked
-                      ? new Set(supplierModal.allSuppliers.map((s) => s.name))
+                      ? new Set(supplierModal.allSuppliers.map((s) => nameKey(s.name)))
                       : new Set();
                     setSupplierModal((m) => ({ ...m, checked: next }));
                   }}
@@ -1050,7 +1063,7 @@ export default function ListAttachments() {
                 <span>Select All</span>
               </label>
               <span className="list-attach__supplier-modal__count">
-                {supplierModal.checked.size} / {supplierModal.allSuppliers.length} selected
+                {supplierModal.allSuppliers.filter((s) => supplierModal.checked.has(nameKey(s.name))).length} / {supplierModal.allSuppliers.length} selected
               </span>
             </div>
 
@@ -1058,18 +1071,19 @@ export default function ListAttachments() {
               {supplierModal.allSuppliers.map((s) => (
                 <label
                   key={s.id}
-                  className={`list-attach__supplier-modal__item ${supplierModal.checked.has(s.name) ? 'checked' : ''}`}
+                  className={`list-attach__supplier-modal__item ${supplierModal.checked.has(nameKey(s.name)) ? 'checked' : ''}`}
                 >
                   <input
                     type="checkbox"
-                    checked={supplierModal.checked.has(s.name)}
+                    checked={supplierModal.checked.has(nameKey(s.name))}
                     onChange={() => {
                       const next = new Set(supplierModal.checked);
-                      next.has(s.name) ? next.delete(s.name) : next.add(s.name);
+                      const k = nameKey(s.name);
+                      next.has(k) ? next.delete(k) : next.add(k);
                       setSupplierModal((m) => ({ ...m, checked: next }));
                     }}
                   />
-                  <span className="list-attach__supplier-modal__name">{s.name}</span>
+                  <span className="list-attach__supplier-modal__name">{s.name}{s.code ? <span style={{ color: '#94a3b8', marginLeft: 6 }}>({s.code})</span> : null}</span>
                 </label>
               ))}
             </div>
@@ -1099,10 +1113,10 @@ export default function ListAttachments() {
               <label className="list-attach__check-label">
                 <input
                   type="checkbox"
-                  checked={employeeModal.allEmployees.length > 0 && employeeModal.checked.size === employeeModal.allEmployees.length}
+                  checked={employeeModal.allEmployees.length > 0 && employeeModal.allEmployees.every((emp) => employeeModal.checked.has(nameKey(empName(emp))))}
                   onChange={(e) => {
                     const next = e.target.checked
-                      ? new Set(employeeModal.allEmployees.map((emp) => `${emp.firstName} ${emp.lastName}`))
+                      ? new Set(employeeModal.allEmployees.map((emp) => nameKey(empName(emp))))
                       : new Set();
                     setEmployeeModal((m) => ({ ...m, checked: next }));
                   }}
@@ -1110,24 +1124,30 @@ export default function ListAttachments() {
                 <span>Select All</span>
               </label>
               <span className="list-attach__supplier-modal__count">
-                {employeeModal.checked.size} / {employeeModal.allEmployees.length} selected
+                {/* Count employees, not distinct names — two employees sharing
+                    a name are both ticked by one key and both shown. */}
+                {employeeModal.allEmployees.filter((emp) => employeeModal.checked.has(nameKey(empName(emp)))).length} / {employeeModal.allEmployees.length} selected
               </span>
             </div>
             <div className="list-attach__supplier-modal__list">
               {employeeModal.allEmployees.map((emp) => {
-                const fullName = `${emp.firstName} ${emp.lastName}`;
+                const fullName = empName(emp);
+                const key = nameKey(fullName);
+                const isChecked = employeeModal.checked.has(key);
                 return (
-                  <label key={emp.id} className={`list-attach__supplier-modal__item ${employeeModal.checked.has(fullName) ? 'checked' : ''}`}>
+                  <label key={emp.id} className={`list-attach__supplier-modal__item ${isChecked ? 'checked' : ''}`}>
                     <input
                       type="checkbox"
-                      checked={employeeModal.checked.has(fullName)}
+                      checked={isChecked}
                       onChange={() => {
                         const next = new Set(employeeModal.checked);
-                        next.has(fullName) ? next.delete(fullName) : next.add(fullName);
+                        next.has(key) ? next.delete(key) : next.add(key);
                         setEmployeeModal((m) => ({ ...m, checked: next }));
                       }}
                     />
-                    <span className="list-attach__supplier-modal__name">{fullName}</span>
+                    <span className="list-attach__supplier-modal__name">
+                      {fullName}{emp.empCode ? <span style={{ color: '#94a3b8', marginLeft: 6 }}>({emp.empCode})</span> : null}
+                    </span>
                   </label>
                 );
               })}
@@ -1157,10 +1177,10 @@ export default function ListAttachments() {
               <label className="list-attach__check-label">
                 <input
                   type="checkbox"
-                  checked={doctorModal.allDoctors.length > 0 && doctorModal.checked.size === doctorModal.allDoctors.length}
+                  checked={doctorModal.allDoctors.length > 0 && doctorModal.allDoctors.every((d) => doctorModal.checked.has(nameKey(d.name)))}
                   onChange={(e) => {
                     const next = e.target.checked
-                      ? new Set(doctorModal.allDoctors.map((d) => d.name))
+                      ? new Set(doctorModal.allDoctors.map((d) => nameKey(d.name)))
                       : new Set();
                     setDoctorModal((m) => ({ ...m, checked: next }));
                   }}
@@ -1168,18 +1188,19 @@ export default function ListAttachments() {
                 <span>Select All</span>
               </label>
               <span className="list-attach__supplier-modal__count">
-                {doctorModal.checked.size} / {doctorModal.allDoctors.length} selected
+                {doctorModal.allDoctors.filter((d) => doctorModal.checked.has(nameKey(d.name))).length} / {doctorModal.allDoctors.length} selected
               </span>
             </div>
             <div className="list-attach__supplier-modal__list">
               {doctorModal.allDoctors.map((d) => (
-                <label key={d.id} className={`list-attach__supplier-modal__item ${doctorModal.checked.has(d.name) ? 'checked' : ''}`}>
+                <label key={d.id} className={`list-attach__supplier-modal__item ${doctorModal.checked.has(nameKey(d.name)) ? 'checked' : ''}`}>
                   <input
                     type="checkbox"
-                    checked={doctorModal.checked.has(d.name)}
+                    checked={doctorModal.checked.has(nameKey(d.name))}
                     onChange={() => {
                       const next = new Set(doctorModal.checked);
-                      next.has(d.name) ? next.delete(d.name) : next.add(d.name);
+                      const k = nameKey(d.name);
+                      next.has(k) ? next.delete(k) : next.add(k);
                       setDoctorModal((m) => ({ ...m, checked: next }));
                     }}
                   />

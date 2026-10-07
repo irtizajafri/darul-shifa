@@ -7571,7 +7571,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     include: {
       doctors: {
         include: {
-          doctor:  { select: { name: true } },
+          doctor:  { select: { name: true, administrativeExpenseEnabled: true } },
           subDept: { select: { name: true } },
         },
       },
@@ -7624,6 +7624,37 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     // shows as Balance instead.
     const effReceived = isCancelled ? 0 : (isDeferred ? 0 : receivedAtCreation);
     const effBalance  = isCancelled ? 0 : (isDeferred ? (v.totalAmount - balancePaidLater) : (v.totalAmount - v.receive));
+
+    // Administrative Expenses (Doctor Parameter toggle+rate) are folded into
+    // v.totalAmount at slip time but never stored on any doctor row (see
+    // GeneralOPD's adminExpenseTotal). Recover the amount as whatever the
+    // total holds beyond the doctor fees (after discount) and the CC
+    // surcharge — the snapshot actually charged, unaffected by later rate
+    // edits — and only for slips with an admin-expense doctor, so legacy
+    // totals that never matched their lines aren't mistaken for it.
+    // Attached to the first row (the one carrying received/balance) as
+    // adminExpense + the share of received/balance it accounts for; the
+    // Patient List shows it as its own line, while row counts and totals
+    // for every other consumer stay exactly as before.
+    let adminExpense = 0;
+    let adminExpenseDoctor = null;
+    const adminDocs = (v.doctors || []).filter((d) => d.doctor?.administrativeExpenseEnabled);
+    if (!isCancelled && adminDocs.length && Number(v.totalAmount) > 0) {
+      const gross = (v.doctors || []).reduce((s, d) => s + Number(d.amount || 0), 0);
+      const doctorNet = Math.max(0, gross - Number(v.discount || 0));
+      const diff = Math.round((Number(v.totalAmount) - Number(v.ccCharge || 0) - doctorNet) * 100) / 100;
+      if (diff >= 1) {
+        adminExpense = diff;
+        adminExpenseDoctor = [...new Set(adminDocs.map((d) => d.doctor.name))].join(', ');
+      }
+    }
+    const adminShare = adminExpense > 0 ? adminExpense / Number(v.totalAmount) : 0;
+    const adminReceived = Math.round(effReceived * adminShare * 100) / 100;
+    const adminBalance  = Math.round(effBalance * adminShare * 100) / 100;
+    const adminFields = adminExpense > 0
+      ? { adminExpense, adminExpenseDoctor, adminReceived, adminBalance }
+      : {};
+
     const baseRow = {
       serialNo:      v.serialNo,
       admitNo:       v.admitNo || null,
@@ -7651,21 +7682,46 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
         discount:      isCancelled ? 0 : v.discount,
       });
     } else {
+      // Money exists once per visit (v.receive / balance / discount), but a
+      // multi-test slip (e.g. 4 lab tests) should show each test's own part.
+      // Split the visit's doctor-fee money across its rows in proportion to
+      // each row's listed rate (d.amount): part = rate / sum(rates) × total.
+      // Discount is stored in rupees (a % discount is converted at slip
+      // time), so a 10% slip discount comes out as exactly 10% of each test,
+      // and a rupee discount is shared in the same rate ratio. Rounding
+      // leftovers go to the LAST row so the rows always add up to exactly
+      // the visit's figures.
+      // The admin-expense share (if any) is not split — it stays on the
+      // first row, where the Patient List peels it off as its own line.
+      const weights = v.doctors.map((d) => Math.max(0, Number(d.amount || 0)));
+      const weightSum = weights.reduce((s, w) => s + w, 0);
+      const splitMoney = (total) => {
+        const amt = Number(total || 0);
+        if (!amt || weightSum <= 0 || v.doctors.length === 1) {
+          return v.doctors.map((_, i) => (i === 0 ? amt : 0));
+        }
+        const parts = weights.map((w) => Math.round((amt * w / weightSum) * 100) / 100);
+        const last = parts.length - 1;
+        const allocated = parts.slice(0, last).reduce((s, p) => s + p, 0);
+        parts[last] = Math.round((amt - allocated) * 100) / 100;
+        return parts;
+      };
+      const adminRecv = adminFields.adminReceived || 0;
+      const adminBal  = adminFields.adminBalance || 0;
+      const recvParts = splitMoney(effReceived - adminRecv);
+      const balParts  = splitMoney(effBalance - adminBal);
+      const discParts = splitMoney(isCancelled ? 0 : v.discount);
+
       v.doctors.forEach((d, idx) => {
         mapped.push({
           ...baseRow,
           id:            `opd_${v.id}_${idx}`,
           subDepartment: d.subDept?.name || null,
           doctor:        d.doctor?.name  || null,
-          // d.amount is each test's listed rate (gross, pre-discount) — not
-          // what was actually collected. Money actually received only exists
-          // once per visit (v.receive), same as discount/balance — all three
-          // only go on the first row so a multi-test visit doesn't sum to
-          // more than what was really taken (and a Panel visit, where
-          // v.receive is always 0, doesn't show a phantom received amount).
-          received:      idx === 0 ? effReceived : 0,
-          balance:       idx === 0 ? effBalance : 0,
-          discount:      idx === 0 ? (isCancelled ? 0 : v.discount) : 0,
+          received:      recvParts[idx] + (idx === 0 ? adminRecv : 0),
+          balance:       balParts[idx] + (idx === 0 ? adminBal : 0),
+          discount:      discParts[idx],
+          ...(idx === 0 ? adminFields : {}),
         });
       });
     }
@@ -10222,7 +10278,238 @@ async function listHandovers({ fromDate, toDate, userId } = {}) {
   return prisma.clinicHandover.findMany({ where, orderBy: { id: 'desc' } });
 }
 
+// ── Superadmin Full Slip Edit (Clinic > Parameters) ─────────────────────────
+// Edits a whole General OPD / Emergency slip: patient details, tests/doctors,
+// discount, payment type, received. Nothing is blocked by business state —
+// every risky situation is returned as a WARNING the UI shows before saving
+// (owner's decision, 2026-10-07). The one hard stop is technical: a test row
+// whose doctor fee was already paid through a voucher can't be DELETED (the
+// voucher's fee record points at it); its amount can still be changed.
+
+const FULL_EDIT_DEPTS = ['general opd', 'emergency'];
+
+async function buildFullEditWarnings(visit) {
+  const warnings = [];
+  const isCancelled = ['canceled', 'cancelled'].includes(String(visit.status || '').toLowerCase());
+  if (isCancelled) {
+    warnings.push({ code: 'cancelled', message: 'Yeh slip Cancelled hai — edit karne se cancel status nahi hatega.' });
+  }
+
+  const paidRows = (visit.doctors || []).filter((d) => d.isPaid);
+  if (paidRows.length) {
+    const names = paidRows.map((d) => `${d.subDept?.name || 'Test'} (${d.doctor?.name || '-'})`).join(', ');
+    warnings.push({ code: 'doctor-paid', message: `In lines ki doctor fee voucher se pay ho chuki hai: ${names}. Amount badalne se paid voucher waisa hi rahega; yeh lines hataayi nahi ja sakti.` });
+  }
+
+  // Business day = 08:00 → 07:59:59. createdAt is a naive timestamp, so do
+  // the day/handover comparisons in SQL against the raw column (same reason
+  // as getHandoverSummary / OV_BIZ elsewhere in this file).
+  const [dayRow] = await prisma.$queryRawUnsafe(
+    `SELECT to_char(("createdAt" - INTERVAL '8 hours')::date, 'YYYY-MM-DD') AS biz,
+            EXISTS (SELECT 1 FROM "AccVoucherIncome" vi
+                    WHERE vi.source = 'auto' AND vi."entityType" = 'non-corporate'
+                      AND vi."voucherDate"::date = ("ClinicOpdVisit"."createdAt" - INTERVAL '8 hours')::date) AS closed,
+            EXISTS (SELECT 1 FROM "ClinicHandover" h
+                    WHERE h."fromUserId" = "ClinicOpdVisit"."createdByUserId"
+                      AND h."createdAt" >= "ClinicOpdVisit"."createdAt") AS handed
+     FROM "ClinicOpdVisit" WHERE id = $1`,
+    Number(visit.id),
+  );
+  if (dayRow?.closed) {
+    warnings.push({ code: 'day-closed', message: `Is slip ka din (${dayRow.biz}) Day Close ho chuka hai — us din ka auto income voucher purani amount par bana hai, woh khud nahi badlega.` });
+  }
+  if (dayRow?.handed) {
+    warnings.push({ code: 'handover', message: `Is slip ka cash ${visit.createdByName || 'cashier'} ke Handover mein shamil ho chuka hai — Received badalne se Handover ka total nahi badlega.` });
+  }
+
+  if (visit.admitNo && visit.adjustPayment) {
+    const provItem = await prisma.clinicProvisionalBillItem.findFirst({ where: { sourceOpdVisitId: Number(visit.id) }, select: { amount: true } });
+    warnings.push({
+      code: 'admission',
+      message: provItem
+        ? `Yeh slip Admission # ${visit.admitNo} ke Provisional Bill mein ${provItem.amount} ki amount par add ho chuki hai — wahan amount khud nahi badlegi.`
+        : `Yeh slip Admission # ${visit.admitNo} se linked hai (Adjust Payment) — patient ke bill par asar pad sakta hai.`,
+    });
+  }
+
+  const panelHeader = await prisma.clinicPanelOpdBillingHeader.findUnique({ where: { opdVisitId: Number(visit.id) }, select: { opdVisitId: true } }).catch(() => null);
+  if (panelHeader) {
+    warnings.push({ code: 'panel-billing', message: 'Is slip ki Panel Billing ban chuki hai — Panel Billing ki amounts khud nahi badlengi.' });
+  }
+  return warnings;
+}
+
+async function loadVisitForFullEdit(id) {
+  return prisma.clinicOpdVisit.findUnique({
+    where: { id: Number(id) },
+    include: {
+      doctors: {
+        include: {
+          doctor: { select: { id: true, code: true, name: true, administrativeExpenseEnabled: true, administrativeExpenseRate: true } },
+          subDept: { select: { id: true, code: true, name: true } },
+        },
+        orderBy: { id: 'asc' },
+      },
+    },
+  });
+}
+
+async function getOpdVisitForFullEdit(id) {
+  const visit = await loadVisitForFullEdit(id);
+  if (!visit) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
+  if (!FULL_EDIT_DEPTS.includes(String(visit.department || '').trim().toLowerCase())) {
+    throw Object.assign(new Error('Full Slip Edit sirf General OPD aur Emergency slips ke liye hai'), { status: 400 });
+  }
+  const [warnings, ccConfig, panelCompany, panelEmployee] = await Promise.all([
+    buildFullEditWarnings(visit),
+    getCcConfig(),
+    visit.panelCompanyId ? prisma.clinicPanelCompany.findUnique({ where: { id: visit.panelCompanyId }, select: { name: true } }).catch(() => null) : null,
+    visit.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: visit.panelEmployeeId }, select: { name: true } }).catch(() => null) : null,
+  ]);
+  return {
+    visit: { ...visit, panelCompanyName: panelCompany?.name || null, panelEmployeeName: panelEmployee?.name || null },
+    warnings,
+    ccConfig: { percentage: Number(ccConfig.percentage || 0), minAmount: Number(ccConfig.minAmount || 0) },
+  };
+}
+
+// Same total rules as GeneralOPD/EmergencyOPD at slip creation:
+// total = max(0, gross − discount) + CC surcharge (on that) + admin expense
+// (once per unique admin-expense doctor); complementary → everything 0.
+async function computeFullEditTotals({ doctors, discount, paymentType, ccPercentage, ccMinAmount }) {
+  const isComplementary = String(paymentType || '').toLowerCase() === 'complementary';
+  const gross = doctors.reduce((s, d) => s + Number(d.amount || 0), 0);
+  const disc = isComplementary ? 0 : Math.min(Math.max(0, Number(discount) || 0), gross);
+  const net = isComplementary ? 0 : Math.max(0, gross - disc);
+  const doctorIds = [...new Set(doctors.map((d) => Number(d.doctorId)).filter(Boolean))];
+  const docs = doctorIds.length
+    ? await prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, administrativeExpenseEnabled: true, administrativeExpenseRate: true } })
+    : [];
+  const admin = isComplementary ? 0 : docs.filter((d) => d.administrativeExpenseEnabled).reduce((s, d) => s + Number(d.administrativeExpenseRate || 0), 0);
+  const isCc = String(paymentType || '').toLowerCase() === 'cc';
+  const pct = isCc && !isComplementary ? Number(ccPercentage) || 0 : 0;
+  const min = isCc && !isComplementary ? Number(ccMinAmount) || 0 : 0;
+  const cc = pct > 0 && net >= min ? Math.round((net * pct) / 100) : 0;
+  return { gross, discount: disc, adminExpense: admin, ccPercentage: pct, ccMinAmount: min, ccCharge: cc, totalAmount: net + cc + admin };
+}
+
+function fullEditSnapshot(v) {
+  return {
+    serialNo: v.serialNo, mrNo: v.mrNo, patientType: v.patientType, patientName: v.patientName,
+    age: v.age, ageMonths: v.ageMonths, ageDays: v.ageDays, gender: v.gender, phoneNo: v.phoneNo,
+    referredBy: v.referredBy, visitType: v.visitType, admitPatient: v.admitPatient, admitNo: v.admitNo,
+    adjustPayment: v.adjustPayment, paymentType: v.paymentType, totalAmount: v.totalAmount,
+    discount: v.discount, receive: v.receive, refund: v.refund, ccPercentage: v.ccPercentage,
+    ccMinAmount: v.ccMinAmount, ccCharge: v.ccCharge,
+    doctors: (v.doctors || []).map((d) => ({
+      id: d.id, doctorId: d.doctorId, doctor: d.doctor?.name, subDeptId: d.subDeptId, subDept: d.subDept?.name,
+      amount: d.amount, quantity: d.quantity, isPaid: d.isPaid,
+    })),
+  };
+}
+
+async function updateOpdVisitFull(id, payload = {}) {
+  const before = await loadVisitForFullEdit(id);
+  if (!before) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
+  if (!FULL_EDIT_DEPTS.includes(String(before.department || '').trim().toLowerCase())) {
+    throw Object.assign(new Error('Full Slip Edit sirf General OPD aur Emergency slips ke liye hai'), { status: 400 });
+  }
+
+  const patientName = String(payload.patientName || '').trim();
+  const serialNo = String(payload.serialNo || '').trim();
+  if (!patientName) throw Object.assign(new Error('Patient name zaroori hai'), { status: 400 });
+  if (!serialNo) throw Object.assign(new Error('Slip # zaroori hai'), { status: 400 });
+  if (serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo);
+
+  const rows = Array.isArray(payload.doctors) ? payload.doctors : [];
+  if (!rows.length) throw Object.assign(new Error('Kam az kam ek test/doctor zaroori hai'), { status: 400 });
+  for (const [i, r] of rows.entries()) {
+    if (!Number(r.doctorId) || !Number(r.subDeptId)) throw Object.assign(new Error(`Line ${i + 1}: doctor/test missing`), { status: 400 });
+    if (!(Number(r.amount) >= 0)) throw Object.assign(new Error(`Line ${i + 1}: amount sahi nahi`), { status: 400 });
+  }
+
+  const keptIds = new Set(rows.map((r) => Number(r.id)).filter(Boolean));
+  const removed = before.doctors.filter((d) => !keptIds.has(d.id));
+  const removedPaid = removed.filter((d) => d.isPaid);
+  if (removedPaid.length) {
+    throw Object.assign(new Error(`Yeh lines hataayi nahi ja sakti kyunki in ki doctor fee voucher se pay ho chuki hai: ${removedPaid.map((d) => d.subDept?.name || d.id).join(', ')}`), { status: 400 });
+  }
+
+  const paymentType = String(payload.paymentType || before.paymentType || 'cash');
+  const totals = await computeFullEditTotals({
+    doctors: rows, discount: payload.discount, paymentType,
+    ccPercentage: payload.ccPercentage, ccMinAmount: payload.ccMinAmount,
+  });
+  const receive = Math.max(0, Number(payload.receive) || 0);
+  const refund = Math.max(0, receive - totals.totalAmount);
+  const admitNo = payload.admitNo ? String(payload.admitNo).trim() : null;
+  const warnings = await buildFullEditWarnings(before);
+
+  await prisma.$transaction(async (tx) => {
+    for (const d of removed) await tx.clinicOpdVisitDoctor.delete({ where: { id: d.id } });
+    for (const r of rows) {
+      const data = {
+        doctorId: Number(r.doctorId), subDeptId: Number(r.subDeptId),
+        amount: Number(r.amount) || 0, quantity: Math.max(1, Number(r.quantity) || 1),
+      };
+      if (Number(r.id) && before.doctors.some((d) => d.id === Number(r.id))) {
+        await tx.clinicOpdVisitDoctor.update({ where: { id: Number(r.id) }, data });
+      } else {
+        await tx.clinicOpdVisitDoctor.create({ data: { ...data, visitId: before.id, extAmount: 0 } });
+      }
+    }
+    await tx.clinicOpdVisit.update({
+      where: { id: before.id },
+      data: {
+        serialNo, patientName,
+        mrNo: payload.mrNo === '' || payload.mrNo == null ? null : Number(payload.mrNo),
+        patientType: payload.patientType || before.patientType,
+        age: payload.age === '' || payload.age == null ? null : Number(payload.age),
+        ageMonths: Number(payload.ageMonths) || 0,
+        ageDays: Number(payload.ageDays) || 0,
+        gender: payload.gender || before.gender,
+        phoneNo: payload.phoneNo ?? before.phoneNo,
+        referredBy: payload.referredBy ?? before.referredBy,
+        visitType: payload.visitType || before.visitType,
+        admitPatient: Boolean(admitNo),
+        admitNo,
+        adjustPayment: Boolean(admitNo) && Boolean(payload.adjustPayment),
+        paymentType,
+        discount: totals.discount,
+        totalAmount: totals.totalAmount,
+        receive,
+        refund,
+        ccPercentage: totals.ccPercentage,
+        ccMinAmount: totals.ccMinAmount,
+        ccCharge: totals.ccCharge,
+        adjustedAt: new Date(),
+      },
+    });
+  });
+
+  const after = await loadVisitForFullEdit(id);
+  await prisma.clinicOpdVisitEditLog.create({
+    data: {
+      visitId: after.id,
+      serialNo: after.serialNo,
+      patientName: after.patientName,
+      editedBy: payload.editedBy ? String(payload.editedBy) : null,
+      warnings: warnings.map((w) => w.message),
+      before: fullEditSnapshot(before),
+      after: fullEditSnapshot(after),
+    },
+  });
+  return { visit: after, totals, warnings };
+}
+
+async function getOpdVisitEditLogs(visitId) {
+  return prisma.clinicOpdVisitEditLog.findMany({ where: { visitId: Number(visitId) }, orderBy: { editedAt: 'desc' } });
+}
+
 module.exports = {
+  getOpdVisitForFullEdit,
+  updateOpdVisitFull,
+  getOpdVisitEditLogs,
   calcFeeSplit,
   getAllDepartments,
   createDepartment,

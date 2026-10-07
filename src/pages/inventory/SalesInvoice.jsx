@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import useModalKeys from '../../hooks/useModalKeys';
 import { ChevronDown, ChevronUp, Download, Plus, Printer, Search, Trash2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -191,7 +191,15 @@ export default function SalesInvoice() {
     fetchSalesInvoiceHeaders,
     createSalesInvoiceWithItems,
     fetchGINsByAdmission,
+    fetchAdmissionInvoices,
+    updateSalesInvoiceLineRate,
   } = useInventoryStore();
+
+  // Saved invoices for the searched admission — shown under "Already billed",
+  // where each line's rate can be corrected (invoice-only change).
+  const [admInvoices, setAdmInvoices] = useState([]);
+  const [billedRateDrafts, setBilledRateDrafts] = useState({});
+  const [savingLineId, setSavingLineId] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -287,9 +295,14 @@ export default function SalesInvoice() {
     if (!admNo) { toast.error('Enter admission number'); return; }
     setAdmLoading(true);
     try {
-      const data = await fetchGINsByAdmission(admNo);
+      const [data, invoices] = await Promise.all([
+        fetchGINsByAdmission(admNo),
+        fetchAdmissionInvoices(admNo),
+      ]);
       const gins = Array.isArray(data) ? data : [];
       setAdmGINs(gins);
+      setAdmInvoices(invoices);
+      setBilledRateDrafts({});
       if (gins.length === 0) { toast('No GINs found for this admission number'); return; }
       // Initialize editable rates from item data
       const rateMap = {};
@@ -320,14 +333,15 @@ export default function SalesInvoice() {
   // at whichever GIN's rate happened to be encountered first — grouping by
   // itemCode+rate instead keeps genuinely different-rate batches as separate
   // rows (same-rate batches of the same item still merge into one, as before).
+  // Only NOT-yet-billed GIN entries become rows here (editable rate, go into
+  // "Save Invoice"). Entries already picked into an earlier Sales Invoice are
+  // shown from the saved invoices themselves (admInvoices, "Already billed"
+  // section) — never offered again here, so nothing is billed twice.
   const admRows = useMemo(() => {
     if (!admGINs) return [];
-    const map = {};
+    const pending = {};
     for (const gin of admGINs) {
       const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
-      // Already-billed entries (picked into an earlier Sales Invoice) must
-      // never be offered again here — otherwise the same GIN/GINItem could
-      // get billed a second time.
       const entries = gin.ginItems && gin.ginItems.length > 0
         ? gin.ginItems.filter((gi) => !gi.isBilled).map((gi) => ({
             ginItemId: gi.id, itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-',
@@ -338,6 +352,7 @@ export default function SalesInvoice() {
             qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0),
           }];
       for (const e of entries) {
+        const map = pending;
         const rowKey = `${e.itemCode}::${e.defaultRate}`;
         if (map[rowKey]) {
           map[rowKey].qty += e.qty;
@@ -354,8 +369,31 @@ export default function SalesInvoice() {
     // Zero (or negative) aggregated quantity shouldn't reach the invoice at
     // all — it isn't a valid billable line, and previously letting it through
     // caused the whole save to fail with "quantity must be a positive number".
-    return Object.values(map).filter((r) => Number(r.qty) > 0);
+    return Object.values(pending).filter((r) => Number(r.qty) > 0);
   }, [admGINs]);
+
+  const admBilledLineCount = admInvoices.reduce((n, h) => n + (h.items?.length || 0), 0);
+  const admBilledTotal = admInvoices.reduce((s, h) => s + Number(h.totalAmount || 0), 0);
+
+  const saveBilledRate = async (line) => {
+    const draft = billedRateDrafts[line.id];
+    const rate = Number(draft);
+    if (draft === undefined || draft === '' || !Number.isFinite(rate) || rate < 0) {
+      toast.error('Enter a valid rate');
+      return;
+    }
+    setSavingLineId(line.id);
+    try {
+      const updatedHeader = await updateSalesInvoiceLineRate(line.id, rate);
+      setAdmInvoices((prev) => prev.map((h) => (h.id === updatedHeader?.id ? updatedHeader : h)));
+      setBilledRateDrafts((prev) => { const next = { ...prev }; delete next[line.id]; return next; });
+      toast.success('Invoice rate updated');
+    } catch (err) {
+      toast.error(err.message || 'Failed to update rate');
+    } finally {
+      setSavingLineId(null);
+    }
+  };
 
   const admGrandTotal = useMemo(() =>
     admRows.reduce((s, r) => s + r.qty * Number(admRates[r.rowKey] ?? r.defaultRate), 0),
@@ -408,10 +446,10 @@ export default function SalesInvoice() {
       const created = await createSalesInvoiceWithItems(payload);
       await fetchSalesInvoiceHeaders(filters);
       toast.success('Admission invoice saved');
-      setAdmGINs(null);
-      setAdmQuery('');
-      setAdmRates({});
       generateSalesInvoicePdf({ inv: created, mode: 'print' });
+      // Reload the same admission so the just-saved items stay on screen,
+      // now marked "Billed", instead of the search clearing to empty.
+      await handleAdmSearch(admQuery);
     } catch (err) {
       toast.error(err.message || 'Failed to save admission invoice');
     } finally {
@@ -640,7 +678,7 @@ export default function SalesInvoice() {
           </div>
           <Button label={admLoading ? 'Searching...' : 'Search'} disabled={admLoading} onClick={() => handleAdmSearch()} />
           <Button label="Browse" variant="outline" onClick={() => setShowAdmPicker(true)} />
-          {admGINs && admGINs.length > 0 && (
+          {admRows.length > 0 && (
             <>
               <Button icon={Printer} label="Print" variant="outline" onClick={printAdmInvoice} />
               <Button label={admSaving ? 'Saving...' : 'Save Invoice'} disabled={admSaving} onClick={saveAdmInvoice} />
@@ -648,7 +686,7 @@ export default function SalesInvoice() {
           )}
           {admGINs !== null && (
             <button
-              onClick={() => { setAdmGINs(null); setAdmQuery(''); }}
+              onClick={() => { setAdmGINs(null); setAdmQuery(''); setAdmInvoices([]); setBilledRateDrafts({}); }}
               className="text-xs text-slate-400 hover:text-slate-600"
             >
               Clear
@@ -656,8 +694,13 @@ export default function SalesInvoice() {
           )}
         </div>
 
+        {admGINs !== null && admRows.length === 0 && admBilledLineCount > 0 && (
+          <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-2">
+            All issued items for admission <strong>{admQuery}</strong> are already billed. Nothing new to invoice.
+          </p>
+        )}
         {admGINs !== null && (
-          admRows.length === 0 ? (
+          admRows.length === 0 && admBilledLineCount === 0 ? (
             <p className="text-sm text-slate-400 py-4 text-center">No records found for admission number <strong>{admQuery}</strong></p>
           ) : (
             <div className="border border-slate-200 rounded-md overflow-x-auto">
@@ -695,10 +738,89 @@ export default function SalesInvoice() {
                       </tr>
                     );
                   })}
-                  <tr className="bg-slate-50 font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-right text-slate-700">Grand Total</td>
-                    <td className="px-3 py-2 text-right">{admGrandTotal.toFixed(2)}</td>
-                  </tr>
+                  {admRows.length > 0 && (
+                    <tr className="bg-slate-50 font-semibold">
+                      <td colSpan={5} className="px-3 py-2 text-right text-slate-700">Grand Total</td>
+                      <td className="px-3 py-2 text-right">{admGrandTotal.toFixed(2)}</td>
+                    </tr>
+                  )}
+                  {admBilledLineCount > 0 && (
+                    <>
+                      <tr className="bg-emerald-50">
+                        <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold text-emerald-800 uppercase tracking-wide">
+                          Already billed — rate change applies to this invoice only
+                        </td>
+                      </tr>
+                      {admInvoices.map((h) => (
+                        <Fragment key={`inv-${h.id}`}>
+                          <tr className="bg-slate-50/60">
+                            <td colSpan={5} className="px-3 py-1.5 text-xs text-slate-600">
+                              Invoice <strong>{h.code}</strong>
+                              {h.invoiceDate ? ` · ${new Date(h.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <button
+                                type="button"
+                                onClick={() => generateSalesInvoicePdf({ inv: h, mode: 'print' })}
+                                className="inline-flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900"
+                                title="Print this invoice"
+                              >
+                                <Printer size={12} /> Print
+                              </button>
+                            </td>
+                          </tr>
+                          {(h.items || []).map((line) => {
+                            const draft = billedRateDrafts[line.id];
+                            const shownRate = draft ?? line.saleRate;
+                            const changed = draft !== undefined && Number(draft) !== Number(line.saleRate);
+                            const saving = savingLineId === line.id;
+                            return (
+                              <tr key={`line-${line.id}`}>
+                                <td className="px-3 py-2 text-slate-500">{line.item?.code || '-'}</td>
+                                <td className="px-3 py-2">
+                                  {line.item?.name || '-'}
+                                  <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800">Billed</span>
+                                </td>
+                                <td className="px-3 py-2 text-slate-500">{h.code}</td>
+                                <td className="px-3 py-2 text-right">{line.quantity}</td>
+                                <td className="px-3 py-2 text-right">
+                                  <div className="inline-flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={shownRate}
+                                      disabled={saving}
+                                      onChange={(e) => setBilledRateDrafts((prev) => ({ ...prev, [line.id]: e.target.value }))}
+                                      onKeyDown={(e) => { if (e.key === 'Enter' && changed) saveBilledRate(line); }}
+                                      className={`w-24 px-2 py-1 border rounded text-sm text-right focus:outline-none focus:border-blue-500 ${changed ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                                    />
+                                    {changed && (
+                                      <button
+                                        type="button"
+                                        onClick={() => saveBilledRate(line)}
+                                        disabled={saving}
+                                        className="px-2 py-1 text-xs font-semibold rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                      >
+                                        {saving ? '…' : 'Update'}
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {(Number(line.quantity) * Number(changed ? draft : line.saleRate)).toFixed(2)}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
+                      <tr className="bg-emerald-50 font-semibold text-emerald-900">
+                        <td colSpan={5} className="px-3 py-2 text-right">Billed Total</td>
+                        <td className="px-3 py-2 text-right">{admBilledTotal.toFixed(2)}</td>
+                      </tr>
+                    </>
+                  )}
                 </tbody>
               </table>
             </div>

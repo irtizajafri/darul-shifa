@@ -1815,6 +1815,50 @@ async function createSalesInvoice(payload) {
   });
 }
 
+// Change the sale rate of ONE saved invoice line (Sales Invoice → admission
+// search → "Already billed" rows). Only this invoice's own numbers move: the
+// line's saleRate/totalAmount and its header's subTotal/discount/total.
+// Deliberately untouched: the item master rates (purchasePrice/lastGrnRate),
+// the GIN's locked unitRate, stock and stock movements — so no other invoice,
+// GIN or patient is affected. The patient's Provisional/Final Bill "Pharmacy
+// Bill (Hospital Store)" reads these invoice lines directly, so it follows
+// the new rate (agreed with the owner, 2026-10-07).
+async function updateSalesInvoiceLineRate(lineId, payload = {}) {
+  const id = Number(lineId);
+  if (!Number.isInteger(id) || id <= 0) throw new Error('Invalid invoice line id');
+  const saleRate = Number(payload.saleRate);
+  if (!Number.isFinite(saleRate) || saleRate < 0) throw new Error('Rate must be zero or a positive number');
+
+  return prisma.$transaction(async (tx) => {
+    const line = await tx.inventorySalesInvoice.findUnique({ where: { id } });
+    if (!line) throw new Error('Invoice line not found');
+
+    const totalAmount = Number((Number(line.quantity) * saleRate).toFixed(2));
+    await tx.inventorySalesInvoice.update({
+      where: { id },
+      data: { saleRate, totalAmount },
+    });
+
+    if (line.headerId) {
+      const header = await tx.inventorySalesInvoiceHeader.findUnique({
+        where: { id: line.headerId },
+        include: { items: { select: { totalAmount: true } } },
+      });
+      const subTotal = Number(header.items.reduce((s, l) => s + Number(l.totalAmount || 0), 0).toFixed(2));
+      const discountAmount = Number((subTotal * (Number(header.discountPercent || 0) / 100)).toFixed(2));
+      await tx.inventorySalesInvoiceHeader.update({
+        where: { id: header.id },
+        data: { subTotal, discountAmount, totalAmount: Number((subTotal - discountAmount).toFixed(2)) },
+      });
+      return tx.inventorySalesInvoiceHeader.findUnique({
+        where: { id: header.id },
+        include: { items: { include: { item: { include: { category: true, subcategory: true } } } } },
+      });
+    }
+    return tx.inventorySalesInvoice.findUnique({ where: { id }, include: { item: true } });
+  });
+}
+
 async function listSalesInvoiceHeaders({ search, customerType, dateFrom, dateTo }) {
   const normalizedCustomerType = customerType ? normalizeCustomerType(customerType) : null;
 
@@ -4457,6 +4501,7 @@ module.exports = {
   createSalesInvoice,
   listSalesInvoiceHeaders,
   createSalesInvoiceWithItems,
+  updateSalesInvoiceLineRate,
   listGDNs,
   createGDN,
   addStockMovement,

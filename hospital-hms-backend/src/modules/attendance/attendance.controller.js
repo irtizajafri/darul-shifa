@@ -772,6 +772,23 @@ async function syncPunches(req, res, next) {
   }
 }
 
+// ─── Salary Paid Months for an employee ──────────────────────────────────────
+// Returns list of { salaryMonth, salaryYear, voucherNo } for all paid months.
+// Used by All Records edit modal to show a warning when editing a paid month.
+async function getSalaryPaidMonths(req, res) {
+  const { empCode } = req.query;
+  if (!empCode) return res.status(400).json({ ok: false, message: 'empCode required' });
+  try {
+    const rows = await prisma.employeeSalaryPayment.findMany({
+      where: { empCode: String(empCode) },
+      select: { salaryMonth: true, salaryYear: true, voucherNo: true },
+    });
+    return res.json({ ok: true, data: rows });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: err.message });
+  }
+}
+
 module.exports = {
   ping,
   list,
@@ -781,13 +798,11 @@ module.exports = {
   testRawPunches,
   syncAttendance,
   syncPunches,
-  // Exported (route-handler-free) so the WhatsApp Punch Notifier job can pull
-  // fresh punches on its own timer, the same way syncPunches' route handler
-  // already calls it — see src/jobs/whatsappPunchNotifier.job.js.
   syncPunchesToDB,
   listOverrides,
   upsertOverride,
   bulkUpsertOverrides,
   replaceOverridesForDates,
+  getSalaryPaidMonths,
 };
 

@@ -54,6 +54,7 @@ import ClinicRoomCategoryPage from '../pages/clinic/parameters/ClinicRoomCategor
 import ClinicBedPage from '../pages/clinic/parameters/ClinicBedPage';
 import ClinicBillHeadListPage from '../pages/clinic/parameters/ClinicBillHeadListPage';
 import DeathCertificatePage from '../pages/clinic/parameters/DeathCertificatePage';
+import FullSlipEdit from '../pages/clinic/parameters/FullSlipEdit';
 import ClinicBillHeadFormPage from '../pages/clinic/parameters/ClinicBillHeadFormPage';
 import ClinicPanelCompanyListPage from '../pages/clinic/panels/ClinicPanelCompanyListPage';
 import ClinicPanelCompanyFormPage from '../pages/clinic/panels/ClinicPanelCompanyFormPage';
@@ -323,6 +324,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/parameters/bed" element={<PermissionGuard module="clinic" subModule="bed"><ClinicBedPage /></PermissionGuard>} />
       <Route path="clinic/parameters/bill-heads" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadListPage /></PermissionGuard>} />
       <Route path="clinic/parameters/death-certificate" element={<PermissionGuard module="clinic" subModule="death-certificate"><DeathCertificatePage /></PermissionGuard>} />
+      <Route path="clinic/transactions/full-slip-edit" element={<SuperAdminRoute><FullSlipEdit /></SuperAdminRoute>} />
       <Route path="clinic/parameters/bill-heads/new" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadFormPage /></PermissionGuard>} />
       <Route path="clinic/parameters/bill-heads/:id" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadFormPage /></PermissionGuard>} />
 

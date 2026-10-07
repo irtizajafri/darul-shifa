@@ -1799,6 +1799,22 @@ model ClinicAdmissionWipeoutLog {
 // exist, just moved between statuses. No FK to ClinicAdmission on purpose:
 // admissionNo/patientName are snapshotted directly so this row keeps making
 // sense even if the admission is later wiped out.
+// Superadmin Full Slip Edit history (migration 040) — see
+// database/migrations/040_add_opd_visit_edit_log.sql.
+model ClinicOpdVisitEditLog {
+  id          Int      @id @default(autoincrement())
+  visitId     Int
+  serialNo    String?
+  patientName String?
+  editedBy    String?
+  warnings    Json?
+  before      Json
+  after       Json
+  editedAt    DateTime @default(now())
+
+  @@index([visitId])
+}
+
 model ClinicAdmissionStatusLog {
   id          Int      @id @default(autoincrement())
   admissionId Int?

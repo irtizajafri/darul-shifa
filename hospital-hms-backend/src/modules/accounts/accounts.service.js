@@ -903,6 +903,23 @@ async function getEmployeesDueForSalary(month, year) {
   return employees.filter((e) => !paidCodes.has(e.empCode));
 }
 
+// Payee entries for HR-sourced heads are stored as plain name strings (see
+// bulkSavePayeeEntries), but employee names in HR can carry stray spaces or
+// an empty/null last name. A raw `===` / `includes` match then silently drops
+// those employees from the Voucher Expense payee list no matter how often
+// they're re-ticked. Compare on a normalized key instead: whitespace
+// collapsed, trimmed, case-insensitive, and a dangling "null"/"undefined"
+// last-name (left behind by older saves) ignored.
+function cleanPayeeName(s) {
+  return String(s ?? '').replace(/\s+/g, ' ').trim();
+}
+function payeeNameKey(s) {
+  return cleanPayeeName(s).replace(/\s+(null|undefined)$/i, '').toLowerCase();
+}
+function employeeDisplayName(e) {
+  return cleanPayeeName(`${e.firstName ?? ''} ${e.lastName ?? ''}`);
+}
+
 async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
   const link = await prisma.accPayeeHeadAccount.findFirst({
     where: { subAccountId: Number(subAccountId), payeeHead: { entityType } },
@@ -917,12 +934,13 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       select: { name: true },
     });
     const checkedNames = checkedEntries.map((e) => e.name);
+    const checkedKeys = new Set(checkedNames.map(payeeNameKey));
     const rows = await prisma.employee.findMany({
       where: { status: 'Active' },
       select: { id: true, firstName: true, lastName: true, empCode: true },
       orderBy: { firstName: 'asc' },
     });
-    const allEmps = rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode }));
+    const allEmps = rows.map((e) => ({ id: e.id, name: employeeDisplayName(e), code: e.empCode }));
     // Once an employee's salary voucher for the current ceiling month has
     // been paid, drop them from the pay-list — they only reappear once a new
     // (unpaid) month rolls around, same idea as the isPaid gates below for
@@ -937,7 +955,7 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
     const paidCodes = new Set(paidRows.map((r) => r.empCode));
     const dueEmps = allEmps.filter((e) => !paidCodes.has(e.code));
     const filteredEntries = checkedNames.length > 0
-      ? dueEmps.filter((e) => checkedNames.includes(e.name))
+      ? dueEmps.filter((e) => checkedKeys.has(payeeNameKey(e.name)))
       : dueEmps;
     return { type: 'employee', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueEmps, checkedNames, salaryCeiling: ceiling };
   }
@@ -955,14 +973,15 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       select: { name: true },
     });
     const checkedNames = checkedEntries.map((e) => e.name);
+    const checkedKeys = new Set(checkedNames.map(payeeNameKey));
     const rows = await prisma.employee.findMany({
       where: { status: 'Active' },
       select: { id: true, firstName: true, lastName: true, empCode: true },
       orderBy: { firstName: 'asc' },
     });
-    const allEmps = rows.map((e) => ({ id: e.id, name: `${e.firstName} ${e.lastName}`, code: e.empCode }));
+    const allEmps = rows.map((e) => ({ id: e.id, name: employeeDisplayName(e), code: e.empCode }));
     const filteredEntries = checkedNames.length > 0
-      ? allEmps.filter((e) => checkedNames.includes(e.name))
+      ? allEmps.filter((e) => checkedKeys.has(payeeNameKey(e.name)))
       : allEmps;
     return { type: 'employee-manual', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: allEmps, checkedNames };
   }
@@ -991,8 +1010,9 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
     });
     const dueSupplierIds = new Set(dueSupplierRows.map((r) => r.supplierId));
     const dueSuppliers = allSuppliers.filter((s) => dueSupplierIds.has(s.id));
+    const checkedKeys = new Set(checkedNames.map(payeeNameKey));
     const filteredEntries = checkedNames.length > 0
-      ? dueSuppliers.filter((s) => checkedNames.includes(s.name))
+      ? dueSuppliers.filter((s) => checkedKeys.has(payeeNameKey(s.name)))
       : dueSuppliers;
     return { type: 'vendor', headName: head.name, headId: head.id, entries: filteredEntries, allSuppliers: dueSuppliers, checkedNames };
   }
@@ -1018,10 +1038,13 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       select: { doctor: true },
       distinct: ['doctor'],
     });
-    const dueDoctorNames = new Set(dueDoctorRows.map((r) => r.doctor));
-    const dueDoctors = allDoctors.filter((d) => dueDoctorNames.has(d.name));
+    // Normalized keys (see payeeNameKey) — visit doctor names and ticked
+    // names can differ from the doctor master only by spacing/case.
+    const dueDoctorKeys = new Set(dueDoctorRows.map((r) => payeeNameKey(r.doctor)));
+    const dueDoctors = allDoctors.filter((d) => dueDoctorKeys.has(payeeNameKey(d.name)));
+    const checkedKeys = new Set(checkedNames.map(payeeNameKey));
     const filteredEntries = checkedNames.length > 0
-      ? dueDoctors.filter((d) => checkedNames.includes(d.name))
+      ? dueDoctors.filter((d) => checkedKeys.has(payeeNameKey(d.name)))
       : dueDoctors;
     return { type: 'doctor', headName: head.name, headId: head.id, entries: filteredEntries, allEntries: dueDoctors, checkedNames };
   }
@@ -1060,39 +1083,52 @@ async function bulkSavePayeeEntries({ payeeHeadId, subAccountId, names }) {
   const where = { payeeHeadId: Number(payeeHeadId) };
   if (subAccountId) where.subAccountId = Number(subAccountId);
   await prisma.accPayeeEntry.deleteMany({ where });
-  if (names && names.length > 0) {
+  // Clean + de-duplicate (same normalized key) so a re-save never stores
+  // "Ali  Khan" and "Ali Khan" as two entries.
+  const seen = new Set();
+  const cleanNames = (names || [])
+    .map(cleanPayeeName)
+    .filter((n) => n && !seen.has(payeeNameKey(n)) && seen.add(payeeNameKey(n)));
+  if (cleanNames.length > 0) {
     await prisma.accPayeeEntry.createMany({
-      data: names.map((name) => ({
+      data: cleanNames.map((name) => ({
         payeeHeadId: Number(payeeHeadId),
         subAccountId: subAccountId ? Number(subAccountId) : null,
-        name: name.trim(),
+        name,
       })),
     });
   }
   return { saved: names?.length || 0 };
 }
 
+// Same population as the Voucher Expense payee list (Active only), so the
+// List Attachments tick-count ("x / y selected") matches what Voucher Expense
+// can actually show. Names come back cleaned (see cleanPayeeName).
 async function getEmployeeList() {
-  return prisma.employee.findMany({
-    select: { id: true, firstName: true, lastName: true },
+  const rows = await prisma.employee.findMany({
+    where: { status: 'Active' },
+    select: { id: true, firstName: true, lastName: true, empCode: true },
     orderBy: { firstName: 'asc' },
   });
+  return rows.map((e) => ({ ...e, fullName: employeeDisplayName(e) }));
 }
 
 async function getSupplierList() {
-  return prisma.inventorySupplier.findMany({
-    where: { status: 'active' },
-    select: { id: true, name: true },
-    orderBy: { name: 'asc' },
-  });
-}
-
-async function getDoctorList() {
-  return prisma.clinicDoctor.findMany({
+  const rows = await prisma.inventorySupplier.findMany({
     where: { status: 'active' },
     select: { id: true, name: true, code: true },
     orderBy: { name: 'asc' },
   });
+  return rows.map((r) => ({ ...r, name: cleanPayeeName(r.name) }));
+}
+
+async function getDoctorList() {
+  const rows = await prisma.clinicDoctor.findMany({
+    where: { status: 'active' },
+    select: { id: true, name: true, code: true },
+    orderBy: { name: 'asc' },
+  });
+  return rows.map((r) => ({ ...r, name: cleanPayeeName(r.name) }));
 }
 
 // ── Bank Accounts ─────────────────────────────────────────────────────────────
