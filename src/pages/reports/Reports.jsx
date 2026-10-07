@@ -121,7 +121,26 @@ export default function Reports() {
     }
   };
 
-  const handleSavePayslip = async () => {
+  // Saving must always use LIVE attendance. When a month already has a saved
+  // snapshot, the screen (and finalSal) are computed from that snapshot, so
+  // saving straight away stored the new rows with the OLD net salary and kept
+  // showing the old figures — edited attendance never reached the salary or
+  // the Voucher Expense salary amount. So: if a snapshot is showing, switch to
+  // live first, let finalSal recompute, then persist (see the
+  // payslipSavePending effect after finalSal).
+  const [payslipSavePending, setPayslipSavePending] = useState(false);
+  const handleSavePayslip = () => {
+    if (!emp?.empCode || !month || !year) return;
+    if (savedPayslipRows !== null) {
+      setIsSaving(true);
+      setPayslipSavePending(true);
+      setSavedPayslipRows(null);
+      return;
+    }
+    persistPayslip();
+  };
+
+  const persistPayslip = async () => {
     if (!emp?.empCode || !month || !year) return;
     setIsSaving(true);
     try {
@@ -150,7 +169,7 @@ export default function Reports() {
       });
       if (!res.ok) throw new Error('Save failed');
       const now = new Date();
-      setSavedPayslipRows(effectiveAttendanceWithOverrides);
+      setSavedPayslipRows(liveAttendanceWithOverrides);
       setPayslipSavedAt(now.toISOString());
       toast.success('Payslip saved to DB');
     } catch (err) {
@@ -1735,6 +1754,15 @@ export default function Reports() {
     : 0;
   const totalSal = finalSal;
 
+  // Second half of handleSavePayslip: runs after the snapshot was cleared and
+  // this render recomputed finalSal from live attendance.
+  useEffect(() => {
+    if (!payslipSavePending || savedPayslipRows !== null) return;
+    setPayslipSavePending(false);
+    persistPayslip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payslipSavePending, savedPayslipRows]);
+
   // ─── Salary Register: data ready hone pe capture karo ───────────────────
   // (Yahan rakha hai taake totalDeductions, overtimeAddition, finalSal
   //  sab define ho chukay hon — pehle TDZ crash tha)
@@ -3001,7 +3029,7 @@ export default function Reports() {
             </button>
             {payslipSavedAt ? (
               <span
-                title="Yeh salary saved snapshot se aa rahi hai — attendance baad mein edit ho bhi jaye, yeh figure nahi badlega jab tak dobara Save Payslip na dabayein."
+                title="Yeh salary saved snapshot se aa rahi hai. Attendance edit ki hai? Save Payslip dabayein — salary nayi attendance se dobara calculate ho kar save hogi (Voucher Expense bhi yahi nayi amount lega)."
                 style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, padding: '3px 8px', borderRadius: '4px', background: '#dcfce7' }}
               >
                 📌 Showing SAVED salary — {new Date(payslipSavedAt).toLocaleString()} (locked)
