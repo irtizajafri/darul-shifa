@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Trash2, Pencil, Fuel } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useFuelStore } from '../../store/useFuelStore';
 import FuelEntryForm from './FuelEntryForm';
 import FuelTransferModal from './FuelTransferModal';
@@ -48,7 +49,7 @@ export default function GeneratorManagement({ generator, onBack }) {
 
   useEffect(() => {
     fetchFuelBalance();
-    fetchTanks().catch(() => {});
+    fetchTanks().catch((err) => toast.error(err?.message || 'Failed to load tanks'));
     // Always load generator-specific balance so the card is correct from the start
     fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => setGenFuelBal(null));
   }, [gid]);
@@ -77,13 +78,13 @@ export default function GeneratorManagement({ generator, onBack }) {
       }
       setShowForm(false);
       fetchGeneratorEntries({ generatorId: gid, entryType });
-      fetchLastGeneratorEntry({ generatorId: gid, entryType }).then(setLastEntry).catch(() => {});
+      fetchLastGeneratorEntry({ generatorId: gid, entryType }).then(setLastEntry).catch((err) => toast.error(err?.message || 'Failed to refresh last entry'));
       fetchFuelBalance();
     } catch (err) { toast.error(err.message); throw err; }
   };
 
   const handleDeleteEntry = async (id) => {
-    if (!confirm('Delete this entry?')) return;
+    if (!(await confirmDialog({ title: 'Delete entry', message: 'Delete this entry?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteGeneratorEntry(id);
       toast.success('Deleted');
@@ -95,13 +96,13 @@ export default function GeneratorManagement({ generator, onBack }) {
   // Fuel-tab entries are created via Transfer — deleting one undoes the whole
   // transfer (frees the fuel back into the tank) rather than just the entry.
   const handleDeleteTransfer = async (transferId) => {
-    if (!confirm('Delete this transfer? Fuel will be returned to the tank.')) return;
+    if (!(await confirmDialog({ title: 'Delete transfer', message: 'Delete this transfer? Fuel will be returned to the tank.', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteTransfer(transferId);
       toast.success('Transfer deleted');
       fetchGeneratorEntries({ generatorId: gid, entryType });
       fetchFuelBalance();
-      fetchTanks().catch(() => {});
+      fetchTanks().catch((err) => toast.error(err?.message || 'Failed to refresh tanks'));
     } catch (err) { toast.error(err.message); }
   };
 
@@ -122,7 +123,7 @@ export default function GeneratorManagement({ generator, onBack }) {
       setEditingSheet(null);
       fetchDailySheets(gid);
       fetchFuelBalance();
-      fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => {});
+      fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch((err) => toast.error(err?.message || 'Failed to refresh fuel balance'));
     } catch (err) { toast.error(err.message); }
     finally { setSaving(false); }
   };
@@ -174,7 +175,7 @@ export default function GeneratorManagement({ generator, onBack }) {
   };
 
   const handleDeleteSheet = async (id) => {
-    if (!confirm('Delete this sheet?')) return;
+    if (!(await confirmDialog({ title: 'Delete sheet', message: 'Delete this sheet?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteDailySheet(id);
       toast.success('Deleted');
@@ -416,8 +417,8 @@ export default function GeneratorManagement({ generator, onBack }) {
                     <td className="px-4 py-3">
                       {activeTab === 'Oil' ? (
                         <div className="flex gap-1 justify-end">
-                          <button onClick={() => { setEditingEntry(e); setShowForm(true); }} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleDeleteEntry(e.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => { setEditingEntry(e); setShowForm(true); }} aria-label="Edit" title="Edit" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDeleteEntry(e.id)} aria-label="Delete" title="Delete" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       ) : e.transfer ? (
                         <div className="flex items-center justify-end gap-1.5">
@@ -493,8 +494,8 @@ export default function GeneratorManagement({ generator, onBack }) {
                       <td className="px-4 py-3 text-right font-medium text-amber-700">{net}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-1 justify-end">
-                          <button onClick={() => openEditSheet(s)} className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
-                          <button onClick={() => handleDeleteSheet(s.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => openEditSheet(s)} aria-label="Edit" title="Edit" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-700"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDeleteSheet(s.id)} aria-label="Delete" title="Delete" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
                         </div>
                       </td>
                     </tr>
@@ -514,11 +515,11 @@ export default function GeneratorManagement({ generator, onBack }) {
           onClose={() => setShowTransfer(false)}
           onDone={() => {
             fetchGeneratorEntries({ generatorId: gid, entryType: 'fuel' });
-            fetchLastGeneratorEntry({ generatorId: gid, entryType: 'fuel' }).then(setLastEntry).catch(() => {});
+            fetchLastGeneratorEntry({ generatorId: gid, entryType: 'fuel' }).then(setLastEntry).catch((err) => toast.error(err?.message || 'Failed to refresh last entry'));
             fetchFuelBalance();
-            fetchTanks().catch(() => {});
+            fetchTanks().catch((err) => toast.error(err?.message || 'Failed to refresh tanks'));
             // Refresh this generator's specific balance so the card and gauge are up-to-date
-            fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch(() => {});
+            fetchGeneratorFuelBalance(gid).then(setGenFuelBal).catch((err) => toast.error(err?.message || 'Failed to refresh fuel balance'));
           }}
         />
       )}

@@ -97,8 +97,8 @@ export default function GoodsReturn() {
   const [reprintSearch, setReprintSearch] = useState('');
 
   useEffect(() => {
-    fetchGINs({ dateFrom: '', dateTo: '' }).catch(() => {});
-    fetchMRNs().catch(() => {});
+    fetchGINs({ dateFrom: '', dateTo: '' }).catch((err) => toast.error(err?.message || 'Failed to load GINs'));
+    fetchMRNs().catch((err) => toast.error(err?.message || 'Failed to load MRNs'));
   }, [fetchGINs, fetchMRNs]);
 
   // Filter GINs for dropdown

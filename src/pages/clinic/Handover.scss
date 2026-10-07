@@ -220,3 +220,8 @@
     }
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 800px) {
+  .ho-page .ho-grid { grid-template-columns: 1fr; }
+}

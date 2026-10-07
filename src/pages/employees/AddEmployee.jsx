@@ -10,6 +10,8 @@ import PageHeader from '../../components/shared/PageHeader';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Card from '../../components/ui/Card';
+import SearchableSelect from '../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { BadgeCheck, Building2, Camera, CalendarClock, User } from 'lucide-react';
@@ -270,11 +272,15 @@ export default function AddEmployee({ edit }) {
   }, []);
 
   // Ensure `photo` is registered so it is included in submit payload.
+  // department/designation are driven by SearchableSelect via setValue, so
+  // they are registered here (no ref) and required-checked in onSubmit.
   useEffect(() => {
     register('photo');
     register('signature');
     register('cnicFrontDoc');
     register('cnicBackDoc');
+    register('department');
+    register('designation');
   }, [register]);
 
   useEffect(() => {
@@ -334,6 +340,8 @@ export default function AddEmployee({ edit }) {
   }, [mastersLoading, selectedDepartment, selectedDesignation, designationOptionsForSelectedDepartment, setValue]);
 
   const onSubmit = async (data) => {
+    if (!normalizeText(data.department)) { toast.error('Department is required'); return; }
+    if (!normalizeText(data.designation)) { toast.error('Designation is required'); return; }
     setSaving(true);
     try {
       const enteredEmpCode = normalizeText(data.empCode);
@@ -580,7 +588,12 @@ export default function AddEmployee({ edit }) {
         return;
       }
 
-      const ok = window.confirm(`Delete designation "${selectedDesignation}" from ${selectedDepartment}?`);
+      const ok = await confirmDialog({
+        title: 'Delete designation',
+        message: `Delete designation "${selectedDesignation}" from ${selectedDepartment}?`,
+        confirmLabel: 'Delete',
+        danger: true,
+      });
       if (!ok) return;
 
       await readApiData(await fetch(`${EMPLOYEE_META_API}/designations/${target.id}`, {
@@ -611,7 +624,12 @@ export default function AddEmployee({ edit }) {
         return;
       }
 
-      const ok = window.confirm(`Delete department "${selectedDepartment}" and its linked designations?`);
+      const ok = await confirmDialog({
+        title: 'Delete department',
+        message: `Delete department "${selectedDepartment}" and its linked designations?`,
+        confirmLabel: 'Delete',
+        danger: true,
+      });
       if (!ok) return;
 
       await readApiData(await fetch(`${EMPLOYEE_META_API}/departments/${selectedDepartmentRecord.id}`, {
@@ -869,12 +887,13 @@ export default function AddEmployee({ edit }) {
             <div className="form-grid">
               <div>
                 <label className="block text-sm font-medium mb-1">Department *</label>
-                <select {...register('department', { required: true })} className="form-select">
-                  <option value="">Select</option>
-                  {departmentOptions.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={departmentOptions}
+                  value={selectedDepartment}
+                  onChange={(v) => setValue('department', v, { shouldValidate: true, shouldDirty: true })}
+                  placeholder="Select"
+                  required
+                />
                 <div className="head-adder-row">
                   <input
                     type="text"
@@ -903,12 +922,13 @@ export default function AddEmployee({ edit }) {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Designation *</label>
-                <select {...register('designation', { required: true })} className="form-select">
-                  <option value="">Select</option>
-                  {designationOptionsForSelectedDepartment.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={designationOptionsForSelectedDepartment}
+                  value={selectedDesignation}
+                  onChange={(v) => setValue('designation', v, { shouldValidate: true, shouldDirty: true })}
+                  placeholder="Select"
+                  required
+                />
                 <div className="head-adder-row">
                   <input
                     type="text"
@@ -1683,7 +1703,7 @@ export default function AddEmployee({ edit }) {
                       <td className="dep-actions">
                         <button className="dep-edit-btn" onClick={() => { setDepForm({ code: d.code || '', name: d.name, relation: d.relation || '', dob: d.dob ? String(d.dob).slice(0, 10) : '', gender: d.gender, status: d.status }); setEditingDepIdx(i); }}>Edit</button>
                         <button className="dep-del-btn" onClick={async () => {
-                          if (!window.confirm('Remove this dependent?')) return;
+                          if (!(await confirmDialog({ title: 'Remove dependent', message: 'Remove this dependent?', confirmLabel: 'Remove', danger: true }))) return;
                           if (d.id) {
                             try {
                               await fetch(`${EMPLOYEE_META_API}/${id}/dependents/${d.id}`, { method: 'DELETE' });

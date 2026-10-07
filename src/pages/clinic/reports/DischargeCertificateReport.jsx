@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { printElementInPopup } from '../../../utils/printPopup';
 import './DischargeCertificateReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -14,24 +15,11 @@ const REASON_LABELS = {
   discharge_on_request: 'Discharge on Request',
 };
 
-// `@page` is a document-level rule shared across the whole bundled app — other
-// pages each declare their own, so whichever loads last in the bundle wins for
-// the WHOLE app's prints unless a page protects itself right before printing.
-function printDischargeCertificateReport() {
-  const styleId = 'dcgr-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  style.textContent = '@page { size: A4 landscape !important; margin: 8mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
+// Prints from a popup window, never window.print() on the main window (which
+// can freeze the whole app behind a modal print dialog on Windows) — see
+// utils/printPopup.js. The @page size/margin travels with the call.
+function printDischargeCertificateReport(sheetEl) {
+  printElementInPopup(sheetEl, { title: 'Discharge Certificate Report', page: 'A4 landscape', margin: '8mm' });
 }
 
 const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -56,6 +44,7 @@ const ynLabel = (v) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '—');
 export default function DischargeCertificateReport() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const sheetRef = useRef(null);
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
 
@@ -107,10 +96,10 @@ export default function DischargeCertificateReport() {
           <button className="dcgr-tool-btn" onClick={() => navigate(-1)}>Back to Filter</button>
           <div className="dcgr-tool-spacer" />
           <button className="dcgr-tool-btn dcgr-tool-btn--excel" onClick={handleExportExcel} disabled={!rows.length}>Export Excel</button>
-          <button className="dcgr-tool-btn dcgr-tool-btn--pdf" onClick={printDischargeCertificateReport} disabled={!rows.length}>Print / PDF</button>
+          <button className="dcgr-tool-btn dcgr-tool-btn--pdf" onClick={() => printDischargeCertificateReport(sheetRef.current)} disabled={!rows.length}>Print / PDF</button>
         </div>
 
-        <div className="dcgr-sheet">
+        <div className="dcgr-sheet" ref={sheetRef}>
           <div className="dcgr-hdr">
             <div className="dcgr-title">Discharge Certificate Report</div>
             <div className="dcgr-sub">From : {fmtDMY(fromDate)}&nbsp;&nbsp;To&nbsp;&nbsp;: {fmtDMY(toDate)}</div>

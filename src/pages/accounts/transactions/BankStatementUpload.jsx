@@ -71,7 +71,7 @@ export default function BankStatementUpload() {
     fetch(`${API}/bank-accounts?entityType=${entityType}`)
       .then((r) => r.json())
       .then((j) => setBankAccounts(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load bank accounts'));
   }, [entityType]);
 
   const fetchLines = useCallback(async (accId) => {

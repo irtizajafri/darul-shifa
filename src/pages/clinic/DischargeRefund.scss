@@ -91,7 +91,8 @@ $border: #bbb;
 
 .dr-info-row {
   display: flex;
-  gap: 30px;
+  flex-wrap: wrap;
+  gap: 8px 30px;
   margin-bottom: 8px;
 
   div { display: flex; flex-direction: column; }
@@ -175,6 +176,7 @@ $border: #bbb;
 .dr-form-row {
   display: flex;
   align-items: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ConsultantWiseFilter.scss';
 import './WardWisePaymentDistributionFilter.scss';
@@ -37,7 +38,7 @@ export default function WardWisePaymentDistributionFilter() {
         setWards(list);
         setSelectedWards(new Set(list.map(w => w.id))); // all checked by default
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load wards'));
   }, []);
 
   const toggleWard = (id) => {

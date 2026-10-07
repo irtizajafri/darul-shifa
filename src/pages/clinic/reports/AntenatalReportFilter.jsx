@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './AntenatalReportFilter.scss';
 
@@ -21,7 +23,7 @@ export default function AntenatalReportFilter() {
   const [doctorId, setDoctorId] = useState('');
 
   useEffect(() => {
-    if (doctors.length === 0) fetchDoctors().catch(() => {});
+    if (doctors.length === 0) fetchDoctors().catch((err) => toast.error(err?.message || 'Failed to load doctors'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -61,10 +63,15 @@ export default function AntenatalReportFilter() {
 
             <div className="atrf-row atrf-row--consultant">
               <span className="atrf-lbl atrf-lbl--wide">Consultant :</span>
-              <select className="atrf-select atrf-select--consultant" value={doctorId} onChange={e => setDoctorId(e.target.value)}>
-                <option value="">ALL</option>
-                {antenatalDoctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                style={{ flex: 1, minWidth: 0 }}
+                options={antenatalDoctors}
+                value={doctorId}
+                onChange={v => setDoctorId(v)}
+                getLabel={d => d.name}
+                placeholder="ALL"
+              />
             </div>
           </div>
 

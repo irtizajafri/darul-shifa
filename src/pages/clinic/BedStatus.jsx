@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { DoorOpen, Save, Copy, RotateCcw, FileText, Printer } from 'lucide-react';
+import { DoorOpen, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import './AdmissionAdjustment.scss';
 import './BedStatus.scss';
 
@@ -75,14 +76,9 @@ export default function BedStatus() {
 
       <div className="aa-toolbar">
         <div className="aa-toolbar-icons">
-          <span className="aa-tbtn aa-tbtn--disabled"><Save size={16} /></span>
-          <span className="aa-tbtn aa-tbtn--disabled"><Copy size={16} /></span>
-          <span className="aa-tbtn aa-tbtn--disabled"><RotateCcw size={16} /></span>
           <button className="aa-tbtn aa-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
             <DoorOpen size={16} />
           </button>
-          <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
-          <span className="aa-tbtn aa-tbtn--disabled"><Printer size={16} /></span>
         </div>
         <span className="aa-toolbar-title">Bed Status</span>
       </div>
@@ -92,21 +88,28 @@ export default function BedStatus() {
           <div className="bst-row">
             <div className="bst-field">
               <label>Room Category</label>
-              <select value={roomCategoryId} onChange={e => handleRoomChange(e.target.value)}>
-                <option value="">— Select Room Category —</option>
-                {roomCategories.map(r => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={roomCategories}
+                value={roomCategoryId}
+                onChange={v => handleRoomChange(v)}
+                placeholder="— Select Room Category —"
+                getLabel={r => r.name}
+                getKey={r => r.id}
+                size="sm"
+              />
             </div>
             <div className="bst-field">
               <label>Bed</label>
-              <select value={bedId} onChange={e => handleBedChange(e.target.value)} disabled={!roomCategoryId}>
-                <option value="">— Select Bed —</option>
-                {roomBeds.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={roomBeds}
+                value={bedId}
+                onChange={v => handleBedChange(v)}
+                placeholder="— Select Bed —"
+                getLabel={b => b.name}
+                getKey={b => b.id}
+                disabled={!roomCategoryId}
+                size="sm"
+              />
             </div>
           </div>
 

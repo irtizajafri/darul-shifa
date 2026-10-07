@@ -97,7 +97,13 @@ const TabInstance = memo(function TabInstance({ tabId, initialPath, isActive }) 
   return (
     <div
       className={isActive ? 'tabs-container__pane tabs-container__pane--active' : 'tabs-container__pane'}
-      style={{ display: isActive ? 'block' : 'none' }}
+      // height:100% gives every page a definite frame height (the <main>
+      // content box: viewport minus navbar minus <main>'s own padding), so
+      // page roots can use `height: 100%` instead of `100vh` and stop
+      // overflowing the frame by ~100px (which clipped footers and produced
+      // a second scrollbar). Pages taller than the frame still overflow
+      // visibly and <main> scrolls as before.
+      style={{ display: isActive ? 'block' : 'none', height: '100%' }}
     >
       <MemoryRouter initialEntries={[initialPath]}>
         <TabRouteSync tabId={tabId} />

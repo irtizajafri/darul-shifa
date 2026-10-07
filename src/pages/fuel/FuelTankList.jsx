@@ -40,7 +40,7 @@ export default function FuelTankList({ onBack }) {
 
   const load = useCallback(() => {
     fetchTanks().catch((e) => toast.error(e.message));
-    fetchGenerators().catch(() => {});
+    fetchGenerators().catch((err) => toast.error(err?.message || 'Failed to load generators'));
   }, [fetchTanks, fetchGenerators]);
 
   useEffect(load, [load]);

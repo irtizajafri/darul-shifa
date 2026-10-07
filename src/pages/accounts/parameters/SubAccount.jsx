@@ -3,9 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
 const API = 'http://localhost:5001/api/accounts';
+const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 
 export default function SubAccount() {
   const { entityType } = useParams();
@@ -38,6 +42,8 @@ export default function SubAccount() {
     setModal({ mode: 'edit', row });
   };
   const closeModal = () => { setModal(null); setModalSubGLs([]); setModalMainAccounts([]); };
+
+  useModalKeys({ active: !!modal, onEsc: closeModal });
 
   const handleMainGlChange = async (mainGlId) => {
     setForm((f) => ({ ...f, mainGlId, subGlId: '', mainAccountId: '' }));
@@ -87,7 +93,7 @@ export default function SubAccount() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this Sub Account?')) return;
+    if (!(await confirmDialog({ title: 'Delete Sub Account', message: 'Delete this Sub Account?', confirmLabel: 'Delete', danger: true }))) return;
     try { await deleteSubAccount(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };
@@ -143,7 +149,7 @@ export default function SubAccount() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{modal.mode === 'add' ? 'Add Sub Account' : 'Edit Sub Account'}</h3>
 
             <div className="acc-param-page__field">
@@ -155,38 +161,37 @@ export default function SubAccount() {
               <>
                 <div className="acc-param-page__field">
                   <label>Main GL</label>
-                  <select value={form.mainGlId} onChange={(e) => handleMainGlChange(e.target.value)}>
-                    <option value="">— Select Main GL —</option>
-                    {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    options={mainGLs}
+                    value={form.mainGlId}
+                    onChange={(v) => handleMainGlChange(v)}
+                    getLabel={codeNameLabel}
+                    placeholder="— Select Main GL —"
+                  />
                 </div>
 
                 <div className="acc-param-page__field">
                   <label>Sub GL</label>
-                  <select
+                  <SearchableSelect
+                    options={modalSubGLs}
                     value={form.subGlId}
-                    onChange={(e) => handleSubGlChange(e.target.value)}
+                    onChange={(v) => handleSubGlChange(v)}
                     disabled={!form.mainGlId || loadingSubGLs}
-                  >
-                    <option value="">
-                      {!form.mainGlId ? '— Select Main GL first —' : loadingSubGLs ? 'Loading…' : '— Select Sub GL —'}
-                    </option>
-                    {modalSubGLs.map((s) => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}
-                  </select>
+                    getLabel={codeNameLabel}
+                    placeholder={!form.mainGlId ? '— Select Main GL first —' : loadingSubGLs ? 'Loading…' : '— Select Sub GL —'}
+                  />
                 </div>
 
                 <div className="acc-param-page__field">
                   <label>Main Account</label>
-                  <select
+                  <SearchableSelect
+                    options={modalMainAccounts}
                     value={form.mainAccountId}
-                    onChange={(e) => setForm((f) => ({ ...f, mainAccountId: e.target.value }))}
+                    onChange={(v) => setForm((f) => ({ ...f, mainAccountId: v }))}
                     disabled={!form.subGlId || loadingMainAccounts}
-                  >
-                    <option value="">
-                      {!form.subGlId ? '— Select Sub GL first —' : loadingMainAccounts ? 'Loading…' : '— Select Main Account —'}
-                    </option>
-                    {modalMainAccounts.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-                  </select>
+                    getLabel={codeNameLabel}
+                    placeholder={!form.subGlId ? '— Select Sub GL first —' : loadingMainAccounts ? 'Loading…' : '— Select Main Account —'}
+                  />
                 </div>
               </>
             )}

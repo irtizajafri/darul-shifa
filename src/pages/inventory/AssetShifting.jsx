@@ -69,7 +69,7 @@ export default function AssetShifting() {
 
   // load locations once for autocomplete
   useEffect(() => {
-    fetchLocations({}).then((data) => setLocationsList(Array.isArray(data) ? data : [])).catch(() => {});
+    fetchLocations({}).then((data) => setLocationsList(Array.isArray(data) ? data : [])).catch((err) => toast.error(err?.message || 'Failed to load locations'));
   }, [fetchLocations]);
 
   // ── load global history ───────────────────────────────────────────────────

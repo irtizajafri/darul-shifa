@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Settings2, BookOpen, AlignLeft, Layers, Users, Landmark, FileDigit, Tag, ArrowLeft, Copy } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import './AccountsParameters.scss';
 
 const ITEMS = [
@@ -37,7 +38,11 @@ export default function AccountsParameters() {
   }, [entityType]);
 
   const handleCopyFromNonCorporate = async () => {
-    if (!confirm('Copy the entire Non-Corporate Main GL / Sub GL / Main Account / Sub Account structure into Corporate? This creates brand-new, independent Corporate records — it only runs once.')) return;
+    if (!(await confirmDialog({
+      title: 'Copy to Corporate',
+      message: 'Copy the entire Non-Corporate Main GL / Sub GL / Main Account / Sub Account structure into Corporate? This creates brand-new, independent Corporate records — it only runs once.',
+      confirmLabel: 'Copy',
+    }))) return;
     setCopying(true);
     try {
       const result = await copyChartToCorporate();

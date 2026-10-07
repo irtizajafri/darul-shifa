@@ -7,6 +7,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { useInventoryStore } from '../../store/useInventoryStore';
 
@@ -549,7 +550,7 @@ export default function UserManagement() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this user? This cannot be undone.')) return;
+    if (!(await confirmDialog({ title: 'Delete user', message: 'Delete this user? This cannot be undone.', confirmLabel: 'Delete', danger: true }))) return;
     setDeletingId(id);
     try {
       await deleteUser(id);
@@ -655,7 +656,7 @@ export default function UserManagement() {
             </div>
           );
         })()}
-        <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="mt-4 bg-white rounded-xl border border-gray-200 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">

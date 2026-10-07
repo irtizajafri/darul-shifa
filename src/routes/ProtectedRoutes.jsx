@@ -149,7 +149,6 @@ import AddEmployee from '../pages/employees/AddEmployee';
 import EmployeeDetail from '../pages/employees/EmployeeDetail';
 import AttendanceList from '../pages/attendance/AttendanceList';
 import TempAttendanceApi from '../pages/attendance/TempAttendanceApi';
-import TestAttendance from '../pages/attendance/TestAttendance';
 import GatePass from '../pages/gatepass/GatePass';
 import ShortLeave from '../pages/shortleave/ShortLeave';
 import AdvanceLoan from '../pages/advance/AdvanceLoan';
@@ -197,7 +196,6 @@ export default function ProtectedRoutes() {
       <Route path="employees/:id/edit" element={<PermissionGuard module="employee" subModule="employee-database"><AddEmployee edit /></PermissionGuard>} />
       <Route path="attendance" element={<PermissionGuard module="employee" subModule="attendance"><AttendanceList /></PermissionGuard>} />
       <Route path="attendance-temp" element={<PermissionGuard module="employee" subModule="attendance"><TempAttendanceApi /></PermissionGuard>} />
-      <Route path="test-attendance" element={<PermissionGuard module="employee" subModule="attendance"><TestAttendance /></PermissionGuard>} />
       <Route path="gatepass" element={<PermissionGuard module="employee" subModule="gatepass"><GatePass /></PermissionGuard>} />
       <Route path="shortleave" element={<PermissionGuard module="employee" subModule="shortleave"><ShortLeave /></PermissionGuard>} />
       <Route path="advance" element={<PermissionGuard module="employee" subModule="advance"><AdvanceLoan /></PermissionGuard>} />

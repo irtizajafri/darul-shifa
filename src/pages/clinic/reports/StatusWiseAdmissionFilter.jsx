@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './StatusWiseAdmissionFilter.scss';
 
@@ -43,14 +45,14 @@ export default function StatusWiseAdmissionFilter() {
     fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
       .then(j => setDoctors((j.data || []).filter(d => !activeOnly || d.status === 'active')))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [activeOnly]);
 
   useEffect(() => {
     fetch(`${API}/surgery-types`)
       .then(r => r.json())
       .then(j => setSurgeryTypes(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load surgery types'));
   }, []);
 
   const togglePatientType = (v) => {
@@ -119,26 +121,46 @@ export default function StatusWiseAdmissionFilter() {
 
             <div className="cwf-row">
               <label className="cwf-lbl">Doctor</label>
-              <select className="cwf-input swa-half" value={doctorFrom} onChange={e => setDoctorFrom(e.target.value)}>
-                <option value="">(first)</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.code} - {d.name}</option>)}
-              </select>
-              <select className="cwf-input swa-half" value={doctorTo} onChange={e => setDoctorTo(e.target.value)}>
-                <option value="">(last)</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.code} - {d.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="swa-half"
+                options={doctors}
+                value={doctorFrom}
+                onChange={v => setDoctorFrom(v)}
+                getLabel={d => `${d.code} - ${d.name}`}
+                placeholder="(first)"
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="swa-half"
+                options={doctors}
+                value={doctorTo}
+                onChange={v => setDoctorTo(v)}
+                getLabel={d => `${d.code} - ${d.name}`}
+                placeholder="(last)"
+              />
             </div>
 
             <div className="cwf-row">
               <label className="cwf-lbl">Surgery Type</label>
-              <select className="cwf-input swa-half" value={surgeryFrom} onChange={e => setSurgeryFrom(e.target.value)}>
-                <option value="">(first)</option>
-                {surgeryTypes.map(s => <option key={s.id} value={s.id}>{s.code} - {s.name}</option>)}
-              </select>
-              <select className="cwf-input swa-half" value={surgeryTo} onChange={e => setSurgeryTo(e.target.value)}>
-                <option value="">(last)</option>
-                {surgeryTypes.map(s => <option key={s.id} value={s.id}>{s.code} - {s.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="swa-half"
+                options={surgeryTypes}
+                value={surgeryFrom}
+                onChange={v => setSurgeryFrom(v)}
+                getLabel={s => `${s.code} - ${s.name}`}
+                placeholder="(first)"
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="swa-half"
+                options={surgeryTypes}
+                value={surgeryTo}
+                onChange={v => setSurgeryTo(v)}
+                getLabel={s => `${s.code} - ${s.name}`}
+                placeholder="(last)"
+              />
             </div>
 
             <fieldset className="cwf-fieldset">

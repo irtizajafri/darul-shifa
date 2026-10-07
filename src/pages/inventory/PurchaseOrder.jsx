@@ -10,6 +10,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { canBackDate } from '../../utils/permissions';
 import { printPODocument } from '../../utils/printPO';
+import { formatDate } from '../../utils/helpers';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
   const [search, setSearch] = useState('');
@@ -405,7 +406,7 @@ export default function PurchaseOrder() {
                     <span className="text-xs text-slate-500">{g.supplierName}</span>
                     <span className="text-slate-400 text-xs mx-2">|</span>
                     <span className="text-xs text-slate-500">{g.records.length} item(s)</span>
-                    {g.poDate && <span className="text-slate-400 text-xs ml-2">({new Date(g.poDate).toLocaleDateString()})</span>}
+                    {g.poDate && <span className="text-slate-400 text-xs ml-2">({formatDate(g.poDate)})</span>}
                   </div>
                   <button
                     onClick={() => printPODocument(
@@ -523,7 +524,7 @@ export default function PurchaseOrder() {
 
             {/* Added items table */}
             {(formData.items || []).length > 0 && (
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="border border-slate-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-100 text-slate-500 text-xs uppercase tracking-wide">
@@ -687,7 +688,7 @@ export default function PurchaseOrder() {
                     <td className="px-6 py-4">{row.item?.name || '-'}</td>
                     <td className="px-6 py-4">{row.requiredQuantity}</td>
                     <td className="px-6 py-4">{row.orderedRate ?? '-'}</td>
-                    <td className="px-6 py-4">{row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-'}</td>
+                    <td className="px-6 py-4">{formatDate(row.expectedDate)}</td>
                     <td className="px-6 py-4 capitalize">{row.status}</td>
                   </tr>
                 ))

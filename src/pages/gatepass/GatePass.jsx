@@ -36,7 +36,7 @@ export default function GatePass() {
   const { gatepasses, fetchGatepasses, createGatepass, closeGatepass } = useGatePassStore();
   const employeeDropdownRef = useRef(null);
 
-  const { register, handleSubmit, watch, setValue } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: {
       date: defaultDate,
       timeOut: defaultTime,
@@ -46,7 +46,8 @@ export default function GatePass() {
   const {
     register: registerReturn,
     handleSubmit: handleReturnSubmit,
-    setValue: setReturnValue
+    setValue: setReturnValue,
+    formState: { isSubmitting: isClosing }
   } = useForm();
   const nature = watch('nature', 'Personal');
   const empCodeVal = watch('empCode');
@@ -542,7 +543,7 @@ export default function GatePass() {
           <div className="modal-actions">
             <Button type="button" label="Close" variant="ghost" onClick={() => setModalOpen(false)} />
             <Button type="button" label="Print" variant="outline" onClick={handleSubmit(handlePrintDraft)} />
-            <Button type="submit" label="Save" />
+            <Button type="submit" label="Save" loading={isSubmitting} />
           </div>
         </form>
       </Modal>
@@ -560,7 +561,7 @@ export default function GatePass() {
             </div>
             <div className="modal-actions">
               <Button type="button" label="Cancel" variant="ghost" onClick={() => setReturnModal(null)} />
-              <Button type="submit" label="Close Gate Pass" />
+              <Button type="submit" label="Close Gate Pass" loading={isClosing} />
             </div>
           </form>
         )}

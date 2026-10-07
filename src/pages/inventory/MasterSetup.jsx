@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 import NoTabAccess from '../../components/auth/NoTabAccess';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useInventoryStore } from '../../store/useInventoryStore';
 
 const TABS = ['Items', 'Categories', 'Subcategories', 'Suppliers', 'Storages', 'Locations', 'Departments'];
@@ -445,6 +446,10 @@ export default function MasterSetup() {
       }
 
       if (activeTab === 'Subcategories') {
+        if (!formData.categoryId) {
+          toast.error('Please select a category');
+          return;
+        }
         if (editingRow) {
           await saveAndRefresh((p) => updateSubcategory(editingRow.id, p), { name: formData.name, categoryId: Number(formData.categoryId), status: formData.status }, 'Subcategory updated');
         } else {
@@ -611,7 +616,12 @@ export default function MasterSetup() {
 
   const handleDelete = async (row) => {
     const label = effectiveTab.slice(0, -1);
-    const isConfirmed = window.confirm(`Are you sure you want to delete this ${label}? If it has linked records, deletion will be blocked.`);
+    const isConfirmed = await confirmDialog({
+      title: `Delete ${label}`,
+      message: `Delete this ${label}? If it has linked records, deletion will be blocked.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
     if (!isConfirmed) return;
     try {
       if (activeTab === 'Items') await deleteItem(row.id);
@@ -629,7 +639,12 @@ export default function MasterSetup() {
   };
 
   const handleDeleteItem = async (itemId) => {
-    const isConfirmed = window.confirm('Are you sure you want to delete this item? If it has transactions, deletion will be blocked.');
+    const isConfirmed = await confirmDialog({
+      title: 'Delete item',
+      message: 'Delete this item? If it has transactions, deletion will be blocked.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
     if (!isConfirmed) return;
 
     try {
@@ -1096,7 +1111,7 @@ export default function MasterSetup() {
           <div className="w-full max-w-3xl bg-white rounded-xl border border-slate-200 shadow-xl flex flex-col max-h-[95vh] sm:max-h-[90vh]">
             <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-200 shrink-0">
               <h3 className="text-base sm:text-lg font-semibold text-slate-900">{editingRow ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}</h3>
-              <button onClick={closeAddModal} className="text-slate-500 hover:text-slate-800">
+              <button type="button" onClick={closeAddModal} aria-label="Close" title="Close" className="text-slate-500 hover:text-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1133,17 +1148,15 @@ export default function MasterSetup() {
                 )}
 
                 {effectiveTab === 'Subcategories' && (
-                  <select
+                  <SearchableSelect
+                    options={masterOptions.categories || []}
                     value={formData.categoryId}
-                    onChange={(e) => onFormChange('categoryId', e.target.value)}
-                    className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                    onChange={(v) => onFormChange('categoryId', v)}
+                    placeholder="Select Category"
+                    getLabel={(cat) => `${cat.name} (${cat.code})`}
+                    getKey={(cat) => cat.id}
                     required
-                  >
-                    <option value="">Select Category</option>
-                    {(masterOptions.categories || []).map((cat) => (
-                      <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                    ))}
-                  </select>
+                  />
                 )}
 
                 {effectiveTab === 'Suppliers' && (
@@ -1426,7 +1439,7 @@ export default function MasterSetup() {
                 <h3 className="text-base font-semibold text-slate-900">Bulk Upload Items (Excel)</h3>
                 <p className="text-xs text-slate-400 mt-0.5">Fixed/current asset items — apni Excel file select karein</p>
               </div>
-              <button onClick={closeItemsImportModal} className="text-slate-500 hover:text-slate-800">
+              <button type="button" onClick={closeItemsImportModal} aria-label="Close" title="Close" className="text-slate-500 hover:text-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -1608,7 +1621,7 @@ export default function MasterSetup() {
           <div className="w-full max-w-lg bg-white rounded-xl border border-slate-200 shadow-xl flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
               <h3 className="text-base sm:text-lg font-semibold text-slate-900">Upload Locations Excel</h3>
-              <button onClick={closeImportModal} className="text-slate-500 hover:text-slate-800">
+              <button type="button" onClick={closeImportModal} aria-label="Close" title="Close" className="text-slate-500 hover:text-slate-800">
                 <X className="w-5 h-5" />
               </button>
             </div>

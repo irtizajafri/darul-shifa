@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, DoorOpen, Save, Copy, RotateCcw, FileText, Printer, X, ArrowRight } from 'lucide-react';
+import { Search, DoorOpen, X, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
+import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import './BedShifting.scss';
@@ -26,6 +28,8 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     searchAdmissionsForAdjustment('')
       .then((data) => setRows(data || []))
@@ -46,11 +50,11 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
   }
 
   return (
-    <div className="aa-overlay">
-      <div className="aa-modal">
+    <div className="aa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="aa-modal" role="dialog" aria-modal="true">
         <div className="aa-modal-hdr">
           <span>Select Admitted Patient</span>
-          <button className="aa-modal-close" onClick={onClose}><X size={14} /></button>
+          <button className="aa-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={14} /></button>
         </div>
         <div className="aa-modal-search">
           <Search size={13} className="aa-modal-search-icon" />
@@ -221,14 +225,9 @@ export default function BedShifting() {
 
         <div className="aa-toolbar">
           <div className="aa-toolbar-icons">
-            <span className="aa-tbtn aa-tbtn--disabled"><Save size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Copy size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><RotateCcw size={16} /></span>
             <button className="aa-tbtn aa-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
               <DoorOpen size={16} />
             </button>
-            <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Printer size={16} /></span>
           </div>
           <span className="aa-toolbar-title">Bed Shifting</span>
         </div>
@@ -253,22 +252,29 @@ export default function BedShifting() {
 
                 <div className="bsh-bed-box">
                   <label>New Ward</label>
-                  <select value={newRoomCategoryId} onChange={e => handleNewRoomChange(e.target.value)}>
-                    <option value="">— Select Ward —</option>
-                    {roomCategories.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={roomCategories}
+                    value={newRoomCategoryId}
+                    onChange={v => handleNewRoomChange(v)}
+                    placeholder="— Select Ward —"
+                    getLabel={r => r.name}
+                    getKey={r => r.id}
+                    size="sm"
+                  />
                 </div>
 
                 <div className="bsh-bed-box">
                   <label>New Bed</label>
-                  <select value={newBedId} onChange={e => setNewBedId(e.target.value)} disabled={!newRoomCategoryId}>
-                    <option value="">— Select Bed —</option>
-                    {newRoomBeds.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={newRoomBeds}
+                    value={newBedId}
+                    onChange={v => setNewBedId(v)}
+                    placeholder="— Select Bed —"
+                    getLabel={b => b.name}
+                    getKey={b => b.id}
+                    disabled={!newRoomCategoryId}
+                    size="sm"
+                  />
                   {newRoomCategoryId && newRoomBeds.length === 0 && (
                     <span className="bsh-no-beds">No available beds</span>
                   )}

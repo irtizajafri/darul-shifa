@@ -7,7 +7,9 @@ import PageHeader from '../../../components/shared/PageHeader';
 import Modal from '../../../components/ui/Modal';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './ClinicParameterPage.scss';
 import './ClinicBedPage.scss';
 
@@ -31,6 +33,10 @@ export default function ClinicBedPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [selectedBed, setSelectedBed] = useState(null);
+
+  // Bed Detail modal (hand-rolled overlay below) — ESC closes it. The Add/Edit
+  // and Delete dialogs use the shared <Modal>, which handles ESC itself.
+  useModalKeys({ active: !!selectedBed, onEsc: () => setSelectedBed(null) });
 
   useEffect(() => {
     fetchRoomCategories();
@@ -194,16 +200,15 @@ export default function ClinicBedPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Room Category <span className="text-red-500">*</span>
             </label>
-            <select
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            <SearchableSelect
+              options={roomCategories}
               value={form.roomCategoryId}
-              onChange={(e) => setForm((f) => ({ ...f, roomCategoryId: e.target.value }))}
-            >
-              <option value="">Select Room Category</option>
-              {roomCategories.map((rc) => (
-                <option key={rc.id} value={String(rc.id)}>{rc.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, roomCategoryId: v }))}
+              getKey={(rc) => rc.id}
+              getLabel={(rc) => rc.name}
+              placeholder="Select Room Category"
+              size="md"
+            />
           </div>
           <Input
             label="Bed Name"
@@ -233,11 +238,11 @@ export default function ClinicBedPage() {
 
       {/* Bed Detail Modal */}
       {selectedBed && (
-        <div className="bed-detail-overlay" onClick={() => setSelectedBed(null)}>
-          <div className="bed-detail-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="bed-detail-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedBed(null); }}>
+          <div className="bed-detail-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className={`bed-detail-header ${selectedBed.status === 'occupied' ? 'bed-detail-header--red' : selectedBed.status === 'not_working' ? 'bed-detail-header--amber' : 'bed-detail-header--green'}`}>
               <span>{selectedBed.name}</span>
-              <button className="bed-detail-close" onClick={() => setSelectedBed(null)}>✕</button>
+              <button className="bed-detail-close" onClick={() => setSelectedBed(null)} aria-label="Close" title="Close">✕</button>
             </div>
             <div className="bed-detail-body">
               {selectedBed.status === 'occupied' ? (

@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
+import useModalKeys from '../../hooks/useModalKeys';
 import './OtRegister.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -50,11 +52,13 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     fetch(`${API}/admission/receiving/search`)
       .then(r => r.json())
       .then(res => setRows(res.data || []))
-      .catch(() => setRows([]))
+      .catch((err) => { setRows([]); toast.error(err?.message || 'Failed to load admissions'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -65,11 +69,11 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   );
 
   return (
-    <div className="otr-overlay">
-      <div className="otr-modal">
+    <div className="otr-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="otr-modal" role="dialog" aria-modal="true">
         <div className="otr-modal-hdr">
           <span>Select Admission</span>
-          <button className="otr-modal-close" onClick={onClose}>✕</button>
+          <button className="otr-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="otr-modal-search">
           <Search size={13} className="otr-modal-search-icon" />
@@ -112,6 +116,7 @@ function AdmissionLookupModal({ onSelect, onClose }) {
 // ── Doctor Picker Modal (filtered by role's Staff Category) ───────────────────
 function DoctorPickerModal({ title, doctors, onSelect, onClose }) {
   const [q, setQ] = useState('');
+  useModalKeys({ active: true, onEsc: onClose });
   const filtered = doctors.filter(d =>
     !q.trim() ||
     d.name?.toLowerCase().includes(q.trim().toLowerCase()) ||
@@ -119,11 +124,11 @@ function DoctorPickerModal({ title, doctors, onSelect, onClose }) {
   );
 
   return (
-    <div className="otr-overlay">
-      <div className="otr-modal">
+    <div className="otr-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="otr-modal" role="dialog" aria-modal="true">
         <div className="otr-modal-hdr">
           <span>{title}</span>
-          <button className="otr-modal-close" onClick={onClose}>✕</button>
+          <button className="otr-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="otr-modal-search">
           <Search size={13} className="otr-modal-search-icon" />
@@ -345,12 +350,16 @@ export default function OtRegister() {
 
               <div className="otr-form-row">
                 <label className="otr-label">Surgery Type</label>
-                <select className="otr-input otr-input--wide" value={form.surgeryTypeId} onChange={e => set('surgeryTypeId', e.target.value)}>
-                  <option value="">— Select —</option>
-                  {surgeryTypes.map(s => (
-                    <option key={s.id} value={s.id}>{s.code ? `${s.code} — ${s.name}` : s.name}</option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={surgeryTypes}
+                  value={form.surgeryTypeId}
+                  onChange={v => set('surgeryTypeId', v)}
+                  placeholder="— Select —"
+                  getLabel={s => s.code ? `${s.code} — ${s.name}` : s.name}
+                  getKey={s => s.id}
+                  size="sm"
+                  style={{ width: 240 }}
+                />
               </div>
 
               <div className="otr-separator" />

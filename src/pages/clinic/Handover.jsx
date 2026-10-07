@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import PageHeader from '../../components/shared/PageHeader';
 import Button from '../../components/ui/Button';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useUserManagementStore } from '../../store/useUserManagementStore';
@@ -401,12 +402,14 @@ export default function Handover() {
                   </div>
                   <div className="ho-field">
                     <label>Asset Handover To</label>
-                    <select value={assetToUserId} onChange={(e) => setAssetToUserId(e.target.value)}>
-                      <option value="">— Select Employee —</option>
-                      {otherUsers.map((u) => (
-                        <option key={u.id} value={u.id}>{u.name}{u.role ? ` (${u.role})` : ''}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={otherUsers}
+                      value={assetToUserId}
+                      onChange={(v) => setAssetToUserId(v)}
+                      placeholder="— Select Employee —"
+                      getLabel={(u) => `${u.name}${u.role ? ` (${u.role})` : ''}`}
+                      getKey={(u) => u.id}
+                    />
                   </div>
                 </div>
 
@@ -454,12 +457,14 @@ export default function Handover() {
                   </div>
                   <div className="ho-field">
                     <label>Cash Handover To</label>
-                    <select value={cashToUserId} onChange={(e) => setCashToUserId(e.target.value)}>
-                      <option value="">— Select Employee —</option>
-                      {otherUsers.map((u) => (
-                        <option key={u.id} value={u.id}>{u.name}{u.role ? ` (${u.role})` : ''}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={otherUsers}
+                      value={cashToUserId}
+                      onChange={(v) => setCashToUserId(v)}
+                      placeholder="— Select Employee —"
+                      getLabel={(u) => `${u.name}${u.role ? ` (${u.role})` : ''}`}
+                      getKey={(u) => u.id}
+                    />
                   </div>
                 </div>
 

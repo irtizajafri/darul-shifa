@@ -933,12 +933,14 @@ export default function Admission() {
                 </div>
                 <div className="adm-field">
                   <label>Ward (Room Category)</label>
-                  <select value={form.roomCategoryId} onChange={e => handleRoomChange(e.target.value)}>
-                    <option value="">— Select Ward —</option>
-                    {roomCategories.map(r => (
-                      <option key={r.id} value={r.id}>{r.name}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={roomCategories}
+                    value={form.roomCategoryId}
+                    onChange={val => handleRoomChange(val)}
+                    placeholder="— Select Ward —"
+                    getLabel={r => r.name}
+                    getKey={r => r.id}
+                  />
                 </div>
               </div>
 
@@ -956,12 +958,15 @@ export default function Admission() {
                 </div>
                 <div className="adm-field">
                   <label>Bed #</label>
-                  <select value={form.bedId} onChange={e => set('bedId', e.target.value)} disabled={!form.roomCategoryId}>
-                    <option value="">— Select Bed —</option>
-                    {availableBeds.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={availableBeds}
+                    value={form.bedId}
+                    onChange={val => set('bedId', val)}
+                    placeholder="— Select Bed —"
+                    getLabel={b => b.name}
+                    getKey={b => b.id}
+                    disabled={!form.roomCategoryId}
+                  />
                   {form.roomCategoryId && availableBeds.length === 0 && (
                     <span className="adm-no-beds">No available beds</span>
                   )}
@@ -1096,16 +1101,15 @@ export default function Admission() {
                   Surgery
                 </label>
                 {form.surgery && (
-                  <select
+                  <SearchableSelect
+                    options={surgeryTypes}
                     value={form.surgeryTypeId}
-                    onChange={e => set('surgeryTypeId', e.target.value)}
-                    className="adm-surgery-select"
-                  >
-                    <option value="">— Select Surgery Type —</option>
-                    {surgeryTypes.map(s => (
-                      <option key={s.id} value={s.id}>{s.code} — {s.name}</option>
-                    ))}
-                  </select>
+                    onChange={val => set('surgeryTypeId', val)}
+                    placeholder="— Select Surgery Type —"
+                    getLabel={s => `${s.code} — ${s.name}`}
+                    getKey={s => s.id}
+                    style={{ width: 'auto', minWidth: 220, maxWidth: '100%' }}
+                  />
                 )}
                 <div className="adm-referral-group">
                   <span className="adm-referral-label">Referral Patient</span>

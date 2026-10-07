@@ -9,6 +9,16 @@
   box-sizing: border-box;
 }
 
+/* Shared responsive helpers — see src/styles/mixins.scss for the SCSS
+   versions. Use `.table-wrap` around any <table> that can be wider than its
+   card so the table scrolls sideways instead of the whole page. */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+  > table { min-width: 100%; }
+}
+
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background: $background;

@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { Filter as FilterIcon, Printer, Search, Upload, X } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
+import { printElementInPopup } from '../../../utils/printPopup';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './DoctorWiseStatement.scss';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,15 +22,12 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const DEFAULT_FROM_TIME = '08:00:00';
 const DEFAULT_TO_TIME = '07:59:59';
 
-function printDoctorWiseStatement() {
-  const styleId = 'dws-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) { style = document.createElement('style'); style.id = styleId; document.head.appendChild(style); }
-  style.textContent = '@page { size: A4 portrait !important; margin: 10mm !important; }';
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-  window.print();
+// Prints from a popup window, never window.print() on the main window (which
+// can freeze the whole app behind a modal print dialog on Windows) — see
+// utils/printPopup.js. The whole body is printed (one .dws-company-page per
+// company, page-break between them per the page's own print CSS).
+function printDoctorWiseStatement(bodyEl) {
+  printElementInPopup(bodyEl, { title: 'Doctor Wise Statement', page: 'A4 portrait', margin: '10mm' });
 }
 
 // Excel's date epoch is 1899-12-30 — standard serial→JS Date conversion.
@@ -171,6 +170,7 @@ function parseDoctorStatementExcel(file) {
 // own repeated doctor/date header, matching the legacy paper output.
 export default function DoctorWiseStatement() {
   const { doctors, fetchDoctors, fetchDoctorStatement } = useClinicStore();
+  const bodyRef = useRef(null);
 
   const [showFilter, setShowFilter] = useState(true);
 
@@ -190,6 +190,10 @@ export default function DoctorWiseStatement() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => { fetchDoctors(); }, [fetchDoctors]);
+
+  // ESC closes the filter dialog — unless the Doctor picker is stacked on top
+  // of it, in which case ESC should only dismiss the picker (its own hook).
+  useModalKeys({ active: showFilter && !showDoctorPicker, onEsc: () => setShowFilter(false) });
 
   const selectedDoctor = doctors.find((d) => String(d.id) === String(doctorId));
   const pickableDoctors = activeConsultantsOnly ? doctors.filter((d) => d.status === 'active') : doctors;
@@ -215,13 +219,13 @@ export default function DoctorWiseStatement() {
     <div className="dws-page">
       <ClinicMenuBar />
 
-      <div className="dws-body">
+      <div className="dws-body" ref={bodyRef}>
         <div className="dws-toolbar no-print">
           <div className="dws-titlebar">Doctor Wise Statement</div>
           <div className="dws-toolbar-actions">
             <button className="dws-btn" onClick={() => setShowFilter(true)}><FilterIcon size={14} /> Filter</button>
             <button className="dws-btn dws-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
-            <button className="dws-btn dws-btn--print" onClick={printDoctorWiseStatement} disabled={!hasRows}>
+            <button className="dws-btn dws-btn--print" onClick={() => printDoctorWiseStatement(bodyRef.current)} disabled={!hasRows}>
               <Printer size={14} /> Print
             </button>
           </div>
@@ -349,10 +353,10 @@ function FilterModal({
 }) {
   return (
     <div className="dws-modal-overlay" onMouseDown={onClose}>
-      <div className="dws-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="dws-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="dws-modal-head">
           <span>Statement of Surgery</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
 
         <div className="dws-modal-body">
@@ -423,6 +427,8 @@ function DoctorPickerModal({ doctors, onSelect, onClose }) {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   const filtered = doctors.filter((d) =>
     !q.trim() ||
     d.name.toLowerCase().includes(q.trim().toLowerCase()) ||
@@ -431,10 +437,10 @@ function DoctorPickerModal({ doctors, onSelect, onClose }) {
 
   return (
     <div className="dws-modal-overlay" onMouseDown={onClose}>
-      <div className="dws-modal dws-modal--picker" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="dws-modal dws-modal--picker" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="dws-modal-head">
           <span>Select Doctor</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
         <div className="dws-picker-search">
           <Search size={13} />
@@ -465,6 +471,10 @@ function ImportModal({ onClose }) {
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+
+  // ESC mirrors the header X button: closable only when not mid-import.
+  const canClose = step === 'pick' || step === 'preview' || step === 'done';
+  useModalKeys({ active: true, onEsc: canClose ? onClose : undefined });
 
   async function handlePickFile(e) {
     const file = e.target.files[0];
@@ -514,11 +524,11 @@ function ImportModal({ onClose }) {
 
   return (
     <div className="dws-modal-overlay" onMouseDown={step === 'pick' || step === 'preview' ? onClose : undefined}>
-      <div className="dws-modal dws-modal--wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="dws-modal dws-modal--wide" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="dws-modal-head">
           <span>Upload Excel — Statement of Consultant for Indoor Files</span>
           {(step === 'pick' || step === 'preview' || step === 'done') && (
-            <button onClick={onClose}><X size={16} /></button>
+            <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
           )}
         </div>
 

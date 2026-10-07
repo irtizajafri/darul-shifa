@@ -194,6 +194,7 @@
   background: #fff;
   border-radius: 8px;
   width: 480px;
+  max-width: 95vw; // also caps the --panel / --wide variants below
   max-height: 70vh;
   display: flex;
   flex-direction: column;
@@ -398,4 +399,9 @@
   border-radius: 5px;
   cursor: pointer;
   &:hover { background: #1e40af; }
+}
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 800px) {
+  .ant-form { grid-template-columns: 1fr; }
 }

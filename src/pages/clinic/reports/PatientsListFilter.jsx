@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import './PatientsListFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -158,7 +159,11 @@ export default function PatientsListFilter() {
 
       const uniqueDates = [...new Set(rows.map(r => r.visitDate))].sort();
       const dateLabel   = uniqueDates.map(formatDateDisplay).join(', ');
-      if (!window.confirm(`Excel file mein is date ka data mila hai: ${dateLabel}\n\nKya aap yeh data import karna chahte hain?`)) {
+      if (!(await confirmDialog({
+        title: 'Import data',
+        message: `Excel file mein is date ka data mila hai: ${dateLabel}\n\nKya aap yeh data import karna chahte hain?`,
+        confirmLabel: 'Import',
+      }))) {
         return;
       }
 
@@ -172,20 +177,29 @@ export default function PatientsListFilter() {
       if (datesWithData.length) {
         const totalExisting = datesWithData.reduce((sum, d) => sum + countsJson.data[d], 0);
         const label = datesWithData.map(formatDateDisplay).join(', ');
-        const choice = window.prompt(
-          `${label} ka data pehle se mojood hai (${totalExisting} records).\n\n` +
-          `Kya karna chahte hain?\n` +
-          `  R = Replace (purana delete, naya dalo)\n` +
-          `  M = Merge (existing raho, sirf naye serial add karo)\n` +
-          `  Cancel = kuch mat karo\n\nR ya M type karo:`
-        );
+        // Replaces the old window.prompt ("type R or M") — the same three
+        // outcomes, as buttons: 'R' | 'M' | null (cancelled / dismissed).
+        const choice = await confirmDialog({
+          title: 'Data pehle se mojood hai',
+          message:
+            `${label} ka data pehle se mojood hai (${totalExisting} records).\n\n` +
+            `Kya karna chahte hain?\n` +
+            `  Replace = purana delete, naya dalo\n` +
+            `  Merge = existing raho, sirf naye serial add karo\n` +
+            `  Cancel = kuch mat karo`,
+          choices: [
+            { label: 'Replace', value: 'R', danger: true },
+            { label: 'Merge', value: 'M' },
+          ],
+          cancelLabel: 'Cancel',
+        });
         if (!choice) {
           toast('Upload cancel kar diya, purana data waisa hi hai');
           return;
         }
-        if (choice.trim().toUpperCase() === 'R') {
+        if (choice === 'R') {
           replaceDates = datesWithData;
-        } else if (choice.trim().toUpperCase() === 'M') {
+        } else if (choice === 'M') {
           mergeDates = datesWithData;
         } else {
           toast('Invalid choice — upload cancel');

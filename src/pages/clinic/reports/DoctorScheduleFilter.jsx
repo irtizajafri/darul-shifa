@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './DoctorScheduleFilter.scss';
 
@@ -24,14 +26,14 @@ export default function DoctorScheduleFilter() {
     fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
       .then(j => setDoctors((j.data || []).filter(d => !activeOnly || d.status === 'active')))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [activeOnly]);
 
   useEffect(() => {
     fetch(`${API}/departments`)
       .then(r => r.json())
       .then(j => setDepartments(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load departments'));
   }, []);
 
   const handlePreview = () => {
@@ -77,26 +79,46 @@ export default function DoctorScheduleFilter() {
 
             <div className="cwf-row">
               <label className="cwf-lbl">Doctor</label>
-              <select className="cwf-input dsf-half" value={doctorFrom} onChange={e => setDoctorFrom(e.target.value)}>
-                <option value="">(first)</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-              <select className="cwf-input dsf-half" value={doctorTo} onChange={e => setDoctorTo(e.target.value)}>
-                <option value="">(last)</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="dsf-half"
+                options={doctors}
+                value={doctorFrom}
+                onChange={v => setDoctorFrom(v)}
+                getLabel={d => d.name}
+                placeholder="(first)"
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="dsf-half"
+                options={doctors}
+                value={doctorTo}
+                onChange={v => setDoctorTo(v)}
+                getLabel={d => d.name}
+                placeholder="(last)"
+              />
             </div>
 
             <div className="cwf-row">
               <label className="cwf-lbl">Department</label>
-              <select className="cwf-input dsf-half" value={deptFrom} onChange={e => setDeptFrom(e.target.value)}>
-                <option value="">(first)</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-              <select className="cwf-input dsf-half" value={deptTo} onChange={e => setDeptTo(e.target.value)}>
-                <option value="">(last)</option>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="dsf-half"
+                options={departments}
+                value={deptFrom}
+                onChange={v => setDeptFrom(v)}
+                getLabel={d => d.name}
+                placeholder="(first)"
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="dsf-half"
+                options={departments}
+                value={deptTo}
+                onChange={v => setDeptTo(v)}
+                getLabel={d => d.name}
+                placeholder="(last)"
+              />
             </div>
 
             <div className="cwf-row">

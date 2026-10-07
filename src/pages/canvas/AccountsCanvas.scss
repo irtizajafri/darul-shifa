@@ -3,7 +3,7 @@
 .accounts-canvas {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 64px); // navbar height ke neeche poori jagah
+  height: 100%; // fills the tab frame (<main> content box) exactly
   padding: 1.25rem 1.5rem 0;
 
   .ac-header {

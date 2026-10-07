@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantStatementFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -30,7 +32,7 @@ export default function ConsultantStatementFilter() {
         setDoctors(list);
         if (list.length) setConsultant(String(list[0].id));
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [activeOnly]);
 
   const handleOk = () => {
@@ -62,16 +64,15 @@ export default function ConsultantStatementFilter() {
             {/* Consultant row */}
             <div className="csf-row">
               <label className="csf-lbl">Consultant</label>
-              <select
-                className="csf-input csf-input--con"
+              <SearchableSelect
+                size="sm"
+                style={{ width: 260 }}
+                options={doctors}
                 value={consultant}
-                onChange={e => setConsultant(e.target.value)}
-              >
-                <option value="">— Select —</option>
-                {doctors.map(d => (
-                  <option key={d.id} value={d.id}>{d.id} - {d.name}</option>
-                ))}
-              </select>
+                onChange={v => setConsultant(v)}
+                getLabel={d => `${d.id} - ${d.name}`}
+                placeholder="— Select —"
+              />
               <label className="csf-chk-active">
                 <input type="checkbox" checked={activeOnly} onChange={e => setActiveOnly(e.target.checked)} />
                 Active Consultants

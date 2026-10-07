@@ -12,6 +12,15 @@ $danger: #EF4444;
 $purple: #8B5CF6;
 $dark-blue: #1E3A5F;
 
+// Shared screen breakpoints (max-width). Use with `respond-below()` from
+// mixins.scss. The app runs on 1366×768 laptops up to 1920 desktops, often in
+// a non-maximized window with the 260px sidebar open, so most layouts need
+// their first collapse step around $bp-xl, not at tablet widths.
+$bp-xl: 1280px;
+$bp-lg: 1024px;
+$bp-md: 768px;
+$bp-sm: 560px;
+
 :root {
   --primary: #{$primary};
   --primary-light: #{$primary-light};

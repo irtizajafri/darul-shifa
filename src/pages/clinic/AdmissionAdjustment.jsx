@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, DoorOpen, Save, Copy, RotateCcw, FileText, Printer, User, Building2, X } from 'lucide-react';
+import { Search, DoorOpen, Save, User, Building2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './Antenatal.scss';
 import './AdmissionAdjustment.scss';
@@ -44,6 +45,8 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
   const timer = useRef(null);
   const inputRef = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => { if (step === 1) inputRef.current?.focus(); }, [step]);
 
   const handleSearch = useCallback((val) => {
@@ -74,10 +77,10 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
   if (step === 2 && selectedEmp) {
     return (
       <div className="ant-modal-overlay" onMouseDown={onClose}>
-        <div className="ant-modal ant-modal--panel" onMouseDown={e => e.stopPropagation()}>
+        <div className="ant-modal ant-modal--panel" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
           <div className="ant-modal-header">
             <div className="ant-modal-title"><User size={16}/> Select Patient</div>
-            <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+            <button className="ant-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={16}/></button>
           </div>
           <div className="ant-panel-body">
             <div className="ant-panel-field">
@@ -105,10 +108,10 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
 
   return (
     <div className="ant-modal-overlay" onMouseDown={onClose}>
-      <div className="ant-modal" onMouseDown={e => e.stopPropagation()}>
+      <div className="ant-modal" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
         <div className="ant-modal-header">
           <div className="ant-modal-title"><User size={16}/> Select Employee</div>
-          <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+          <button className="ant-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={16}/></button>
         </div>
         <div className="ant-modal-search">
           <Search size={14} className="ant-modal-search-icon"/>
@@ -152,6 +155,8 @@ function PanelModal({ onSelect, onClose }) {
   const [dependentIdx, setDependentIdx] = useState('');
   const [loading, setLoading] = useState(true);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     Promise.all([fetchPanelCompanies(), fetchPanelEmployees()]).finally(() => setLoading(false));
   }, [fetchPanelCompanies, fetchPanelEmployees]);
@@ -175,10 +180,10 @@ function PanelModal({ onSelect, onClose }) {
 
   return (
     <div className="ant-modal-overlay" onMouseDown={onClose}>
-      <div className="ant-modal ant-modal--panel" onMouseDown={e => e.stopPropagation()}>
+      <div className="ant-modal ant-modal--panel" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
         <div className="ant-modal-header">
           <div className="ant-modal-title"><Building2 size={16}/> Select Panel</div>
-          <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+          <button className="ant-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={16}/></button>
         </div>
         {loading ? <div className="ant-modal-empty" style={{ padding: '2rem' }}>Loading...</div> : (
           <div className="ant-panel-body">
@@ -232,6 +237,8 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     searchAdmissionsForAdjustment('')
       .then((data) => setRows(data || []))
@@ -252,11 +259,11 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
   }
 
   return (
-    <div className="aa-overlay">
-      <div className="aa-modal">
+    <div className="aa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="aa-modal" role="dialog" aria-modal="true">
         <div className="aa-modal-hdr">
           <span>Select Admitted Patient</span>
-          <button className="aa-modal-close" onClick={onClose}><X size={14} /></button>
+          <button className="aa-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={14} /></button>
         </div>
         <div className="aa-modal-search">
           <Search size={13} className="aa-modal-search-icon" />
@@ -523,14 +530,9 @@ export default function AdmissionAdjustment() {
 
         <div className="aa-toolbar">
           <div className="aa-toolbar-icons">
-            <span className="aa-tbtn aa-tbtn--disabled"><Save size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Copy size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><RotateCcw size={16} /></span>
             <button className="aa-tbtn aa-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
               <DoorOpen size={16} />
             </button>
-            <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Printer size={16} /></span>
           </div>
           <span className="aa-toolbar-title">Admission Adjustment</span>
         </div>
@@ -642,12 +644,14 @@ export default function AdmissionAdjustment() {
                   </div>
                   <div className="adm-field">
                     <label>Ward (Room Category)</label>
-                    <select value={form.roomCategoryId} onChange={e => handleRoomChange(e.target.value)}>
-                      <option value="">— Select Ward —</option>
-                      {roomCategories.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={roomCategories}
+                      value={form.roomCategoryId}
+                      onChange={val => handleRoomChange(val)}
+                      placeholder="— Select Ward —"
+                      getLabel={r => r.name}
+                      getKey={r => r.id}
+                    />
                   </div>
                 </div>
 
@@ -665,12 +669,15 @@ export default function AdmissionAdjustment() {
                   </div>
                   <div className="adm-field">
                     <label>Bed #</label>
-                    <select value={form.bedId} onChange={e => set('bedId', e.target.value)} disabled={!form.roomCategoryId}>
-                      <option value="">— Select Bed —</option>
-                      {availableBeds.map(b => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect
+                      options={availableBeds}
+                      value={form.bedId}
+                      onChange={val => set('bedId', val)}
+                      placeholder="— Select Bed —"
+                      getLabel={b => b.name}
+                      getKey={b => b.id}
+                      disabled={!form.roomCategoryId}
+                    />
                     {form.roomCategoryId && availableBeds.length === 0 && (
                       <span className="adm-no-beds">No available beds</span>
                     )}
@@ -776,16 +783,15 @@ export default function AdmissionAdjustment() {
                     Surgery
                   </label>
                   {form.surgery && (
-                    <select
+                    <SearchableSelect
+                      options={surgeryTypes}
                       value={form.surgeryTypeId}
-                      onChange={e => set('surgeryTypeId', e.target.value)}
-                      className="adm-surgery-select"
-                    >
-                      <option value="">— Select Surgery Type —</option>
-                      {surgeryTypes.map(s => (
-                        <option key={s.id} value={s.id}>{s.code} — {s.name}</option>
-                      ))}
-                    </select>
+                      onChange={val => set('surgeryTypeId', val)}
+                      placeholder="— Select Surgery Type —"
+                      getLabel={s => `${s.code} — ${s.name}`}
+                      getKey={s => s.id}
+                      style={{ width: 'auto', minWidth: 220, maxWidth: '100%' }}
+                    />
                   )}
                   <div className="adm-referral-group">
                     <span className="adm-referral-label">Referral Patient</span>

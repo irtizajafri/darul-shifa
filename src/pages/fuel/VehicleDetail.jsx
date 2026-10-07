@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Trash2, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useFuelStore } from '../../store/useFuelStore';
 import FuelEntryForm from './FuelEntryForm';
 import FuelBalanceCard from './FuelBalanceCard';
@@ -41,13 +42,13 @@ export default function VehicleDetail({ vehicle, onBack }) {
       }
       setShowForm(false);
       fetchVehicleEntries({ vehicleId: vehicle.id, entryType });
-      fetchLastVehicleEntry({ vehicleId: vehicle.id, entryType }).then(setLastEntry).catch(() => {});
+      fetchLastVehicleEntry({ vehicleId: vehicle.id, entryType }).then(setLastEntry).catch((err) => toast.error(err?.message || 'Failed to refresh last entry'));
       fetchFuelBalance();
     } catch (err) { toast.error(err.message); throw err; }
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this entry?')) return;
+    if (!(await confirmDialog({ title: 'Delete entry', message: 'Delete this entry?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteVehicleEntry(id);
       toast.success('Deleted');

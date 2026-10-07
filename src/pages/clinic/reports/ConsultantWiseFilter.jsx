@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -33,7 +35,7 @@ export default function ConsultantWiseFilter() {
         setConsultants(list);
         if (list.length) { setFromConsultant(list[0]); setToConsultant(list[0]); }
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load consultants'));
   }, []);
 
   const toggleType = (t) => setTypes(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
@@ -74,17 +76,25 @@ export default function ConsultantWiseFilter() {
               <label className="cwf-lbl">Consultant</label>
               <div className="cwf-field-group">
                 <span className="cwf-sub-lbl">From</span>
-                <select className="cwf-input cwf-input--con" value={fromConsultant} onChange={e => setFromConsultant(e.target.value)}>
-                  <option value="">— All —</option>
-                  {consultants.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <SearchableSelect
+                  size="sm"
+                  style={{ width: 260 }}
+                  options={consultants}
+                  value={fromConsultant}
+                  onChange={v => setFromConsultant(v)}
+                  placeholder="— All —"
+                />
               </div>
               <div className="cwf-field-group">
                 <span className="cwf-sub-lbl">To</span>
-                <select className="cwf-input cwf-input--con" value={toConsultant} onChange={e => setToConsultant(e.target.value)}>
-                  <option value="">— All —</option>
-                  {consultants.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <SearchableSelect
+                  size="sm"
+                  style={{ width: 260 }}
+                  options={consultants}
+                  value={toConsultant}
+                  onChange={v => setToConsultant(v)}
+                  placeholder="— All —"
+                />
               </div>
             </div>
 

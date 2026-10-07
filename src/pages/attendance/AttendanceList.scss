@@ -155,3 +155,8 @@
     margin-top: 1.5rem;
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 560px) {
+  .attendance-page .form-row { grid-template-columns: 1fr; }
+}

@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './WardWiseBillFilter.scss';
 
@@ -44,13 +46,13 @@ export default function WardWiseBillFilter() {
   const [selectedConsultants, setSelectedConsultants] = useState(new Set());
 
   useEffect(() => {
-    fetch(`${API}/room-categories`).then(r => r.json()).then(j => setWards(j.data || [])).catch(() => {});
+    fetch(`${API}/room-categories`).then(r => r.json()).then(j => setWards(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load wards'));
     fetch(`${API}/bill-heads`).then(r => r.json())
       .then(j => setBillHeads((j.data || []).filter(h => h.status === 'active')))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load bill heads'));
     fetch(`${API}/doctors?minimal=true`).then(r => r.json())
       .then(j => setDoctors((j.data || []).filter(d => d.status === 'active')))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, []);
 
   const filteredHeads = useMemo(() => {
@@ -58,6 +60,10 @@ export default function WardWiseBillFilter() {
     if (!q) return billHeads;
     return billHeads.filter(h => h.description.toLowerCase().includes(q) || h.headCode.toLowerCase().includes(q));
   }, [billHeads, headFind]);
+
+  // "ALL" is a real selectable row (the legacy select had no blank option),
+  // so it goes in the list rather than being a placeholder.
+  const wardOptions = useMemo(() => [{ id: 'ALL', name: 'ALL' }, ...wards], [wards]);
 
   const togglePatientType = (v) => {
     setTypes(prev => (prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]));
@@ -169,10 +175,15 @@ export default function WardWiseBillFilter() {
             {/* Wards */}
             <div className="cwf-row">
               <label className="cwf-lbl wwb-lbl-wide">Wards :</label>
-              <select className="cwf-input wwb-ward-select" value={ward} onChange={e => setWard(e.target.value)}>
-                <option value="ALL">ALL</option>
-                {wards.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                style={{ width: 260 }}
+                options={wardOptions}
+                value={ward}
+                onChange={v => setWard(v)}
+                getLabel={w => w.name}
+                clearable={false}
+              />
             </div>
 
             {/* Discharge Head + Consultants checklists */}

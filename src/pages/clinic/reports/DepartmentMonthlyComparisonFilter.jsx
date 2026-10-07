@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './DepartmentMonthlyComparisonFilter.scss';
 
@@ -33,7 +34,7 @@ export default function DepartmentMonthlyComparisonFilter() {
         setDepartments(list);
         if (list.length) { setDeptFrom(String(list[0].id)); setDeptTo(String(list[0].id)); }
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load departments'));
   }, []);
 
   const addMonth = () => {
@@ -74,12 +75,24 @@ export default function DepartmentMonthlyComparisonFilter() {
 
             <div className="cwf-row">
               <label className="cwf-lbl">Department</label>
-              <select className="cwf-input dmc-half" value={deptFrom} onChange={e => setDeptFrom(e.target.value)}>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-              <select className="cwf-input dmc-half" value={deptTo} onChange={e => setDeptTo(e.target.value)}>
-                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="dmc-half"
+                options={departments}
+                value={deptFrom}
+                onChange={v => setDeptFrom(v)}
+                getLabel={d => d.name}
+                clearable={false}
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="dmc-half"
+                options={departments}
+                value={deptTo}
+                onChange={v => setDeptTo(v)}
+                getLabel={d => d.name}
+                clearable={false}
+              />
             </div>
 
             <div className="dmc-month-row">

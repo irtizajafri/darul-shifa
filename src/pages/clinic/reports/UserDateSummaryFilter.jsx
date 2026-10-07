@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useClinicStore } from '../../../store/useClinicStore';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import useModalKeys from '../../../hooks/useModalKeys';
 import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
@@ -14,9 +16,11 @@ function UserLookupModal({ onSelect, onClose }) {
   const [users, setUsers] = useState([]);
   const inputRef = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     inputRef.current?.focus();
-    fetch(API_USERS).then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : (d.data || []))).catch(() => {});
+    fetch(API_USERS).then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : (d.data || []))).catch((err) => toast.error(err?.message || 'Failed to load users'));
   }, []);
 
   const filtered = q.trim()
@@ -25,10 +29,10 @@ function UserLookupModal({ onSelect, onClose }) {
 
   return (
     <div className="gopd-modal-overlay" onMouseDown={onClose}>
-      <div className="gopd-modal" onMouseDown={e => e.stopPropagation()}>
+      <div className="gopd-modal" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
         <div className="gopd-modal-header">
           <div className="gopd-modal-title">Select User</div>
-          <button className="gopd-modal-close" onClick={onClose}>×</button>
+          <button className="gopd-modal-close" onClick={onClose} aria-label="Close" title="Close">×</button>
         </div>
         <div className="gopd-modal-body">
           <input ref={inputRef} className="gopd-modal-search" placeholder="Name / Email…" value={q} onChange={e => setQ(e.target.value)} />
@@ -61,7 +65,7 @@ export default function UserDateSummaryFilter() {
   const [shift, setShift] = useState('ALL');
   const [showLookup, setShowLookup] = useState(false);
 
-  useEffect(() => { if (shifts.length === 0) fetchShifts().catch(() => {}); }, []);
+  useEffect(() => { if (shifts.length === 0) fetchShifts().catch((err) => toast.error(err?.message || 'Failed to load shifts')); }, []);
 
   function handleSelect(u) {
     setUserId(u.id);
@@ -93,7 +97,7 @@ export default function UserDateSummaryFilter() {
               <label className="cwf-lbl">User ID</label>
               <div className="cwf-field-group">
                 <input className="cwf-input" style={{ width: 200 }} value={userName} readOnly placeholder="Select user…" />
-                <button type="button" className="ddp-lookup-btn" onClick={() => setShowLookup(true)}>…</button>
+                <button type="button" className="ddp-lookup-btn" onClick={() => setShowLookup(true)} aria-label="Select user" title="Select user">…</button>
               </div>
             </div>
 

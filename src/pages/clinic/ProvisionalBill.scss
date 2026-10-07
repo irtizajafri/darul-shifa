@@ -510,6 +510,7 @@ $border: #bbb;
 .pb-footer {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 20px;
   max-width: 1100px;
   margin: 0 auto;

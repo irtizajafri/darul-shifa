@@ -678,9 +678,10 @@ export default function Reports() {
         const json = await res.json();
         if (controller.signal.aborted) return;
         setOverrides(Array.isArray(json?.data) ? json.data : []);
-      } catch {
+      } catch (err) {
         if (controller.signal.aborted) return;
         setOverrides([]);
+        toast.error(err?.message || 'Failed to load payroll overrides');
       }
     };
 
@@ -695,7 +696,7 @@ export default function Reports() {
         setOverrides(prev =>
           JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh
         );
-      } catch {}
+      } catch { /* background re-sync on window focus — keep the already-loaded overrides, don't toast on every refocus */ }
     };
 
     window.addEventListener('focus', handleFocus);
@@ -1798,7 +1799,7 @@ export default function Reports() {
           setLeaveEncashMeta({ count: json.data?.count || 0, employees: json.data?.employees || [] });
         }
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load leave encashment total'));
   }, [payrollTab, activeReport, selectedEmpCode, month, year]);
 
   // ─── Append Leave Encashment row after generation completes ───────────────

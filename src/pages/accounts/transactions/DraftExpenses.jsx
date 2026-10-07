@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Trash2, RefreshCw, Clock, FileText, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import './DraftExpenses.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -41,7 +42,7 @@ export default function DraftExpenses() {
 
   const handleFlashNow = async () => {
     if (!drafts.length) { toast.error('Koi pending draft nahi hai'); return; }
-    if (!window.confirm(`Abhi ${drafts.length} draft(s) post karna chahte hain? Yeh action immediate hai.`)) return;
+    if (!(await confirmDialog({ title: 'Post drafts', message: `Abhi ${drafts.length} draft(s) post karna chahte hain? Yeh action immediate hai.`, confirmLabel: 'Post' }))) return;
     setPosting(true);
     try {
       const r = await fetch(`${API}/expense-drafts/flash-now?entityType=${entityType}`, { method: 'POST' });

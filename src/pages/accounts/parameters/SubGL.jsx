@@ -3,7 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
+
+const glLabel = (g) => `${g.code} — ${g.name}`;
 
 export default function SubGL() {
   const { entityType } = useParams();
@@ -26,6 +31,8 @@ export default function SubGL() {
   const openEdit = (row) => { setForm({ name: row.name, mainGlId: row.mainGlId }); setModal({ mode: 'edit', row }); };
   const closeModal = () => setModal(null);
 
+  useModalKeys({ active: !!modal, onEsc: closeModal });
+
   const handleSave = async () => {
     if (!form.name.trim()) return toast.error('Name is required');
     if (!form.mainGlId) return toast.error('Select a Main GL');
@@ -47,7 +54,7 @@ export default function SubGL() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this Sub GL? All child Main Accounts will also be removed.')) return;
+    if (!(await confirmDialog({ title: 'Delete Sub GL', message: 'Delete this Sub GL? All child Main Accounts will also be removed.', confirmLabel: 'Delete', danger: true }))) return;
     try { await deleteSubGL(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };
@@ -103,7 +110,7 @@ export default function SubGL() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{modal.mode === 'add' ? 'Add Sub GL' : 'Edit Sub GL'}</h3>
 
             <div className="acc-param-page__field">
@@ -114,10 +121,13 @@ export default function SubGL() {
             {modal.mode === 'add' && (
               <div className="acc-param-page__field">
                 <label>Parent — Main GL</label>
-                <select value={form.mainGlId} onChange={(e) => setForm((f) => ({ ...f, mainGlId: e.target.value }))}>
-                  <option value="">— Select Main GL —</option>
-                  {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-                </select>
+                <SearchableSelect
+                  options={mainGLs}
+                  value={form.mainGlId}
+                  onChange={(v) => setForm((f) => ({ ...f, mainGlId: v }))}
+                  getLabel={glLabel}
+                  placeholder="— Select Main GL —"
+                />
               </div>
             )}
 

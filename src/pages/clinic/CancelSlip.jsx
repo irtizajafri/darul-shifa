@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer } from 'lucide-react';
+import { Search, DoorOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../store/useAuthStore';
@@ -151,14 +151,9 @@ export default function CancelSlip() {
 
       <div className="cnsl-toolbar">
         <div className="cnsl-toolbar-icons">
-          <span className="cnsl-tbtn cnsl-tbtn--disabled"><Save size={16} /></span>
-          <span className="cnsl-tbtn cnsl-tbtn--disabled"><Copy size={16} /></span>
-          <span className="cnsl-tbtn cnsl-tbtn--disabled"><RotateCcw size={16} /></span>
           <button className="cnsl-tbtn cnsl-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
             <DoorOpen size={16} />
           </button>
-          <span className="cnsl-tbtn cnsl-tbtn--disabled"><FileText size={16} /></span>
-          <span className="cnsl-tbtn cnsl-tbtn--disabled"><Printer size={16} /></span>
         </div>
         <span className="cnsl-toolbar-title">Cancel Slip</span>
       </div>

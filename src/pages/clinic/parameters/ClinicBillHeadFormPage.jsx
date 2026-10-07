@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicBillHeadFormPage.scss';
 
@@ -226,10 +227,15 @@ export default function ClinicBillHeadFormPage() {
             </div>
             <div className="bh-field bh-field--md">
               <label className="bh-label">Ref. Department</label>
-              <select className="bh-select" value={form.refDepartmentId} onChange={(e) => setF('refDepartmentId', e.target.value)}>
-                <option value="">NA - Not Applicable</option>
-                {departments.map((d) => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={departments}
+                value={form.refDepartmentId}
+                onChange={(v) => setF('refDepartmentId', v)}
+                getKey={(d) => d.id}
+                getLabel={(d) => d.name}
+                placeholder="NA - Not Applicable"
+                size="sm"
+              />
             </div>
             <div className="bh-field bh-field--sm">
               <label className="bh-label" title="Panel Billing screen mein is row ka number — chhota number pehle aata hai. Khaali chhodein to woh sabse aakhir mein aayega.">Panel Sequence</label>

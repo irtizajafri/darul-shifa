@@ -93,3 +93,8 @@
     margin-top: 1.5rem;
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 700px) {
+  .shortleave-page .form-row { grid-template-columns: 1fr; }
+}

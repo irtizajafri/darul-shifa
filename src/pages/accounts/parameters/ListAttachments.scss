@@ -502,3 +502,11 @@
     background: #f8fafc;
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 1280px) {
+  .list-attach__link-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 700px) {
+  .list-attach__link-grid { grid-template-columns: 1fr; }
+}

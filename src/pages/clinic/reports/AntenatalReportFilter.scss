@@ -1,7 +1,7 @@
 .atrf-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: #f1f5f9;
   font-family: 'Inter', sans-serif;
 }
@@ -109,4 +109,15 @@
   color: #1e293b;
 
   &:hover { background: #e2e8f0; }
+}
+
+// The Consultant field is now a searchable dropdown sitting inside the
+// bordered .atrf-row--consultant box — strip the dropdown's own border/ring
+// so the row still reads as one control, like the old borderless <select>.
+.atrf-row--consultant [role="combobox"] {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding-left: 4px;
+  padding-right: 0;
 }

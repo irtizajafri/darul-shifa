@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
 export default function ChequeSerial() {
@@ -28,6 +30,8 @@ export default function ChequeSerial() {
   };
   const closeModal = () => setModal(false);
 
+  useModalKeys({ active: modal, onEsc: closeModal });
+
   const handleSave = async () => {
     if (!form.bankAccountId) return toast.error('Select a Bank Account');
     if (!form.fromSerial.trim()) return toast.error('From serial is required');
@@ -42,7 +46,7 @@ export default function ChequeSerial() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this cheque serial range?')) return;
+    if (!(await confirmDialog({ title: 'Delete cheque serial range', message: 'Delete this cheque serial range?', confirmLabel: 'Delete', danger: true }))) return;
     try { await deleteChequeSerial(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };
@@ -101,7 +105,7 @@ export default function ChequeSerial() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>Add Cheque Serial Range</h3>
 
             <div className="acc-param-page__field">

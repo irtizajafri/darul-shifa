@@ -1,3 +1,4 @@
+import toast from 'react-hot-toast';
 import { create } from 'zustand';
 import { useAuthStore } from './useAuthStore';
 
@@ -450,6 +451,9 @@ export const useClinicStore = create((set) => ({
       set({ doctors, loading: false });
     } catch (err) {
       set({ error: err.message, loading: false });
+      // 16 pages call this and most don't catch — surface the failure here
+      // once instead of letting every doctor dropdown silently come up empty.
+      toast.error(err?.message || 'Failed to load doctors');
     }
   },
 

@@ -1,29 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { printElementInPopup } from '../../../utils/printPopup';
 import './AntenatalReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
-// `@page` is a document-level rule shared across the whole bundled app — every
-// print-enabled page must protect itself right before printing (see the same
-// pattern in DischargeCertificateReport.jsx and elsewhere this session).
-function printAntenatalReport() {
-  const styleId = 'atr-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  style.textContent = '@page { size: A4 landscape !important; margin: 8mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
+// Prints from a popup window, never window.print() on the main window (which
+// can freeze the whole app behind a modal print dialog on Windows) — see
+// utils/printPopup.js. The @page size/margin travels with the call.
+function printAntenatalReport(sheetEl) {
+  printElementInPopup(sheetEl, { title: 'Antenatal Report', page: 'A4 landscape', margin: '8mm' });
 }
 
 function fmtDMY(iso) {
@@ -43,6 +31,7 @@ const fmt2 = (v) => Number(v || 0).toFixed(2);
 export default function AntenatalReport() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const sheetRef = useRef(null);
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
   const dateField = searchParams.get('dateField') || 'edd';
@@ -102,10 +91,10 @@ export default function AntenatalReport() {
           <button className="atr-tool-btn" onClick={() => navigate(-1)}>Back to Filter</button>
           <div className="atr-tool-spacer" />
           <button className="atr-tool-btn atr-tool-btn--excel" onClick={handleExportExcel} disabled={!rows.length}>Export Excel</button>
-          <button className="atr-tool-btn atr-tool-btn--pdf" onClick={printAntenatalReport} disabled={!rows.length}>Print / PDF</button>
+          <button className="atr-tool-btn atr-tool-btn--pdf" onClick={() => printAntenatalReport(sheetRef.current)} disabled={!rows.length}>Print / PDF</button>
         </div>
 
-        <div className="atr-sheet">
+        <div className="atr-sheet" ref={sheetRef}>
           <div className="atr-hdr">
             <div className="atr-title">Antenatal Report</div>
             <div className="atr-sub">From : {fmtDMY(fromDate)}&nbsp;&nbsp;To&nbsp;&nbsp;: {fmtDMY(toDate)}</div>

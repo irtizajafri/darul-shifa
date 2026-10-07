@@ -3,7 +3,9 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload, X, Plus, Pencil, Trash2, Search } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useClinicStore } from '../../../store/useClinicStore';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './MedicineListReport.scss';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -79,6 +81,8 @@ export default function MedicineListReport() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
+  useModalKeys({ active: showForm, onEsc: () => setShowForm(false) });
+
   const load = () => {
     setLoading(true);
     fetchMedicineList({ status: 'all' })
@@ -148,7 +152,7 @@ export default function MedicineListReport() {
   }
 
   async function handleDelete(m) {
-    if (!window.confirm(`"${m.name}" delete karni hai?`)) return;
+    if (!(await confirmDialog({ title: 'Delete medicine', message: `"${m.name}" delete karni hai?`, confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteMedicine(m.id);
       setMedicines((prev) => prev.filter((x) => x.id !== m.id));
@@ -230,10 +234,10 @@ export default function MedicineListReport() {
 
       {showForm && (
         <div className="mlr-modal-overlay" onMouseDown={() => setShowForm(false)}>
-          <div className="mlr-modal" onMouseDown={(e) => e.stopPropagation()}>
+          <div className="mlr-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
             <div className="mlr-modal-head">
               <span>{editing ? 'Edit Medicine' : 'Add Medicine'}</span>
-              <button onClick={() => setShowForm(false)}><X size={16} /></button>
+              <button onClick={() => setShowForm(false)} aria-label="Close" title="Close"><X size={16} /></button>
             </div>
             <div className="mlr-modal-body">
               <div className="mlr-form-row">
@@ -289,6 +293,8 @@ function ImportModal({ onClose, onImported }) {
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   async function handlePickFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -325,10 +331,10 @@ function ImportModal({ onClose, onImported }) {
 
   return (
     <div className="mlr-modal-overlay" onMouseDown={onClose}>
-      <div className="mlr-modal mlr-modal--wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="mlr-modal mlr-modal--wide" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mlr-modal-head">
           <span>Upload Excel — Medicine Price List</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
 
         <div className="mlr-modal-body">

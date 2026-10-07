@@ -13,6 +13,7 @@ import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
 import { ChevronDown, Download } from 'lucide-react';
 import { jsPDF } from 'jspdf';
@@ -20,6 +21,8 @@ import autoTable from 'jspdf-autotable';
 import logo from '../../assets/logo.jpg';
 import { format } from 'date-fns';
 import './AttendanceList.scss';
+
+const employeeLabel = (e) => `${e.empCode} - ${e.firstName} ${e.lastName}`;
 
 const ATTENDANCE_API_URL = 'http://localhost:5001/api/attendance';
 
@@ -228,7 +231,7 @@ export default function AttendanceList() {
   };
 
   const fetchMonthlyApiData = async () => {
-    if (!monthlyEmpCode) return alert("Please enter Employee Code");
+    if (!monthlyEmpCode) { toast.error("Please enter Employee Code"); return; }
     setMonthlyLoading(true);
     try {
       const mm = monthlyMonth.padStart(2, '0');
@@ -300,16 +303,16 @@ export default function AttendanceList() {
           });
 
           setMonthlyApiData(tableData);
-          if(tableData.length === 0) alert("No records found for this month");
+          if(tableData.length === 0) toast("No records found for this month");
       }
     } catch (e) {
       console.error(e);
-      alert("Failed to fetch API");
+      toast.error("Failed to fetch API");
     }
     setMonthlyLoading(false);
   };
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm();
+  const { register, handleSubmit, reset, watch, setValue, getValues, formState: { errors } } = useForm();
 
   const register24Hour = (fieldName) => register(fieldName, {
     setValueAs: (v) => normalize24HourTime(v),
@@ -342,6 +345,19 @@ export default function AttendanceList() {
 
 
   const addModalWaiveDeduction = watch('waiveDeduction');
+  const selectedEmployeeId = watch('employee');
+
+  // `employee` is driven by SearchableSelect via setValue (no DOM ref), so
+  // register it once so RHF still tracks it through reset()/handleSubmit.
+  useEffect(() => { register('employee'); }, [register]);
+
+  // The Add Manual Entry employee list has no blank option — the native
+  // <select> defaulted to the first employee, so keep that default.
+  useEffect(() => {
+    if (!addModal || !employees?.length) return;
+    if (getValues('employee')) return;
+    setValue('employee', String(employees[0].id));
+  }, [addModal, employees, getValues, setValue]);
 
   useEffect(() => {
     setModule('employee');
@@ -1319,13 +1335,15 @@ export default function AttendanceList() {
             )}
             <div className="form-group">
               <label>Employee</label>
-              <select {...register('employee')} className="form-select" disabled={editRows.some(r => r.isLocked) && !isMaster}>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.empCode} - {e.firstName} {e.lastName}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={employees}
+                value={selectedEmployeeId ?? ''}
+                onChange={(v) => setValue('employee', v, { shouldDirty: true })}
+                getLabel={employeeLabel}
+                placeholder="Select employee"
+                clearable={false}
+                disabled={editRows.some(r => r.isLocked) && !isMaster}
+              />
             </div>
             
             {/* Multiple Rows for Split Shifts */}
@@ -1584,13 +1602,14 @@ export default function AttendanceList() {
         <form onSubmit={handleSubmit(onAddSave)}>
           <div className="form-group">
             <label>Employee</label>
-            <select {...register('employee')} className="form-select">
-              {employees.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.empCode} - {e.firstName} {e.lastName}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={employees}
+              value={selectedEmployeeId ?? ''}
+              onChange={(v) => setValue('employee', v, { shouldDirty: true })}
+              getLabel={employeeLabel}
+              placeholder="Select employee"
+              clearable={false}
+            />
           </div>
           <div className="form-row">
             <Input label="Date" type="date" {...register('dateIn')} />

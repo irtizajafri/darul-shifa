@@ -14,6 +14,7 @@ import { printGINDocument, printAllGINs, printGDDocument } from '../../utils/pri
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission, canBackDate } from '../../utils/permissions';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { formatDate } from '../../utils/helpers';
 
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 
@@ -582,7 +583,7 @@ export default function GoodsIssue() {
     demandCategoryType: row.demandCategoryType?.name || '-',
     quantityRequested: row.quantityRequested,
     status: row.status,
-    requestDate: row.requestDate ? new Date(row.requestDate).toLocaleDateString() : '-',
+    requestDate: formatDate(row.requestDate),
   })), [filteredGDRows]);
 
   const ginExportRows = useMemo(() => {
@@ -591,7 +592,7 @@ export default function GoodsIssue() {
       const ginCode = row.code;
       const gdRef = row.gdHeader?.code || row.gd?.code || '-';
       const dept = row.department?.name || row.gdHeader?.department?.name || '-';
-      const date = row.issueDate ? new Date(row.issueDate).toLocaleDateString() : '-';
+      const date = formatDate(row.issueDate);
       if (row.ginItems && row.ginItems.length > 0) {
         for (const gi of row.ginItems) {
           rows.push({ ginCode, gdRef, department: dept, item: gi.item?.name || '-', issuedQuantity: gi.issuedQuantity, issueDate: date });
@@ -630,7 +631,7 @@ export default function GoodsIssue() {
             <div className="px-4 sm:px-6 pt-3 pb-2 shrink-0">
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs sm:text-sm text-slate-500">
                 <span>Dept: <span className="font-medium text-slate-800">{createdGDHeader.department?.name || '-'}</span></span>
-                <span>Date: <span className="font-medium text-slate-800">{new Date(createdGDHeader.requestDate).toLocaleDateString()}</span></span>
+                <span>Date: <span className="font-medium text-slate-800">{formatDate(createdGDHeader.requestDate)}</span></span>
               </div>
             </div>
 
@@ -781,7 +782,7 @@ export default function GoodsIssue() {
                       <span className="text-xs text-slate-500">{gd.department?.name || '-'}</span>
                       <span className="text-slate-400 text-xs">|</span>
                       <span className="text-xs text-slate-500">{(gd.gdItems || []).length} item(s)</span>
-                      {gd.requestDate && <span className="text-slate-400 text-xs">({new Date(gd.requestDate).toLocaleDateString()})</span>}
+                      {gd.requestDate && <span className="text-slate-400 text-xs">({formatDate(gd.requestDate)})</span>}
                       {gd.isIgnored && (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-semibold text-orange-600 bg-orange-50 border border-orange-200 rounded">
                           <EyeOff className="w-2.5 h-2.5" /> Ignored
@@ -845,7 +846,7 @@ export default function GoodsIssue() {
                         <span className="text-slate-400 text-xs mx-2">|</span>
                         <span className="text-xs text-slate-500">{gin.department?.name || gin.gdHeader?.department?.name || '-'}</span>
                         {gin.gdHeader?.code && <><span className="text-slate-400 text-xs mx-2">|</span><span className="text-xs text-slate-400">GD: {gin.gdHeader.code}</span></>}
-                        {gin.issueDate && <span className="text-slate-400 text-xs ml-2">({new Date(gin.issueDate).toLocaleDateString()})</span>}
+                        {gin.issueDate && <span className="text-slate-400 text-xs ml-2">({formatDate(gin.issueDate)})</span>}
                       </div>
                       <div className="flex items-center gap-1.5">
                         {canEditGIN && (
@@ -879,16 +880,14 @@ export default function GoodsIssue() {
                       <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
                         <div>
                           <label className="block text-xs text-slate-500 mb-1">Department</label>
-                          <select
+                          <SearchableSelect
+                            options={masterOptions.departments || []}
                             value={editGINForm.departmentId}
-                            onChange={(e) => setEditGINForm((f) => ({ ...f, departmentId: e.target.value }))}
-                            className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-white"
-                          >
-                            <option value="">— Select Department —</option>
-                            {(masterOptions.departments || []).map((d) => (
-                              <option key={d.id} value={String(d.id)}>{d.name}</option>
-                            ))}
-                          </select>
+                            onChange={(v) => setEditGINForm((f) => ({ ...f, departmentId: v }))}
+                            placeholder="— Select Department —"
+                            getLabel={(d) => d.name}
+                            getKey={(d) => d.id}
+                          />
                         </div>
                         <div>
                           <label className="block text-xs text-slate-500 mb-1">Issue Date</label>
@@ -986,17 +985,15 @@ export default function GoodsIssue() {
         <Card className="mb-4" title="Create Goods Demand (GD)">
           <form ref={gdFormRef} onSubmit={handleCreateGD} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <select
+              <SearchableSelect
+                options={masterOptions.departments || []}
                 value={gdDepartmentId}
-                onChange={(e) => setGdDepartmentId(e.target.value)}
-                className="px-3 py-2 border border-slate-300 rounded-md text-sm"
+                onChange={(v) => setGdDepartmentId(v)}
+                placeholder="Select Department"
+                getLabel={(dep) => `${dep.name} (${dep.code})`}
+                getKey={(dep) => dep.id}
                 required
-              >
-                <option value="">Select Department</option>
-                {(masterOptions.departments || []).map((dep) => (
-                  <option key={dep.id} value={dep.id}>{dep.name} ({dep.code})</option>
-                ))}
-              </select>
+              />
               <div>
                 <label className="block text-xs text-slate-500 mb-1">Request Date</label>
                 <input
@@ -1067,7 +1064,7 @@ export default function GoodsIssue() {
             </div>
 
             {gdSelectedItems.length > 0 && (
-              <div className="border border-slate-200 rounded-md overflow-hidden">
+              <div className="border border-slate-200 rounded-md overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
@@ -1228,19 +1225,16 @@ export default function GoodsIssue() {
         <Card className="mb-4" title="Create Goods Issuance (GIN)">
           <form ref={ginFormRef} onSubmit={handleCreateGIN} className="space-y-4">
             <div className="flex flex-wrap gap-3 items-end">
-              <select
+              <SearchableSelect
+                options={(gdHeaders || []).filter((h) => h.status === 'open' && !h.isIgnored)}
                 value={selectedGDHeaderId}
-                onChange={(e) => { setSelectedGDHeaderId(e.target.value); setGinIssuedQtys({}); setGinUnitOptions({}); setGinSelectedUnits({}); }}
-                className="px-3 py-2 border border-slate-300 rounded-md text-sm flex-1 min-w-[220px]"
+                onChange={(v) => { setSelectedGDHeaderId(v); setGinIssuedQtys({}); setGinUnitOptions({}); setGinSelectedUnits({}); }}
+                placeholder="Select GD (by header code)"
+                getLabel={(h) => `${h.code} — ${h.department?.name || '-'} [${h.status}] (${h.gdItems?.length || 0} items)${h.admissionNumber ? ` — Adm# ${h.admissionNumber}` : ''}${h.patientName ? ` (${h.patientName})` : ''}${h.createdByName ? ` — by ${h.createdByName}` : ''}`}
+                getKey={(h) => h.id}
+                wrapperClassName="flex-1 min-w-[220px]"
                 required
-              >
-                <option value="">Select GD (by header code)</option>
-                {(gdHeaders || []).filter((h) => h.status === 'open' && !h.isIgnored).map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.code} — {h.department?.name || '-'} [{h.status}] ({h.gdItems?.length || 0} items){h.admissionNumber ? ` — Adm# ${h.admissionNumber}` : ''}{h.patientName ? ` (${h.patientName})` : ''}{h.createdByName ? ` — by ${h.createdByName}` : ''}
-                  </option>
-                ))}
-              </select>
+              />
               <div>
                 <label className="block text-xs text-slate-500 mb-1">Issue Date</label>
                 <input
@@ -1311,7 +1305,7 @@ export default function GoodsIssue() {
             )}
 
             {selectedGDHeader && (
-              <div className="border border-slate-200 rounded-md overflow-hidden">
+              <div className="border border-slate-200 rounded-md overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
@@ -1583,7 +1577,7 @@ export default function GoodsIssue() {
                     <td className="px-6 py-4">{row.item?.name || '-'}</td>
                     <td className="px-6 py-4">{row.department?.name || '-'}</td>
                     <td className="px-6 py-4">{row.quantityRequested}</td>
-                    <td className="px-6 py-4">{row.requestDate ? new Date(row.requestDate).toLocaleDateString() : '-'}</td>
+                    <td className="px-6 py-4">{formatDate(row.requestDate)}</td>
                     <td className="px-6 py-4 capitalize">{row.status}</td>
                   </tr>
                 ))
@@ -1736,7 +1730,7 @@ export default function GoodsIssue() {
                         <span className="text-sm">{row.item?.name || '-'} × {row.issuedQuantity ?? '-'}</span>
                       )}
                     </td>
-                    <td className="px-6 py-4">{row.issueDate ? new Date(row.issueDate).toLocaleDateString() : '-'}</td>
+                    <td className="px-6 py-4">{formatDate(row.issueDate)}</td>
                     <td className="px-6 py-4 text-right">
                       <button
                         title="Print GIN"

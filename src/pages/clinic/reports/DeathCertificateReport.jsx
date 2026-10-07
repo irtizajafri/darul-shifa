@@ -195,7 +195,7 @@ export default function DeathCertificateReport() {
       const map = {};
       (j.data || []).forEach((d) => { map[d.id] = d.name; });
       setDoctors(map);
-    }).catch(() => {});
+    }).catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, []);
 
   const fetchRows = () => {
@@ -206,6 +206,7 @@ export default function DeathCertificateReport() {
     fetch(`${API}/death-certificates?${q}`)
       .then((r) => r.json())
       .then((j) => setRows(j.data || []))
+      .catch((err) => toast.error(err?.message || 'Failed to load death certificates'))
       .finally(() => setLoading(false));
   };
 

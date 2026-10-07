@@ -204,3 +204,8 @@
     font-size: 0.9rem;
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 700px) {
+  .gatepass-page .form-row { grid-template-columns: 1fr; }
+}

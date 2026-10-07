@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, DoorOpen, Save, Copy, RotateCcw, FileText, Printer, X } from 'lucide-react';
+import { Search, DoorOpen, Save, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import './AdmissionStatusChange.scss';
@@ -45,6 +46,8 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     searchAdmissions('')
       .then((data) => setRows(data || []))
@@ -65,11 +68,11 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   }
 
   return (
-    <div className="aa-overlay">
-      <div className="aa-modal">
+    <div className="aa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="aa-modal" role="dialog" aria-modal="true">
         <div className="aa-modal-hdr">
           <span>Select Admitted Patient</span>
-          <button className="aa-modal-close" onClick={onClose}><X size={14} /></button>
+          <button className="aa-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={14} /></button>
         </div>
         <div className="aa-modal-search">
           <Search size={13} className="aa-modal-search-icon" />
@@ -215,14 +218,9 @@ export default function AdmissionStatusChange() {
 
         <div className="aa-toolbar">
           <div className="aa-toolbar-icons">
-            <span className="aa-tbtn aa-tbtn--disabled"><Save size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Copy size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><RotateCcw size={16} /></span>
             <button className="aa-tbtn aa-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
               <DoorOpen size={16} />
             </button>
-            <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Printer size={16} /></span>
           </div>
           <span className="aa-toolbar-title">Admission Status Change</span>
         </div>

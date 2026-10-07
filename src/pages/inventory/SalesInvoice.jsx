@@ -537,7 +537,7 @@ export default function SalesInvoice() {
 
           {/* Lines table */}
           {lines.length > 0 && (
-            <div className="border border-slate-200 rounded-md overflow-hidden mb-3">
+            <div className="border border-slate-200 rounded-md overflow-x-auto mb-3">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
                   <tr>
@@ -660,7 +660,7 @@ export default function SalesInvoice() {
           admRows.length === 0 ? (
             <p className="text-sm text-slate-400 py-4 text-center">No records found for admission number <strong>{admQuery}</strong></p>
           ) : (
-            <div className="border border-slate-200 rounded-md overflow-hidden">
+            <div className="border border-slate-200 rounded-md overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
                   <tr>

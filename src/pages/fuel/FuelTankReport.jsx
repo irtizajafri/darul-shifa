@@ -37,7 +37,7 @@ export default function FuelTankReport({ onBack }) {
   const [loading, setLoading] = useState(true);
 
   // Load tank list for dropdown
-  useEffect(() => { fetchTanks().catch(() => {}); }, [fetchTanks]);
+  useEffect(() => { fetchTanks().catch((err) => toast.error(err?.message || 'Failed to load tanks')); }, [fetchTanks]);
 
   const doFetch = useCallback(() => {
     setLoading(true);

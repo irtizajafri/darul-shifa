@@ -1,3 +1,4 @@
+import toast from 'react-hot-toast';
 import logoSvgRaw from '../assets/logo.svg?raw';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -397,7 +398,7 @@ export function printUtilityBill({
 
   const win = window.open('', '_blank');
   if (!win) {
-    alert('Popup blocked — please allow popups in your browser');
+    toast.error('Popup blocked — please allow popups in your browser');
     return;
   }
   win.document.write(html);

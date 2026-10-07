@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Pencil, Phone, ChevronDown, ChevronRight, Trash2, BarChart3 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useUtilitiesStore } from '../../store/useUtilitiesStore';
 import PtclReport from './PtclReport';
 
@@ -73,7 +74,7 @@ export default function PtclLineList({ onBack }) {
   };
 
   const handleDeleteBill = async (id) => {
-    if (!confirm('Delete this bill?')) return;
+    if (!(await confirmDialog({ title: 'Delete bill', message: 'Delete this bill?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteBill(id);
       toast.success('Deleted');

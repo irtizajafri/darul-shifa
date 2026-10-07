@@ -1,7 +1,7 @@
 .csr-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100%;
   background: #e8ecf0;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
 }
@@ -66,7 +66,7 @@
 }
 
 .csr-report-page {
-  width: 760px;
+  width: 760px; max-width: 100%;
   background: #fff;
   box-shadow: 0 2px 12px rgba(0,0,0,0.15);
   padding: 14px 16px;

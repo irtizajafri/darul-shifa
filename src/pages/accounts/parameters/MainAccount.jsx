@@ -3,9 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
 const API = 'http://localhost:5001/api/accounts';
+const glLabel = (g) => `${g.code} — ${g.name}`;
 
 export default function MainAccount() {
   const { entityType } = useParams();
@@ -34,6 +38,8 @@ export default function MainAccount() {
     setModal({ mode: 'edit', row });
   };
   const closeModal = () => { setModal(null); setModalSubGLs([]); };
+
+  useModalKeys({ active: !!modal, onEsc: closeModal });
 
   const handleMainGlChange = async (mainGlId) => {
     setForm((f) => ({ ...f, mainGlId, subGlId: '' }));
@@ -69,7 +75,7 @@ export default function MainAccount() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this Main Account? All child Sub Accounts will also be removed.')) return;
+    if (!(await confirmDialog({ title: 'Delete Main Account', message: 'Delete this Main Account? All child Sub Accounts will also be removed.', confirmLabel: 'Delete', danger: true }))) return;
     try { await deleteMainAccount(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };
@@ -125,7 +131,7 @@ export default function MainAccount() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{modal.mode === 'add' ? 'Add Main Account' : 'Edit Main Account'}</h3>
 
             <div className="acc-param-page__field">
@@ -137,24 +143,25 @@ export default function MainAccount() {
               <>
                 <div className="acc-param-page__field">
                   <label>Main GL</label>
-                  <select value={form.mainGlId} onChange={(e) => handleMainGlChange(e.target.value)}>
-                    <option value="">— Select Main GL —</option>
-                    {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    options={mainGLs}
+                    value={form.mainGlId}
+                    onChange={(v) => handleMainGlChange(v)}
+                    getLabel={glLabel}
+                    placeholder="— Select Main GL —"
+                  />
                 </div>
 
                 <div className="acc-param-page__field">
                   <label>Sub GL</label>
-                  <select
+                  <SearchableSelect
+                    options={modalSubGLs}
                     value={form.subGlId}
-                    onChange={(e) => setForm((f) => ({ ...f, subGlId: e.target.value }))}
+                    onChange={(v) => setForm((f) => ({ ...f, subGlId: v }))}
                     disabled={!form.mainGlId || loadingSubGLs}
-                  >
-                    <option value="">
-                      {!form.mainGlId ? '— Select Main GL first —' : loadingSubGLs ? 'Loading…' : '— Select Sub GL —'}
-                    </option>
-                    {modalSubGLs.map((s) => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}
-                  </select>
+                    getLabel={glLabel}
+                    placeholder={!form.mainGlId ? '— Select Main GL first —' : loadingSubGLs ? 'Loading…' : '— Select Sub GL —'}
+                  />
                 </div>
               </>
             )}

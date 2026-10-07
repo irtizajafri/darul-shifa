@@ -166,3 +166,8 @@
     }
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 560px) {
+  .leave-encashment-page .balance-info { grid-template-columns: 1fr; }
+}

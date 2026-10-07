@@ -11,6 +11,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToPdf } from '../../utils/exportInventoryReports';
 import { useAuthStore } from '../../store/useAuthStore';
 import { canBackDate } from '../../utils/permissions';
+import { formatDate } from '../../utils/helpers';
 
 // ── Portal dropdown list (escapes overflow-hidden containers) ─────────────────
 function DropdownPortal({ inputRef, open, items, highlightedIndex, onSelect }) {
@@ -367,9 +368,7 @@ export default function GoodsDiscard() {
         itemName: row.item?.name || '-',
         quantity: row.quantity,
         reason: row.reason,
-        discardedDate: row.discardedDate
-          ? new Date(row.discardedDate).toLocaleDateString()
-          : '-',
+        discardedDate: formatDate(row.discardedDate),
       }],
     });
   };
@@ -512,9 +511,7 @@ export default function GoodsDiscard() {
         itemName: row.item?.name || '-',
         quantity: row.quantity,
         reason: row.reason,
-        discardedDate: row.discardedDate
-          ? new Date(row.discardedDate).toLocaleDateString()
-          : '-',
+        discardedDate: formatDate(row.discardedDate),
       })),
     [filteredRows]
   );
@@ -792,9 +789,7 @@ export default function GoodsDiscard() {
                         : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-6 py-4">
-                      {row.discardedDate
-                        ? new Date(row.discardedDate).toLocaleDateString()
-                        : '-'}
+                      {formatDate(row.discardedDate)}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <Button

@@ -4,6 +4,7 @@ import 'x-data-spreadsheet/dist/xspreadsheet.css';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload, Download, FilePlus2 } from 'lucide-react';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import './ExcelWorkspace.scss';
 
 // ── SheetJS (.xlsx) <-> x-data-spreadsheet ke darmiyan conversion ──────────
@@ -132,8 +133,13 @@ export default function ExcelWorkspace() {
     XLSX.writeFile(wb, `workbook-${stamp}.xlsx`);
   };
 
-  const handleNew = () => {
-    if (!confirm('Naya blank workbook shuru karein? Abhi ka data (agar save/export nahi kiya) chala jayega.')) return;
+  const handleNew = async () => {
+    if (!(await confirmDialog({
+      title: 'New workbook',
+      message: 'Naya blank workbook shuru karein? Abhi ka data (agar save/export nahi kiya) chala jayega.',
+      confirmLabel: 'Start new',
+      danger: true,
+    }))) return;
     instanceRef.current?.loadData(blankSheet());
   };
 

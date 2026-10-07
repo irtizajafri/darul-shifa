@@ -8,6 +8,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { generateMaintenanceBillPdf } from '../../utils/exportInventoryReports';
+import { formatDate } from '../../utils/helpers';
 
 // Status badge
 function StatusBadge({ status }) {
@@ -311,7 +312,7 @@ export default function Maintenance() {
       setLastRepair(null);
       setAssetInstances([]);
       setSelectedInstanceIds([]);
-      fetchMaintenanceRecords().catch(() => {});
+      fetchMaintenanceRecords().catch((err) => toast.error(err?.message || 'Failed to refresh maintenance records'));
       // Auto-print Bill 1 (sent for repair)
       generateMaintenanceBillPdf({ record: created, billType: 'sent', mode: 'print', printedBy, generatedAt });
     } catch (err) {
@@ -392,7 +393,7 @@ export default function Maintenance() {
                 <div>
                   <p className="text-xs text-[#64748B] mb-0.5">Date</p>
                   <p className="text-sm font-medium text-[#1E293B]">
-                    {lastRepair.date ? new Date(lastRepair.date).toLocaleDateString() : '—'}
+                    {lastRepair.date ? formatDate(lastRepair.date) : '—'}
                   </p>
                 </div>
                 <div>
@@ -508,7 +509,7 @@ export default function Maintenance() {
         const renderRow = (r) => (
           <tr key={r.id} className="border-b border-[#F1F5F9] hover:bg-[#F8FAFC]">
             <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-700">{r.moNumber || '-'}</td>
-            <td className="px-4 py-3 text-[#475569]">{r.date ? new Date(r.date).toLocaleDateString() : '—'}</td>
+            <td className="px-4 py-3 text-[#475569]">{r.date ? formatDate(r.date) : '—'}</td>
             <td className="px-4 py-3 font-medium text-[#1E293B]">{r.item?.name || '—'}</td>
             <td className="px-4 py-3 text-[#475569] text-xs">
               {Array.isArray(r.assetInstances) && r.assetInstances.length > 0

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import useModalKeys from '../../hooks/useModalKeys';
 import './ReceiveBalanceSlip.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -24,11 +25,13 @@ function BalanceLookupModal({ onSelect, onClose }) {
   const [loading, setLoading] = useState(true);
   const [q,       setQ]       = useState('');
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     fetch(`${API}/opd/balance-slips`)
       .then(r => r.json())
       .then(res => setSlips(res.data || []))
-      .catch(() => setSlips([]))
+      .catch((err) => { setSlips([]); toast.error(err?.message || 'Failed to load balance slips'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -39,11 +42,11 @@ function BalanceLookupModal({ onSelect, onClose }) {
   );
 
   return (
-    <div className="rbs-overlay">
-      <div className="rbs-modal">
+    <div className="rbs-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="rbs-modal" role="dialog" aria-modal="true">
         <div className="rbs-modal-hdr">
           <span>Select Slip with Balance</span>
-          <button className="rbs-modal-close" onClick={onClose}>✕</button>
+          <button className="rbs-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="rbs-modal-search">
           <Search size={13} className="rbs-modal-search-icon" />

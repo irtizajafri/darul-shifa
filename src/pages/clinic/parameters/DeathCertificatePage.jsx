@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { buildDeathCertificatePrintHtml } from '../deathCertificatePrintUtils';
 import './DeathCertificatePage.scss';
 
@@ -372,10 +373,15 @@ export default function DeathCertificatePage() {
               <div className="dc-row">
                 <div className="dc-fg dc-fg--wide">
                   <label>Medical Officer</label>
-                  <select value={manual.medicalOfficerId} onChange={(e) => set('medicalOfficerId', e.target.value)}>
-                    <option value="">— Select —</option>
-                    {doctors.map((d) => <option key={d.id} value={d.id}>{d.code} - {d.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    options={doctors}
+                    value={manual.medicalOfficerId}
+                    onChange={(v) => set('medicalOfficerId', v)}
+                    getKey={(d) => d.id}
+                    getLabel={(d) => `${d.code} - ${d.name}`}
+                    placeholder="— Select —"
+                    size="sm"
+                  />
                 </div>
               </div>
 

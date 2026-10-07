@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Plus, Pencil, Trash2, PlugZap, Building2, Flame, BarChart3, TrendingUp, Receipt, Printer, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useUtilitiesStore } from '../../store/useUtilitiesStore';
 import MeterReport from './MeterReport';
 import { printUtilityBill } from '../../utils/printUtilityBill';
@@ -112,7 +113,7 @@ export default function MeterDetail({ meter, onBack }) {
   };
 
   const handleDeleteReading = async (id) => {
-    if (!confirm('Delete this reading?')) return;
+    if (!(await confirmDialog({ title: 'Delete reading', message: 'Delete this reading?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteReading(id);
       toast.success('Deleted');
@@ -144,7 +145,7 @@ export default function MeterDetail({ meter, onBack }) {
   };
 
   const handleDeleteRate = async (id) => {
-    if (!confirm('Delete this rate entry?')) return;
+    if (!(await confirmDialog({ title: 'Delete rate entry', message: 'Delete this rate entry?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteRate(id);
       toast.success('Deleted');
@@ -172,7 +173,7 @@ export default function MeterDetail({ meter, onBack }) {
   };
 
   const handleDeleteBill = async (id) => {
-    if (!confirm('Delete this bill?')) return;
+    if (!(await confirmDialog({ title: 'Delete bill', message: 'Delete this bill?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteBill(id);
       toast.success('Deleted');

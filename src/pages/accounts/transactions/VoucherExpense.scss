@@ -3,7 +3,7 @@
 .vex {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100%;
   background: $background;
   align-items: center;
   justify-content: center;
@@ -236,4 +236,12 @@
     align-items: center;
     justify-content: center;
   }
+}
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 760px) {
+  .vex { padding: 1rem; }
+  .vex__wrap { flex-direction: column; min-height: 0; }
+  .vex__left { width: 100%; min-width: 0; }
+  .vex__right { padding: 2rem 1.5rem; }
 }

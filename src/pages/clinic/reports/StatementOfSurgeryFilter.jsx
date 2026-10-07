@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './StatementOfSurgeryFilter.scss';
 
@@ -41,7 +43,7 @@ export default function StatementOfSurgeryFilter() {
           setDoctorTo(String(list[list.length - 1].id));
         }
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [activeOnly]);
 
   const handleOk = () => {
@@ -83,14 +85,26 @@ export default function StatementOfSurgeryFilter() {
             </div>
             <div className="cwf-row">
               <label className="cwf-lbl">Doctor</label>
-              <select className="cwf-input sos-doctor-select" value={doctorFrom} onChange={e => setDoctorFrom(e.target.value)}>
-                <option value="">— Select —</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.code} - {d.name}</option>)}
-              </select>
-              <select className="cwf-input sos-doctor-select" value={doctorTo} onChange={e => setDoctorTo(e.target.value)}>
-                <option value="">— Select —</option>
-                {doctors.map(d => <option key={d.id} value={d.id}>{d.code} - {d.name}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="sos-doctor-select"
+                style={{ minWidth: 0 }}
+                options={doctors}
+                value={doctorFrom}
+                onChange={v => setDoctorFrom(v)}
+                getLabel={d => `${d.code} - ${d.name}`}
+                placeholder="— Select —"
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="sos-doctor-select"
+                style={{ minWidth: 0 }}
+                options={doctors}
+                value={doctorTo}
+                onChange={v => setDoctorTo(v)}
+                getLabel={d => `${d.code} - ${d.name}`}
+                placeholder="— Select —"
+              />
             </div>
 
             {/* Date From / To */}

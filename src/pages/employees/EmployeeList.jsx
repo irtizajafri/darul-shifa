@@ -9,6 +9,7 @@ import DataTable from '../../components/shared/DataTable';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import Modal from '../../components/ui/Modal';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
 import { formatDate } from '../../utils/helpers';
 import './EmployeeList.scss';
@@ -131,7 +132,6 @@ export default function EmployeeList() {
 
   const handleDelete = () => {
     if (deleteModal) {
-      console.log('Delete employee:', deleteModal.id);
       deleteEmployee(deleteModal.id);
       toast.success('Employee deleted successfully');
       setDeleteModal(null);
@@ -168,18 +168,20 @@ export default function EmployeeList() {
           onChange={(e) => setSearch(e.target.value)}
           className="filter-input"
         />
-        <select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} className="filter-select">
-          <option value="">All Departments</option>
-          {departmentOptions.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-        <select value={filterDesig} onChange={(e) => setFilterDesig(e.target.value)} className="filter-select">
-          <option value="">All Designations</option>
-          {designationOptions.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
+        <SearchableSelect
+          options={departmentOptions}
+          value={filterDept}
+          onChange={(v) => setFilterDept(v)}
+          placeholder="All Departments"
+          style={{ width: 200, flex: '0 0 auto' }}
+        />
+        <SearchableSelect
+          options={designationOptions}
+          value={filterDesig}
+          onChange={(v) => setFilterDesig(v)}
+          placeholder="All Designations"
+          style={{ width: 200, flex: '0 0 auto' }}
+        />
         <div className="status-pills">
           {['all', 'active', 'inactive'].map((s) => (
             <button

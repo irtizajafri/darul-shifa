@@ -3,6 +3,7 @@ import { Search, Save } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import PageHeader from '../../../components/shared/PageHeader';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './UpdateRatesPage.scss';
 
@@ -110,10 +111,16 @@ export default function UpdateRatesPage() {
 
         <div className="upr-picker">
           <label className="upr-picker-label">Panel</label>
-          <select className="upr-picker-select" value={panelCompanyId} onChange={(e) => { setActiveTab('subdept'); setPanelCompanyId(e.target.value); }}>
-            <option value="">— Select Panel Company —</option>
-            {panelCompanies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-          </select>
+          <SearchableSelect
+            options={panelCompanies}
+            value={panelCompanyId}
+            onChange={(v) => { setActiveTab('subdept'); setPanelCompanyId(v); }}
+            getKey={(c) => c.id}
+            getLabel={(c) => `${c.code} — ${c.name}`}
+            placeholder="— Select Panel Company —"
+            size="sm"
+            style={{ flex: 1, maxWidth: 420 }}
+          />
         </div>
 
         {!panelCompanyId && (

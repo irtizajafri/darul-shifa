@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Search, Plus, Printer } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { printElementInPopup } from '../../../utils/printPopup';
 import './PanelProvisionalBill.scss';
+
+// Prints from a popup window (utils/printPopup.js) instead of window.print()
+// on the main window, which could freeze the whole app on Windows. The page's
+// own @media print rules still hide the tabs/add-row/buttons in the popup.
+function printProvisionalBill(bodyEl) {
+  printElementInPopup(bodyEl, { title: 'Panel Provisional Bill', page: 'A4 portrait', margin: '10mm' });
+}
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -22,6 +31,7 @@ const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 
 
 export default function PanelProvisionalBill() {
   const [searchParams] = useSearchParams();
+  const bodyRef = useRef(null);
   const [admitNo, setAdmitNo] = useState('');
   const [bill, setBill] = useState(null);          // looked-up billing detail
   const [loading, setLoading] = useState(false);
@@ -35,7 +45,7 @@ export default function PanelProvisionalBill() {
   const [manual, setManual] = useState({ ward: '', head: '', qty: '1', rate: '', remarks: '' });
 
   useEffect(() => {
-    fetch(`${API}/bill-heads`).then((r) => r.json()).then((j) => setBillHeads(j.data || [])).catch(() => {});
+    fetch(`${API}/bill-heads`).then((r) => r.json()).then((j) => setBillHeads(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load bill heads'));
   }, []);
 
   async function lookup(overrideNo) {
@@ -78,7 +88,7 @@ export default function PanelProvisionalBill() {
 
   useEffect(() => {
     if (!reprintReady) return;
-    const t = setTimeout(() => window.print(), 300);
+    const t = setTimeout(() => printProvisionalBill(bodyRef.current), 300);
     return () => clearTimeout(t);
   }, [reprintReady]);
 
@@ -100,7 +110,7 @@ export default function PanelProvisionalBill() {
     <div className="ppb-page">
       <ClinicMenuBar />
 
-      <div className="ppb-body">
+      <div className="ppb-body" ref={bodyRef}>
         <div className="ppb-window">
           <div className="ppb-titlebar">
             <span>Transaction — Panel Provisional Bill</span>
@@ -147,10 +157,16 @@ export default function PanelProvisionalBill() {
                     <input value={manual.ward} onChange={(e) => setManual((m) => ({ ...m, ward: e.target.value }))} placeholder="Ward (optional)" />
                   </div>
                   <div className="ppb-fg"><label>Heads</label>
-                    <select value={manual.head} onChange={(e) => setManual((m) => ({ ...m, head: e.target.value }))}>
-                      <option value="">— Select —</option>
-                      {billHeads.map((b) => <option key={b.id} value={b.description || b.headCode}>{b.description || b.headCode}</option>)}
-                    </select>
+                    <SearchableSelect
+                      options={billHeads}
+                      value={manual.head}
+                      onChange={(v) => setManual((m) => ({ ...m, head: v }))}
+                      getKey={(b) => b.description || b.headCode}
+                      getLabel={(b) => b.description || b.headCode}
+                      placeholder="— Select —"
+                      size="sm"
+                      style={{ minWidth: 150 }}
+                    />
                   </div>
                   <div className="ppb-fg ppb-fg--sm"><label>Qty</label>
                     <input value={manual.qty} onChange={(e) => setManual((m) => ({ ...m, qty: e.target.value }))} />
@@ -197,7 +213,7 @@ export default function PanelProvisionalBill() {
 
           {/* ── Footer ── */}
           <div className="ppb-footer">
-            <button className="ppb-print" onClick={() => window.print()} disabled={!provRows.length}><Printer size={14} /> Print</button>
+            <button className="ppb-print" onClick={() => printProvisionalBill(bodyRef.current)} disabled={!provRows.length}><Printer size={14} /> Print</button>
             <div className="ppb-total">Bill Amount <span>{fmt(billAmount)}</span></div>
           </div>
         </div>

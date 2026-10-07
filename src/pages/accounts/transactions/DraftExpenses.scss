@@ -312,3 +312,11 @@
     &:disabled { opacity: 0.4; cursor: not-allowed; }
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 900px) {
+  .drafts__summary { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+  .drafts__summary { grid-template-columns: 1fr; }
+}

@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
 export default function BankAccounts() {
@@ -23,6 +25,8 @@ export default function BankAccounts() {
   const openEdit = (row) => { setForm({ bankName: row.bankName, accountNumber: row.accountNumber }); setModal({ mode: 'edit', row }); };
   const closeModal = () => setModal(null);
 
+  useModalKeys({ active: !!modal, onEsc: closeModal });
+
   const handleSave = async () => {
     if (!form.bankName.trim()) return toast.error('Bank name is required');
     if (!form.accountNumber.trim()) return toast.error('Account number is required');
@@ -41,7 +45,7 @@ export default function BankAccounts() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this Bank Account? Linked cheque serials will also be removed.')) return;
+    if (!(await confirmDialog({ title: 'Delete Bank Account', message: 'Delete this Bank Account? Linked cheque serials will also be removed.', confirmLabel: 'Delete', danger: true }))) return;
     try { await deleteBankAccount(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };
@@ -97,7 +101,7 @@ export default function BankAccounts() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{modal.mode === 'add' ? 'Add Bank Account' : 'Edit Bank Account'}</h3>
             <div className="acc-param-page__field">
               <label>Bank Name</label>

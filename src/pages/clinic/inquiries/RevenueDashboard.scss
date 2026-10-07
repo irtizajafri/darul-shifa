@@ -7,7 +7,7 @@ $ora:   #e65100;
 .rd-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: #dde3ea;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
   font-size: 12px;
@@ -559,4 +559,33 @@ $ora:   #e65100;
   color: #111;
 
   span:last-child { color: $blue; }
+}
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+// Fixed 220px filter sidebar + 8-column calendar needs ~1000px. Below 1100px
+// the filters move above the calendar (laid out as a wrapping row of groups)
+// and the page itself scrolls instead of clipping the summary bar.
+.rd-summary { flex-wrap: wrap; row-gap: 6px; }
+
+@media (max-width: 1280px) {
+  .rd-cell { min-height: 64px; }
+}
+
+@media (max-width: 1100px) {
+  .rd-page { height: auto; min-height: 100%; overflow: visible; }
+  .rd-body { flex-direction: column; overflow: visible; }
+  .rd-sidebar {
+    width: 100%;
+    min-width: 0;
+    border-right: 0;
+    border-bottom: 1px solid #bbb;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px 16px;
+    overflow: visible;
+    > * { flex: 1 1 200px; min-width: 0; }
+  }
+  .rd-main { overflow: visible; }
+  .rd-month-grid { grid-template-columns: repeat(2, 1fr); }
 }

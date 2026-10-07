@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import useModalKeys from '../../hooks/useModalKeys';
 import './Appointment.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -34,11 +35,13 @@ function SlipLookupModal({ onSelect, onClose }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     fetch(`${API}/appointment/search`)
       .then(r => r.json())
       .then(res => setRows(res.data || []))
-      .catch(() => setRows([]))
+      .catch((err) => { setRows([]); toast.error(err?.message || 'Failed to load slips'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -49,11 +52,11 @@ function SlipLookupModal({ onSelect, onClose }) {
   );
 
   return (
-    <div className="apt-overlay">
-      <div className="apt-modal">
+    <div className="apt-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="apt-modal" role="dialog" aria-modal="true">
         <div className="apt-modal-hdr">
           <span>Select Slip</span>
-          <button className="apt-modal-close" onClick={onClose}>✕</button>
+          <button className="apt-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="apt-modal-search">
           <Search size={13} className="apt-modal-search-icon" />

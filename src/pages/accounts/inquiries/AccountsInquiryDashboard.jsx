@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { RefreshCw, ChevronLeft, ChevronRight, BarChart2, TrendingUp, Activity, ArrowLeft } from 'lucide-react';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './AccountsInquiryDashboard.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -192,6 +193,8 @@ function VoucherHistoryModal({ date, entityType, onClose }) {
   const [chequeRevenue, setChequeRevenue] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     const base = { entityType: entityType || 'non-corporate', dateFrom: date, dateTo: date };
     const qExp = new URLSearchParams({ type: 'expense', ...base });
@@ -224,11 +227,11 @@ function VoucherHistoryModal({ date, entityType, onClose }) {
   const isEmpty = !loading && expenseVouchers.length === 0 && incomeVouchers.length === 0 && !hasClinic && !hasCheques;
 
   return (
-    <div className="aid-hist-overlay" onClick={onClose}>
-      <div className="aid-hist-modal" onClick={e => e.stopPropagation()}>
+    <div className="aid-hist-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="aid-hist-modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
         <div className="aid-hist-hdr">
           <span>Voucher History — {fmtStmtDate(date)}</span>
-          <button className="aid-hist-close" onClick={onClose}>✕</button>
+          <button className="aid-hist-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="aid-hist-body">
           {loading && <div className="aid-hist-loading">Loading…</div>}
@@ -389,9 +392,9 @@ export default function AccountsInquiryDashboard() {
     return (
       <div className="aid-calendar">
         <div className="aid-cal-nav">
-          <button className="aid-nav-btn" onClick={prevPeriod}><ChevronLeft size={16}/></button>
+          <button className="aid-nav-btn" onClick={prevPeriod} aria-label="Previous month" title="Previous month"><ChevronLeft size={16}/></button>
           <span className="aid-cal-title">{MNF[month-1]} {year}</span>
-          <button className="aid-nav-btn" onClick={nextPeriod}><ChevronRight size={16}/></button>
+          <button className="aid-nav-btn" onClick={nextPeriod} aria-label="Next month" title="Next month"><ChevronRight size={16}/></button>
         </div>
         <div className="aid-cal-grid">
           <div className="aid-cal-hdr-row">
@@ -485,9 +488,9 @@ export default function AccountsInquiryDashboard() {
     return (
       <div className="aid-yearly">
         <div className="aid-cal-nav">
-          <button className="aid-nav-btn" onClick={prevPeriod}><ChevronLeft size={16}/></button>
+          <button className="aid-nav-btn" onClick={prevPeriod} aria-label="Previous year" title="Previous year"><ChevronLeft size={16}/></button>
           <span className="aid-cal-title">{year}</span>
-          <button className="aid-nav-btn" onClick={nextPeriod}><ChevronRight size={16}/></button>
+          <button className="aid-nav-btn" onClick={nextPeriod} aria-label="Next year" title="Next year"><ChevronRight size={16}/></button>
         </div>
         <div className="aid-month-grid">
           {cellData.map(d => (
@@ -587,9 +590,9 @@ export default function AccountsInquiryDashboard() {
           <div className="aid-chart-header">
             <span className="aid-chart-title">Amount Trend</span>
             <div className="aid-ct-toggle">
-              <button className={`aid-ct-btn ${chartType==='bar'?'--on':''}`} onClick={()=>setChartType('bar')}><BarChart2 size={11}/></button>
-              <button className={`aid-ct-btn ${chartType==='line'?'--on':''}`} onClick={()=>setChartType('line')}><TrendingUp size={11}/></button>
-              <button className={`aid-ct-btn ${chartType==='area'?'--on':''}`} onClick={()=>setChartType('area')}><Activity size={11}/></button>
+              <button className={`aid-ct-btn ${chartType==='bar'?'--on':''}`} onClick={()=>setChartType('bar')} aria-label="Bar chart" title="Bar chart"><BarChart2 size={11}/></button>
+              <button className={`aid-ct-btn ${chartType==='line'?'--on':''}`} onClick={()=>setChartType('line')} aria-label="Line chart" title="Line chart"><TrendingUp size={11}/></button>
+              <button className={`aid-ct-btn ${chartType==='area'?'--on':''}`} onClick={()=>setChartType('area')} aria-label="Area chart" title="Area chart"><Activity size={11}/></button>
             </div>
           </div>
 

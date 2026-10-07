@@ -1171,3 +1171,27 @@
 
   &:hover { background: #1d4ed8; }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+// The two-panel split assumes ~1100px of content width. With the 260px
+// sidebar open on a 1366px laptop, or in a non-maximized window, the right
+// panel's totals row ran out of room and clipped under overflow:hidden.
+// 1) The totals row may wrap (Save/Print drop to a second line) instead of
+//    clipping. 2) Below 1200px the panels stack and the transfer buttons
+//    turn into a horizontal row between them.
+.gopd-total-body { flex-wrap: wrap; }
+.gopd-total-fields { flex: 1 1 200px; }
+
+@media (max-width: 1200px) {
+  .gopd-main { flex-direction: column; align-items: stretch; }
+  .gopd-left-panel,
+  .gopd-right-panel { flex: 0 0 auto; width: 100%; }
+  .gopd-transfer {
+    flex-direction: row;
+    justify-content: center;
+    align-self: stretch;
+    padding: 0.25rem 0;
+  }
+  .gopd-table-wrap,
+  .gopd-table-wrap--right { max-height: 300px; }
+}

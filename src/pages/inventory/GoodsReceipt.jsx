@@ -10,6 +10,10 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission, canBackDate } from '../../utils/permissions';
 import { printGRNDocument } from '../../utils/printGRN';
+import { formatDate } from '../../utils/helpers';
+// Shared portal-based searchable dropdown. Aliased because this file still
+// carries its own inline type-ahead `SearchableSelect` (below) for the PO picker.
+import SharedSearchableSelect from '../../components/ui/SearchableSelect';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
   const [search, setSearch] = useState('');
@@ -386,7 +390,7 @@ export default function GoodsReceipt() {
                       <span className="text-xs text-slate-500">{grn.supplier?.name || '-'}</span>
                       <span className="text-slate-400 text-xs mx-2">|</span>
                       <span className="text-xs text-slate-500">{grn.item?.name || '-'}</span>
-                      {grn.receivedDate && <span className="text-slate-400 text-xs ml-2">({new Date(grn.receivedDate).toLocaleDateString()})</span>}
+                      {grn.receivedDate && <span className="text-slate-400 text-xs ml-2">({formatDate(grn.receivedDate)})</span>}
                     </div>
                     <div className="flex items-center gap-1.5">
                       {canEditGRN && (
@@ -430,16 +434,14 @@ export default function GoodsReceipt() {
                     <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Supplier</label>
-                        <select
+                        <SharedSearchableSelect
+                          options={masterOptions.suppliers || []}
                           value={editGRNForm.supplierId}
-                          onChange={(e) => setEditGRNForm((f) => ({ ...f, supplierId: e.target.value }))}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500 bg-white"
-                        >
-                          <option value="">— Select Supplier —</option>
-                          {(masterOptions.suppliers || []).map((s) => (
-                            <option key={s.id} value={String(s.id)}>{s.name}</option>
-                          ))}
-                        </select>
+                          onChange={(v) => setEditGRNForm((f) => ({ ...f, supplierId: v }))}
+                          placeholder="— Select Supplier —"
+                          getLabel={(s) => s.name}
+                          getKey={(s) => s.id}
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -631,7 +633,7 @@ export default function GoodsReceipt() {
 
             {/* Inline editable items table */}
             {draftLines.length > 0 && (
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="border border-slate-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-100 text-slate-500 text-xs uppercase tracking-wide">
@@ -815,7 +817,7 @@ export default function GoodsReceipt() {
                     <td className="px-6 py-4">{row.code}</td>
                     <td className="px-6 py-4">{row.purchaseOrder?.code || '-'}</td>
                     <td className="px-6 py-4 font-medium text-slate-800">{row.supplier?.name || '-'}</td>
-                    <td className="px-6 py-4">{row.receivedDate ? new Date(row.receivedDate).toLocaleDateString() : '-'}</td>
+                    <td className="px-6 py-4">{formatDate(row.receivedDate)}</td>
                     <td className="px-6 py-4">{row.item?.name || '-'}</td>
                     <td className="px-6 py-4">{row.receivedQuantity} @ {row.receivedRate}</td>
                     <td className="px-6 py-4">{row.totalAmount}</td>

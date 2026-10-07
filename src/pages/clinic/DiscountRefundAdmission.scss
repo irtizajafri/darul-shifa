@@ -7,7 +7,7 @@ $bg:      #dde3ea;
 .dra-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: $bg;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
   font-size: 12px;
@@ -358,6 +358,7 @@ $amber: #b8730b;
 
 .dc-modal {
   width: 560px;
+  max-width: 95vw;
   max-height: 88vh;
 }
 

@@ -3,7 +3,10 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Filter as FilterIcon, Printer, Upload, X } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
+import { printElementInPopup } from '../../../utils/printPopup';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './OpdAdmitReport.scss';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -17,15 +20,10 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // `@page` is document-level and shared across the whole app's stylesheet —
 // inject a highest-priority override right before printing, remove it after
 // (same pattern as Panel Cheques Report / Medicine Report's own print).
-function printOpdAdmitReport() {
-  const styleId = 'oar-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) { style = document.createElement('style'); style.id = styleId; document.head.appendChild(style); }
-  style.textContent = '@page { size: A4 portrait !important; margin: 10mm !important; }';
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-  window.print();
+// Now prints from a popup window (utils/printPopup.js) instead of
+// window.print() on the main window, which could freeze the app on Windows.
+function printOpdAdmitReport(reportEl) {
+  printElementInPopup(reportEl, { title: 'OPD Admit Report', page: 'A4 portrait', margin: '10mm' });
 }
 
 // Excel's date epoch is 1899-12-30 — standard serial→JS Date conversion
@@ -167,6 +165,7 @@ function parseAdmitPanelExcel(file) {
 // ClinicAdmission, just reflects the uploaded file's own data as-is.
 export default function OpdAdmitReport() {
   const { panelCompanies, fetchPanelCompanies, fetchPanelAdmitReport } = useClinicStore();
+  const reportRef = useRef(null);
 
   const [showFilter, setShowFilter] = useState(true);
 
@@ -245,13 +244,13 @@ export default function OpdAdmitReport() {
           <div className="oar-toolbar-actions">
             <button className="oar-btn" onClick={() => setShowFilter(true)}><FilterIcon size={14} /> Filter</button>
             <button className="oar-btn oar-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
-            <button className="oar-btn oar-btn--print" onClick={printOpdAdmitReport} disabled={!hasRows}>
+            <button className="oar-btn oar-btn--print" onClick={() => printOpdAdmitReport(reportRef.current)} disabled={!hasRows}>
               <Printer size={14} /> Print
             </button>
           </div>
         </div>
 
-        <div className="oar-report">
+        <div className="oar-report" ref={reportRef}>
           <div className="oar-rpt-head">
             <div className="oar-rpt-sub">Darul Shifa Hospital</div>
             <div className="oar-rpt-title">ADMISSION WISE PANEL REPORT</div>
@@ -367,12 +366,13 @@ function FilterModal({
   viewMode, onViewModeChange,
   onClose, onPreview,
 }) {
+  useModalKeys({ active: true, onEsc: onClose });
   return (
     <div className="oar-modal-overlay" onMouseDown={onClose}>
-      <div className="oar-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="oar-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="oar-modal-head">
           <span>Panel Report</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
 
         <div className="oar-modal-body">
@@ -405,10 +405,16 @@ function FilterModal({
 
           <div className="oar-filter-section">
             <label className="oar-company-lbl">Company :</label>
-            <select value={companyId} onChange={(e) => onCompanyIdChange(e.target.value)}>
-              <option value="ALL">ALL</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={[{ id: 'ALL' }, ...companies]}
+              value={companyId}
+              onChange={(v) => onCompanyIdChange(v)}
+              getKey={(c) => c.id}
+              getLabel={(c) => (c.id === 'ALL' ? 'ALL' : `${c.code} — ${c.name}`)}
+              clearable={false}
+              size="sm"
+              style={{ flex: 1, minWidth: 180 }}
+            />
           </div>
 
           <div className="oar-filter-section oar-filter-radios">
@@ -444,6 +450,10 @@ function ImportModal({ onClose }) {
   const [parsing, setParsing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
+
+  // ESC mirrors the header X button: closable only when not mid-import.
+  const canClose = step === 'pick' || step === 'preview' || step === 'done';
+  useModalKeys({ active: true, onEsc: canClose ? onClose : undefined });
 
   function suggestCode(name) {
     return name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 8);
@@ -514,11 +524,11 @@ function ImportModal({ onClose }) {
 
   return (
     <div className="oar-modal-overlay" onMouseDown={step === 'pick' || step === 'preview' ? onClose : undefined}>
-      <div className="oar-modal oar-modal--wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="oar-modal oar-modal--wide" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="oar-modal-head">
           <span>Upload Excel — Admission Wise Panel Report</span>
           {(step === 'pick' || step === 'preview' || step === 'done') && (
-            <button onClick={onClose}><X size={16} /></button>
+            <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
           )}
         </div>
 

@@ -4,6 +4,7 @@ import { RefreshCw, X } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './PanelChequeReceived.scss';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -240,6 +241,8 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
   const [amuont, setAmuont] = useState('');
   const [saving, setSaving] = useState(false);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -301,7 +304,7 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
 
   return (
     <div className="pcr-modal-overlay" onMouseDown={onClose}>
-      <div className="pcr-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pcr-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="pcr-modal-head">{target.company}</div>
         <div className="pcr-modal-sub">Billing Month of : {target.monthName}-{target.year}</div>
 

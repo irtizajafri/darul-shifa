@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer } from 'lucide-react';
+import { Search, DoorOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -149,14 +149,9 @@ export default function SlipRefund() {
 
       <div className="sref-toolbar">
         <div className="sref-toolbar-icons">
-          <span className="sref-tbtn sref-tbtn--disabled"><Save size={16} /></span>
-          <span className="sref-tbtn sref-tbtn--disabled"><Copy size={16} /></span>
-          <span className="sref-tbtn sref-tbtn--disabled"><RotateCcw size={16} /></span>
           <button className="sref-tbtn sref-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
             <DoorOpen size={16} />
           </button>
-          <span className="sref-tbtn sref-tbtn--disabled"><FileText size={16} /></span>
-          <span className="sref-tbtn sref-tbtn--disabled"><Printer size={16} /></span>
         </div>
         <span className="sref-toolbar-title">Slip Refund</span>
       </div>

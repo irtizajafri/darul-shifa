@@ -3,6 +3,8 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload, RefreshCw, Printer } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { printElementInPopup } from '../../../utils/printPopup';
 import './PanelBillingDetailReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -13,21 +15,10 @@ const API = 'http://localhost:5001/api/clinic';
 // loads last wins for the WHOLE app's prints. Inject a highest-priority
 // override right before printing this page, and remove it once the print
 // dialog closes so it doesn't leak into other pages.
-function printBillingDetailReport() {
-  const styleId = 'pbd-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
-  style.textContent = '@page { size: A4 landscape !important; margin: 6mm !important; }';
-
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-
-  window.print();
+// Now prints from a popup window (utils/printPopup.js) instead of
+// window.print() on the main window, which could freeze the app on Windows.
+function printBillingDetailReport(reportEl) {
+  printElementInPopup(reportEl, { title: 'Panel Billing Report', page: 'A4 landscape', margin: '6mm' });
 }
 
 // Bill-head columns (order = report columns)
@@ -128,6 +119,7 @@ const fmtDate = (d) => {
 
 export default function PanelBillingDetailReport() {
   const fileRef = useRef(null);
+  const reportRef = useRef(null);
 
   const [companies, setCompanies] = useState([]);
   const [organisation, setOrganisation] = useState('ALL');
@@ -140,7 +132,7 @@ export default function PanelBillingDetailReport() {
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/panel-companies`).then((r) => r.json()).then((j) => setCompanies(j.data || [])).catch(() => {});
+    fetch(`${API}/panel-companies`).then((r) => r.json()).then((j) => setCompanies(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load panel companies'));
   }, []);
 
   const fetchReport = useCallback(async () => {
@@ -177,7 +169,7 @@ export default function PanelBillingDetailReport() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
       toast.success(json.message || `${rows.length} bills imported`);
-      fetch(`${API}/panel-companies`).then((r) => r.json()).then((j) => setCompanies(j.data || [])).catch(() => {});
+      fetch(`${API}/panel-companies`).then((r) => r.json()).then((j) => setCompanies(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load panel companies'));
       fetchReport();
     } catch (err) {
       toast.error(err.message || 'Upload failed');
@@ -200,10 +192,14 @@ export default function PanelBillingDetailReport() {
           <div className="pbd-filter-row">
             <div className="pbd-fg">
               <label>Organisation</label>
-              <select value={organisation} onChange={(e) => setOrganisation(e.target.value)}>
-                <option value="ALL">ALL</option>
-                {companies.map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={['ALL', ...companies.map((c) => c.name)]}
+                value={organisation}
+                onChange={(v) => setOrganisation(v)}
+                clearable={false}
+                size="sm"
+                style={{ minWidth: 200 }}
+              />
             </div>
             <div className="pbd-fg">
               <label>Person / Emp.</label>
@@ -221,7 +217,7 @@ export default function PanelBillingDetailReport() {
               <button className="pbd-btn pbd-btn--upload" onClick={() => fileRef.current?.click()} disabled={uploading}>
                 <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Excel'}
               </button>
-              <button className="pbd-btn pbd-btn--print" onClick={printBillingDetailReport} disabled={!shown || !rows.length}>
+              <button className="pbd-btn pbd-btn--print" onClick={() => printBillingDetailReport(reportRef.current)} disabled={!shown || !rows.length}>
                 <Printer size={14} /> Print
               </button>
             </div>
@@ -229,7 +225,7 @@ export default function PanelBillingDetailReport() {
         </div>
 
         {/* ── Report ── */}
-        <div className="pbd-report">
+        <div className="pbd-report" ref={reportRef}>
           <div className="pbd-rpt-head">
             <div className="pbd-rpt-title">PANEL BILLING REPORT</div>
             <div className="pbd-rpt-sub">Darul Shifa Hospital</div>

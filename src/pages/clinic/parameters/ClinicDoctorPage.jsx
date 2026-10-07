@@ -7,6 +7,7 @@ import PageHeader from '../../../components/shared/PageHeader';
 import Modal from '../../../components/ui/Modal';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
 import './ClinicDoctorPage.scss';
@@ -670,32 +671,30 @@ export default function ClinicDoctorPage() {
               <div className="cdp-grid-2">
                 <div className="cdp-field">
                   <label className="cdp-label">Department</label>
-                  <select
-                    className="cdp-select"
+                  <SearchableSelect
+                    options={departments}
                     value={subDeptForm.departmentId}
-                    onChange={(e) =>
-                      setSubDeptForm((f) => ({ ...f, departmentId: e.target.value, subDeptId: '' }))
+                    onChange={(v) =>
+                      setSubDeptForm((f) => ({ ...f, departmentId: v, subDeptId: '' }))
                     }
-                  >
-                    <option value="">— Select Dept —</option>
-                    {departments.map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
+                    getKey={(d) => d.id}
+                    getLabel={(d) => d.name}
+                    placeholder="— Select Dept —"
+                    size="sm"
+                  />
                 </div>
                 <div className="cdp-field">
                   <label className="cdp-label">Sub Department</label>
-                  <select
-                    className="cdp-select"
+                  <SearchableSelect
+                    options={availableSubDepts}
                     value={subDeptForm.subDeptId}
-                    onChange={(e) => setSubDeptForm((f) => ({ ...f, subDeptId: e.target.value }))}
+                    onChange={(v) => setSubDeptForm((f) => ({ ...f, subDeptId: v }))}
+                    getKey={(s) => s.id}
+                    getLabel={(s) => s.name}
+                    placeholder="— Select Sub Dept —"
                     disabled={!subDeptForm.departmentId}
-                  >
-                    <option value="">— Select Sub Dept —</option>
-                    {availableSubDepts.map((s) => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                    size="sm"
+                  />
                 </div>
               </div>
 
@@ -959,16 +958,16 @@ export default function ClinicDoctorPage() {
               Department <span style={{ color: '#ef4444' }}>*</span>
               <span style={{ fontWeight: 400, color: '#888' }}> — inn tests ka department (list se chuno)</span>
             </label>
-            <select
-              className="cdp-upload-file-input"
+            <SearchableSelect
+              options={departments}
               value={uploadDeptTitle}
-              onChange={(e) => setUploadDeptTitle(e.target.value)}
-            >
-              <option value="">— Department chuno —</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.name}>{d.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setUploadDeptTitle(v)}
+              getKey={(d) => d.name}
+              getLabel={(d) => d.name}
+              placeholder="— Department chuno —"
+              size="sm"
+              wrapperClassName="mt-1"
+            />
             {detectedTitle && !uploadDeptTitle && (
               <p className="cdp-upload-info">
                 File ka title: <strong>{detectedTitle}</strong> — is naam ka exact department nahi mila, upar list se sahi department chuno.

@@ -5,8 +5,11 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { RefreshCw, ChevronLeft, ChevronRight, BarChart2, TrendingUp, Activity } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './RevenueDashboard.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -53,20 +56,22 @@ function DailyStatementModal({ date, onClose, onDeptClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     fetch(`${API}/inquiries/daily-department-statement?date=${date}`)
       .then(r => r.json())
       .then(json => setData(json.data))
-      .catch(() => setData(null))
+      .catch((err) => { setData(null); toast.error(err?.message || 'Failed to load daily statement'); })
       .finally(() => setLoading(false));
   }, [date]);
 
   return (
-    <div className="rd-stmt-overlay" onClick={onClose}>
-      <div className="rd-stmt-modal" onClick={e => e.stopPropagation()}>
+    <div className="rd-stmt-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="rd-stmt-modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
         <div className="rd-stmt-hdr">
           <span>Statement for the Date of {fmtStmtDate(date)}</span>
-          <button className="rd-stmt-close" onClick={onClose}>✕</button>
+          <button className="rd-stmt-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="rd-stmt-body">
           {loading && <div className="rd-stmt-loading">Loading…</div>}
@@ -149,9 +154,9 @@ export default function RevenueDashboard() {
 
   // Load dropdowns on mount
   useEffect(() => {
-    fetch(`${API}/departments`).then(r=>r.json()).then(j=>setDepartments(j.data||[])).catch(()=>{});
-    fetch(`${API}/sub-departments`).then(r=>r.json()).then(j=>setSubDepts(j.data||[])).catch(()=>{});
-    fetch(`${API}/doctors?minimal=true`).then(r=>r.json()).then(j=>setConsultants(j.data||[])).catch(()=>{});
+    fetch(`${API}/departments`).then(r=>r.json()).then(j=>setDepartments(j.data||[])).catch((err) => toast.error(err?.message || 'Failed to load departments'));
+    fetch(`${API}/sub-departments`).then(r=>r.json()).then(j=>setSubDepts(j.data||[])).catch((err) => toast.error(err?.message || 'Failed to load sub departments'));
+    fetch(`${API}/doctors?minimal=true`).then(r=>r.json()).then(j=>setConsultants(j.data||[])).catch((err) => toast.error(err?.message || 'Failed to load consultants'));
   }, []);
 
   // monthly_daily reuses Patient List's own endpoint + the same per-row
@@ -360,9 +365,9 @@ export default function RevenueDashboard() {
     return (
       <div className="rd-calendar">
         <div className="rd-cal-nav">
-          <button className="rd-nav-btn" onClick={prevPeriod}><ChevronLeft size={16}/></button>
+          <button className="rd-nav-btn" onClick={prevPeriod} aria-label="Previous month" title="Previous month"><ChevronLeft size={16}/></button>
           <span className="rd-cal-title">{MNF[month-1]} {year}</span>
-          <button className="rd-nav-btn" onClick={nextPeriod}><ChevronRight size={16}/></button>
+          <button className="rd-nav-btn" onClick={nextPeriod} aria-label="Next month" title="Next month"><ChevronRight size={16}/></button>
         </div>
         <div className="rd-cal-grid">
           <div className="rd-cal-hdr-row">
@@ -452,9 +457,9 @@ export default function RevenueDashboard() {
     return (
       <div className="rd-yearly">
         <div className="rd-cal-nav">
-          <button className="rd-nav-btn" onClick={prevPeriod}><ChevronLeft size={16}/></button>
+          <button className="rd-nav-btn" onClick={prevPeriod} aria-label="Previous year" title="Previous year"><ChevronLeft size={16}/></button>
           <span className="rd-cal-title">{year}</span>
-          <button className="rd-nav-btn" onClick={nextPeriod}><ChevronRight size={16}/></button>
+          <button className="rd-nav-btn" onClick={nextPeriod} aria-label="Next year" title="Next year"><ChevronRight size={16}/></button>
         </div>
         <div className="rd-month-grid">
           {rawData.map(d => (
@@ -540,26 +545,35 @@ export default function RevenueDashboard() {
 
           <div className="rd-filter-group">
             <label className="rd-flabel">Department</label>
-            <select className="rd-select" value={dept} onChange={e => { setDept(e.target.value); setSubDept('ALL'); }}>
-              <option value="ALL">ALL</option>
-              {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={['ALL', ...departments.map(d => d.name)]}
+              value={dept}
+              onChange={v => { setDept(v); setSubDept('ALL'); }}
+              clearable={false}
+              size="sm"
+            />
           </div>
 
           <div className="rd-filter-group">
             <label className="rd-flabel">Sub Dep.</label>
-            <select className="rd-select" value={subDept} onChange={e => setSubDept(e.target.value)}>
-              <option value="ALL">ALL</option>
-              {subDepts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={['ALL', ...subDepts.map(d => d.name)]}
+              value={subDept}
+              onChange={v => setSubDept(v)}
+              clearable={false}
+              size="sm"
+            />
           </div>
 
           <div className="rd-filter-group">
             <label className="rd-flabel">RMO / Consultant</label>
-            <select className="rd-select" value={consultant} onChange={e => setConsultant(e.target.value)}>
-              <option value="ALL">ALL</option>
-              {consultants.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={['ALL', ...consultants.map(d => d.name)]}
+              value={consultant}
+              onChange={v => setConsultant(v)}
+              clearable={false}
+              size="sm"
+            />
           </div>
 
           <div className="rd-radio-grid">
@@ -574,9 +588,9 @@ export default function RevenueDashboard() {
           <div className="rd-chart-header">
             <span className="rd-chart-title">Revenue Trend</span>
             <div className="rd-ct-toggle">
-              <button className={`rd-ct-btn ${chartType==='bar'?'--on':''}`} onClick={()=>setChartType('bar')}><BarChart2 size={11}/></button>
-              <button className={`rd-ct-btn ${chartType==='line'?'--on':''}`} onClick={()=>setChartType('line')}><TrendingUp size={11}/></button>
-              <button className={`rd-ct-btn ${chartType==='area'?'--on':''}`} onClick={()=>setChartType('area')}><Activity size={11}/></button>
+              <button className={`rd-ct-btn ${chartType==='bar'?'--on':''}`} onClick={()=>setChartType('bar')} aria-label="Bar chart" title="Bar chart"><BarChart2 size={11}/></button>
+              <button className={`rd-ct-btn ${chartType==='line'?'--on':''}`} onClick={()=>setChartType('line')} aria-label="Line chart" title="Line chart"><TrendingUp size={11}/></button>
+              <button className={`rd-ct-btn ${chartType==='area'?'--on':''}`} onClick={()=>setChartType('area')} aria-label="Area chart" title="Area chart"><Activity size={11}/></button>
             </div>
           </div>
 

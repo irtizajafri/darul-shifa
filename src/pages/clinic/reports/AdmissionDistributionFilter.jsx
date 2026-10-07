@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './AdmissionDistributionFilter.scss';
 
@@ -36,7 +38,7 @@ export default function AdmissionDistributionFilter() {
     fetch(`${API}/bill-heads`)
       .then(r => r.json())
       .then(j => setBillHeads((j.data || []).filter(h => h.status === 'active')))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load bill heads'));
   }, []);
 
   const handlePreview = () => {
@@ -78,14 +80,26 @@ export default function AdmissionDistributionFilter() {
 
             <div className="cwf-row">
               <label className="cwf-lbl">Bill Heads</label>
-              <select className="cwf-input adf-half" value={billHeadFrom} onChange={e => setBillHeadFrom(e.target.value)}>
-                <option value="">(first)</option>
-                {billHeads.map(h => <option key={h.id} value={h.id}>{h.headCode} - {h.description}</option>)}
-              </select>
-              <select className="cwf-input adf-half" value={billHeadTo} onChange={e => setBillHeadTo(e.target.value)}>
-                <option value="">(last)</option>
-                {billHeads.map(h => <option key={h.id} value={h.id}>{h.headCode} - {h.description}</option>)}
-              </select>
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="adf-half"
+                style={{ minWidth: 0 }}
+                options={billHeads}
+                value={billHeadFrom}
+                onChange={v => setBillHeadFrom(v)}
+                getLabel={h => `${h.headCode} - ${h.description}`}
+                placeholder="(first)"
+              />
+              <SearchableSelect
+                size="sm"
+                wrapperClassName="adf-half"
+                style={{ minWidth: 0 }}
+                options={billHeads}
+                value={billHeadTo}
+                onChange={v => setBillHeadTo(v)}
+                getLabel={h => `${h.headCode} - ${h.description}`}
+                placeholder="(last)"
+              />
             </div>
 
             <div className="cwf-row">

@@ -5,10 +5,14 @@ import { ArrowLeft, Plus, ChevronDown, ChevronUp, Pencil, Trash2, Link2, CheckCi
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../../store/useAuthStore';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './ListAttachments.scss';
 
 const API = 'http://localhost:5001/api/accounts';
 const UTIL_API = 'http://localhost:5001/api/utilities';
+const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 
 // Matches a "Utility provider" payee entry's free-text name to the Utilities
 // Bill module's utility bucket, so we know which actual-bill date to show.
@@ -110,7 +114,7 @@ export default function ListAttachments() {
     fetch(`${UTIL_API}/last-bill-summary`)
       .then((r) => r.json())
       .then((j) => setUtilMeterBills(Array.isArray(j?.data) ? j.data : []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load utility bill summary'));
   }, []);
 
   useEffect(() => {
@@ -381,7 +385,7 @@ export default function ListAttachments() {
   };
 
   const removeHead = async (id) => {
-    if (!confirm('Delete this head and all its entries?')) return;
+    if (!(await confirmDialog({ title: 'Delete head', message: 'Delete this head and all its entries?', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deletePayeeHead(id);
       toast.success('Deleted');
@@ -392,6 +396,16 @@ export default function ListAttachments() {
   // ── Entry modal ───────────────────────────────────────────────────────────
   const openAddEntry = (headId) => { setEntryName(''); setEntryModal({ headId }); };
   const closeEntryModal = () => setEntryModal(null);
+
+  // ESC closes whichever overlay modal is open (backdrop-click already handled on each overlay).
+  useModalKeys({ active: !!headModal, onEsc: closeHeadModal });
+  useModalKeys({ active: invModal, onEsc: closeInvModal });
+  useModalKeys({ active: surgModal, onEsc: closeSurgModal });
+  useModalKeys({ active: !!entryModal, onEsc: closeEntryModal });
+  useModalKeys({ active: !!supplierModal, onEsc: () => setSupplierModal(null) });
+  useModalKeys({ active: !!employeeModal, onEsc: () => setEmployeeModal(null) });
+  useModalKeys({ active: !!doctorModal, onEsc: () => setDoctorModal(null) });
+  useModalKeys({ active: !!customHeadLinkModal, onEsc: () => setCustomHeadLinkModal(null) });
 
   const saveEntry = async () => {
     if (!entryName.trim()) return toast.error('Entry name is required');
@@ -406,7 +420,7 @@ export default function ListAttachments() {
   };
 
   const removeEntry = async (id, headId) => {
-    if (!confirm('Remove this entry?')) return;
+    if (!(await confirmDialog({ title: 'Remove entry', message: 'Remove this entry?', confirmLabel: 'Remove', danger: true }))) return;
     try { await deletePayeeEntry(id); await fetchPayeeEntries(headId); toast.success('Removed'); }
     catch (err) { toast.error(err.message); }
   };
@@ -494,7 +508,7 @@ export default function ListAttachments() {
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               {utilKey && (isEntryOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
-              <button className="btn-icon danger" onClick={(ev) => { ev.stopPropagation(); removeEntry(e.id, head.id); }}><Trash2 className="w-3 h-3" /></button>
+              <button className="btn-icon danger" aria-label="Remove entry" title="Remove entry" onClick={(ev) => { ev.stopPropagation(); removeEntry(e.id, head.id); }}><Trash2 className="w-3 h-3" /></button>
             </div>
           </div>
 
@@ -659,24 +673,35 @@ export default function ListAttachments() {
           <div className="list-attach__link-grid">
             <div className="list-attach__link-field">
               <label>Main GL</label>
-              <select value={ls.mainGlId} onChange={(e) => loadSubGLs(head.id, e.target.value)}>
-                <option value="">Select Main GL</option>
-                {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={mainGLs}
+                value={ls.mainGlId}
+                onChange={(v) => loadSubGLs(head.id, v)}
+                getLabel={codeNameLabel}
+                placeholder="Select Main GL"
+              />
             </div>
             <div className="list-attach__link-field">
               <label>Sub GL</label>
-              <select value={ls.subGlId} onChange={(e) => loadMainAccs(head.id, e.target.value)} disabled={!ls.mainGlId}>
-                <option value="">Select Sub GL</option>
-                {ls.subGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={ls.subGLs}
+                value={ls.subGlId}
+                onChange={(v) => loadMainAccs(head.id, v)}
+                disabled={!ls.mainGlId}
+                getLabel={codeNameLabel}
+                placeholder="Select Sub GL"
+              />
             </div>
             <div className="list-attach__link-field">
               <label>Main Account</label>
-              <select value={ls.mainAccountId} onChange={(e) => updLink(head.id, { mainAccountId: e.target.value })} disabled={!ls.subGlId}>
-                <option value="">Select Main Account</option>
-                {ls.mainAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-              </select>
+              <SearchableSelect
+                options={ls.mainAccs}
+                value={ls.mainAccountId}
+                onChange={(v) => updLink(head.id, { mainAccountId: v })}
+                disabled={!ls.subGlId}
+                getLabel={codeNameLabel}
+                placeholder="Select Main Account"
+              />
             </div>
           </div>
           <div className="list-attach__link-actions">
@@ -696,55 +721,66 @@ export default function ListAttachments() {
         <div className="list-attach__link-grid">
           <div className="list-attach__link-field">
             <label>Main GL</label>
-            <select value={ls.mainGlId} onChange={(e) => loadSubGLs(head.id, e.target.value)}>
-              <option value="">Select Main GL</option>
-              {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={mainGLs}
+              value={ls.mainGlId}
+              onChange={(v) => loadSubGLs(head.id, v)}
+              getLabel={codeNameLabel}
+              placeholder="Select Main GL"
+            />
           </div>
           <div className="list-attach__link-field">
             <label>Sub GL</label>
-            <select value={ls.subGlId} onChange={(e) => loadMainAccs(head.id, e.target.value)} disabled={!ls.mainGlId}>
-              <option value="">Select Sub GL</option>
-              {ls.subGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={ls.subGLs}
+              value={ls.subGlId}
+              onChange={(v) => loadMainAccs(head.id, v)}
+              disabled={!ls.mainGlId}
+              getLabel={codeNameLabel}
+              placeholder="Select Sub GL"
+            />
           </div>
           <div className="list-attach__link-field">
             <label>Main Account</label>
-            <select value={ls.mainAccountId} onChange={(e) => loadSubAccs(head.id, e.target.value)} disabled={!ls.subGlId}>
-              <option value="">Select Main Account</option>
-              {ls.mainAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={ls.mainAccs}
+              value={ls.mainAccountId}
+              onChange={(v) => loadSubAccs(head.id, v)}
+              disabled={!ls.subGlId}
+              getLabel={codeNameLabel}
+              placeholder="Select Main Account"
+            />
           </div>
           <div className="list-attach__link-field">
             <label>Sub Account</label>
-            <select
+            <SearchableSelect
+              options={ls.subAccs}
               value={ls.subAccountId}
               disabled={!ls.mainAccountId || ls.subAccs.length === 0}
-              onChange={async (e) => {
-                updLink(head.id, { subAccountId: e.target.value });
-                if (head.sourceType === 'vendor' && e.target.value) {
-                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
+              onChange={async (v) => {
+                updLink(head.id, { subAccountId: v });
+                if (head.sourceType === 'vendor' && v) {
+                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${v}`);
                   const j = await r.json();
                   const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
-                  setSupplierModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allSuppliers: linkedSuppliers, checked: checkedNames });
+                  setSupplierModal({ headId: head.id, subAccountId: v, headName: head.name, allSuppliers: linkedSuppliers, checked: checkedNames });
                 }
-                if ((head.sourceType === 'employee' || head.sourceType === 'employee-manual') && e.target.value) {
-                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
+                if ((head.sourceType === 'employee' || head.sourceType === 'employee-manual') && v) {
+                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${v}`);
                   const j = await r.json();
                   const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
-                  setEmployeeModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allEmployees: linkedEmployees, checked: checkedNames });
+                  setEmployeeModal({ headId: head.id, subAccountId: v, headName: head.name, allEmployees: linkedEmployees, checked: checkedNames });
                 }
-                if (head.sourceType === 'doctor' && e.target.value) {
-                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${e.target.value}`);
+                if (head.sourceType === 'doctor' && v) {
+                  const r = await fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${v}`);
                   const j = await r.json();
                   const checkedNames = new Set((Array.isArray(j?.data) ? j.data : []).map((en) => en.name));
-                  setDoctorModal({ headId: head.id, subAccountId: e.target.value, headName: head.name, allDoctors: linkedDoctors, checked: checkedNames });
+                  setDoctorModal({ headId: head.id, subAccountId: v, headName: head.name, allDoctors: linkedDoctors, checked: checkedNames });
                 }
               }}
-            >
-              <option value="">Select Sub Account</option>
-              {ls.subAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-            </select>
+              getLabel={codeNameLabel}
+              placeholder="Select Sub Account"
+            />
           </div>
         </div>
         <div className="list-attach__link-actions">
@@ -800,6 +836,8 @@ export default function ListAttachments() {
             )}
             <button
               className="list-attach__expand-btn"
+              aria-label={isExpanded ? 'Collapse' : 'Expand'}
+              title={isExpanded ? 'Collapse' : 'Expand'}
               onClick={() => toggleHead(head)}
             >
               {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -897,7 +935,7 @@ export default function ListAttachments() {
       {/* Custom Head Modal */}
       {headModal && (
         <div className="acc-param-page__overlay" onClick={closeHeadModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{headModal.mode === 'add' ? 'Add Custom Head' : 'Edit Head Name'}</h3>
             <div className="acc-param-page__field">
               <label>Head Name</label>
@@ -914,16 +952,17 @@ export default function ListAttachments() {
       {/* Inventory Head Modal */}
       {invModal && (
         <div className="acc-param-page__overlay" onClick={closeInvModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>Add Inventory Head</h3>
             <div className="acc-param-page__field">
               <label>Inventory Sub Category</label>
-              <select value={headSubcatId} onChange={(e) => setHeadSubcatId(e.target.value)} autoFocus>
-                <option value="">— Select Sub Category —</option>
-                {inventorySubcategories.map((s) => (
-                  <option key={s.id} value={s.id}>{s.category?.name} → {s.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={inventorySubcategories}
+                value={headSubcatId}
+                onChange={(v) => setHeadSubcatId(v)}
+                getLabel={(s) => `${s.category?.name ?? ''} → ${s.name}`}
+                placeholder="— Select Sub Category —"
+              />
             </div>
             <div className="acc-param-page__field">
               <label>Head Name</label>
@@ -940,7 +979,7 @@ export default function ListAttachments() {
       {/* Surgery/Anesthesia / IPD Consultant Head Modal */}
       {surgModal && (
         <div className="acc-param-page__overlay" onClick={closeSurgModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>Add {SURG_MODAL_LABEL} Head</h3>
             <div className="acc-param-page__field">
               <label>Head Name</label>
@@ -987,13 +1026,13 @@ export default function ListAttachments() {
       {/* Supplier Modal */}
       {supplierModal && (
         <div className="acc-param-page__overlay" onClick={() => setSupplierModal(null)}>
-          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="list-attach__supplier-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="list-attach__supplier-modal__header">
               <div>
                 <div className="list-attach__supplier-modal__title">Select Suppliers</div>
                 <div className="list-attach__supplier-modal__sub">{supplierModal.headName}</div>
               </div>
-              <button className="list-attach__supplier-modal__close" onClick={() => setSupplierModal(null)}>✕</button>
+              <button className="list-attach__supplier-modal__close" aria-label="Close" title="Close" onClick={() => setSupplierModal(null)}>✕</button>
             </div>
 
             <div className="list-attach__supplier-modal__select-all">
@@ -1048,13 +1087,13 @@ export default function ListAttachments() {
       {/* Employee Modal */}
       {employeeModal && (
         <div className="acc-param-page__overlay" onClick={() => setEmployeeModal(null)}>
-          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="list-attach__supplier-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="list-attach__supplier-modal__header">
               <div>
                 <div className="list-attach__supplier-modal__title">Select Employees</div>
                 <div className="list-attach__supplier-modal__sub">{employeeModal.headName}</div>
               </div>
-              <button className="list-attach__supplier-modal__close" onClick={() => setEmployeeModal(null)}>✕</button>
+              <button className="list-attach__supplier-modal__close" aria-label="Close" title="Close" onClick={() => setEmployeeModal(null)}>✕</button>
             </div>
             <div className="list-attach__supplier-modal__select-all">
               <label className="list-attach__check-label">
@@ -1106,13 +1145,13 @@ export default function ListAttachments() {
       {/* Doctor Modal */}
       {doctorModal && (
         <div className="acc-param-page__overlay" onClick={() => setDoctorModal(null)}>
-          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="list-attach__supplier-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="list-attach__supplier-modal__header">
               <div>
                 <div className="list-attach__supplier-modal__title">Select Doctors / Consultants</div>
                 <div className="list-attach__supplier-modal__sub">{doctorModal.headName}</div>
               </div>
-              <button className="list-attach__supplier-modal__close" onClick={() => setDoctorModal(null)}>✕</button>
+              <button className="list-attach__supplier-modal__close" aria-label="Close" title="Close" onClick={() => setDoctorModal(null)}>✕</button>
             </div>
             <div className="list-attach__supplier-modal__select-all">
               <label className="list-attach__check-label">
@@ -1161,13 +1200,13 @@ export default function ListAttachments() {
       {/* Link Custom Head(s) to an Inventory Head */}
       {customHeadLinkModal && (
         <div className="acc-param-page__overlay" onClick={() => setCustomHeadLinkModal(null)}>
-          <div className="list-attach__supplier-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="list-attach__supplier-modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <div className="list-attach__supplier-modal__header">
               <div>
                 <div className="list-attach__supplier-modal__title">Link Custom Heads</div>
                 <div className="list-attach__supplier-modal__sub">{customHeadLinkModal.headName} — their entries merge into this Inventory Head's Payee list</div>
               </div>
-              <button className="list-attach__supplier-modal__close" onClick={() => setCustomHeadLinkModal(null)}>✕</button>
+              <button className="list-attach__supplier-modal__close" aria-label="Close" title="Close" onClick={() => setCustomHeadLinkModal(null)}>✕</button>
             </div>
             <div className="list-attach__supplier-modal__list">
               {customHeads.length === 0 ? (
@@ -1196,7 +1235,7 @@ export default function ListAttachments() {
       {/* Entry Modal */}
       {entryModal && (
         <div className="acc-param-page__overlay" onClick={closeEntryModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>Add Entry</h3>
             <div className="acc-param-page__field">
               <label>Name</label>

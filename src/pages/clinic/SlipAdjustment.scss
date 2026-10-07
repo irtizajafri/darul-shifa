@@ -6,7 +6,7 @@ $bg:     #dde3ea;
 .sadj-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: $bg;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
   font-size: 12px;
@@ -70,6 +70,7 @@ $bg:     #dde3ea;
 // ─── Search Row ───────────────────────────────────────────────────────────────
 .sadj-search-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   padding: 18px 10px 14px;
@@ -83,6 +84,7 @@ $bg:     #dde3ea;
 }
 
 .sadj-search-box {
+  max-width: 100%;
   display: flex;
   align-items: stretch;
   border: 1px solid #93a2b8;

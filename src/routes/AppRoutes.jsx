@@ -4,7 +4,6 @@ import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '../store/useAuthStore';
 import MainLayout from '../components/layout/MainLayout';
 import Login from '../pages/auth/Login';
-import Signup from '../pages/auth/Signup';
 
 // The actual page-route table (Dashboard, Employee/Inventory/Accounts/Clinic
 // modules, ~140 routes) lives in ProtectedRoutes.jsx now, not here — it's
@@ -29,7 +28,8 @@ export default function AppRoutes() {
         <Toaster position="top-right" />
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+          {/* User accounts are created by an admin in Admin → User
+              Management; there is no public self-signup. */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer, X } from 'lucide-react';
+import { Search, DoorOpen, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import useModalKeys from '../../hooks/useModalKeys';
 import './SlipAdjustment.scss';
 import './AdmissionAdjustment.scss';
 import './SlipTransfer.scss';
@@ -29,6 +30,8 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     searchAdmissionsForAdjustment('')
       .then((data) => setRows(data || []))
@@ -49,11 +52,11 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
   }
 
   return (
-    <div className="aa-overlay">
-      <div className="aa-modal">
+    <div className="aa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="aa-modal" role="dialog" aria-modal="true">
         <div className="aa-modal-hdr">
           <span>Select Correct Admission</span>
-          <button className="aa-modal-close" onClick={onClose}><X size={14} /></button>
+          <button className="aa-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={14} /></button>
         </div>
         <div className="aa-modal-search">
           <Search size={13} className="aa-modal-search-icon" />
@@ -183,14 +186,9 @@ export default function SlipTransfer() {
 
       <div className="sadj-toolbar">
         <div className="sadj-toolbar-icons">
-          <span className="sadj-tbtn sadj-tbtn--disabled"><Save size={16} /></span>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><Copy size={16} /></span>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><RotateCcw size={16} /></span>
           <button className="sadj-tbtn sadj-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
             <DoorOpen size={16} />
           </button>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><FileText size={16} /></span>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><Printer size={16} /></span>
         </div>
         <span className="sadj-toolbar-title">Slip Transfer</span>
       </div>

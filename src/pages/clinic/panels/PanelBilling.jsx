@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import toast from 'react-hot-toast';
 import { Search, X, Plus } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { printElementInPopup } from '../../../utils/printPopup';
 import '../AdmissionAdjustment.scss'; // .aa-* lookup-modal classes
 import './PanelBilling.scss';
 
@@ -151,30 +154,29 @@ const REPORT_TYPES = [
   { key: 'headWise',      label: 'Head Wise Report',                   ready: false },
 ];
 
-// `@page` is a document-level rule shared across the whole bundled app (see
-// ProvisionalBill.jsx for the same issue) — inject an override right before
-// printing so this isn't silently overridden by whichever other page's
-// `@page` rule happens to load last.
 // All three reports wired up here (Billing Covering Page, Medicine Bill,
 // Diagnostic Bill) print on pre-printed hospital letterhead — top margin left
 // generous (same value as DischargeRefund.jsx's Final Bill print) so content
 // starts below the letterhead artwork instead of overlapping it. Covering
 // Page needs extra room beyond that (its letterhead sits lower) — 50px more
 // (~13mm) than the other two.
+//
+// Printed from a popup window (utils/printPopup.js), never window.print() on
+// the main window, which could freeze the whole app behind a modal print
+// dialog on Windows. The `.pnbr-print-area` is display:none on screen and
+// positioned absolutely by this page's print CSS (it was overlaid on the
+// live page); inside the popup it is the whole document, so render it
+// statically instead.
 const PRINT_TOP_MARGIN = { covering: '48mm', medicine: '35mm', diagnostic: '35mm' };
-function printWithA4Override(styleId, reportType) {
-  let style = document.getElementById(styleId);
-  if (!style) {
-    style = document.createElement('style');
-    style.id = styleId;
-    document.head.appendChild(style);
-  }
+const PRINT_TITLES = { covering: 'Billing Covering Page', medicine: 'Pharmacy Bill', diagnostic: 'Diagnostic Bill' };
+function printPanelReport(printHostEl, reportType) {
   const topMargin = PRINT_TOP_MARGIN[reportType] || '35mm';
-  style.textContent = `@page { size: A4 portrait !important; margin: ${topMargin} 10mm !important; }`;
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-  window.print();
+  printElementInPopup(printHostEl, {
+    title: PRINT_TITLES[reportType] || 'Panel Billing',
+    page: 'A4 portrait',
+    margin: `${topMargin} 10mm`,
+    extraCss: '.pnbr-print-area { display: block !important; position: static !important; }',
+  });
 }
 
 // ── Panel Admission/OPD Lookup Modal — patientCategory/paymentType 'panel'
@@ -628,6 +630,8 @@ export default function PanelBilling() {
     setShowReports(true);
   }
 
+  const printAreaRef = useRef(null);
+
   async function handleGenerateReport() {
     const no = reportAdmitNo.trim();
     if (!no) return toast.error('Admission # daalo');
@@ -638,7 +642,7 @@ export default function PanelBilling() {
       const res = await fetchPanelAdmissionBilling(no);
       setPrintData({ type: reportType, data: res });
       setShowReports(false);
-      setTimeout(() => printWithA4Override(`pnbr-print-${reportType}`, reportType), 300);
+      setTimeout(() => printPanelReport(printAreaRef.current, reportType), 300);
     } catch (e) {
       toast.error(e.message || 'Report load nahi hui');
     } finally {
@@ -1001,12 +1005,17 @@ export default function PanelBilling() {
             <div className="pnb-hg">
               <label>Entitled For</label>
               {data ? (
-                <select className="pnb-date-input" value={data.admission.entitledFor || ''}
-                  onChange={(e) => handleHeaderSelectChange('entitledFor', e.target.value)}
-                  disabled={readOnly}>
-                  <option value="">— Select —</option>
-                  {roomCategories.map((rc) => <option key={rc.id} value={rc.name}>{rc.name}</option>)}
-                </select>
+                <SearchableSelect
+                  options={roomCategories}
+                  value={data.admission.entitledFor || ''}
+                  onChange={(v) => handleHeaderSelectChange('entitledFor', v)}
+                  getKey={(rc) => rc.name}
+                  getLabel={(rc) => rc.name}
+                  placeholder="— Select —"
+                  disabled={readOnly}
+                  size="sm"
+                  style={{ minWidth: 160 }}
+                />
               ) : <div className="pnb-val">—</div>}
             </div>
           </div>
@@ -1086,6 +1095,7 @@ export default function PanelBilling() {
 
           {/* ── Grid ── */}
           <div className="pnb-tab-body">
+            <div className="table-wrap">
             <table className="pnb-table">
               <thead>
                 <tr><th>Description</th><th className="r">Rate</th><th className="r">Qty</th><th className="r">Amount</th><th>Remarks</th><th></th></tr>
@@ -1130,6 +1140,7 @@ export default function PanelBilling() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* ── Footer ── */}
@@ -1165,9 +1176,11 @@ export default function PanelBilling() {
         />
       )}
 
-      {printData?.type === 'covering' && <BillingCoveringPagePrintTemplate data={printData.data} />}
-      {printData?.type === 'diagnostic' && <DiagnosticBillPrintTemplate data={printData.data} />}
-      {printData?.type === 'medicine' && <MedicineBillPrintTemplate data={printData.data} />}
+      <div ref={printAreaRef}>
+        {printData?.type === 'covering' && <BillingCoveringPagePrintTemplate data={printData.data} />}
+        {printData?.type === 'diagnostic' && <DiagnosticBillPrintTemplate data={printData.data} />}
+        {printData?.type === 'medicine' && <MedicineBillPrintTemplate data={printData.data} />}
+      </div>
 
       {popup === 'pharmacy' && data && (
         <PharmacyDetailModal
@@ -1457,7 +1470,7 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
   // onDeleteRow/excludeLiveDetailItem.
   async function handleDeleteOne(key) {
     const row = selections.find((s) => s.key === key);
-    if (!window.confirm(`"${row.medicine}" ko bill se delete karna hai?`)) return;
+    if (!(await confirmDialog({ title: 'Delete from bill', message: `"${row.medicine}" ko bill se delete karna hai?`, confirmLabel: 'Delete', danger: true }))) return;
     setDeletingKey(key);
     try {
       await onDeleteRow(key, 'Medicine', row.originalAmount);
@@ -1626,7 +1639,7 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
   // onDeleteRow/excludeLiveDetailItem.
   async function handleDeleteOne(key) {
     const row = selections.find((s) => s.key === key);
-    if (!window.confirm(`"${row.particulars}" ko bill se delete karna hai?`)) return;
+    if (!(await confirmDialog({ title: 'Delete from bill', message: `"${row.particulars}" ko bill se delete karna hai?`, confirmLabel: 'Delete', danger: true }))) return;
     setDeletingKey(key);
     try {
       await onDeleteRow(key, title, row.originalAmount);

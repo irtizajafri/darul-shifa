@@ -158,7 +158,7 @@ export default function GLBalanceReport() {
     fetch(`${API}/main-gl?entityType=${entityType}`)
       .then((r) => r.json())
       .then((j) => setMainGLs(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load Main GLs'));
     // No per-payee code exists in the chart of accounts (see the Salary head
     // example — every entry shares one Sub Account, only payeeName differs),
     // so this lets Detail Voucher/Detail Summary/Account Level Summary
@@ -166,7 +166,7 @@ export default function GLBalanceReport() {
     fetch(`${API}/payee-names?entityType=${entityType}`)
       .then((r) => r.json())
       .then((j) => setPayeeNames(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load payee names'));
   }, [entityType]);
 
   // Cascading lookups — each level clears and refetches everything below it,

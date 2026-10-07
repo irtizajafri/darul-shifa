@@ -248,3 +248,8 @@
   &:hover:not(:disabled) { background: #1d4ed8; }
   &:disabled { opacity: 0.5; cursor: not-allowed; }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 560px) {
+  .bd-row { grid-template-columns: 1fr; }
+}

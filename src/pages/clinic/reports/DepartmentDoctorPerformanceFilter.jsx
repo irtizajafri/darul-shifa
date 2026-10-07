@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useClinicStore } from '../../../store/useClinicStore';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import useModalKeys from '../../../hooks/useModalKeys';
 import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
@@ -14,15 +16,16 @@ function DoctorLookupModal({ doctors, onSelect, onClose }) {
   const [q, setQ] = useState('');
   const inputRef = useRef(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
+  useModalKeys({ active: true, onEsc: onClose });
   const filtered = q.trim()
     ? doctors.filter(d => d.name?.toLowerCase().includes(q.toLowerCase()) || d.code?.toLowerCase().includes(q.toLowerCase()))
     : doctors;
   return (
     <div className="gopd-modal-overlay" onMouseDown={onClose}>
-      <div className="gopd-modal" onMouseDown={e => e.stopPropagation()}>
+      <div className="gopd-modal" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
         <div className="gopd-modal-header">
           <div className="gopd-modal-title">Select Doctor</div>
-          <button className="gopd-modal-close" onClick={onClose}>×</button>
+          <button className="gopd-modal-close" onClick={onClose} aria-label="Close" title="Close">×</button>
         </div>
         <div className="gopd-modal-body">
           <input ref={inputRef} className="gopd-modal-search" placeholder="Name / Code…" value={q} onChange={e => setQ(e.target.value)} />

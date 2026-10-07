@@ -307,7 +307,7 @@ export default function SurgeryInformation() {
 
       setGdSelectedItems([]);
       setGdItemSearch('');
-      fetchGDHeaders({ admissionNumber: adm.admissionNo }).catch(() => {});
+      fetchGDHeaders({ admissionNumber: adm.admissionNo }).catch((err) => toast.error(err?.message || 'Failed to load GD requests'));
     } catch (e) {
       toast.error(e.message || 'Admission load nahi hui');
     }
@@ -426,16 +426,16 @@ export default function SurgeryInformation() {
                   </div>
                   <div className="si-field">
                     <label className="si-lbl">Anesthesist</label>
-                    <select
-                      className="si-input si-input--select"
+                    <SearchableSelect
+                      options={anesthesists}
                       value={form.anesthesistId}
-                      onChange={e => set('anesthesistId', e.target.value)}
-                    >
-                      <option value="">— Select —</option>
-                      {anesthesists.map(d => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
+                      onChange={v => set('anesthesistId', v)}
+                      placeholder="— Select —"
+                      getLabel={d => d.name}
+                      getKey={d => d.id}
+                      size="sm"
+                      style={{ width: 220 }}
+                    />
                   </div>
                 </div>
 
@@ -444,6 +444,7 @@ export default function SurgeryInformation() {
                   <div className="si-field">
                     <label className="si-lbl">Procedure</label>
                     <SearchableSelect
+                      size="sm"
                       options={surgeryTypes}
                       value={form.surgeryTypeId}
                       onChange={v => set('surgeryTypeId', v)}

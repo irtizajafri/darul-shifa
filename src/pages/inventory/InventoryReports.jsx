@@ -14,6 +14,7 @@ import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf, exportItemLedgerPdf
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import { formatDate } from '../../utils/helpers';
 
 const REPORT_TYPES = [
   'Item List', 'Stock Position', 'Item Ledger', 'Reorder Report',
@@ -876,7 +877,7 @@ export default function InventoryReports() {
 
   const supplierLedgerExportRows = useMemo(() => {
     return (supplierLedgerReport?.rows || []).map((row) => ({
-      Date: row.date ? new Date(row.date).toLocaleDateString() : '-',
+      Date: formatDate(row.date),
       'GRN Code': row.grnCode,
       Supplier: row.supplierName,
       Item: row.itemName,
@@ -923,7 +924,7 @@ export default function InventoryReports() {
       (inv.lines || []).forEach((line) => {
         rows.push({
           'Invoice No': inv.invoiceCode,
-          Date: inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-',
+          Date: formatDate(inv.invoiceDate),
           Customer: inv.customerName,
           Item: line.itemName,
           'Item Code': line.itemCode,
@@ -1136,7 +1137,7 @@ export default function InventoryReports() {
 
   const receivingExportRows = useMemo(() => {
     return receivingRows.map((row) => ({
-      Date: row.date ? new Date(row.date).toLocaleString() : '-',
+      Date: formatDate(row.date, 'dd MMM yyyy, hh:mm a'),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1221,7 +1222,7 @@ export default function InventoryReports() {
   const issuanceExportRows = useMemo(() => {
     return issuanceRows.map((row) => ({
       'GIN Code': row.ginCode || '-',
-      Date: row.date ? new Date(row.date).toLocaleDateString() : '-',
+      Date: formatDate(row.date),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1299,7 +1300,7 @@ export default function InventoryReports() {
 
   const discardExportRows = useMemo(() => {
     return discardRows.map((row) => ({
-      Date: row.date ? new Date(row.date).toLocaleString() : '-',
+      Date: formatDate(row.date, 'dd MMM yyyy, hh:mm a'),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1325,7 +1326,7 @@ export default function InventoryReports() {
 
   const expiryExportRows = useMemo(() => {
     return expiryRows.map((row) => ({
-      'Expiry Date': row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : '-',
+      'Expiry Date': formatDate(row.expiryDate),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1351,8 +1352,8 @@ export default function InventoryReports() {
 
   const shortExpiryExportRows = useMemo(() => {
     return shortExpiryRows.map((row) => ({
-      Date: row.date ? new Date(row.date).toLocaleDateString() : '-',
-      'Date Log': row.dateLog ? new Date(row.dateLog).toLocaleDateString() : '-',
+      Date: formatDate(row.date),
+      'Date Log': formatDate(row.dateLog),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1414,7 +1415,7 @@ export default function InventoryReports() {
   const repairingExportRows = useMemo(() => {
     return repairingRows.map((row) => ({
       'MO No': row.moNumber,
-      Date: row.date ? new Date(row.date).toLocaleDateString() : '-',
+      Date: formatDate(row.date),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1427,7 +1428,7 @@ export default function InventoryReports() {
       'Checked By': row.checkedBy,
       'Warranty (Days)': row.warrantyDays,
       Status: row.status === 'in_repair' ? 'In Repair' : row.status === 'completed' ? 'Completed' : 'Discarded',
-      'Return Date': row.returnDate ? new Date(row.returnDate).toLocaleDateString() : '-',
+      'Return Date': formatDate(row.returnDate),
     }));
   }, [repairingRows]);
 
@@ -1473,8 +1474,8 @@ export default function InventoryReports() {
       Item: row.item,
       'Required Qty': row.requiredQuantity,
       'Ordered Rate': row.orderedRate,
-      'PO Date': row.poDate ? new Date(row.poDate).toLocaleDateString() : '-',
-      'Expected Date': row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-',
+      'PO Date': formatDate(row.poDate),
+      'Expected Date': formatDate(row.expectedDate),
       Status: row.status,
     }));
   }, [poRows]);
@@ -1972,29 +1973,25 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={stockPositionFilters.categoryId}
-                      onChange={(e) => updateStockPositionFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateStockPositionFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={stockPositionSubcategoryOptions}
                       value={stockPositionFilters.subcategoryId}
-                      onChange={(e) => updateStockPositionFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {stockPositionSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateStockPositionFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
@@ -2027,29 +2024,21 @@ export default function InventoryReports() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Location</label>
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      <SearchableSelect
+                        options={fixedAssetLocationOptions}
                         value={stockPositionFilters.location}
-                        onChange={(e) => updateStockPositionFilter('location', e.target.value)}
-                      >
-                        <option value="">All Locations</option>
-                        {fixedAssetLocationOptions.map((loc) => (
-                          <option key={loc} value={loc}>{loc}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateStockPositionFilter('location', val)}
+                        placeholder="All Locations"
+                      />
                     </div>
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Brand</label>
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      <SearchableSelect
+                        options={fixedAssetBrandOptions}
                         value={stockPositionFilters.brand}
-                        onChange={(e) => updateStockPositionFilter('brand', e.target.value)}
-                      >
-                        <option value="">All Brands</option>
-                        {fixedAssetBrandOptions.map((b) => (
-                          <option key={b} value={b}>{b}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateStockPositionFilter('brand', val)}
+                        placeholder="All Brands"
+                      />
                     </div>
                   </div>
                 )}
@@ -2137,42 +2126,36 @@ export default function InventoryReports() {
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 block mb-1">Department (GIN)</label>
-                      <select
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                      <SearchableSelect
+                        options={masterOptions?.departments || []}
                         value={ledgerFilters.departmentId}
-                        onChange={(e) => updateLedgerFilter('departmentId', e.target.value)}
-                      >
-                        <option value="">All Departments</option>
-                        {(masterOptions?.departments || []).map((dep) => (
-                          <option key={dep.id} value={dep.id}>{dep.name}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateLedgerFilter('departmentId', val)}
+                        placeholder="All Departments"
+                        getLabel={(opt) => opt.name}
+                        getKey={(opt) => opt.id}
+                      />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 block mb-1">Category</label>
-                      <select
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                      <SearchableSelect
+                        options={categoryOptions}
                         value={ledgerFilters.categoryId}
-                        onChange={(e) => updateLedgerFilter('categoryId', e.target.value)}
-                      >
-                        <option value="">All Categories</option>
-                        {categoryOptions.map((cat) => (
-                          <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateLedgerFilter('categoryId', val)}
+                        placeholder="All Categories"
+                        getLabel={(opt) => `${opt.name} (${opt.code})`}
+                        getKey={(opt) => opt.id}
+                      />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 block mb-1">Subcategory</label>
-                      <select
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                      <SearchableSelect
+                        options={subcategoryOptions}
                         value={ledgerFilters.subcategoryId}
-                        onChange={(e) => updateLedgerFilter('subcategoryId', e.target.value)}
-                      >
-                        <option value="">All Subcategories</option>
-                        {subcategoryOptions.map((sub) => (
-                          <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateLedgerFilter('subcategoryId', val)}
+                        placeholder="All Subcategories"
+                        getLabel={(opt) => `${opt.name} (${opt.code})`}
+                        getKey={(opt) => opt.id}
+                      />
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 block mb-1">Item</label>
@@ -2200,16 +2183,12 @@ export default function InventoryReports() {
                     {ledgerFilters.assetType === 'fixed asset' && (
                       <div>
                         <label className="text-xs font-medium text-slate-500 block mb-1">Location</label>
-                        <select
-                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none"
+                        <SearchableSelect
+                          options={fixedAssetLocationOptions}
                           value={ledgerFilters.location}
-                          onChange={(e) => updateLedgerFilter('location', e.target.value)}
-                        >
-                          <option value="">All Locations</option>
-                          {fixedAssetLocationOptions.map((loc) => (
-                            <option key={loc} value={loc}>{loc}</option>
-                          ))}
-                        </select>
+                          onChange={(val) => updateLedgerFilter('location', val)}
+                          placeholder="All Locations"
+                        />
                       </div>
                     )}
                   </div>
@@ -2412,55 +2391,47 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Supplier</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={masterOptions?.suppliers || []}
                       value={receivingFilters.supplierId}
-                      onChange={(e) => updateReceivingFilter('supplierId', e.target.value)}
-                    >
-                      <option value="">All Suppliers</option>
-                      {(masterOptions?.suppliers || []).map((sup) => (
-                        <option key={sup.id} value={sup.id}>{sup.name} ({sup.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateReceivingFilter('supplierId', val)}
+                      placeholder="All Suppliers"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={receivingFilters.categoryId}
-                      onChange={(e) => updateReceivingFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateReceivingFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={receivingSubcategoryOptions}
                       value={receivingFilters.subcategoryId}
-                      onChange={(e) => updateReceivingFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {receivingSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateReceivingFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={receivingItemOptions}
                       value={receivingFilters.itemId}
-                      onChange={(e) => updateReceivingFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Items</option>
-                      {receivingItemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateReceivingFilter('itemId', val)}
+                      placeholder="All Items"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -2553,7 +2524,7 @@ export default function InventoryReports() {
                           const rawGRN = (grns || []).find((g) => g.id === row.key);
                           return (
                             <tr key={row.key}>
-                              <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
+                              <td className="px-4 py-3">{formatDate(row.date)}</td>
                               <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                               <td className="px-4 py-3">{row.itemCode}</td>
                               <td className="px-4 py-3">{row.category}</td>
@@ -2682,16 +2653,12 @@ export default function InventoryReports() {
                   {issuanceFilters.assetType === 'fixed asset' && (
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Location</label>
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      <SearchableSelect
+                        options={fixedAssetLocationOptions}
                         value={issuanceFilters.location}
-                        onChange={(e) => updateIssuanceFilter('location', e.target.value)}
-                      >
-                        <option value="">All Locations</option>
-                        {fixedAssetLocationOptions.map((loc) => (
-                          <option key={loc} value={loc}>{loc}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateIssuanceFilter('location', val)}
+                        placeholder="All Locations"
+                      />
                     </div>
                   )}
                   <div>
@@ -2806,7 +2773,7 @@ export default function InventoryReports() {
                         {issuanceRows.map((row) => (
                           <tr key={row.key}>
                             <td className="px-4 py-3 text-slate-500 text-xs">{row.ginCode || '-'}</td>
-                            <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
+                            <td className="px-4 py-3">{formatDate(row.date)}</td>
                             <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
@@ -2849,45 +2816,39 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={shortExpiryFilters.categoryId}
-                      onChange={(e) => updateShortExpiryFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateShortExpiryFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={shortExpirySubcategoryOptions}
                       value={shortExpiryFilters.subcategoryId}
-                      onChange={(e) => updateShortExpiryFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {shortExpirySubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateShortExpiryFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={shortExpiryItemOptions}
                       value={shortExpiryFilters.itemId}
-                      onChange={(e) => updateShortExpiryFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Expiry Items</option>
-                      {shortExpiryItemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateShortExpiryFilter('itemId', val)}
+                      placeholder="All Expiry Items"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Date Log (Single)</label>
@@ -2952,7 +2913,7 @@ export default function InventoryReports() {
                       <tbody className="divide-y divide-slate-100">
                         {shortExpiryRows.map((row) => (
                           <tr key={row.key}>
-                            <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
+                            <td className="px-4 py-3">{formatDate(row.date)}</td>
                             <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
@@ -2982,42 +2943,36 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={expiryFilters.categoryId}
-                      onChange={(e) => updateExpiryFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateExpiryFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={expirySubcategoryOptions}
                       value={expiryFilters.subcategoryId}
-                      onChange={(e) => updateExpiryFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {expirySubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateExpiryFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={expiryItemOptions}
                       value={expiryFilters.itemId}
-                      onChange={(e) => updateExpiryFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Expiry Items</option>
-                      {expiryItemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateExpiryFilter('itemId', val)}
+                      placeholder="All Expiry Items"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -3057,7 +3012,7 @@ export default function InventoryReports() {
                         {expiryRows.map((row) => (
                           <tr key={row.key} className="bg-red-50">
                             <td className="px-4 py-3 text-red-700 font-semibold">
-                              {row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : '-'}
+                              {formatDate(row.expiryDate)}
                             </td>
                             <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
@@ -3091,29 +3046,21 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Department</label>
-                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={gdFilters.departmentId} onChange={(e) => updateGdFilter('departmentId', e.target.value)}>
-                      <option value="">All Departments</option>
-                      {(masterOptions?.departments || []).map((d) => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
+                    <SearchableSelect options={masterOptions?.departments || []} value={gdFilters.departmentId}
+                      onChange={(val) => updateGdFilter('departmentId', val)} placeholder="All Departments"
+                      getLabel={(opt) => opt.name} getKey={(opt) => opt.id} />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={gdFilters.categoryId} onChange={(e) => updateGdFilter('categoryId', e.target.value)}>
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <SearchableSelect options={categoryOptions} value={gdFilters.categoryId}
+                      onChange={(val) => updateGdFilter('categoryId', val)} placeholder="All Categories"
+                      getLabel={(opt) => opt.name} getKey={(opt) => opt.id} />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={gdFilters.subcategoryId} onChange={(e) => updateGdFilter('subcategoryId', e.target.value)}>
-                      <option value="">All Subcategories</option>
-                      {gdSubcategoryOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                    <SearchableSelect options={gdSubcategoryOptions} value={gdFilters.subcategoryId}
+                      onChange={(val) => updateGdFilter('subcategoryId', val)} placeholder="All Subcategories"
+                      getLabel={(opt) => opt.name} getKey={(opt) => opt.id} />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
@@ -3132,11 +3079,8 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Location</label>
-                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-                      value={gdFilters.location} onChange={(e) => updateGdFilter('location', e.target.value)}>
-                      <option value="">All Locations</option>
-                      {fixedAssetLocationOptions.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
-                    </select>
+                    <SearchableSelect options={fixedAssetLocationOptions} value={gdFilters.location}
+                      onChange={(val) => updateGdFilter('location', val)} placeholder="All Locations" />
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -3168,42 +3112,36 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={discardFilters.categoryId}
-                      onChange={(e) => updateDiscardFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateDiscardFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={discardSubcategoryOptions}
                       value={discardFilters.subcategoryId}
-                      onChange={(e) => updateDiscardFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {discardSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateDiscardFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={discardItemOptions}
                       value={discardFilters.itemId}
-                      onChange={(e) => updateDiscardFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Items</option>
-                      {discardItemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateDiscardFilter('itemId', val)}
+                      placeholder="All Items"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -3220,16 +3158,12 @@ export default function InventoryReports() {
                   {discardFilters.assetType === 'fixed asset' && (
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Location</label>
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      <SearchableSelect
+                        options={fixedAssetLocationOptions}
                         value={discardFilters.location}
-                        onChange={(e) => updateDiscardFilter('location', e.target.value)}
-                      >
-                        <option value="">All Locations</option>
-                        {fixedAssetLocationOptions.map((loc) => (
-                          <option key={loc} value={loc}>{loc}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => updateDiscardFilter('location', val)}
+                        placeholder="All Locations"
+                      />
                     </div>
                   )}
                 </div>
@@ -3257,7 +3191,7 @@ export default function InventoryReports() {
                       <tbody className="divide-y divide-slate-100">
                         {discardRows.map((row) => (
                           <tr key={row.key}>
-                            <td className="px-4 py-3">{row.date ? new Date(row.date).toLocaleDateString() : '-'}</td>
+                            <td className="px-4 py-3">{formatDate(row.date)}</td>
                             <td className="px-4 py-3 font-medium text-black">{row.item}</td>
                             <td className="px-4 py-3">{row.itemCode}</td>
                             <td className="px-4 py-3">{row.category}</td>
@@ -3297,55 +3231,47 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Supplier</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={masterOptions?.suppliers || []}
                       value={repairingFilters.supplierId}
-                      onChange={(e) => updateRepairingFilter('supplierId', e.target.value)}
-                    >
-                      <option value="">All Suppliers</option>
-                      {(masterOptions?.suppliers || []).map((sup) => (
-                        <option key={sup.id} value={sup.id}>{sup.name} ({sup.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateRepairingFilter('supplierId', val)}
+                      placeholder="All Suppliers"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={repairingFilters.categoryId}
-                      onChange={(e) => updateRepairingFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateRepairingFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={repairingSubcategoryOptions}
                       value={repairingFilters.subcategoryId}
-                      onChange={(e) => updateRepairingFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {repairingSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateRepairingFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={repairingItemOptions}
                       value={repairingFilters.itemId}
-                      onChange={(e) => updateRepairingFilter('itemId', e.target.value)}
-                    >
-                      <option value="">All Items</option>
-                      {repairingItemOptions.map((item) => (
-                        <option key={item.id} value={item.id}>{item.name} ({item.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateRepairingFilter('itemId', val)}
+                      placeholder="All Items"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -3392,25 +3318,25 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={dailySalesFilters.categoryId}
-                      onChange={(e) => updateDailySalesFilter('categoryId', e.target.value)}>
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name} ({cat.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateDailySalesFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={dailySalesSubcategoryOptions}
                       value={dailySalesFilters.subcategoryId}
-                      onChange={(e) => updateDailySalesFilter('subcategoryId', e.target.value)}>
-                      <option value="">All Subcategories</option>
-                      {dailySalesSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name} ({sub.code})</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateDailySalesFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -3475,7 +3401,7 @@ export default function InventoryReports() {
                           <div>
                             <p className="font-semibold text-black">{inv.invoiceCode}</p>
                             <p className="text-xs text-slate-500">
-                              {inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'} • {inv.customerName}
+                              {formatDate(inv.invoiceDate)} • {inv.customerName}
                             </p>
                           </div>
                           <div className="text-right text-xs text-slate-500">
@@ -3631,29 +3557,25 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={supplierLedgerFilters.categoryId}
-                      onChange={(e) => updateSupplierLedgerFilter('categoryId', e.target.value)}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateSupplierLedgerFilter('categoryId', val)}
+                      placeholder="All Categories"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={supplierLedgerSubcategoryOptions}
                       value={supplierLedgerFilters.subcategoryId}
-                      onChange={(e) => updateSupplierLedgerFilter('subcategoryId', e.target.value)}
-                    >
-                      <option value="">All Subcategories</option>
-                      {supplierLedgerSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => updateSupplierLedgerFilter('subcategoryId', val)}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -3720,7 +3642,7 @@ export default function InventoryReports() {
                               {group.rows.map((row) => (
                                 <tr key={row.grnId} className="hover:bg-slate-50">
                                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">
-                                    {row.date ? new Date(row.date).toLocaleDateString() : '-'}
+                                    {formatDate(row.date)}
                                   </td>
                                   <td className="px-4 py-3 text-xs">
                                     <div className="font-medium text-black">{row.itemName}</div>
@@ -3794,29 +3716,25 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={itemListFilters.categoryId}
-                      onChange={(e) => setItemListFilters((p) => ({ ...p, categoryId: e.target.value, subcategoryId: '' }))}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setItemListFilters((p) => ({ ...p, categoryId: val, subcategoryId: '' }))}
+                      placeholder="All Categories"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={itemListSubcategoryOptions}
                       value={itemListFilters.subcategoryId}
-                      onChange={(e) => setItemListFilters((p) => ({ ...p, subcategoryId: e.target.value }))}
-                    >
-                      <option value="">All Subcategories</option>
-                      {itemListSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setItemListFilters((p) => ({ ...p, subcategoryId: val }))}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -3833,16 +3751,12 @@ export default function InventoryReports() {
                   {itemListFilters.assetType === 'fixed asset' && (
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Location</label>
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      <SearchableSelect
+                        options={fixedAssetLocationOptions}
                         value={itemListFilters.location}
-                        onChange={(e) => setItemListFilters((p) => ({ ...p, location: e.target.value }))}
-                      >
-                        <option value="">All Locations</option>
-                        {fixedAssetLocationOptions.map((loc) => (
-                          <option key={loc} value={loc}>{loc}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setItemListFilters((p) => ({ ...p, location: val }))}
+                        placeholder="All Locations"
+                      />
                     </div>
                   )}
                 </div>
@@ -3915,29 +3829,25 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Supplier</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={masterOptions?.suppliers || []}
                       value={poFilters.supplierId}
-                      onChange={(e) => setPoFilters((p) => ({ ...p, supplierId: e.target.value }))}
-                    >
-                      <option value="">All Suppliers</option>
-                      {(masterOptions?.suppliers || []).map((sup) => (
-                        <option key={sup.id} value={sup.id}>{sup.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setPoFilters((p) => ({ ...p, supplierId: val }))}
+                      placeholder="All Suppliers"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Item</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={items || []}
                       value={poFilters.itemId}
-                      onChange={(e) => setPoFilters((p) => ({ ...p, itemId: e.target.value }))}
-                    >
-                      <option value="">All Items</option>
-                      {(items || []).map((item) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setPoFilters((p) => ({ ...p, itemId: val }))}
+                      placeholder="All Items"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Status</label>
@@ -3997,8 +3907,8 @@ export default function InventoryReports() {
                               <td className="px-4 py-3">{row.item}</td>
                               <td className="px-4 py-3">{row.requiredQuantity}</td>
                               <td className="px-4 py-3">{row.orderedRate !== '-' ? Number(row.orderedRate).toLocaleString() : '-'}</td>
-                              <td className="px-4 py-3">{row.poDate ? new Date(row.poDate).toLocaleDateString() : '-'}</td>
-                              <td className="px-4 py-3">{row.expectedDate ? new Date(row.expectedDate).toLocaleDateString() : '-'}</td>
+                              <td className="px-4 py-3">{formatDate(row.poDate)}</td>
+                              <td className="px-4 py-3">{formatDate(row.expectedDate)}</td>
                               <td className="px-4 py-3 capitalize">{row.status}</td>
                               <td className="px-4 py-3">
                                 <button
@@ -4054,29 +3964,25 @@ export default function InventoryReports() {
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Category</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={categoryOptions}
                       value={reorderFilters.categoryId}
-                      onChange={(e) => setReorderFilters((p) => ({ ...p, categoryId: e.target.value, subcategoryId: '' }))}
-                    >
-                      <option value="">All Categories</option>
-                      {categoryOptions.map((cat) => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setReorderFilters((p) => ({ ...p, categoryId: val, subcategoryId: '' }))}
+                      placeholder="All Categories"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Subcategory</label>
-                    <select
-                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    <SearchableSelect
+                      options={reorderSubcategoryOptions}
                       value={reorderFilters.subcategoryId}
-                      onChange={(e) => setReorderFilters((p) => ({ ...p, subcategoryId: e.target.value }))}
-                    >
-                      <option value="">All Subcategories</option>
-                      {reorderSubcategoryOptions.map((sub) => (
-                        <option key={sub.id} value={sub.id}>{sub.name}</option>
-                      ))}
-                    </select>
+                      onChange={(val) => setReorderFilters((p) => ({ ...p, subcategoryId: val }))}
+                      placeholder="All Subcategories"
+                      getLabel={(opt) => opt.name}
+                      getKey={(opt) => opt.id}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Asset Type</label>
@@ -4093,16 +3999,12 @@ export default function InventoryReports() {
                   {reorderFilters.assetType === 'fixed asset' && (
                     <div>
                       <label className="text-xs text-slate-500 block mb-1">Location</label>
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      <SearchableSelect
+                        options={fixedAssetLocationOptions}
                         value={reorderFilters.location}
-                        onChange={(e) => setReorderFilters((p) => ({ ...p, location: e.target.value }))}
-                      >
-                        <option value="">All Locations</option>
-                        {fixedAssetLocationOptions.map((loc) => (
-                          <option key={loc} value={loc}>{loc}</option>
-                        ))}
-                      </select>
+                        onChange={(val) => setReorderFilters((p) => ({ ...p, location: val }))}
+                        placeholder="All Locations"
+                      />
                     </div>
                   )}
                 </div>

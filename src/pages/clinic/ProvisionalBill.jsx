@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, DoorOpen, Save, Copy, RotateCcw, FileText, Printer, X, Plus } from 'lucide-react';
+import { Search, DoorOpen, Printer, X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -694,13 +694,9 @@ export default function ProvisionalBill() {
 
         <div className="aa-toolbar">
           <div className="aa-toolbar-icons">
-            <span className="aa-tbtn aa-tbtn--disabled"><Save size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Copy size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><RotateCcw size={16} /></span>
             <button className="aa-tbtn aa-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
               <DoorOpen size={16} />
             </button>
-            <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
             <button className="aa-tbtn" onClick={() => {
               setIsDuplicate(true);
               const w = window.open('', '_blank', 'width=700,height=900');
@@ -746,10 +742,16 @@ export default function ProvisionalBill() {
                   Surgery
                 </label>
                 {surgery && (
-                  <select value={surgeryTypeId} onChange={e => setSurgeryTypeId(e.target.value)} className="pb-sel">
-                    <option value="">— Select Surgery Type —</option>
-                    {surgeryTypes.map(s => <option key={s.id} value={s.id}>{s.code} — {s.name}</option>)}
-                  </select>
+                  <SearchableSelect
+                    options={surgeryTypes}
+                    value={surgeryTypeId}
+                    onChange={v => setSurgeryTypeId(v)}
+                    placeholder="— Select Surgery Type —"
+                    getLabel={s => `${s.code} — ${s.name}`}
+                    getKey={s => s.id}
+                    size="sm"
+                    style={{ width: 'auto', minWidth: 220, maxWidth: '100%' }}
+                  />
                 )}
                 <div className="pb-surgery-date-box">
                   <label className="pb-hdr-lbl">Surgery Date</label>
@@ -804,10 +806,15 @@ export default function ProvisionalBill() {
                     <div className="pb-form-row">
                       <div className="pb-fg">
                         <label>Ward</label>
-                        <select value={row.roomCategoryId} onChange={e => handleWardOrHeadChange('roomCategoryId', e.target.value)}>
-                          <option value="">— Select Ward —</option>
-                          {roomCategories.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
+                        <SearchableSelect
+                          options={roomCategories}
+                          value={row.roomCategoryId}
+                          onChange={v => handleWardOrHeadChange('roomCategoryId', v)}
+                          placeholder="— Select Ward —"
+                          getLabel={r => r.name}
+                          getKey={r => r.id}
+                          size="sm"
+                        />
                       </div>
                       <div className="pb-fg pb-fg--right">
                         <label>Patient Type</label>

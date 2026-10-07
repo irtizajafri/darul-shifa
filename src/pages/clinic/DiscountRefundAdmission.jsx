@@ -4,9 +4,11 @@ import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import DischargeCertificateButton from '../../components/clinic/DischargeCertificateButton';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { canBackDate } from '../../utils/permissions';
+import useModalKeys from '../../hooks/useModalKeys';
 import { buildDischargeCertificatePrintHtml } from './dischargeCertificatePrintUtils';
 import './DiscountRefundAdmission.scss';
 
@@ -46,6 +48,8 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   // The backend endpoint only ever returns the most recent 100 admissions
   // (by id) — fine as an initial "browse recent" list, but a text search
   // must re-query the server with the typed term, or an older admission
@@ -55,7 +59,7 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
     return fetch(`${API}/admission/receiving/search?q=${encodeURIComponent(term)}`)
       .then(r => r.json())
       .then(res => setRows(res.data || []))
-      .catch(() => setRows([]))
+      .catch((err) => { setRows([]); toast.error(err?.message || 'Failed to load admissions'); })
       .finally(() => setLoading(false));
   }
 
@@ -72,11 +76,11 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
   );
 
   return (
-    <div className="dra-overlay">
-      <div className="dra-modal">
+    <div className="dra-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="dra-modal" role="dialog" aria-modal="true">
         <div className="dra-modal-hdr">
           <span>{closedFilesOnly ? 'Select Discharged / Closed File' : 'Select Admission'}</span>
-          <button className="dra-modal-close" onClick={onClose}>✕</button>
+          <button className="dra-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="dra-modal-search">
           <Search size={13} className="dra-modal-search-icon" />
@@ -123,12 +127,14 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
 // ── Discharge Certificate Modal ─────────────────────────────────────────────────
 function DischargeCertificateModal({ header, form, onChange, onClose, onSave, saving, diagnosisOptions }) {
   const { admission, roomCategory, bed, consultant } = header;
+  // ESC only — this is a data-entry form, so no backdrop-click close.
+  useModalKeys({ active: true, onEsc: onClose });
   return (
     <div className="dra-overlay">
-      <div className="dra-modal dc-modal">
+      <div className="dra-modal dc-modal" role="dialog" aria-modal="true">
         <div className="dra-modal-hdr">
           <span>Discharge Certificate — {admission.admissionNo}</span>
-          <button className="dra-modal-close" onClick={onClose}>✕</button>
+          <button className="dra-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="dc-modal-body">
           <div className="dc-modal-info">
@@ -156,10 +162,13 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
 
           <div className="dc-modal-row">
             <label>Diagnosis</label>
-            <select value={form.diagnosis} onChange={e => onChange('diagnosis', e.target.value)}>
-              <option value="">Select…</option>
-              {diagnosisOptions.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
+            <SearchableSelect
+              options={diagnosisOptions}
+              value={form.diagnosis}
+              onChange={v => onChange('diagnosis', v)}
+              placeholder="Select…"
+              size="sm"
+            />
           </div>
 
           <div className="dc-modal-row dc-modal-row--split">

@@ -3,7 +3,10 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Printer, Filter as FilterIcon, Upload, X } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
+import { printElementInPopup } from '../../../utils/printPopup';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './PanelChequesReport.scss';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -17,15 +20,10 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // `@page` is document-level and shared across the whole app's stylesheet —
 // inject a highest-priority override right before printing, remove it after
 // (same pattern as PanelBillingDetailReport / PanelBilling's own print).
-function printChequesReport() {
-  const styleId = 'pcqr-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) { style = document.createElement('style'); style.id = styleId; document.head.appendChild(style); }
-  style.textContent = '@page { size: A4 portrait !important; margin: 10mm !important; }';
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-  window.print();
+// Now prints from a popup window (utils/printPopup.js) instead of
+// window.print() on the main window, which could freeze the app on Windows.
+function printChequesReport(reportEl) {
+  printElementInPopup(reportEl, { title: 'Panel Cheques Report', page: 'A4 portrait', margin: '10mm' });
 }
 
 // Legacy "PENAL IPD SUMMARY REPORT" .xls export — Crystal Reports preserves
@@ -108,6 +106,7 @@ function parsePanelChequeExcel(file) {
 // only) individual admission rows.
 export default function PanelChequesReport() {
   const { fetchPanelChequesReport, panelCompanies, fetchPanelCompanies } = useClinicStore();
+  const reportRef = useRef(null);
 
   const [showFilter, setShowFilter] = useState(true);
   const [status, setStatus] = useState('both'); // due | received | both
@@ -161,13 +160,13 @@ export default function PanelChequesReport() {
           <div className="pcqr-toolbar-actions">
             <button className="pcqr-btn" onClick={() => setShowFilter(true)}><FilterIcon size={14} /> Filter</button>
             <button className="pcqr-btn pcqr-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
-            <button className="pcqr-btn pcqr-btn--print" onClick={printChequesReport} disabled={!shown || !companies.length}>
+            <button className="pcqr-btn pcqr-btn--print" onClick={() => printChequesReport(reportRef.current)} disabled={!shown || !companies.length}>
               <Printer size={14} /> Print
             </button>
           </div>
         </div>
 
-        <div className="pcqr-report">
+        <div className="pcqr-report" ref={reportRef}>
           <div className="pcqr-rpt-head">
             <div className="pcqr-rpt-sub">Darul Shifa Hospital</div>
             <div className="pcqr-rpt-title">PANEL IPD SUMMARY REPORT</div>
@@ -338,6 +337,8 @@ function ImportModal({ onClose, onImported }) {
   const [newCodes, setNewCodes] = useState({}); // { companyNameLower: code }
   const [parsing, setParsing] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  useModalKeys({ active: true, onEsc: onClose });
   const [result, setResult] = useState(null);
 
   function suggestCode(name) {
@@ -392,10 +393,10 @@ function ImportModal({ onClose, onImported }) {
 
   return (
     <div className="pcqr-modal-overlay" onMouseDown={onClose}>
-      <div className="pcqr-modal pcqr-modal--wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pcqr-modal pcqr-modal--wide" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="pcqr-modal-head">
           <span>Upload Excel — Legacy Panel Bill/Cheque Import</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
 
         <div className="pcqr-modal-body">
@@ -472,12 +473,13 @@ function FilterModal({
   companyId, onCompanyIdChange, companies, summary, onSummaryChange, groupBy, onGroupByChange,
   onClose, onPreview, loading,
 }) {
+  useModalKeys({ active: true, onEsc: onClose });
   return (
     <div className="pcqr-modal-overlay" onMouseDown={onClose}>
-      <div className="pcqr-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pcqr-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="pcqr-modal-head">
           <span>Bill Report</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
 
         <div className="pcqr-modal-body">
@@ -505,10 +507,16 @@ function FilterModal({
 
           <div className="pcqr-filter-section">
             <label className="pcqr-company-lbl">Company :</label>
-            <select value={companyId} onChange={(e) => onCompanyIdChange(e.target.value)}>
-              <option value="ALL">ALL</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-            </select>
+            <SearchableSelect
+              options={[{ id: 'ALL' }, ...companies]}
+              value={companyId}
+              onChange={(v) => onCompanyIdChange(v)}
+              getKey={(c) => c.id}
+              getLabel={(c) => (c.id === 'ALL' ? 'ALL' : `${c.code} — ${c.name}`)}
+              clearable={false}
+              size="sm"
+              style={{ flex: 1, minWidth: 180 }}
+            />
           </div>
 
           <div className="pcqr-filter-section pcqr-filter-summary">

@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
+import useModalKeys from '../../hooks/useModalKeys';
 import { buildBirthCertificatePrintHtml } from './birthCertificatePrintUtils';
 import './BirthCertificate.scss';
 
@@ -32,11 +33,13 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     fetch(`${API}/admission/receiving/search`)
       .then(r => r.json())
       .then(res => setRows(res.data || []))
-      .catch(() => setRows([]))
+      .catch((err) => { setRows([]); toast.error(err?.message || 'Failed to load admissions'); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -47,11 +50,11 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   );
 
   return (
-    <div className="bc-overlay">
-      <div className="bc-modal">
+    <div className="bc-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bc-modal" role="dialog" aria-modal="true">
         <div className="bc-modal-hdr">
           <span>Select Admission</span>
-          <button className="bc-modal-close" onClick={onClose}>✕</button>
+          <button className="bc-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="bc-modal-search">
           <Search size={13} className="bc-modal-search-icon" />

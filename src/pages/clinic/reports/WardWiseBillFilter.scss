@@ -4,7 +4,7 @@
 // select, and the two side-by-side "Find + Clear All" checklists.
 
 .wwb-window {
-  width: 640px;
+  width: 640px; max-width: 100%;
 }
 
 .wwb-billtype-row {

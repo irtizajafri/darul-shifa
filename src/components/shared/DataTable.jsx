@@ -14,6 +14,9 @@ export default function DataTable({
   data,
   searchPlaceholder = 'Search...',
   pageSize = 10,
+  loading = false,
+  emptyText = 'No records found',
+  loadingText = 'Loading…',
 }) {
   const [globalFilter, setGlobalFilter] = useState('');
 
@@ -55,7 +58,20 @@ export default function DataTable({
             ))}
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
-            {table.getRowModel().rows.map((row) => (
+            {loading ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-[#64748B]">
+                  {loadingText}
+                </td>
+              </tr>
+            ) : table.getRowModel().rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-[#64748B]">
+                  {globalFilter ? `No results for “${globalFilter}”` : emptyText}
+                </td>
+              </tr>
+            ) : null}
+            {!loading && table.getRowModel().rows.map((row) => (
               <tr key={row.id} className="hover:bg-[#F8FAFC]">
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="px-4 py-3 text-sm text-[#0F172A]">
@@ -79,8 +95,11 @@ export default function DataTable({
           </p>
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => table.previousPage()}
               disabled={!table.getCanPreviousPage()}
+              aria-label="Previous page"
+              title="Previous page"
               className="p-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] disabled:opacity-50"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -90,8 +109,11 @@ export default function DataTable({
               {table.getPageCount()}
             </span>
             <button
+              type="button"
               onClick={() => table.nextPage()}
               disabled={!table.getCanNextPage()}
+              aria-label="Next page"
+              title="Next page"
               className="p-2 rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] disabled:opacity-50"
             >
               <ChevronRight className="w-4 h-4" />

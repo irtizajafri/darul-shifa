@@ -426,9 +426,9 @@ export default function ConsultantOPD() {
     // systems' sequences are out of sync. Logic kept, not deleted — re-enable
     // this line once legacy and new system are back on the same numbering.
     // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
-    fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch(() => {});
+    fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch((err) => toast.error(err?.message || 'Failed to load next MR No'));
     loadDoctors(false);
-    fetchCcConfig().catch(() => {});
+    fetchCcConfig().catch((err) => toast.error(err?.message || 'Failed to load credit card surcharge config'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1058,16 +1058,16 @@ export default function ConsultantOPD() {
                 <>
                   <div className="gopd-doctor-dropdown-row">
                     <span className="gopd-lbl">Doctor</span>
-                    <select
-                      className="gopd-doctor-select"
+                    <SearchableSelect
+                      options={uniqueDoctors}
                       value={selectedDoctorId}
-                      onChange={e => { setSelectedDoctorId(e.target.value); setCheckedLeft([]); }}
-                    >
-                      <option value="">— Select Doctor —</option>
-                      {uniqueDoctors.map(d => (
-                        <option key={d.id} value={d.id}>{d.code} — {d.name}</option>
-                      ))}
-                    </select>
+                      onChange={v => { setSelectedDoctorId(v); setCheckedLeft([]); }}
+                      placeholder="— Select Doctor —"
+                      getLabel={d => `${d.code} — ${d.name}`}
+                      getKey={d => d.id}
+                      size="sm"
+                      wrapperClassName="flex-1 min-w-0"
+                    />
                   </div>
                   <div className="gopd-table-wrap">
                     {loadingDoctors ? (

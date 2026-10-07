@@ -17,3 +17,14 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+// @include respond-below($bp-lg) { ... }  → @media (max-width: 1024px)
+@mixin respond-below($bp) {
+  @media (max-width: $bp) { @content; }
+}
+
+// Fixed-width dialog that never exceeds the viewport.
+@mixin modal-box($w) {
+  width: $w;
+  max-width: 95vw;
+}

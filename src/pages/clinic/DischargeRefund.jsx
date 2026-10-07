@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, DoorOpen, Save, Copy, RotateCcw, FileText, Printer, X, Plus } from 'lucide-react';
+import { Search, DoorOpen, Printer, X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -369,13 +369,9 @@ export default function DischargeRefund() {
 
         <div className="aa-toolbar">
           <div className="aa-toolbar-icons">
-            <span className="aa-tbtn aa-tbtn--disabled"><Save size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><Copy size={16} /></span>
-            <span className="aa-tbtn aa-tbtn--disabled"><RotateCcw size={16} /></span>
             <button className="aa-tbtn aa-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
               <DoorOpen size={16} />
             </button>
-            <span className="aa-tbtn aa-tbtn--disabled"><FileText size={16} /></span>
             <button className="aa-tbtn" onClick={() => printDischargeBillPopup(true)} disabled={!detail} title="Print">
               <Printer size={16} />
             </button>

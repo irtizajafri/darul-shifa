@@ -3,7 +3,10 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Filter as FilterIcon, Printer, Search, Upload, X } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
+import { printElementInPopup } from '../../../utils/printPopup';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './MedicineReport.scss';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -17,15 +20,10 @@ const fmtDate = (d) => {
 // `@page` is document-level and shared across the whole app's stylesheet —
 // inject a highest-priority override right before printing, remove it after
 // (same pattern as Panel Cheques Report / Provisional Bill's own print).
-function printMedicineReport() {
-  const styleId = 'mrp-page-size-override';
-  let style = document.getElementById(styleId);
-  if (!style) { style = document.createElement('style'); style.id = styleId; document.head.appendChild(style); }
-  style.textContent = '@page { size: A4 portrait !important; margin: 10mm !important; }';
-  const cleanup = () => { style.remove(); window.removeEventListener('afterprint', cleanup); };
-  window.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 5000);
-  window.print();
+// Now prints from a popup window (utils/printPopup.js) instead of
+// window.print() on the main window, which could freeze the app on Windows.
+function printMedicineReport(reportEl) {
+  printElementInPopup(reportEl, { title: 'Medicine Report', page: 'A4 portrait', margin: '10mm' });
 }
 
 // Excel's date epoch is 1899-12-30 — this is the standard serial→JS Date
@@ -138,6 +136,7 @@ function parsePanelMedicineIssuanceExcel(file) {
 // matching how Panel Cheques Report was staged in two steps.
 export default function MedicineReport() {
   const { panelCompanies, fetchPanelCompanies, fetchPanelMedicineIssuanceReport } = useClinicStore();
+  const reportRef = useRef(null);
 
   const [showFilter, setShowFilter] = useState(true);
 
@@ -161,6 +160,10 @@ export default function MedicineReport() {
   const [appliedFilters, setAppliedFilters] = useState(null);
 
   useEffect(() => { fetchPanelCompanies(); }, [fetchPanelCompanies]);
+
+  // ESC closes the filter dialog — unless the Company picker is stacked on top
+  // of it, in which case ESC should only dismiss the picker (its own hook).
+  useModalKeys({ active: showFilter && !showCompanyPicker, onEsc: () => setShowFilter(false) });
 
   const selectedCompany = panelCompanies.find((c) => String(c.id) === String(companyId));
 
@@ -207,13 +210,13 @@ export default function MedicineReport() {
           <div className="mrp-toolbar-actions">
             <button className="mrp-btn" onClick={() => setShowFilter(true)}><FilterIcon size={14} /> Filter</button>
             <button className="mrp-btn mrp-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
-            <button className="mrp-btn mrp-btn--print" onClick={printMedicineReport} disabled={!hasRows}>
+            <button className="mrp-btn mrp-btn--print" onClick={() => printMedicineReport(reportRef.current)} disabled={!hasRows}>
               <Printer size={14} /> Print
             </button>
           </div>
         </div>
 
-        <div className="mrp-report">
+        <div className="mrp-report" ref={reportRef}>
           <div className="mrp-rpt-head">
             <div className="mrp-rpt-hospital">Darul Shifa Hospital</div>
             <div className="mrp-rpt-title">MEDICINE ISSUANCE REPORT FOR PANEL</div>
@@ -378,10 +381,10 @@ function FilterModal({
 }) {
   return (
     <div className="mrp-modal-overlay" onMouseDown={onClose}>
-      <div className="mrp-modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="mrp-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mrp-modal-head">
           <span>Medicine Report</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
 
         <div className="mrp-modal-body">
@@ -452,14 +455,16 @@ function FilterModal({
               <input type="radio" name="mrp-viewmode" checked={viewMode === 'summary'} onChange={() => onViewModeChange('summary')} />
               Admit wise Summary
             </label>
-            <select
-              className="mrp-select mrp-select--grow"
+            <SearchableSelect
+              options={[{ id: 'ALL' }, ...companies]}
               value={summaryCompanyId}
-              onChange={(e) => onSummaryCompanyIdChange(e.target.value)}
-            >
-              <option value="ALL">ALL</option>
-              {companies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
-            </select>
+              onChange={(v) => onSummaryCompanyIdChange(v)}
+              getKey={(c) => c.id}
+              getLabel={(c) => (c.id === 'ALL' ? 'ALL' : `${c.code} — ${c.name}`)}
+              clearable={false}
+              size="sm"
+              style={{ flex: 1, minWidth: 160 }}
+            />
           </div>
         </div>
 
@@ -478,6 +483,8 @@ function CompanyPickerModal({ companies, onSelect, onClose }) {
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   const filtered = companies.filter((c) =>
     !q.trim() ||
     c.name.toLowerCase().includes(q.trim().toLowerCase()) ||
@@ -486,10 +493,10 @@ function CompanyPickerModal({ companies, onSelect, onClose }) {
 
   return (
     <div className="mrp-modal-overlay" onMouseDown={onClose}>
-      <div className="mrp-modal mrp-modal--picker" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="mrp-modal mrp-modal--picker" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mrp-modal-head">
           <span>Select Company</span>
-          <button onClick={onClose}><X size={16} /></button>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
         </div>
         <div className="mrp-picker-search">
           <Search size={13} />
@@ -524,6 +531,10 @@ function ImportModal({ onClose }) {
   const [parsing, setParsing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
+
+  // ESC mirrors the header X button: closable only when not mid-import.
+  const canClose = step === 'pick' || step === 'preview' || step === 'done';
+  useModalKeys({ active: true, onEsc: canClose ? onClose : undefined });
 
   function suggestCode(name) {
     return name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 8);
@@ -594,11 +605,11 @@ function ImportModal({ onClose }) {
 
   return (
     <div className="mrp-modal-overlay" onMouseDown={step === 'pick' || step === 'preview' ? onClose : undefined}>
-      <div className="mrp-modal mrp-modal--wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="mrp-modal mrp-modal--wide" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
         <div className="mrp-modal-head">
           <span>Upload Excel — Medical Issuance Report for Panel</span>
           {(step === 'pick' || step === 'preview' || step === 'done') && (
-            <button onClick={onClose}><X size={16} /></button>
+            <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
           )}
         </div>
 

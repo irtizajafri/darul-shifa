@@ -133,7 +133,7 @@ export default function SupplierPaymentHistory() {
     fetch(`${INVENTORY_API}/suppliers`)
       .then((r) => r.json())
       .then((j) => setSuppliers(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load suppliers'));
   }, [entityType]);
 
   const handleGenerate = async () => {

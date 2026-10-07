@@ -4,6 +4,7 @@ import { ArrowLeft, Plus, Trash2, ChevronRight, Pencil } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import toast from 'react-hot-toast';
 import { handleEnterAsTab } from '../../../utils/keyboardNav';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -146,16 +147,15 @@ export default function VoucherIncomeForm() {
           <div className="ve-form__alloc-row">
             <span className="ve-form__alloc-label">Account</span>
             <span className="ve-form__alloc-sep">:</span>
-            <select
-              className="ve-form__alloc-input"
+            <SearchableSelect
+              options={incomeCategories}
               value={entry.incomeCategoryId}
-              onChange={(e) => handleCategoryChange(e.target.value)}
-            >
-              <option value="">— Select Income Account —</option>
-              {incomeCategories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={(v) => handleCategoryChange(v)}
+              getLabel={(c) => c.name}
+              placeholder="— Select Income Account —"
+              size="sm"
+              style={{ flex: 1, minWidth: 0 }}
+            />
           </div>
         </div>
       </div>

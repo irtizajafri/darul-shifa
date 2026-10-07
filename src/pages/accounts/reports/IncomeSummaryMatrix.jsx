@@ -139,7 +139,7 @@ export default function IncomeSummaryMatrix() {
         const sorted = [...(j.data || [])].sort((a, b) => a.name.localeCompare(b.name));
         setCategories(sorted);
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load income categories'));
   }, [entityType]);
 
   const handlePrint = async () => {

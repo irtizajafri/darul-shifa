@@ -7,7 +7,7 @@ $white:   #fff;
 .si-page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: $bg;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
   font-size: 12px;
@@ -552,3 +552,10 @@ $white:   #fff;
   td { padding: 5px 10px; border-bottom: 1px solid #eee; }
 }
 .si-td-empty { text-align: center; color: #999; padding: 20px !important; }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 900px) {
+  .si-staff-card { flex-direction: column; }
+  .si-staff-divider { width: auto; height: 1px; }
+  .si-staff-col { max-height: none; }
+}

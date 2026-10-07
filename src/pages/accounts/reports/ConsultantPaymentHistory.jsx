@@ -134,7 +134,7 @@ export default function ConsultantPaymentHistory() {
     fetch(`${CLINIC_API}/doctors?minimal=true`)
       .then((r) => r.json())
       .then((j) => setDoctors(j.data || []))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [entityType]);
 
   const handleGenerate = async () => {

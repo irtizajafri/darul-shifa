@@ -282,9 +282,9 @@ export default function EmergencyOPD() {
     // systems' sequences are out of sync. Logic kept, not deleted — re-enable
     // this line once legacy and new system are back on the same numbering.
     // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
-    fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch(() => {});
+    fetchNextMrNo().then(n => set('mrNo', String(n).padStart(3, '0'))).catch((err) => toast.error(err?.message || 'Failed to load next MR No'));
     loadDoctors(false);
-    fetchCcConfig().catch(() => {});
+    fetchCcConfig().catch((err) => toast.error(err?.message || 'Failed to load credit card surcharge config'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

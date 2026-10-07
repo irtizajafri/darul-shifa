@@ -6,6 +6,7 @@ import PageHeader from '../../components/shared/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -494,17 +495,13 @@ export default function LeaveEncashment() {
         <div className="modal-body">
           <div className="form-group">
             <label>Employee</label>
-            <select
+            <SearchableSelect
+              options={employees.filter((e) => e.leaveEncashmentEnabled)}
               value={selectedEmployee}
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-            >
-              <option value="">— Select Employee —</option>
-              {employees.filter((e) => e.leaveEncashmentEnabled).map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.empCode} — {e.firstName} {e.lastName}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => setSelectedEmployee(v)}
+              getLabel={(e) => `${e.empCode} — ${e.firstName} ${e.lastName}`}
+              placeholder="— Select Employee —"
+            />
           </div>
 
           {balance && (

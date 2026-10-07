@@ -267,7 +267,7 @@ export default function AmbulanceSlip() {
     // systems' sequences are out of sync. Logic kept, not deleted — re-enable
     // this line once legacy and new system are back on the same numbering.
     // fetchNextSerialNo().then(s => set('serialNo', s)).catch(() => {});
-    if (doctors.length === 0) fetchDoctors().catch(() => {});
+    if (doctors.length === 0) fetchDoctors().catch((err) => toast.error(err?.message || 'Failed to load doctors'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -529,16 +529,17 @@ export default function AmbulanceSlip() {
             </div>
             <div className="gopd-name-grp">
               <span className="gopd-lbl">Adviced By</span>
-              <select
-                className="gopd-sel-type"
-                style={{ width: 170 }}
+              <SearchableSelect
+                options={doctors}
                 value={form.advisedBy}
-                onChange={e => set('advisedBy', e.target.value)}
+                onChange={v => set('advisedBy', v)}
+                placeholder="— Select —"
+                getLabel={d => d.name}
+                getKey={d => d.name}
                 disabled={fieldsDisabled}
-              >
-                <option value="">— Select —</option>
-                {doctors.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-              </select>
+                size="sm"
+                style={{ width: 170 }}
+              />
             </div>
           </div>
 

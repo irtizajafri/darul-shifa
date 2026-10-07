@@ -5,9 +5,11 @@ import { useAccountsStore } from '../../../store/useAccountsStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import toast from 'react-hot-toast';
 import { handleEnterAsTab } from '../../../utils/keyboardNav';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
+const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 const UTIL_API = 'http://localhost:5001/api/utilities';
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 
@@ -659,7 +661,7 @@ export default function VoucherExpenseForm() {
     fetch(`${API}/cash-serial/next?entityType=${entityType}`)
       .then((r) => r.json())
       .then((j) => { if (j?.data?.nextSerial) setCashSerial(j.data.nextSerial); })
-      .catch(() => {}); // silent — fallback to 1
+      .catch((err) => toast.error(err?.message || 'Failed to load next cash serial')); // serial stays at fallback 1
   }, [entityType, mode, isEditMode]);
 
   // ── Auto Narration ────────────────────────────────────────────────────────────
@@ -788,7 +790,7 @@ export default function VoucherExpenseForm() {
         fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${entityType}`)
           .then((r) => r.json())
           .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
-          .catch(() => {});
+          .catch((err) => toast.error(err?.message || 'Failed to load admissions'));
         // Only one role linked — no need to make the user pick, load it directly
         if (cats.length === 1) {
           setSurgeryCategoryId(String(cats[0].id));
@@ -1230,7 +1232,7 @@ export default function VoucherExpenseForm() {
     if (!entry.subGlId)       { toast.error('Select Sub GL'); return; }
     if (!entry.mainAccountId) { toast.error('Select Main Account'); return; }
     if (isSurgeryAcc && !entry.admissionNo) { toast.error('Select an Admission'); return; }
-    if (!entry.amount || Number(entry.amount) === 0 || isNaN(Number(entry.amount))) { toast.error('Enter a valid amount'); return; }
+    if (!entry.amount || isNaN(Number(entry.amount)) || Number(entry.amount) <= 0) { toast.error('Enter a valid amount (greater than zero)'); return; }
     if (isCheque && !entry.chequeNo.trim()) { toast.error('Enter cheque number'); return; }
 
     const serial = mode === 'cash'
@@ -1372,14 +1374,15 @@ export default function VoucherExpenseForm() {
           <div className="ve-form__alloc-row">
             <span className="ve-form__alloc-label">Main GL</span>
             <span className="ve-form__alloc-sep">:</span>
-            <select
-              className="ve-form__alloc-input"
+            <SearchableSelect
+              options={mainGLs}
               value={entry.mainGlId}
-              onChange={(e) => handleMainGlChange(e.target.value)}
-            >
-              <option value="">— Select Main GL —</option>
-              {mainGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-            </select>
+              onChange={(v) => handleMainGlChange(v)}
+              getLabel={codeNameLabel}
+              placeholder="— Select Main GL —"
+              size="sm"
+              style={{ flex: 1, minWidth: 0 }}
+            />
             {user?.isSuperAdmin && (
               <button type="button" className="ve-form__qa-btn" title="Add Main GL" onClick={() => openQa('mainGl')}>
                 <Plus className="w-3.5 h-3.5" />
@@ -1390,15 +1393,16 @@ export default function VoucherExpenseForm() {
           <div className="ve-form__alloc-row">
             <span className="ve-form__alloc-label">SUB GL</span>
             <span className="ve-form__alloc-sep">:</span>
-            <select
-              className="ve-form__alloc-input"
+            <SearchableSelect
+              options={subGLs}
               value={entry.subGlId}
-              onChange={(e) => handleSubGlChange(e.target.value)}
+              onChange={(v) => handleSubGlChange(v)}
               disabled={!entry.mainGlId}
-            >
-              <option value="">— Select SUB GL —</option>
-              {subGLs.map((g) => <option key={g.id} value={g.id}>{g.code} — {g.name}</option>)}
-            </select>
+              getLabel={codeNameLabel}
+              placeholder="— Select SUB GL —"
+              size="sm"
+              style={{ flex: 1, minWidth: 0 }}
+            />
             {user?.isSuperAdmin && (
               <button type="button" className="ve-form__qa-btn" title="Add Sub GL" disabled={!entry.mainGlId} onClick={() => openQa('subGl')}>
                 <Plus className="w-3.5 h-3.5" />
@@ -1409,15 +1413,16 @@ export default function VoucherExpenseForm() {
           <div className="ve-form__alloc-row">
             <span className="ve-form__alloc-label">Main Account</span>
             <span className="ve-form__alloc-sep">:</span>
-            <select
-              className="ve-form__alloc-input"
+            <SearchableSelect
+              options={mainAccs}
               value={entry.mainAccountId}
-              onChange={(e) => handleMainAccChange(e.target.value)}
+              onChange={(v) => handleMainAccChange(v)}
               disabled={!entry.subGlId}
-            >
-              <option value="">— Select Main Account —</option>
-              {mainAccs.map((a) => <option key={a.id} value={a.id}>{a.code} — {a.name}</option>)}
-            </select>
+              getLabel={codeNameLabel}
+              placeholder="— Select Main Account —"
+              size="sm"
+              style={{ flex: 1, minWidth: 0 }}
+            />
             {user?.isSuperAdmin && (
               <button type="button" className="ve-form__qa-btn" title="Add Main Account" disabled={!entry.subGlId} onClick={() => openQa('mainAcc')}>
                 <Plus className="w-3.5 h-3.5" />
@@ -1467,19 +1472,16 @@ export default function VoucherExpenseForm() {
                 )}
               </div>
             ) : (
-              <select
-                className="ve-form__alloc-input"
+              <SearchableSelect
+                options={subAccs}
                 value={entry.subAccountId}
-                onChange={(e) => handleSubAccChange(e.target.value)}
+                onChange={(v) => handleSubAccChange(v)}
                 disabled={!entry.mainAccountId}
-              >
-                <option value="">None</option>
-                {subAccs.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code ? `${a.code} — ` : ''}{a.name}
-                  </option>
-                ))}
-              </select>
+                getLabel={(a) => `${a.code ? `${a.code} — ` : ''}${a.name}`}
+                placeholder="None"
+                size="sm"
+                style={{ flex: 1, minWidth: 0 }}
+              />
             )}
             {user?.isSuperAdmin && !isIpdConsultantAcc && !isSurgeryAcc && (
               <button type="button" className="ve-form__qa-btn" title="Add Sub Account" disabled={!entry.mainAccountId} onClick={() => openQa('subAcc')}>
@@ -1608,7 +1610,7 @@ export default function VoucherExpenseForm() {
                 )}
               </label>
               <input
-                type="number" step="0.01"
+                type="number" step="0.01" min="0.01"
                 value={entry.amount}
                 onChange={upd('amount')}
                 readOnly={entry.amountLocked}

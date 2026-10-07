@@ -1,7 +1,7 @@
 // Extends ConsultantWiseFilter.scss's shared .cwf-* window chrome.
 
 .dmc-window {
-  width: 680px;
+  width: 680px; max-width: 100%;
 }
 
 .dmc-fromto-labels {

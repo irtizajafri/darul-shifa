@@ -1,7 +1,7 @@
 .plf-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  min-height: 100%;
   background: #dde2e8;
   font-family: 'Tahoma', 'Segoe UI', sans-serif;
 }
@@ -15,7 +15,7 @@
 }
 
 .plf-window {
-  width: 700px;
+  width: 700px; max-width: 100%;
   background: #d4d0c8;
   border: 2px solid #7a7a7a;
   border-top-color: #fff;

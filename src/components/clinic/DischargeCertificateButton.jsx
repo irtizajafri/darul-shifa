@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
+import SearchableSelect from '../ui/SearchableSelect';
 import { buildDischargeCertificatePrintHtml } from '../../pages/clinic/dischargeCertificatePrintUtils';
 import '../../pages/clinic/DiscountRefundAdmission.scss';
 
@@ -57,10 +58,13 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
 
           <div className="dc-modal-row">
             <label>Diagnosis</label>
-            <select value={form.diagnosis} onChange={e => onChange('diagnosis', e.target.value)}>
-              <option value="">Select…</option>
-              {diagnosisOptions.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
+            <SearchableSelect
+              options={diagnosisOptions}
+              value={form.diagnosis}
+              onChange={v => onChange('diagnosis', v)}
+              placeholder="Select…"
+              size="sm"
+            />
           </div>
 
           <div className="dc-modal-row dc-modal-row--split">

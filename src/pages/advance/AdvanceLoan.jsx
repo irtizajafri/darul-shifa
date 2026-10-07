@@ -10,6 +10,7 @@ import Button from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
 import { formatDate } from '../../utils/helpers';
 import './AdvanceLoan.scss';
@@ -126,7 +127,7 @@ export default function AdvanceLoan() {
   const now         = new Date();
   const defaultDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  const { register, handleSubmit, watch, reset, setValue } = useForm({
+  const { register, handleSubmit, watch, reset, setValue, formState: { isSubmitting } } = useForm({
     defaultValues: { type: 'Advance', amount: '', installmentMonths: '', issueDate: '', empCode: '', remarks: '' },
   });
 
@@ -207,6 +208,14 @@ export default function AdvanceLoan() {
   const onSave = async (data) => {
     if (!selectedEmployee) {
       toast.error('Employee not found');
+      return;
+    }
+    if (!(Number(amount) > 0)) {
+      toast.error('Amount must be greater than zero');
+      return;
+    }
+    if (!isAdvance && !(Number(data.installmentMonths) >= 1)) {
+      toast.error('Installment months must be at least 1');
       return;
     }
     try {
@@ -411,7 +420,7 @@ export default function AdvanceLoan() {
 
   // ── Delete ─────────────────────────────────────────────────────────────────
   const onDelete = async (row) => {
-    if (!window.confirm(`Delete ${row.type} record #${row.id}?`)) return;
+    if (!(await confirmDialog({ title: 'Delete record', message: `Delete ${row.type} record #${row.id}?`, confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteAdvanceLoan(row.id);
       toast.success('Record deleted');
@@ -642,7 +651,8 @@ export default function AdvanceLoan() {
               className="form-input"
               readOnly={lockedFields}
               style={lockedFields ? { background: '#f8fafc', color: '#64748b', cursor: 'not-allowed' } : {}}
-              {...register('amount', { required: true, valueAsNumber: true })}
+              min="1"
+              {...register('amount', { required: true, valueAsNumber: true, min: 1 })}
             />
           </div>
 
@@ -667,7 +677,8 @@ export default function AdvanceLoan() {
                 className="form-input"
                 readOnly={lockedFields}
                 style={lockedFields ? { background: '#f8fafc', color: '#64748b', cursor: 'not-allowed' } : {}}
-                {...register('installmentMonths', { required: true, valueAsNumber: true })}
+                min="1"
+                {...register('installmentMonths', { required: true, valueAsNumber: true, min: 1 })}
               />
             </div>
           )}
@@ -810,7 +821,7 @@ export default function AdvanceLoan() {
 
           <div className="modal-actions">
             <Button type="button" label="Cancel" variant="ghost" onClick={closeModal} />
-            <Button type="submit" label={editingRecord ? 'Update' : 'Save'} />
+            <Button type="submit" label={editingRecord ? 'Update' : 'Save'} loading={isSubmitting} />
           </div>
         </form>
       </Modal>

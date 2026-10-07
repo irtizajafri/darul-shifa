@@ -6,6 +6,7 @@ import JsBarcode from 'jsbarcode';
 import { useClinicStore } from '../../store/useClinicStore';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
+import useModalKeys from '../../hooks/useModalKeys';
 import { buildAntenatalReceiptHtml, buildAntenatalCardHtml } from './antenatalReceiptUtils';
 import './Antenatal.scss';
 
@@ -58,6 +59,8 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
 
   useEffect(() => { if (step === 1) inputRef.current?.focus(); }, [step]);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   const handleSearch = useCallback((val) => {
     setQ(val);
     clearTimeout(timer.current);
@@ -65,7 +68,7 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
     timer.current = setTimeout(async () => {
       setLoading(true);
       try { setResults((await searchEmployees(val)) || []); }
-      catch { setResults([]); }
+      catch (err) { setResults([]); toast.error(err?.message || 'Failed to search employees'); }
       finally { setLoading(false); }
     }, 300);
   }, [searchEmployees]);
@@ -86,10 +89,10 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
   if (step === 2 && selectedEmp) {
     return (
       <div className="ant-modal-overlay" onMouseDown={onClose}>
-        <div className="ant-modal ant-modal--panel" onMouseDown={e => e.stopPropagation()}>
+        <div className="ant-modal ant-modal--panel" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
           <div className="ant-modal-header">
             <div className="ant-modal-title"><User size={16}/> Select Patient</div>
-            <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+            <button className="ant-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={16}/></button>
           </div>
           <div className="ant-panel-body">
             <div className="ant-panel-field">
@@ -117,10 +120,10 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
 
   return (
     <div className="ant-modal-overlay" onMouseDown={onClose}>
-      <div className="ant-modal" onMouseDown={e => e.stopPropagation()}>
+      <div className="ant-modal" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
         <div className="ant-modal-header">
           <div className="ant-modal-title"><User size={16}/> Select Employee</div>
-          <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+          <button className="ant-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={16}/></button>
         </div>
         <div className="ant-modal-search">
           <Search size={14} className="ant-modal-search-icon"/>
@@ -164,6 +167,8 @@ function PanelModal({ onSelect, onClose }) {
   const [dependentIdx, setDependentIdx] = useState('');
   const [loading, setLoading] = useState(true);
 
+  useModalKeys({ active: true, onEsc: onClose });
+
   useEffect(() => {
     Promise.all([fetchPanelCompanies(), fetchPanelEmployees()]).finally(() => setLoading(false));
   }, [fetchPanelCompanies, fetchPanelEmployees]);
@@ -191,10 +196,10 @@ function PanelModal({ onSelect, onClose }) {
 
   return (
     <div className="ant-modal-overlay" onMouseDown={onClose}>
-      <div className="ant-modal ant-modal--panel" onMouseDown={e => e.stopPropagation()}>
+      <div className="ant-modal ant-modal--panel" role="dialog" aria-modal="true" onMouseDown={e => e.stopPropagation()}>
         <div className="ant-modal-header">
           <div className="ant-modal-title"><Building2 size={16}/> Select Panel</div>
-          <button className="ant-modal-close" onClick={onClose}><X size={16}/></button>
+          <button className="ant-modal-close" onClick={onClose} aria-label="Close" title="Close"><X size={16}/></button>
         </div>
         {loading ? <div className="ant-modal-empty" style={{ padding: '2rem' }}>Loading...</div> : (
           <div className="ant-panel-body">
@@ -277,7 +282,7 @@ export default function Antenatal() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    if (doctors.length === 0) fetchDoctors().catch(() => {});
+    if (doctors.length === 0) fetchDoctors().catch((err) => toast.error(err?.message || 'Failed to load doctors'));
     // Serial No auto-fill temporarily disabled (2026-09) — staff are typing
     // it in manually to match the legacy system's numbering while the two
     // systems' sequences are out of sync. Logic kept, not deleted — re-enable
@@ -537,15 +542,17 @@ export default function Antenatal() {
             </div>
             <div className="ant-field">
               <label>Under Treatment</label>
-              <select className="ant-inp ant-inp--sel" value={form.underTreatmentId} onChange={e => handleUnderTreatmentChange(e.target.value)}>
-                <option value="">— Select Doctor —</option>
-                {antenatalDoctors.length === 0 && doctors.length > 0 && (
-                  <option disabled>No Antenatal doctors found</option>
-                )}
-                {antenatalDoctors.map(d => (
-                  <option key={d.id} value={d.id}>{d.code} — {d.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={antenatalDoctors}
+                value={form.underTreatmentId}
+                onChange={v => handleUnderTreatmentChange(v)}
+                placeholder="— Select Doctor —"
+                getLabel={d => `${d.code} — ${d.name}`}
+                getKey={d => d.id}
+                emptyText={antenatalDoctors.length === 0 && doctors.length > 0 ? 'No Antenatal doctors found' : 'No results found'}
+                size="sm"
+                wrapperClassName="flex-1 min-w-0"
+              />
             </div>
             <div className="ant-inline-row">
               <div className="ant-field ant-field--sm">

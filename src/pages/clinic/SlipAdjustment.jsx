@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Save, Copy, RotateCcw, DoorOpen, FileText, Printer, Pencil } from 'lucide-react';
+import { Search, DoorOpen, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { genderForPatientType } from './opdValidation';
@@ -60,7 +60,7 @@ export default function SlipAdjustment() {
     fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
       .then(j => setDoctors((j.data || []).filter(d => d.status === 'active')))
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, []);
 
   async function handleSearch() {
@@ -226,14 +226,9 @@ export default function SlipAdjustment() {
 
       <div className="sadj-toolbar">
         <div className="sadj-toolbar-icons">
-          <span className="sadj-tbtn sadj-tbtn--disabled"><Save size={16} /></span>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><Copy size={16} /></span>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><RotateCcw size={16} /></span>
           <button className="sadj-tbtn sadj-tbtn--exit" onClick={() => navigate(-1)} title="Exit">
             <DoorOpen size={16} />
           </button>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><FileText size={16} /></span>
-          <span className="sadj-tbtn sadj-tbtn--disabled"><Printer size={16} /></span>
         </div>
         <span className="sadj-toolbar-title">Slip Adjustment</span>
       </div>

@@ -6,6 +6,7 @@ import PageHeader from '../../../components/shared/PageHeader';
 import Modal from '../../../components/ui/Modal';
 import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
 
@@ -118,16 +119,16 @@ export default function ClinicSubDepartmentPage() {
             />
           </div>
 
-          <select
-            className="cpp-filter-select"
+          <SearchableSelect
+            options={departments}
             value={filterDept}
-            onChange={(e) => setFilterDept(e.target.value)}
-          >
-            <option value="">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={String(d.id)}>{d.name}</option>
-            ))}
-          </select>
+            onChange={(v) => setFilterDept(v)}
+            getKey={(d) => d.id}
+            getLabel={(d) => d.name}
+            placeholder="All Departments"
+            size="sm"
+            style={{ width: 240 }}
+          />
 
           <span className="cpp-count">{filtered.length} record{filtered.length !== 1 ? 's' : ''}</span>
         </div>
@@ -178,16 +179,15 @@ export default function ClinicSubDepartmentPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Department <span className="text-red-500">*</span>
             </label>
-            <select
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+            <SearchableSelect
+              options={departments}
               value={form.departmentId}
-              onChange={(e) => setForm((f) => ({ ...f, departmentId: e.target.value }))}
-            >
-              <option value="">Select Department</option>
-              {departments.map((d) => (
-                <option key={d.id} value={String(d.id)}>{d.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setForm((f) => ({ ...f, departmentId: v }))}
+              getKey={(d) => d.id}
+              getLabel={(d) => d.name}
+              placeholder="Select Department"
+              size="md"
+            />
           </div>
 
           <Input

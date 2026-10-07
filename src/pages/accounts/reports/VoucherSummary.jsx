@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './VoucherReprint.scss';
 
 const ACCOUNTS_API  = 'http://localhost:5001/api/accounts';
@@ -314,7 +316,7 @@ export default function VoucherSummary() {
     ]).then(([sRes, aRes]) => {
       setSuppliers(sRes.data || []);
       setMainAccs(aRes.data || []);
-    }).catch(() => {});
+    }).catch((err) => toast.error(err?.message || 'Failed to load filter options'));
   }, [entityType]);
 
   const upd = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
@@ -335,13 +337,13 @@ export default function VoucherSummary() {
       const vouchers = json.data || [];
 
       if (!vouchers.length) {
-        alert('No vouchers found for the selected filters.');
+        toast('No vouchers found for the selected filters.');
         return;
       }
 
       printVoucherSummary({ vouchers, entityType, printBy: user?.name || 'System' });
     } catch (err) {
-      alert('Error: ' + err.message);
+      toast.error('Error: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -381,12 +383,15 @@ export default function VoucherSummary() {
         <div className="vr-filter-row">
           <span className="vr-filter-label">Paid to / Supplier</span>
           <div className="vr-filter-fields">
-            <select className="vr-input" value={filters.supplierId} onChange={upd('supplierId')}>
-              <option value="">— All Suppliers —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={suppliers}
+              value={filters.supplierId}
+              onChange={(v) => upd('supplierId')({ target: { value: v } })}
+              getLabel={(s) => s.name}
+              placeholder="— All Suppliers —"
+              size="sm"
+              style={{ width: 280 }}
+            />
           </div>
         </div>
 
@@ -394,12 +399,15 @@ export default function VoucherSummary() {
         <div className="vr-filter-row">
           <span className="vr-filter-label">In Account of</span>
           <div className="vr-filter-fields">
-            <select className="vr-input" value={filters.mainAccountId} onChange={upd('mainAccountId')}>
-              <option value="">— All Accounts —</option>
-              {mainAccs.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={mainAccs}
+              value={filters.mainAccountId}
+              onChange={(v) => upd('mainAccountId')({ target: { value: v } })}
+              getLabel={(a) => a.name}
+              placeholder="— All Accounts —"
+              size="sm"
+              style={{ width: 280 }}
+            />
           </div>
         </div>
 

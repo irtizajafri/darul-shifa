@@ -94,7 +94,7 @@ export default function VoucherSummaryMatrix() {
         const sorted = [...(j.data || [])].sort((a, b) => a.code.localeCompare(b.code));
         setMainGLs(sorted);
       })
-      .catch(() => {});
+      .catch((err) => toast.error(err?.message || 'Failed to load Main GLs'));
   }, [entityType]);
 
   const handlePrint = async () => {

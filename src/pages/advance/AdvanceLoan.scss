@@ -154,3 +154,8 @@
     }
   }
 }
+
+// ── Responsive ────────────────────────────────────────────────────────────────
+@media (max-width: 560px) {
+  .advance-page .schedule-grid { grid-template-columns: 1fr; }
+}

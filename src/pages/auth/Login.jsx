@@ -123,9 +123,6 @@ export default function Login() {
             <p>Admin: admin@hospital.com / admin123</p>
           </div> */}
         </div>
-        <p className="login-signup">
-          Don&apos;t have an account? <Link to="/signup">Sign up</Link>
-        </p>
       </div>
     </div>
   );

@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
 export default function MainGL() {
@@ -22,6 +24,8 @@ export default function MainGL() {
   const openAdd = () => { setForm({ name: '' }); setModal({ mode: 'add' }); };
   const openEdit = (row) => { setForm({ name: row.name }); setModal({ mode: 'edit', row }); };
   const closeModal = () => setModal(null);
+
+  useModalKeys({ active: !!modal, onEsc: closeModal });
 
   const handleSave = async () => {
     if (!form.name.trim()) return toast.error('Name is required');
@@ -43,7 +47,7 @@ export default function MainGL() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this Main GL? All child Sub GLs and accounts will also be removed.')) return;
+    if (!(await confirmDialog({ title: 'Delete Main GL', message: 'Delete this Main GL? All child Sub GLs and accounts will also be removed.', confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteMainGL(id);
       toast.success('Deleted');
@@ -101,7 +105,7 @@ export default function MainGL() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{modal.mode === 'add' ? 'Add Main GL' : 'Edit Main GL'}</h3>
 
             <div className="acc-param-page__field">

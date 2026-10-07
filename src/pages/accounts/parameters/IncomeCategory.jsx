@@ -3,6 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
 export default function IncomeCategory() {
@@ -23,6 +25,8 @@ export default function IncomeCategory() {
   const openEdit = (row) => { setName(row.name); setModal({ mode: 'edit', row }); };
   const closeModal = () => setModal(null);
 
+  useModalKeys({ active: !!modal, onEsc: closeModal });
+
   const handleSave = async () => {
     if (!name.trim()) return toast.error('Category name is required');
     setSaving(true);
@@ -40,7 +44,7 @@ export default function IncomeCategory() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Delete this income category?')) return;
+    if (!(await confirmDialog({ title: 'Delete income category', message: 'Delete this income category?', confirmLabel: 'Delete', danger: true }))) return;
     try { await deleteIncomeCategory(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };
@@ -94,7 +98,7 @@ export default function IncomeCategory() {
 
       {modal && (
         <div className="acc-param-page__overlay" onClick={closeModal}>
-          <div className="acc-param-page__modal" onClick={(e) => e.stopPropagation()}>
+          <div className="acc-param-page__modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
             <h3>{modal.mode === 'add' ? 'Add Income Category' : 'Edit Income Category'}</h3>
             <div className="acc-param-page__field">
               <label>Category Name</label>
