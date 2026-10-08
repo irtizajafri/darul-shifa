@@ -1420,8 +1420,20 @@ async function generateVoucherNo(entityType, voucherDate) {
   const d = new Date(voucherDate);
   const dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
   const prefix = `VE-${dateStr}`;
-  const count = await prisma.accVoucherExpense.count({ where: { voucherNo: { startsWith: prefix }, entityType } });
-  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+  // Next number = highest existing sequence for this day + 1, not count + 1:
+  // after a voucher is deleted the count drops below the highest number in
+  // use, and count + 1 then collides with an existing voucherNo ("Unique
+  // constraint failed on (voucherNo, entityType)"). Same fix as server PC.
+  const existing = await prisma.accVoucherExpense.findMany({
+    where: { voucherNo: { startsWith: prefix }, entityType },
+    select: { voucherNo: true },
+  });
+  let maxSeq = 0;
+  for (const v of existing) {
+    const seq = parseInt(v.voucherNo.split('-').pop(), 10);
+    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+  }
+  return `${prefix}-${String(maxSeq + 1).padStart(3, '0')}`;
 }
 
 async function createVoucherExpense({ entityType, mode, bankId, voucherDate, entries }) {
