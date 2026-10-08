@@ -229,6 +229,63 @@ function isAlternativeDuty(emp) {
   return duty === 'alternative' || duty === 'alternate';
 }
 
+// ─── Duty config as it stood on a given date ─────────────────────────────────
+// detectNight/isAlternativeDuty read the employee's CURRENT record, so the day
+// someone moves off night duty their earlier night months stop pairing — the
+// 21:00 punch and next morning's 09:00 punch land in different day windows and
+// both come back as missed_out. These two helpers resolve the config from
+// employee_roster_history instead, per date.
+
+// The whole table is read in one go and matched in JS: it is small, and the
+// employee ids would otherwise have to be interpolated into a raw query.
+async function loadRosterHistory() {
+  try {
+    const rows = await prisma.$queryRawUnsafe(`
+      SELECT employee_id, effective_from, duty_type, is_night_shift, duty_roster
+      FROM employee_roster_history
+      ORDER BY effective_from ASC
+    `);
+    const byEmp = new Map();
+    for (const r of rows) {
+      const id = Number(r.employee_id);
+      if (!byEmp.has(id)) byEmp.set(id, []);
+      byEmp.get(id).push({
+        effectiveFrom: new Date(r.effective_from),
+        dutyType: r.duty_type || null,
+        isNightShift: r.is_night_shift,
+        dutyRoster: typeof r.duty_roster === 'string' ? JSON.parse(r.duty_roster) : (r.duty_roster || null),
+      });
+    }
+    return byEmp;
+  } catch {
+    // Table not created yet (fresh DB) — every employee then falls back to
+    // their current record, which is the pre-existing behaviour.
+    return new Map();
+  }
+}
+
+// Returns `emp` itself when history says nothing about that date, so an
+// employee with no recorded history calculates exactly as before.
+function empAsOf(emp, date, historyByEmp) {
+  const rows = historyByEmp.get(Number(emp?.id));
+  if (!rows || rows.length === 0) return emp;
+
+  const target = toDateOnlyUTC(date).getTime();
+  let hit = null;
+  for (const r of rows) { // ascending, so the last match is the latest one
+    if (toDateOnlyUTC(r.effectiveFrom).getTime() <= target) hit = r;
+    else break;
+  }
+  if (!hit) return emp;
+
+  return {
+    ...emp,
+    dutyType:     hit.dutyType     ?? emp?.dutyType,
+    isNightShift: hit.isNightShift ?? emp?.isNightShift,
+    dutyRoster:   hit.dutyRoster   ?? emp?.dutyRoster,
+  };
+}
+
 function toDateOnlyUTC(value) {
   const d = new Date(value);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
@@ -443,6 +500,7 @@ async function testPairing(req, res, next) {
     const employees = await prisma.employee.findMany();
     const empMap = {};
     employees.forEach(e => { empMap[e.empCode] = e; });
+    const rosterHistory = await loadRosterHistory();
 
     const parsedData = [];
 
@@ -462,17 +520,15 @@ async function testPairing(req, res, next) {
       const logs = (logsByStaff[staffId] || []).sort((a, b) => a - b);
       const emp  = empMap[staffId];
 
-  const isNightBase = detectNight(emp);
-  const isAlternate = isAlternativeDuty(emp);
-  const applyNightLogic = isNightBase;
-      const altAnchorDate = isAlternate
-        ? (emp?.appointmentDate
-            ? new Date(emp.appointmentDate)
-            : (emp?.createdAt ? new Date(emp.createdAt) : new Date('2026-01-01')))
-        : null;
+      const altAnchorDate = emp?.appointmentDate
+        ? new Date(emp.appointmentDate)
+        : (emp?.createdAt ? new Date(emp.createdAt) : new Date('2026-01-01'));
 
       logicalDates.forEach(date => {
-  const { windowStart, windowEnd } = getWindow(date, applyNightLogic, isAlternate);
+        const empOn = empAsOf(emp, date, rosterHistory);
+        const applyNightLogic = detectNight(empOn);
+        const isAlternate = isAlternativeDuty(empOn);
+        const { windowStart, windowEnd } = getWindow(date, applyNightLogic, isAlternate);
         const punches = logs.filter(l => l >= windowStart && l <= windowEnd);
 
         if (isAlternate) {
@@ -490,7 +546,7 @@ async function testPairing(req, res, next) {
             }
             parsedData.push({
               empCode:      staffId,
-              dutyType:     emp?.dutyType || 'alternative',
+              dutyType:     empOn?.dutyType || 'alternative',
               logicalDate:  date.toISOString().split('T')[0],
               timeIn:       offIn ? offIn.toISOString() : null,
               timeOut:      offOut ? offOut.toISOString() : null,
@@ -517,7 +573,7 @@ async function testPairing(req, res, next) {
 
           parsedData.push({
             empCode:      staffId,
-            dutyType:     emp?.dutyType || 'alternative',
+            dutyType:     empOn?.dutyType || 'alternative',
             logicalDate:  date.toISOString().split('T')[0],
             timeIn:       onIn ? onIn.toISOString() : null,
             timeOut:      onOut ? onOut.toISOString() : null,
@@ -533,7 +589,7 @@ async function testPairing(req, res, next) {
 
           parsedData.push({
             empCode:      staffId,
-            dutyType:     emp?.dutyType || (isNightBase ? 'night (auto)' : 'normal'),
+            dutyType:     empOn?.dutyType || (applyNightLogic ? 'night (auto)' : 'normal'),
             logicalDate:  date.toISOString().split('T')[0],
             timeIn:       timeIn  ? timeIn.toISOString()  : null,
             timeOut:      timeOut ? timeOut.toISOString() : null,
@@ -665,6 +721,7 @@ async function syncAttendance(req, res, next) {
     const employees = await prisma.employee.findMany();
     const empMap = {};
     employees.forEach(e => { empMap[String(e.empCode)] = e; });
+    const rosterHistory = await loadRosterHistory();
 
     const parsedData = [];
     const dStart = new Date(startDate);
@@ -681,10 +738,10 @@ async function syncAttendance(req, res, next) {
       const logs = logsByStaff[staffId].sort((a, b) => a - b);
       const emp  = empMap[staffId];
 
-  const isNight     = detectNight(emp);
-  const isAlternate = isAlternativeDuty(emp);
-
       logicalDates.forEach(date => {
+        const empOn       = empAsOf(emp, date, rosterHistory);
+        const isNight     = detectNight(empOn);
+        const isAlternate = isAlternativeDuty(empOn);
         const { windowStart, windowEnd } = getWindow(date, isNight, isAlternate);
         const punches = logs.filter(l => l >= windowStart && l <= windowEnd);
 
