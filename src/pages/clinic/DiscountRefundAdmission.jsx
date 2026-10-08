@@ -10,6 +10,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { canBackDate } from '../../utils/permissions';
 import useModalKeys from '../../hooks/useModalKeys';
 import { buildDischargeCertificatePrintHtml } from './dischargeCertificatePrintUtils';
+import { buildRefundSlipPrintHtml } from './refundSlipPrintUtils';
 import './DiscountRefundAdmission.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -238,6 +239,8 @@ export default function DiscountRefundAdmission() {
   const [billAmount, setBillAmount] = useState(0);
   const [receivedAmount, setReceivedAmount] = useState(0);
   const [history, setHistory] = useState([]);
+  const [paymentHistory, setPaymentHistory] = useState([]);
+  const [dischargeDate, setDischargeDate] = useState(null);
 
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('amount');
@@ -262,6 +265,22 @@ export default function DiscountRefundAdmission() {
     const w = window.open('', '_blank', 'width=700,height=900');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
     w.document.write(buildDischargeCertificatePrintHtml(data));
+    w.document.close();
+  }
+
+  // Payment Refund Slip — same popup print as the certificates (A4/A5, 130mm
+  // block, letterhead margin). Opened automatically after a refund is saved,
+  // and from each refund row in Previous Entries for a reprint.
+  function openRefundSlipPopup(entry, data = null) {
+    const w = window.open('', '_blank', 'width=700,height=900');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    w.document.write(buildRefundSlipPrintHtml({
+      admission: data?.admission || admission,
+      entry,
+      paymentHistory: data?.paymentHistory || paymentHistory,
+      dischargeDate: data ? data.dischargeDate : dischargeDate,
+      printedBy: user?.name || user?.username || user?.email || '',
+    }));
     w.document.close();
   }
 
@@ -297,6 +316,8 @@ export default function DiscountRefundAdmission() {
     setBillAmount(json.data.billAmount || 0);
     setReceivedAmount(json.data.receivedAmount || 0);
     setHistory(json.data.history || []);
+    setPaymentHistory(json.data.paymentHistory || []);
+    setDischargeDate(json.data.dischargeDate || null);
     // discountAmount is always stored as the already-resolved rupee value
     // (percent entries get converted before saving), so it's always safe to
     // pre-fill back in as a plain "amount" regardless of how it was entered.
@@ -322,6 +343,12 @@ export default function DiscountRefundAdmission() {
   async function handleAdd() {
     if (!admission) { toast.error('Pehle admission select karein'); return; }
     if (discountAmt <= 0 && refundAmt <= 0) { toast.error('Discount ya Refund amount daalein'); return; }
+    // receivedAmount is already net of every earlier refund (backend), so it
+    // is exactly what is still available to give back.
+    if (refundAmt > receivedAmount + 0.005) {
+      toast.error(`Refund ${fmt2(refundAmt)} zyada hai — wapas karne ke liye sirf ${fmt2(receivedAmount)} bacha hai`);
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`${API}/admission/discount-refund/${admission.id}/add`, {
@@ -342,16 +369,28 @@ export default function DiscountRefundAdmission() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
+      // Show success / warning for Refund voucher
       if (json.data?.voucherWarning) {
         toast(json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
       } else if (json.data?.voucherNo) {
-        toast.success(`Discount/Refund save ho gaya — Voucher ${json.data.voucherNo} auto-create ho gaya`);
-      } else {
+        toast.success(`Refund save ho gaya — Voucher ${json.data.voucherNo} auto-create ho gaya`);
+      }
+      // Show success / warning for Discount voucher
+      if (json.data?.discountVoucherWarning) {
+        toast(json.data.discountVoucherWarning, { icon: '⚠️', duration: 7000 });
+      } else if (json.data?.discountVoucherNo) {
+        toast.success(`Discount save ho gaya — Voucher ${json.data.discountVoucherNo} auto-create ho gaya`);
+      }
+      // Fallback if neither voucher was created
+      if (!json.data?.voucherNo && !json.data?.discountVoucherNo && !json.data?.voucherWarning && !json.data?.discountVoucherWarning) {
         toast.success('Discount/Refund save ho gaya');
       }
       // Reload the same admission (not resetForm/blank) so Net Balance and
       // history immediately reflect the discount that was just saved.
-      await loadAdmissionByNo(admission.admissionNo);
+      const fresh = await loadAdmissionByNo(admission.admissionNo);
+      // A refund was paid out → print the Payment Refund Slip for this entry.
+      const saved = (fresh?.history || [])[0];
+      if (refundAmt > 0 && saved && Number(saved.refundAmount) > 0) openRefundSlipPopup(saved, fresh);
     } catch (e) {
       toast.error(e.message || 'Error saving');
     } finally {
@@ -564,8 +603,11 @@ export default function DiscountRefundAdmission() {
                         <tr>
                           <th>Date</th>
                           <th>Discount</th>
+                          <th>Discount Voucher</th>
                           <th>Permission By</th>
                           <th>Refund</th>
+                          <th>Refund Voucher</th>
+                          <th />
                         </tr>
                       </thead>
                       <tbody>
@@ -573,8 +615,17 @@ export default function DiscountRefundAdmission() {
                           <tr key={h.id}>
                             <td>{fmtDateTime(h.createdAt)}</td>
                             <td className="dra-td-r">{fmt2(h.discountAmount)}{h.discountType === 'percent' ? ' %' : ''}</td>
+                            <td className="dra-td-voucher">{h.discountVoucherNo || '—'}</td>
                             <td>{h.permissionBy || '—'}</td>
                             <td className="dra-td-r">{fmt2(h.refundAmount)}</td>
+                            <td className="dra-td-voucher">{h.voucherNo || '—'}</td>
+                            <td>
+                              {Number(h.refundAmount) > 0 && (
+                                <button type="button" className="dra-print-btn" onClick={() => openRefundSlipPopup(h)} title="Payment Refund Slip print karein">
+                                  Print
+                                </button>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

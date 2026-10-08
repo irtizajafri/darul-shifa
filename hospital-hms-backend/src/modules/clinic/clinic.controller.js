@@ -1426,17 +1426,17 @@ async function deletePanelBillHeadItem(req, res, next) {
 async function addAdmissionDiscountRefund(req, res, next) {
   try {
     const { billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName, voucherDate } = req.body;
+    // First create the record (without voucher numbers yet)
     const data = await service.addAdmissionDiscountRefund(req.params.admissionId, {
       billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount, createdByUserId, createdByName,
     });
-    // Auto Voucher Expense — only for an actual Refund amount, never for a
-    // plain Discount (that's a waiver, not cash going back out). Never
-    // blocks the save above even if this fails — see tryCreateRefundVoucher.
-    // voucherDate is optional (Back Date, gated client-side by
-    // canBackDate) — falls back to today when not sent. The
-    // ClinicAdmissionDiscountRefund row's own createdAt always stays "now".
+    // Auto Voucher Expense — for both Refund and Discount amounts. Refund is
+    // cash going back out; Discount is a waiver that still needs an accounts
+    // entry so it shows up in the books. Neither blocks the save above if
+    // the voucher creation fails — see tryCreate* helpers.
+    const entityType = refundVoucherSvc.entityTypeFromPatientCategory(data.admission.patientCategory);
+
     if (Number(refundAmount) > 0) {
-      const entityType = refundVoucherSvc.entityTypeFromPatientCategory(data.admission.patientCategory);
       const result = await refundVoucherSvc.tryCreateRefundVoucher({
         entityType,
         payeeName: data.admission.patientName,
@@ -1447,6 +1447,30 @@ async function addAdmissionDiscountRefund(req, res, next) {
       if (result.voucherNo) data.voucherNo = result.voucherNo;
       else if (result.warning) data.voucherWarning = result.warning;
     }
+
+    // Only the NEW part of the discount (over the previous entry's discount)
+    // gets a voucher — the field is pre-filled with the existing discount.
+    const discountIncrease = Math.round(((Number(discountAmount) || 0) - (Number(data.previousDiscount) || 0)) * 100) / 100;
+    if (discountIncrease > 0) {
+      const result = await refundVoucherSvc.tryCreateDiscountVoucher({
+        entityType,
+        payeeName: data.admission.patientName,
+        amount: discountIncrease,
+        particulars: `Admission Discount — ${data.admission.patientName} (${data.admission.admissionNo})`,
+        voucherDate,
+      });
+      if (result.voucherNo) data.discountVoucherNo = result.voucherNo;
+      else if (result.warning) data.discountVoucherWarning = result.warning;
+    }
+
+    // Patch voucher numbers back onto the saved record so history shows them
+    if (data.voucherNo || data.discountVoucherNo) {
+      await service.patchDiscountRefundVoucherNos(data.id, {
+        voucherNo: data.voucherNo || null,
+        discountVoucherNo: data.discountVoucherNo || null,
+      });
+    }
+
     success(res, data, 'Discount/Refund save ho gaya');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -1651,7 +1675,11 @@ async function searchAdmissionsForProvisionalBill(req, res, next) {
 
 async function searchActiveAdmissionsForProvisionalBill(req, res, next) {
   try {
-    success(res, await service.searchActiveAdmissionsForProvisionalBill(req.query.q, req.query.panelOnly === '1' || req.query.panelOnly === 'true'));
+    success(res, await service.searchActiveAdmissionsForProvisionalBill(
+      req.query.q,
+      req.query.panelOnly === '1' || req.query.panelOnly === 'true',
+      req.query.category,
+    ));
   } catch (err) { next(err); }
 }
 

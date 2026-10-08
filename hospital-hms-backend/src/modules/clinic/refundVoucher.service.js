@@ -58,4 +58,39 @@ async function tryCreateRefundVoucher({ entityType, payeeName, amount, particula
   }
 }
 
-module.exports = { tryCreateRefundVoucher, entityTypeFromPaymentType, entityTypeFromPatientCategory };
+// Auto Voucher Expense for Admission Discount — mirrors tryCreateRefundVoucher
+// but uses the 'admission-discount' payee head account chain. A discount is a
+// waiver (no cash out), but it still needs an accounts entry so the discount
+// appears in books. Returns { voucherNo } or { warning }.
+async function tryCreateDiscountVoucher({ entityType, payeeName, amount, particulars, voucherDate: requestedDate }) {
+  try {
+    const chain = await accountsService.getDiscountVoucherAccountChain(entityType);
+    if (!chain) {
+      const book = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+      return { warning: `Discount save ho gaya, lekin voucher nahi bana — Accounts → ${book} → Parameters → List Attachments mein "Admission Discount" head ko pehle kisi account se link karein.` };
+    }
+    const voucherDate = requestedDate ? String(requestedDate).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const voucher = await accountsService.createVoucherExpense({
+      entityType,
+      mode: 'cash',
+      bankId: null,
+      voucherDate,
+      entries: [{
+        mainGlId:      chain.mainGlId,
+        subGlId:       chain.subGlId,
+        mainAccountId: chain.mainAccountId,
+        subAccountId:  chain.subAccountId,
+        accountCode:   chain.accountCode,
+        accountName:   chain.accountName,
+        payeeName,
+        amount,
+        particulars,
+      }],
+    });
+    return { voucherNo: voucher.voucherNo };
+  } catch (err) {
+    return { warning: `Discount save ho gaya, lekin voucher banate waqt error aayi: ${err.message}` };
+  }
+}
+
+module.exports = { tryCreateRefundVoucher, tryCreateDiscountVoucher, entityTypeFromPaymentType, entityTypeFromPatientCategory };

@@ -198,6 +198,7 @@ $bg:      #dde3ea;
 }
 
 .dra-td-r { text-align: right; }
+.dra-td-voucher { font-size: 11px; color: #1a3c6e; font-weight: 600; white-space: nowrap; }
 
 // ─── Footer ───────────────────────────────────────────────────────────────────
 .dra-footer {
@@ -440,3 +441,16 @@ $amber: #b8730b;
   justify-content: flex-end;
 }
 
+
+// Reprint button on refund rows in Previous Entries (Payment Refund Slip)
+.dra-print-btn {
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid #1a3c6e;
+  border-radius: 3px;
+  background: #fff;
+  color: #1a3c6e;
+  cursor: pointer;
+  &:hover { background: #1a3c6e; color: #fff; }
+}

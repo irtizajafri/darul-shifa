@@ -1940,12 +1940,13 @@ async function getAdmissionForDiscountRefund(admissionNo) {
   });
   if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
 
-  const [detail, history] = await Promise.all([
+  const [detail, history, certificate] = await Promise.all([
     getProvisionalBillDetail(admission.id),
     prisma.clinicAdmissionDiscountRefund.findMany({
       where: { admissionId: admission.id },
       orderBy: { id: 'desc' },
     }),
+    prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: admission.id }, select: { dischargeDate: true } }),
   ]);
 
   return {
@@ -1953,6 +1954,10 @@ async function getAdmissionForDiscountRefund(admissionNo) {
     billAmount: detail.balanceInfo.billAmount,
     receivedAmount: detail.balanceInfo.amountReceived,
     history,
+    // For the printed Payment Refund Slip: every advance/receipt slip on this
+    // admission, and the discharge date (from the Discharge Certificate).
+    paymentHistory: detail.patientInfo?.paymentHistory || [],
+    dischargeDate: certificate?.dischargeDate || null,
   };
 }
 
@@ -3074,12 +3079,43 @@ async function deletePanelBillHeadItem(itemId) {
   return { deleted: true };
 }
 
+async function sumAdmissionRefunds(admissionId) {
+  const agg = await prisma.clinicAdmissionDiscountRefund.aggregate({
+    where: { admissionId: Number(admissionId) },
+    _sum: { refundAmount: true },
+  });
+  return Number(agg._sum.refundAmount) || 0;
+}
+
 async function addAdmissionDiscountRefund(admissionId, {
   billAmount, receivedAmount, discountAmount, discountType, permissionBy, netBalance, refundAmount,
-  createdByUserId, createdByName,
+  createdByUserId, createdByName, voucherNo, discountVoucherNo,
 }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+
+  // Refund can never exceed the money still held for this admission:
+  // everything received minus every refund already paid out. Checked on the
+  // server (not just the screen) so no refund voucher is ever created for
+  // money that isn't there.
+  const refund = Number(refundAmount) || 0;
+  if (refund < 0) throw Object.assign(new Error('Refund amount manfi nahi ho sakti'), { status: 400 });
+  const detail = await getProvisionalBillDetail(admission.id);
+  const refundable = Number(detail.balanceInfo.amountReceived) || 0; // already net of past refunds
+  if (refund > refundable + 0.005) {
+    throw Object.assign(new Error(
+      `Refund ${refund.toFixed(2)} zyada hai — is admission par wapas karne ke liye sirf ${refundable.toFixed(2)} bacha hai (Received me se pichhle saare refunds nikal kar).`,
+    ), { status: 400 });
+  }
+  // The Discount field comes pre-filled with the current (latest) discount,
+  // so re-saving it must not book that same discount again. Only the
+  // increase over the previous discount gets a new discount voucher.
+  const previous = await prisma.clinicAdmissionDiscountRefund.findFirst({
+    where: { admissionId: Number(admissionId) },
+    orderBy: { id: 'desc' },
+    select: { discountAmount: true },
+  });
+  const previousDiscount = Number(previous?.discountAmount) || 0;
 
   const created = await prisma.clinicAdmissionDiscountRefund.create({
     data: {
@@ -3091,20 +3127,31 @@ async function addAdmissionDiscountRefund(admissionId, {
       permissionBy: permissionBy?.trim() || null,
       netBalance: Number(netBalance) || 0,
       refundAmount: Number(refundAmount) || 0,
+      voucherNo: voucherNo || null,
+      discountVoucherNo: discountVoucherNo || null,
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
     },
   });
-  // Controller uses these to auto-post a Refund Voucher (refundVoucher.service.js)
-  // when refundAmount > 0 — not needed for discount-only saves.
   return {
     ...created,
+    previousDiscount,
     admission: {
       admissionNo: admission.admissionNo,
       patientName: `${admission.patientTitle || ''} ${admission.patientName}`.trim(),
       patientCategory: admission.patientCategory,
     },
   };
+}
+
+async function patchDiscountRefundVoucherNos(id, { voucherNo, discountVoucherNo }) {
+  return prisma.clinicAdmissionDiscountRefund.update({
+    where: { id: Number(id) },
+    data: {
+      ...(voucherNo        != null ? { voucherNo }        : {}),
+      ...(discountVoucherNo != null ? { discountVoucherNo } : {}),
+    },
+  });
 }
 
 const DISCHARGE_REASONS = ['treated', 'transfer', 'lama', 'expired', 'discharge_on_request'];
@@ -3972,11 +4019,16 @@ async function searchAdmissionsForProvisionalBill(q) {
 // Discharged/Closed, further billing work moves to Final Bill (Discharge &
 // Refund, which already stays discharge-status-only on its own lookup) or
 // to Reports > Reprint, never back through this one.
-async function searchActiveAdmissionsForProvisionalBill(q, panelOnly) {
+// category: 'panel' → panel admissions only, 'cash' → everything that is NOT
+// panel (patientCategory 'private' etc.), anything else → all. panelOnly is
+// the older boolean form of category 'panel', kept for compatibility.
+async function searchActiveAdmissionsForProvisionalBill(q, panelOnly, category) {
   const term = String(q || '').trim();
+  const cat = category === 'panel' || category === 'cash' ? category : (panelOnly ? 'panel' : null);
   const where = {
     status: 'active',
-    ...(panelOnly ? { patientCategory: 'panel' } : {}),
+    ...(cat === 'panel' ? { patientCategory: 'panel' } : {}),
+    ...(cat === 'cash' ? { NOT: { patientCategory: 'panel' } } : {}),
     ...(term
       ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
       : {}),
@@ -6226,7 +6278,12 @@ async function getProvisionalBillDetail(admissionId) {
   // physically left the till, so it must reduce what's still "received"
   // against this bill — otherwise Balance/Refund keep recalculating as if
   // that refund was never actually paid out.
-  const refundGiven = Number(latestDiscountRefund?.refundAmount) || 0;
+  // EVERY refund entry is money that physically left the till (each one
+  // creates its own refund voucher), so subtract the SUM of all of them —
+  // not just the latest entry's. Using only the latest made Received jump
+  // back up after a second, smaller refund (3000 then 90 → showed 2910).
+  // (Discount is different: only the latest entry is the active discount.)
+  const refundGiven = await sumAdmissionRefunds(admission.id);
   const netAmountReceived = Math.max(0, amountReceived - refundGiven);
 
   return {
@@ -6745,11 +6802,8 @@ async function getDischargeBillDetail(admissionId) {
   // A refund already given out (via Discount & Refund Against Admission)
   // has physically left the till, same as on Provisional Bill — it must
   // reduce what's still counted as "received" here too.
-  const latestDischargeRefund = await prisma.clinicAdmissionDiscountRefund.findFirst({
-    where: { admissionId: Number(admissionId) },
-    orderBy: { id: 'desc' },
-  });
-  const refundGiven = Number(latestDischargeRefund?.refundAmount) || 0;
+  // Sum of ALL refunds given (see getProvisionalBillDetail for why).
+  const refundGiven = await sumAdmissionRefunds(admissionId);
   const netAmountReceived = Math.max(0, amountReceived - refundGiven);
   const netAmount = Math.max(0, billAmount - discountAmount);
 
@@ -10685,7 +10739,7 @@ module.exports = {
   deletePanelBillHead,
   addPanelBillHeadItem,
   deletePanelBillHeadItem,
-  addAdmissionDiscountRefund,
+  addAdmissionDiscountRefund, patchDiscountRefundVoucherNos,
   getDischargeCertificate,
   saveDischargeCertificate,
   getDischargeCertificateReport,

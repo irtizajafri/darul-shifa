@@ -4,9 +4,10 @@ $red:    #c62828;
 $amber:  #b8730b;
 $border: #bbb;
 
-// "Panel" toggle inside the Admission Lookup Modal — filters the list to
-// patientCategory 'panel' only.
+// Cash / Panel switch inside the Admission Lookup Modal — label shows which
+// list is on screen: green "Cash" (non-panel, default) or blue "Panel".
 .aa-modal-panel-toggle {
+  min-width: 56px;
   flex-shrink: 0;
   font-size: 11px;
   font-weight: 700;
@@ -19,6 +20,8 @@ $border: #bbb;
 
   &:hover { border-color: $blue; color: $blue; }
   &--active { background: $blue; border-color: $blue; color: #fff; }
+  &--cash { background: $green; border-color: $green; color: #fff; }
+  &--active:hover, &--cash:hover { color: #fff; filter: brightness(1.1); }
 }
 
 .pb-body {

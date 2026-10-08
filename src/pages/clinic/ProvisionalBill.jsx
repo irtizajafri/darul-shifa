@@ -31,31 +31,32 @@ function todayIso() { return new Date().toISOString().slice(0, 10); }
 
 
 // ── Admission Lookup Modal — active/admitted patients only ────────────────────
-// "Panel" toggle re-runs the same search with patientCategory restricted to
-// panel admissions — searchAdmissions is searchActiveAdmissionsForProvisionalBill,
-// which accepts (q, panelOnly); harmless no-op extra arg for any other caller.
+// Cash / Panel switch: the button shows which list is on screen — "Cash"
+// (default) = non-panel admissions only, click → "Panel" = panel admissions
+// only, click again → back to Cash. searchAdmissions is
+// searchActiveAdmissionsForProvisionalBill(q, category).
 function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [panelOnly, setPanelOnly] = useState(false);
+  const [category, setCategory] = useState('cash'); // 'cash' | 'panel'
   const timer = useRef(null);
 
   useEffect(() => {
     setLoading(true);
-    searchAdmissions(q, panelOnly)
+    searchAdmissions(q, category)
       .then((data) => setRows(data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchAdmissions, panelOnly]);
+  }, [searchAdmissions, category]);
 
   function handleQueryChange(val) {
     setQ(val);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setLoading(true);
-      searchAdmissions(val, panelOnly)
+      searchAdmissions(val, category)
         .then((data) => setRows(data || []))
         .catch(() => setRows([]))
         .finally(() => setLoading(false));
@@ -80,11 +81,12 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
           />
           <button
             type="button"
-            className={`aa-modal-panel-toggle ${panelOnly ? 'aa-modal-panel-toggle--active' : ''}`}
-            onClick={() => setPanelOnly((v) => !v)}
-            title="Sirf Panel patients dikhao"
+            className={`aa-modal-panel-toggle ${category === 'panel' ? 'aa-modal-panel-toggle--active' : 'aa-modal-panel-toggle--cash'}`}
+            onClick={() => setCategory((c) => (c === 'cash' ? 'panel' : 'cash'))}
+            title={category === 'cash' ? 'Abhi Cash patients dikh rahe hain — click karein Panel patients ke liye' : 'Abhi Panel patients dikh rahe hain — click karein Cash patients ke liye'}
+            aria-pressed={category === 'panel'}
           >
-            Panel
+            {category === 'cash' ? 'Cash' : 'Panel'}
           </button>
         </div>
         <div className="aa-modal-body">

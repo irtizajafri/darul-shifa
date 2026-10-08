@@ -322,6 +322,11 @@ const SYSTEM_HEAD_DEFS = [
   // (Corporate/Panel vs Non-Corporate) as the original slip/admission, so
   // this head exists once per entityType, each linked separately.
   { sourceType: 'slip-admission-refund', name: 'Slip/Admission Refund' },
+  // Same Link-to-Account-only pattern. When an Admission Discount is saved
+  // (Clinic → Discount & Refund Against Admission), the backend posts an auto
+  // Voucher Expense against whichever Sub Account is linked here — so the
+  // discount appears in the accounts books even though no cash is going out.
+  { sourceType: 'admission-discount', name: 'Admission Discount' },
 ];
 
 async function ensureSystemHeads(entityType) {
@@ -528,6 +533,29 @@ async function getAdvanceLoanVoucherAccountChain(entityType) {
 // 'slip-admission-refund' system head instead — see clinic/refundVoucher.service.js.
 async function getRefundVoucherAccountChain(entityType) {
   const head = await prisma.accPayeeHead.findFirst({ where: { sourceType: 'slip-admission-refund', entityType } });
+  if (!head) return null;
+  const link = await prisma.accPayeeHeadAccount.findFirst({
+    where: { payeeHeadId: head.id },
+    include: {
+      subAccount: {
+        include: { mainAccount: { include: { subGL: { include: { mainGL: true } } } } },
+      },
+    },
+  });
+  if (!link?.subAccount) return null;
+  const sa = link.subAccount;
+  return {
+    subAccountId: sa.id,
+    accountCode:  sa.code,
+    accountName:  sa.name,
+    mainAccountId: sa.mainAccount.id,
+    subGlId:      sa.mainAccount.subGL.id,
+    mainGlId:     sa.mainAccount.subGL.mainGL.id,
+  };
+}
+
+async function getDiscountVoucherAccountChain(entityType) {
+  const head = await prisma.accPayeeHead.findFirst({ where: { sourceType: 'admission-discount', entityType } });
   if (!head) return null;
   const link = await prisma.accPayeeHeadAccount.findFirst({
     where: { payeeHeadId: head.id },
@@ -3143,7 +3171,7 @@ module.exports = {
   getSalaryCeilingMonth, getSalaryLockSetting, setSalaryLockOverride, getGlobalOldestUnpaidSalaryMonth,
   getPayeeHeads, createPayeeHead, updatePayeeHead, deletePayeeHead, addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   getSurgeryHeadForMainAccount, addPayeeHeadStaffCategory, removePayeeHeadStaffCategory, getSurgeryPayeesForHead,
-  getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain, getRefundVoucherAccountChain,
+  getIpdConsultantHeadForMainAccount, getPendingConsultantFees, getAdvanceLoanVoucherAccountChain, getRefundVoucherAccountChain, getDiscountVoucherAccountChain,
   getPayeeEntries, createPayeeEntry, deletePayeeEntry, bulkSavePayeeEntries, getEmployeeList, getSupplierList, getDoctorList, getInventorySubcategories, getInventoryItemsBySubcategory, getInventoryItemsForHead, linkCustomHeadToInventoryHead, unlinkCustomHeadFromInventoryHead, getInventoryHeadForMainAccount,
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,

@@ -612,8 +612,10 @@ export const useClinicStore = create((set) => ({
   // Provisional Bill's own "start/continue a bill" lookup — active-only,
   // unlike searchAdmissionsForProvisionalBill above which stays status-
   // agnostic on purpose for reprinting an already-closed bill.
-  searchActiveAdmissionsForProvisionalBill: async (q, panelOnly) => {
-    return request(`/provisional-bill/search-active?q=${encodeURIComponent(q || '')}${panelOnly ? '&panelOnly=1' : ''}`);
+  // category: 'cash' | 'panel' (or true = 'panel' for older callers); omitted = all.
+  searchActiveAdmissionsForProvisionalBill: async (q, category) => {
+    const cat = category === true ? 'panel' : category;
+    return request(`/provisional-bill/search-active?q=${encodeURIComponent(q || '')}${cat === 'panel' || cat === 'cash' ? `&category=${cat}` : ''}`);
   },
 
   fetchAdmissionForAdjustment: async (id) => {

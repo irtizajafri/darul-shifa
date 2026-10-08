@@ -1668,6 +1668,8 @@ model ClinicAdmissionDiscountRefund {
   permissionBy    String?
   netBalance      Float           @default(0)
   refundAmount    Float           @default(0)
+  voucherNo       String?
+  discountVoucherNo String?
   createdByUserId String?
   createdByName   String?
   createdAt       DateTime        @default(now())
