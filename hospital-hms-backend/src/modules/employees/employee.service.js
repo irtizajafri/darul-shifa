@@ -87,10 +87,13 @@ async function ensureRosterHistoryTable() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_roster_history_emp_date
     ON employee_roster_history(employee_id, effective_from)
   `);
+  await prisma.$executeRawUnsafe(
+    'ALTER TABLE employee_roster_history ADD COLUMN IF NOT EXISTS duty_type TEXT'
+  );
   isRosterHistoryTableReady = true;
 }
 
-async function saveRosterHistory(employeeId, dutyRoster, isNightShift, effectiveFrom) {
+async function saveRosterHistory(employeeId, dutyRoster, isNightShift, effectiveFrom, dutyType) {
   await ensureRosterHistoryTable();
   const id = toIntId(employeeId, 'employee id');
   const rosterJson = JSON.stringify(Array.isArray(dutyRoster) ? dutyRoster : []);
@@ -98,20 +101,25 @@ async function saveRosterHistory(employeeId, dutyRoster, isNightShift, effective
   const today = effectiveFrom
     ? String(effectiveFrom).slice(0, 10)
     : new Date().toISOString().slice(0, 10);
+  const duty = dutyType === undefined || dutyType === null || dutyType === ''
+    ? null
+    : String(dutyType);
+  // COALESCE: a null incoming duty_type must not wipe an already-recorded one
   await prisma.$executeRawUnsafe(`
-    INSERT INTO employee_roster_history (employee_id, duty_roster, is_night_shift, effective_from)
-    VALUES ($1, $2::jsonb, $3, $4)
+    INSERT INTO employee_roster_history (employee_id, duty_roster, is_night_shift, effective_from, duty_type)
+    VALUES ($1, $2::jsonb, $3, $4, $5)
     ON CONFLICT (employee_id, effective_from) DO UPDATE SET
       duty_roster = EXCLUDED.duty_roster,
-      is_night_shift = EXCLUDED.is_night_shift
-  `, id, rosterJson, nightShift, today);
+      is_night_shift = EXCLUDED.is_night_shift,
+      duty_type = COALESCE(EXCLUDED.duty_type, employee_roster_history.duty_type)
+  `, id, rosterJson, nightShift, today, duty);
 }
 
 async function getRosterHistory(employeeId) {
   await ensureRosterHistoryTable();
   const id = toIntId(employeeId, 'employee id');
   const rows = await prisma.$queryRawUnsafe(`
-    SELECT id, employee_id, duty_roster, is_night_shift, effective_from
+    SELECT id, employee_id, duty_roster, is_night_shift, effective_from, duty_type
     FROM employee_roster_history
     WHERE employee_id = $1
     ORDER BY effective_from ASC
@@ -122,6 +130,7 @@ async function getRosterHistory(employeeId) {
     dutyRoster: typeof r.duty_roster === 'string' ? JSON.parse(r.duty_roster) : (r.duty_roster || []),
     isNightShift: Boolean(r.is_night_shift),
     effectiveFrom: r.effective_from,
+    dutyType: r.duty_type || null,
   }));
 }
 
@@ -564,7 +573,7 @@ async function update(id, payload) {
   if (payload.dutyRoster !== undefined) {
     oldEmpRoster = await prisma.employee.findUnique({
       where: { id: parseInt(id) },
-      select: { dutyRoster: true, isNightShift: true },
+      select: { dutyRoster: true, isNightShift: true, dutyType: true },
     });
   }
 
@@ -572,6 +581,9 @@ async function update(id, payload) {
   const extended = await upsertExtendedEmployeeFields(id, payload);
 
   if (payload.dutyRoster !== undefined) {
+    const dutyTypeForHistory = payload.dutyType !== undefined
+      ? payload.dutyType
+      : (updated.dutyType ?? null);
     const nightShift = payload.isNightShift !== undefined ? payload.isNightShift : (updated.isNightShift ?? false);
     const newEffFrom  = payload.rosterEffectiveFrom || new Date().toISOString().slice(0, 10);
     const newEffDate  = new Date(newEffFrom);
@@ -587,11 +599,17 @@ async function update(id, payload) {
         empIdInt, firstOfMonthStr
       );
       if (covered.length === 0) {
-        await saveRosterHistory(id, oldEmpRoster.dutyRoster, oldEmpRoster.isNightShift ?? false, firstOfMonthStr);
+        await saveRosterHistory(
+          id,
+          oldEmpRoster.dutyRoster,
+          oldEmpRoster.isNightShift ?? false,
+          firstOfMonthStr,
+          oldEmpRoster.dutyType ?? null
+        );
       }
     }
 
-    await saveRosterHistory(id, payload.dutyRoster, nightShift, newEffFrom);
+    await saveRosterHistory(id, payload.dutyRoster, nightShift, newEffFrom, dutyTypeForHistory);
 
     // When user explicitly provides a custom effective-from date, propagate
     // the new roster to all intermediate history entries up to today.
@@ -602,13 +620,18 @@ async function update(id, payload) {
       const empIdInt = toIntId(id, 'employee id');
       const rosterJson = JSON.stringify(Array.isArray(payload.dutyRoster) ? payload.dutyRoster : []);
       const todayStr = new Date().toISOString().slice(0, 10);
+      const duty = dutyTypeForHistory === undefined || dutyTypeForHistory === null || dutyTypeForHistory === ''
+        ? null
+        : String(dutyTypeForHistory);
       await prisma.$executeRawUnsafe(`
         UPDATE employee_roster_history
-        SET duty_roster = $1::jsonb, is_night_shift = $2
+        SET duty_roster = $1::jsonb,
+            is_night_shift = $2,
+            duty_type = COALESCE($6, duty_type)
         WHERE employee_id = $3
         AND effective_from > $4::date
         AND effective_from <= $5::date
-      `, rosterJson, nightShift, empIdInt, newEffFrom, todayStr);
+      `, rosterJson, nightShift, empIdInt, newEffFrom, todayStr, duty);
     }
   }
 

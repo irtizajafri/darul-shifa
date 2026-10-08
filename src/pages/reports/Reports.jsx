@@ -319,6 +319,48 @@ export default function Reports() {
     return emp.dutyRoster.find((d) => d.day === dayKey) || null;
   }, [emp, empRosterHistory]);
 
+  // Duty type as it stood on a given date. Falls back to the employee's
+  // current dutyType whenever history carries none, so employees without a
+  // recorded duty-type change calculate exactly as they did before.
+  const getDutyTypeForDate = useCallback((dateStr) => {
+    const currentDutyType = String(emp?.dutyType || '').toLowerCase();
+    if (!dateStr || empRosterHistory.length === 0) return currentDutyType;
+
+    const dateObj = new Date(dateStr);
+    if (Number.isNaN(dateObj.getTime())) return currentDutyType;
+
+    const applicable = empRosterHistory
+      .filter((h) => h.dutyType && new Date(h.effectiveFrom) <= dateObj)
+      .sort((a, b) => new Date(b.effectiveFrom) - new Date(a.effectiveFrom));
+
+    if (applicable.length === 0) return currentDutyType;
+    return String(applicable[0].dutyType).toLowerCase();
+  }, [emp, empRosterHistory]);
+
+  const isAlternativeDutyType = useCallback((dutyTypeValue) => {
+    const dt = String(dutyTypeValue || '').toLowerCase();
+    return dt === 'alternative' || dt === 'alternate';
+  }, []);
+
+  const isAlternativeOnDate = useCallback(
+    (dateStr) => isAlternativeDutyType(getDutyTypeForDate(dateStr)),
+    [getDutyTypeForDate, isAlternativeDutyType]
+  );
+
+  const toDayKey = useCallback((value) => {
+    if (!value) return '';
+    const s = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const pref = s.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (pref) return pref[1];
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
   const isRosterOff = useCallback((dateStr) => {
     const roster = getRosterForDate(dateStr);
     if (!roster) return false;
@@ -523,8 +565,7 @@ export default function Reports() {
 
             const isOff    = isRosterOff(dateStr);
             const isFuture = new Date(`${dateStr}T23:59:59`) > new Date();
-            const dutyType = String(emp?.dutyType || '').toLowerCase();
-            const isAlternativeDuty = dutyType === 'alternative' || dutyType === 'alternate';
+            const isAlternativeDuty = isAlternativeOnDate(dateStr);
 
             // ─── FIX 2: DB ka status priority pe hona chahiye ─────────────────
             // Pehle: status = isFuture ? 'Future' : (isOff ? 'Off' : (inTime ? 'Present' : 'Absent'))
@@ -593,8 +634,7 @@ export default function Reports() {
             const currDateStr = new Date(curr.date).toISOString().split('T')[0];
             const currIsFuture = new Date(`${currDateStr}T23:59:59`) > new Date();
             const currIsOff = isRosterOff(currDateStr);
-            const dutyType = String(emp?.dutyType || '').toLowerCase();
-            const isAlternativeDuty = dutyType === 'alternative' || dutyType === 'alternate';
+            const isAlternativeDuty = isAlternativeOnDate(currDateStr);
 
             if (currIsFuture) curr.status = 'Future';
             else if (isAlternativeDuty && currIsOff) curr.status = 'leave';
@@ -625,7 +665,7 @@ export default function Reports() {
     return () => {
       controller.abort();
     };
-  }, [emp?.empCode, month, year, apiAttendanceCache, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes]);
+  }, [emp?.empCode, month, year, apiAttendanceCache, getRosterForDate, toRosterDateTime, isRosterOff, getRosterScheduledMinutes, isAlternativeOnDate]);
 
   useEffect(() => {
     if (!month || !year) return;
@@ -801,8 +841,10 @@ export default function Reports() {
 
   const effectiveAttendance = apiAttendance.length ? apiAttendance : empAttendance;
 
-  const gatepassMinutes = useMemo(() => {
-    if (!emp) return 0;
+  // Kept per-gatepass (not just a total) so each one can be charged at the
+  // rate of its own date — duty type can change mid-month.
+  const gatepassEntries = useMemo(() => {
+    if (!emp) return [];
     return gatepasses
       .filter((g) => g.employeeId === emp.id)
       .filter((g) => String(g.nature || '').toLowerCase() === 'personal')
@@ -810,13 +852,22 @@ export default function Reports() {
         const d = new Date(g.issuedAt || g.outAt);
         return d.getMonth() + 1 === parseInt(month, 10) && d.getFullYear() === parseInt(year, 10);
       })
-      .reduce((sum, g) => {
+      .map((g) => {
         const outAt = new Date(g.issuedAt || g.outAt);
         const inAt  = g.validTill || g.inAt ? new Date(g.validTill || g.inAt) : new Date();
-        if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return sum;
-        return sum + Math.max(0, Math.round((inAt - outAt) / 60000));
-      }, 0);
+        if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return null;
+        return {
+          date: g.issuedAt || g.outAt,
+          minutes: Math.max(0, Math.round((inAt - outAt) / 60000)),
+        };
+      })
+      .filter(Boolean);
   }, [emp, gatepasses, month, year]);
+
+  const gatepassMinutes = useMemo(
+    () => gatepassEntries.reduce((sum, e) => sum + e.minutes, 0),
+    [gatepassEntries]
+  );
 
   const liveAttendanceWithOverrides = useMemo(() => {
     if (!emp?.empCode) return effectiveAttendance;
@@ -1012,23 +1063,22 @@ export default function Reports() {
     // Sort all results by date
     const sorted = result.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-    // Alternative shift: sirf punch aaye ya holiday wali rows
-    const dutyType = String(emp?.dutyType || '').toLowerCase();
-    if (dutyType === 'alternative' || dutyType === 'alternate') {
-      return sorted
-        .filter(r => {
-          const st = String(r.status || '').toLowerCase();
-          return r.actualIn || st === 'holiday_avail' || st === 'holiday_not_avail';
-        })
-        .map(r => {
-          const st = String(r.status || '').toLowerCase();
-          if (st === 'off_not_avail') return { ...r, status: 'present' };
-          return r;
-        });
-    }
-
-    return sorted;
-  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag]);
+    // Alternative shift: sirf punch aaye ya holiday wali rows.
+    // Per-row check — duty type mid-month badal sakta hai, to alternative wale
+    // dinon pe hi filter lage aur normal dinon ki rows jaisi hain waisi rahein.
+    return sorted
+      .filter((r) => {
+        if (!isAlternativeOnDate(toDayKey(r.date))) return true;
+        const st = String(r.status || '').toLowerCase();
+        return r.actualIn || st === 'holiday_avail' || st === 'holiday_not_avail';
+      })
+      .map((r) => {
+        if (!isAlternativeOnDate(toDayKey(r.date))) return r;
+        const st = String(r.status || '').toLowerCase();
+        if (st === 'off_not_avail') return { ...r, status: 'present' };
+        return r;
+      });
+  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag, isAlternativeOnDate, toDayKey]);
 
   // A past month's payslip must stay locked to whatever was saved when it
   // was generated (savedPayslipRows) — recalculating from live attendance
@@ -1209,26 +1259,28 @@ export default function Reports() {
     normalizeWaiveDeductionFlag(record?.waiveDeduction) || hasManualDeduction(record)
   ), [hasManualDeduction, normalizeWaiveDeductionFlag]);
 
-  const totalAbsents = effectiveAttendanceWithOverrides.filter((r) => {
+  const absentRows = effectiveAttendanceWithOverrides.filter((r) => {
     if (shouldSkipAutoDeduction(r)) return false;
     const status = normalizePayrollStatus(r.status);
     if (status !== 'absent') return false;
     const dateStr = new Date(r.date).toISOString().split('T')[0];
     if (new Date(`${dateStr}T23:59:59`) > new Date()) return false;
     return !isRosterOff(dateStr);
-  }).length;
+  });
+  const totalAbsents = absentRows.length;
 
   // ─── FIX 7: missed_out = sirf timeIn hai, timeOut missing ─────────────────
   // Yeh absent nahi — deduction partial hona chahiye ya HR decide kare
   // Filhaal missed_out ko 1x per day treat karo, lekin off days skip karo
   // (totalAbsents ki tarah isRosterOff check add kiya — Sunday missed punch galat deduct ho raha tha)
-  const totalMissedOut = effectiveAttendanceWithOverrides.filter((r) => {
+  const missedOutRows = effectiveAttendanceWithOverrides.filter((r) => {
     if (shouldSkipAutoDeduction(r)) return false;
     const status = normalizePayrollStatus(r.status);
     if (status !== 'missed_out') return false;
     const dateStr = new Date(r.date).toISOString().split('T')[0];
     return !isRosterOff(dateStr);
-  }).length;
+  });
+  const totalMissedOut = missedOutRows.length;
 
   const totalLeaves = effectiveAttendanceWithOverrides.filter((r) => {
     if (shouldSkipAutoDeduction(r)) return false;
@@ -1258,11 +1310,44 @@ export default function Reports() {
   const basePerDayRate = effectiveBaseTotalSal > 0 ? (effectiveBaseTotalSal / daysInSelectedMonth) : 0;
   const perDayRate = isAlternativeShift ? (basePerDayRate * 2) : basePerDayRate;
 
+  // Same rate, resolved for one specific date — duty type can change mid-month.
+  // The 'alternative' check mirrors isAlternativeShift above exactly (plain
+  // 'alternate' never doubled the rate, and must keep not doubling it).
+  const getPerDayRateForDate = (dateValue) => {
+    const key = toDayKey(dateValue);
+    if (!key) return perDayRate;
+    return getDutyTypeForDate(key) === 'alternative' ? (basePerDayRate * 2) : basePerDayRate;
+  };
+
+  // Totals are accumulated per distinct rate, not per row: a single-rate month
+  // then collapses to one `weight × rate` product, bit-identical to the plain
+  // `count × rate` this replaced. Summing row by row drifts by ~1e-12.
+  const groupWeightByDateRate = (items, getDate, getWeight) => {
+    const byRate = new Map();
+    items.forEach((item) => {
+      const rate = getPerDayRateForDate(getDate(item));
+      byRate.set(rate, (byRate.get(rate) || 0) + getWeight(item));
+    });
+    return byRate;
+  };
+
   // Fixed salary employee ko koi attendance deduction nahi lagti
   const isFixed = String(emp?.workingDays || '').toLowerCase() === 'fixed';
 
-  const absentDeduction   = isFixed ? 0 : totalAbsents * (perDayRate * 2);
-  const missedOutDeduction = isFixed ? 0 : totalMissedOut * perDayRate; // 1x deduction for missed punch
+  const absentDeduction = isFixed ? 0 : (() => {
+    let total = 0;
+    groupWeightByDateRate(absentRows, (r) => r.date, () => 1)
+      .forEach((count, rate) => { total += count * (rate * 2); });
+    return total;
+  })();
+
+  const missedOutDeduction = isFixed ? 0 : (() => {
+    let total = 0; // 1x for missed punch
+    groupWeightByDateRate(missedOutRows, (r) => r.date, () => 1)
+      .forEach((count, rate) => { total += count * rate; });
+    return total;
+  })();
+
   const leaveDeduction    = 0;
 
   const lateDeduction = (isFixed || !isLateDeductionEnabled)
@@ -1275,7 +1360,7 @@ export default function Reports() {
       const timingPenaltyMinutes = getTimingPenaltyMinutes(r);
       if (timingPenaltyMinutes <= 0) return sum;
 
-      const perMinuteRate = perDayRate / scheduledMinutes;
+      const perMinuteRate = getPerDayRateForDate(r.date) / scheduledMinutes;
       return sum + Math.round(timingPenaltyMinutes * perMinuteRate);
     }, 0);
 
@@ -1285,7 +1370,12 @@ export default function Reports() {
     return sum + Math.max(0, Number(r.manualDeduction) || 0);
   }, 0);
 
-  const gatepassDeduction  = Math.round(gatepassMinutes * (perDayRate / (8 * 60)));
+  const gatepassDeduction = Math.round((() => {
+    let total = 0;
+    groupWeightByDateRate(gatepassEntries, (e) => e.date, (e) => e.minutes)
+      .forEach((minutes, rate) => { total += minutes * (rate / (8 * 60)); });
+    return total;
+  })());
   const currentMonthKey    = `${year}-${month}`;
 
   const isSameEmployee = (recordEmployeeId, selectedEmployeeId) =>
@@ -1367,7 +1457,7 @@ export default function Reports() {
       if (Number.isNaN(outAt.getTime()) || Number.isNaN(inAt.getTime())) return sum;
       const mins         = Math.max(0, Math.round((inAt - outAt) / 60000));
       const rosterMins   = getRosterMinutesForDate(s.date);
-      const perMinute    = rosterMins > 0 ? perDayRate / rosterMins : 0;
+      const perMinute    = rosterMins > 0 ? getPerDayRateForDate(s.date) / rosterMins : 0;
       return sum + (mins * perMinute);
     }, 0));
 
@@ -1380,7 +1470,7 @@ export default function Reports() {
   // same isFixed gate jo deductions ke liye upar use hota hai.
   const overtimeAddition = isFixed ? 0 : Math.round(effectiveAttendanceWithOverrides.reduce((sum, r) => {
     const scheduledMinutes = getScheduledMinutes(r);
-    const perMinuteRate    = scheduledMinutes > 0 ? (perDayRate / scheduledMinutes) : 0;
+    const perMinuteRate    = scheduledMinutes > 0 ? (getPerDayRateForDate(r.date) / scheduledMinutes) : 0;
     return sum + (getAllocatedOvertimeMinutes(r) * perMinuteRate);
   }, 0));
 
@@ -1495,7 +1585,8 @@ export default function Reports() {
         const overtimeRateMinutes = isWorkedExtra
           ? Math.max(1, getRosterScheduledMinutes(dayStr))
           : scheduledMinutes;
-        const perMinuteRate    = overtimeRateMinutes > 0 ? (perDayRate / overtimeRateMinutes) : 0;
+        const rowPerDayRate    = getPerDayRateForDate(dayStr);
+        const perMinuteRate    = overtimeRateMinutes > 0 ? (rowPerDayRate / overtimeRateMinutes) : 0;
 
         const workedMinutes = record.actualIn && record.actualOut
           ? Math.max(0, Math.round((new Date(record.actualOut) - new Date(record.actualIn)) / 60000))
@@ -1534,11 +1625,11 @@ export default function Reports() {
         const baseWorkedMinutes = isPayablePresentRow
           ? rowDutyMinutes
           : Math.max(0, workedMinutes - overtimeMinutes);
-        const proratedGross = Math.round(Math.min(perDayRate, Math.max(0, baseWorkedMinutes * perMinuteRate)));
+        const proratedGross = Math.round(Math.min(rowPerDayRate, Math.max(0, baseWorkedMinutes * perMinuteRate)));
 
         const effectiveDayRate = actStatus === 'leave_with_pay' && lwpRateByDate[dayStr] != null
           ? lwpRateByDate[dayStr]
-          : perDayRate;
+          : rowPerDayRate;
 
         const grossPerDay = (isFuture || actStatus === 'leave')
           ? 0
@@ -1553,9 +1644,9 @@ export default function Reports() {
           : Math.round(lateMinutes * perMinuteRate);
 
         let dailyDeduction = 0;
-        if (actStatus === 'absent')      dailyDeduction = perDayRate * 2;
+        if (actStatus === 'absent')      dailyDeduction = rowPerDayRate * 2;
   else if (actStatus === 'leave')  dailyDeduction = 0;
-        else if (isMissedOut)            dailyDeduction = perDayRate; // 1x for missing punch
+        else if (isMissedOut)            dailyDeduction = rowPerDayRate; // 1x for missing punch
 
         const computedDeduction = (isAvailOff || isWorkedExtra || effectiveOffDay || isFuture)
           ? 0
@@ -1666,7 +1757,7 @@ export default function Reports() {
             }
           }
 
-          const extraGross = Math.round(Math.min(perDayRate, Math.max(0, extraDutyMinutes * perMinuteRate)));
+          const extraGross = Math.round(Math.min(rowPerDayRate, Math.max(0, extraDutyMinutes * perMinuteRate)));
           const extraOtVal = Math.round(Math.max(0, extraOvertimeMinutes * perMinuteRate));
           const extraTotal = Math.max(0, extraGross + extraOtVal);
 
@@ -1720,7 +1811,7 @@ export default function Reports() {
       ded:     i % 5 === 0 ? Math.round(15 * fallbackPerMinute).toString() : "0",
       total:   i % 6 === 0 ? "0" : Math.round(perDayRate).toString(),
     }));
-  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, emp?.workingDays, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled, normalizeWaiveDeductionFlag, lwpRateByDate]);
+  }, [effectiveAttendanceWithOverrides, month, year, perDayRate, basePerDayRate, getDutyTypeForDate, emp?.workingDays, getScheduledMinutes, getTimingPenaltyMinutes, getAllocatedOvertimeMinutes, isRosterOff, normalizePayrollStatus, rawPunchTimesByDate, hasManualDeduction, isLateDeductionEnabled, normalizeWaiveDeductionFlag, lwpRateByDate]);
 
   const calculatedSalaryFromRows = useMemo(() => {
     return detailedAttendanceRows.reduce((sum, row) => {
@@ -1899,7 +1990,7 @@ export default function Reports() {
       dutyHrs: r.dutyHrs,
       wrkDays: idx === 0 ? '28' : '12',
       ot:      r.ot,
-      perDay:  r.status === 'Future' ? '0' : (r.status === 'Leave With Pay' ? r.salary : Math.round(perDayRate).toString()),
+      perDay:  r.status === 'Future' ? '0' : (r.status === 'Leave With Pay' ? r.salary : Math.round(getPerDayRateForDate(r.date)).toString()),
       salary:  (() => {
         const salaryNum = Number(r.salary);
         const totalNum = Number(r.total);
@@ -1911,7 +2002,7 @@ export default function Reports() {
       ded:     r.ded,
       total:   r.total,
     }));
-  }, [detailedAttendanceRows, emp, perDayRate, lwpRateByDate]);
+  }, [detailedAttendanceRows, emp, perDayRate, basePerDayRate, getDutyTypeForDate, lwpRateByDate]);
 
   const payrollConsolidatedRows = useMemo(() => {
     return employees.map((e) => {
