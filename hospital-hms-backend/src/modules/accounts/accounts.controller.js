@@ -73,7 +73,19 @@ async function getNextCashSerial(req, res, next) { try { success(res, { nextSeri
 
 async function getAllPayeeEntries(req, res, next) { try { success(res, await svc.getAllPayeeEntries(et(req))); } catch (e) { next(e); } }
 async function getPayeeEntriesBySubAccount(req, res, next) { try { success(res, await svc.getPayeeEntriesBySubAccount(req.query.subAccountId, et(req))); } catch (e) { next(e); } }
-async function createVoucherExpense(req, res, next) { try { success(res, await svc.createVoucherExpense(req.body), 'created'); } catch (e) { next(e); } }
+async function createVoucherExpense(req, res, next) {
+  try { success(res, await svc.createVoucherExpense(req.body), 'created'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+// Confirm on an open voucher → add one line / remove one line (before Print)
+async function appendVoucherExpenseEntry(req, res, next) {
+  try { success(res, await svc.appendVoucherExpenseEntry(req.params.id, req.body?.entry || req.body), 'entry added'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+async function removeVoucherExpenseEntry(req, res, next) {
+  try { success(res, await svc.removeVoucherExpenseEntry(req.params.id, req.params.entryId), 'entry removed'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
 async function getVoucherExpenses(req, res, next) { try { success(res, await svc.getVoucherExpenses(et(req))); } catch (e) { next(e); } }
 async function updateVoucherExpense(req, res, next) {
   try { success(res, await svc.updateVoucherExpense(req.params.id, req.body), 'updated'); }
@@ -193,7 +205,7 @@ async function removePayeeHeadStaffCategory(req, res, next) {
   } catch (e) { next(e); }
 }
 
-async function saveDraftExpenseEntry(req, res, next) { try { success(res, await svc.saveDraftExpenseEntry({ ...req.body, entityType: et(req) }), 'Draft saved'); } catch (e) { next(e); } }
+async function saveDraftExpenseEntry(req, res, next) { try { success(res, await svc.saveDraftExpenseEntry({ ...req.body, entityType: et(req) }), 'Draft saved'); } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); } }
 async function getDraftExpenses(req, res, next) { try { success(res, await svc.getDraftExpenses(et(req), req.query.userId)); } catch (e) { next(e); } }
 async function deleteDraftExpense(req, res, next) { try { await svc.deleteDraftExpense(req.params.id); success(res, null, 'Draft deleted'); } catch (e) { next(e); } }
 async function flashDraftsNow(req, res, next) {
@@ -332,7 +344,7 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
-  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
+  getAllPayeeEntries, createVoucherExpense, appendVoucherExpenseEntry, removeVoucherExpenseEntry, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,

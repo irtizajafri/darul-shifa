@@ -42,7 +42,7 @@ const menuItems = [
       // skipGrnQueue=1 — this shortcut is for a quick Clinic-side payment,
       // not Accounts' own GRN-backlog workflow, so the Pending GRN Queue
       // popup (irrelevant here) shouldn't auto-open (see VoucherExpenseForm).
-      { label: 'General Payment',  path: '/accounts/non-corporate/transactions/voucher-expense/form?skipGrnQueue=1' },
+      { label: 'General Payment',  path: '/accounts/non-corporate/transactions/voucher-expense/form?skipGrnQueue=1&source=clinic' },
       { label: 'Mark Attendance',  path: '/attendance' },
       { label: 'Short Leave',      path: '/shortleave' },
       { label: 'Gate Pass',        path: '/gatepass' },

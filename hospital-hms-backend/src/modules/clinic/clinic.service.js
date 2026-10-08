@@ -1978,9 +1978,21 @@ async function getPanelAdmissionBilling(admissionNo) {
 
   const dischargeCertificate = await prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: admission.id } });
   // Same gate as the search modal (see searchPanelAdmissions) — enforced here
-  // too so typing an Admission # in directly can't skip it.
+  // too so typing an Admission # in directly can't skip it: a saved
+  // Discharge Certificate, or (panel files) status Discharge.
+  if (!dischargeCertificate && admission.status !== 'discharge') {
+    throw Object.assign(new Error('Is admission ka Discharge Certificate abhi tak nahi bana aur file Discharge bhi nahi hui — Billing sirf uske baad show hoti hai'), { status: 400 });
+  }
+  // Discharged via Admission Status Change (no certificate) → take the
+  // discharge date from that status change.
+  let statusDischargeDate = null;
   if (!dischargeCertificate) {
-    throw Object.assign(new Error('Is admission ka Discharge Certificate abhi tak nahi bana — Billing sirf uske baad show hoti hai'), { status: 400 });
+    const log = await prisma.clinicAdmissionStatusLog.findFirst({
+      where: { admissionId: admission.id, toStatus: 'discharge' },
+      orderBy: { changedAt: 'desc' },
+      select: { changedAt: true },
+    });
+    statusDischargeDate = log?.changedAt || null;
   }
 
   const [detail, billHeads, panelHeadOrders, panelCompany, panelEmployee] = await Promise.all([
@@ -2085,7 +2097,7 @@ async function getPanelAdmissionBilling(admissionNo) {
       data: {
         admissionId: admission.id,
         admitDate: admission.createdAt,
-        dischargeDate: dischargeCertificate?.dischargeDate || null,
+        dischargeDate: dischargeCertificate?.dischargeDate || statusDischargeDate || null,
         patientName: livePatientName || null,
         consultantName: detail.consultant?.name || null,
         diagnosis: dischargeCertificate?.diagnosis || null,
@@ -2100,6 +2112,8 @@ async function getPanelAdmissionBilling(admissionNo) {
     if (header.patientName == null && livePatientName) backfill.patientName = livePatientName;
     if (header.consultantName == null && detail.consultant?.name) backfill.consultantName = detail.consultant.name;
     if (header.diagnosis == null && dischargeCertificate?.diagnosis) backfill.diagnosis = dischargeCertificate.diagnosis;
+    // A certificate saved later fills in the discharge date if it was missing.
+    if (header.dischargeDate == null && dischargeCertificate?.dischargeDate) backfill.dischargeDate = dischargeCertificate.dischargeDate;
     if (Object.keys(backfill).length) {
       header = await prisma.clinicPanelBillingHeader.update({ where: { admissionId: admission.id }, data: backfill });
     }
@@ -4055,10 +4069,16 @@ async function searchPanelAdmissions(q) {
     // the company" event; before that it stays out of Billing entirely, per
     // explicit instruction (Provisional Bill itself is still worked on the
     // normal Provisional Bill screen the whole time, same as any admission).
-    dischargeCertificate: { isNot: null },
-    ...(term
-      ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
-      : {}),
+    // ...or, for panel files only, once the file status is Discharge — e.g.
+    // discharged from Admission Status Change without a certificate. It
+    // would otherwise drop out of Provisional Bill (active-only) and never
+    // reach Billing either (owner's decision, 2026-10-08).
+    AND: [
+      { OR: [{ dischargeCertificate: { isNot: null } }, { status: 'discharge' }] },
+      ...(term
+        ? [{ OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }]
+        : []),
+    ],
   };
   const rows = await prisma.clinicAdmission.findMany({ where, orderBy: { id: 'desc' }, take: 100 });
   return rows.map((a) => ({
@@ -6285,9 +6305,15 @@ async function getProvisionalBillDetail(admissionId) {
   // (Discount is different: only the latest entry is the active discount.)
   const refundGiven = await sumAdmissionRefunds(admission.id);
   const netAmountReceived = Math.max(0, amountReceived - refundGiven);
+  // Panel patient's company — printed on its own line on the bill (the
+  // "S/o" line must not carry the company name; see ProvisionalBillPrintTemplate).
+  const panelCompany = admission.panelCompanyId
+    ? await prisma.clinicPanelCompany.findUnique({ where: { id: admission.panelCompanyId }, select: { name: true } }).catch(() => null)
+    : null;
 
   return {
     admission,
+    panelCompanyName: panelCompany?.name || null,
     roomCategory,
     bed,
     surgeryType,

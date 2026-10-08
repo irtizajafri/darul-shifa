@@ -32,6 +32,14 @@ function numToWords(n) {
   return cvt(Math.abs(Math.floor(n))).trim();
 }
 
+// "W/o" / "wife" → "W/o"; blank → "S/o" (the bill's default label).
+function relationLabel(type) {
+  const v = String(type || '').trim();
+  if (!v) return 'S/o';
+  if (/^[a-z]\/o$/i.test(v)) return v.charAt(0).toUpperCase() + '/o';
+  return { son: 'S/o', daughter: 'D/o', wife: 'W/o', husband: 'H/o' }[v.toLowerCase()] || v;
+}
+
 export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
   const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, pharmacyAmount, balanceInfo } = detail;
@@ -101,6 +109,7 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
     });
   }
 
+  const isPanel = admission.patientCategory === 'panel';
   const categoryLabel = { private: 'Private Patient', staff: 'Staff Patient', panel: 'Panel Patient', cc: 'CC Patient', complementary: 'Complementary Patient' }[admission.patientCategory] || 'Private Patient';
   const balanceWords = balanceInfo.balance > 0 ? numToWords(Math.floor(balanceInfo.balance)) : (balanceInfo.refund > 0 ? numToWords(Math.floor(balanceInfo.refund)) : 'zero');
 
@@ -126,11 +135,20 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
             <td className="v">{dateStr}</td>
           </tr>
           <tr>
-            <td className="l">S/o.</td>
-            <td className="v">{admission.responsibleParty || '—'}</td>
+            {/* Panel files often have the company typed into Responsible Party,
+                so for panel the S/o line uses the admission's own relation
+                (S/o / W/o / D/o + name) and the company gets its own line. */}
+            <td className="l">{isPanel ? `${relationLabel(admission.relationType)}.` : 'S/o.'}</td>
+            <td className="v">{isPanel ? (admission.relationName || '—') : (admission.responsibleParty || '—')}</td>
             <td className="l">Surgery:</td>
             <td className="v">{admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission'}</td>
           </tr>
+          {isPanel && (
+            <tr>
+              <td className="l">Company:</td>
+              <td className="v" colSpan={3}>{detail.panelCompanyName || '—'}</td>
+            </tr>
+          )}
           <tr>
             <td className="l">Category:</td>
             <td className="v">{roomCategory?.name || '—'}</td>

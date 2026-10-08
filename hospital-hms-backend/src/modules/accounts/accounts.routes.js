@@ -70,6 +70,8 @@ router.get('/consultant-visits', ctrl.getConsultantVisits);
 router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);
 router.post('/voucher-expense', ctrl.createVoucherExpense);
+router.post('/voucher-expense/:id/entries', ctrl.appendVoucherExpenseEntry);
+router.delete('/voucher-expense/:id/entries/:entryId', ctrl.removeVoucherExpenseEntry);
 router.put('/voucher-expense/:id', ctrl.updateVoucherExpense);
 router.delete('/voucher-expense/:id', ctrl.deleteVoucherExpense);
 

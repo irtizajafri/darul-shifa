@@ -2058,8 +2058,18 @@ async function getOpdVisitForCancel(req, res, next) {
 
 async function cancelOpdVisit(req, res, next) {
   try {
-    const { reason, note, cancelledBy } = req.body;
+    const { reason, note, cancelledBy, voucherDate } = req.body;
     const data = await service.cancelOpdVisit(req.params.id, { reason, note, cancelledBy });
+    // Zero-amount voucher for audit record — never blocks the cancel above.
+    const entityType = refundVoucherSvc.entityTypeFromPaymentType(data.paymentType);
+    const result = await refundVoucherSvc.tryCreateCancelSlipVoucher({
+      entityType,
+      payeeName: data.patientName,
+      particulars: `Slip Cancel — ${data.patientName} (${data.serialNo})`,
+      voucherDate,
+    });
+    if (result.voucherNo) data.voucherNo = result.voucherNo;
+    else if (result.warning) data.voucherWarning = result.warning;
     success(res, data, 'Slip cancel ho gayi');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);

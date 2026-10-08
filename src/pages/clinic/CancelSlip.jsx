@@ -134,7 +134,13 @@ export default function CancelSlip() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Cancel nahi ho saki');
-      toast.success('Slip cancel ho gayi');
+      if (json.data?.voucherWarning) {
+        toast('Slip cancel ho gayi — ' + json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
+      } else if (json.data?.voucherNo) {
+        toast.success(`Slip cancel ho gayi — Voucher ${json.data.voucherNo} bana`);
+      } else {
+        toast.success('Slip cancel ho gayi');
+      }
       resetToSearch();
     } catch (e) {
       toast.error(e.message || 'Error cancelling slip');

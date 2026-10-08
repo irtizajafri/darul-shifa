@@ -58,6 +58,40 @@ async function tryCreateRefundVoucher({ entityType, payeeName, amount, particula
   }
 }
 
+// Auto Voucher Expense for Cancel Slip — zero-amount voucher for audit record.
+// Uses the same 'slip-admission-refund' account chain (no cash out, just a
+// trace that a cancellation happened in the books).
+async function tryCreateCancelSlipVoucher({ entityType, payeeName, particulars, voucherDate: requestedDate }) {
+  try {
+    const chain = await accountsService.getRefundVoucherAccountChain(entityType);
+    if (!chain) {
+      const book = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+      return { warning: `Slip cancel ho gayi, lekin voucher nahi bana — Accounts → ${book} → Parameters → List Attachments mein "Slip/Admission Refund" head ko pehle kisi account se link karein.` };
+    }
+    const voucherDate = requestedDate ? String(requestedDate).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const voucher = await accountsService.createVoucherExpense({
+      entityType,
+      mode: 'cash',
+      bankId: null,
+      voucherDate,
+      entries: [{
+        mainGlId:      chain.mainGlId,
+        subGlId:       chain.subGlId,
+        mainAccountId: chain.mainAccountId,
+        subAccountId:  chain.subAccountId,
+        accountCode:   chain.accountCode,
+        accountName:   chain.accountName,
+        payeeName,
+        amount:        0,
+        particulars,
+      }],
+    });
+    return { voucherNo: voucher.voucherNo };
+  } catch (err) {
+    return { warning: `Slip cancel ho gayi, lekin voucher banate waqt error aayi: ${err.message}` };
+  }
+}
+
 // Auto Voucher Expense for Admission Discount — mirrors tryCreateRefundVoucher
 // but uses the 'admission-discount' payee head account chain. A discount is a
 // waiver (no cash out), but it still needs an accounts entry so the discount
@@ -93,4 +127,4 @@ async function tryCreateDiscountVoucher({ entityType, payeeName, amount, particu
   }
 }
 
-module.exports = { tryCreateRefundVoucher, tryCreateDiscountVoucher, entityTypeFromPaymentType, entityTypeFromPatientCategory };
+module.exports = { tryCreateRefundVoucher, tryCreateDiscountVoucher, tryCreateCancelSlipVoucher, entityTypeFromPaymentType, entityTypeFromPatientCategory };

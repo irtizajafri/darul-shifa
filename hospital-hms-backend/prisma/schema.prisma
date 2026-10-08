@@ -2481,6 +2481,9 @@ model AccVoucherExpenseEntry {
   // an admission instead of a normal Sub Account — the admission number is
   // kept here so reprints/reports can show which patient this payment was for.
   admissionNo   String?
+  // Items this line marked paid that have no link table (migration 041) —
+  // { visitIds, opdDoctorIds, salary: {empCode, month, year}, utilityBillIds }
+  paidRefs      Json?
   createdAt     DateTime          @default(now())
 
   // Un-Presented Cheque List — a cheque-mode entry stays "Un-Presented"
@@ -3041,6 +3044,9 @@ model UtilityActualBill {
   unitsCharges Float?
   fixedCharges Float?
   notes        String?
+  // Paid through Voucher Expense (migration 041)
+  isPaid             Boolean  @default(false)
+  paidVoucherEntryId Int?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

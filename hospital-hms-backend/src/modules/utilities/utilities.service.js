@@ -273,7 +273,9 @@ async function lastBillByMeter() {
       meterId: m.id,
       meterNo: m.meterNo,
       utility: m.utility,
-      lastBill: b ? { postedAt: b.createdAt, amount: b.amount, fromDate: b.fromDate, toDate: b.toDate } : null,
+      // id/isPaid let Voucher Expense pay a bill once and then hide it
+      // (UtilityActualBill.isPaid, migration 041).
+      lastBill: b ? { id: b.id, isPaid: Boolean(b.isPaid), postedAt: b.createdAt, amount: b.amount, fromDate: b.fromDate, toDate: b.toDate } : null,
     };
   });
 }
