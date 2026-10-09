@@ -135,7 +135,7 @@ function parsePanelMedicineIssuanceExcel(file) {
 // the results view lands once its own reference screenshot is provided,
 // matching how Panel Cheques Report was staged in two steps.
 export default function MedicineReport() {
-  const { panelCompanies, fetchPanelCompanies, fetchPanelMedicineIssuanceReport } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies, pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceReport } = useClinicStore();
   const reportRef = useRef(null);
 
   const [showFilter, setShowFilter] = useState(true);
@@ -150,7 +150,8 @@ export default function MedicineReport() {
   const [showCompanyPicker, setShowCompanyPicker] = useState(false);
 
   const [viewMode, setViewMode] = useState('details'); // 'details' | 'summary'
-  const [summaryCompanyId, setSummaryCompanyId] = useState('ALL');
+  // Medical Store (Parameters > Pharmacy Stores) — 'ALL' | 'hospital' | store id.
+  const [storeFilter, setStoreFilter] = useState('ALL');
 
   const [showImport, setShowImport] = useState(false);
 
@@ -159,13 +160,21 @@ export default function MedicineReport() {
   const [loading, setLoading] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState(null);
 
-  useEffect(() => { fetchPanelCompanies(); }, [fetchPanelCompanies]);
+  useEffect(() => { fetchPanelCompanies(); fetchPharmacyStores(); }, [fetchPanelCompanies, fetchPharmacyStores]);
 
   // ESC closes the filter dialog — unless the Company picker is stacked on top
   // of it, in which case ESC should only dismiss the picker (its own hook).
   useModalKeys({ active: showFilter && !showCompanyPicker, onEsc: () => setShowFilter(false) });
 
   const selectedCompany = panelCompanies.find((c) => String(c.id) === String(companyId));
+  const storeOptions = [
+    { id: 'ALL', label: 'ALL' },
+    // Pharmacy Stores usually already has a "HOSPITAL STORE" — only add our
+    // own In-House option when it doesn't.
+    ...(pharmacyStores.some((s) => /hospital/i.test(s.name)) ? [] : [{ id: 'hospital', label: 'Hospital Store' }]),
+    ...pharmacyStores.map((s) => ({ id: String(s.id), label: s.status === 'inactive' ? `${s.name} (inactive)` : s.name })),
+  ];
+  const storeLabel = storeOptions.find((o) => o.id === storeFilter)?.label || 'ALL';
 
   async function handleView() {
     if (scopeMode === 'admission' && !admissionNo.trim()) {
@@ -176,7 +185,6 @@ export default function MedicineReport() {
       toast.error('From/To date select karein');
       return;
     }
-    const effectiveCompanyId = (viewMode === 'summary' && summaryCompanyId !== 'ALL') ? summaryCompanyId : companyId;
     setLoading(true);
     try {
       const res = await fetchPanelMedicineIssuanceReport({
@@ -185,12 +193,13 @@ export default function MedicineReport() {
         dateType: scopeMode === 'date' ? dateType : undefined,
         fromDate: scopeMode === 'date' ? fromDate : undefined,
         toDate: scopeMode === 'date' ? toDate : undefined,
-        panelCompanyId: effectiveCompanyId || undefined,
+        panelCompanyId: companyId || undefined,
+        storeFilter,
         viewMode,
       });
       setData(res);
       setShown(true);
-      setAppliedFilters({ scopeMode, admissionNo: admissionNo.trim(), dateType, fromDate, toDate });
+      setAppliedFilters({ scopeMode, admissionNo: admissionNo.trim(), dateType, fromDate, toDate, storeLabel });
       setShowFilter(false);
     } catch (err) {
       toast.error(err.message || 'Report load nahi hui');
@@ -225,7 +234,8 @@ export default function MedicineReport() {
                 <span>
                   {appliedFilters.scopeMode === 'admission'
                     ? `Admission # : ${appliedFilters.admissionNo}`
-                    : `From : ${fmtDate(appliedFilters.fromDate)} &nbsp; To : ${fmtDate(appliedFilters.toDate)}`}
+                    : `From : ${fmtDate(appliedFilters.fromDate)}  To : ${fmtDate(appliedFilters.toDate)}`}
+                  {'  |  '}Medical Store : {appliedFilters.storeLabel}
                 </span>
                 <span>Produced On : {new Date().toLocaleString('en-GB')}</span>
               </div>
@@ -350,8 +360,7 @@ export default function MedicineReport() {
           onPickCompany={() => setShowCompanyPicker(true)}
           onClearCompany={() => setCompanyId('')}
           viewMode={viewMode} onViewModeChange={setViewMode}
-          summaryCompanyId={summaryCompanyId} onSummaryCompanyIdChange={setSummaryCompanyId}
-          companies={panelCompanies}
+          storeFilter={storeFilter} onStoreFilterChange={setStoreFilter} storeOptions={storeOptions}
           onClose={() => setShowFilter(false)}
           onView={handleView}
         />
@@ -376,7 +385,7 @@ function FilterModal({
   scopeMode, onScopeModeChange, admissionNo, onAdmissionNoChange,
   dateType, onDateTypeChange, fromDate, onFromDateChange, toDate, onToDateChange,
   selectedCompany, onPickCompany, onClearCompany,
-  viewMode, onViewModeChange, summaryCompanyId, onSummaryCompanyIdChange, companies,
+  viewMode, onViewModeChange, storeFilter, onStoreFilterChange, storeOptions,
   onClose, onView,
 }) {
   return (
@@ -456,11 +465,14 @@ function FilterModal({
               Admit wise Summary
             </label>
             <SearchableSelect
-              options={[{ id: 'ALL' }, ...companies]}
-              value={summaryCompanyId}
-              onChange={(v) => onSummaryCompanyIdChange(v)}
-              getKey={(c) => c.id}
-              getLabel={(c) => (c.id === 'ALL' ? 'ALL' : `${c.code} — ${c.name}`)}
+              options={storeOptions}
+              value={storeFilter}
+              onChange={(v) => onStoreFilterChange(v || 'ALL')}
+              getKey={(o) => o.id}
+              getLabel={(o) => o.label}
+              placeholder="Medical Store"
+              title="Medical Store"
+
               clearable={false}
               size="sm"
               style={{ flex: 1, minWidth: 160 }}

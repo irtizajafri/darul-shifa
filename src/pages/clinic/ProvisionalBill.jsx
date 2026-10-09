@@ -599,7 +599,10 @@ export default function ProvisionalBill() {
     if (!pharmRow.medDate) return toast.error('Date select karo');
     setAddingPharmRow(true);
     try {
-      await addProvisionalPharmacyItem(admissionId, pharmRow);
+      await addProvisionalPharmacyItem(admissionId, {
+        ...pharmRow,
+        createdByName: user?.name || user?.username || user?.email || null,
+      });
       // Keep Store selected — the next medicine in this sitting is almost
       // always from the same outside store, so only the item fields clear.
       setPharmRow(r => ({ ...emptyPharmRow, storeId: r.storeId }));

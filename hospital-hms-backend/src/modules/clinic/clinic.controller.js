@@ -1752,8 +1752,8 @@ async function confirmPanelMedicineIssuanceImportBatch(req, res, next) {
 
 async function getPanelMedicineIssuanceReport(req, res, next) {
   try {
-    const { scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode } = req.query;
-    success(res, await service.getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }));
+    const { scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode } = req.query;
+    success(res, await service.getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode }));
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -1783,8 +1783,8 @@ async function confirmPanelMedicineIssuanceTxnImportBatch(req, res, next) {
 
 async function getPanelMedicineIssuanceTxnReport(req, res, next) {
   try {
-    const { scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode } = req.query;
-    success(res, await service.getPanelMedicineIssuanceTxnReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }));
+    const { scopeMode, admissionNo, dateType, fromDate, toDate, storeFilter, viewMode } = req.query;
+    success(res, await service.getPanelMedicineIssuanceTxnReport({ scopeMode, admissionNo, dateType, fromDate, toDate, storeFilter, viewMode }));
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);

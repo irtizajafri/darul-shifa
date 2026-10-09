@@ -410,6 +410,10 @@ export default function VoucherExpenseForm() {
   const [linkedHeadName, setLinkedHeadName] = useState('');
   const [linkedHeadType, setLinkedHeadType] = useState('');
   const [payeeSearch, setPayeeSearch]   = useState('');
+  // Payee suggestion list: open while the user is searching, closed once a
+  // payee is picked (picking used to leave it open, because the picked
+  // name stays in the search box).
+  const [payeeListOpen, setPayeeListOpen] = useState(false);
   const [salaryModal, setSalaryModal]   = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [grnModal, setGrnModal]         = useState(null);
@@ -1671,9 +1675,14 @@ export default function VoucherExpenseForm() {
                   className="ve-form__payee-search"
                   placeholder="Search by name or code…"
                   value={payeeSearch}
-                  onChange={(e) => { setPayeeSearch(e.target.value); setEntry((f) => ({ ...f, payeeName: '' })); }}
+                  onChange={(e) => { setPayeeSearch(e.target.value); setEntry((f) => ({ ...f, payeeName: '' })); setPayeeListOpen(true); }}
+                  onFocus={() => setPayeeListOpen(true)}
+                  onClick={() => setPayeeListOpen(true)}
+                  // delay so a click on a list item lands before the list hides
+                  onBlur={() => setTimeout(() => setPayeeListOpen(false), 150)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setPayeeListOpen(false); } }}
                 />
-                {(payeeSearch || !entry.payeeName) && (
+                {payeeListOpen && (
                   <div className="ve-form__payee-list">
                     {linkedPayees
                       .filter((p) => {
@@ -1685,7 +1694,9 @@ export default function VoucherExpenseForm() {
                         <div
                           key={p.id}
                           className={`ve-form__payee-item ${entry.payeeName === p.name ? 'active' : ''}`}
+                          onMouseDown={(e) => e.preventDefault()}
                           onClick={() => {
+                            setPayeeListOpen(false);
                             if (linkedHeadType === 'employee') openSalaryModal(p);
                             else if (linkedHeadType === 'vendor') openGrnModal(p);
                             else if (linkedHeadType === 'doctor') openConsultantModal(p);

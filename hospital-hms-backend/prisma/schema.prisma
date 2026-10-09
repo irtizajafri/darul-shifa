@@ -633,6 +633,7 @@ model InventorySalesInvoice {
   markupPercent   Float                          @default(0)
   saleRate        Float
   totalAmount     Float
+  createdByName   String?
   createdAt       DateTime                       @default(now())
   updatedAt       DateTime                       @updatedAt
 
@@ -874,6 +875,7 @@ model ClinicProvisionalPharmacyItem {
   amount      Float                @default(0)
   medDate     DateTime
   remarks     String?
+  createdByName String?
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
 

@@ -6,11 +6,12 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
+import { buildMedicineIssuancePrintHtml } from './medicineIssuancePrintUtils';
 import useModalKeys from '../../../hooks/useModalKeys';
-// Same exact UI as Panels > Reports > Medicine Report (down to the class
-// names) — this is a deliberate visual duplicate, only the data underneath
-// is separate (see clinic.service.js's ClinicPanelMedicineIssuanceTxn*).
+// Shares Panels > Reports > Medicine Report's styles; the Cash layout's own
+// extras (patient grid, store filter) live in MedicineIssuanceTransaction.scss.
 import './MedicineReport.scss';
+import './MedicineIssuanceTransaction.scss';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -20,13 +21,24 @@ const fmtDate = (d) => {
   return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()}`;
 };
 
-// `@page` is document-level and shared across the whole app's stylesheet —
-// inject a highest-priority override right before printing, remove it after
-// (same pattern as Medicine Report / Panel Cheques Report's own print).
-// Now prints from a popup window (utils/printPopup.js) instead of
-// window.print() on the main window, which could freeze the app on Windows.
-function printMedicineIssuanceTxn(reportEl) {
-  printElementInPopup(reportEl, { title: 'Medicine Issuance', page: 'A4 portrait', margin: '10mm' });
+// Details prints the legacy CashMed.rpt layout (medicineIssuancePrintUtils);
+// Admit wise Summary prints the on-screen table from a popup, in the same
+// small Arial type. Both print from a popup window, never window.print() on
+// the main window (which could freeze the app on Windows).
+function printMedicineIssuanceTxn(reportEl, data, filters) {
+  if (data?.mode === 'details') {
+    const w = window.open('', '_blank', 'width=1000,height=800');
+    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    w.document.write(buildMedicineIssuancePrintHtml({ data, filters }));
+    w.document.close();
+    return;
+  }
+  printElementInPopup(reportEl, {
+    title: 'Medicine Issuance',
+    page: 'A4 portrait',
+    margin: '8mm',
+    extraCss: '[data-print-root], [data-print-root] * { font-family: Arial, Helvetica, sans-serif !important; } [data-print-root] { font-size: 7pt !important; } [data-print-root] table, [data-print-root] th, [data-print-root] td { font-size: 7pt !important; }',
+  });
 }
 
 // Excel's date epoch is 1899-12-30 — this is the standard serial→JS Date
@@ -119,27 +131,32 @@ function parsePanelMedicineIssuanceExcel(file) {
   });
 }
 
-// Panels > Transaction > Medicine Issuance — same filter/report/upload UI as
-// Panels > Reports > Medicine Report, but backed by its own separate table
-// (ClinicPanelMedicineIssuanceTxnAdmission/Item) — uploading here never
-// touches the Report-side data and vice versa.
+// Clinic > Report > Medicine Issuance — "MADICAL ISSUANCE REPORT FOR CASH".
+// Cash (non-panel) admissions' medicine from the Provisional Bill's Pharmacy
+// Bill tab (Hospital Store + Outside Stores), plus anything uploaded from the
+// legacy .xls (ClinicPanelMedicineIssuanceTxn*). Panel admissions' medicine
+// shows in Panels > Reports > Medicine Report instead.
+const DATE_TYPE_LABEL = { admission: 'Admission Date', discharge: 'Discharge Date', medicine: 'Medicine Date' };
+const fmtDayHeading = (ymd) => {
+  if (!ymd || ymd === '—') return '—';
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+};
+
 export default function MedicineIssuanceTransaction() {
-  const { panelCompanies, fetchPanelCompanies, fetchPanelMedicineIssuanceTxnReport } = useClinicStore();
+  const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceTxnReport } = useClinicStore();
   const reportRef = useRef(null);
 
   const [showFilter, setShowFilter] = useState(true);
 
   const [scopeMode, setScopeMode] = useState('date'); // 'admission' | 'date'
   const [admissionNo, setAdmissionNo] = useState('');
-  const [dateType, setDateType] = useState('discharge'); // 'admission' | 'discharge'
+  const [dateType, setDateType] = useState('medicine'); // 'admission' | 'discharge' | 'medicine'
   const [fromDate, setFromDate] = useState(todayIso());
   const [toDate, setToDate] = useState(todayIso());
 
-  const [companyId, setCompanyId] = useState('');
-  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
-
+  const [storeFilter, setStoreFilter] = useState('ALL'); // 'ALL' | 'hospital' | store id
   const [viewMode, setViewMode] = useState('details'); // 'details' | 'summary'
-  const [summaryCompanyId, setSummaryCompanyId] = useState('ALL');
 
   const [showImport, setShowImport] = useState(false);
 
@@ -148,13 +165,18 @@ export default function MedicineIssuanceTransaction() {
   const [loading, setLoading] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState(null);
 
-  useEffect(() => { fetchPanelCompanies(); }, [fetchPanelCompanies]);
+  useEffect(() => { fetchPharmacyStores(); }, [fetchPharmacyStores]);
 
-  // ESC closes the filter dialog — unless the Company picker is stacked on top
-  // of it, in which case ESC should only dismiss the picker (its own hook).
-  useModalKeys({ active: showFilter && !showCompanyPicker, onEsc: () => setShowFilter(false) });
+  useModalKeys({ active: showFilter, onEsc: () => setShowFilter(false) });
 
-  const selectedCompany = panelCompanies.find((c) => String(c.id) === String(companyId));
+  const storeOptions = [
+    { id: 'ALL', label: 'ALL' },
+    // Pharmacy Stores usually already has a "HOSPITAL STORE" — only add our
+    // own In-House option when it doesn't.
+    ...(pharmacyStores.some((s) => /hospital/i.test(s.name)) ? [] : [{ id: 'hospital', label: 'Hospital Store' }]),
+    ...pharmacyStores.map((s) => ({ id: String(s.id), label: s.status === 'inactive' ? `${s.name} (inactive)` : s.name })),
+  ];
+  const storeLabel = storeOptions.find((o) => o.id === storeFilter)?.label || 'ALL';
 
   async function handleView() {
     if (scopeMode === 'admission' && !admissionNo.trim()) {
@@ -165,7 +187,6 @@ export default function MedicineIssuanceTransaction() {
       toast.error('From/To date select karein');
       return;
     }
-    const effectiveCompanyId = (viewMode === 'summary' && summaryCompanyId !== 'ALL') ? summaryCompanyId : companyId;
     setLoading(true);
     try {
       const res = await fetchPanelMedicineIssuanceTxnReport({
@@ -174,12 +195,12 @@ export default function MedicineIssuanceTransaction() {
         dateType: scopeMode === 'date' ? dateType : undefined,
         fromDate: scopeMode === 'date' ? fromDate : undefined,
         toDate: scopeMode === 'date' ? toDate : undefined,
-        panelCompanyId: effectiveCompanyId || undefined,
+        storeFilter,
         viewMode,
       });
       setData(res);
       setShown(true);
-      setAppliedFilters({ scopeMode, admissionNo: admissionNo.trim(), dateType, fromDate, toDate });
+      setAppliedFilters({ scopeMode, admissionNo: admissionNo.trim(), dateType, fromDate, toDate, storeLabel });
       setShowFilter(false);
     } catch (err) {
       toast.error(err.message || 'Report load nahi hui');
@@ -189,6 +210,7 @@ export default function MedicineIssuanceTransaction() {
   }
 
   const hasRows = data && (data.mode === 'summary' ? data.rows.length > 0 : data.days.length > 0);
+  let patientNo = 0;
 
   return (
     <div className="mrp-page">
@@ -199,7 +221,7 @@ export default function MedicineIssuanceTransaction() {
           <div className="mrp-toolbar-actions">
             <button className="mrp-btn" onClick={() => setShowFilter(true)}><FilterIcon size={14} /> Filter</button>
             <button className="mrp-btn mrp-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
-            <button className="mrp-btn mrp-btn--print" onClick={() => printMedicineIssuanceTxn(reportRef.current)} disabled={!hasRows}>
+            <button className="mrp-btn mrp-btn--print" onClick={() => printMedicineIssuanceTxn(reportRef.current, data, appliedFilters)} disabled={!hasRows}>
               <Printer size={14} /> Print
             </button>
           </div>
@@ -208,13 +230,14 @@ export default function MedicineIssuanceTransaction() {
         <div className="mrp-report" ref={reportRef}>
           <div className="mrp-rpt-head">
             <div className="mrp-rpt-hospital">Darul Shifa Hospital</div>
-            <div className="mrp-rpt-title">MEDICINE ISSUANCE REPORT FOR PANEL</div>
+            <div className="mrp-rpt-title">MEDICINE ISSUANCE REPORT FOR CASH</div>
             {appliedFilters && (
               <div className="mrp-rpt-meta">
                 <span>
                   {appliedFilters.scopeMode === 'admission'
                     ? `Admission # : ${appliedFilters.admissionNo}`
-                    : `From : ${fmtDate(appliedFilters.fromDate)} &nbsp; To : ${fmtDate(appliedFilters.toDate)}`}
+                    : `${DATE_TYPE_LABEL[appliedFilters.dateType]} — From : ${fmtDate(appliedFilters.fromDate)}  To : ${fmtDate(appliedFilters.toDate)}`}
+                  {'  |  '}Medical Store : {appliedFilters.storeLabel}
                 </span>
                 <span>Produced On : {new Date().toLocaleString('en-GB')}</span>
               </div>
@@ -235,9 +258,9 @@ export default function MedicineIssuanceTransaction() {
                     <th className="mrp-l">Sno</th>
                     <th className="mrp-l">Admission #</th>
                     <th className="mrp-l">Patient</th>
-                    <th className="mrp-l">Company</th>
                     <th className="mrp-l">Admit Date</th>
                     <th className="mrp-l">Dis. Date</th>
+                    <th className="mrp-l">Status</th>
                     <th className="mrp-r">Items</th>
                     <th className="mrp-r">Amount</th>
                   </tr>
@@ -248,9 +271,9 @@ export default function MedicineIssuanceTransaction() {
                       <td className="mrp-l">{idx + 1}</td>
                       <td className="mrp-l">{r.admissionNo}</td>
                       <td className="mrp-l">{r.patientName}</td>
-                      <td className="mrp-l">{r.companyName || '—'}</td>
                       <td className="mrp-l">{fmtDate(r.admitDate)}</td>
                       <td className="mrp-l">{fmtDate(r.dischargeDate)}</td>
+                      <td className="mrp-l">{r.status || '—'}</td>
                       <td className="mrp-r">{r.itemCount}</td>
                       <td className="mrp-r">{fmt(r.total)}</td>
                     </tr>
@@ -269,56 +292,65 @@ export default function MedicineIssuanceTransaction() {
               {data.days.map((day) => (
                 <div className="mrp-day-block" key={day.date}>
                   <div className="mrp-day-hdr">
-                    <span>{fmtDate(day.date)}</span>
+                    <span>{fmtDayHeading(day.date)}</span>
                     <span className="mrp-day-total">DAY WISE TOTAL : <b>{fmt(day.dayTotal)}</b></span>
                   </div>
 
-                  {day.patients.map((p) => (
-                    <div className="mrp-patient-block" key={`${day.date}-${p.admissionNo}`}>
-                      <div className="mrp-patient-hdr">
-                        <span><b>PATIENT :</b> {p.admissionNo} - {p.patientName}</span>
-                        <span><b>ADMIT DATE :</b> {fmtDate(p.admitDate)}</span>
-                      </div>
-                      <div className="mrp-patient-hdr">
-                        <span><b>COMPANY :</b> {p.companyName || '—'}</span>
-                        <span><b>DIS. DATE :</b> {fmtDate(p.dischargeDate)}</span>
-                      </div>
+                  {day.patients.map((p) => {
+                    patientNo += 1;
+                    return (
+                      <div className="mrp-patient-block" key={`${day.date}-${p.admissionNo}`}>
+                        <div className="mit-patient-grid">
+                          <span className="mit-patient-no">{patientNo}</span>
+                          <span><b>PATIENT :</b> {p.admissionNo} - {p.patientName}</span>
+                          <span><b>ADMIT DATE :</b> {fmtDate(p.admitDate)}</span>
+                          <span><b>STATUS :</b> {p.status || '—'}</span>
+                          <span />
+                          <span />
+                          <span><b>DIS. DATE :</b> {fmtDate(p.dischargeDate)}</span>
+                          <span />
+                        </div>
 
-                      <table className="mrp-rpt-table mrp-rpt-table--items">
-                        <thead>
-                          <tr>
-                            <th className="mrp-l">Sno</th>
-                            <th className="mrp-l">Description</th>
-                            <th className="mrp-l">Med Date</th>
-                            <th className="mrp-r">Rate</th>
-                            <th className="mrp-r">Qty</th>
-                            <th className="mrp-r">Amount</th>
-                            <th className="mrp-l">Medical Store</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {p.items.map((it) => (
-                            <tr key={it.sno}>
-                              <td className="mrp-l">{it.sno}</td>
-                              <td className="mrp-l">{it.description}</td>
-                              <td className="mrp-l">{fmtDate(it.medDate)}</td>
-                              <td className="mrp-r">{fmt(it.rate)}</td>
-                              <td className="mrp-r">{it.qty}</td>
-                              <td className="mrp-r">{fmt(it.amount)}</td>
-                              <td className="mrp-l">{it.store || '—'}</td>
+                        <table className="mrp-rpt-table mrp-rpt-table--items">
+                          <thead>
+                            <tr>
+                              <th className="mrp-l">Sno</th>
+                              <th className="mrp-l">Description</th>
+                              <th className="mrp-l">Med Date</th>
+                              <th className="mrp-r">Rate</th>
+                              <th className="mrp-r">Qty</th>
+                              <th className="mrp-r">Amount</th>
+                              <th className="mrp-l">Created</th>
+                              <th className="mrp-l">Date</th>
+                              <th className="mrp-l">Medical Store</th>
                             </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="mrp-patient-totals">
-                            <td colSpan={5} className="mrp-l">TOTAL :</td>
-                            <td className="mrp-r">{fmt(p.patientTotal)}</td>
-                            <td />
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  ))}
+                          </thead>
+                          <tbody>
+                            {p.items.map((it) => (
+                              <tr key={it.sno}>
+                                <td className="mrp-l">{it.sno}</td>
+                                <td className="mrp-l">{it.description}</td>
+                                <td className="mrp-l">{fmtDate(it.medDate)}</td>
+                                <td className="mrp-r">{fmt(it.rate)}</td>
+                                <td className="mrp-r">{it.qty}</td>
+                                <td className="mrp-r">{fmt(it.amount)}</td>
+                                <td className="mrp-l">{it.createdByName || '—'}</td>
+                                <td className="mrp-l">{it.createdAt ? fmtDate(it.createdAt) : '—'}</td>
+                                <td className="mrp-l">{it.store || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="mrp-patient-totals">
+                              <td colSpan={5} className="mrp-l">TOTAL :</td>
+                              <td className="mrp-r">{fmt(p.patientTotal)}</td>
+                              <td colSpan={3} />
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
 
@@ -335,22 +367,10 @@ export default function MedicineIssuanceTransaction() {
           dateType={dateType} onDateTypeChange={setDateType}
           fromDate={fromDate} onFromDateChange={setFromDate}
           toDate={toDate} onToDateChange={setToDate}
-          selectedCompany={selectedCompany}
-          onPickCompany={() => setShowCompanyPicker(true)}
-          onClearCompany={() => setCompanyId('')}
+          storeFilter={storeFilter} onStoreFilterChange={setStoreFilter} storeOptions={storeOptions}
           viewMode={viewMode} onViewModeChange={setViewMode}
-          summaryCompanyId={summaryCompanyId} onSummaryCompanyIdChange={setSummaryCompanyId}
-          companies={panelCompanies}
           onClose={() => setShowFilter(false)}
           onView={handleView}
-        />
-      )}
-
-      {showCompanyPicker && (
-        <CompanyPickerModal
-          companies={panelCompanies}
-          onSelect={(c) => { setCompanyId(String(c.id)); setShowCompanyPicker(false); }}
-          onClose={() => setShowCompanyPicker(false)}
         />
       )}
 
@@ -364,8 +384,8 @@ export default function MedicineIssuanceTransaction() {
 function FilterModal({
   scopeMode, onScopeModeChange, admissionNo, onAdmissionNoChange,
   dateType, onDateTypeChange, fromDate, onFromDateChange, toDate, onToDateChange,
-  selectedCompany, onPickCompany, onClearCompany,
-  viewMode, onViewModeChange, summaryCompanyId, onSummaryCompanyIdChange, companies,
+  storeFilter, onStoreFilterChange, storeOptions,
+  viewMode, onViewModeChange,
   onClose, onView,
 }) {
   return (
@@ -401,6 +421,7 @@ function FilterModal({
               onChange={(e) => { onDateTypeChange(e.target.value); onScopeModeChange('date'); }}
               disabled={scopeMode !== 'date'}
             >
+              <option value="medicine">Medicine Date</option>
               <option value="admission">Admission Date</option>
               <option value="discharge">Discharge Date</option>
             </select>
@@ -419,20 +440,17 @@ function FilterModal({
           </div>
 
           <div className="mrp-section">
-            <label className="mrp-company-lbl">Company</label>
-            <div className="mrp-lookup-row">
-              <input
-                className="mrp-text-input"
-                readOnly
-                value={selectedCompany ? `${selectedCompany.code} — ${selectedCompany.name}` : ''}
-                placeholder="— Sab companies —"
-                onClick={onPickCompany}
-              />
-              {selectedCompany && (
-                <button className="mrp-lookup-clear" onClick={onClearCompany} title="Clear">✕</button>
-              )}
-              <button className="mrp-lookup-btn" onClick={onPickCompany} title="Search company"><Search size={13} /></button>
-            </div>
+            <label className="mrp-company-lbl mit-store-lbl">Medical Store</label>
+            <SearchableSelect
+              options={storeOptions}
+              value={storeFilter}
+              onChange={(v) => onStoreFilterChange(v || 'ALL')}
+              getKey={(o) => o.id}
+              getLabel={(o) => o.label}
+              clearable={false}
+              size="sm"
+              style={{ flex: 1, minWidth: 160 }}
+            />
           </div>
 
           <div className="mrp-section mrp-section--viewmode">
@@ -444,62 +462,12 @@ function FilterModal({
               <input type="radio" name="mit-viewmode" checked={viewMode === 'summary'} onChange={() => onViewModeChange('summary')} />
               Admit wise Summary
             </label>
-            <SearchableSelect
-              options={[{ id: 'ALL' }, ...companies]}
-              value={summaryCompanyId}
-              onChange={(v) => onSummaryCompanyIdChange(v)}
-              getKey={(c) => c.id}
-              getLabel={(c) => (c.id === 'ALL' ? 'ALL' : `${c.code} — ${c.name}`)}
-              clearable={false}
-              size="sm"
-              style={{ flex: 1, minWidth: 160 }}
-            />
           </div>
         </div>
 
         <div className="mrp-modal-footer">
           <button className="mrp-btn mrp-btn--view" onClick={onView}>View</button>
           <button className="mrp-btn" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CompanyPickerModal({ companies, onSelect, onClose }) {
-  const [q, setQ] = useState('');
-  const inputRef = useRef(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  useModalKeys({ active: true, onEsc: onClose });
-
-  const filtered = companies.filter((c) =>
-    !q.trim() ||
-    c.name.toLowerCase().includes(q.trim().toLowerCase()) ||
-    c.code.toLowerCase().includes(q.trim().toLowerCase())
-  );
-
-  return (
-    <div className="mrp-modal-overlay" onMouseDown={onClose}>
-      <div className="mrp-modal mrp-modal--picker" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="mrp-modal-head">
-          <span>Select Company</span>
-          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
-        </div>
-        <div className="mrp-picker-search">
-          <Search size={13} />
-          <input ref={inputRef} placeholder="Search company…" value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
-        <div className="mrp-picker-list">
-          {filtered.length === 0 ? (
-            <div className="mrp-picker-empty">Koi company nahi mili</div>
-          ) : filtered.map((c) => (
-            <div key={c.id} className="mrp-picker-row" onClick={() => onSelect(c)}>
-              <span className="mrp-picker-code">{c.code}</span>
-              <span className="mrp-picker-name">{c.name}</span>
-            </div>
-          ))}
         </div>
       </div>
     </div>

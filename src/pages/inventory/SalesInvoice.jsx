@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useInventoryStore } from '../../store/useInventoryStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { generateSalesInvoicePdf } from '../../utils/exportInventoryReports';
 
 const CLINIC_API = 'http://localhost:5001/api/clinic';
@@ -161,6 +162,9 @@ function createEmptyLine() {
 }
 
 export default function SalesInvoice() {
+  const { user } = useAuthStore();
+  // Saved on every invoice line — shows as "Created" in the Medicine Issuance reports.
+  const createdByName = user?.name || user?.username || user?.email || null;
   const [query, setQuery] = useState('');
   const [showForm, setShowForm] = useState(true);
   const [showInvoiceTable, setShowInvoiceTable] = useState(false);
@@ -263,6 +267,7 @@ export default function SalesInvoice() {
         customerType: header.customerType,
         customerName: header.customerType === 'customer' ? header.customerName : undefined,
         discountPercent: Number(discountPercent || 0),
+        createdByName,
         items: lines.map((l) => ({
           itemId: Number(l.itemId),
           quantity: Number(l.quantity),
@@ -433,6 +438,7 @@ export default function SalesInvoice() {
         customerType: 'admission',
         customerName: admQuery,
         discountPercent: 0,
+        createdByName,
         items: admRows.map((r) => ({
           itemId: Number(r.itemId),
           quantity: r.qty,

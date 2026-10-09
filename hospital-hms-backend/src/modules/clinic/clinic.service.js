@@ -4948,7 +4948,7 @@ async function confirmPanelMedicineIssuanceImportBatch(admissions, { companyName
 // (no @relation, same convention as ClinicAdmission.panelCompanyId
 // elsewhere in this file), so companies are fetched separately and mapped
 // by id rather than included.
-async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }) {
+async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode }) {
   const where = {};
   if (scopeMode === 'admission' && admissionNo) {
     where.admissionNo = String(admissionNo).trim();
@@ -4961,11 +4961,21 @@ async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType
     where[field] = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59`) };
   }
 
-  const rows = await prisma.clinicPanelMedicineIssuanceAdmission.findMany({
-    where,
-    include: { items: { orderBy: { medDate: 'asc' } } },
-  });
-  const admissions = rows.filter((a) => a.items.length);
+  const storeName = storeFilter && storeFilter !== 'ALL' && storeFilter !== 'hospital'
+    ? (await prisma.clinicPharmacyStore.findUnique({ where: { id: Number(storeFilter) }, select: { name: true } }))?.name
+    : null;
+  const [rows, live] = await Promise.all([
+    prisma.clinicPanelMedicineIssuanceAdmission.findMany({
+      where,
+      include: { items: { orderBy: { medDate: 'asc' } } },
+    }),
+    // Panel admissions' Provisional Bill > Pharmacy Bill medicine (live).
+    loadLiveAdmissionMedicines({ category: 'panel', scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter }),
+  ]);
+  const uploaded = rows
+    .map((a) => ({ ...a, items: a.items.filter((i) => uploadedStoreMatches(i.store, storeFilter, storeName)) }))
+    .filter((a) => a.items.length);
+  const admissions = [...uploaded, ...live];
 
   const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
   const companies = companyIds.length
@@ -5165,89 +5175,230 @@ async function confirmPanelMedicineIssuanceTxnImportBatch(admissions, { companyN
   return { imported, refreshed, skipped, itemsCreated };
 }
 
-async function getPanelMedicineIssuanceTxnReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, viewMode }) {
-  const where = {};
-  if (scopeMode === 'admission' && admissionNo) {
+// ─── Live admission medicine (Provisional Bill > Pharmacy Bill tab) ─────────
+// Both stores of that tab, as one list per admission:
+//   • Hospital / In-House Store — Inventory Sales Invoices billed against the
+//     admission number (customerType 'admission').
+//   • Outside Hospital Store    — ClinicProvisionalPharmacyItem, store per line.
+// category 'cash' = every non-panel admission, 'panel' = patientCategory
+// 'panel'. Discharge date follows the Provisional Bill rule: Discharge
+// Certificate first, else the latest status change to 'discharge'.
+// storeFilter: 'ALL' | 'hospital' | a ClinicPharmacyStore id.
+const HOSPITAL_STORE_LABEL = 'HOSPITAL STORE'; // same spelling as Pharmacy Stores + legacy uploads
+const MED_ISSUANCE_STATUS_LABEL = { active: 'ADMIT', discharge: 'DISCHARGE', closed: 'CLOSE', wipeout: 'WIPEOUT' };
+
+function medicineDateRange(fromDate, toDate) {
+  return { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59.999`) };
+}
+
+function localYmd(d) {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+async function loadLiveAdmissionMedicines({ category, scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter }) {
+  const where = { patientCategory: category === 'panel' ? 'panel' : { not: 'panel' } };
+  if (category === 'panel' && panelCompanyId && panelCompanyId !== 'ALL') where.panelCompanyId = Number(panelCompanyId);
+
+  const byDate = scopeMode === 'date' && fromDate && toDate;
+  const range = byDate ? medicineDateRange(fromDate, toDate) : null;
+  if (scopeMode === 'admission') {
+    if (!admissionNo) return [];
     where.admissionNo = String(admissionNo).trim();
-  }
-  if (panelCompanyId && panelCompanyId !== 'ALL') {
-    where.panelCompanyId = Number(panelCompanyId);
-  }
-  if (scopeMode === 'date' && fromDate && toDate) {
-    const field = dateType === 'admission' ? 'admitDate' : 'dischargeDate';
-    where[field] = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59`) };
+  } else if (byDate && dateType === 'admission') {
+    where.createdAt = range;
+  } else if (byDate && dateType === 'discharge') {
+    const [certs, logs] = await Promise.all([
+      prisma.clinicDischargeCertificate.findMany({ where: { dischargeDate: range }, select: { admissionId: true } }),
+      prisma.clinicAdmissionStatusLog.findMany({ where: { toStatus: 'discharge', changedAt: range, admissionId: { not: null } }, select: { admissionId: true } }),
+    ]);
+    where.id = { in: [...new Set([...certs, ...logs].map((r) => r.admissionId))] };
+  } else if (byDate && dateType === 'medicine') {
+    const [pharm, sales] = await Promise.all([
+      prisma.clinicProvisionalPharmacyItem.findMany({ where: { medDate: range }, select: { admissionId: true }, distinct: ['admissionId'] }),
+      prisma.inventorySalesInvoice.findMany({ where: { customerType: 'admission', invoiceDate: range }, select: { customerName: true }, distinct: ['customerName'] }),
+    ]);
+    where.OR = [
+      { id: { in: pharm.map((r) => r.admissionId) } },
+      { admissionNo: { in: sales.map((r) => r.customerName).filter(Boolean) } },
+    ];
   }
 
-  const rows = await prisma.clinicPanelMedicineIssuanceTxnAdmission.findMany({
+  const admissions = await prisma.clinicAdmission.findMany({
     where,
-    include: { items: { orderBy: { medDate: 'asc' } } },
+    select: {
+      id: true, admissionNo: true, patientTitle: true, patientName: true, status: true,
+      panelCompanyId: true, createdAt: true,
+      dischargeCertificate: { select: { dischargeDate: true } },
+    },
   });
-  const admissions = rows.filter((a) => a.items.length);
+  if (!admissions.length) return [];
 
-  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
-  const companies = companyIds.length
-    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } } })
-    : [];
-  const companyById = new Map(companies.map((c) => [c.id, c]));
+  const ids = admissions.map((a) => a.id);
+  const nos = admissions.map((a) => a.admissionNo);
+  const medRange = byDate && dateType === 'medicine' ? range : undefined;
+  // A Pharmacy Stores entry named like "HOSPITAL STORE" also stands for the
+  // In-House (Sales Invoice) medicine, so picking it brings both.
+  let wantHospital = true;
+  let wantOutside = true;
+  let outsideStoreId = null;
+  if (storeFilter === 'hospital') {
+    wantOutside = false;
+  } else if (storeFilter && storeFilter !== 'ALL') {
+    outsideStoreId = Number(storeFilter);
+    const store = await prisma.clinicPharmacyStore.findUnique({ where: { id: outsideStoreId }, select: { name: true } });
+    wantHospital = /hospital/i.test(store?.name || '');
+  }
+
+  const [logs, pharmItems, salesItems] = await Promise.all([
+    prisma.clinicAdmissionStatusLog.findMany({
+      where: { admissionId: { in: ids }, toStatus: 'discharge' },
+      orderBy: { changedAt: 'desc' },
+      select: { admissionId: true, changedAt: true },
+    }),
+    wantOutside
+      ? prisma.clinicProvisionalPharmacyItem.findMany({
+          where: { admissionId: { in: ids }, ...(medRange ? { medDate: medRange } : {}), ...(outsideStoreId ? { storeId: outsideStoreId } : {}) },
+          include: { store: { select: { name: true } } },
+          orderBy: [{ medDate: 'asc' }, { id: 'asc' }],
+        })
+      : [],
+    wantHospital
+      ? prisma.inventorySalesInvoice.findMany({
+          where: { customerType: 'admission', customerName: { in: nos }, ...(medRange ? { invoiceDate: medRange } : {}) },
+          include: { item: { select: { name: true } } },
+          orderBy: [{ invoiceDate: 'asc' }, { id: 'asc' }],
+        })
+      : [],
+  ]);
+
+  const statusDischarge = new Map();
+  logs.forEach((l) => { if (!statusDischarge.has(l.admissionId)) statusDischarge.set(l.admissionId, l.changedAt); });
+
+  const itemsByAdmission = new Map(admissions.map((a) => [a.id, []]));
+  const idByNo = new Map(admissions.map((a) => [a.admissionNo, a.id]));
+  salesItems.forEach((s) => {
+    itemsByAdmission.get(idByNo.get(s.customerName))?.push({
+      description: s.item?.name || 'Medicine', medDate: s.invoiceDate,
+      rate: s.saleRate, qty: s.quantity, amount: s.totalAmount,
+      store: HOSPITAL_STORE_LABEL, createdByName: s.createdByName, createdAt: s.createdAt,
+    });
+  });
+  pharmItems.forEach((p) => {
+    itemsByAdmission.get(p.admissionId)?.push({
+      description: p.medicine, medDate: p.medDate,
+      rate: p.rate, qty: p.qty, amount: p.amount,
+      store: p.store?.name || null, createdByName: p.createdByName, createdAt: p.createdAt,
+    });
+  });
+
+  return admissions
+    .map((a) => {
+      const dischargeDate = a.dischargeCertificate?.dischargeDate || statusDischarge.get(a.id) || null;
+      return {
+        id: `live-${a.id}`,
+        admissionNo: a.admissionNo,
+        // Skip the title when the name already carries one ("MS. MESHA").
+        patientName: /^(mr|mrs|ms|miss|master|baby|dr|b\/o)\b/i.test(String(a.patientName || '').trim())
+          ? a.patientName
+          : [a.patientTitle, a.patientName].filter(Boolean).join(' '),
+        panelCompanyId: a.panelCompanyId,
+        admitDate: a.createdAt,
+        dischargeDate,
+        status: MED_ISSUANCE_STATUS_LABEL[a.status] || String(a.status || '').toUpperCase(),
+        items: itemsByAdmission.get(a.id).sort((x, y) => new Date(x.medDate) - new Date(y.medDate)),
+      };
+    })
+    // A discharge-date filter matched on certificate OR status-log date —
+    // keep only admissions whose effective discharge date is in range.
+    .filter((a) => !(byDate && dateType === 'discharge') || (a.dischargeDate && new Date(a.dischargeDate) >= range.gte && new Date(a.dischargeDate) <= range.lte))
+    .filter((a) => a.items.length);
+}
+
+// Does an uploaded (legacy .xls) item's free-text store label match the
+// chosen store filter?
+function uploadedStoreMatches(label, storeFilter, storeName) {
+  if (!storeFilter || storeFilter === 'ALL') return true;
+  const l = String(label || '').toLowerCase();
+  if (storeFilter === 'hospital') return l.includes('hospital');
+  return !!storeName && l.includes(storeName.toLowerCase());
+}
+
+// Clinic > Report > Medicine Issuance — "MADICAL ISSUANCE REPORT FOR CASH".
+// Cash (non-panel) admissions' Pharmacy Bill medicine, live from the
+// Provisional Bill, plus whatever was uploaded from the legacy .xls into
+// ClinicPanelMedicineIssuanceTxn* (same admission # → one block).
+// dateType: 'admission' | 'discharge' | 'medicine'. Details are grouped by
+// admit date (Day Wise Total), one block per admission with all its lines.
+async function getPanelMedicineIssuanceTxnReport({ scopeMode, admissionNo, dateType, fromDate, toDate, storeFilter, viewMode }) {
+  const byDate = scopeMode === 'date' && fromDate && toDate;
+  const range = byDate ? medicineDateRange(fromDate, toDate) : null;
+  const storeName = storeFilter && storeFilter !== 'ALL' && storeFilter !== 'hospital'
+    ? (await prisma.clinicPharmacyStore.findUnique({ where: { id: Number(storeFilter) }, select: { name: true } }))?.name
+    : null;
+
+  const where = {};
+  if (scopeMode === 'admission' && admissionNo) where.admissionNo = String(admissionNo).trim();
+  if (byDate && dateType === 'admission') where.admitDate = range;
+  if (byDate && dateType === 'discharge') where.dischargeDate = range;
+  if (byDate && dateType === 'medicine') where.items = { some: { medDate: range } };
+
+  const [uploadedRows, live] = await Promise.all([
+    prisma.clinicPanelMedicineIssuanceTxnAdmission.findMany({
+      where,
+      include: { items: { orderBy: [{ medDate: 'asc' }, { sortOrder: 'asc' }] } },
+    }),
+    loadLiveAdmissionMedicines({ category: 'cash', scopeMode, admissionNo, dateType, fromDate, toDate, storeFilter }),
+  ]);
+
+  const byNo = new Map(live.map((a) => [a.admissionNo, a]));
+  uploadedRows.forEach((u) => {
+    const items = u.items
+      .filter((i) => uploadedStoreMatches(i.store, storeFilter, storeName))
+      .filter((i) => !(byDate && dateType === 'medicine') || (i.medDate && i.medDate >= range.gte && i.medDate <= range.lte))
+      .map((i) => ({
+        description: i.description, medDate: i.medDate, rate: i.rate, qty: i.qty, amount: i.amount,
+        store: i.store, createdByName: null, createdAt: null,
+      }));
+    if (!items.length) return;
+    const existing = byNo.get(u.admissionNo);
+    if (existing) {
+      existing.items = [...items, ...existing.items];
+      return;
+    }
+    byNo.set(u.admissionNo, {
+      id: `upload-${u.id}`, admissionNo: u.admissionNo, patientName: u.patientName,
+      admitDate: u.admitDate, dischargeDate: u.dischargeDate, status: null, items,
+    });
+  });
+  const admissions = [...byNo.values()].sort((x, y) =>
+    (new Date(x.admitDate || 0) - new Date(y.admitDate || 0)) || x.admissionNo.localeCompare(y.admissionNo));
+  const sum = (items) => items.reduce((s, i) => s + Number(i.amount || 0), 0);
 
   if (viewMode === 'summary') {
-    const summaryRows = admissions.map((a) => {
-      const total = a.items.reduce((s, i) => s + Number(i.amount || 0), 0);
-      return {
-        admissionNo: a.admissionNo,
-        patientName: a.patientName,
-        companyName: companyById.get(a.panelCompanyId)?.name || null,
-        admitDate: a.admitDate,
-        dischargeDate: a.dischargeDate,
-        itemCount: a.items.length,
-        total,
-      };
-    }).sort((x, y) => new Date(x.admitDate) - new Date(y.admitDate));
-    const grandTotal = summaryRows.reduce((s, r) => s + r.total, 0);
-    return { mode: 'summary', rows: summaryRows, grandTotal };
+    const rows = admissions.map((a) => ({
+      admissionNo: a.admissionNo, patientName: a.patientName, status: a.status,
+      admitDate: a.admitDate, dischargeDate: a.dischargeDate,
+      itemCount: a.items.length, total: sum(a.items),
+    }));
+    return { mode: 'summary', rows, grandTotal: rows.reduce((s, r) => s + r.total, 0) };
   }
 
-  const dayMap = new Map();
+  const dayMap = new Map(); // admit 'YYYY-MM-DD' -> patients
   admissions.forEach((a) => {
-    a.items.forEach((item) => {
-      const d = item.medDate || a.admitDate;
-      const dayKey = new Date(d).toISOString().slice(0, 10);
-      if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
-      dayMap.get(dayKey).push({ admission: a, item });
+    const dayKey = a.admitDate ? localYmd(a.admitDate) : '—';
+    if (!dayMap.has(dayKey)) dayMap.set(dayKey, []);
+    dayMap.get(dayKey).push({
+      admissionNo: a.admissionNo, patientName: a.patientName, status: a.status,
+      admitDate: a.admitDate, dischargeDate: a.dischargeDate,
+      items: a.items.map((i, idx) => ({ sno: idx + 1, ...i })),
+      patientTotal: sum(a.items),
     });
   });
-
   const days = [...dayMap.entries()]
     .sort(([x], [y]) => x.localeCompare(y))
-    .map(([dayKey, entries]) => {
-      const byAdmission = new Map();
-      entries.forEach(({ admission, item }) => {
-        if (!byAdmission.has(admission.id)) byAdmission.set(admission.id, { admission, items: [] });
-        byAdmission.get(admission.id).items.push(item);
-      });
-      const patients = [...byAdmission.values()]
-        .map(({ admission: a, items }) => {
-          const patientTotal = items.reduce((s, i) => s + Number(i.amount || 0), 0);
-          return {
-            admissionNo: a.admissionNo,
-            patientName: a.patientName,
-            companyName: companyById.get(a.panelCompanyId)?.name || null,
-            admitDate: a.admitDate,
-            dischargeDate: a.dischargeDate,
-            items: items.map((i, idx) => ({
-              sno: idx + 1, description: i.description, medDate: i.medDate,
-              rate: i.rate, qty: i.qty, amount: i.amount, store: i.store,
-            })),
-            patientTotal,
-          };
-        })
-        .sort((x, y) => x.admissionNo.localeCompare(y.admissionNo));
-      const dayTotal = patients.reduce((s, p) => s + p.patientTotal, 0);
-      return { date: dayKey, patients, dayTotal };
-    });
-
-  const grandTotal = days.reduce((s, d) => s + d.dayTotal, 0);
-  return { mode: 'details', days, grandTotal };
+    .map(([date, patients]) => ({ date, patients, dayTotal: patients.reduce((s, p) => s + p.patientTotal, 0) }));
+  return { mode: 'details', days, grandTotal: days.reduce((s, d) => s + d.dayTotal, 0) };
 }
 
 // Panels > Reports > OPD Admit Report ("Admission" scope, "Details" view) —
@@ -6524,7 +6675,7 @@ async function listProvisionalPharmacyItems(admissionId) {
   });
 }
 
-async function addProvisionalPharmacyItem(admissionId, { storeId, medicine, dosage, qty, unit, rate, medDate, remarks }) {
+async function addProvisionalPharmacyItem(admissionId, { storeId, medicine, dosage, qty, unit, rate, medDate, remarks, createdByName }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
   if (!medicine?.trim()) throw Object.assign(new Error('Medicine naam zaroori hai'), { status: 400 });
@@ -6543,6 +6694,7 @@ async function addProvisionalPharmacyItem(admissionId, { storeId, medicine, dosa
       amount: q * r,
       medDate: new Date(medDate),
       remarks: remarks?.trim() || null,
+      createdByName: createdByName ? String(createdByName).trim() || null : null,
     },
     include: { store: { select: { id: true, name: true } } },
   });

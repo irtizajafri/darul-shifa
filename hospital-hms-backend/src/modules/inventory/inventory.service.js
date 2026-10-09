@@ -1781,6 +1781,7 @@ async function createSalesInvoice(payload) {
         markupPercent,
         saleRate,
         totalAmount,
+        createdByName: payload.createdByName ? String(payload.createdByName).trim() || null : null,
       },
       include: {
         item: { include: { category: true, subcategory: true } },
@@ -1891,6 +1892,7 @@ async function createSalesInvoiceWithItems(payload) {
   const customerName = payload.customerName ? String(payload.customerName).trim() : '';
   const invoiceDate = payload.invoiceDate ? new Date(payload.invoiceDate) : new Date();
   const lineItems = Array.isArray(payload.items) ? payload.items : [];
+  const createdByName = payload.createdByName ? String(payload.createdByName).trim() || null : null;
 
   if (lineItems.length === 0) throw new Error('At least one item is required');
 
@@ -1989,6 +1991,7 @@ async function createSalesInvoiceWithItems(payload) {
           markupPercent: line.markupPercent,
           saleRate: line.saleRate,
           totalAmount: line.totalAmount,
+          createdByName,
         },
         include: {
           item: { include: { category: true, subcategory: true } },
