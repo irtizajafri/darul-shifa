@@ -73,6 +73,10 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
   const grossAmt  = preChargeTotal + discount;
   const balance   = Math.max(0, total - received);
 
+  // Admit Patient + Adjust Payment slip — its amount goes to this admission's
+  // bill, so the slip names the admission it was adjusted against.
+  const adjustedAdmitNo = doc.admitPatient && doc.adjustPayment && doc.admitNo ? String(doc.admitNo).trim() : '';
+
   const ageStr = [
     doc.age != null ? `${doc.age} Year(s)` : '0 Year(s)',
     `${doc.ageMonths || 0} Month(s)`,
@@ -209,7 +213,7 @@ export function buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, 
     <span><span class="lbl">Age:</span> ${ageStr}</span>
 
     ${doc.referredBy && String(doc.referredBy).trim() ? `<span><span class="lbl">Ref. By</span> &nbsp;${doc.referredBy}</span>` : '<span></span>'}
-    <span></span>
+    ${adjustedAdmitNo ? `<span><span class="lbl">Admission #:</span> ${adjustedAdmitNo}</span>` : '<span></span>'}
     <span></span>
 
     ${doc.antenatalNo && String(doc.antenatalNo).trim().toUpperCase() !== 'NA' ? `<span><span class="lbl">Antenatal #:</span> ${doc.antenatalNo}</span>` : '<span></span>'}

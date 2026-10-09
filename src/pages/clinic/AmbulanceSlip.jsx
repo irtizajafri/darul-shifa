@@ -323,12 +323,19 @@ export default function AmbulanceSlip() {
   const refundAmt = Math.max(0, (Number(receive) || 0) - totalAmount);
   const fieldsDisabled = !form.hospitalPatient;
 
+  // Admit Patient + Adjust Payment — the amount goes to the admission's own
+  // bill instead of being collected here, so the slip prints Received 0 and
+  // the whole amount as Balance (same as General/Emergency OPD).
+  const isAdjustPayment = form.admitPatient && form.adjustPayment;
+
   // Panel patients don't pay cash at the counter — the company settles later
   // via Panel Cheque Transaction — so Received always stays 0 for them even
-  // though the slip's own Amount keeps showing the real charge.
+  // though the slip's own Amount keeps showing the real charge. Unticking
+  // clears that forced 0 so the counter types the real amount again.
   useEffect(() => {
-    if (isPanel) setReceive('0');
-  }, [isPanel]);
+    if (isPanel || isAdjustPayment) setReceive('0');
+    else setReceive((r) => (r === '0' ? '' : r));
+  }, [isPanel, isAdjustPayment]);
 
   // Escape (advanced keyboard mode) — back out of whichever lookup/confirm
   // popup happens to be open, without the user needing to know which one.
@@ -575,7 +582,7 @@ export default function AmbulanceSlip() {
                   </div>
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Receive</span>
-                    <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary || isPanel} />
+                    <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary || isPanel || isAdjustPayment} />
                   </div>
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Refund</span>

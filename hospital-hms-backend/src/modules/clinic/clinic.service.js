@@ -463,7 +463,7 @@ async function updateCcConfig({ percentage, minAmount }) {
 }
 
 async function createOpdVisit({
-  mrNo, serialNo, patientType, patientName, admitPatient, admitNo, adjustPayment, antenatal, antenatalNo,
+  mrNo, serialNo: serialNoRaw, patientType, patientName, admitPatient, admitNo, adjustPayment, antenatal, antenatalNo,
   age, ageMonths, ageDays, gender, phoneNo, referredBy, driver, location, hospitalPatient, advisedBy,
   paymentType, visitType, onCall, employeeId, employeeName,
   totalAmount, discount, receive, refund,
@@ -473,6 +473,9 @@ async function createOpdVisit({
   createdByUserId, createdByName,
   doctors = [],
 }) {
+  // A stray space typed with the Slip # (" 2872089") used to be saved as-is,
+  // and Reprint's lookup then never matched it.
+  const serialNo = typeof serialNoRaw === 'string' ? serialNoRaw.trim() : serialNoRaw;
   await assertSerialNoAvailable(serialNo);
   const now = new Date();
   const shift = await resolveShiftForTime(now);
@@ -1747,17 +1750,22 @@ function normalizePvPaymentType(pt) {
 async function reprintOpdVisitBySerial(serialNo) {
   const no = String(serialNo).trim();
 
-  const visit = await prisma.clinicOpdVisit.findFirst({
-    where: { serialNo: { equals: no, mode: 'insensitive' } },
-    include: {
-      doctors: {
+  // Match ignoring case and any spaces saved around the stored Slip # (older
+  // slips were saved untrimmed).
+  const [idRow] = await prisma.$queryRaw`SELECT id FROM "ClinicOpdVisit" WHERE LOWER(TRIM("serialNo")) = LOWER(${no}) LIMIT 1`;
+  const visit = idRow
+    ? await prisma.clinicOpdVisit.findUnique({
+        where: { id: idRow.id },
         include: {
-          doctor: { include: { staffCategory: { select: { name: true } } } },
-          subDept: { select: { id: true, name: true } },
+          doctors: {
+            include: {
+              doctor: { include: { staffCategory: { select: { name: true } } } },
+              subDept: { select: { id: true, name: true } },
+            },
+          },
         },
-      },
-    },
-  });
+      })
+    : null;
   if (visit) {
     await prisma.$executeRaw`UPDATE "ClinicOpdVisit" SET "printCount" = COALESCE("printCount", 0) + 1 WHERE id = ${visit.id}`;
     const doctorId = visit.doctors[0]?.doctorId;

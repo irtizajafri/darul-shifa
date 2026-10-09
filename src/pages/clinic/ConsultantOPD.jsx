@@ -556,14 +556,20 @@ export default function ConsultantOPD() {
   const refundAmt  = Math.max(0, (Number(receive) || 0) - grandTotal);
   const balanceAmt = Math.max(0, grandTotal - (Number(receive) || 0));
 
+  // Admit Patient + Adjust Payment — this slip's amount isn't collected at
+  // the OPD counter at all, it flows straight into the linked admission's
+  // own Provisional/Final Bill to be settled later, so the slip prints
+  // Received 0 and the whole amount as Balance (same as General/Emergency OPD).
+  const isAdjustPayment = form.admitPatient && form.adjustPayment;
+
   // Received amount auto-follows the selected slip amount (doctor/item +
   // discount + CC surcharge) so it never has to be typed manually. Panel
   // patients don't pay cash at the counter — the company settles later via
   // Panel Cheque Transaction — so Received always stays 0 for them even
   // though the slip's own Amount/Total keep showing the real charge.
   useEffect(() => {
-    setReceive(isPanel ? '0' : (isComplementary ? '' : String(grandTotal)));
-  }, [grandTotal, isComplementary, isPanel]);
+    setReceive((isPanel || isAdjustPayment) ? '0' : (isComplementary ? '' : String(grandTotal)));
+  }, [grandTotal, isComplementary, isPanel, isAdjustPayment]);
 
   function applyPatientData(patient, useNewMr) {
     if (useNewMr) {
@@ -1215,7 +1221,7 @@ export default function ConsultantOPD() {
                   )}
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Receive</span>
-                    <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary || isPanel} />
+                    <input className="gopd-total-inp" value={receive} onChange={e => setReceive(e.target.value)} disabled={isComplementary || isPanel || isAdjustPayment} />
                   </div>
                   <div className="gopd-total-row">
                     <span className="gopd-total-lbl">Refund</span>

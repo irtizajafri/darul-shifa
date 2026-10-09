@@ -12,7 +12,12 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
 
   const total    = isComplementary ? 0 : (doc.totalAmount || 0);
   const discount = isComplementary ? 0 : (doc.discount    || 0);
-  const received = isComplementary ? 0 : (doc.receive     || total);
+  // Older Emergency slips were saved with receive 0 even when paid in full,
+  // so 0 normally falls back to the total. An Adjust Payment (amount goes to
+  // the admission's bill) or Panel slip really received nothing here, so its
+  // 0 is kept and the whole amount shows as Balance.
+  const nothingCollected = (doc.admitPatient && doc.adjustPayment) || pt === 'panel' || !!doc.panelCompanyId;
+  const received = isComplementary ? 0 : (nothingCollected ? Number(doc.receive || 0) : (doc.receive || total));
   // doc.totalAmount already includes the CC surcharge (if any) — back it out
   // to get the pre-discount subtotal of the line items.
   const ccCharge     = isComplementary ? 0 : (doc.ccCharge     || 0);
@@ -21,6 +26,10 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
   const preChargeTotal = Math.max(0, total - ccCharge);
   const grossAmt = preChargeTotal + discount;
   const balance  = Math.max(0, total - received);
+
+  // Admit Patient + Adjust Payment slip — its amount goes to this admission's
+  // bill, so the slip names the admission it was adjusted against.
+  const adjustedAdmitNo = doc.admitPatient && doc.adjustPayment && doc.admitNo ? String(doc.admitNo).trim() : '';
 
   const ageStr = [
     doc.age != null ? `${doc.age} Yr(s)` : '0 Yr(s)',
@@ -234,6 +243,11 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
       <td><span class="lbl">Attend By:</span></td>
       <td>${drName || '—'}</td>
     </tr>
+    ${adjustedAdmitNo ? `
+    <tr>
+      <td><span class="lbl">Admission #:</span></td>
+      <td colspan="5">${adjustedAdmitNo}</td>
+    </tr>` : ''}
     ${doc.panelCompanyName ? `
     <tr>
       <td><span class="lbl">Company:</span></td>

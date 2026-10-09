@@ -32,6 +32,10 @@ export function buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDa
   const grossAmt  = total + discount;
   const balance   = Math.max(0, total - received);
 
+  // Admit Patient + Adjust Payment slip — its amount goes to this admission's
+  // bill, so the slip names the admission it was adjusted against.
+  const adjustedAdmitNo = doc.admitPatient && doc.adjustPayment && doc.admitNo ? String(doc.admitNo).trim() : '';
+
   const ageStr = [
     doc.age != null ? `${doc.age}Y` : '0Y',
     `${doc.ageMonths || 0}M`,
@@ -115,6 +119,7 @@ export function buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDa
   <div class="th-row"><span class="lbl">Patient:</span><span>${doc.patientType} ${doc.patientName}</span></div>
   <div class="th-row"><span class="lbl">Age:</span><span>${ageStr}</span></div>
   ${doc.mrNo ? `<div class="th-row"><span class="lbl">MR #:</span><span>${doc.mrNo}</span></div>` : ''}
+  ${adjustedAdmitNo ? `<div class="th-row"><span class="lbl">Admission #:</span><span>${adjustedAdmitNo}</span></div>` : ''}
   ${doc.referredBy && String(doc.referredBy).trim() ? `<div class="th-row"><span class="lbl">Ref. By:</span><span>${doc.referredBy}</span></div>` : ''}
   ${doc.antenatalNo && String(doc.antenatalNo).trim().toUpperCase() !== 'NA' ? `<div class="th-row"><span class="lbl">Antenatal #:</span><span>${doc.antenatalNo}</span></div>` : ''}
   ${doc.panelCompanyName ? `<div class="th-row"><span class="lbl">Company:</span><span>${doc.panelCompanyName}</span></div>` : ''}
