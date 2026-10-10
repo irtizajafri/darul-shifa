@@ -6,86 +6,8 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
 import { generateSalesInvoicePdf } from '../../utils/exportInventoryReports';
-
-const CLINIC_API = 'http://localhost:5001/api/clinic';
-
-function fmtAdmDate(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-// ── Admission Picker — browse active admissions instead of typing the number blind ──
-function AdmissionPickerModal({ onSelect, onClose }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState('');
-  const timer = useRef(null);
-
-  const runSearch = (term) => {
-    fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(term)}`)
-      .then((r) => r.json())
-      .then((j) => setRows(j?.data || []))
-      .catch(() => setRows([]))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => { runSearch(''); }, []);
-
-  const handleQueryChange = (val) => {
-    setQ(val);
-    setLoading(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => runSearch(val), 300);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-          <span className="font-semibold text-slate-800">Select Admitted Patient</span>
-          <button className="text-slate-400 hover:text-slate-600" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="px-4 py-2 border-b border-slate-200 relative">
-          <Search className="w-4 h-4 absolute left-7 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            autoFocus
-            className="pl-8 pr-2 py-1.5 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
-            placeholder="Search Admission # or Patient Name…"
-            value={q}
-            onChange={(e) => handleQueryChange(e.target.value)}
-          />
-        </div>
-        <div className="overflow-y-auto flex-1">
-          {loading ? (
-            <div className="text-center text-sm text-slate-400 py-6">Loading…</div>
-          ) : rows.length === 0 ? (
-            <div className="text-center text-sm text-slate-400 py-6">No admitted patients found</div>
-          ) : (
-            <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50 text-xs text-slate-500 uppercase sticky top-0">
-                <tr>
-                  <th className="px-3 py-2">Admission #</th>
-                  <th className="px-3 py-2">Patient</th>
-                  <th className="px-3 py-2">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="cursor-pointer hover:bg-blue-50 border-t border-slate-100" onClick={() => onSelect(r)}>
-                    <td className="px-3 py-2 font-medium text-slate-700">{r.admissionNo}</td>
-                    <td className="px-3 py-2">{r.patientName}</td>
-                    <td className="px-3 py-2 text-slate-500">{fmtAdmDate(r.createdAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function toDateInput(value) {
   const d = value ? new Date(value) : new Date();
@@ -309,20 +231,9 @@ export default function SalesInvoice() {
       setAdmInvoices(invoices);
       setBilledRateDrafts({});
       if (gins.length === 0) { toast('No GINs found for this admission number'); return; }
-      // Initialize editable rates from item data
-      const rateMap = {};
-      for (const gin of gins) {
-        if (gin.ginItems && gin.ginItems.length > 0) {
-          gin.ginItems.forEach((gi) => {
-            const code = gi.item?.code;
-            if (code && !(code in rateMap)) rateMap[code] = Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0);
-          });
-        } else {
-          const code = gin.item?.code;
-          if (code && !(code in rateMap)) rateMap[code] = Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0);
-        }
-      }
-      setAdmRates(rateMap);
+      // Editable rates start empty — each GIN line shows its own locked rate
+      // until the user types a different one.
+      setAdmRates({});
     } catch (err) {
       toast.error(err.message || 'Failed to search');
     } finally {
@@ -330,55 +241,76 @@ export default function SalesInvoice() {
     }
   };
 
-  // Aggregate same items across all GINs — one row per item+rate, qty summed.
-  // Each GIN now carries its OWN locked-in rate (see createGIN/
-  // createGINFromHeader's unitRate) — a later rate change must not retroactively
-  // reprice an earlier GIN's quantity. Grouping by itemCode alone would merge
-  // e.g. "6 @ Rs2" and "7 @ Rs3" into one row and silently bill all 13 units
-  // at whichever GIN's rate happened to be encountered first — grouping by
-  // itemCode+rate instead keeps genuinely different-rate batches as separate
-  // rows (same-rate batches of the same item still merge into one, as before).
-  // Only NOT-yet-billed GIN entries become rows here (editable rate, go into
-  // "Save Invoice"). Entries already picked into an earlier Sales Invoice are
-  // shown from the saved invoices themselves (admInvoices, "Already billed"
-  // section) — never offered again here, so nothing is billed twice.
-  const admRows = useMemo(() => {
+  // Admission search shows every GIN of the admission date-wise, one block
+  // per GIN with its own lines and total, never merged across GINs. Each line
+  // keeps the rate locked on its GIN (see createGINFromHeader's unitRate).
+  //   • Not yet billed → rate editable here, billed by "Save Invoice".
+  //   • Billed        → shows its invoice line's rate (editable, invoice-only
+  //     change). New invoice lines point at their GIN line (ginItemId/ginId);
+  //     older ones were merged across GINs, so they are matched by item when
+  //     only one invoice line has that item, else the locked GIN rate shows.
+  const admInvoiceLines = useMemo(() => admInvoices.flatMap((h) => (h.items || []).map((l) => ({ ...l, headerCode: h.code }))), [admInvoices]);
+  const admGinBlocks = useMemo(() => {
     if (!admGINs) return [];
-    const pending = {};
-    for (const gin of admGINs) {
-      const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
-      const entries = gin.ginItems && gin.ginItems.length > 0
-        ? gin.ginItems.filter((gi) => !gi.isBilled).map((gi) => ({
-            ginItemId: gi.id, itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-',
-            qty: Number(gi.issuedQuantity || 0), dept, defaultRate: Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0),
-          }))
-        : gin.isBilled ? [] : [{
-            ginId: gin.id, itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-',
-            qty: Number(gin.issuedQuantity || 0), dept, defaultRate: Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0),
-          }];
-      for (const e of entries) {
-        const map = pending;
-        const rowKey = `${e.itemCode}::${e.defaultRate}`;
-        if (map[rowKey]) {
-          map[rowKey].qty += e.qty;
-          if (e.ginId) map[rowKey].ginIds.push(e.ginId);
-          if (e.ginItemId) map[rowKey].ginItemIds.push(e.ginItemId);
-        } else {
-          map[rowKey] = {
-            rowKey, itemId: e.itemId, itemCode: e.itemCode, item: e.item, qty: e.qty, department: e.dept, defaultRate: e.defaultRate,
-            ginIds: e.ginId ? [e.ginId] : [], ginItemIds: e.ginItemId ? [e.ginItemId] : [],
-          };
-        }
+    const byGinItem = new Map();
+    const byGin = new Map();
+    const legacyByItem = new Map();
+    admInvoiceLines.forEach((l) => {
+      if (l.mrnItemId || Number(l.quantity) < 0) return; // MRN return lines — shown on their own below
+      if (l.ginItemId) byGinItem.set(l.ginItemId, l);
+      else if (l.ginId) byGin.set(l.ginId, l);
+      else {
+        const list = legacyByItem.get(l.itemId) || [];
+        list.push(l);
+        legacyByItem.set(l.itemId, list);
       }
-    }
-    // Zero (or negative) aggregated quantity shouldn't reach the invoice at
-    // all — it isn't a valid billable line, and previously letting it through
-    // caused the whole save to fail with "quantity must be a positive number".
-    return Object.values(pending).filter((r) => Number(r.qty) > 0);
-  }, [admGINs]);
+    });
+    const legacyLine = (itemId) => {
+      const list = legacyByItem.get(itemId);
+      return list && list.length === 1 ? list[0] : null;
+    };
 
-  const admBilledLineCount = admInvoices.reduce((n, h) => n + (h.items?.length || 0), 0);
-  const admBilledTotal = admInvoices.reduce((s, h) => s + Number(h.totalAmount || 0), 0);
+    return [...admGINs]
+      .sort((a, b) => (new Date(a.issueDate || a.createdAt) - new Date(b.issueDate || b.createdAt)) || (a.id - b.id))
+      .map((gin) => {
+        const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
+        const entries = gin.ginItems && gin.ginItems.length > 0
+          ? gin.ginItems.map((gi) => ({
+              key: `gi-${gi.id}`, ginItemIds: [gi.id], ginIds: [], billed: !!gi.isBilled,
+              itemId: gi.item?.id, itemCode: gi.item?.code || '-', item: gi.item?.name || '-',
+              qty: Number(gi.issuedQuantity || 0),
+              lockedRate: Number(gi.unitRate ?? gi.item?.lastGrnRate ?? gi.item?.purchasePrice ?? 0),
+              invoiceLine: gi.isBilled ? (byGinItem.get(gi.id) || legacyLine(gi.item?.id)) : null,
+            }))
+          : [{
+              key: `g-${gin.id}`, ginItemIds: [], ginIds: [gin.id], billed: !!gin.isBilled,
+              itemId: gin.item?.id, itemCode: gin.item?.code || '-', item: gin.item?.name || '-',
+              qty: Number(gin.issuedQuantity || 0),
+              lockedRate: Number(gin.unitRate ?? gin.item?.lastGrnRate ?? gin.item?.purchasePrice ?? 0),
+              invoiceLine: gin.isBilled ? (byGin.get(gin.id) || legacyLine(gin.item?.id)) : null,
+            }];
+        // Zero quantity isn't a billable line (and used to fail the save).
+        const lines = entries.filter((e) => e.qty > 0).map((e) => {
+          let rate = e.lockedRate;
+          if (!e.billed) rate = Number(admRates[e.key] ?? e.lockedRate);
+          else if (e.invoiceLine) rate = Number(billedRateDrafts[e.invoiceLine.id] ?? e.invoiceLine.saleRate);
+          return { ...e, rate, amount: e.qty * rate };
+        });
+        return {
+          id: gin.id, code: gin.code, date: gin.issueDate || gin.createdAt, dept, lines,
+          total: lines.reduce((s, l) => s + l.amount, 0),
+        };
+      })
+      .filter((b) => b.lines.length > 0);
+  }, [admGINs, admInvoiceLines, admRates, billedRateDrafts]);
+
+  // Medicine the patient gave back (MRN) — minus lines on the bill.
+  const admReturnLines = admInvoiceLines.filter((l) => l.mrnItemId || Number(l.quantity) < 0);
+  const admReturnTotal = admReturnLines.reduce((s, l) => s + Number(l.totalAmount || 0), 0);
+
+  const admPendingLines = admGinBlocks.flatMap((b) => b.lines.filter((l) => !l.billed));
+  const admGrandTotal = admGinBlocks.reduce((s, b) => s + b.total, 0) + admReturnTotal;
+  const admPendingTotal = admPendingLines.reduce((s, l) => s + l.amount, 0);
 
   const saveBilledRate = async (line) => {
     const draft = billedRateDrafts[line.id];
@@ -400,36 +332,28 @@ export default function SalesInvoice() {
     }
   };
 
-  const admGrandTotal = useMemo(() =>
-    admRows.reduce((s, r) => s + r.qty * Number(admRates[r.rowKey] ?? r.defaultRate), 0),
-    [admRows, admRates]
-  );
-
   const buildAdmInvObject = (code = `ADM-${admQuery}`) => ({
     code,
     customerType: 'customer',
     customerName: admQuery,
     invoiceDate: new Date().toISOString(),
-    items: admRows.map((r) => {
-      const rate = Number(admRates[r.rowKey] ?? r.defaultRate);
-      return { item: { name: r.item }, saleRate: rate, quantity: r.qty, totalAmount: r.qty * rate };
-    }),
-    subTotal: admGrandTotal,
-    totalAmount: admGrandTotal,
+    items: admPendingLines.map((l) => ({ item: { name: l.item }, saleRate: l.rate, quantity: l.qty, totalAmount: l.amount })),
+    subTotal: admPendingTotal,
+    totalAmount: admPendingTotal,
     discountPercent: 0,
     discountAmount: 0,
   });
 
   const printAdmInvoice = () => {
-    if (admRows.length === 0) return;
+    if (admPendingLines.length === 0) return;
     generateSalesInvoicePdf({ inv: buildAdmInvObject(), mode: 'print' });
   };
 
   const [admSaving, setAdmSaving] = useState(false);
 
   const saveAdmInvoice = async () => {
-    if (admRows.length === 0) { toast.error('No items to save'); return; }
-    const invalidItem = admRows.find((r) => !r.itemId);
+    if (admPendingLines.length === 0) { toast.error('No items to save'); return; }
+    const invalidItem = admPendingLines.find((r) => !r.itemId);
     if (invalidItem) { toast.error(`Item ID missing for: ${invalidItem.item}`); return; }
     setAdmSaving(true);
     try {
@@ -439,14 +363,15 @@ export default function SalesInvoice() {
         customerName: admQuery,
         discountPercent: 0,
         createdByName,
-        items: admRows.map((r) => ({
-          itemId: Number(r.itemId),
-          quantity: r.qty,
-          saleRate: Number(admRates[r.rowKey] ?? r.defaultRate),
-          // Which GIN(s)/GINItem(s) this row's quantity came from — flipped
-          // to isBilled server-side so they stop being offered again here.
-          ginIds: r.ginIds,
-          ginItemIds: r.ginItemIds,
+        // One invoice line per GIN line (not merged across GINs), each
+        // pointing at the GIN line it bills — flipped to isBilled server-side
+        // and remembered on the invoice line.
+        items: admPendingLines.map((l) => ({
+          itemId: Number(l.itemId),
+          quantity: l.qty,
+          saleRate: l.rate,
+          ginIds: l.ginIds,
+          ginItemIds: l.ginItemIds,
         })),
       };
       const created = await createSalesInvoiceWithItems(payload);
@@ -684,7 +609,7 @@ export default function SalesInvoice() {
           </div>
           <Button label={admLoading ? 'Searching...' : 'Search'} disabled={admLoading} onClick={() => handleAdmSearch()} />
           <Button label="Browse" variant="outline" onClick={() => setShowAdmPicker(true)} />
-          {admRows.length > 0 && (
+          {admPendingLines.length > 0 && (
             <>
               <Button icon={Printer} label="Print" variant="outline" onClick={printAdmInvoice} />
               <Button label={admSaving ? 'Saving...' : 'Save Invoice'} disabled={admSaving} onClick={saveAdmInvoice} />
@@ -700,13 +625,13 @@ export default function SalesInvoice() {
           )}
         </div>
 
-        {admGINs !== null && admRows.length === 0 && admBilledLineCount > 0 && (
+        {admGINs !== null && admGinBlocks.length > 0 && admPendingLines.length === 0 && (
           <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 mb-2">
             All issued items for admission <strong>{admQuery}</strong> are already billed. Nothing new to invoice.
           </p>
         )}
         {admGINs !== null && (
-          admRows.length === 0 && admBilledLineCount === 0 ? (
+          admGinBlocks.length === 0 ? (
             <p className="text-sm text-slate-400 py-4 text-center">No records found for admission number <strong>{admQuery}</strong></p>
           ) : (
             <div className="border border-slate-200 rounded-md overflow-x-auto">
@@ -715,118 +640,117 @@ export default function SalesInvoice() {
                   <tr>
                     <th className="px-3 py-2">Item Code</th>
                     <th className="px-3 py-2">Item</th>
-                    <th className="px-3 py-2">Department</th>
                     <th className="px-3 py-2 text-right">Qty</th>
                     <th className="px-3 py-2 text-right">Rate</th>
                     <th className="px-3 py-2 text-right">Amount</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {admRows.map((r) => {
-                    const rate = Number(admRates[r.rowKey] ?? r.defaultRate);
-                    return (
-                      <tr key={r.rowKey}>
-                        <td className="px-3 py-2 text-slate-500">{r.itemCode}</td>
-                        <td className="px-3 py-2">{r.item}</td>
-                        <td className="px-3 py-2">{r.department}</td>
-                        <td className="px-3 py-2 text-right">{r.qty}</td>
-                        <td className="px-3 py-2 text-right">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={admRates[r.rowKey] ?? r.defaultRate}
-                            onChange={(e) => setAdmRates((prev) => ({ ...prev, [r.rowKey]: e.target.value }))}
-                            className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right focus:outline-none focus:border-blue-500"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right font-medium">{(r.qty * rate).toFixed(2)}</td>
-                      </tr>
-                    );
-                  })}
-                  {admRows.length > 0 && (
-                    <tr className="bg-slate-50 font-semibold">
-                      <td colSpan={5} className="px-3 py-2 text-right text-slate-700">Grand Total</td>
-                      <td className="px-3 py-2 text-right">{admGrandTotal.toFixed(2)}</td>
-                    </tr>
-                  )}
-                  {admBilledLineCount > 0 && (
-                    <>
-                      <tr className="bg-emerald-50">
-                        <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold text-emerald-800 uppercase tracking-wide">
-                          Already billed — rate change applies to this invoice only
+                  {admGinBlocks.map((b) => (
+                    <Fragment key={`gin-${b.id}`}>
+                      <tr className="bg-slate-100/80">
+                        <td colSpan={5} className="px-3 py-1.5 text-xs text-slate-700">
+                          <strong>{b.date ? new Date(b.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}</strong>
+                          <span className="mx-2 text-slate-400">·</span>
+                          GIN <strong>{b.code}</strong>
+                          <span className="mx-2 text-slate-400">·</span>
+                          {b.dept}
                         </td>
                       </tr>
-                      {admInvoices.map((h) => (
-                        <Fragment key={`inv-${h.id}`}>
-                          <tr className="bg-slate-50/60">
-                            <td colSpan={5} className="px-3 py-1.5 text-xs text-slate-600">
-                              Invoice <strong>{h.code}</strong>
-                              {h.invoiceDate ? ` · ${new Date(h.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}
+                      {b.lines.map((l) => {
+                        const inv = l.invoiceLine;
+                        const draft = inv ? billedRateDrafts[inv.id] : undefined;
+                        const changed = inv && draft !== undefined && Number(draft) !== Number(inv.saleRate);
+                        const saving = inv && savingLineId === inv.id;
+                        return (
+                          <tr key={l.key}>
+                            <td className="px-3 py-2 text-slate-500">{l.itemCode}</td>
+                            <td className="px-3 py-2">
+                              {l.item}
+                              {l.billed && (
+                                <span
+                                  className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800"
+                                  title={inv ? `Invoice ${inv.headerCode}` : 'Billed'}
+                                >
+                                  Billed
+                                </span>
+                              )}
                             </td>
-                            <td className="px-3 py-1.5 text-right">
-                              <button
-                                type="button"
-                                onClick={() => generateSalesInvoicePdf({ inv: h, mode: 'print' })}
-                                className="inline-flex items-center gap-1 text-xs text-blue-700 hover:text-blue-900"
-                                title="Print this invoice"
-                              >
-                                <Printer size={12} /> Print
-                              </button>
+                            <td className="px-3 py-2 text-right">{l.qty}</td>
+                            <td className="px-3 py-2 text-right">
+                              {!l.billed ? (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={admRates[l.key] ?? l.lockedRate}
+                                  onChange={(e) => setAdmRates((prev) => ({ ...prev, [l.key]: e.target.value }))}
+                                  className="w-24 px-2 py-1 border border-slate-300 rounded text-sm text-right focus:outline-none focus:border-blue-500"
+                                />
+                              ) : inv ? (
+                                <div className="inline-flex items-center gap-1">
+                                  {saving && <span className="text-xs text-slate-400">Saving…</span>}
+                                  {/* Saves itself on Enter or when the box loses focus — the
+                                      invoice and the patient's bill follow; the GIN's own
+                                      rate, item rates and stock are untouched. */}
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={draft ?? inv.saleRate}
+                                    disabled={saving}
+                                    title="Rate change applies to this invoice only — saves on Enter or when you leave the box"
+                                    onChange={(e) => setBilledRateDrafts((prev) => ({ ...prev, [inv.id]: e.target.value }))}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                    onBlur={() => { if (changed) saveBilledRate(inv); }}
+                                    className={`w-24 px-2 py-1 border rounded text-sm text-right focus:outline-none focus:border-blue-500 ${changed ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
+                                  />
+                                </div>
+                              ) : (
+                                <span className="text-slate-600">{l.rate.toFixed(2)}</span>
+                              )}
                             </td>
+                            <td className="px-3 py-2 text-right font-medium">{l.amount.toFixed(2)}</td>
                           </tr>
-                          {(h.items || []).map((line) => {
-                            const draft = billedRateDrafts[line.id];
-                            const shownRate = draft ?? line.saleRate;
-                            const changed = draft !== undefined && Number(draft) !== Number(line.saleRate);
-                            const saving = savingLineId === line.id;
-                            return (
-                              <tr key={`line-${line.id}`}>
-                                <td className="px-3 py-2 text-slate-500">{line.item?.code || '-'}</td>
-                                <td className="px-3 py-2">
-                                  {line.item?.name || '-'}
-                                  <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800">Billed</span>
-                                </td>
-                                <td className="px-3 py-2 text-slate-500">{h.code}</td>
-                                <td className="px-3 py-2 text-right">{line.quantity}</td>
-                                <td className="px-3 py-2 text-right">
-                                  <div className="inline-flex items-center gap-1">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      value={shownRate}
-                                      disabled={saving}
-                                      onChange={(e) => setBilledRateDrafts((prev) => ({ ...prev, [line.id]: e.target.value }))}
-                                      onKeyDown={(e) => { if (e.key === 'Enter' && changed) saveBilledRate(line); }}
-                                      className={`w-24 px-2 py-1 border rounded text-sm text-right focus:outline-none focus:border-blue-500 ${changed ? 'border-amber-400 bg-amber-50' : 'border-slate-300'}`}
-                                    />
-                                    {changed && (
-                                      <button
-                                        type="button"
-                                        onClick={() => saveBilledRate(line)}
-                                        disabled={saving}
-                                        className="px-2 py-1 text-xs font-semibold rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-                                      >
-                                        {saving ? '…' : 'Update'}
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 text-right">
-                                  {(Number(line.quantity) * Number(changed ? draft : line.saleRate)).toFixed(2)}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </Fragment>
+                        );
+                      })}
+                      <tr className="bg-slate-50 font-semibold">
+                        <td colSpan={4} className="px-3 py-1.5 text-right text-slate-700">Total</td>
+                        <td className="px-3 py-1.5 text-right">{b.total.toFixed(2)}</td>
+                      </tr>
+                    </Fragment>
+                  ))}
+                  {admReturnLines.length > 0 && (
+                    <>
+                      <tr className="bg-amber-50">
+                        <td colSpan={5} className="px-3 py-1.5 text-xs font-semibold text-amber-800 uppercase tracking-wide">
+                          Wapsi (MRN) — patient ne jo medicine wapas ki
+                        </td>
+                      </tr>
+                      {admReturnLines.map((l) => (
+                        <tr key={`ret-${l.id}`}>
+                          <td className="px-3 py-2 text-slate-500">{l.item?.code || '-'}</td>
+                          <td className="px-3 py-2">
+                            Return: {l.item?.name || '-'}
+                            <span className="ml-2 text-xs text-slate-400">
+                              {l.invoiceDate ? new Date(l.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right">{l.quantity}</td>
+                          <td className="px-3 py-2 text-right text-slate-600">{Number(l.saleRate).toFixed(2)}</td>
+                          <td className="px-3 py-2 text-right font-medium text-amber-700">{Number(l.totalAmount).toFixed(2)}</td>
+                        </tr>
                       ))}
-                      <tr className="bg-emerald-50 font-semibold text-emerald-900">
-                        <td colSpan={5} className="px-3 py-2 text-right">Billed Total</td>
-                        <td className="px-3 py-2 text-right">{admBilledTotal.toFixed(2)}</td>
+                      <tr className="bg-amber-50/60 font-semibold">
+                        <td colSpan={4} className="px-3 py-1.5 text-right text-slate-700">Wapsi Total</td>
+                        <td className="px-3 py-1.5 text-right text-amber-700">{admReturnTotal.toFixed(2)}</td>
                       </tr>
                     </>
                   )}
+                  <tr className="bg-slate-200/70 font-bold">
+                    <td colSpan={4} className="px-3 py-2 text-right text-slate-800">Grand Total</td>
+                    <td className="px-3 py-2 text-right">{admGrandTotal.toFixed(2)}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>

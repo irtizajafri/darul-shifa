@@ -5,11 +5,15 @@ function safeRows(rows) {
   return Array.isArray(rows) ? rows : [];
 }
 
+// Number-looking identifiers (Admission #, Item Code, …) are not amounts.
+const isIdColumn = (h) => /#|code|admission/i.test(h);
+
 function buildGrandTotalFooter(rows) {
   if (!rows.length) return null;
   const headers = Object.keys(rows[0]);
   return headers.map((h, i) => {
     if (i === 0) return 'Grand Total';
+    if (isIdColumn(h)) return '';
     const vals = rows.map((r) => Number(r[h])).filter((v) => !isNaN(v) && isFinite(v));
     if (vals.length === rows.length && vals.length > 0) {
       return vals.reduce((a, b) => a + b, 0).toFixed(2);
@@ -84,7 +88,7 @@ function addPdfMeta(doc, title, filterSummary, printedBy, generatedAt) {
   return { startY, drawFooter };
 }
 
-export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '' }) {
+export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '', grandTotal = true }) {
   const data = safeRows(rows);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
@@ -100,7 +104,7 @@ export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = 
 
   const headers = Object.keys(data[0]);
   const body = data.map((row) => headers.map((key) => String(row[key] ?? '')));
-  const footer = buildGrandTotalFooter(data);
+  const footer = grandTotal ? buildGrandTotalFooter(data) : null;
 
   autoTable(doc, {
     startY,
@@ -118,7 +122,59 @@ export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = 
   doc.save(`${fileName}.pdf`);
 }
 
-export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '' }) {
+// Portrait A4 print of a row report as a plain HTML page in a popup — real
+// Arial 8pt (jsPDF has no Arial). Columns empty on every row ('-' / blank)
+// are dropped so the rest fit the narrower portrait page. Same title,
+// filter line, Grand Total footer and Printed by / Generated line as the PDF.
+export function printRowsHtml({ title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '', grandTotal = true }) {
+  const data = safeRows(rows);
+  const allHeaders = data.length ? Object.keys(data[0]) : [];
+  const isBlank = (v) => v === undefined || v === null || String(v).trim() === '' || String(v).trim() === '-';
+  const headers = allHeaders.filter((h) => data.some((r) => !isBlank(r[h])));
+  const numeric = (h) => data.length > 0 && data.every((r) => isBlank(r[h]) || (!Number.isNaN(Number(r[h])) && Number.isFinite(Number(r[h]))));
+  const numCols = new Set(headers.filter((h) => !isIdColumn(h) && numeric(h)));
+  const footer = grandTotal ? buildGrandTotalFooter(data.map((r) => Object.fromEntries(headers.map((h) => [h, r[h]])))) : null;
+  const isTotalRow = (r) => /total/i.test(String(r[headers[0]] ?? ''));
+
+  const head = headers.map((h) => `<th class="${numCols.has(h) ? 'r' : ''}">${escHtml(h)}</th>`).join('');
+  const body = data.map((r) => `<tr class="${isTotalRow(r) ? 'tot' : ''}">${headers.map((h) => `<td class="${numCols.has(h) ? 'r' : ''}">${escHtml(r[h] ?? '')}</td>`).join('')}</tr>`).join('');
+  const foot = footer ? `<tfoot><tr>${footer.map((v, i) => `<td class="${i > 0 && numCols.has(headers[i]) ? 'r' : ''}">${escHtml(v)}</td>`).join('')}</tr></tfoot>` : '';
+  const printed = [printedBy && `Printed by: ${printedBy}`, generatedAt && `Generated: ${generatedAt}`].filter(Boolean).join('   |   ');
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/>
+<title>${escHtml(title)}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; line-height: 1.2; color: #000; background: #fff; }
+  h1 { font-size: 10pt; margin-bottom: 2px; }
+  .filters { font-size: 7.5pt; color: #333; margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; table-layout: auto; }
+  th, td { border: 0.5pt solid #888; padding: 1px 3px; vertical-align: top; word-break: break-word; }
+  th { background: #e3e3e3; font-weight: 700; text-align: left; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; page-break-inside: avoid; }
+  .r { text-align: right; white-space: nowrap; }
+  tr.tot td { font-weight: 700; background: #f2f2f2; }
+  tfoot td { font-weight: 700; background: #e3e3e3; }
+  .printed { font-size: 7pt; color: #555; margin-top: 4px; }
+  @page { size: A4 portrait; margin: 10mm; }
+</style></head><body>
+  <h1>${escHtml(title)}</h1>
+  ${filterSummary && filterSummary.length ? `<div class="filters">${escHtml(filterSummary.join('   |   '))}</div>` : ''}
+  ${data.length ? `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}</table>` : '<p>No records found.</p>'}
+  ${printed ? `<div class="printed">${escHtml(printed)}</div>` : ''}
+  <script>window.onload = function () { window.print(); };</script>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=1000');
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+}
+
+// grandTotal: false when the rows already carry their own total lines.
+export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '', grandTotal = true }) {
   const data = safeRows(rows);
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
 
@@ -131,7 +187,7 @@ export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = []
   } else {
     const headers = Object.keys(data[0]);
     const body = data.map((row) => headers.map((key) => String(row[key] ?? '')));
-    const footer = buildGrandTotalFooter(data);
+    const footer = grandTotal ? buildGrandTotalFooter(data) : null;
 
     autoTable(doc, {
       startY,
@@ -316,8 +372,81 @@ export function exportItemLedgerPdf({
  * Generates a formatted Sales Invoice PDF (Portrait A4)
  * mode: 'download' → saves file | 'print' → opens browser print dialog
  */
+// Sales Invoice print — a plain HTML page in a popup (real Arial 9pt, tight
+// spacing, fixed on A4), the same popup-print pattern as the hospital's
+// slips. 'download' still builds the PDF below.
+const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money2 = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function printSalesInvoiceHtml(inv) {
+  const who = inv.customerType === 'admission'
+    ? ['Admission #', inv.customerName || '-']
+    : ['Patient', inv.customerType === 'customer' ? (inv.customerName || 'N/A') : 'Walking Customer'];
+  const date = inv.invoiceDate
+    ? new Date(inv.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '-';
+  const rows = (inv.items || []).map((line, i) => `
+    <tr>
+      <td class="c">${i + 1}</td>
+      <td>${escHtml(`${Number(line.quantity) < 0 ? 'Return: ' : ''}${line.item?.name || '-'}`)}</td>
+      <td class="r">${money2(line.saleRate)}</td>
+      <td class="c">${escHtml(line.quantity)}</td>
+      <td class="r">${money2(line.totalAmount)}</td>
+    </tr>`).join('');
+  const subTotal = Number(inv.subTotal ?? inv.totalAmount ?? 0);
+  const discountPercent = Number(inv.discountPercent || 0);
+  const discountAmount = Number(inv.discountAmount || 0);
+  const grandTotal = Number(inv.totalAmount || 0);
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/>
+<title>Sales Invoice ${escHtml(inv.code || '')}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; line-height: 1.25; color: #000; background: #fff; width: 190mm; margin: 0 auto; }
+  h1 { font-size: 12pt; text-align: center; margin-bottom: 3px; }
+  .rule { border-top: 1px solid #000; margin-bottom: 4px; }
+  .meta { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .meta b { margin-right: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 0.5pt solid #777; padding: 2px 4px; vertical-align: top; }
+  th { background: #e5e5e5; font-weight: 700; text-align: left; }
+  .c { text-align: center; } .r { text-align: right; }
+  th.c { text-align: center; } th.r { text-align: right; }
+  .tot { width: 65mm; margin: 4px 0 0 auto; }
+  .tot div { display: flex; justify-content: space-between; padding: 1px 0; }
+  .tot .grand { font-weight: 700; border-top: 1px solid #000; margin-top: 2px; padding-top: 2px; }
+  .disc { color: #b00; }
+  @page { size: A4 portrait; margin: 10mm; }
+</style></head><body>
+  <h1>Fair Price Medical Store</h1>
+  <div class="rule"></div>
+  <div class="meta">
+    <div><b>Invoice No:</b>${escHtml(inv.code || '-')}</div>
+    <div><b>${who[0]}:</b>${escHtml(who[1])}</div>
+    <div><b>Date:</b>${escHtml(date)}</div>
+  </div>
+  <table>
+    <thead><tr><th class="c" style="width:10mm">S.No</th><th>Description</th><th class="r" style="width:24mm">Rate</th><th class="c" style="width:14mm">Qty</th><th class="r" style="width:26mm">Amount</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" class="c">—</td></tr>'}</tbody>
+  </table>
+  <div class="tot">
+    <div><span>Sub Total:</span><span>${money2(subTotal)}</span></div>
+    ${discountPercent > 0 ? `<div class="disc"><span>Discount (${discountPercent}%):</span><span>- ${money2(discountAmount)}</span></div>` : ''}
+    <div class="grand"><span>Grand Total:</span><span>${money2(grandTotal)}</span></div>
+  </div>
+  <script>window.onload = function () { window.print(); };</script>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=900');
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+}
+
 export function generateSalesInvoicePdf({ inv, mode = 'download' }) {
   if (!inv) return;
+  if (mode === 'print') { printSalesInvoiceHtml(inv); return; }
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();

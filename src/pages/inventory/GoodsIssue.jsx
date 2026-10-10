@@ -477,7 +477,11 @@ export default function GoodsIssue() {
       setGinUnitOptions({});
       setGinSelectedUnits({});
       setShowGINForm(false);
-      toast.success('GIN created');
+      // An admission GIN bills itself (server-side) — say so, so nobody goes
+      // looking for a Save Invoice step.
+      toast.success(newGIN?.admissionNumber
+        ? `GIN created — Admission # ${newGIN.admissionNumber} ke bill mein add ho gayi`
+        : 'GIN created');
       if (andPrint && newGIN) printGINDocument(newGIN, { printedBy: newGIN.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
     } catch (err) {
       toast.error(err.message || 'Failed to create GIN');

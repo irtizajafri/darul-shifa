@@ -634,11 +634,20 @@ model InventorySalesInvoice {
   saleRate        Float
   totalAmount     Float
   createdByName   String?
+  // Admission billing: the one GIN line (or legacy single-item GIN) this
+  // invoice line billed. NULL on older lines, which were merged across GINs.
+  ginItemId       Int?
+  ginId           Int?
+  // Set on a minus "Return" line made by an MRN (quantity/amount negative).
+  mrnItemId       Int?
   createdAt       DateTime                       @default(now())
   updatedAt       DateTime                       @updatedAt
 
   @@index([invoiceDate])
   @@index([itemId])
+  @@index([ginItemId])
+  @@index([ginId])
+  @@index([mrnItemId])
   @@index([customerType])
   @@index([headerId])
 }
@@ -3056,26 +3065,32 @@ model UtilityActualBill {
 }
 
 // ─── Material Return Note (MRN) ───────────────────────────────────────────────
-// Department ne issued maal wapas kiya — stock increment + movement IN
+// Department ne issued maal wapas kiya — stock increment + movement IN.
+// By Admission # (no single GIN/department): an admitted patient's unused
+// medicine, across that admission's GINs, billed back as a minus "Return".
 
 model InventoryMRN {
-  id           Int                 @id @default(autoincrement())
-  code         String              @unique
-  ginId        Int
-  gin          InventoryGIN        @relation(fields: [ginId], references: [id])
-  departmentId Int
-  department   InventoryDepartment @relation(fields: [departmentId], references: [id])
-  returnDate   DateTime
-  receivedBy   String?
-  notes        String?
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
+  id              Int                  @id @default(autoincrement())
+  code            String               @unique
+  ginId           Int?
+  gin             InventoryGIN?        @relation(fields: [ginId], references: [id])
+  departmentId    Int?
+  department      InventoryDepartment? @relation(fields: [departmentId], references: [id])
+  admissionNumber String?
+  patientName     String?
+  createdByName   String?
+  returnDate      DateTime
+  receivedBy      String?
+  notes           String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   mrnItems     InventoryMRNItem[]
 
   @@index([ginId])
   @@index([departmentId])
   @@index([returnDate])
+  @@index([admissionNumber])
 }
 
 model InventoryMRNItem {
@@ -3085,9 +3100,15 @@ model InventoryMRNItem {
   itemId      Int
   item        InventoryItem @relation(fields: [itemId], references: [id])
   ginItemId   Int?
+  ginId       Int?
   returnedQty Float
+  // Rate it was billed at (admission GINs) — the Return line's rate.
+  rate        Float?
+  amount      Float?
   createdAt   DateTime      @default(now())
 
   @@index([mrnId])
   @@index([itemId])
+  @@index([ginItemId])
+  @@index([ginId])
 }

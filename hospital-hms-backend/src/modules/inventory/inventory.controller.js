@@ -680,6 +680,7 @@ async function createGDBatch(req, res, next) {
     const data = await service.createGDBatch({ departmentId, items, admissionNumber, patientName, comment, createdByName });
     return success(res, data, 'gd batch created');
   } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
     if (String(err.message).includes('inactive') || String(err.message).includes('not found') || String(err.message).includes('must') || String(err.message).includes('Invalid')) {
       return fail(res, 400, err.message);
     }
@@ -710,6 +711,7 @@ async function createGIN(req, res, next) {
     const data = await service.createGIN(req.body || {});
     return success(res, data, 'gin created');
   } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
     if (String(err.message).includes('not found') || String(err.message).includes('must') || String(err.message).includes('Insufficient') || String(err.message).includes('fulfilled') || String(err.message).includes('exceed')) {
       return fail(res, 400, err.message);
     }
@@ -1044,6 +1046,19 @@ async function createMRN(req, res, next) {
     const data = await service.createMRN(req.body || {});
     return success(res, data, 'MRN created');
   } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    if (/returnable|required|not found/i.test(String(err.message))) return fail(res, 400, err.message);
+    next(err);
+  }
+}
+
+// MRN "Admission #" mode — the admission's GIN lines with returnable qty + billed rate.
+async function getAdmissionReturnables(req, res, next) {
+  try {
+    const data = await service.getAdmissionReturnables(req.params.admissionNo);
+    return success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }
@@ -1125,6 +1140,7 @@ module.exports = {
   resyncAllItemCurrentStock,
   listMRNs,
   createMRN,
+  getAdmissionReturnables,
   previewBulkItems,
   bulkImportItems,
 };

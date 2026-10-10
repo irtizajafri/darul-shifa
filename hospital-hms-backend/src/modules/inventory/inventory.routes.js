@@ -79,6 +79,7 @@ router.post('/gdn', controller.createGDN);
 
 router.get('/mrn', controller.listMRNs);
 router.post('/mrn', controller.createMRN);
+router.get('/mrn/admission/:admissionNo', controller.getAdmissionReturnables);
 
 router.get('/alerts/reorder', controller.listOpenReorderAlerts);
 router.get('/reports/item-ledger', controller.listItemLedgerReport);

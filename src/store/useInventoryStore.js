@@ -438,7 +438,7 @@ export const useInventoryStore = create((set) => ({
     return data;
   },
 
-  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '', issuedById = '' } = {}) => {
+  fetchGINs: async ({ search = '', departmentId = '', itemId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '', issuedById = '', admissionNumber = '', patientType = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -451,6 +451,8 @@ export const useInventoryStore = create((set) => ({
   if (dateTo) qs.set('dateTo', String(dateTo));
       if (assetType) qs.set('assetType', String(assetType));
       if (issuedById) qs.set('issuedById', String(issuedById));
+      if (admissionNumber && String(admissionNumber).trim()) qs.set('admissionNumber', String(admissionNumber).trim());
+      if (patientType) qs.set('patientType', String(patientType));
       const data = await request(`/gin?${qs.toString()}`);
       set({ gins: Array.isArray(data) ? data : [], loading: false });
       return data;
@@ -584,6 +586,9 @@ export const useInventoryStore = create((set) => ({
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+
+  // MRN "Admission #" mode — the admission's GIN lines, returnable qty and billed rate.
+  fetchAdmissionReturnables: async (admissionNo) => request(`/mrn/admission/${encodeURIComponent(String(admissionNo).trim())}`),
 
   fetchMaintenanceRecords: async ({ itemId = '', supplierId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });

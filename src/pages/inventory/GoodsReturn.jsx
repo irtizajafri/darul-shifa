@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { Fragment, useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Search, RotateCcw, Printer, ChevronDown, ChevronUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { useInventoryStore } from '../../store/useInventoryStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -22,17 +24,22 @@ function fmtDate(str) {
 // ─── Print MRN ───────────────────────────────────────────────────────────────
 
 function printMRN(mrn) {
+  // Admission returns carry the billed rate — show Rate/Amount and a total.
+  const priced = (mrn.mrnItems || []).some((mi) => mi.rate != null);
+  const td = 'padding:6px 8px;border-bottom:1px solid #e5e7eb;';
   const rows = (mrn.mrnItems || [])
     .map(
       (mi, i) => `
       <tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">${i + 1}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">${mi.item?.code || '-'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">${mi.item?.name || '-'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:center;">${fmt(mi.returnedQty)} ${mi.item?.unit || ''}</td>
+        <td style="${td}">${i + 1}</td>
+        <td style="${td}">${mi.item?.code || '-'}</td>
+        <td style="${td}">${mi.item?.name || '-'}</td>
+        <td style="${td}text-align:center;">${fmt(mi.returnedQty)} ${mi.item?.unit || ''}</td>
+        ${priced ? `<td style="${td}text-align:right;">${fmt(mi.rate)}</td><td style="${td}text-align:right;">${fmt(mi.amount)}</td>` : ''}
       </tr>`
     )
     .join('');
+  const total = (mrn.mrnItems || []).reduce((s, mi) => s + Number(mi.amount || 0), 0);
 
   const html = `<!DOCTYPE html><html><head><title>MRN ${mrn.code}</title>
   <style>*{font-family:sans-serif;margin:0;padding:0;box-sizing:border-box;}body{padding:24px;font-size:13px;}
@@ -47,8 +54,9 @@ function printMRN(mrn) {
   <div class="meta">
     <div>MRN # <span>${mrn.code}</span></div>
     <div>Return Date <span>${fmtDate(mrn.returnDate)}</span></div>
-    <div>GIN # <span>${mrn.gin?.code || '-'}</span></div>
-    <div>Department <span>${mrn.department?.name || '-'}</span></div>
+    ${mrn.admissionNumber ? `<div>Admission # <span>${mrn.admissionNumber}</span></div><div>Patient <span>${mrn.patientName || '-'}</span></div>` : ''}
+    ${mrn.gin ? `<div>GIN # <span>${mrn.gin.code}</span></div>` : ''}
+    ${mrn.department ? `<div>Department <span>${mrn.department.name}</span></div>` : ''}
     <div>Received By <span>${mrn.receivedBy || '-'}</span></div>
     ${mrn.notes ? `<div style="grid-column:span 2">Notes <span>${mrn.notes}</span></div>` : ''}
   </div>
@@ -58,8 +66,10 @@ function printMRN(mrn) {
       <th>Item Code</th>
       <th>Item Name</th>
       <th style="text-align:center;">Returned Qty</th>
+      ${priced ? '<th style="text-align:right;">Rate</th><th style="text-align:right;">Amount</th>' : ''}
     </tr></thead>
     <tbody>${rows}</tbody>
+    ${priced ? `<tfoot><tr><td colspan="5" style="padding:6px 8px;text-align:right;font-weight:700;">Wapsi Total</td><td style="padding:6px 8px;text-align:right;font-weight:700;">${fmt(total)}</td></tr></tfoot>` : ''}
   </table>
   <div style="margin-top:32px;display:flex;justify-content:space-between;">
     <div style="text-align:center;"><div style="border-top:1px solid #374151;padding-top:4px;width:160px;">Returned By</div></div>
@@ -77,7 +87,19 @@ function printMRN(mrn) {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function GoodsReturn() {
-  const { gins, fetchGINs, mrns, fetchMRNs, createMRN, fetchItems } = useInventoryStore();
+  const { gins, fetchGINs, mrns, fetchMRNs, createMRN, fetchItems, fetchAdmissionReturnables } = useInventoryStore();
+  const { user } = useAuthStore();
+  const createdByName = user?.name || user?.username || user?.email || '';
+
+  // 'gin' = department return of one GIN (original MRN);
+  // 'admission' = an admitted patient's unused medicine, across all its GINs —
+  // credited on the patient's bill at the billed rate.
+  const [mode, setMode] = useState('admission');
+  const [admQuery, setAdmQuery] = useState('');
+  const [admData, setAdmData] = useState(null); // { admission, gins: [{ lines }] }
+  const [admLoading, setAdmLoading] = useState(false);
+  const [admQtys, setAdmQtys] = useState({}); // ginItemId → qty string
+  const [showAdmPicker, setShowAdmPicker] = useState(false);
 
   // GIN search state
   const [ginSearch, setGinSearch] = useState('');
@@ -132,18 +154,76 @@ export default function GoodsReturn() {
   const alreadyReturnedMap = (() => {
     if (!selectedGIN) return {};
     const map = {};
-    (mrns || [])
-      .filter((m) => m.ginId === selectedGIN.id)
-      .forEach((m) => {
-        (m.mrnItems || []).forEach((mi) => {
-          map[mi.itemId] = (map[mi.itemId] || 0) + Number(mi.returnedQty || 0);
-        });
+    (mrns || []).forEach((m) => {
+      (m.mrnItems || []).forEach((mi) => {
+        if (m.ginId !== selectedGIN.id && mi.ginId !== selectedGIN.id) return;
+        map[mi.itemId] = (map[mi.itemId] || 0) + Number(mi.returnedQty || 0);
       });
+    });
     return map;
   })();
 
+  const loadAdmission = async (admissionNoOverride) => {
+    const no = String(admissionNoOverride ?? admQuery).trim();
+    if (!no) return toast.error('Admission # likhein');
+    setAdmLoading(true);
+    try {
+      const data = await fetchAdmissionReturnables(no);
+      setAdmData(data);
+      setAdmQuery(no);
+      setAdmQtys({});
+      if (!data?.gins?.length) toast('Is admission par koi GIN nahi mili');
+    } catch (err) {
+      setAdmData(null);
+      toast.error(err.message || 'Admission load nahi hui');
+    } finally {
+      setAdmLoading(false);
+    }
+  };
+
+  const clearAdmission = () => { setAdmData(null); setAdmQuery(''); setAdmQtys({}); };
+
+  const admLines = (admData?.gins || []).flatMap((g) => g.lines);
+  const admReturnTotal = admLines.reduce((s, l) => s + (parseFloat(admQtys[l.ginItemId]) || 0) * Number(l.rate || 0), 0);
+  const admClosed = admData && ['closed', 'wipeout'].includes(admData.admission?.status);
+
+  const handleAdmissionSubmit = async (andPrint) => {
+    if (!admData) return toast.error('Pehle admission search karein');
+    if (admClosed) return toast.error('Is admission ki file closed hai — wapsi nahi ho sakti');
+    const items = admLines
+      .map((l) => ({ line: l, qty: parseFloat(admQtys[l.ginItemId]) || 0 }))
+      .filter((x) => x.qty > 0);
+    if (!items.length) return toast.error('Kam az kam ek item ki wapsi qty enter karein');
+    const over = items.find((x) => x.qty > x.line.returnable + 0.0001);
+    if (over) return toast.error(`"${over.line.itemName}": sirf ${fmt(over.line.returnable)} wapas ho sakti hai`);
+
+    setSaving(true);
+    try {
+      const mrn = await createMRN({
+        admissionNumber: admData.admission.admissionNo,
+        returnDate,
+        receivedBy: receivedBy.trim() || undefined,
+        notes: notes.trim() || undefined,
+        createdByName,
+        items: items.map((x) => ({ ginItemId: x.line.ginItemId, returnedQty: x.qty })),
+      });
+      toast.success(`MRN ${mrn.code} bana diya — stock wapas aur patient ke bill se minus`);
+      await Promise.all([fetchMRNs(), fetchItems()]);
+      clearAdmission();
+      setReturnDate(today());
+      setReceivedBy('');
+      setNotes('');
+      if (andPrint) printMRN(mrn);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSubmit = async (e, andPrint = false) => {
     e.preventDefault();
+    if (mode === 'admission') return handleAdmissionSubmit(andPrint);
     if (!selectedGIN) return toast.error('GIN select karein pehle');
 
     const items = Object.entries(returnQtys)
@@ -156,6 +236,7 @@ export default function GoodsReturn() {
     try {
       const mrn = await createMRN({
         ginId: selectedGIN.id,
+        createdByName,
         returnDate,
         receivedBy: receivedBy.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -186,6 +267,8 @@ export default function GoodsReturn() {
       m.code?.toLowerCase().includes(q) ||
       m.department?.name?.toLowerCase().includes(q) ||
       m.gin?.code?.toLowerCase().includes(q) ||
+      (m.admissionNumber || '').toLowerCase().includes(q) ||
+      (m.patientName || '').toLowerCase().includes(q) ||
       (m.receivedBy || '').toLowerCase().includes(q)
     );
   }).slice(0, 20);
@@ -203,7 +286,7 @@ export default function GoodsReturn() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-slate-800">Material Return Note (MRN)</h1>
-          <p className="text-sm text-slate-500">Department se maal wapas lena — stock restore hoga</p>
+          <p className="text-sm text-slate-500">Department ya admitted patient se maal wapas lena — stock restore hoga</p>
         </div>
       </div>
 
@@ -213,7 +296,124 @@ export default function GoodsReturn() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
+          {/* Mode */}
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="mrn-mode" checked={mode === 'admission'} onChange={() => setMode('admission')} />
+              <span className="font-medium text-slate-700">Admission # se (patient ki wapsi)</span>
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="mrn-mode" checked={mode === 'gin'} onChange={() => setMode('gin')} />
+              <span className="font-medium text-slate-700">GIN se (department ki wapsi)</span>
+            </label>
+          </div>
+
+          {mode === 'admission' && (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                  <input
+                    value={admQuery}
+                    onChange={(e) => { setAdmQuery(e.target.value); setAdmData(null); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadAdmission(); } }}
+                    placeholder="Admission number likhein..."
+                    className={`${inputCls} pl-9`}
+                  />
+                </div>
+                <Button type="button" label={admLoading ? 'Searching...' : 'Search'} disabled={admLoading} onClick={() => loadAdmission()} />
+                <Button type="button" label="Browse" variant="outline" onClick={() => setShowAdmPicker(true)} />
+                {admData && (
+                  <button type="button" onClick={clearAdmission} className="text-xs text-slate-400 hover:text-slate-600">Clear</button>
+                )}
+              </div>
+
+              {admData && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+                  <div className="flex flex-wrap gap-4 text-sm">
+                    <div><span className="text-slate-500">Admission #:</span> <span className="font-semibold text-slate-800">{admData.admission.admissionNo}</span></div>
+                    <div><span className="text-slate-500">Patient:</span> <span className="font-semibold">{admData.admission.patientName || '-'}</span></div>
+                    <div><span className="text-slate-500">Status:</span> <span className="font-semibold capitalize">{admData.admission.status}</span></div>
+                  </div>
+                  {admClosed && (
+                    <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                      Is admission ki file closed hai — bill final ho chuka, wapsi nahi ho sakti.
+                    </p>
+                  )}
+                  {admData.gins.length === 0 ? (
+                    <div className="text-sm text-slate-400 text-center py-4">Is admission par koi GIN nahi mili</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-white border border-slate-200">
+                            <th className="px-3 py-2 text-left text-xs font-semibold text-slate-600">Item</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Issued</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Pehle Wapas</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Wapas Ho Sakti</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Rate</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-emerald-700">Wapsi Qty</th>
+                            <th className="px-3 py-2 text-right text-xs font-semibold text-slate-600">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {admData.gins.map((g) => (
+                            <Fragment key={g.id}>
+                              <tr className="bg-slate-100/80">
+                                <td colSpan={7} className="px-3 py-1.5 text-xs text-slate-700">
+                                  <strong>{fmtDate(g.issueDate)}</strong>
+                                  <span className="mx-2 text-slate-400">·</span>GIN <strong>{g.code}</strong>
+                                  <span className="mx-2 text-slate-400">·</span>{g.department}
+                                </td>
+                              </tr>
+                              {g.lines.map((l) => {
+                                const entered = parseFloat(admQtys[l.ginItemId] || '0') || 0;
+                                const isOver = entered > l.returnable + 0.0001;
+                                return (
+                                  <tr key={l.ginItemId} className="bg-white">
+                                    <td className="px-3 py-2">
+                                      <div className="font-medium text-slate-800">{l.itemName}</div>
+                                      <div className="text-xs text-slate-400">{l.itemCode}</div>
+                                    </td>
+                                    <td className="px-3 py-2 text-right text-slate-600">{fmt(l.issued)} {l.unit}</td>
+                                    <td className="px-3 py-2 text-right text-orange-600">{fmt(l.returned)}</td>
+                                    <td className="px-3 py-2 text-right font-semibold text-slate-700">{fmt(l.returnable)}</td>
+                                    <td className="px-3 py-2 text-right text-slate-600">{fmt(l.rate)}</td>
+                                    <td className="px-3 py-2 text-right">
+                                      {l.returnable <= 0 ? (
+                                        <span className="text-xs text-slate-400 italic">Sab wapas</span>
+                                      ) : (
+                                        <input
+                                          type="number" step="0.01" min="0" max={l.returnable}
+                                          value={admQtys[l.ginItemId] ?? ''}
+                                          disabled={admClosed}
+                                          onChange={(e) => setAdmQtys((p) => ({ ...p, [l.ginItemId]: e.target.value }))}
+                                          className={`w-24 px-2 py-1 border rounded text-sm text-right focus:outline-none ${isOver ? 'border-red-400 bg-red-50 focus:border-red-500' : 'border-slate-300 focus:border-emerald-500'}`}
+                                          placeholder="0"
+                                        />
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-medium">{entered > 0 ? fmt(entered * l.rate) : '-'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </Fragment>
+                          ))}
+                          <tr className="bg-amber-50 font-semibold">
+                            <td colSpan={6} className="px-3 py-2 text-right text-slate-700">Wapsi Total (bill se minus hoga)</td>
+                            <td className="px-3 py-2 text-right text-amber-700">{fmt(admReturnTotal)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* GIN Search */}
+          {mode === 'gin' && (
           <div className="relative">
             <label className={labelCls}>GIN Select karein *</label>
             <div className="relative">
@@ -254,8 +454,10 @@ export default function GoodsReturn() {
             )}
           </div>
 
+          )}
+
           {/* Selected GIN details + items */}
-          {selectedGIN && (
+          {mode === 'gin' && selectedGIN && (
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
               <div className="flex flex-wrap gap-4 text-sm">
                 <div><span className="text-slate-500">GIN:</span> <span className="font-semibold text-slate-800">{selectedGIN.code}</span></div>
@@ -339,10 +541,10 @@ export default function GoodsReturn() {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <Button type="submit" label={saving ? 'Saving...' : 'MRN Save Karein'} disabled={saving || !selectedGIN} />
+            <Button type="submit" label={saving ? 'Saving...' : 'MRN Save Karein'} disabled={saving || (mode === 'gin' ? !selectedGIN : (!admData || admClosed))} />
             <Button type="button" label="Save + Print"
               onClick={(e) => handleSubmit(e, true)}
-              disabled={saving || !selectedGIN} variant="outline"
+              disabled={saving || (mode === 'gin' ? !selectedGIN : (!admData || admClosed))} variant="outline"
               icon={Printer} />
           </div>
         </form>
@@ -370,7 +572,7 @@ export default function GoodsReturn() {
               type="text"
               value={reprintSearch}
               onChange={(e) => setReprintSearch(e.target.value)}
-              placeholder="MRN code, GIN code, department se dhundhein..."
+              placeholder="MRN code, GIN code, admission #, patient, department se dhundhein..."
               className={inputCls}
             />
 
@@ -384,12 +586,19 @@ export default function GoodsReturn() {
                     <div>
                       <div className="flex items-center gap-3">
                         <span className="font-semibold text-slate-800 text-sm">{mrn.code}</span>
-                        <span className="text-xs text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded">
-                          GIN: {mrn.gin?.code || '-'}
-                        </span>
+                        {mrn.gin && (
+                          <span className="text-xs text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                            GIN: {mrn.gin.code}
+                          </span>
+                        )}
+                        {mrn.admissionNumber && (
+                          <span className="text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                            Adm: {mrn.admissionNumber}{mrn.patientName ? ` — ${mrn.patientName}` : ''}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5">
-                        {mrn.department?.name} — {fmtDate(mrn.returnDate)}
+                        {mrn.department?.name ? `${mrn.department.name} — ` : ''}{fmtDate(mrn.returnDate)}
                         {mrn.receivedBy && ` — ${mrn.receivedBy}`}
                       </div>
                       <div className="text-xs text-emerald-700 mt-0.5">
@@ -413,6 +622,13 @@ export default function GoodsReturn() {
           </div>
         )}
       </Card>
+
+      {showAdmPicker && (
+        <AdmissionPickerModal
+          onSelect={(r) => { setShowAdmPicker(false); loadAdmission(r.admissionNo); }}
+          onClose={() => setShowAdmPicker(false)}
+        />
+      )}
     </div>
   );
 }

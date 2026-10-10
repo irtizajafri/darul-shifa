@@ -5287,7 +5287,8 @@ async function loadLiveAdmissionMedicines({ category, scopeMode, admissionNo, da
   const idByNo = new Map(admissions.map((a) => [a.admissionNo, a.id]));
   salesItems.forEach((s) => {
     itemsByAdmission.get(idByNo.get(s.customerName))?.push({
-      description: s.item?.name || 'Medicine', medDate: s.invoiceDate,
+      // MRN returns are minus lines on the same admission invoices.
+      description: `${s.quantity < 0 ? 'Return: ' : ''}${s.item?.name || 'Medicine'}`, medDate: s.invoiceDate,
       rate: s.saleRate, qty: s.quantity, amount: s.totalAmount,
       store: HOSPITAL_STORE_LABEL, createdByName: s.createdByName, createdAt: s.createdAt,
     });
@@ -6381,7 +6382,8 @@ async function getProvisionalBillDetail(admissionId) {
       // adds never did in the legacy system either).
       code: si.item?.code || null,
       date: si.invoiceDate,
-      medicine: si.item?.name || '—',
+      // An MRN (medicine the patient didn't use) bills back as a minus line.
+      medicine: `${si.quantity < 0 ? 'Return: ' : ''}${si.item?.name || '—'}`,
       qty: si.quantity,
       rate: si.saleRate,
       amount: si.totalAmount,

@@ -10,10 +10,11 @@ import { Printer, Download, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
-import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf, exportItemLedgerPdf } from '../../utils/exportInventoryReports';
+import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf, printRowsHtml, exportItemLedgerPdf } from '../../utils/exportInventoryReports';
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
 import { formatDate } from '../../utils/helpers';
 
 const REPORT_TYPES = [
@@ -38,7 +39,10 @@ export default function InventoryReports() {
   });
   const [ledgerSummary, setLedgerSummary] = useState(false);
   const [receivingSummary, setReceivingSummary] = useState(false);
-  const [issuanceSummary, setIssuanceSummary] = useState(false);
+  // Issuance Report view: 'details' | 'item' (item-wise summary) |
+  // 'patient' (patient-wise summary, Cash and Panel with their own totals).
+  const [issuanceView, setIssuanceView] = useState('details');
+  const issuanceSummary = issuanceView === 'item';
   const [pendingPrint, setPendingPrint] = useState(false);
   const [receivingFilters, setReceivingFilters] = useState({
     dateFrom: '',
@@ -59,7 +63,12 @@ export default function InventoryReports() {
     assetType: '',
     issuedById: '',
     location: '',
+    // Admitted patient's medicine — GINs issued against this Admission #.
+    admissionNumber: '',
+    // '' all issuance | 'admission' any admitted patient | 'cash' | 'panel'
+    patientType: '',
   });
+  const [showIssuanceAdmPicker, setShowIssuanceAdmPicker] = useState(false);
   const [gdFilters, setGdFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -614,6 +623,9 @@ export default function InventoryReports() {
       subcategoryId: '',
       assetType: '',
       issuedById: '',
+      location: '',
+      admissionNumber: '',
+      patientType: '',
     };
     setIssuanceFilters(emptyFilters);
     fetchGINs(emptyFilters).catch((err) => {
@@ -1169,9 +1181,15 @@ export default function InventoryReports() {
       const dept = gin.department?.name || gin.gdHeader?.department?.name || '-';
       const issuedBy = gin.issuedBy ? `${gin.issuedBy.firstName} ${gin.issuedBy.lastName}` : '-';
       if (gin.ginItems && gin.ginItems.length > 0) {
-        const filteredGinItems = issuanceFilters.itemId
-          ? gin.ginItems.filter((gi) => String(gi.itemId) === String(issuanceFilters.itemId))
-          : gin.ginItems;
+        // The server returns a GIN if ANY of its lines matches; keep only the
+        // lines that match every item-level filter (a multi-item GIN can mix
+        // categories / subcategories / asset types).
+        const f = issuanceFilters;
+        const filteredGinItems = gin.ginItems.filter((gi) =>
+          (!f.itemId || String(gi.itemId) === String(f.itemId))
+          && (!f.categoryId || String(gi.item?.categoryId) === String(f.categoryId))
+          && (!f.subcategoryId || String(gi.item?.subcategoryId) === String(f.subcategoryId))
+          && (!f.assetType || gi.item?.itemType === f.assetType));
         filteredGinItems.forEach((gi, idx) => {
           const qty = Number(gi.issuedQuantity || 0);
           const rate = Number(gi.item?.lastGrnRate || gi.item?.purchasePrice || 0);
@@ -1188,6 +1206,11 @@ export default function InventoryReports() {
             department: dept,
             issuedBy,
             location,
+            admissionNumber: gin.admissionNumber || '',
+            patientName: gin.patientName || gin.admissionPatientName || '',
+            patientCategory: gin.patientCategory || null,
+            // Rate locked on the GIN line when it was issued (Patient + Item view).
+            ginRate: Number(gi.unitRate ?? rate),
             quantity: qty,
             rate,
             amount: qty * rate,
@@ -1209,6 +1232,10 @@ export default function InventoryReports() {
             department: dept,
             issuedBy,
             location,
+            admissionNumber: gin.admissionNumber || '',
+            patientName: gin.patientName || gin.admissionPatientName || '',
+            patientCategory: gin.patientCategory || null,
+            ginRate: Number(gin.unitRate ?? rate),
             quantity: qty,
             rate,
             amount: qty * rate,
@@ -1217,12 +1244,15 @@ export default function InventoryReports() {
       }
     }
     return rows;
-  }, [gins, issuanceFilters.itemId, issuanceFilters.location]);
+  }, [gins, issuanceFilters]);
 
+  // Patient filters on → each line says whose medicine it was.
+  const issuanceShowsPatient = Boolean(issuanceFilters.patientType || issuanceFilters.admissionNumber?.trim());
   const issuanceExportRows = useMemo(() => {
     return issuanceRows.map((row) => ({
       'GIN Code': row.ginCode || '-',
       Date: formatDate(row.date),
+      ...(issuanceShowsPatient ? { 'Admission #': row.admissionNumber || '-', Patient: row.patientName || '-' } : {}),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1234,7 +1264,7 @@ export default function InventoryReports() {
       Rate: Number(row.rate || 0).toFixed(2),
       Amount: Number(row.amount || 0).toFixed(2),
     }));
-  }, [issuanceRows]);
+  }, [issuanceRows, issuanceShowsPatient]);
 
   const issuanceSummaryExportRows = useMemo(() => {
     return Object.values(
@@ -1247,6 +1277,91 @@ export default function InventoryReports() {
       }, {})
     ).map((r) => ({ ...r, 'Total Issued Qty': Number(r['Total Issued Qty']).toFixed(2), 'Total Amount': Number(r['Total Amount']).toFixed(2) }));
   }, [issuanceRows]);
+
+  // Patient-wise summary — one line per admission, Cash patients first then
+  // Panel, each group with its own total line, then a Grand Total line.
+  // Department (non-patient) issuance has no patient, so it's left out.
+  const issuancePatientSummaryRows = useMemo(() => {
+    const byAdm = new Map();
+    issuanceRows.forEach((r) => {
+      if (!r.admissionNumber) return;
+      if (!byAdm.has(r.admissionNumber)) {
+        byAdm.set(r.admissionNumber, { type: r.patientCategory, adm: r.admissionNumber, patient: r.patientName, gins: new Set(), qty: 0, amount: 0 });
+      }
+      const a = byAdm.get(r.admissionNumber);
+      a.gins.add(r.ginCode);
+      a.qty += Number(r.quantity || 0);
+      a.amount += Number(r.amount || 0);
+      if (!a.patient && r.patientName) a.patient = r.patientName;
+    });
+    const groups = [['cash', 'Cash'], ['panel', 'Panel'], [null, 'Unknown']];
+    const out = [];
+    let gQty = 0; let gAmt = 0; let gCount = 0;
+    groups.forEach(([key, label]) => {
+      const list = [...byAdm.values()].filter((a) => (a.type || null) === key).sort((x, y) => x.adm.localeCompare(y.adm));
+      if (!list.length) return;
+      let qty = 0; let amt = 0;
+      list.forEach((a) => {
+        qty += a.qty; amt += a.amount;
+        out.push({ Type: label, 'Admission #': a.adm, Patient: a.patient || '-', GINs: a.gins.size, 'Total Qty': a.qty.toFixed(2), Amount: a.amount.toFixed(2) });
+      });
+      out.push({ Type: `${label} Total`, 'Admission #': `${list.length} patient(s)`, Patient: '', GINs: '', 'Total Qty': qty.toFixed(2), Amount: amt.toFixed(2) });
+      gQty += qty; gAmt += amt; gCount += list.length;
+    });
+    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${gCount} patient(s)`, Patient: '', GINs: '', 'Total Qty': gQty.toFixed(2), Amount: gAmt.toFixed(2) });
+    return out;
+  }, [issuanceRows]);
+
+  // Patient + Item-wise — per admission, per medicine and GIN rate: how many
+  // times it went (GIN lines), total qty, rate, amount; a Total line per
+  // patient and a Grand Total. Amounts here use the GIN's own issue rate.
+  const issuancePatientItemRows = useMemo(() => {
+    const TYPE = { cash: 'Cash', panel: 'Panel' };
+    const TYPE_ORDER = { cash: 0, panel: 1 }; // Unknown (no such admission) last
+    const byAdm = new Map();
+    issuanceRows.forEach((r) => {
+      if (!r.admissionNumber) return;
+      if (!byAdm.has(r.admissionNumber)) byAdm.set(r.admissionNumber, { type: r.patientCategory, patient: r.patientName, items: new Map() });
+      const a = byAdm.get(r.admissionNumber);
+      if (!a.patient && r.patientName) a.patient = r.patientName;
+      const key = `${r.itemCode}::${r.ginRate}`;
+      if (!a.items.has(key)) a.items.set(key, { code: r.itemCode, name: r.item, rate: r.ginRate, times: 0, qty: 0 });
+      const it = a.items.get(key);
+      it.times += 1;
+      it.qty += Number(r.quantity || 0);
+    });
+    const out = [];
+    let gQty = 0; let gAmt = 0;
+    [...byAdm.entries()]
+      .sort(([x, ax], [y, ay]) => (TYPE_ORDER[ax.type] ?? 2) - (TYPE_ORDER[ay.type] ?? 2) || x.localeCompare(y))
+      .forEach(([adm, a]) => {
+        let qty = 0; let amt = 0;
+        [...a.items.values()]
+          .sort((x, y) => x.name.localeCompare(y.name) || x.rate - y.rate)
+          .forEach((it) => {
+            const amount = it.qty * it.rate;
+            qty += it.qty; amt += amount;
+            out.push({
+              Type: TYPE[a.type] || 'Unknown', 'Admission #': adm, Patient: a.patient || '-',
+              'Item Code': it.code, Item: it.name, 'Kitni Dafa': it.times,
+              'Total Qty': it.qty.toFixed(2), Rate: it.rate.toFixed(2), Amount: amount.toFixed(2),
+            });
+          });
+        out.push({ Type: 'Total', 'Admission #': adm, Patient: a.patient || '-', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': qty.toFixed(2), Rate: '', Amount: amt.toFixed(2) });
+        gQty += qty; gAmt += amt;
+      });
+    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${byAdm.size} patient(s)`, Patient: '', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': gQty.toFixed(2), Rate: '', Amount: gAmt.toFixed(2) });
+    return out;
+  }, [issuanceRows]);
+
+  // What Print / PDF / Excel output for the chosen Issuance view.
+  const issuanceOutput = issuanceView === 'patient'
+    ? { title: 'Issuance Summary — Patient-wise (Cash / Panel)', file: 'inventory-issuance-patient-summary', rows: issuancePatientSummaryRows, grandTotal: false }
+    : issuanceView === 'patientItem'
+      ? { title: 'Issuance Summary — Patient + Item-wise', file: 'inventory-issuance-patient-item-summary', rows: issuancePatientItemRows, grandTotal: false }
+    : issuanceSummary
+      ? { title: 'Issuance Summary', file: 'inventory-issuance-summary', rows: issuanceSummaryExportRows, grandTotal: true }
+      : { title: 'Issuance Report', file: 'inventory-issuance-report', rows: issuanceExportRows, grandTotal: true };
 
   const gdRows = useMemo(() => {
     return (gds || [])
@@ -1564,11 +1679,15 @@ export default function InventoryReports() {
       push('Item', itemName(issuanceFilters.itemId));
       push('Type', issuanceFilters.assetType);
       push('Location', issuanceFilters.location);
+      push('Patient Type', { admission: 'All Admitted (Cash + Panel)', cash: 'Cash Patients', panel: 'Panel Patients' }[issuanceFilters.patientType]);
+      push('Admission #', issuanceFilters.admissionNumber?.trim());
       if (issuanceFilters.issuedById) {
         const emp = (employees || []).find((e) => String(e.id) === String(issuanceFilters.issuedById));
         if (emp) push('Issued By', `${emp.firstName} ${emp.lastName}`);
       }
-      if (issuanceSummary) parts.push('View: Summary');
+      if (issuanceView === 'item') parts.push('View: Item-wise Summary');
+      if (issuanceView === 'patient') parts.push('View: Patient-wise Summary (Cash / Panel)');
+      if (issuanceView === 'patientItem') parts.push('View: Patient + Item-wise Summary (rate = GIN issue rate)');
     } else if (report === 'GD Report') {
       push('From', fmtDate(gdFilters.dateFrom));
       push('To', fmtDate(gdFilters.dateTo));
@@ -1676,7 +1795,7 @@ export default function InventoryReports() {
       return;
     }
     if (activeReport === 'Issuance Report') {
-      exportRowsToPdf({ fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report', title: issuanceSummary ? 'Inventory Issuance Summary' : 'Inventory Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta });
+      exportRowsToPdf({ fileName: issuanceOutput.file, title: `Inventory ${issuanceOutput.title}`, rows: issuanceOutput.rows, grandTotal: issuanceOutput.grandTotal, ...meta });
       return;
     }
     if (activeReport === 'GD Report') {
@@ -1743,7 +1862,8 @@ export default function InventoryReports() {
     if (activeReport === 'Stock Position') { printRowsToPdf({ title: 'Stock Position Report', rows: stockPositionExportRows, ...meta }); return; }
     if (activeReport === 'Item Ledger') { exportItemLedgerPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, isSummary: ledgerSummary, mode: 'print', ...meta }); return; }
     if (activeReport === 'Receiving Report') { printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows, ...meta }); return; }
-    if (activeReport === 'Issuance Report') { printRowsToPdf({ title: issuanceSummary ? 'Issuance Summary' : 'Issuance Report', rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows, ...meta }); return; }
+    // Portrait A4, Arial 8pt (HTML print).
+    if (activeReport === 'Issuance Report') { printRowsHtml({ title: issuanceOutput.title, rows: issuanceOutput.rows, grandTotal: issuanceOutput.grandTotal, ...meta }); return; }
     if (activeReport === 'GD Report') {
       fetchGDs(gdFilters).then((rawData) => {
         const rows = (Array.isArray(rawData) ? rawData : [])
@@ -1796,9 +1916,9 @@ export default function InventoryReports() {
 
     if (activeReport === 'Issuance Report') {
       exportRowsToExcel({
-        fileName: issuanceSummary ? 'inventory-issuance-summary' : 'inventory-issuance-report',
+        fileName: issuanceOutput.file,
         sheetName: 'IssuanceReport',
-        rows: issuanceSummary ? issuanceSummaryExportRows : issuanceExportRows,
+        rows: issuanceOutput.rows,
       });
       return;
     }
@@ -2595,6 +2715,40 @@ export default function InventoryReports() {
                     />
                   </div>
                   <div>
+                    <label className="text-xs text-slate-500 block mb-1">Admission #</label>
+                    <div className="flex gap-1">
+                      <input
+                        type="text"
+                        className="w-full min-w-0 rounded-md border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="All Patients"
+                        value={issuanceFilters.admissionNumber}
+                        onChange={(e) => updateIssuanceFilter('admissionNumber', e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') applyIssuanceFilters(); }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowIssuanceAdmPicker(true)}
+                        className="shrink-0 rounded-md border border-slate-300 px-2 text-xs text-slate-600 hover:bg-slate-50"
+                        title="Browse admitted patients"
+                      >
+                        ···
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Patient Type</label>
+                    <select
+                      className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                      value={issuanceFilters.patientType}
+                      onChange={(e) => updateIssuanceFilter('patientType', e.target.value)}
+                    >
+                      <option value="">All (sab issuance)</option>
+                      <option value="admission">All Admitted (Cash + Panel)</option>
+                      <option value="cash">Cash Patients</option>
+                      <option value="panel">Panel Patients</option>
+                    </select>
+                  </div>
+                  <div>
                     <label className="text-xs text-slate-500 block mb-1">Department</label>
                     <SearchableSelect
                       options={masterOptions?.departments || []}
@@ -2702,14 +2856,18 @@ export default function InventoryReports() {
                 <div className="flex items-center gap-4">
                   <Button size="sm" label="Apply" onClick={applyIssuanceFilters} />
                   <Button size="sm" variant="outline" label="Reset" onClick={resetIssuanceFilters} />
-                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={issuanceSummary}
-                      onChange={(e) => setIssuanceSummary(e.target.checked)}
-                      className="w-4 h-4 accent-blue-600"
-                    />
-                    Summary
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    View
+                    <select
+                      className="rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                      value={issuanceView}
+                      onChange={(e) => setIssuanceView(e.target.value)}
+                    >
+                      <option value="details">Details</option>
+                      <option value="item">Summary — Item-wise</option>
+                      <option value="patient">Summary — Patient-wise (Cash / Panel)</option>
+                      <option value="patientItem">Summary — Patient + Item-wise</option>
+                    </select>
                   </label>
                 </div>
 
@@ -4054,6 +4212,18 @@ export default function InventoryReports() {
           </Card>
         </div>
       </div>
+
+      {showIssuanceAdmPicker && (
+        <AdmissionPickerModal
+          onSelect={(r) => {
+            setShowIssuanceAdmPicker(false);
+            const next = { ...issuanceFilters, admissionNumber: r.admissionNo };
+            setIssuanceFilters(next);
+            fetchGINs(next).then(() => setPendingPrint(true)).catch((err) => toast.error(err.message || 'Failed to load issuance report'));
+          }}
+          onClose={() => setShowIssuanceAdmPicker(false)}
+        />
+      )}
     </div>
   );
 }
