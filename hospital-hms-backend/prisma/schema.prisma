@@ -2661,8 +2661,26 @@ model AttendanceOverride {
   updatedAt        DateTime @updatedAt @map("updated_at")
   isLocked         Boolean  @default(false) @map("is_locked")
   isManuallyEdited Boolean  @default(false) @map("is_manually_edited")
+  // User who last saved this row (All Records edit audit).
+  editedBy         String?  @map("edited_by")
 
   @@map("attendance_overrides")
+}
+
+// One entry per All Records save — who, when, and that employee/day's
+// rows before → after (attendance.service.js writes it; raw-SQL table).
+model AttendanceOverrideLog {
+  id       Int      @id @default(autoincrement())
+  empCode  String   @map("emp_code")
+  dateIn   DateTime @map("date_in") @db.Date
+  action   String
+  editedBy String?  @map("edited_by")
+  editedAt DateTime @default(now()) @map("edited_at")
+  before   Json?
+  after    Json?
+
+  @@index([empCode, dateIn])
+  @@map("attendance_override_logs")
 }
 
 // ─── Panel Cheque Transaction ─────────────────────────────────────────────────

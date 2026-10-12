@@ -15,7 +15,7 @@ import Input from '../../components/ui/Input';
 import Badge from '../../components/ui/Badge';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import toast from 'react-hot-toast';
-import { ChevronDown, Download } from 'lucide-react';
+import { ChevronDown, Download, History } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logo from '../../assets/logo.jpg';
@@ -160,6 +160,27 @@ export default function AttendanceList() {
   const { employees, fetchEmployees } = useEmployeeStore();
   const { user } = useAuthStore();
   const isMaster = Boolean(user?.isSuperAdmin) || user?.email === SUPER_ADMIN_EMAIL;
+  // Saved with every All Records save — shown as "Edited By" + in History.
+  const editedBy = user?.name || user?.username || user?.email || null;
+  const [historyFor, setHistoryFor] = useState(null); // { empCode, name, date }
+  const [historyLogs, setHistoryLogs] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const openHistory = async (row) => {
+    const date = toDateOnly(row.dateIn || row.date);
+    setHistoryFor({ empCode: row.empCode, name: row.name, date });
+    setHistoryLogs([]);
+    setHistoryLoading(true);
+    try {
+      const r = await fetch(`${ATTENDANCE_API_URL}/overrides/logs?empCode=${encodeURIComponent(row.empCode)}&date=${encodeURIComponent(date)}`);
+      const j = await r.json();
+      setHistoryLogs(Array.isArray(j?.data) ? j.data : []);
+    } catch {
+      toast.error('History load nahi hui');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
 
   const [monthlyEmpCode, setMonthlyEmpCode] = useState('');
   const [monthlyEmpQuery, setMonthlyEmpQuery] = useState('');
@@ -335,10 +356,10 @@ export default function AttendanceList() {
     await fetch(`${ATTENDANCE_API_URL}/overrides/bulk-upsert`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows }),
+      body: JSON.stringify({ rows, editedBy }),
     });
     localStorage.removeItem(OVERRIDE_KEY);
-  }, []);
+  }, [editedBy]);
 
   const toInputTimeValue = (value) => {
     return normalize24HourTime(value);
@@ -649,6 +670,7 @@ export default function AttendanceList() {
       manualDeduction: payload.manualDeduction,
       manualTotal: payload.manualTotal,
       waiveDeduction: Boolean(payload.waiveDeduction),
+      editedBy,
     };
 
     await fetch(`${ATTENDANCE_API_URL}/overrides/upsert`, {
@@ -722,6 +744,7 @@ export default function AttendanceList() {
         empCode: emp.empCode,
         dates: Array.from(datesToReplace),
         rows: normalizedRows,
+        editedBy,
       }),
     });
 
@@ -882,6 +905,9 @@ export default function AttendanceList() {
             timeIn: timeInVal,
             timeOut: timeOutVal,
             status: o.status || 'present',
+            isOverride: true,
+            editedBy: o.editedBy || '',
+            editedAtText: o.editedAtText || '',
           };
         });
       }
@@ -932,7 +958,10 @@ export default function AttendanceList() {
           actualDateOut: dateOutVal,
           timeIn: o.timeIn || '-',
           timeOut: outTime,
-          status: o.status || 'present'
+          status: o.status || 'present',
+          isOverride: true,
+          editedBy: o.editedBy || '',
+          editedAtText: o.editedAtText || '',
         };
       });
 
@@ -1202,6 +1231,7 @@ export default function AttendanceList() {
                   <th>Time IN</th>
                   <th>Time OUT</th>
                   <th>Status</th>
+                  <th>Edited By</th>
                   <th>Edit</th>
                 </tr>
               </thead>
@@ -1223,6 +1253,25 @@ export default function AttendanceList() {
                         label={toStatusLabel(row.status)}
                         variant={toStatusVariant(row.status)}
                       />
+                    </td>
+                    <td>
+                      {row.isOverride ? (
+                        <div className="flex items-center gap-2">
+                          <div className="leading-tight">
+                            <div className="text-sm font-medium text-slate-700">{row.editedBy || '—'}</div>
+                            <div className="text-xs text-slate-400">{row.editedBy ? row.editedAtText : 'pehle ka edit (naam save nahi tha)'}</div>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-blue-600"
+                            title="Edit history"
+                            aria-label={`Edit history of ${row.name}`}
+                            onClick={() => openHistory(row)}
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : <span className="text-xs text-slate-400">—</span>}
                     </td>
                     <td>
                       <button className="edit-btn" onClick={async () => {
@@ -1342,6 +1391,16 @@ export default function AttendanceList() {
         </Card>
       )}
 
+
+      <Modal isOpen={!!historyFor} onClose={() => setHistoryFor(null)} title="Edit History" size="lg">
+        {historyFor && (
+          <AttendanceHistory
+            target={historyFor}
+            logs={historyLogs}
+            loading={historyLoading}
+          />
+        )}
+      </Modal>
 
       <Modal isOpen={!!editModal} onClose={() => { setEditModal(null); setPaidMonthWarning(null); }} title="Edit Attendance" size="lg">
         {editModal && (
@@ -1688,6 +1747,76 @@ export default function AttendanceList() {
           </div>
         </form>
       </Modal>
+    </div>
+  );
+}
+
+// ── All Records edit history ────────────────────────────────────────────────
+const HISTORY_FIELDS = [
+  ['timeIn', 'Time In'], ['timeOut', 'Time Out'], ['dateOut', 'Date Out'], ['status', 'Status'],
+  ['manualWrkHrs', 'Work Hrs'], ['manualOvertime', 'Overtime'], ['manualDeduction', 'Deduction'],
+  ['manualTotal', 'Total'], ['waiveDeduction', 'Deduction maaf'], ['isLocked', 'Locked'],
+];
+const histVal = (v) => (v === null || v === undefined || v === '' ? '—' : v === true ? 'Haan' : v === false ? 'Nahi' : String(v));
+const ACTION_LABEL = { create: 'Naya record', update: 'Badla', delete: 'Hataya' };
+
+function AttendanceHistory({ target, logs, loading }) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-slate-600">
+        <b>{target.name || target.empCode}</b> ({target.empCode}) — {target.date}
+      </p>
+      {loading ? (
+        <p className="text-sm text-slate-400">Loading…</p>
+      ) : logs.length === 0 ? (
+        <p className="text-sm text-slate-400">Is din ki koi edit history nahi. (History aaj ke baad wale edits ki banti hai.)</p>
+      ) : logs.map((log) => {
+        const before = Array.isArray(log.before) ? log.before : [];
+        const after = Array.isArray(log.after) ? log.after : [];
+        const single = before.length <= 1 && after.length <= 1;
+        const b = before[0] || {};
+        const a = after[0] || {};
+        const changes = single ? HISTORY_FIELDS.filter(([k]) => histVal(b[k]) !== histVal(a[k])) : [];
+        return (
+          <div key={log.id} className="border border-slate-200 rounded-md p-3">
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-semibold text-slate-800">{log.editedBy || 'Naam save nahi'}</span>
+              <span className="text-slate-400">·</span>
+              <span className="text-slate-500">{log.editedAtText}</span>
+              <span className="ml-auto text-xs rounded px-2 py-0.5 bg-slate-100 text-slate-600">{ACTION_LABEL[log.action] || log.action}</span>
+            </div>
+            {single ? (
+              <table className="w-full text-sm mt-2">
+                <tbody>
+                  {changes.map(([k, label]) => (
+                    <tr key={k}>
+                      <td className="py-0.5 pr-3 text-slate-500 w-32">{label}</td>
+                      <td className="py-0.5 text-red-600 line-through">{histVal(b[k])}</td>
+                      <td className="py-0.5 px-2 text-slate-400">→</td>
+                      <td className="py-0.5 text-emerald-700 font-medium">{histVal(a[k])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-xs">
+                {[['Pehle', before], ['Baad mein', after]].map(([title, rows]) => (
+                  <div key={title}>
+                    <div className="font-semibold text-slate-600 mb-1">{title}</div>
+                    {rows.length === 0 ? <div className="text-slate-400">—</div> : rows.map((r, i) => (
+                      <div key={i} className="text-slate-700">
+                        {histVal(r.timeIn)}–{histVal(r.timeOut)} · {histVal(r.status)}
+                        {r.manualDeduction != null ? ` · Ded ${r.manualDeduction}` : ''}
+                        {r.waiveDeduction ? ' · maaf' : ''}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

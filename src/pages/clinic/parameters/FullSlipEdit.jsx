@@ -8,16 +8,18 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { buildReceiptHtml } from '../receiptUtils';
 import { buildEmergencyReceiptHtml } from '../emergencyReceiptUtils';
+import { buildConsultantReceiptHtml } from '../consultantReceiptUtils';
 import './FullSlipEdit.scss';
 
 // Clinic > Transactions > Full Slip Edit — superadmin only (route is wrapped in
-// SuperAdminRoute). Edits an entire General OPD / Emergency slip. Risky
+// SuperAdminRoute). Edits an entire OPD slip of any department (General OPD,
+// Emergency, Consultant, Laboratory, Radiology, Ultrasound, Miscellaneous,
+// Ambulance…). Slips with no test lines (Ambulance) are edited by amount. Risky
 // situations (doctor fee paid, day closed, cash handed over, admission/panel
 // bill, cancelled) are shown as warnings, never blocked; totals follow the
 // same rules as the OPD screens and are re-computed by the backend on save.
 
 const API = 'http://localhost:5001/api/clinic';
-const FULL_EDIT_DEPTS = ['general opd', 'emergency'];
 
 const PAYMENT_TYPES = [
   { value: 'cash', label: 'Cash' },
@@ -62,6 +64,8 @@ export default function FullSlipEdit() {
   const [discount, setDiscount] = useState('');
   const [discountType, setDiscountType] = useState('amount');
   const [receive, setReceive] = useState('');
+  // Slips saved without test lines (Ambulance, older slips): their amount.
+  const [baseAmount, setBaseAmount] = useState('');
   const [addPick, setAddPick] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
@@ -75,9 +79,9 @@ export default function FullSlipEdit() {
     setSearching(true);
     try {
       const data = await api(`/opd/adjustment/search?q=${encodeURIComponent(term)}`);
-      const list = (Array.isArray(data) ? data : []).filter(
-        (r) => r.source === 'opd' && FULL_EDIT_DEPTS.includes(String(r.department || '').trim().toLowerCase()),
-      );
+      // Only slips made in this system — the old imported Patients List
+      // rows (source 'pv') have a different shape and can't be edited here.
+      const list = (Array.isArray(data) ? data : []).filter((r) => r.source === 'opd');
       setResults(list);
       if (list.length === 1) loadSlip(list[0].id);
     } catch (err) {
@@ -111,6 +115,7 @@ export default function FullSlipEdit() {
       setDiscount(String(v.discount || ''));
       setDiscountType('amount');
       setReceive(String(v.receive ?? ''));
+      setBaseAmount(String(Math.max(0, Number(v.totalAmount || 0) - Number(v.ccCharge || 0) + Number(v.discount || 0))));
       setAddPick('');
       setSavedOnce(false);
       setResults(null);
@@ -151,7 +156,9 @@ export default function FullSlipEdit() {
   const totals = useMemo(() => {
     if (!form) return null;
     const isComplementary = form.paymentType === 'complementary';
-    const gross = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const gross = rows.length
+      ? rows.reduce((s, r) => s + (Number(r.amount) || 0), 0)
+      : Math.max(0, Number(baseAmount) || 0);
     const rawDisc = discountType === 'percent' ? Math.round((gross * (Number(discount) || 0)) / 100) : (Number(discount) || 0);
     const disc = isComplementary ? 0 : Math.min(Math.max(0, rawDisc), gross);
     const net = isComplementary ? 0 : Math.max(0, gross - disc);
@@ -165,12 +172,16 @@ export default function FullSlipEdit() {
     const total = net + cc + admin;
     const rec = Number(receive) || 0;
     return { gross, disc, net, admin, cc, pct, min, total, refund: Math.max(0, rec - total), balance: Math.max(0, total - rec) };
-  }, [form, rows, discount, discountType, receive, original, ccConfig]);
+  }, [form, rows, discount, discountType, receive, original, ccConfig, baseAmount]);
+
+  // Slip that was saved without any test line — edited by its amount.
+  const amountOnly = Boolean(original) && original.doctors.length === 0 && rows.length === 0;
 
   async function handleSave() {
     if (!form.patientName.trim()) return toast.error('Patient name zaroori hai');
     if (!form.serialNo.trim()) return toast.error('Slip # zaroori hai');
-    if (!rows.length) return toast.error('Kam az kam ek test/doctor zaroori hai');
+    if (!rows.length && !amountOnly) return toast.error('Kam az kam ek test/doctor zaroori hai');
+    if (amountOnly && (baseAmount === '' || !(Number(baseAmount) >= 0))) return toast.error('Amount sahi likhein');
     const bad = rows.find((r) => !(Number(r.amount) >= 0) || r.amount === '');
     if (bad) return toast.error(`${bad.subDeptName}: amount sahi likhein`);
 
@@ -194,6 +205,7 @@ export default function FullSlipEdit() {
           receive: Number(receive) || 0,
           ccPercentage: totals.pct,
           ccMinAmount: totals.min,
+          baseAmount: amountOnly ? Number(baseAmount) || 0 : undefined,
           editedBy,
           doctors: rows.map((r) => ({ id: r.id, doctorId: r.doctorId, subDeptId: r.subDeptId, amount: Number(r.amount) || 0, quantity: r.quantity })),
         }),
@@ -218,7 +230,9 @@ export default function FullSlipEdit() {
       } else {
         const canvas = document.createElement('canvas');
         JsBarcode(canvas, visit.serialNo, { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
-        html = buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl: canvas.toDataURL('image/png'), printedBy: editedBy });
+        const args = { visit, tokenNo, isDuplicate, barcodeDataUrl: canvas.toDataURL('image/png'), printedBy: editedBy };
+        // Each department prints on its own slip layout, same as Reprint.
+        html = dept === 'consultant opd' ? buildConsultantReceiptHtml(args) : buildReceiptHtml(args);
       }
       const w = window.open('', '_blank', dept === 'emergency' ? 'width=740,height=900' : 'width=420,height=680');
       if (!w) return toast.error('Popup blocked — please allow popups for this site');
@@ -246,7 +260,7 @@ export default function FullSlipEdit() {
         <div className="fse-head">
           <div>
             <h1 className="fse-title">Full Slip Edit</h1>
-            <p className="fse-sub">General OPD aur Emergency slips — sirf Super Admin. Har save ki history rakhi jati hai.</p>
+            <p className="fse-sub">Har department ki slip (General OPD, Emergency, Consultant, Lab, Radiology, Ultrasound, Ambulance…) — sirf Super Admin. Har save ki history rakhi jati hai.</p>
           </div>
         </div>
 
@@ -259,7 +273,7 @@ export default function FullSlipEdit() {
         {results && (
           <div className="fse-card">
             {results.length === 0 ? (
-              <p className="fse-empty">Koi General OPD / Emergency slip nahi mili.</p>
+              <p className="fse-empty">Koi slip nahi mili.</p>
             ) : (
               <div className="table-wrap">
                 <table className="fse-table">
@@ -341,7 +355,15 @@ export default function FullSlipEdit() {
             </div>
 
             <div className="fse-card">
-              <h2 className="fse-h2">Tests / Doctors</h2>
+              <h2 className="fse-h2">{amountOnly ? 'Amount' : 'Tests / Doctors'}</h2>
+              {amountOnly && (
+                <div className="fse-grid">
+                  <label>Slip Amount
+                    <input type="number" min="0" step="0.01" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} />
+                  </label>
+                </div>
+              )}
+              {!amountOnly && (
               <div className="table-wrap">
                 <table className="fse-table">
                   <thead><tr><th>Test / Service</th><th>Doctor</th><th className="r">Qty</th><th className="r">Amount</th><th /></tr></thead>
@@ -368,6 +390,8 @@ export default function FullSlipEdit() {
                   </tbody>
                 </table>
               </div>
+              )}
+              {catalog.length > 0 && (
               <div className="fse-add">
                 <Plus size={16} />
                 <SearchableSelect
@@ -380,7 +404,12 @@ export default function FullSlipEdit() {
                   emptyText="Koi test nahi mila"
                 />
               </div>
-              <p className="fse-note">Amount line ka poora total hai (quantity samet), jaise slip banate waqt hota hai.</p>
+              )}
+              <p className="fse-note">
+                {amountOnly
+                  ? 'Is slip mein test lines nahi hain (jaise Ambulance) — Slip Amount se total banta hai.'
+                  : 'Amount line ka poora total hai (quantity samet), jaise slip banate waqt hota hai.'}
+              </p>
             </div>
 
             <div className="fse-card">

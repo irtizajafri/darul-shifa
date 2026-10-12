@@ -27,6 +27,10 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
   const grossAmt = preChargeTotal + discount;
   const balance  = Math.max(0, total - received);
 
+  // Duplicate: Printed By is whoever reprints it — also show who originally
+  // made the slip (the ID it was created from).
+  const createdByLine = isDuplicate && doc.createdByName ? doc.createdByName : '';
+
   // Admit Patient + Adjust Payment slip — its amount goes to this admission's
   // bill, so the slip names the admission it was adjusted against.
   const adjustedAdmitNo = doc.admitPatient && doc.adjustPayment && doc.admitNo ? String(doc.admitNo).trim() : '';
@@ -230,6 +234,12 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
       <td style="width:10%"><span class="lbl">Printed By:</span></td>
       <td style="width:10%">${printedBy || '—'}</td>
     </tr>
+    ${createdByLine ? `
+    <tr>
+      <td colspan="4"></td>
+      <td><span class="lbl">Created By:</span></td>
+      <td>${createdByLine}</td>
+    </tr>` : ''}
     <tr class="info-sep"><td colspan="6" style="height:3px"></td></tr>
     <tr>
       <td><span class="lbl">Patient:</span></td>

@@ -1486,7 +1486,7 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, patien
   };
 }
 
-async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber, issuedById, patientType }) {
+async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber, issuedById, patientType, panelCompanyId }) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
@@ -1509,8 +1509,13 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
   if (patientType === 'admission') {
     itemConditions.push({ admissionNumber: { not: null } });
   } else if (patientType === 'cash' || patientType === 'panel') {
+    // Panel can be narrowed to one Panel Company (Clinic → Panel Companies).
+    const companyId = patientType === 'panel' ? parsePositiveNumber(panelCompanyId) : null;
     const admissions = await prisma.clinicAdmission.findMany({
-      where: { patientCategory: patientType === 'panel' ? 'panel' : { not: 'panel' } },
+      where: {
+        patientCategory: patientType === 'panel' ? 'panel' : { not: 'panel' },
+        ...(companyId ? { panelCompanyId: companyId } : {}),
+      },
       select: { admissionNo: true },
     });
     itemConditions.push({ admissionNumber: { in: admissions.map((a) => a.admissionNo) } });
@@ -1551,14 +1556,23 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
   if (!admNos.length) return gins;
   const admissions = await prisma.clinicAdmission.findMany({
     where: { admissionNo: { in: admNos } },
-    select: { admissionNo: true, patientCategory: true, patientTitle: true, patientName: true },
+    select: { admissionNo: true, patientCategory: true, patientTitle: true, patientName: true, panelCompanyId: true },
   });
   const byNo = new Map(admissions.map((a) => [a.admissionNo, a]));
+  // Panel admissions' company — printed by its code (soft-linked id).
+  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
+  const companies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, code: true, name: true } })
+    : [];
+  const companyById = new Map(companies.map((c) => [c.id, c]));
   return gins.map((g) => {
     const adm = g.admissionNumber ? byNo.get(g.admissionNumber) : null;
+    const company = adm?.patientCategory === 'panel' ? companyById.get(adm.panelCompanyId) : null;
     return {
       ...g,
       patientCategory: adm ? (adm.patientCategory === 'panel' ? 'panel' : 'cash') : null,
+      panelCompanyCode: company?.code || null,
+      panelCompanyName: company?.name || null,
       // GD's typed patient name is optional — fall back to the admission's.
       admissionPatientName: adm ? admissionPatientName(adm) : null,
     };

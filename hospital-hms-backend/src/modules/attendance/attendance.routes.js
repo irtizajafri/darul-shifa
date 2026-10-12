@@ -6,6 +6,7 @@ const router = express.Router();
 router.get('/ping', controller.ping);
 router.get('/', controller.list);
 router.get('/overrides', controller.listOverrides);
+router.get('/overrides/logs', controller.listOverrideLogs);
 router.post('/', controller.create);
 router.post('/overrides/upsert', controller.upsertOverride);
 router.post('/overrides/bulk-upsert', controller.bulkUpsertOverrides);

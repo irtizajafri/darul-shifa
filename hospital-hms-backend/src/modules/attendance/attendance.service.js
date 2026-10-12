@@ -77,6 +77,7 @@ function normalizeOverridePayload(payload = {}) {
     waiveDeduction: normalizeBoolean(payload.waiveDeduction, false),
     isLocked: payload.isLocked === true || payload.is_locked === true,
     isManuallyEdited: payload.isManuallyEdited === true || payload.is_manually_edited === true,
+    editedBy: payload.editedBy ? String(payload.editedBy).trim() || null : null,
   };
 }
 
@@ -101,7 +102,52 @@ function mapOverrideRow(row) {
     isManuallyEdited: Boolean(row.is_manually_edited ?? row.isManuallyEdited),
     createdAt: row.created_at || row.createdAt || null,
     updatedAt: row.updated_at || row.updatedAt || null,
+    editedBy: row.edited_by ?? row.editedBy ?? null,
+    // updated_at is PKT wall-clock (NOW() in the DB's Asia/Karachi session),
+    // so it's handed over as text rather than as a UTC-misread Date.
+    editedAtText: row.updated_at_text ?? null,
   };
+}
+
+// ── All Records edit audit ───────────────────────────────────────────────────
+// The fields a person can change in All Records — what the history compares.
+const AUDIT_FIELDS = ['dateIn', 'dateOut', 'timeIn', 'timeOut', 'status', 'manualWrkHrs', 'manualOvertime', 'manualDeduction', 'manualTotal', 'waiveDeduction', 'isLocked'];
+const auditSnapshot = (r) => Object.fromEntries(AUDIT_FIELDS.map((k) => [k, r?.[k] ?? null]));
+const sameRows = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+async function writeOverrideLog(db, { empCode, dateIn, action, editedBy, before, after }) {
+  await db.$executeRaw`
+    INSERT INTO attendance_override_logs (emp_code, date_in, action, edited_by, before, after)
+    VALUES (${empCode}, ${dateIn}::date, ${action}, ${editedBy || null},
+            ${before == null ? null : JSON.stringify(before)}::jsonb, ${after == null ? null : JSON.stringify(after)}::jsonb)
+  `;
+}
+
+// History of one employee's day (or all their days) — newest first.
+async function listOverrideLogs({ empCode, date } = {}) {
+  await ensureAttendanceOverridesTable();
+  const code = String(empCode || '').trim();
+  if (!code) {
+    const err = new Error('empCode is required');
+    err.status = 400;
+    throw err;
+  }
+  const day = normalizeDateOnly(date);
+  const rows = day
+    ? await prisma.$queryRaw`
+        SELECT id, emp_code, to_char(date_in, 'YYYY-MM-DD') AS date_in, action, edited_by,
+               to_char(edited_at, 'DD Mon YYYY, HH24:MI') AS edited_at_text, before, after
+        FROM attendance_override_logs WHERE emp_code = ${code} AND date_in = ${day}::date
+        ORDER BY id DESC`
+    : await prisma.$queryRaw`
+        SELECT id, emp_code, to_char(date_in, 'YYYY-MM-DD') AS date_in, action, edited_by,
+               to_char(edited_at, 'DD Mon YYYY, HH24:MI') AS edited_at_text, before, after
+        FROM attendance_override_logs WHERE emp_code = ${code}
+        ORDER BY id DESC LIMIT 200`;
+  return rows.map((r) => ({
+    id: r.id, empCode: r.emp_code, date: r.date_in, action: r.action,
+    editedBy: r.edited_by, editedAtText: r.edited_at_text, before: r.before, after: r.after,
+  }));
 }
 
 async function ensureAttendanceOverridesTable() {
@@ -130,6 +176,15 @@ async function ensureAttendanceOverridesTable() {
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS idx_attendance_overrides_date_in ON attendance_overrides(date_in)');
   await prisma.$executeRawUnsafe('ALTER TABLE attendance_overrides ADD COLUMN IF NOT EXISTS is_locked BOOLEAN NOT NULL DEFAULT FALSE');
   await prisma.$executeRawUnsafe('ALTER TABLE attendance_overrides ADD COLUMN IF NOT EXISTS is_manually_edited BOOLEAN NOT NULL DEFAULT FALSE');
+  // Edit audit — also in migration 046_attendance_override_audit.sql.
+  await prisma.$executeRawUnsafe('ALTER TABLE attendance_overrides ADD COLUMN IF NOT EXISTS edited_by TEXT');
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS attendance_override_logs (
+      id SERIAL PRIMARY KEY, emp_code TEXT NOT NULL, date_in DATE NOT NULL, action TEXT NOT NULL,
+      edited_by TEXT, edited_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(), before JSONB, after JSONB
+    )
+  `);
+  await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS idx_attendance_override_logs_emp_date ON attendance_override_logs (emp_code, date_in)');
 
   isAttendanceOverridesTableReady = true;
 }
@@ -152,7 +207,7 @@ async function listOverrides(filters = {}) {
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = await prisma.$queryRawUnsafe(`
-    SELECT *
+    SELECT *, to_char(updated_at, 'DD Mon YYYY, HH24:MI') AS updated_at_text
     FROM attendance_overrides
     ${whereClause}
     ORDER BY date_in ASC, created_at ASC
@@ -165,12 +220,15 @@ async function upsertOverride(payload = {}) {
   await ensureAttendanceOverridesTable();
   const normalized = normalizeOverridePayload(payload);
   const id = normalized.id || randomUUID();
+  const [existing] = normalized.id
+    ? await prisma.$queryRaw`SELECT * FROM attendance_overrides WHERE id = ${id}`
+    : [];
 
   await prisma.$executeRaw`
     INSERT INTO attendance_overrides (
       id, emp_code, date_in, date_out, time_in, time_out, status,
       manual_wrk_hrs, manual_overtime, manual_deduction, manual_total,
-      waive_deduction, is_locked, is_manually_edited, created_at, updated_at
+      waive_deduction, is_locked, is_manually_edited, edited_by, created_at, updated_at
     ) VALUES (
       ${id},
       ${normalized.empCode},
@@ -186,6 +244,7 @@ async function upsertOverride(payload = {}) {
       ${normalized.waiveDeduction},
       ${normalized.isLocked},
       ${normalized.isManuallyEdited},
+      ${normalized.editedBy},
       NOW(),
       NOW()
     )
@@ -203,17 +262,27 @@ async function upsertOverride(payload = {}) {
       waive_deduction = EXCLUDED.waive_deduction,
       is_locked = EXCLUDED.is_locked,
       is_manually_edited = EXCLUDED.is_manually_edited,
+      edited_by = EXCLUDED.edited_by,
       updated_at = NOW()
   `;
 
   const [saved] = await prisma.$queryRaw`
-    SELECT * FROM attendance_overrides WHERE id = ${id}
+    SELECT *, to_char(updated_at, 'DD Mon YYYY, HH24:MI') AS updated_at_text FROM attendance_overrides WHERE id = ${id}
   `;
 
-  return mapOverrideRow(saved);
+  const result = mapOverrideRow(saved);
+  const before = existing ? [auditSnapshot(mapOverrideRow(existing))] : [];
+  const after = [auditSnapshot(result)];
+  if (!sameRows(before, after)) {
+    await writeOverrideLog(prisma, {
+      empCode: result.empCode, dateIn: result.dateIn, action: existing ? 'update' : 'create',
+      editedBy: normalized.editedBy, before, after,
+    });
+  }
+  return result;
 }
 
-async function bulkUpsertOverrides(rows = []) {
+async function bulkUpsertOverrides(rows = [], editedBy = null) {
   if (!Array.isArray(rows)) {
     const err = new Error('rows must be an array');
     err.status = 400;
@@ -223,7 +292,7 @@ async function bulkUpsertOverrides(rows = []) {
   const saved = [];
   for (const row of rows) {
     // eslint-disable-next-line no-await-in-loop
-    const item = await upsertOverride(row);
+    const item = await upsertOverride({ ...row, editedBy: row.editedBy || editedBy });
     saved.push(item);
   }
   return saved;
@@ -260,6 +329,11 @@ async function replaceOverridesForDates(payload = {}) {
     return { ...normalized, id: normalized.id || randomUUID() };
   });
 
+  const editedBy = payload.editedBy ? String(payload.editedBy).trim() || null : null;
+  const beforeRows = (await prisma.$queryRaw`
+    SELECT * FROM attendance_overrides WHERE emp_code = ${empCode}
+  `).map(mapOverrideRow).filter((r) => dates.includes(r.dateIn));
+
   await prisma.$transaction(async (tx) => {
     for (const dateIn of dates) {
       // eslint-disable-next-line no-await-in-loop
@@ -276,7 +350,7 @@ async function replaceOverridesForDates(payload = {}) {
         INSERT INTO attendance_overrides (
           id, emp_code, date_in, date_out, time_in, time_out, status,
           manual_wrk_hrs, manual_overtime, manual_deduction, manual_total,
-          waive_deduction, is_locked, is_manually_edited, created_at, updated_at
+          waive_deduction, is_locked, is_manually_edited, edited_by, created_at, updated_at
         ) VALUES (
           ${row.id},
           ${row.empCode},
@@ -292,10 +366,24 @@ async function replaceOverridesForDates(payload = {}) {
           ${row.waiveDeduction},
           ${Boolean(row.isLocked)},
           ${Boolean(row.isManuallyEdited)},
+          ${editedBy},
           NOW(),
           NOW()
         )
       `;
+    }
+
+    // One history entry per day that actually changed: that day's rows
+    // before → after, and who saved it.
+    for (const dateIn of dates) {
+      const before = beforeRows.filter((r) => r.dateIn === dateIn).map(auditSnapshot);
+      const after = normalizedRows.filter((r) => r.dateIn === dateIn).map(auditSnapshot);
+      if (sameRows(before, after)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await writeOverrideLog(tx, {
+        empCode, dateIn, editedBy, before, after,
+        action: before.length && after.length ? 'update' : (after.length ? 'create' : 'delete'),
+      });
     }
   });
 
@@ -506,4 +594,5 @@ module.exports = {
   upsertOverride,
   bulkUpsertOverrides,
   replaceOverridesForDates,
+  listOverrideLogs,
 };

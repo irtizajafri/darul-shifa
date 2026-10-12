@@ -7177,8 +7177,12 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
   let deletedCount = 0;
   let result;
   if (dates.length) {
+    // Replace = only the slips in THIS file swap out their old lines. A
+    // business-day export runs past midnight (8 Sep 08:00 → 9 Sep 07:59), so
+    // wiping whole dates would also delete the next day's other slips.
+    const fileSerials = [...new Set(data.map((r) => r.serialNo).filter(Boolean))];
     const [delRes, insRes] = await prisma.$transaction([
-      prisma.patientVisit.deleteMany({ where: { visitDate: { in: dates } } }),
+      prisma.patientVisit.deleteMany({ where: { visitDate: { in: dates }, serialNo: { in: fileSerials } } }),
       prisma.patientVisit.createMany({ data }),
     ]);
     deletedCount = delRes.count;
@@ -7729,6 +7733,24 @@ async function narrowToPreciseWindow(tableName, dateField, rows, fromDate, toDat
   return rows.filter((r) => idSet.has(r.id));
 }
 
+// Hospital business day (08:00 → 07:59 next morning, PKT, named for its
+// start day) of one Patients List row — sent with every row so the Revenue
+// Dashboard groups days exactly as this list does instead of re-deriving
+// them. Legacy rows carry a calendar date + typed PKT time; every other
+// source is a real timestamp stored in UTC (Prisma), so +5h → PKT, −8h.
+function patientListBusinessDay(v) {
+  if (!v.visitDate) return null;
+  if (v._source === 'old') {
+    const datePart = new Date(v.visitDate).toISOString().slice(0, 10);
+    const [h, m] = String(v.visitTime || '12:00').slice(0, 5).split(':').map((n) => Number(n) || 0);
+    if (h * 60 + m >= 480) return datePart;
+    const d = new Date(`${datePart}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+  return new Date(new Date(v.visitDate).getTime() + (5 - 8) * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTypes, fromConsultant, toConsultant }) {
   // fromTime/toTime narrow the window within fromDate/toDate (e.g. the UI's
   // default 08:00:00 -> 07:59:59 hospital business day). Fall back to a full
@@ -8174,7 +8196,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // — the shared running sequence across every source, so the list reads in
   // the same order it was actually issued instead of by source block.
   let merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay, ...mappedAnt, ...mappedOpdBalPay];
-  merged = merged.map((v) => ({ ...v, patientName: String(v.patientName || '').toUpperCase() }));
+  merged = merged.map((v) => ({ ...v, patientName: String(v.patientName || '').toUpperCase(), businessDay: patientListBusinessDay(v) }));
   const sortMs = (v) => {
     const d = new Date(v.visitDate);
     const [h, m] = String(v.visitTime || '00:00').split(':').map((n) => Number(n) || 0);
@@ -8504,9 +8526,12 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   //                 time null/blank ho to midday maan lo taake apne hi visitDate par rahe.
   //   ClinicOpdVisit: createdAt timestamp se seedha 8h ghatao.
   const PV_BIZ      = `(("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time)) - INTERVAL '8 hours')::date`;
-  const OV_BIZ      = `("createdAt" - INTERVAL '8 hours')::date`;
-  const ADM_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
-  const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '8 hours')::date`;
+  // createdAt / receivedAt are stored in UTC — PKT is +5h, the business
+  // day starts at 08:00 PKT, so the date is (UTC + 5h − 8h) = UTC − 3h.
+  // (Legacy PatientVisit date + typed time is already PKT: − 8h.)
+  const OV_BIZ      = `("createdAt" - INTERVAL '3 hours')::date`;
+  const ADM_BIZ     = `("createdAt" - INTERVAL '3 hours')::date`;
+  const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '3 hours')::date`;
 
   // Cancelled ClinicOpdVisit rows: patient still counts (COUNT(*) untouched), amount is 0.
   // A slip that's been refunded (Slip Refund) still shows its full/gross
@@ -8840,10 +8865,13 @@ async function getDailyDepartmentStatement(date) {
   // START day — same offset used by the Revenue Dashboard's own calendar
   // so this modal's totals reconcile with the cell the user double-clicked.
   const PV_BIZ      = `(("visitDate" + COALESCE(NULLIF("visitTime",'')::time, '12:00'::time)) - INTERVAL '8 hours')::date`;
-  const OV_BIZ      = `("createdAt" - INTERVAL '8 hours')::date`;
-  const ADM_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
-  const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '8 hours')::date`;
-  const ANT_BIZ     = `("createdAt" - INTERVAL '8 hours')::date`;
+  // createdAt / receivedAt are stored in UTC — PKT is +5h, the business
+  // day starts at 08:00 PKT, so the date is (UTC + 5h − 8h) = UTC − 3h.
+  // (Legacy PatientVisit date + typed time is already PKT: − 8h.)
+  const OV_BIZ      = `("createdAt" - INTERVAL '3 hours')::date`;
+  const ADM_BIZ     = `("createdAt" - INTERVAL '3 hours')::date`;
+  const ADM_PAY_BIZ = `("receivedAt" - INTERVAL '3 hours')::date`;
+  const ANT_BIZ     = `("createdAt" - INTERVAL '3 hours')::date`;
   // Cancelled ClinicOpdVisit rows: patient + cancel count still increment, amount/discount don't.
   const OV_CANCELLED = `LOWER(COALESCE(status,'')) IN ('canceled','cancelled')`;
 
@@ -8935,6 +8963,32 @@ async function getDailyDepartmentStatement(date) {
   }), { count: 0, amount: 0, discount: 0, cancel: 0 });
 
   return { date, rows, total, netReceived: total.amount };
+}
+
+// Revenue Dashboard day popup — built from that business day's Patients
+// List rows themselves (same rows, same Received, same patient count), so
+// the popup, the calendar cell and the Patients List always agree. Grouped
+// by the same canonical department names as before.
+async function getDailyStatementFromPatientList(date) {
+  if (!date) throw Object.assign(new Error('Date is required'), { status: 400 });
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const rows = await getPatientVisits({ fromDate: date, toDate: next.toISOString().slice(0, 10), fromTime: '08:00:00', toTime: '07:59:59' });
+  const map = new Map();
+  for (const r of rows) {
+    const key = r._source === 'antenatal' ? 'Antenatal' : canonicalRevenueDept(r.department || (r._source === 'admission' || r._source === 'admission-payment' ? 'Admission' : ''));
+    if (!map.has(key)) map.set(key, { department: key, count: 0, amount: 0, discount: 0, cancel: 0 });
+    const e = map.get(key);
+    e.count += 1;
+    e.amount += Number(r.received) || 0;
+    e.discount += Number(r.discount) || 0;
+    if (r.cancelled) e.cancel += 1;
+  }
+  const out = [...map.values()].sort((a, b) => a.department.localeCompare(b.department));
+  const total = out.reduce((s, r) => ({
+    count: s.count + r.count, amount: s.amount + r.amount, discount: s.discount + r.discount, cancel: s.cancel + r.cancel,
+  }), { count: 0, amount: 0, discount: 0, cancel: 0 });
+  return { date, rows: out, total, netReceived: total.amount };
 }
 
 async function getBalanceSlips() {
@@ -10520,15 +10574,15 @@ async function listHandovers({ fromDate, toDate, userId } = {}) {
   return prisma.clinicHandover.findMany({ where, orderBy: { id: 'desc' } });
 }
 
-// ── Superadmin Full Slip Edit (Clinic > Parameters) ─────────────────────────
-// Edits a whole General OPD / Emergency slip: patient details, tests/doctors,
+// ── Superadmin Full Slip Edit (Clinic > Transactions) ───────────────────────
+// Edits a whole OPD slip of any department (General OPD, Emergency,
+// Consultant, Laboratory, Radiology, Ultrasound, Miscellaneous, Ambulance…):
+// patient details, tests/doctors,
 // discount, payment type, received. Nothing is blocked by business state —
 // every risky situation is returned as a WARNING the UI shows before saving
 // (owner's decision, 2026-10-07). The one hard stop is technical: a test row
 // whose doctor fee was already paid through a voucher can't be DELETED (the
 // voucher's fee record points at it); its amount can still be changed.
-
-const FULL_EDIT_DEPTS = ['general opd', 'emergency'];
 
 async function buildFullEditWarnings(visit) {
   const warnings = [];
@@ -10547,10 +10601,10 @@ async function buildFullEditWarnings(visit) {
   // the day/handover comparisons in SQL against the raw column (same reason
   // as getHandoverSummary / OV_BIZ elsewhere in this file).
   const [dayRow] = await prisma.$queryRawUnsafe(
-    `SELECT to_char(("createdAt" - INTERVAL '8 hours')::date, 'YYYY-MM-DD') AS biz,
+    `SELECT to_char(("createdAt" - INTERVAL '3 hours')::date, 'YYYY-MM-DD') AS biz,
             EXISTS (SELECT 1 FROM "AccVoucherIncome" vi
                     WHERE vi.source = 'auto' AND vi."entityType" = 'non-corporate'
-                      AND vi."voucherDate"::date = ("ClinicOpdVisit"."createdAt" - INTERVAL '8 hours')::date) AS closed,
+                      AND vi."voucherDate"::date = ("ClinicOpdVisit"."createdAt" - INTERVAL '3 hours')::date) AS closed,
             EXISTS (SELECT 1 FROM "ClinicHandover" h
                     WHERE h."fromUserId" = "ClinicOpdVisit"."createdByUserId"
                       AND h."createdAt" >= "ClinicOpdVisit"."createdAt") AS handed
@@ -10578,6 +10632,16 @@ async function buildFullEditWarnings(visit) {
   if (panelHeader) {
     warnings.push({ code: 'panel-billing', message: 'Is slip ki Panel Billing ban chuki hai — Panel Billing ki amounts khud nahi badlengi.' });
   }
+
+  const panelCheque = await prisma.clinicPanelChequeReceiptOpdItem.findUnique({ where: { opdVisitId: Number(visit.id) }, select: { id: true } }).catch(() => null);
+  if (panelCheque) {
+    warnings.push({ code: 'panel-cheque', message: 'Is slip ka Panel Cheque receive ho chuka hai — cheque ki amount khud nahi badlegi.' });
+  }
+
+  const balancePaid = await prisma.clinicOpdBalancePayment.aggregate({ where: { visitId: Number(visit.id) }, _sum: { amount: true }, _count: true }).catch(() => null);
+  if (balancePaid?._count) {
+    warnings.push({ code: 'balance-paid', message: `Is slip ka baqaya baad mein ${balancePaid._count} dafa wasool hua (${Number(balancePaid._sum.amount || 0)}) — Received badalne se woh payments waisi rahengi.` });
+  }
   return warnings;
 }
 
@@ -10599,9 +10663,6 @@ async function loadVisitForFullEdit(id) {
 async function getOpdVisitForFullEdit(id) {
   const visit = await loadVisitForFullEdit(id);
   if (!visit) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
-  if (!FULL_EDIT_DEPTS.includes(String(visit.department || '').trim().toLowerCase())) {
-    throw Object.assign(new Error('Full Slip Edit sirf General OPD aur Emergency slips ke liye hai'), { status: 400 });
-  }
   const [warnings, ccConfig, panelCompany, panelEmployee] = await Promise.all([
     buildFullEditWarnings(visit),
     getCcConfig(),
@@ -10615,12 +10676,16 @@ async function getOpdVisitForFullEdit(id) {
   };
 }
 
-// Same total rules as GeneralOPD/EmergencyOPD at slip creation:
+// Same total rules as the OPD screens at slip creation:
 // total = max(0, gross − discount) + CC surcharge (on that) + admin expense
 // (once per unique admin-expense doctor); complementary → everything 0.
-async function computeFullEditTotals({ doctors, discount, paymentType, ccPercentage, ccMinAmount }) {
+// A slip with no test lines (Ambulance, older slips) is priced by its own
+// amount instead (baseAmount).
+async function computeFullEditTotals({ doctors, discount, paymentType, ccPercentage, ccMinAmount, baseAmount }) {
   const isComplementary = String(paymentType || '').toLowerCase() === 'complementary';
-  const gross = doctors.reduce((s, d) => s + Number(d.amount || 0), 0);
+  const gross = doctors.length
+    ? doctors.reduce((s, d) => s + Number(d.amount || 0), 0)
+    : Math.max(0, Number(baseAmount) || 0);
   const disc = isComplementary ? 0 : Math.min(Math.max(0, Number(discount) || 0), gross);
   const net = isComplementary ? 0 : Math.max(0, gross - disc);
   const doctorIds = [...new Set(doctors.map((d) => Number(d.doctorId)).filter(Boolean))];
@@ -10653,9 +10718,6 @@ function fullEditSnapshot(v) {
 async function updateOpdVisitFull(id, payload = {}) {
   const before = await loadVisitForFullEdit(id);
   if (!before) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
-  if (!FULL_EDIT_DEPTS.includes(String(before.department || '').trim().toLowerCase())) {
-    throw Object.assign(new Error('Full Slip Edit sirf General OPD aur Emergency slips ke liye hai'), { status: 400 });
-  }
 
   const patientName = String(payload.patientName || '').trim();
   const serialNo = String(payload.serialNo || '').trim();
@@ -10664,7 +10726,11 @@ async function updateOpdVisitFull(id, payload = {}) {
   if (serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo);
 
   const rows = Array.isArray(payload.doctors) ? payload.doctors : [];
-  if (!rows.length) throw Object.assign(new Error('Kam az kam ek test/doctor zaroori hai'), { status: 400 });
+  // Slips that never had test lines (Ambulance, older slips) are edited by
+  // amount; every other slip keeps at least one test/doctor line.
+  const amountOnly = before.doctors.length === 0 && rows.length === 0;
+  if (!rows.length && !amountOnly) throw Object.assign(new Error('Kam az kam ek test/doctor zaroori hai'), { status: 400 });
+  if (amountOnly && !(Number(payload.baseAmount) >= 0)) throw Object.assign(new Error('Amount sahi likhein'), { status: 400 });
   for (const [i, r] of rows.entries()) {
     if (!Number(r.doctorId) || !Number(r.subDeptId)) throw Object.assign(new Error(`Line ${i + 1}: doctor/test missing`), { status: 400 });
     if (!(Number(r.amount) >= 0)) throw Object.assign(new Error(`Line ${i + 1}: amount sahi nahi`), { status: 400 });
@@ -10681,6 +10747,7 @@ async function updateOpdVisitFull(id, payload = {}) {
   const totals = await computeFullEditTotals({
     doctors: rows, discount: payload.discount, paymentType,
     ccPercentage: payload.ccPercentage, ccMinAmount: payload.ccMinAmount,
+    baseAmount: payload.baseAmount,
   });
   const receive = Math.max(0, Number(payload.receive) || 0);
   const refund = Math.max(0, receive - totals.totalAmount);
@@ -10727,6 +10794,10 @@ async function updateOpdVisitFull(id, payload = {}) {
         adjustedAt: new Date(),
       },
     });
+    // A Consultant appointment remembers its slip by number — keep it in step.
+    if (serialNo !== before.serialNo) {
+      await tx.clinicAppointment.updateMany({ where: { opdVisitId: before.id }, data: { slipNo: serialNo } });
+    }
   });
 
   const after = await loadVisitForFullEdit(id);
@@ -10751,6 +10822,7 @@ async function getOpdVisitEditLogs(visitId) {
 module.exports = {
   getOpdVisitForFullEdit,
   updateOpdVisitFull,
+  getDailyStatementFromPatientList,
   getOpdVisitEditLogs,
   calcFeeSplit,
   getAllDepartments,

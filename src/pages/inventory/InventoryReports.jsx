@@ -10,6 +10,7 @@ import { Printer, Download, BarChart3, Menu, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
+import { useClinicStore } from '../../store/useClinicStore';
 import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf, printRowsHtml, exportItemLedgerPdf } from '../../utils/exportInventoryReports';
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
@@ -67,8 +68,15 @@ export default function InventoryReports() {
     admissionNumber: '',
     // '' all issuance | 'admission' any admitted patient | 'cash' | 'panel'
     patientType: '',
+    // Panel only — one Panel Company (Clinic → Panel Companies).
+    panelCompanyId: '',
   });
   const [showIssuanceAdmPicker, setShowIssuanceAdmPicker] = useState(false);
+  // Panel Companies come from the Clinic module (Panels → Panel Companies).
+  const { panelCompanies, fetchPanelCompanies } = useClinicStore();
+  useEffect(() => {
+    if (issuanceFilters.patientType === 'panel' && !(panelCompanies || []).length) fetchPanelCompanies();
+  }, [issuanceFilters.patientType, panelCompanies, fetchPanelCompanies]);
   const [gdFilters, setGdFilters] = useState({
     dateFrom: '',
     dateTo: '',
@@ -603,6 +611,11 @@ export default function InventoryReports() {
         };
       }
 
+      // Panel Company only applies while Patient Type is Panel.
+      if (key === 'patientType' && value !== 'panel') {
+        return { ...prev, patientType: value, panelCompanyId: '' };
+      }
+
       return { ...prev, [key]: value };
     });
   };
@@ -626,6 +639,7 @@ export default function InventoryReports() {
       location: '',
       admissionNumber: '',
       patientType: '',
+      panelCompanyId: '',
     };
     setIssuanceFilters(emptyFilters);
     fetchGINs(emptyFilters).catch((err) => {
@@ -1209,6 +1223,7 @@ export default function InventoryReports() {
             admissionNumber: gin.admissionNumber || '',
             patientName: gin.patientName || gin.admissionPatientName || '',
             patientCategory: gin.patientCategory || null,
+            panelCompanyCode: gin.panelCompanyCode || '',
             // Rate locked on the GIN line when it was issued (Patient + Item view).
             ginRate: Number(gi.unitRate ?? rate),
             quantity: qty,
@@ -1235,6 +1250,7 @@ export default function InventoryReports() {
             admissionNumber: gin.admissionNumber || '',
             patientName: gin.patientName || gin.admissionPatientName || '',
             patientCategory: gin.patientCategory || null,
+            panelCompanyCode: gin.panelCompanyCode || '',
             ginRate: Number(gin.unitRate ?? rate),
             quantity: qty,
             rate,
@@ -1252,7 +1268,7 @@ export default function InventoryReports() {
     return issuanceRows.map((row) => ({
       'GIN Code': row.ginCode || '-',
       Date: formatDate(row.date),
-      ...(issuanceShowsPatient ? { 'Admission #': row.admissionNumber || '-', Patient: row.patientName || '-' } : {}),
+      ...(issuanceShowsPatient ? { 'Admission #': row.admissionNumber || '-', Patient: row.patientName || '-', Company: row.panelCompanyCode || '-' } : {}),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1286,7 +1302,7 @@ export default function InventoryReports() {
     issuanceRows.forEach((r) => {
       if (!r.admissionNumber) return;
       if (!byAdm.has(r.admissionNumber)) {
-        byAdm.set(r.admissionNumber, { type: r.patientCategory, adm: r.admissionNumber, patient: r.patientName, gins: new Set(), qty: 0, amount: 0 });
+        byAdm.set(r.admissionNumber, { type: r.patientCategory, adm: r.admissionNumber, patient: r.patientName, company: r.panelCompanyCode, gins: new Set(), qty: 0, amount: 0 });
       }
       const a = byAdm.get(r.admissionNumber);
       a.gins.add(r.ginCode);
@@ -1303,12 +1319,12 @@ export default function InventoryReports() {
       let qty = 0; let amt = 0;
       list.forEach((a) => {
         qty += a.qty; amt += a.amount;
-        out.push({ Type: label, 'Admission #': a.adm, Patient: a.patient || '-', GINs: a.gins.size, 'Total Qty': a.qty.toFixed(2), Amount: a.amount.toFixed(2) });
+        out.push({ Type: label, 'Admission #': a.adm, Patient: a.patient || '-', Company: a.company || '-', GINs: a.gins.size, 'Total Qty': a.qty.toFixed(2), Amount: a.amount.toFixed(2) });
       });
-      out.push({ Type: `${label} Total`, 'Admission #': `${list.length} patient(s)`, Patient: '', GINs: '', 'Total Qty': qty.toFixed(2), Amount: amt.toFixed(2) });
+      out.push({ Type: `${label} Total`, 'Admission #': `${list.length} patient(s)`, Patient: '', Company: '', GINs: '', 'Total Qty': qty.toFixed(2), Amount: amt.toFixed(2) });
       gQty += qty; gAmt += amt; gCount += list.length;
     });
-    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${gCount} patient(s)`, Patient: '', GINs: '', 'Total Qty': gQty.toFixed(2), Amount: gAmt.toFixed(2) });
+    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${gCount} patient(s)`, Patient: '', Company: '', GINs: '', 'Total Qty': gQty.toFixed(2), Amount: gAmt.toFixed(2) });
     return out;
   }, [issuanceRows]);
 
@@ -1321,7 +1337,7 @@ export default function InventoryReports() {
     const byAdm = new Map();
     issuanceRows.forEach((r) => {
       if (!r.admissionNumber) return;
-      if (!byAdm.has(r.admissionNumber)) byAdm.set(r.admissionNumber, { type: r.patientCategory, patient: r.patientName, items: new Map() });
+      if (!byAdm.has(r.admissionNumber)) byAdm.set(r.admissionNumber, { type: r.patientCategory, patient: r.patientName, company: r.panelCompanyCode, items: new Map() });
       const a = byAdm.get(r.admissionNumber);
       if (!a.patient && r.patientName) a.patient = r.patientName;
       const key = `${r.itemCode}::${r.ginRate}`;
@@ -1342,15 +1358,15 @@ export default function InventoryReports() {
             const amount = it.qty * it.rate;
             qty += it.qty; amt += amount;
             out.push({
-              Type: TYPE[a.type] || 'Unknown', 'Admission #': adm, Patient: a.patient || '-',
+              Type: TYPE[a.type] || 'Unknown', 'Admission #': adm, Patient: a.patient || '-', Company: a.company || '-',
               'Item Code': it.code, Item: it.name, 'Kitni Dafa': it.times,
               'Total Qty': it.qty.toFixed(2), Rate: it.rate.toFixed(2), Amount: amount.toFixed(2),
             });
           });
-        out.push({ Type: 'Total', 'Admission #': adm, Patient: a.patient || '-', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': qty.toFixed(2), Rate: '', Amount: amt.toFixed(2) });
+        out.push({ Type: 'Total', 'Admission #': adm, Patient: a.patient || '-', Company: a.company || '-', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': qty.toFixed(2), Rate: '', Amount: amt.toFixed(2) });
         gQty += qty; gAmt += amt;
       });
-    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${byAdm.size} patient(s)`, Patient: '', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': gQty.toFixed(2), Rate: '', Amount: gAmt.toFixed(2) });
+    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${byAdm.size} patient(s)`, Patient: '', Company: '', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': gQty.toFixed(2), Rate: '', Amount: gAmt.toFixed(2) });
     return out;
   }, [issuanceRows]);
 
@@ -1680,6 +1696,9 @@ export default function InventoryReports() {
       push('Type', issuanceFilters.assetType);
       push('Location', issuanceFilters.location);
       push('Patient Type', { admission: 'All Admitted (Cash + Panel)', cash: 'Cash Patients', panel: 'Panel Patients' }[issuanceFilters.patientType]);
+      if (issuanceFilters.patientType === 'panel' && issuanceFilters.panelCompanyId) {
+        push('Panel Company', (panelCompanies || []).find((c) => String(c.id) === String(issuanceFilters.panelCompanyId))?.code);
+      }
       push('Admission #', issuanceFilters.admissionNumber?.trim());
       if (issuanceFilters.issuedById) {
         const emp = (employees || []).find((e) => String(e.id) === String(issuanceFilters.issuedById));
@@ -2748,6 +2767,19 @@ export default function InventoryReports() {
                       <option value="panel">Panel Patients</option>
                     </select>
                   </div>
+                  {issuanceFilters.patientType === 'panel' && (
+                    <div>
+                      <label className="text-xs text-slate-500 block mb-1">Panel Company</label>
+                      <SearchableSelect
+                        options={panelCompanies || []}
+                        value={issuanceFilters.panelCompanyId}
+                        onChange={(val) => updateIssuanceFilter('panelCompanyId', val)}
+                        placeholder="All Companies"
+                        getLabel={(c) => `${c.code} — ${c.name}`}
+                        getKey={(c) => c.id}
+                      />
+                    </div>
+                  )}
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Department</label>
                     <SearchableSelect

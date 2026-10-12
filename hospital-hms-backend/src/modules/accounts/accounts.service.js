@@ -222,82 +222,162 @@ async function getPendingGrnQueue(entityType) {
   return rows;
 }
 
-// One-time seed: clones the entire Non-Corporate Main GL → Sub GL → Main
-// Account → Sub Account tree into brand-new Corporate rows (own ids/codes,
-// no link back to the source) so Corporate starts from the same structure
-// instead of being built by hand from scratch. Guarded to only run while
-// Corporate is still empty — after that, each side is edited independently
-// via its own Parameters screens (no re-sync).
+// Non-Corporate → Corporate copy (Parameters → "Copy from Non-Corporate").
+// Re-runnable merge: Corporate gets every Non-Corporate Main GL → Sub GL →
+// Main Account → Sub Account it doesn't have yet (matched by name under the
+// same parent), plus the List Attachments setup — heads, their Sub/Main
+// Account links (pointed at the matching Corporate accounts), staff
+// category links, linked custom heads and the payee name lists. Nothing in
+// Corporate is renamed, deleted or overwritten, and past vouchers are
+// untouched. `code` is globally unique (not per book), so new Corporate rows
+// get their own codes continuing each level's sequence (e.g. E-10, E-10.1).
+const copyKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
 async function copyChartToCorporate() {
-  const alreadyCopied = await prisma.accMainGL.findFirst({ where: { entityType: 'corporate' } });
-  if (alreadyCopied) {
-    throw new Error('Corporate chart of accounts already has data — copy already done. Edit it directly from the Corporate Parameters screens.');
-  }
-
-  const sourceMainGLs = await prisma.accMainGL.findMany({
-    where: { entityType: 'non-corporate' },
-    orderBy: { id: 'asc' },
-    include: {
-      subGLs: {
-        orderBy: { id: 'asc' },
-        include: {
-          mainAccounts: {
-            orderBy: { id: 'asc' },
-            include: { subAccounts: { orderBy: { id: 'asc' } } },
-          },
-        },
-      },
+  const SRC = 'non-corporate';
+  const DST = 'corporate';
+  const treeInclude = {
+    subGLs: {
+      orderBy: { id: 'asc' },
+      include: { mainAccounts: { orderBy: { id: 'asc' }, include: { subAccounts: { orderBy: { id: 'asc' } } } } },
     },
-  });
-  if (sourceMainGLs.length === 0) {
-    throw new Error('Non-Corporate chart of accounts is empty — nothing to copy.');
-  }
+  };
+  const [srcTree, dstTree] = await Promise.all([
+    prisma.accMainGL.findMany({ where: { entityType: SRC }, orderBy: { id: 'asc' }, include: treeInclude }),
+    prisma.accMainGL.findMany({ where: { entityType: DST }, orderBy: { id: 'asc' }, include: treeInclude }),
+  ]);
+  if (srcTree.length === 0) throw new Error('Non-Corporate chart of accounts is empty — nothing to copy.');
 
-  const counts = { mainGL: 0, subGL: 0, mainAccount: 0, subAccount: 0 };
+  // System heads exist once per book — make sure Corporate has its own.
+  await ensureSystemHeads(SRC);
+  await ensureSystemHeads(DST);
+  const headInclude = { linkedAccounts: true, linkedMainAccounts: true, staffCategoryLinks: true, linkedCustomHeads: true, entries: true };
+  const [srcHeads, dstHeadsInit] = await Promise.all([
+    prisma.accPayeeHead.findMany({ where: { entityType: SRC }, orderBy: { id: 'asc' }, include: headInclude }),
+    prisma.accPayeeHead.findMany({ where: { entityType: DST }, orderBy: { id: 'asc' }, include: headInclude }),
+  ]);
+
+  const counts = {
+    mainGL: 0, subGL: 0, mainAccount: 0, subAccount: 0,
+    heads: 0, headAccounts: 0, headMainAccounts: 0, staffCategories: 0, customHeadLinks: 0, entries: 0,
+  };
+  const subAccountMap = new Map(); // Non-Corporate Sub Account id → Corporate id
+  const mainAccountMap = new Map();
 
   await prisma.$transaction(async (tx) => {
-    // `code` is globally unique (not scoped by entityType), so Main GL codes
-    // continue the existing global sequence (same rule as createMainGL above)
-    // — e.g. Non-Corporate's E-1..E-3 become Corporate's E-4..E-6. Every
-    // level below derives its code from its own *new* parent's new code, so
-    // uniqueness falls out automatically without extra checks.
-    let mainGlSeq = await tx.accMainGL.count();
+    // Next free code directly under a parent code (max existing suffix + 1).
+    const nextChildCode = async (model, parentCode) => {
+      const rows = await tx[model].findMany({ where: { code: { startsWith: `${parentCode}.` } }, select: { code: true } });
+      const max = rows.reduce((m, r) => {
+        const tail = r.code.slice(parentCode.length + 1);
+        return /^\d+$/.test(tail) ? Math.max(m, Number(tail)) : m;
+      }, 0);
+      return `${parentCode}.${max + 1}`;
+    };
+    const glCodes = await tx.accMainGL.findMany({ select: { code: true } });
+    let glSeq = glCodes.reduce((m, g) => Math.max(m, Number(String(g.code).replace(/^E-/, '')) || 0), 0);
 
-    for (const srcGL of sourceMainGLs) {
-      mainGlSeq += 1;
-      const newGL = await tx.accMainGL.create({
-        data: { code: `E-${mainGlSeq}`, name: srcGL.name, entityType: 'corporate' },
-      });
-      counts.mainGL += 1;
-
-      let subGlSeq = 0;
-      for (const srcSubGL of srcGL.subGLs) {
-        subGlSeq += 1;
-        const newSubGL = await tx.accSubGL.create({
-          data: { code: `${newGL.code}.${subGlSeq}`, name: srcSubGL.name, mainGlId: newGL.id, entityType: 'corporate' },
-        });
-        counts.subGL += 1;
-
-        let mainAccSeq = 0;
-        for (const srcMA of srcSubGL.mainAccounts) {
-          mainAccSeq += 1;
-          const newMA = await tx.accMainAccount.create({
-            data: { code: `${newSubGL.code}.${mainAccSeq}`, name: srcMA.name, subGlId: newSubGL.id, entityType: 'corporate' },
-          });
-          counts.mainAccount += 1;
-
-          let subAccSeq = 0;
+    for (const srcGL of srcTree) {
+      let dstGL = dstTree.find((g) => copyKey(g.name) === copyKey(srcGL.name));
+      if (!dstGL) {
+        glSeq += 1;
+        dstGL = { ...(await tx.accMainGL.create({ data: { code: `E-${glSeq}`, name: srcGL.name.trim(), entityType: DST } })), subGLs: [] };
+        dstTree.push(dstGL);
+        counts.mainGL += 1;
+      }
+      for (const srcSub of srcGL.subGLs) {
+        let dstSub = dstGL.subGLs.find((x) => copyKey(x.name) === copyKey(srcSub.name));
+        if (!dstSub) {
+          const code = await nextChildCode('accSubGL', dstGL.code);
+          dstSub = { ...(await tx.accSubGL.create({ data: { code, name: srcSub.name.trim(), mainGlId: dstGL.id, entityType: DST } })), mainAccounts: [] };
+          dstGL.subGLs.push(dstSub);
+          counts.subGL += 1;
+        }
+        for (const srcMA of srcSub.mainAccounts) {
+          let dstMA = dstSub.mainAccounts.find((x) => copyKey(x.name) === copyKey(srcMA.name));
+          if (!dstMA) {
+            const code = await nextChildCode('accMainAccount', dstSub.code);
+            dstMA = { ...(await tx.accMainAccount.create({ data: { code, name: srcMA.name.trim(), subGlId: dstSub.id, entityType: DST } })), subAccounts: [] };
+            dstSub.mainAccounts.push(dstMA);
+            counts.mainAccount += 1;
+          }
+          mainAccountMap.set(srcMA.id, dstMA.id);
           for (const srcSA of srcMA.subAccounts) {
-            subAccSeq += 1;
-            await tx.accSubAccount.create({
-              data: { code: `${newMA.code}.${subAccSeq}`, name: srcSA.name, mainAccountId: newMA.id, entityType: 'corporate' },
-            });
-            counts.subAccount += 1;
+            let dstSA = dstMA.subAccounts.find((x) => copyKey(x.name) === copyKey(srcSA.name));
+            if (!dstSA) {
+              const code = await nextChildCode('accSubAccount', dstMA.code);
+              dstSA = await tx.accSubAccount.create({ data: { code, name: srcSA.name.trim(), mainAccountId: dstMA.id, entityType: DST } });
+              dstMA.subAccounts.push(dstSA);
+              counts.subAccount += 1;
+            }
+            subAccountMap.set(srcSA.id, dstSA.id);
           }
         }
       }
     }
-  });
+
+    // ── List Attachments ──
+    // System heads pair up by sourceType (one each per book); every other
+    // head by sourceType + name (+ inventory subcategory for Inventory heads).
+    const systemTypes = new Set(SYSTEM_HEAD_DEFS.map((d) => d.sourceType));
+    const dstHeads = [...dstHeadsInit];
+    const headMap = new Map();
+    for (const h of srcHeads) {
+      let d = systemTypes.has(h.sourceType)
+        ? dstHeads.find((x) => x.sourceType === h.sourceType)
+        : dstHeads.find((x) => x.sourceType === h.sourceType
+            && copyKey(x.name) === copyKey(h.name)
+            && (x.inventorySubcategoryId || null) === (h.inventorySubcategoryId || null));
+      if (!d) {
+        d = {
+          ...(await tx.accPayeeHead.create({
+            data: { name: h.name.trim(), sourceType: h.sourceType, entityType: DST, inventorySubcategoryId: h.inventorySubcategoryId || null },
+          })),
+          linkedAccounts: [], linkedMainAccounts: [], staffCategoryLinks: [], linkedCustomHeads: [], entries: [],
+        };
+        dstHeads.push(d);
+        counts.heads += 1;
+      }
+      headMap.set(h.id, d);
+    }
+
+    for (const h of srcHeads) {
+      const d = headMap.get(h.id);
+      for (const l of h.linkedAccounts) {
+        const subAccountId = subAccountMap.get(l.subAccountId);
+        if (!subAccountId || d.linkedAccounts.some((x) => x.subAccountId === subAccountId)) continue;
+        d.linkedAccounts.push(await tx.accPayeeHeadAccount.create({ data: { payeeHeadId: d.id, subAccountId } }));
+        counts.headAccounts += 1;
+      }
+      for (const l of h.linkedMainAccounts) {
+        const mainAccountId = mainAccountMap.get(l.mainAccountId);
+        if (!mainAccountId || d.linkedMainAccounts.some((x) => x.mainAccountId === mainAccountId)) continue;
+        d.linkedMainAccounts.push(await tx.accPayeeHeadMainAccount.create({ data: { payeeHeadId: d.id, mainAccountId } }));
+        counts.headMainAccounts += 1;
+      }
+      for (const l of h.staffCategoryLinks) {
+        if (d.staffCategoryLinks.some((x) => x.staffCategoryId === l.staffCategoryId)) continue;
+        d.staffCategoryLinks.push(await tx.accPayeeHeadStaffCategory.create({ data: { payeeHeadId: d.id, staffCategoryId: l.staffCategoryId } }));
+        counts.staffCategories += 1;
+      }
+      for (const l of h.linkedCustomHeads) {
+        const custom = headMap.get(l.customHeadId);
+        if (!custom || d.linkedCustomHeads.some((x) => x.customHeadId === custom.id)) continue;
+        d.linkedCustomHeads.push(await tx.accPayeeHeadLinkedCustomHead.create({ data: { headId: d.id, customHeadId: custom.id } }));
+        counts.customHeadLinks += 1;
+      }
+      // Payee name lists (ticked employees / suppliers / custom names), under
+      // the matching Corporate Sub Account. An entry whose Sub Account has
+      // no Corporate copy is skipped rather than filed under the wrong one.
+      for (const e of h.entries) {
+        const subAccountId = e.subAccountId ? subAccountMap.get(e.subAccountId) : null;
+        if (e.subAccountId && !subAccountId) continue;
+        if (d.entries.some((x) => (x.subAccountId || null) === subAccountId && copyKey(x.name) === copyKey(e.name))) continue;
+        d.entries.push(await tx.accPayeeEntry.create({ data: { payeeHeadId: d.id, subAccountId, name: e.name } }));
+        counts.entries += 1;
+      }
+    }
+  }, { timeout: 120000 });
 
   return counts;
 }

@@ -2332,7 +2332,8 @@ async function getRevenueDashboard(req, res, next) {
 
 async function getDailyDepartmentStatement(req, res, next) {
   try {
-    const data = await service.getDailyDepartmentStatement(req.query.date);
+    // Dashboard popup = the Patients List of that business day.
+    const data = await service.getDailyStatementFromPatientList(req.query.date);
     success(res, data);
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);

@@ -59,7 +59,8 @@ function buildColumnMap(headerRow) {
     const h = normalizeHeader(cell);
     if (!h) return;
     if (h === 'DEPARTMENT') COL.dept = idx;
-    else if (h.startsWith('SUB DEPARTMENT') || h === 'SUB DEPT' || h === 'SUB DEPT.') COL.subDept = idx;
+    // "SUB- Department" / "Sub-Department" / "Sub Dept." all mean the same column.
+    else if (/^SUB DEPARTMENT|^SUB DEPT$/.test(h.replace(/[-.]/g, ' ').replace(/\s+/g, ' ').trim())) COL.subDept = idx;
     else if (h.startsWith('DOCTOR')) COL.doctor = idx;
     // 'Type' is deliberately NOT read from its own header label: some exports
     // insert a stray blank header cell right after "Doctor/Consultant" that
@@ -184,7 +185,7 @@ export default function PatientsListFilter() {
           message:
             `${label} ka data pehle se mojood hai (${totalExisting} records).\n\n` +
             `Kya karna chahte hain?\n` +
-            `  Replace = purana delete, naya dalo\n` +
+            `  Replace = is file ke Slip # ki purani lines hata kar file wali lines dalo\n` +
             `  Merge = existing raho, sirf naye serial add karo\n` +
             `  Cancel = kuch mat karo`,
           choices: [
@@ -214,10 +215,12 @@ export default function PatientsListFilter() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
-      const msg = json.data.deleted
-        ? `${json.data.deleted} purane records delete hue, ${json.data.inserted} naye records import hue`
-        : `${json.data.inserted} records imported successfully`;
-      toast.success(msg);
+      const d = json.data || {};
+      toast.success(
+        [`${d.inserted} lines import`, d.deleted ? `${d.deleted} purani lines replace` : '', d.autoDeduped ? `${d.autoDeduped} duplicate hataye` : '']
+          .filter(Boolean).join(' · '),
+        { duration: 6000 },
+      );
     } catch (err) {
       toast.error(err.message || 'Upload failed');
     } finally {

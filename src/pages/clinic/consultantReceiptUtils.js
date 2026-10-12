@@ -68,6 +68,10 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   const grossAmt  = preChargeTotal + discount;
   const balance   = Math.max(0, total - received);
 
+  // Duplicate: Printed By is whoever reprints it — also show who originally
+  // made the slip (the ID it was created from).
+  const createdByLine = isDuplicate && doc.createdByName ? doc.createdByName : '';
+
   // Admit Patient + Adjust Payment slip — its amount goes to this admission's
   // bill, so the slip names the admission it was adjusted against.
   const adjustedAdmitNo = doc.admitPatient && doc.adjustPayment && doc.admitNo ? String(doc.admitNo).trim() : '';
@@ -194,7 +198,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
   <div class="info-grid">
     <span><span class="lbl">Serial #:</span> ${doc.serialNo}</span>
     <span><span class="lbl">Date :</span> ${dateStr} ${timeStr}</span>
-    <span><span class="lbl">Printed By:</span> ${printedBy || '—'}</span>
+    <span><span class="lbl">Printed By:</span> ${printedBy || '—'}${createdByLine ? `<br/><span class="lbl">Created By:</span> ${createdByLine}` : ''}</span>
 
     <span><span class="lbl">Patient :</span> ${doc.patientType} ${doc.patientName}</span>
     ${doc.mrNo ? `<span><span class="lbl">MR #:</span> ${doc.mrNo}</span>` : '<span></span>'}

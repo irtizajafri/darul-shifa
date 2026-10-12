@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Settings2, BookOpen, AlignLeft, Layers, Users, Landmark, FileDigit, Tag, ArrowLeft, Copy } from 'lucide-react';
@@ -20,34 +20,31 @@ const ITEMS = [
 export default function AccountsParameters() {
   const { entityType } = useParams();
   const navigate = useNavigate();
-  const { mainGLs, fetchMainGLs, copyChartToCorporate } = useAccountsStore();
+  const { copyChartToCorporate } = useAccountsStore();
 
   const label = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
 
-  // Only relevant on the Corporate side — checks whether the Main GL /
-  // Sub GL / Main Account / Sub Account tree has already been copied over
-  // from Non-Corporate, so the one-time "Copy" button hides itself once
-  // it's no longer needed.
-  const [checkingCopy, setCheckingCopy] = useState(entityType === 'corporate');
+  // Corporate side only — copies whatever Non-Corporate has that Corporate
+  // doesn't yet (accounts + List Attachments). Safe to press again any time.
   const [copying, setCopying] = useState(false);
-
-  useEffect(() => {
-    if (entityType !== 'corporate') return;
-    setCheckingCopy(true);
-    fetchMainGLs('corporate').finally(() => setCheckingCopy(false));
-  }, [entityType]);
 
   const handleCopyFromNonCorporate = async () => {
     if (!(await confirmDialog({
-      title: 'Copy to Corporate',
-      message: 'Copy the entire Non-Corporate Main GL / Sub GL / Main Account / Sub Account structure into Corporate? This creates brand-new, independent Corporate records — it only runs once.',
-      confirmLabel: 'Copy',
+      title: 'Non-Corporate se Corporate mein copy',
+      message: 'Non-Corporate ka Account Allocation (Main GL → Sub GL → Main Account → Sub Account) aur List Attachments (heads, un ki account linking aur names) Corporate mein copy ho jayenge. Jo Corporate mein pehle se hai woh waisa hi rahega — sirf jo kam hai woh banega. Kuch delete ya overwrite nahi hoga.',
+      confirmLabel: 'Copy karo',
     }))) return;
     setCopying(true);
     try {
-      const result = await copyChartToCorporate();
-      toast.success(`Copied: ${result.mainGL} Main GL, ${result.subGL} Sub GL, ${result.mainAccount} Main Account, ${result.subAccount} Sub Account`);
-      await fetchMainGLs('corporate');
+      const r = await copyChartToCorporate();
+      const accounts = r.mainGL + r.subGL + r.mainAccount + r.subAccount;
+      const attachments = r.heads + r.headAccounts + r.headMainAccounts + r.staffCategories + r.customHeadLinks + r.entries;
+      toast.success(
+        accounts + attachments === 0
+          ? 'Corporate pehle se Non-Corporate jaisa hai — kuch naya copy karne ko nahi tha'
+          : `Copy ho gaya — Accounts: ${r.mainGL} Main GL, ${r.subGL} Sub GL, ${r.mainAccount} Main Account, ${r.subAccount} Sub Account · List Attachments: ${r.heads} heads, ${r.headAccounts + r.headMainAccounts} account links, ${r.entries} names`,
+        { duration: 7000 },
+      );
     } catch (e) {
       toast.error(e.message || 'Copy failed');
     } finally {
@@ -55,7 +52,7 @@ export default function AccountsParameters() {
     }
   };
 
-  const showCopyBanner = entityType === 'corporate' && !checkingCopy && mainGLs.length === 0;
+  const showCopyBanner = entityType === 'corporate';
 
   return (
     <div className="acc-parameters">
@@ -72,8 +69,8 @@ export default function AccountsParameters() {
       {showCopyBanner && (
         <div className="acc-parameters__copy-banner">
           <div>
-            <strong>Corporate chart of accounts is empty.</strong>
-            <p>Copy the Main GL / Sub GL / Main Account / Sub Account structure from Non-Corporate to start from the same setup — a one-time action, both sides stay fully independent afterwards.</p>
+            <strong>Non-Corporate se copy</strong>
+            <p>Non-Corporate ka Account Allocation (Main GL / Sub GL / Main Account / Sub Account) aur List Attachments Corporate mein copy karein. Sirf jo Corporate mein nahi hai woh banta hai — jitni dafa chahein dabayein, kuch delete ya overwrite nahi hota.</p>
           </div>
           <button className="acc-parameters__copy-btn" onClick={handleCopyFromNonCorporate} disabled={copying}>
             <Copy className="w-4 h-4" /> {copying ? 'Copying…' : 'Copy from Non-Corporate'}

@@ -32,6 +32,10 @@ export function buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDa
   const grossAmt  = total + discount;
   const balance   = Math.max(0, total - received);
 
+  // Duplicate: Printed By is whoever reprints it — also show who originally
+  // made the slip (the ID it was created from).
+  const createdByLine = isDuplicate && doc.createdByName ? doc.createdByName : '';
+
   // Admit Patient + Adjust Payment slip — its amount goes to this admission's
   // bill, so the slip names the admission it was adjusted against.
   const adjustedAdmitNo = doc.admitPatient && doc.adjustPayment && doc.admitNo ? String(doc.admitNo).trim() : '';
@@ -115,6 +119,7 @@ export function buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDa
 
   <div class="th-row"><span class="lbl">Serial #:</span><span>${doc.serialNo}</span></div>
   <div class="th-row"><span class="lbl">Date:</span><span>${dateStr} ${timeStr}</span></div>
+  ${createdByLine ? `<div class="th-row"><span class="lbl">Created By:</span><span>${createdByLine}</span></div>` : ''}
   <div class="th-row"><span class="lbl">Printed By:</span><span>${printedBy || '—'}</span></div>
   <div class="th-row"><span class="lbl">Patient:</span><span>${doc.patientType} ${doc.patientName}</span></div>
   <div class="th-row"><span class="lbl">Age:</span><span>${ageStr}</span></div>

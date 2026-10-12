@@ -341,9 +341,20 @@ async function upsertOverride(req, res, next) {
 async function bulkUpsertOverrides(req, res, next) {
   try {
     const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
-    const saved = await service.bulkUpsertOverrides(rows);
+    const saved = await service.bulkUpsertOverrides(rows, req.body?.editedBy);
     return success(res, saved, 'attendance overrides saved');
   } catch (err) {
+    next(err);
+  }
+}
+
+// All Records edit history for one employee (optionally one day).
+async function listOverrideLogs(req, res, next) {
+  try {
+    const data = await service.listOverrideLogs({ empCode: req.query.empCode, date: req.query.date });
+    return success(res, data);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ ok: false, message: err.message });
     next(err);
   }
 }
@@ -860,6 +871,7 @@ module.exports = {
   upsertOverride,
   bulkUpsertOverrides,
   replaceOverridesForDates,
+  listOverrideLogs,
   getSalaryPaidMonths,
 };
 

@@ -193,7 +193,11 @@ export default function RevenueDashboard() {
         // only carry a date + free-text time, not a real timestamp, so they
         // get their own text-based cutoff instead of the millisecond-offset
         // math the new-system rows use.
+        // The Patients List sends each row's business day (08:00 PKT →
+        // 07:59 next day) — use it so a cell always equals that day's list.
+        // The fallback below only covers an older backend without it.
         const bizDay = (r) => {
+          if (r.businessDay) return r.businessDay;
           if (r._source === 'old') {
             const datePart = String(r.visitDate).slice(0, 10);
             const [h, m] = String(r.visitTime || '12:00').slice(0, 5).split(':').map(Number);

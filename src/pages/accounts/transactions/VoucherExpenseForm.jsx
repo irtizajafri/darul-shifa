@@ -1338,15 +1338,26 @@ export default function VoucherExpenseForm() {
     }
     if (mode === 'cash') setCashSerial((s) => s + 1);
 
-    setEntry(emptyEntry());
+    // Next line: keep the Account Allocation (Main GL → Sub Account, their
+    // dropdown options and the linked payee list) so another payee under the
+    // same account is one pick away — only the payee and what belongs to it
+    // (amount, particulars, linked GRN/visit/salary/utility/admission) clear.
+    // Changing any allocation level still resets the levels below it as usual.
+    setEntry((e) => ({
+      ...emptyEntry(),
+      mainGlId: e.mainGlId, subGlId: e.subGlId, mainAccountId: e.mainAccountId, subAccountId: e.subAccountId,
+      accountCode: e.accountCode, accountName: e.accountName,
+      chequeDate: e.chequeDate, chequeType: e.chequeType,
+    }));
     if (isBank && selectedBankId) {
       fetch(`${API}/cheque-serials/next?bankAccountId=${selectedBankId}`)
         .then((r) => r.json())
         .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
     }
-    setSubGLs([]); setMainAccs([]); setSubAccs([]); setIsInventoryAcc(false);
-    resetSurgeryState();
-    setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
+    // Surgery: the admission(s) belong to the line just confirmed; the
+    // role (Surgeon/Anaesthetic) and its doctor list stay.
+    setSelectedAdmissions([]); setAdmissionQuery(''); setAdmissionSearchOpen(false);
+    setPayeeSearch(''); setPayeeListOpen(false);
 
     // Entry's in the list — if any pending GRNs are still uncovered, bring
     // the queue popup back so the next one can be picked straight away.

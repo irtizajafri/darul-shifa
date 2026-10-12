@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X, AlertTriangle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
 
@@ -82,7 +83,8 @@ function buildColumnMap(headerRow) {
     const h = normalizeHeader(cell);
     if (!h) return;
     if (h === 'DEPARTMENT') COL.dept = idx;
-    else if (h.startsWith('SUB DEPARTMENT') || h === 'SUB DEPT' || h === 'SUB DEPT.') COL.subDept = idx;
+    // "SUB- Department" / "Sub-Department" / "Sub Dept." all mean the same column.
+    else if (/^SUB DEPARTMENT|^SUB DEPT$/.test(h.replace(/[-.]/g, ' ').replace(/\s+/g, ' ').trim())) COL.subDept = idx;
     else if (h.startsWith('DOCTOR')) COL.doctor = idx;
     // 'Type' is deliberately NOT read from its own header label: some exports
     // insert a stray blank header cell right after "Doctor/Consultant" that
@@ -336,14 +338,51 @@ export default function PatientsListReport() {
     try {
       const rows = await parseExcelFile(file);
       if (!rows.length) { toast.error('File mein valid data nahi mila'); return; }
+
+      // Same choice as the filter screen: if these dates already hold data,
+      // Replace (this file's slips swap out their old lines) or Merge (only
+      // slip numbers not there yet get added) — a plain re-upload would
+      // otherwise add the same lines again.
+      const uniqueDates = [...new Set(rows.map((r) => r.visitDate))].sort();
+      const countsRes  = await fetch(`${API}/patient-visits/date-counts?dates=${uniqueDates.join(',')}`);
+      const countsJson = await countsRes.json();
+      if (!countsRes.ok) throw new Error(countsJson.message);
+      const datesWithData = uniqueDates.filter((d) => countsJson.data[d] > 0);
+      let replaceDates = [];
+      let mergeDates = [];
+      if (datesWithData.length) {
+        const totalExisting = datesWithData.reduce((sum, d) => sum + countsJson.data[d], 0);
+        const choice = await confirmDialog({
+          title: 'Data pehle se mojood hai',
+          message:
+            `${datesWithData.join(', ')} ka data pehle se mojood hai (${totalExisting} lines).\n\n` +
+            `  Replace = is file ke Slip # ki purani lines hata kar file wali lines dalo\n` +
+            `  Merge = purana waisa rahe, sirf naye Slip # add karo\n` +
+            `  Cancel = kuch mat karo`,
+          choices: [
+            { label: 'Replace', value: 'R', danger: true },
+            { label: 'Merge', value: 'M' },
+          ],
+          cancelLabel: 'Cancel',
+        });
+        if (!choice) { toast('Upload cancel — purana data waisa hi hai'); return; }
+        if (choice === 'R') replaceDates = datesWithData;
+        else mergeDates = datesWithData;
+      }
+
       const res  = await fetch(`${API}/patient-visits/bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, replaceDates, mergeDates }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
-      toast.success(`${json.data.inserted} records imported`);
+      const d = json.data || {};
+      toast.success(
+        [`${d.inserted} lines import`, d.deleted ? `${d.deleted} purani lines replace` : '', d.autoDeduped ? `${d.autoDeduped} duplicate hataye` : '']
+          .filter(Boolean).join(' · '),
+        { duration: 6000 },
+      );
       // Import ke turant baad refresh ka apna spinner chalta rahi bina
       // "Importing..." khatam hue — ab dono ek hi "busy" state se chalte
       // hain, isliye button states overlap nahi karte.
