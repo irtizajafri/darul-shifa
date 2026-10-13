@@ -782,7 +782,7 @@ export default function VoucherExpenseForm() {
         // Show recent admissions immediately so the picker isn't empty —
         // entityType narrows to this book's Cash (non-corporate) or Panel
         // (corporate) files only, same split GRN/Doctor payments already use.
-        fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${entityType}`)
+        fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${entityType}&includeDischarged=1`)
           .then((r) => r.json())
           .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
           .catch((err) => toast.error(err?.message || 'Failed to load admissions'));
@@ -838,7 +838,7 @@ export default function VoucherExpenseForm() {
     clearTimeout(admissionSearchTimer.current);
     admissionSearchTimer.current = setTimeout(async () => {
       try {
-        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}&entityType=${entityType}`);
+        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}&entityType=${entityType}&includeDischarged=1`);
         const j = await r.json();
         setAdmissionResults(Array.isArray(j?.data) ? j.data : []);
       } catch { setAdmissionResults([]); }
@@ -1640,6 +1640,7 @@ export default function VoucherExpenseForm() {
                       <div key={r.id} className="ve-form__payee-item" onMouseDown={() => handleAdmissionSelect(r)}>
                         <span className="ve-form__payee-code">{r.admissionNo}</span>
                         <span>{r.patientName}</span>
+                        {r.status === 'discharge' && <span className="ve-form__admission-tag">Discharged</span>}
                       </div>
                     ))}
                   </div>

@@ -1900,6 +1900,65 @@ async function searchAdmissionsForReceiving(q) {
   }));
 }
 
+// Admission Form print (Save & Print and Report > Reprint) — everything the
+// form shows that isn't just the typed-in fields: who generated it, when it
+// was really admitted, the room it's in now (= the room it was discharged
+// from, since a room shift moves admission.bedId), every room shift, every
+// payment (the advance first — it lives on the admission itself under its
+// own Slip # — then each Receiving against Admission), and the discharge
+// date (certificate, else the status change to Discharge).
+async function getAdmissionFormPrintData(admissionNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+    include: { payments: { orderBy: [{ receivedAt: 'asc' }, { id: 'asc' }] } },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+
+  const [shifts, certificate, dischargeLog] = await Promise.all([
+    prisma.clinicBedShiftHistory.findMany({ where: { admissionId: admission.id }, orderBy: [{ shiftedAt: 'asc' }, { id: 'asc' }] }),
+    prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: admission.id }, select: { dischargeDate: true } }),
+    prisma.clinicAdmissionStatusLog.findFirst({ where: { admissionId: admission.id, toStatus: 'discharge' }, orderBy: { changedAt: 'desc' }, select: { changedAt: true } }),
+  ]);
+
+  const bedIds = [...new Set([admission.bedId, ...shifts.flatMap((h) => [h.fromBedId, h.toBedId])].filter(Boolean))];
+  const beds = bedIds.length
+    ? await prisma.clinicBed.findMany({ where: { id: { in: bedIds } }, include: { roomCategory: { select: { name: true } } } })
+    : [];
+  const bedById = new Map(beds.map((b) => [b.id, b]));
+  const roomCategory = admission.roomCategoryId
+    ? await prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId }, select: { name: true } })
+    : null;
+  const currentBed = bedById.get(admission.bedId);
+
+  const payments = [];
+  if (Number(admission.advancePayment) > 0) {
+    payments.push({ date: admission.createdAt, amount: Number(admission.advancePayment), slipNo: admission.serialNo || '' });
+  }
+  admission.payments.forEach((p) => payments.push({ date: p.receivedAt || p.createdAt, amount: Number(p.amount) || 0, slipNo: p.serialNo }));
+
+  return {
+    admittedAt: admission.createdAt,
+    admittedBy: admission.createdByName || null,
+    roomCategoryName: currentBed?.roomCategory?.name || roomCategory?.name || null,
+    roomName: currentBed?.name || null,
+    roomHistory: shifts.map((h) => {
+      const from = bedById.get(h.fromBedId);
+      const to = bedById.get(h.toBedId);
+      return {
+        fromRoom: from?.name || null,
+        fromCategory: from?.roomCategory?.name || null,
+        toRoom: to?.name || null,
+        toCategory: to?.roomCategory?.name || null,
+        shiftedAt: h.shiftedAt,
+        shiftedBy: h.shiftedBy || null,
+      };
+    }),
+    payments,
+    dischargeDate: certificate?.dischargeDate || dischargeLog?.changedAt || null,
+  };
+}
+
 async function getAdmissionForReceiving(admissionNo) {
   const admission = await prisma.clinicAdmission.findFirst({
     where: { admissionNo: String(admissionNo).trim() },
@@ -3940,6 +3999,8 @@ async function createAdmission(data) {
       panelCompanyId:    data.panelCompanyId ? Number(data.panelCompanyId) : null,
       panelEmployeeId:   data.panelEmployeeId ? Number(data.panelEmployeeId) : null,
       panelDependentId:  data.panelDependentId ? Number(data.panelDependentId) : null,
+      createdByUserId:   data.createdByUserId != null ? String(data.createdByUserId) : null,
+      createdByName:     data.createdByName?.trim() || null,
     },
   });
   if (admission.bedId) {
@@ -3981,10 +4042,14 @@ async function getAvailableBeds(roomCategoryId, excludeAdmissionId) {
 // everything except Panel — private/staff/cc). Left undefined for callers
 // that don't care about the split (e.g. Inventory GD's admission picker),
 // so existing behaviour there is unchanged.
-async function searchAdmissionsForAdjustment(q, entityType) {
+// includeDischarged — Accounts > Voucher Expense's Surgery/Anesthesia
+// picker: surgeon/anesthetist are usually paid after discharge, so a
+// Discharge-status file must stay pickable there (Admission Adjustment and
+// Inventory keep the admitted-only list).
+async function searchAdmissionsForAdjustment(q, entityType, includeDischarged = false) {
   const term = String(q || '').trim();
   const where = {
-    status: 'active',
+    status: includeDischarged ? { in: ['active', 'discharge'] } : 'active',
     ...(term
       ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
       : {}),
@@ -4008,6 +4073,7 @@ async function searchAdmissionsForAdjustment(q, entityType) {
     admissionNo: a.admissionNo,
     patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
     createdAt: a.createdAt,
+    status: a.status,
   }));
 }
 
@@ -11054,6 +11120,7 @@ module.exports = {
   getPanelChequeSummary,
   getPanelChequesReport,
   getPanelChequePostingReport,
+  getAdmissionFormPrintData,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,
@@ -11338,12 +11405,11 @@ async function getPanelBillingDetails({ from, to, panelCompanyId, panelEmployeeI
 
   const ids = admissions.map((a) => a.id);
   const admNos = admissions.map((a) => String(a.admissionNo));
-  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
   const doctorIds = [...new Set(admissions.map((a) => a.consultantId).filter(Boolean))];
   const [items, legacyRows, companies, doctors, billHeads] = await Promise.all([
     ids.length ? prisma.clinicPanelBillingItem.findMany({ where: { admissionId: { in: ids } }, select: { admissionId: true, billHeadId: true, description: true, groupInto: true, amount: true } }) : [],
     admNos.length ? prisma.clinicPanelBillingDetail.findMany({ where: { admitNo: { in: admNos } } }) : [],
-    companyIds.length ? prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true } }) : [],
+    prisma.clinicPanelCompany.findMany({ select: { id: true, name: true, code: true } }),
     doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, name: true } }) : [],
     prisma.clinicBillHead.findMany({ select: { id: true, description: true } }),
   ]);
@@ -11354,7 +11420,7 @@ async function getPanelBillingDetails({ from, to, panelCompanyId, panelEmployeeI
   items.forEach((i) => { (itemsByAdm[i.admissionId] ||= []).push(i); });
   const legacyByNo = {};
   legacyRows.forEach((r) => { if (r.admitNo && !legacyByNo[r.admitNo]) legacyByNo[r.admitNo] = r; });
-  const companyName = Object.fromEntries(companies.map((c) => [c.id, c.name]));
+  const companyById = new Map(companies.map((c) => [c.id, c]));
   const doctorName = Object.fromEntries(doctors.map((d) => [d.id, d.name]));
 
   const HEAD_KEYS = PANEL_BILL_HEADS.map((h) => h.key);
@@ -11372,7 +11438,8 @@ async function getPanelBillingDetails({ from, to, panelCompanyId, panelEmployeeI
       admitNo: a.admissionNo,
       patientName: a.panelBillingHeader?.patientName || `${a.patientTitle || ''} ${a.patientName}`.trim(),
       consCode: consName,
-      companyName: companyName[a.panelCompanyId] || legacy?.companyName || null,
+      companyName: companyById.get(a.panelCompanyId)?.name || legacy?.companyName || null,
+      companyCode: companyById.get(a.panelCompanyId)?.code || companyById.get(legacy?.panelCompanyId)?.code || null,
       dischargeDate: a.panelBillingHeader?.dischargeDate || null,
     };
     HEAD_KEYS.forEach((k) => { row[k] = 0; });

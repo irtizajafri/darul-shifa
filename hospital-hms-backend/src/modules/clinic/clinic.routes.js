@@ -207,6 +207,7 @@ router.get('/reports/antenatal', controller.getAntenatalReport);
 router.get('/admission/available-beds', controller.getAvailableBeds);
 router.get('/admission', controller.getAdmissions);
 router.get('/admission/by-number/:admissionNo', controller.getAdmissionByNumber);
+router.get('/admission/form-print/by-number/:admissionNo', controller.getAdmissionFormPrintData);
 router.get('/admission/receiving/search', controller.searchAdmissionsForReceiving);
 router.get('/admission/receiving/by-number/:admissionNo', controller.getAdmissionForReceiving);
 router.post('/admission/receiving/:admissionId/pay', controller.addAdmissionPayment);

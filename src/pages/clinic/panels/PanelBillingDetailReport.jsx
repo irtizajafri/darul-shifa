@@ -295,9 +295,9 @@ export default function PanelBillingDetailReport() {
                     <th className="pbd-l">Admit #</th>
                     <th className="pbd-l">Patient Name</th>
                     <th className="pbd-l">ConsCode</th>
-                    <th className="pbd-l">CompName</th>
-                    {HEADS.map((h) => <th key={h.key} className="pbd-r">{h.label}</th>)}
-                    <th className="pbd-r pbd-total-col">Total Amount</th>
+                    <th className="pbd-l">CompCode</th>
+                    {HEADS.map((h) => <th key={h.key} className="pbd-r pbd-amt">{h.label}</th>)}
+                    <th className="pbd-r pbd-amt pbd-total-col">Total Amount</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -306,17 +306,17 @@ export default function PanelBillingDetailReport() {
                       <td className="pbd-l">{r.admitNo}</td>
                       <td className="pbd-l">{r.patientName}</td>
                       <td className="pbd-l">{r.consCode || '—'}</td>
-                      <td className="pbd-l">{r.companyName || '—'}</td>
-                      {HEADS.map((h) => <td key={h.key} className="pbd-r">{r[h.key] ? fmt(r[h.key]) : '-'}</td>)}
-                      <td className="pbd-r pbd-total-col">{fmt(r.totalAmount)}</td>
+                      <td className="pbd-l" title={r.companyName || ''}>{r.companyCode || r.companyName || '—'}</td>
+                      {HEADS.map((h) => <td key={h.key} className="pbd-r pbd-amt">{r[h.key] ? fmt(r[h.key]) : '-'}</td>)}
+                      <td className="pbd-r pbd-amt pbd-total-col">{fmt(r.totalAmount)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="pbd-totals">
                     <td className="pbd-l" colSpan={4}>TOTAL — {rows.length} bills</td>
-                    {HEADS.map((h) => <td key={h.key} className="pbd-r">{fmt(totals[h.key])}</td>)}
-                    <td className="pbd-r pbd-total-col">{fmt(totals.totalAmount)}</td>
+                    {HEADS.map((h) => <td key={h.key} className="pbd-r pbd-amt">{fmt(totals[h.key])}</td>)}
+                    <td className="pbd-r pbd-amt pbd-total-col">{fmt(totals.totalAmount)}</td>
                   </tr>
                 </tfoot>
               </table>

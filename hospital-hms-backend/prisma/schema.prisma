@@ -1185,6 +1185,9 @@ model ClinicAdmission {
   // deleting the underlying sales invoices / OPD visits.
   pharmacyBillExcluded   Boolean  @default(false)
   diagnosticBillExcluded Boolean  @default(false)
+  // Who generated this admission (Admission Form shows it) — see migration 048
+  createdByUserId    String?
+  createdByName      String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

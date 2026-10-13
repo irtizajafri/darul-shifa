@@ -365,6 +365,17 @@
     .active & { background: rgba(255,255,255,0.2); color: #fff; }
   }
 
+  // Surgery/Anesthesia admission picker — marks a file that's already discharged
+  &__admission-tag {
+    margin-left: auto;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #92400e;
+    background: #fef3c7;
+    padding: 0.05rem 0.4rem;
+    border-radius: 4px;
+  }
+
   // ── Dual panels ──────────────────────────────────────────────────────────────
   &__dual-panels {
     display: flex;

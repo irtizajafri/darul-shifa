@@ -6,10 +6,14 @@
   font-family: 'Inter', sans-serif;
 }
 
+// Whole screen stays put — no page scroll; the two grids split the space
+// left under the filter and each scrolls inside itself (header + TOTAL row
+// stay pinned, see .pcr-table).
 .pcr-body {
   flex: 1;
-  overflow: auto;
-  padding: 14px 18px 40px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -89,10 +93,9 @@
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  padding: 10px;
-  overflow-x: auto;
-  flex: 1;
-  min-height: 220px;
+  overflow: auto;
+  flex: 1 1 0;
+  min-height: 120px;
 }
 
 .pcr-table {
@@ -101,9 +104,9 @@
   font-size: 0.78rem;
   white-space: nowrap;
 
-  th, td { border: 1px solid #e2e8f0; padding: 6px 10px; }
+  th, td { border: 1px solid #e2e8f0; padding: 4px 10px; }
   thead th {
-    background: #f1f5f9; color: #334155; font-weight: 700; position: sticky; top: 0;
+    background: #f1f5f9; color: #334155; font-weight: 700; position: sticky; top: 0; z-index: 1;
   }
   tbody tr:nth-child(even) { background: #f8fafc; }
   tbody tr:hover { background: #eff6ff; }
@@ -122,7 +125,7 @@
 
   tfoot .pcr-totals {
     background: #1a3c6e; color: #fff; font-weight: 700;
-    td { border-color: #1a3c6e; }
+    td { border-color: #1a3c6e; position: sticky; bottom: 0; background: #1a3c6e; }
   }
 }
 

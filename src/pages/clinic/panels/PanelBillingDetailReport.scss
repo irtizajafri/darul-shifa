@@ -95,6 +95,7 @@
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 14px;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .pbd-rpt-head { text-align: center; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 10px; }
@@ -124,6 +125,9 @@
   .pbd-l { text-align: left; }
   .pbd-r { text-align: right; font-variant-numeric: tabular-nums; }
   .pbd-total-col { font-weight: 700; background: #f8fafc; }
+  // Bill-head amount columns (and Total) one size down — Admit # / Patient /
+  // ConsCode / CompCode keep the table's own size.
+  .pbd-amt { font-size: 7pt; }
 
   tfoot .pbd-totals {
     background: #1a3c6e; color: #fff; font-weight: 700; position: sticky; bottom: 0;
@@ -138,6 +142,9 @@
   .no-print, .menu-bar, nav { display: none !important; }
   .pbd-page, .pbd-body { height: auto; overflow: visible; background: #fff; padding: 0; }
   .pbd-report { border: none; padding: 0; }
-  .pbd-table { font-size: 6.5pt; }
+  .pbd-table { font-size: 8pt; }
+  .pbd-table th, .pbd-table td { padding: 2px 3px; }
+  // Fit 17 columns on A4 landscape: long head labels wrap, rows stay one line
+  .pbd-table th { white-space: normal; }
   .pbd-table thead th { position: static; }
 }

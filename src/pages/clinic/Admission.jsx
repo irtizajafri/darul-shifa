@@ -415,6 +415,9 @@ export default function Admission() {
   const [showArrivedSlipModal, setShowArrivedSlipModal] = useState(false);
   const [admissionNoDup, setAdmissionNoDup] = useState(null); // { patientName } | null
   const [reprintReady, setReprintReady] = useState(false);
+  // Saved admission data for the reprinted Admission Form (see
+  // getAdmissionFormPrintData) — creator, admit time, room, shifts, payments.
+  const [reprintRecord, setReprintRecord] = useState(null);
   const [barcodeDataUrl, setBarcodeDataUrl] = useState('');
   const mrRef = useRef(null);
   const [searchParams] = useSearchParams();
@@ -517,6 +520,11 @@ export default function Admission() {
         if (rec.roomCategoryId) {
           try { setAvailableBeds(await fetchAvailableBeds(rec.roomCategoryId)); } catch { /* ignore */ }
         }
+        try {
+          const pr = await fetch(`${API}/admission/form-print/by-number/${encodeURIComponent(reprintNo)}`);
+          const pj = await pr.json();
+          setReprintRecord(pr.ok ? pj.data : null);
+        } catch { setReprintRecord(null); }
         setReprintReady(true);
       } catch {
         toast.error('Admission reprint lookup failed');
@@ -530,7 +538,7 @@ export default function Admission() {
     const t = setTimeout(() => {
       const w = window.open('', '_blank', 'width=900,height=1000');
       if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
-      const html = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: true, printedBy, barcodeDataUrl });
+      const html = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: true, barcodeDataUrl, record: reprintRecord || {} });
       w.document.write(html);
       w.document.close();
     }, 300);
@@ -694,7 +702,7 @@ export default function Admission() {
     if (formErr) return toast.error(formErr);
     setSaving(true);
     try {
-      await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes' });
+      await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes', createdByUserId: user?.id ?? null, createdByName: printedBy });
       toast.success('Admission saved successfully');
       setForm(EMPTY);
       setAvailableBeds([]);
@@ -747,14 +755,22 @@ export default function Admission() {
     if (formErr) return toast.error(formErr);
     setSaving(true);
     try {
-      const created = await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes' });
+      const created = await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes', createdByUserId: user?.id ?? null, createdByName: printedBy });
       toast.success('Admission saved');
 
       // Advance slip (if any) + Admission Form print as two separate,
       // sequential print jobs in ONE popup — never window.print() on the
       // main window (that used to freeze the whole app on Windows).
       const advanceHtml = buildAdvanceSlipHtml(created);
-      const admissionHtml = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: false, printedBy, barcodeDataUrl });
+      // Just saved — the user printing IS the one who generated it; the only
+      // payment so far is the advance, under its own Slip #.
+      const advAmt = parseFloat(form.advancePayment || 0);
+      const record = {
+        admittedAt: created.createdAt || new Date(),
+        admittedBy: created.createdByName || printedBy,
+        payments: advAmt > 0 ? [{ date: created.createdAt || new Date(), amount: advAmt, slipNo: created.serialNo || form.serialNo || '' }] : [],
+      };
+      const admissionHtml = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: false, barcodeDataUrl, record });
       const w = window.open('', '_blank', 'width=900,height=1000');
       if (!w) {
         toast.error('Popup blocked — please allow popups for this site');

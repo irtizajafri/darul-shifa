@@ -1612,6 +1612,49 @@ async function getPendingDraftReservations() {
 
 const payErr = (msg) => Object.assign(new Error(msg), { status: 409 });
 
+// Surgery/Anesthesia lines (admissionNo set from the admission picker — may
+// carry several files, comma-joined): one payee is paid once per file. A
+// different payee (surgeon vs anesthetist) on the same file is fine.
+// excludeVoucherId — editing a voucher re-saves its own lines, so they don't
+// count against themselves.
+const splitAdmissionNos = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+const payeeKey = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+async function assertSurgeryPaidOnce(entries, { excludeVoucherId } = {}) {
+  const wanted = [];
+  for (const e of entries) {
+    const files = splitAdmissionNos(e.admissionNo);
+    if (!files.length || !payeeKey(e.payeeName)) continue;
+    files.forEach((no) => wanted.push({ no, payee: String(e.payeeName).trim(), key: `${payeeKey(e.payeeName)}|${no}` }));
+  }
+  if (!wanted.length) return;
+
+  const seen = new Set();
+  for (const w of wanted) {
+    if (seen.has(w.key)) throw payErr(`${w.payee} ko file ${w.no} ki payment is voucher mein do dafa daali gayi hai`);
+    seen.add(w.key);
+  }
+
+  // Looked up by file number (payee names are matched below, ignoring case
+  // and extra spaces — a DB equals can't do the spaces part).
+  const files = [...new Set(wanted.map((w) => w.no))];
+  const existing = await prisma.accVoucherExpenseEntry.findMany({
+    where: {
+      payeeName: { not: null },
+      OR: files.map((no) => ({ admissionNo: { contains: no } })),
+      ...(excludeVoucherId ? { voucherId: { not: Number(excludeVoucherId) } } : {}),
+    },
+    select: { payeeName: true, admissionNo: true, voucher: { select: { voucherNo: true } } },
+  });
+  const paidIn = new Map();
+  existing.forEach((x) => splitAdmissionNos(x.admissionNo).forEach((no) => {
+    const k = `${payeeKey(x.payeeName)}|${no}`;
+    if (!paidIn.has(k)) paidIn.set(k, x.voucher?.voucherNo || '');
+  }));
+  const hit = wanted.find((w) => paidIn.has(w.key));
+  if (hit) throw payErr(`${hit.payee} ko file ${hit.no} ki payment pehle hi ho chuki hai (Voucher ${paidIn.get(hit.key)})`);
+}
+
 async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
   const grnIds = [], oldVisit = [], opdDoc = [], dbi = [], utilIds = [], salary = [], maintIds = [];
   for (const e of entries) {
@@ -1748,6 +1791,7 @@ async function appendVoucherExpenseEntry(voucherId, entry) {
   const voucher = await prisma.accVoucherExpense.findUnique({ where: { id: Number(voucherId) } });
   if (!voucher) throw Object.assign(new Error('Voucher nahi mila'), { status: 404 });
   await assertEntriesPayable([entry]);
+  await assertSurgeryPaidOnce([entry]);
   const created = await prisma.accVoucherExpenseEntry.create({ data: { ...entryCreateData(entry), voucherId: voucher.id } });
   try {
     await markEntriesPaid([entry], [created], voucher.voucherNo);
@@ -1784,6 +1828,7 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
   const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
   if (!Array.isArray(entries) || !entries.length) throw Object.assign(new Error('Kam az kam ek line zaroori hai'), { status: 400 });
   await assertEntriesPayable(entries);
+  await assertSurgeryPaidOnce(entries);
   const voucherNo = await generateVoucherNo(entityType, voucherDate);
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
 
@@ -1944,6 +1989,7 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
   if (!Array.isArray(entries) || entries.length === 0) {
     throw Object.assign(new Error('At least one entry is required'), { status: 400 });
   }
+  await assertSurgeryPaidOnce(entries, { excludeVoucherId: existing.id });
 
   const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);

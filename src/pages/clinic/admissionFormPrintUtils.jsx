@@ -27,6 +27,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; 
 .adm-print-section-hdr { text-align: center; font-weight: 700; font-size: 9pt; border: 1px solid #000; border-top: none; padding: 2px; background: #e8e8e8; letter-spacing: 1px; }
 .adm-print-history { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; font-size: 9pt; }
 .adm-print-history td { border: 1px solid #000; padding: 3px 6px; white-space: nowrap; }
+.adm-print-history tr.aph-filled td { white-space: normal; }
 .dln { display: inline-block; border-bottom: 1px solid #000; vertical-align: bottom; margin-left: 4px; }
 .dln-sm { width: 60px; }
 .dln-md { width: 100px; }
@@ -48,7 +49,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; 
 @page { size: A4 portrait; margin: 8mm 10mm; }
 `;
 
-export function buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate, printedBy, barcodeDataUrl }) {
+export function buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate, barcodeDataUrl, record }) {
   const body = renderToStaticMarkup(
     <AdmissionPrintTemplate
       form={form}
@@ -56,8 +57,8 @@ export function buildAdmissionFormPrintHtml({ form, doctors, roomCategories, ava
       roomCategories={roomCategories}
       availableBeds={availableBeds}
       isDuplicate={isDuplicate}
-      printedBy={printedBy}
       barcodeDataUrl={barcodeDataUrl}
+      record={record}
     />
   );
   return `<!DOCTYPE html>

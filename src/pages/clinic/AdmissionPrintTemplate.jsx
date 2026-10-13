@@ -16,15 +16,37 @@ function numToWords(n) {
   return cvt(Math.abs(Math.floor(n))).trim();
 }
 
-export function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, isDuplicate, printedBy, barcodeDataUrl }) {
+// 'Tuesday 08 Sept 2026 13:47'
+function fmtDateTime(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  const dateStr = dt.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' });
+  const timeStr = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${dateStr.replace(',', '')} ${timeStr}`;
+}
+
+// '13-10-2026 15:17' — compact, for the Room / Payment History rows
+function fmtShort(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(dt.getDate())}-${p(dt.getMonth() + 1)}-${dt.getFullYear()} ${p(dt.getHours())}:${p(dt.getMinutes())}`;
+}
+
+// `record` — the saved admission's own data (see getAdmissionFormPrintData /
+// Admission.jsx): who generated it, real admit time, current room (= the
+// room it was discharged from), room shifts, payments, discharge date. The
+// typed-in fields still come from `form`.
+export function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, isDuplicate, barcodeDataUrl, record = {} }) {
   const consultant = doctors.find(d => String(d.id) === String(form.consultantId));
   const roomCat    = roomCategories.find(r => String(r.id) === String(form.roomCategoryId));
   const bed        = availableBeds.find(b => String(b.id) === String(form.bedId));
+  const roomCategoryName = record.roomCategoryName || roomCat?.name || '—';
+  const roomName         = record.roomName || bed?.name || '—';
 
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'short', year: 'numeric' });
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  const admitDateTime = `${dateStr.replace(',', '')} ${timeStr}`;
+  const admitDateTime = fmtDateTime(record.admittedAt || new Date());
+  const roomHistory = record.roomHistory || [];
+  const payments    = record.payments || [];
 
   const statusLabel = { private: 'Private', staff: 'Staff', panel: 'Panel', cc: 'CC', complementary: 'Complementary', jazzcash: 'JazzCash' }[form.patientCategory] || 'Private';
 
@@ -49,7 +71,7 @@ export function AdmissionPrintTemplate({ form, doctors, roomCategories, availabl
       <div className="adm-print-status-bar">
         <span>Patients Status: <strong>{statusLabel}</strong></span>
         <span className="adm-print-form-title">ADMISSION FORM</span>
-        <span>Printed By: <strong>{printedBy || 'SYSTEM'}</strong></span>
+        <span>Admitted By: <strong>{record.admittedBy || ''}</strong></span>
       </div>
 
       {/* Fields table */}
@@ -69,9 +91,9 @@ export function AdmissionPrintTemplate({ form, doctors, roomCategories, availabl
           </tr>
           <tr>
             <td className="apf-lbl">Room Category:</td>
-            <td className="apf-val">{roomCat?.name || '—'}</td>
+            <td className="apf-val">{roomCategoryName}</td>
             <td className="apf-lbl">Room #:</td>
-            <td className="apf-val">{bed?.name || '—'}</td>
+            <td className="apf-val">{roomName}</td>
           </tr>
           <tr>
             <td className="apf-lbl">Age:</td>
@@ -101,7 +123,7 @@ export function AdmissionPrintTemplate({ form, doctors, roomCategories, availabl
             <td className="apf-lbl">Adv. Received:</td>
             <td className="apf-val">{advAmt > 0 ? `Rs. ${advAmt.toFixed(2)}` : ''}</td>
             <td className="apf-lbl">Discharge Date:</td>
-            <td className="apf-val"></td>
+            <td className="apf-val">{fmtDateTime(record.dischargeDate)}</td>
           </tr>
         </tbody>
       </table>
@@ -117,7 +139,17 @@ export function AdmissionPrintTemplate({ form, doctors, roomCategories, availabl
       <div className="adm-print-section-hdr">ROOM HISTORY</div>
       <table className="adm-print-history">
         <tbody>
-          {[0, 1].map(i => (
+          {roomHistory.map((h, i) => (
+            <tr key={`h-${i}`} className="aph-filled">
+              <td>Shifted from <span>{[h.fromCategory, h.fromRoom].filter(Boolean).join(' / ') || '—'}</span></td>
+              <td>Category <span>{h.toCategory || ''}</span></td>
+              <td>Room # <span>{h.toRoom || ''}</span></td>
+              <td>Date &amp; Time <span>{fmtShort(h.shiftedAt)}</span></td>
+              <td>By <span>{h.shiftedBy || ''}</span></td>
+            </tr>
+          ))}
+          {/* blank lines left to fill by hand — at least two rows in all */}
+          {Array.from({ length: Math.max(0, 2 - roomHistory.length) }, (_, i) => (
             <tr key={i}>
               <td>Shifted to <span className="dln dln-md" /></td>
               <td>Category <span className="dln dln-sm" /></td>
@@ -133,13 +165,16 @@ export function AdmissionPrintTemplate({ form, doctors, roomCategories, availabl
       <div className="adm-print-section-hdr">PAYMENT HISTORY</div>
       <table className="adm-print-history">
         <tbody>
-          <tr>
-            <td>Date: <span>{advAmt > 0 ? admitDateTime : <span className="dln dln-md" />}</span></td>
-            <td>Amount: <span>{advAmt > 0 ? advAmt.toFixed(2) : <span className="dln dln-sm" />}</span></td>
-            <td>Slip #: <span>{form.admissionNo || <span className="dln dln-sm" />}</span></td>
-            <td>Sig. <span className="dln dln-sm" /></td>
-          </tr>
-          {[1, 2, 3].map(i => (
+          {payments.map((p, i) => (
+            <tr key={`p-${i}`} className="aph-filled">
+              <td>Date: <span>{fmtShort(p.date)}</span></td>
+              <td>Amount: <span>{Number(p.amount || 0).toFixed(2)}</span></td>
+              <td>Slip #: <span>{p.slipNo || ''}</span></td>
+              <td>Sig. <span className="dln dln-sm" /></td>
+            </tr>
+          ))}
+          {/* blank lines left to fill by hand — at least four rows in all */}
+          {Array.from({ length: Math.max(0, 4 - payments.length) }, (_, i) => (
             <tr key={i}>
               <td>Date: <span className="dln dln-md" /></td>
               <td>Amount: <span className="dln dln-sm" /></td>

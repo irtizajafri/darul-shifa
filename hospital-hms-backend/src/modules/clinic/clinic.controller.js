@@ -1645,6 +1645,15 @@ async function createAdmission(req, res, next) {
   }
 }
 
+async function getAdmissionFormPrintData(req, res, next) {
+  try {
+    success(res, await service.getAdmissionFormPrintData(req.params.admissionNo));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function checkAdmissionNoDuplicate(req, res, next) {
   try {
     success(res, await service.checkAdmissionNoDuplicate(req.query.admissionNo));
@@ -1663,7 +1672,7 @@ async function getAvailableBeds(req, res, next) {
 
 async function searchAdmissionsForAdjustment(req, res, next) {
   try {
-    success(res, await service.searchAdmissionsForAdjustment(req.query.q, req.query.entityType));
+    success(res, await service.searchAdmissionsForAdjustment(req.query.q, req.query.entityType, req.query.includeDischarged === '1'));
   } catch (err) { next(err); }
 }
 
@@ -2698,6 +2707,7 @@ module.exports = {
   getPanelChequeSummary,
   getPanelChequesReport,
   getPanelChequePostingReport,
+  getAdmissionFormPrintData,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,
