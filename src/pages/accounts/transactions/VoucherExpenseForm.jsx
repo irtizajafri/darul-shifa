@@ -1190,6 +1190,7 @@ export default function VoucherExpenseForm() {
       if (!entry.amount || !(Number(entry.amount) > 0)) { toast.error('Amount daalein'); return; }
       const linkMsg = linkMissingMessage();
       if (linkMsg) { toast.error(linkMsg); return; }
+      if (!(await confirmUnlinkedSupplier())) return;
       const mainGl  = mainGLs.find((g) => String(g.id) === String(entry.mainGlId));
       const subGl   = subGLs.find((g)  => String(g.id) === String(entry.subGlId));
       const mainAcc = mainAccs.find((a) => String(a.id) === String(entry.mainAccountId));
@@ -1262,13 +1263,25 @@ export default function VoucherExpenseForm() {
   // pay without marking anything paid.
   const linkMissingMessage = () => {
     if (linkedHeadType === 'employee' && !entry.salaryEmpCode) return 'Salary: employee chunein aur Salary Verification se amount bharein';
-    if (linkedHeadType === 'vendor' && !(entry.grnIds || []).length && !(entry.maintenanceIds || []).length) return 'Supplier: popup se GRN ya Maintenance chun kar amount bharein';
     if (linkedHeadType === 'doctor' && !(entry.visitIds || []).length) return 'Doctor: visits popup se visits chun kar amount bharein';
     if (linkedHeadType === 'ipd-consultant' && !(entry.consultantFeeItemIds || []).length) return 'IPD Consultant: pending fees popup se items chun kar amount bharein';
     if (linkedHeadType === 'manual' && linkedHeadName.toLowerCase().includes('utility') && matchUtility(entry.payeeName || '') && !(entry.utilityBillIds || []).length) {
       return 'Utility: bill popup se bill chun kar amount bharein';
     }
     return null;
+  };
+
+  // Supplier lines may also be paid by hand (owner's decision 2026-10-13) —
+  // an amount typed without picking a GRN / Maintenance from the popup is
+  // allowed after a yes, since nothing gets marked paid and those GRNs stay
+  // due. Returns false if the user backs out.
+  const confirmUnlinkedSupplier = async () => {
+    if (linkedHeadType !== 'vendor' || (entry.grnIds || []).length || (entry.maintenanceIds || []).length) return true;
+    return confirmDialog({
+      title: 'Manual supplier payment?',
+      message: `${entry.payeeName || 'Supplier'} — ${Number(entry.amount || 0).toLocaleString()}: yeh payment kisi GRN / Maintenance se link nahi hai, is liye us supplier ki GRN unpaid hi rahengi (popup mein aati rahengi). Phir bhi save karein?`,
+      confirmLabel: 'Haan, save karein',
+    });
   };
 
   const handleAddEntry = async () => {
@@ -1308,11 +1321,13 @@ export default function VoucherExpenseForm() {
       if (isClinic && !isEditMode) {
         const linkMsg = linkMissingMessage();
         if (linkMsg) { toast.error(linkMsg); return; }
+        if (!(await confirmUnlinkedSupplier())) return;
       }
       setEntries((es) => [...es, line]);
     } else {
       const linkMsg = linkMissingMessage();
       if (linkMsg) { toast.error(linkMsg); return; }
+      if (!(await confirmUnlinkedSupplier())) return;
       // Confirm = the line is saved on the server right now: the first one
       // creates the voucher (number allotted), later ones join it. The
       // server also refuses anything already paid / reserved in a draft.
