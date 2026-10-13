@@ -1613,38 +1613,46 @@ async function getPendingDraftReservations() {
 const payErr = (msg) => Object.assign(new Error(msg), { status: 409 });
 
 async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
-  const grnIds = [], oldVisit = [], opdDoc = [], dbi = [], utilIds = [], salary = [];
+  const grnIds = [], oldVisit = [], opdDoc = [], dbi = [], utilIds = [], salary = [], maintIds = [];
   for (const e of entries) {
     const amt = Number(e.amount);
-    if (!Number.isFinite(amt) || amt < 0) throw Object.assign(new Error('Amount sahi nahi — manfi ya khali nahi ho sakti'), { status: 400 });
+    // Minus amounts are allowed on lines that pay nothing (refund /
+    // correction, owner's decision 2026-10-13); a line that pays a GRN /
+    // visit / fee / salary / utility / maintenance must still be above 0
+    // (checked just below).
+    if (!Number.isFinite(amt)) throw Object.assign(new Error('Amount sahi nahi — khali nahi ho sakti'), { status: 400 });
     // A line that pays something (GRN / visit / fee / salary / utility) must
     // carry a real amount. A plain zero line is allowed — e.g. the audit-only
     // voucher Cancel Slip creates (refundVoucher.service tryCreateCancelSlipVoucher).
     const paysSomething = (Array.isArray(e.grnIds) && e.grnIds.length) || (Array.isArray(e.visitIds) && e.visitIds.length)
       || (Array.isArray(e.consultantFeeItemIds) && e.consultantFeeItemIds.length) || (Array.isArray(e.utilityBillIds) && e.utilityBillIds.length)
+      || (Array.isArray(e.maintenanceIds) && e.maintenanceIds.length)
       || (e.salaryEmpCode && e.salaryMonth && e.salaryYear);
     if (paysSomething && !(amt > 0)) throw Object.assign(new Error('Har line ki amount 0 se zyada honi chahiye'), { status: 400 });
     grnIds.push(...(Array.isArray(e.grnIds) ? e.grnIds.map(Number).filter(Boolean) : []));
     const v = splitVisitIds(e.visitIds); oldVisit.push(...v.old); opdDoc.push(...v.opd);
     const f = splitFeeIds(e.consultantFeeItemIds); dbi.push(...f.dbi); opdDoc.push(...f.opdv);
     utilIds.push(...(Array.isArray(e.utilityBillIds) ? e.utilityBillIds.map(Number).filter(Boolean) : []));
+    maintIds.push(...(Array.isArray(e.maintenanceIds) ? e.maintenanceIds.map(Number).filter(Boolean) : []));
     if (e.salaryEmpCode && e.salaryMonth && e.salaryYear) salary.push({ empCode: String(e.salaryEmpCode), salaryMonth: String(e.salaryMonth), salaryYear: String(e.salaryYear) });
   }
   const dup = (arr) => arr.find((x, i) => arr.indexOf(x) !== i);
-  if (dup(grnIds) || dup(oldVisit) || dup(opdDoc) || dup(dbi) || dup(utilIds)) throw payErr('Ek hi cheez is voucher mein do dafa daali gayi hai');
+  if (dup(grnIds) || dup(oldVisit) || dup(opdDoc) || dup(dbi) || dup(utilIds) || dup(maintIds)) throw payErr('Ek hi cheez is voucher mein do dafa daali gayi hai');
 
-  const [paidGrns, paidVisits, paidOpd, paidDbi, paidUtil, paidSalary] = await Promise.all([
+  const [paidGrns, paidVisits, paidOpd, paidDbi, paidUtil, paidSalary, paidMaint] = await Promise.all([
     grnIds.length ? prisma.inventoryGRN.findMany({ where: { id: { in: grnIds }, isPaid: true }, select: { code: true } }) : [],
     oldVisit.length ? prisma.patientVisit.findMany({ where: { id: { in: oldVisit }, isPaid: true }, select: { serialNo: true } }) : [],
     opdDoc.length ? prisma.clinicOpdVisitDoctor.findMany({ where: { id: { in: opdDoc }, isPaid: true }, select: { id: true } }) : [],
     dbi.length ? prisma.clinicDischargeBillItem.findMany({ where: { id: { in: dbi }, isPaid: true }, select: { id: true } }) : [],
     utilIds.length ? prisma.utilityActualBill.findMany({ where: { id: { in: utilIds }, isPaid: true }, select: { id: true } }) : [],
     salary.length ? prisma.employeeSalaryPayment.findMany({ where: { OR: salary }, select: { empCode: true, salaryMonth: true, salaryYear: true, voucherNo: true } }) : [],
+    maintIds.length ? prisma.inventoryMaintenance.findMany({ where: { id: { in: maintIds }, isPaid: true }, select: { moNumber: true } }) : [],
   ]);
   if (paidGrns.length) throw payErr(`Yeh GRN pehle hi pay ho chuka hai: ${paidGrns.map((g) => g.code).join(', ')}`);
   if (paidVisits.length || paidOpd.length) throw payErr('Kuch doctor visits ki fee pehle hi pay ho chuki hai — popup dobara khol kar select karein');
   if (paidDbi.length) throw payErr('Kuch IPD consultant fees pehle hi pay ho chuki hain — popup dobara khol kar select karein');
   if (paidUtil.length) throw payErr('Yeh utility bill pehle hi pay ho chuka hai');
+  if (paidMaint.length) throw payErr(`Yeh maintenance pehle hi pay ho chuki hai: ${paidMaint.map((m) => m.moNumber || '-').join(', ')}`);
   if (paidSalary.length) {
     const p = paidSalary[0];
     throw payErr(`Employee ${p.empCode} ki ${p.salaryMonth}/${p.salaryYear} salary pehle hi pay ho chuki hai (Voucher ${p.voucherNo})`);
@@ -1668,6 +1676,8 @@ async function markEntriesPaid(entries, createdEntries, voucherNo) {
     const e = entries[i];
     const v = splitVisitIds(e.visitIds);
     const utilIds = Array.isArray(e.utilityBillIds) ? e.utilityBillIds.map(Number).filter(Boolean) : [];
+    const maintIds = Array.isArray(e.maintenanceIds) ? e.maintenanceIds.map(Number).filter(Boolean) : [];
+    if (maintIds.length) await prisma.inventoryMaintenance.updateMany({ where: { id: { in: maintIds } }, data: { isPaid: true, paidVoucherEntryId: createdEntries[i].id } });
     if (v.old.length) await prisma.patientVisit.updateMany({ where: { id: { in: v.old } }, data: { isPaid: true } });
     if (v.opd.length) await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: v.opd } }, data: { isPaid: true } });
     if (utilIds.length) await prisma.utilityActualBill.updateMany({ where: { id: { in: utilIds } }, data: { isPaid: true, paidVoucherEntryId: createdEntries[i].id } });
@@ -1678,10 +1688,10 @@ async function markEntriesPaid(entries, createdEntries, voucherNo) {
         data: { empCode: salary.empCode, salaryMonth: salary.month, salaryYear: salary.year, voucherNo },
       });
     }
-    if (v.old.length || v.opd.length || utilIds.length || salary) {
+    if (v.old.length || v.opd.length || utilIds.length || maintIds.length || salary) {
       await prisma.accVoucherExpenseEntry.update({
         where: { id: createdEntries[i].id },
-        data: { paidRefs: { visitIds: v.old, opdDoctorIds: v.opd, utilityBillIds: utilIds, salary } },
+        data: { paidRefs: { visitIds: v.old, opdDoctorIds: v.opd, utilityBillIds: utilIds, maintenanceIds: maintIds, salary } },
       });
     }
   }
@@ -1705,6 +1715,9 @@ async function unmarkEntryPaid(entryId, voucherNo) {
   if (Array.isArray(refs.visitIds) && refs.visitIds.length) await prisma.patientVisit.updateMany({ where: { id: { in: refs.visitIds } }, data: { isPaid: false } });
   if (Array.isArray(refs.utilityBillIds) && refs.utilityBillIds.length) {
     await prisma.utilityActualBill.updateMany({ where: { id: { in: refs.utilityBillIds } }, data: { isPaid: false, paidVoucherEntryId: null } });
+  }
+  if (Array.isArray(refs.maintenanceIds) && refs.maintenanceIds.length) {
+    await prisma.inventoryMaintenance.updateMany({ where: { id: { in: refs.maintenanceIds } }, data: { isPaid: false, paidVoucherEntryId: null } });
   }
   if (refs.salary?.empCode) {
     await prisma.employeeSalaryPayment.deleteMany({
@@ -2138,6 +2151,18 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   });
 
   return [...oldRows, ...newRows];
+}
+
+// Inventory Maintenance jobs back from repair (completed / discarded) with an
+// Actual Cost, not yet paid — payable to the supplier from Non-Corporate
+// Voucher Expense, listed in the same Vendors popup as the GRNs.
+async function getSupplierMaintenance(supplierId, entityType) {
+  if (entityType && entityType !== 'non-corporate') return [];
+  return prisma.inventoryMaintenance.findMany({
+    where: { supplierId: Number(supplierId), isPaid: false, status: { not: 'in_repair' }, actualCost: { gt: 0 } },
+    include: { item: { select: { name: true } } },
+    orderBy: [{ receivedDate: 'desc' }, { date: 'desc' }],
+  });
 }
 
 async function getSupplierGRNs(supplierId, entityType) {
@@ -3457,7 +3482,7 @@ module.exports = {
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,
-  getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
+  getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,

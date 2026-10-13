@@ -102,6 +102,7 @@ async function updateIncomeCategory(req, res, next) { try { success(res, await s
 async function deleteIncomeCategory(req, res, next) { try { await svc.deleteIncomeCategory(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
 async function getSupplierGRNs(req, res, next) { try { success(res, await svc.getSupplierGRNs(req.query.supplierId, et(req))); } catch (e) { next(e); } }
+async function getSupplierMaintenance(req, res, next) { try { success(res, await svc.getSupplierMaintenance(req.query.supplierId, et(req))); } catch (e) { next(e); } }
 async function getConsultantVisits(req, res, next) { try { const { doctorName, dateFrom, dateTo } = req.query; success(res, await svc.getConsultantVisits(doctorName, dateFrom, dateTo)); } catch (e) { next(e); } }
 
 async function createBankDeposit(req, res, next) {
@@ -345,7 +346,7 @@ module.exports = {
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, appendVoucherExpenseEntry, removeVoucherExpenseEntry, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
-  getPayeeEntriesBySubAccount, getSupplierGRNs, getConsultantVisits,
+  getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,

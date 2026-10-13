@@ -42,6 +42,8 @@ function amountInWords(amount) {
 
   const n = Math.round(Number(amount));
   if (n === 0) return 'Rupees Zero Only';
+  // Minus voucher / line (refund, correction): "Rupees Minus … Only".
+  if (n < 0) return amountInWords(-n).replace('Rupees ', 'Rupees Minus ');
   const millions  = Math.floor(n / 1000000);
   const thousands = Math.floor((n % 1000000) / 1000);
   const remainder = n % 1000;

@@ -66,6 +66,7 @@ router.delete('/cheque-serials/:id', ctrl.deleteChequeSerial);
 
 router.get('/payee-entries/all', ctrl.getAllPayeeEntries);
 router.get('/supplier-grns', ctrl.getSupplierGRNs);
+router.get('/supplier-maintenance', ctrl.getSupplierMaintenance);
 router.get('/consultant-visits', ctrl.getConsultantVisits);
 router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);

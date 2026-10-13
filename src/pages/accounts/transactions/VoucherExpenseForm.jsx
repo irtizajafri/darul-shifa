@@ -65,8 +65,11 @@ function amountInWords(amount) {
     if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '') + ' ';
     return ones[Math.floor(n / 100)] + ' Hundred ' + chunk(n % 100);
   }
-  const n = Math.round(Number(amount));
-  if (n === 0) return 'Rupees Zero Only';
+  const signed = Math.round(Number(amount));
+  if (signed === 0) return 'Rupees Zero Only';
+  // A minus line / voucher (refund, correction) reads "Rupees Minus … Only".
+  if (signed < 0) return amountInWords(-signed).replace('Rupees ', 'Rupees Minus ');
+  const n = signed;
   const millions  = Math.floor(n / 1000000);
   const thousands = Math.floor((n % 1000000) / 1000);
   const remainder = n % 1000;
@@ -270,6 +273,8 @@ const emptyEntry = () => ({
   particulars: '',
   visitIds: [],
   grnIds: [],
+  // Inventory Maintenance jobs paid by this line (Vendors popup, Actual Cost).
+  maintenanceIds: [],
   consultantFeeItemIds: [],
   salaryEmpCode: '', salaryMonth: '', salaryYear: '',
   utilityBillIds: [],
@@ -419,6 +424,7 @@ export default function VoucherExpenseForm() {
   const [grnModal, setGrnModal]         = useState(null);
   const [grnLoading, setGrnLoading]     = useState(false);
   const [checkedGrns, setCheckedGrns]   = useState({});
+  const [checkedMaint, setCheckedMaint] = useState({});
   const [consultantModal, setConsultantModal]   = useState(null);
   const [consultantLoading, setConsultantLoading] = useState(false);
   const [checkedVisits, setCheckedVisits]       = useState({});
@@ -1033,22 +1039,28 @@ export default function VoucherExpenseForm() {
     setEntry((f) => ({ ...f, payeeName: payee.name }));
     setPayeeSearch(payee.name);
     setCheckedGrns({});
-    setGrnModal({ supplierName: payee.name, grns: null });
+    setCheckedMaint({});
+    setGrnModal({ supplierName: payee.name, grns: null, maint: [] });
     setGrnLoading(true);
     try {
-      const r = await fetch(`${API}/supplier-grns?supplierId=${payee.id}&entityType=${entityType}`);
-      const j = await r.json();
-      setGrnModal((prev) => ({ ...prev, grns: j?.data || [] }));
+      // GRNs + (Non-Corporate) Inventory Maintenance jobs back from repair
+      // with an Actual Cost — both are this supplier's payables.
+      const [r, mr] = await Promise.all([
+        fetch(`${API}/supplier-grns?supplierId=${payee.id}&entityType=${entityType}`),
+        fetch(`${API}/supplier-maintenance?supplierId=${payee.id}&entityType=${entityType}`),
+      ]);
+      const [j, mj] = await Promise.all([r.json(), mr.json().catch(() => ({}))]);
+      setGrnModal((prev) => ({ ...prev, grns: j?.data || [], maint: Array.isArray(mj?.data) ? mj.data : [] }));
     } catch {
-      setGrnModal((prev) => ({ ...prev, grns: [] }));
+      setGrnModal((prev) => ({ ...prev, grns: [], maint: [] }));
     } finally {
       setGrnLoading(false);
     }
   };
 
-  const grnCheckedTotal = grnModal?.grns
+  const grnCheckedTotal = (grnModal?.grns
     ? grnModal.grns.filter((g) => checkedGrns[g.id]).reduce((s, g) => s + Number(g.totalAmount), 0)
-    : 0;
+    : 0) + (grnModal?.maint || []).filter((m) => checkedMaint[m.id]).reduce((s, m) => s + Number(m.actualCost || 0), 0);
 
   const openConsultantModal = async (payee) => {
     setEntry((f) => ({ ...f, payeeName: payee.name }));
@@ -1250,7 +1262,7 @@ export default function VoucherExpenseForm() {
   // pay without marking anything paid.
   const linkMissingMessage = () => {
     if (linkedHeadType === 'employee' && !entry.salaryEmpCode) return 'Salary: employee chunein aur Salary Verification se amount bharein';
-    if (linkedHeadType === 'vendor' && !(entry.grnIds || []).length) return 'Supplier: GRN popup se GRN chun kar amount bharein';
+    if (linkedHeadType === 'vendor' && !(entry.grnIds || []).length && !(entry.maintenanceIds || []).length) return 'Supplier: popup se GRN ya Maintenance chun kar amount bharein';
     if (linkedHeadType === 'doctor' && !(entry.visitIds || []).length) return 'Doctor: visits popup se visits chun kar amount bharein';
     if (linkedHeadType === 'ipd-consultant' && !(entry.consultantFeeItemIds || []).length) return 'IPD Consultant: pending fees popup se items chun kar amount bharein';
     if (linkedHeadType === 'manual' && linkedHeadName.toLowerCase().includes('utility') && matchUtility(entry.payeeName || '') && !(entry.utilityBillIds || []).length) {
@@ -1265,7 +1277,10 @@ export default function VoucherExpenseForm() {
     if (!entry.subGlId)       { toast.error('Select Sub GL'); return; }
     if (!entry.mainAccountId) { toast.error('Select Main Account'); return; }
     if (isSurgeryAcc && !entry.admissionNo) { toast.error('Select an Admission'); return; }
-    if (!entry.amount || isNaN(Number(entry.amount)) || Number(entry.amount) <= 0) { toast.error('Enter a valid amount (greater than zero)'); return; }
+    // Minus amounts are allowed (refund / correction lines) — only blank,
+    // non-numbers and 0 are refused here; lines tied to a GRN / salary / fee /
+    // utility / maintenance always come from their popup as a plus amount.
+    if (entry.amount === '' || entry.amount == null || isNaN(Number(entry.amount)) || Number(entry.amount) === 0) { toast.error('Amount likhein (minus bhi chal sakta hai, 0 nahi)'); return; }
     if (isCheque && !entry.chequeNo.trim()) { toast.error('Enter cheque number'); return; }
 
     const serial = mode === 'cash'
@@ -1776,7 +1791,7 @@ export default function VoucherExpenseForm() {
                 )}
               </label>
               <input
-                type="number" step="0.01" min="0.01"
+                type="number" step="0.01"
                 value={entry.amount}
                 onChange={upd('amount')}
                 readOnly={entry.amountLocked}
@@ -2061,7 +2076,7 @@ export default function VoucherExpenseForm() {
           <div className="ve-grn-modal" onClick={(e) => e.stopPropagation()}>
             <div className="ve-sal-modal__header">
               <div>
-                <div className="ve-sal-modal__title">GRN Transactions</div>
+                <div className="ve-sal-modal__title">GRN / Maintenance</div>
                 <div className="ve-sal-modal__sub">{grnModal.supplierName}</div>
               </div>
               <button className="ve-sal-modal__close" onClick={() => setGrnModal(null)}>✕</button>
@@ -2069,10 +2084,11 @@ export default function VoucherExpenseForm() {
 
             {grnLoading ? (
               <div className="ve-sal-modal__loading">Loading transactions…</div>
-            ) : !grnModal.grns?.length ? (
-              <div className="ve-sal-modal__no-data">No GRN transactions found for this supplier.</div>
+            ) : !grnModal.grns?.length && !grnModal.maint?.length ? (
+              <div className="ve-sal-modal__no-data">Is supplier ka koi unpaid GRN ya Maintenance nahi.</div>
             ) : (
               <>
+                {grnModal.grns?.length > 0 && (
                 <div className="ve-grn-modal__table-wrap">
                   <table className="ve-grn-modal__table">
                     <thead>
@@ -2111,6 +2127,37 @@ export default function VoucherExpenseForm() {
                     </tbody>
                   </table>
                 </div>
+                )}
+                {grnModal.maint?.length > 0 && (
+                  <div className="ve-grn-modal__table-wrap">
+                    <table className="ve-grn-modal__table">
+                      <thead>
+                        <tr>
+                          <th />
+                          <th>Maintenance #</th>
+                          <th>Item · Nature of Repair</th>
+                          <th>Date</th>
+                          <th>Actual Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grnModal.maint.map((m) => (
+                          <tr
+                            key={`m-${m.id}`}
+                            className={checkedMaint[m.id] ? 've-grn-modal__row--checked' : ''}
+                            onClick={() => setCheckedMaint((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+                          >
+                            <td><input type="checkbox" checked={!!checkedMaint[m.id]} onChange={() => {}} /></td>
+                            <td className="ve-grn-modal__code">{m.moNumber || `MO-${m.id}`}</td>
+                            <td>{m.item?.name || '—'} · {m.natureOfRepair}</td>
+                            <td>{new Date(m.receivedDate || m.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                            <td className="ve-grn-modal__amount">PKR {Number(m.actualCost || 0).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
                 <div className="ve-grn-modal__footer">
                   <div className="ve-grn-modal__total">
                     <span>Selected Total</span>
@@ -2123,7 +2170,19 @@ export default function VoucherExpenseForm() {
                       disabled={grnCheckedTotal === 0}
                       onClick={() => {
                         const ids = (grnModal.grns || []).filter((g) => checkedGrns[g.id]).map((g) => g.id);
-                        setEntry((f) => ({ ...f, amount: String(Math.round(grnCheckedTotal)), grnIds: ids, amountLocked: true }));
+                        const pickedMaint = (grnModal.maint || []).filter((m) => checkedMaint[m.id]);
+                        // Maintenance: its Nature of Repair goes into Particulars.
+                        const maintText = pickedMaint
+                          .map((m) => `Maintenance ${m.moNumber || `MO-${m.id}`}: ${m.natureOfRepair}${m.item?.name ? ` (${m.item.name})` : ''}`)
+                          .join('; ');
+                        setEntry((f) => ({
+                          ...f,
+                          amount: String(Math.round(grnCheckedTotal)),
+                          grnIds: ids,
+                          maintenanceIds: pickedMaint.map((m) => m.id),
+                          particulars: maintText ? (ids.length && f.particulars ? `${f.particulars} | ${maintText}` : maintText) : f.particulars,
+                          amountLocked: true,
+                        }));
                         setGrnModal(null);
                       }}
                     >

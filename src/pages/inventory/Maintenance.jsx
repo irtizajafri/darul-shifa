@@ -405,6 +405,7 @@ export default function Maintenance() {
                 <div>
                   <p className="text-xs text-[#64748B] mb-0.5">Status</p>
                   <StatusBadge status={lastRepair.status || 'in_repair'} />
+                        {lastRepair.isPaid && <span className="ml-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-blue-100 text-blue-700 border-blue-200">Paid</span>}
                 </div>
               </div>
             </div>
@@ -522,7 +523,10 @@ export default function Maintenance() {
                 : '—'}
             </td>
             <td className="px-4 py-3 text-[#475569]">{r.cost != null ? Number(r.cost).toLocaleString() : '—'}</td>
-            <td className="px-4 py-3"><StatusBadge status={r.status || 'in_repair'} /></td>
+            <td className="px-4 py-3">
+                <StatusBadge status={r.status || 'in_repair'} />
+                {r.isPaid && <span className="ml-1 text-xs px-2 py-0.5 rounded-full border font-medium bg-blue-100 text-blue-700 border-blue-200" title="Supplier ko Voucher Expense se pay ho chuka">Paid</span>}
+              </td>
             <td className="px-4 py-3">
               <div className="flex items-center gap-1 flex-wrap">
                 <button title="Download Sent Bill" onClick={() => generateMaintenanceBillPdf({ record: r, billType: 'sent', mode: 'download', ...getReprintMeta() })}

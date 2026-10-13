@@ -691,6 +691,9 @@ model InventoryMaintenance {
   warrantyDays   Int?
   printedBy      String?
   generatedAt    DateTime?
+  // Paid to the supplier from Non-Corporate Voucher Expense (by Actual Cost).
+  isPaid             Boolean       @default(false)
+  paidVoucherEntryId Int?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
