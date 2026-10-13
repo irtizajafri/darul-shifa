@@ -1,0 +1,54 @@
+// Panel Cheque Posting Report — legacy layout, Arial 8pt, tight rows on
+// screen and paper alike. Page / toolbar / modal chrome reuses the pcqr-*
+// classes from PanelChequesReport.scss.
+
+.pcpr-report {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 8pt;
+  color: #000;
+  background: #fff;
+  line-height: 1.25;
+}
+
+.pcpr-head { text-align: center; margin-bottom: 6px; }
+.pcpr-title { font-weight: 700; }
+.pcpr-range { margin-top: 2px; }
+
+.pcpr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+
+  td { padding: 1px 4px; white-space: nowrap; vertical-align: top; }
+  .r { text-align: right; font-variant-numeric: tabular-nums; }
+}
+
+.pcpr-cheque-row td {
+  font-weight: 700;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.pcpr-line td { font-weight: 400; }
+.pcpr-line td:first-child { padding-left: 60px; }
+.pcpr-name { white-space: normal !important; }
+
+.pcpr-grand td {
+  font-weight: 700;
+  font-size: 9pt;
+  padding-top: 3px;
+}
+
+.pcpr-empty { text-align: center; color: #64748b; padding: 30px 0; }
+
+.pcpr-filter-grid {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 12px 10px;
+  align-items: center;
+
+  label { font-size: 0.83rem; font-weight: 600; color: #334155; }
+  input[type='date'] { padding: 4px 6px; font-size: 0.83rem; }
+}

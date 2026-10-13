@@ -117,14 +117,28 @@ const fmtDate = (d) => {
   return `${String(dt.getUTCDate()).padStart(2, '0')}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${dt.getUTCFullYear()}`;
 };
 
+const pad2 = (n) => String(n).padStart(2, '0');
+const monthStartIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`; };
+const monthEndIso = () => { const d = new Date(); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0); return `${last.getFullYear()}-${pad2(last.getMonth() + 1)}-${pad2(last.getDate())}`; };
+
+// Panels > Reports > Billing Detail Report — every CLOSED panel file whose
+// Billing discharge date is in From/To, head-wise amounts straight from
+// Panels > Billing (see getPanelBillingDetails). Filter matches the legacy
+// screen: Organisation / Person-Emp. / Consultant (code lookup + name) and
+// Month From/To. Upload Excel still loads the legacy system's own export,
+// which only fills in the head split for files imported without one.
 export default function PanelBillingDetailReport() {
   const fileRef = useRef(null);
   const reportRef = useRef(null);
 
   const [companies, setCompanies] = useState([]);
-  const [organisation, setOrganisation] = useState('ALL');
-  const [person, setPerson] = useState('');
-  const [consultant, setConsultant] = useState('');
+  const [employees, setEmployees] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [companyId, setCompanyId] = useState('ALL');
+  const [employeeId, setEmployeeId] = useState('ALL');
+  const [consultantId, setConsultantId] = useState('ALL');
+  const [fromDate, setFromDate] = useState(monthStartIso());
+  const [toDate, setToDate] = useState(monthEndIso());
 
   const [data, setData] = useState({ rows: [], totals: {}, period: null, count: 0 });
   const [loading, setLoading] = useState(false);
@@ -133,24 +147,30 @@ export default function PanelBillingDetailReport() {
 
   useEffect(() => {
     fetch(`${API}/panel-companies`).then((r) => r.json()).then((j) => setCompanies(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load panel companies'));
+    fetch(`${API}/panel-employees`).then((r) => r.json()).then((j) => setEmployees(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load panel employees'));
+    fetch(`${API}/doctors?minimal=true`).then((r) => r.json()).then((j) => setDoctors(j.data || [])).catch((err) => toast.error(err?.message || 'Failed to load consultants'));
   }, []);
 
+  // Person/Emp. list narrows to the picked Organisation
+  const employeeOptions = companyId === 'ALL' ? employees : employees.filter((e) => String(e.companyId) === String(companyId));
+
   const fetchReport = useCallback(async () => {
+    if (!fromDate || !toDate) { toast.error('Month From aur To dono chunein'); return; }
+    if (fromDate > toDate) { toast.error('From date, To date se pehle honi chahiye'); return; }
     setLoading(true);
     try {
-      const q = new URLSearchParams({ organisation });
-      if (person.trim()) q.set('person', person.trim());
-      if (consultant.trim()) q.set('consultant', consultant.trim());
+      const q = new URLSearchParams({ from: fromDate, to: toDate, panelCompanyId: companyId, panelEmployeeId: employeeId, consultantId });
       const res = await fetch(`${API}/panel-billing?${q}`);
       const json = await res.json();
+      if (!res.ok) throw new Error(json.message);
       setData(json.data || { rows: [], totals: {}, period: null, count: 0 });
       setShown(true);
-    } catch {
-      toast.error('Report load nahi hui');
+    } catch (err) {
+      toast.error(err.message || 'Report load nahi hui');
     } finally {
       setLoading(false);
     }
-  }, [organisation, person, consultant]);
+  }, [fromDate, toDate, companyId, employeeId, consultantId]);
 
   async function handleUpload(e) {
     const file = e.target.files[0];
@@ -193,21 +213,49 @@ export default function PanelBillingDetailReport() {
             <div className="pbd-fg">
               <label>Organisation</label>
               <SearchableSelect
-                options={['ALL', ...companies.map((c) => c.name)]}
-                value={organisation}
-                onChange={(v) => setOrganisation(v)}
+                options={[{ id: 'ALL' }, ...companies]}
+                value={companyId}
+                onChange={(v) => { setCompanyId(v || 'ALL'); setEmployeeId('ALL'); }}
+                getKey={(c) => c.id}
+                getLabel={(c) => (c.id === 'ALL' ? 'ALL' : `${c.code} — ${c.name}`)}
                 clearable={false}
                 size="sm"
-                style={{ minWidth: 200 }}
+                style={{ minWidth: 220 }}
               />
             </div>
             <div className="pbd-fg">
               <label>Person / Emp.</label>
-              <input value={person} onChange={(e) => setPerson(e.target.value)} placeholder="Patient / employee naam" />
+              <SearchableSelect
+                options={[{ id: 'ALL' }, ...employeeOptions]}
+                value={employeeId}
+                onChange={(v) => setEmployeeId(v || 'ALL')}
+                getKey={(e) => e.id}
+                getLabel={(e) => (e.id === 'ALL' ? 'ALL' : `${e.empCode} — ${e.name}`)}
+                clearable={false}
+                size="sm"
+                style={{ minWidth: 220 }}
+              />
             </div>
             <div className="pbd-fg">
               <label>Consultant</label>
-              <input value={consultant} onChange={(e) => setConsultant(e.target.value)} placeholder="Doctor naam" />
+              <SearchableSelect
+                options={[{ id: 'ALL' }, ...doctors]}
+                value={consultantId}
+                onChange={(v) => setConsultantId(v || 'ALL')}
+                getKey={(d) => d.id}
+                getLabel={(d) => (d.id === 'ALL' ? 'ALL' : `${d.code} — ${d.name}`)}
+                clearable={false}
+                size="sm"
+                style={{ minWidth: 220 }}
+              />
+            </div>
+            <div className="pbd-fg">
+              <label>Month From</label>
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div className="pbd-fg">
+              <label>To</label>
+              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </div>
             <div className="pbd-filter-actions">
               <button className="pbd-btn pbd-btn--ok" onClick={fetchReport} disabled={loading}>
@@ -236,7 +284,7 @@ export default function PanelBillingDetailReport() {
           </div>
 
           {!shown ? (
-            <div className="pbd-empty">Filter set karke <b>Show Report</b> dabao, ya <b>Upload Excel</b> se data laao.</div>
+            <div className="pbd-empty">Filter set karke <b>Show Report</b> dabayein — sirf close ho chuki files aati hain.</div>
           ) : !rows.length ? (
             <div className="pbd-empty">Is filter par koi bill nahi mila.</div>
           ) : (

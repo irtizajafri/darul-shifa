@@ -882,6 +882,11 @@ export const useClinicStore = create((set) => ({
     return request(`/panel-cheque/report?${q.toString()}`);
   },
 
+  fetchPanelChequePostingReport: async ({ from, to, basis }) => {
+    const q = new URLSearchParams({ from, to, basis: basis || 'posting' });
+    return request(`/panel-cheque/posting-report?${q.toString()}`);
+  },
+
   fetchUnpaidPanelAdmissions: async ({ panelCompanyId, month, year }) => {
     const q = new URLSearchParams({ panelCompanyId, month, year });
     return request(`/panel-cheque/unpaid?${q.toString()}`);

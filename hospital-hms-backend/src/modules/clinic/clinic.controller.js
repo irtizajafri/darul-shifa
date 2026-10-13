@@ -1709,6 +1709,16 @@ async function getPanelChequesReport(req, res, next) {
   }
 }
 
+async function getPanelChequePostingReport(req, res, next) {
+  try {
+    const { from, to, basis } = req.query;
+    success(res, await service.getPanelChequePostingReport({ from, to, basis }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function previewPanelChequeImport(req, res, next) {
   try {
     success(res, await service.previewPanelChequeImport(req.body.rows));
@@ -2687,6 +2697,7 @@ module.exports = {
   searchPanelAdmissions,
   getPanelChequeSummary,
   getPanelChequesReport,
+  getPanelChequePostingReport,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,
@@ -2841,10 +2852,13 @@ async function importPanelBillingDetail(req, res, next) {
 
 async function getPanelBillingDetails(req, res, next) {
   try {
-    const { organisation, person, consultant } = req.query;
-    const data = await service.getPanelBillingDetails({ organisation, person, consultant });
+    const { from, to, panelCompanyId, panelEmployeeId, consultantId } = req.query;
+    const data = await service.getPanelBillingDetails({ from, to, panelCompanyId, panelEmployeeId, consultantId });
     success(res, data);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
 }
 
 async function getPanelBillingByAdmit(req, res, next) {

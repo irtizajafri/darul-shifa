@@ -4598,6 +4598,90 @@ async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, c
   });
 }
 
+// Panels > Reports > Panel Cheque Posting Report — legacy "Penal Cheque
+// Posting Report": every cheque posted from Panel Cheque Transaction, grouped
+// by Cheque #, one line per admission / OPD slip it settled.
+//   basis 'posting' — From/To on the day the cheque was entered (createdAt,
+//                     PKT day), i.e. the day the money came in.
+//   basis 'posted'  — From/To on the bill's own month (Billing Month end,
+//                     e.g. the June file → 30-06), which is the date each
+//                     line shows.
+// Cheque header amount = what the cheque actually brought in (receivedAmount,
+// summed if the same Cheque # was posted in more than one go). The Excel
+// import's synthetic "LEGACY-…" receipts are left out — their entry time is
+// the import run, not a real posting.
+async function getPanelChequePostingReport({ from, to, basis }) {
+  if (!from || !to) throw Object.assign(new Error('From aur To date zaroori hain'), { status: 400 });
+  const byPosted = String(basis || 'posting').toLowerCase() === 'posted';
+
+  const where = { NOT: { createdByName: 'Legacy Import' } };
+  if (byPosted) {
+    const fy = Number(String(from).slice(0, 4));
+    const ty = Number(String(to).slice(0, 4));
+    where.billingYear = { gte: fy, lte: ty };
+  } else {
+    const start = new Date(`${from}T00:00:00+05:00`);
+    const end = new Date(`${to}T23:59:59.999+05:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw Object.assign(new Error('Date sahi nahi'), { status: 400 });
+    where.createdAt = { gte: start, lte: end };
+  }
+
+  const monthEnd = (y, m) => {
+    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+  };
+
+  let receipts = await prisma.clinicPanelChequeReceipt.findMany({
+    where,
+    include: { items: { orderBy: { id: 'asc' } }, opdItems: { orderBy: { id: 'asc' } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+  if (byPosted) {
+    receipts = receipts.filter((r) => {
+      const d = monthEnd(r.billingYear, r.billingMonth);
+      return d >= from && d <= to;
+    });
+  }
+
+  const admissionIds = [...new Set(receipts.flatMap((r) => r.items.map((i) => i.admissionId)))];
+  const opdIds = [...new Set(receipts.flatMap((r) => r.opdItems.map((i) => i.opdVisitId)))];
+  const [admissions, opdVisits] = await Promise.all([
+    admissionIds.length ? prisma.clinicAdmission.findMany({
+      where: { id: { in: admissionIds } },
+      select: { id: true, admissionNo: true, patientTitle: true, patientName: true, panelBillingHeader: { select: { patientName: true } } },
+    }) : [],
+    opdIds.length ? prisma.clinicOpdVisit.findMany({ where: { id: { in: opdIds } }, select: { id: true, serialNo: true, patientName: true } }) : [],
+  ]);
+  const admById = new Map(admissions.map((a) => [a.id, a]));
+  const opdById = new Map(opdVisits.map((v) => [v.id, v]));
+
+  const groups = new Map();
+  for (const r of receipts) {
+    const key = r.chequeNo;
+    if (!groups.has(key)) groups.set(key, { chequeNo: key, amount: 0, lines: [] });
+    const g = groups.get(key);
+    g.amount += Number(r.receivedAmount) || 0;
+    const common = { postedDate: monthEnd(r.billingYear, r.billingMonth), chequeNo: r.chequeNo, user: r.createdByName || '', postingAt: r.createdAt };
+    r.items.forEach((i) => {
+      const a = admById.get(i.admissionId);
+      g.lines.push({
+        type: 'Admission',
+        refNo: a?.admissionNo || '',
+        patientName: a?.panelBillingHeader?.patientName || `${a?.patientTitle || ''} ${a?.patientName || ''}`.trim(),
+        ...common,
+      });
+    });
+    r.opdItems.forEach((i) => {
+      const v = opdById.get(i.opdVisitId);
+      g.lines.push({ type: 'OPD', refNo: v?.serialNo || '', patientName: v?.patientName || '', ...common });
+    });
+  }
+
+  const cheques = [...groups.values()].sort((a, b) => a.chequeNo.localeCompare(b.chequeNo));
+  const grandTotal = cheques.reduce((s, c) => s + c.amount, 0);
+  return { cheques, grandTotal };
+}
+
 const TITLE_WORDS = new Set(['MR', 'MRS', 'MS', 'MASTER', 'BABY', 'DR']);
 
 // Splits "MR FAIZAN MUGHAL" -> { title: 'Mr', name: 'FAIZAN MUGHAL' }. Only
@@ -7172,8 +7256,15 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
     discount:       Number(r.discount)  || 0,
   }));
 
-  const dates = Array.isArray(replaceDates) ? replaceDates.filter(Boolean).map(d => new Date(d)) : [];
+  const dates = Array.isArray(replaceDates) ? replaceDates.filter(Boolean) : [];
   const mDates = Array.isArray(mergeDates) ? mergeDates.filter(Boolean) : [];
+  // Each date as a full-day range, not an exact-timestamp `in` — a live OPD
+  // visit's visitDate isn't always stored at midnight, and an exact match
+  // misses it (same approach as getPatientVisitDateCounts).
+  const dayRanges = (list) => list.map((d) => {
+    const iso = String(d).slice(0, 10);
+    return { visitDate: { gte: new Date(`${iso}T00:00:00.000Z`), lte: new Date(`${iso}T23:59:59.999Z`) } };
+  });
   let deletedCount = 0;
   let result;
   if (dates.length) {
@@ -7182,7 +7273,7 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
     // wiping whole dates would also delete the next day's other slips.
     const fileSerials = [...new Set(data.map((r) => r.serialNo).filter(Boolean))];
     const [delRes, insRes] = await prisma.$transaction([
-      prisma.patientVisit.deleteMany({ where: { visitDate: { in: dates }, serialNo: { in: fileSerials } } }),
+      prisma.patientVisit.deleteMany({ where: { OR: dayRanges(dates), serialNo: { in: fileSerials } } }),
       prisma.patientVisit.createMany({ data }),
     ]);
     deletedCount = delRes.count;
@@ -7190,7 +7281,7 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
   } else if (mDates.length) {
     // Merge: existing serial numbers skip karo
     const existing = await prisma.patientVisit.findMany({
-      where: { visitDate: { in: mDates.map(d => new Date(d)) } },
+      where: { OR: dayRanges(mDates) },
       select: { serialNo: true },
     });
     const existingSerials = new Set(existing.map(e => Number(e.serialNo)).filter(Boolean));
@@ -10962,6 +11053,7 @@ module.exports = {
   searchPanelAdmissions,
   getPanelChequeSummary,
   getPanelChequesReport,
+  getPanelChequePostingReport,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,
@@ -11188,31 +11280,120 @@ async function importPanelBillingDetail({ rows, periodFrom, periodTo }) {
   return result;
 }
 
-// Report list with filters (organisation / person / consultant)
-async function getPanelBillingDetails({ organisation, person, consultant } = {}) {
-  const where = {};
-  if (organisation && organisation !== 'ALL') where.companyName = { equals: organisation, mode: 'insensitive' };
-  if (consultant && consultant !== 'ALL' && consultant.trim()) where.consCode = { contains: consultant.trim(), mode: 'insensitive' };
-  if (person && person.trim()) where.patientName = { contains: person.trim(), mode: 'insensitive' };
+// Panels > Reports > Billing Detail Report — one line per CLOSED panel
+// admission whose Billing discharge date falls in From/To, amounts per head
+// straight from Panels > Billing (ClinicPanelBillingItem — the same snapshot
+// that screen shows and saves). Manual Medicine/Lab/... adds (groupInto)
+// count under their head, exactly as the Billing grid rolls them up. The 12
+// columns are the legacy report's; Total Amount is the whole bill (every
+// head, shown in a column or not) — same as the legacy report's own total.
+//
+// Files that came in through the Panel Cheque Excel import carry only one
+// "Legacy Import" lump instead of real heads — for those, the head split is
+// taken from the uploaded legacy Billing Detail Excel (ClinicPanelBillingDetail)
+// when that has the same Admit #, otherwise only the Total shows.
+const BILLING_DETAIL_HEAD_OF = {
+  'a) Consultant Fee': 'constFee',
+  'Const Fee': 'constFee',
+  'b) Follow-up': 'followUp',
+  'Anesthesia Charges': 'anesthesia',
+  Medicine: 'medicine',
+  Laboratory: 'laboratory',
+  'Cost of Blood': 'costOfBlood',
+  Echocardiograph: 'echocardiograph',
+  Ultrasound: 'ultrasound',
+  'Ultra Sound, Echo & Color Doppler': 'ultrasound',
+  'X-Ray': 'xRay',
+  Radiology: 'xRay',
+  Physiotherapy: 'physiotherapy',
+  'C.T. Scan': 'ctScan',
+  'Surgeon Fee': 'surgeonFee',
+};
 
-  const rows = await prisma.clinicPanelBillingDetail.findMany({ where, orderBy: { id: 'asc' } });
-  const periodRow = await prisma.clinicPanelBillingDetail.findFirst({ select: { periodFrom: true, periodTo: true } });
+async function getPanelBillingDetails({ from, to, panelCompanyId, panelEmployeeId, consultantId } = {}) {
+  if (!from || !to) throw Object.assign(new Error('From aur To date zaroori hain'), { status: 400 });
+  const start = new Date(`${from}T00:00:00+05:00`);
+  const end = new Date(`${to}T23:59:59.999+05:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw Object.assign(new Error('Date sahi nahi'), { status: 400 });
 
-  const HEAD_KEYS = PANEL_BILL_HEADS.map(h => h.key).concat('totalAmount');
-  const totals = {};
-  for (const k of HEAD_KEYS) totals[k] = 0;
-  const mapped = rows.map(r => {
-    const m = panelRowToNum(r);
-    for (const k of HEAD_KEYS) totals[k] += m[k];
-    return m;
-  });
-  return {
-    rows: mapped,
-    count: mapped.length,
-    totals,
-    period: periodRow ? { from: periodRow.periodFrom, to: periodRow.periodTo } : null,
-    heads: PANEL_BILL_HEADS,
+  const where = {
+    patientCategory: 'panel',
+    status: 'closed',
+    panelBillingHeader: { dischargeDate: { gte: start, lte: end } },
   };
+  if (panelCompanyId && panelCompanyId !== 'ALL') where.panelCompanyId = Number(panelCompanyId);
+  if (panelEmployeeId && panelEmployeeId !== 'ALL') where.panelEmployeeId = Number(panelEmployeeId);
+
+  const doctor = consultantId && consultantId !== 'ALL'
+    ? await prisma.clinicDoctor.findUnique({ where: { id: Number(consultantId) }, select: { id: true, name: true } })
+    : null;
+
+  const admissions = await prisma.clinicAdmission.findMany({
+    where,
+    select: {
+      id: true, admissionNo: true, patientTitle: true, patientName: true, panelCompanyId: true, consultantId: true,
+      panelBillingHeader: { select: { patientName: true, consultantName: true, dischargeDate: true } },
+    },
+  });
+
+  const ids = admissions.map((a) => a.id);
+  const admNos = admissions.map((a) => String(a.admissionNo));
+  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
+  const doctorIds = [...new Set(admissions.map((a) => a.consultantId).filter(Boolean))];
+  const [items, legacyRows, companies, doctors, billHeads] = await Promise.all([
+    ids.length ? prisma.clinicPanelBillingItem.findMany({ where: { admissionId: { in: ids } }, select: { admissionId: true, billHeadId: true, description: true, groupInto: true, amount: true } }) : [],
+    admNos.length ? prisma.clinicPanelBillingDetail.findMany({ where: { admitNo: { in: admNos } } }) : [],
+    companyIds.length ? prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true } }) : [],
+    doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } }, select: { id: true, name: true } }) : [],
+    prisma.clinicBillHead.findMany({ select: { id: true, description: true } }),
+  ]);
+  // A row seeded before a head was renamed keeps its old description —
+  // its billHeadId still says which head it is.
+  const billHeadDesc = Object.fromEntries(billHeads.map((h) => [h.id, h.description]));
+  const itemsByAdm = {};
+  items.forEach((i) => { (itemsByAdm[i.admissionId] ||= []).push(i); });
+  const legacyByNo = {};
+  legacyRows.forEach((r) => { if (r.admitNo && !legacyByNo[r.admitNo]) legacyByNo[r.admitNo] = r; });
+  const companyName = Object.fromEntries(companies.map((c) => [c.id, c.name]));
+  const doctorName = Object.fromEntries(doctors.map((d) => [d.id, d.name]));
+
+  const HEAD_KEYS = PANEL_BILL_HEADS.map((h) => h.key);
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  const rows = [];
+  for (const a of admissions) {
+    const list = itemsByAdm[a.id] || [];
+    const legacyOnly = list.length > 0 && list.every((i) => i.description === 'Legacy Import');
+    const legacy = legacyByNo[String(a.admissionNo)];
+    const consName = a.panelBillingHeader?.consultantName || doctorName[a.consultantId] || (legacyOnly ? legacy?.consCode : null) || null;
+    if (doctor && a.consultantId !== doctor.id && norm(consName) !== norm(doctor.name)) continue;
+
+    const row = {
+      id: a.id,
+      admitNo: a.admissionNo,
+      patientName: a.panelBillingHeader?.patientName || `${a.patientTitle || ''} ${a.patientName}`.trim(),
+      consCode: consName,
+      companyName: companyName[a.panelCompanyId] || legacy?.companyName || null,
+      dischargeDate: a.panelBillingHeader?.dischargeDate || null,
+    };
+    HEAD_KEYS.forEach((k) => { row[k] = 0; });
+    row.totalAmount = list.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    if (legacyOnly) {
+      if (legacy) HEAD_KEYS.forEach((k) => { row[k] = dnum(legacy[k]); });
+    } else {
+      list.forEach((i) => {
+        const key = i.groupInto
+          ? BILLING_DETAIL_HEAD_OF[i.groupInto]
+          : (BILLING_DETAIL_HEAD_OF[billHeadDesc[i.billHeadId]] || BILLING_DETAIL_HEAD_OF[i.description]);
+        if (key) row[key] += Number(i.amount) || 0;
+      });
+    }
+    rows.push(row);
+  }
+  rows.sort((x, y) => String(x.admitNo).localeCompare(String(y.admitNo), undefined, { numeric: true }));
+
+  const totals = {};
+  HEAD_KEYS.concat('totalAmount').forEach((k) => { totals[k] = rows.reduce((s, r) => s + r[k], 0); });
+  return { rows, count: rows.length, totals, period: { from, to }, heads: PANEL_BILL_HEADS };
 }
 
 // Single admission lookup for the Provisional Bill screen

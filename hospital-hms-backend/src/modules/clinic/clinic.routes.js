@@ -237,6 +237,7 @@ router.delete('/opd-panel-billing/items/:itemId', controller.deletePanelOpdBilli
 // Panels > Panel Cheque Transaction
 router.get('/panel-cheque/summary', controller.getPanelChequeSummary);
 router.get('/panel-cheque/report', controller.getPanelChequesReport);
+router.get('/panel-cheque/posting-report', controller.getPanelChequePostingReport);
 router.get('/panel-cheque/unpaid', controller.getUnpaidPanelAdmissions);
 router.post('/panel-cheque/receive', controller.receivePanelCheque);
 router.post('/panel-cheque/import/preview', controller.previewPanelChequeImport);

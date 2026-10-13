@@ -1,16 +1,14 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { renderToStaticMarkup } from 'react-dom/server';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X, AlertTriangle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X, AlertTriangle } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
-const PAGE_SIZE = 50;
 
 // A slip's Administrative Expense (Doctor Parameter toggle+rate) is folded
 // into the visit total, so the backend sends it as `adminExpense` on that
@@ -171,27 +169,6 @@ const GROUP_LABELS = {
   user_shift_summary: 'User shift wise summary',
 };
 
-// Shown both above and below the table, per request.
-function PaginationBar({ page, totalPages, total, onChange }) {
-  return (
-    <div className="plr-pagination no-print">
-      <button className="plr-page-btn" onClick={() => onChange(1)} disabled={page <= 1} title="First page">
-        <ChevronsLeft size={14} /> First
-      </button>
-      <button className="plr-page-btn" onClick={() => onChange(page - 1)} disabled={page <= 1}>
-        <ChevronLeft size={14} /> Prev
-      </button>
-      <span className="plr-page-info">Page {page} of {totalPages} &nbsp;({total} patients)</span>
-      <button className="plr-page-btn" onClick={() => onChange(page + 1)} disabled={page >= totalPages}>
-        Next <ChevronRight size={14} />
-      </button>
-      <button className="plr-page-btn" onClick={() => onChange(totalPages)} disabled={page >= totalPages} title="Last page">
-        Last <ChevronsRight size={14} />
-      </button>
-    </div>
-  );
-}
-
 export default function PatientsListReport() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -314,17 +291,6 @@ export default function PatientsListReport() {
       a.user.localeCompare(b.user) || String(a.shift || '').localeCompare(String(b.shift || ''))
     );
   }, [filteredVisits, groupBy]);
-
-  // Pagination — only the default flat ("without_users") table, 50 rows at a
-  // time. Print/Excel still use filteredVisits in full (see handlePrint),
-  // this only limits what's rendered on screen.
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filteredVisits.length / PAGE_SIZE));
-  useEffect(() => { setPage(1); }, [filteredVisits]);
-  const pagedVisits = useMemo(
-    () => filteredVisits.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filteredVisits, page]
-  );
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
@@ -471,16 +437,10 @@ export default function PatientsListReport() {
   };
 
   const handlePrint = () => {
-    // Print sirf .plr-report-page wala hissa — but the on-screen table is
-    // paginated (50 rows/page), so print must rebuild the body with the FULL
-    // filteredVisits instead of whatever page happens to be showing right now.
+    // Print sirf .plr-report-page wala hissa (poori list screen par hi hai).
     const content = document.querySelector('.plr-report-page');
     if (!content) return;
     const clone = content.cloneNode(true);
-    if (groupBy === 'without_users') {
-      const tbody = clone.querySelector('tbody');
-      if (tbody) tbody.innerHTML = renderToStaticMarkup(<>{renderRows(filteredVisits)}</>);
-    }
     const win = window.open('', '_blank', 'width=900,height=700');
     win.document.write(`
       <html><head><title>Patients List</title>
@@ -676,12 +636,9 @@ export default function PatientsListReport() {
             </div>
           ) : groupBy === 'without_users' ? (
             <>
-              {totalPages > 1 && (
-                <PaginationBar page={page} totalPages={totalPages} total={filteredVisits.length} onChange={setPage} />
-              )}
               <table className="plr-rpt-table">
                 <thead>{columns}</thead>
-                <tbody>{renderRows(pagedVisits)}</tbody>
+                <tbody>{renderRows(filteredVisits)}</tbody>
                 <tfoot>
                   <tr>
                     <td colSpan={3} className="plr-tf-label">Total Patients: {uniqueSlips}</td>
@@ -692,9 +649,6 @@ export default function PatientsListReport() {
                   </tr>
                 </tfoot>
               </table>
-              {totalPages > 1 && (
-                <PaginationBar page={page} totalPages={totalPages} total={filteredVisits.length} onChange={setPage} />
-              )}
             </>
           ) : groupBy === 'user_shift_summary' ? (
             // Sirf totals — koi individual patient row nahi.
