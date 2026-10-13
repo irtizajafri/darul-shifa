@@ -2,6 +2,7 @@ const express = require('express');
 const ctrl = require('./accounts.controller');
 const router = express.Router();
 
+router.get('/allocation-usage', ctrl.getAllocationUsage);
 router.get('/main-gl', ctrl.getMainGLs);
 router.post('/main-gl', ctrl.createMainGL);
 router.put('/main-gl/:id', ctrl.updateMainGL);

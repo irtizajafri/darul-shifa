@@ -23,15 +23,105 @@ async function createMainGL({ name, entityType }) {
   return prisma.accMainGL.create({ data: { code, name: name.trim(), entityType } });
 }
 
+// ── Account Allocation edit / delete rules (owner's decision 2026-10-13) ────
+// Main GL → Sub GL → Main Account → Sub Account.
+//  • Anything a Voucher Expense line or a pending Draft sits on — the level
+//    itself or anything under it — can be neither renamed nor deleted.
+//  • Otherwise a rename (any change, even spelling) wipes everything under
+//    it (the user then builds fresh children under the new name); a delete
+//    removes it and everything under it. List Attachments links / names on
+//    the removed accounts go with them (DB cascade).
+// The screens call getAllocationUsage first to show what will go.
+const ALLOC_LEVELS = {
+  'main-gl':      { model: 'accMainGL',      field: 'mainGlId',      label: 'Main GL',      child: { model: 'accSubGL', parentField: 'mainGlId' } },
+  'sub-gl':       { model: 'accSubGL',       field: 'subGlId',       label: 'Sub GL',       child: { model: 'accMainAccount', parentField: 'subGlId' } },
+  'main-account': { model: 'accMainAccount', field: 'mainAccountId', label: 'Main Account', child: { model: 'accSubAccount', parentField: 'mainAccountId' } },
+  'sub-account':  { model: 'accSubAccount',  field: 'subAccountId',  label: 'Sub Account',  child: null },
+};
+
+async function getAllocationUsage(level, id) {
+  const cfg = ALLOC_LEVELS[level];
+  if (!cfg) throw Object.assign(new Error('Level sahi nahi'), { status: 400 });
+  const rowId = Number(id);
+  const row = await prisma[cfg.model].findUnique({ where: { id: rowId } });
+  if (!row) throw Object.assign(new Error(`${cfg.label} nahi mila`), { status: 404 });
+
+  // Everything under it
+  let subGlIds = [], mainAccIds = [], subAccIds = [];
+  if (level === 'main-gl') subGlIds = (await prisma.accSubGL.findMany({ where: { mainGlId: rowId }, select: { id: true } })).map((r) => r.id);
+  if (level === 'sub-gl') mainAccIds = (await prisma.accMainAccount.findMany({ where: { subGlId: rowId }, select: { id: true } })).map((r) => r.id);
+  if (subGlIds.length) mainAccIds = (await prisma.accMainAccount.findMany({ where: { subGlId: { in: subGlIds } }, select: { id: true } })).map((r) => r.id);
+  if (level === 'main-account') subAccIds = (await prisma.accSubAccount.findMany({ where: { mainAccountId: rowId }, select: { id: true } })).map((r) => r.id);
+  if (mainAccIds.length) subAccIds = (await prisma.accSubAccount.findMany({ where: { mainAccountId: { in: mainAccIds } }, select: { id: true } })).map((r) => r.id);
+
+  // Vouchers / pending drafts on it or anything under it
+  const usedWhere = {
+    OR: [
+      { [cfg.field]: rowId },
+      ...(subGlIds.length ? [{ subGlId: { in: subGlIds } }] : []),
+      ...(mainAccIds.length ? [{ mainAccountId: { in: mainAccIds } }] : []),
+      ...(subAccIds.length ? [{ subAccountId: { in: subAccIds } }] : []),
+    ],
+  };
+  // List Attachments links / typed names: under it (gone on rename) and its
+  // own too (gone on delete)
+  const ownMainAcc = level === 'main-account' ? [rowId] : [];
+  const ownSubAcc = level === 'sub-account' ? [rowId] : [];
+  const countLinks = (mIds, sIds) => Promise.all([
+    mIds.length ? prisma.accPayeeHeadMainAccount.count({ where: { mainAccountId: { in: mIds } } }) : 0,
+    sIds.length ? prisma.accPayeeHeadAccount.count({ where: { subAccountId: { in: sIds } } }) : 0,
+    sIds.length ? prisma.accPayeeEntry.count({ where: { subAccountId: { in: sIds } } }) : 0,
+  ]).then(([a, b, c]) => ({ headLinks: a + b, payeeNames: c }));
+
+  const [voucherLines, pendingDrafts, onRename, onDelete] = await Promise.all([
+    prisma.accVoucherExpenseEntry.count({ where: usedWhere }),
+    prisma.accVoucherExpenseDraft.count({ where: { ...usedWhere, status: 'pending' } }),
+    countLinks(mainAccIds, subAccIds),
+    countLinks([...mainAccIds, ...ownMainAcc], [...subAccIds, ...ownSubAcc]),
+  ]);
+
+  return {
+    level, id: rowId, name: row.name, label: cfg.label,
+    voucherLines, pendingDrafts, locked: voucherLines + pendingDrafts > 0,
+    under: { subGl: subGlIds.length, mainAccount: mainAccIds.length, subAccount: subAccIds.length },
+    onRename, onDelete,
+  };
+}
+
+function allocationLockedErr(u, action) {
+  const parts = [];
+  if (u.voucherLines) parts.push(`${u.voucherLines} voucher line(s)`);
+  if (u.pendingDrafts) parts.push(`${u.pendingDrafts} pending draft(s)`);
+  return Object.assign(new Error(`${u.label} "${u.name}" (ya is ke neeche ke accounts) par ${parts.join(' aur ')} bane hue hain — ${action} nahi ho sakta`), { status: 409 });
+}
+
+async function renameAllocation(level, id, name) {
+  const cfg = ALLOC_LEVELS[level];
+  const newName = String(name || '').trim();
+  if (!newName) throw Object.assign(new Error('Naam khali nahi ho sakta'), { status: 400 });
+  const u = await getAllocationUsage(level, id);
+  if (newName === u.name) return prisma[cfg.model].findUnique({ where: { id: u.id } });
+  if (u.locked) throw allocationLockedErr(u, 'edit');
+  const ops = [];
+  if (cfg.child) ops.push(prisma[cfg.child.model].deleteMany({ where: { [cfg.child.parentField]: u.id } }));
+  ops.push(prisma[cfg.model].update({ where: { id: u.id }, data: { name: newName } }));
+  const res = await prisma.$transaction(ops);
+  return res[res.length - 1];
+}
+
+async function deleteAllocation(level, id) {
+  const cfg = ALLOC_LEVELS[level];
+  const u = await getAllocationUsage(level, id);
+  if (u.locked) throw allocationLockedErr(u, 'delete');
+  return prisma[cfg.model].delete({ where: { id: u.id } });
+}
+
 async function updateMainGL(id, { name }) {
-  return prisma.accMainGL.update({
-    where: { id: Number(id) },
-    data: { name: name.trim() },
-  });
+  return renameAllocation('main-gl', id, name);
 }
 
 async function deleteMainGL(id) {
-  return prisma.accMainGL.delete({ where: { id: Number(id) } });
+  return deleteAllocation('main-gl', id);
 }
 
 // ── Sub GL ────────────────────────────────────────────────────────────────────
@@ -56,11 +146,11 @@ async function createSubGL({ name, mainGlId, entityType }) {
 }
 
 async function updateSubGL(id, { name }) {
-  return prisma.accSubGL.update({ where: { id: Number(id) }, data: { name: name.trim() } });
+  return renameAllocation('sub-gl', id, name);
 }
 
 async function deleteSubGL(id) {
-  return prisma.accSubGL.delete({ where: { id: Number(id) } });
+  return deleteAllocation('sub-gl', id);
 }
 
 // ── Main Account ──────────────────────────────────────────────────────────────
@@ -85,11 +175,11 @@ async function createMainAccount({ name, subGlId, entityType }) {
 }
 
 async function updateMainAccount(id, { name }) {
-  return prisma.accMainAccount.update({ where: { id: Number(id) }, data: { name: name.trim() } });
+  return renameAllocation('main-account', id, name);
 }
 
 async function deleteMainAccount(id) {
-  return prisma.accMainAccount.delete({ where: { id: Number(id) } });
+  return deleteAllocation('main-account', id);
 }
 
 // ── Sub Account ───────────────────────────────────────────────────────────────
@@ -114,11 +204,11 @@ async function createSubAccount({ name, mainAccountId, entityType }) {
 }
 
 async function updateSubAccount(id, { name }) {
-  return prisma.accSubAccount.update({ where: { id: Number(id) }, data: { name: name.trim() } });
+  return renameAllocation('sub-account', id, name);
 }
 
 async function deleteSubAccount(id) {
-  return prisma.accSubAccount.delete({ where: { id: Number(id) } });
+  return deleteAllocation('sub-account', id);
 }
 
 // ── Voucher Expense — pending GRN queue (auto-popup) ────────────────────────
@@ -3513,6 +3603,7 @@ async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporat
 
 module.exports = {
   appendVoucherExpenseEntry, removeVoucherExpenseEntry, assertEntriesPayable, getPendingDraftReservations,
+  getAllocationUsage,
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,

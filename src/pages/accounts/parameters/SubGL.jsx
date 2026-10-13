@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
-import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import { guardAllocationChange } from './allocationGuard';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
 
@@ -36,6 +36,10 @@ export default function SubGL() {
   const handleSave = async () => {
     if (!form.name.trim()) return toast.error('Name is required');
     if (!form.mainGlId) return toast.error('Select a Main GL');
+    // Rename: refused if a voucher sits on it; otherwise warn that everything
+    // under it goes (see allocationGuard).
+    if (modal.mode === 'edit' && form.name.trim() !== modal.row.name
+      && !(await guardAllocationChange('sub-gl', modal.row.id, 'rename'))) return;
     setSaving(true);
     try {
       if (modal.mode === 'add') {
@@ -54,7 +58,7 @@ export default function SubGL() {
   };
 
   const handleDelete = async (id) => {
-    if (!(await confirmDialog({ title: 'Delete Sub GL', message: 'Delete this Sub GL? All child Main Accounts will also be removed.', confirmLabel: 'Delete', danger: true }))) return;
+    if (!(await guardAllocationChange('sub-gl', id, 'delete'))) return;
     try { await deleteSubGL(id); toast.success('Deleted'); }
     catch (err) { toast.error(err.message); }
   };

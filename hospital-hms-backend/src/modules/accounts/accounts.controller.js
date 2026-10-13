@@ -5,23 +5,27 @@ const et = (req) => req.query.entityType || 'non-corporate';
 
 async function getMainGLs(req, res, next) { try { success(res, await svc.getMainGLs(et(req))); } catch (e) { next(e); } }
 async function createMainGL(req, res, next) { try { success(res, await svc.createMainGL(req.body), 'created'); } catch (e) { next(e); } }
-async function updateMainGL(req, res, next) { try { success(res, await svc.updateMainGL(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
-async function deleteMainGL(req, res, next) { try { await svc.deleteMainGL(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+// Account Allocation edit/delete refusals (voucher on it, blank name) carry
+// a status — send their message back instead of a generic 500.
+const allocFail = (res, next, e) => (e.status ? fail(res, e.status, e.message) : next(e));
+async function getAllocationUsage(req, res, next) { try { success(res, await svc.getAllocationUsage(req.query.level, req.query.id)); } catch (e) { allocFail(res, next, e); } }
+async function updateMainGL(req, res, next) { try { success(res, await svc.updateMainGL(req.params.id, req.body), 'updated'); } catch (e) { allocFail(res, next, e); } }
+async function deleteMainGL(req, res, next) { try { await svc.deleteMainGL(req.params.id); success(res, null, 'deleted'); } catch (e) { allocFail(res, next, e); } }
 
 async function getSubGLs(req, res, next) { try { success(res, await svc.getSubGLs(et(req), req.query.mainGlId)); } catch (e) { next(e); } }
 async function createSubGL(req, res, next) { try { success(res, await svc.createSubGL(req.body), 'created'); } catch (e) { next(e); } }
-async function updateSubGL(req, res, next) { try { success(res, await svc.updateSubGL(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
-async function deleteSubGL(req, res, next) { try { await svc.deleteSubGL(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+async function updateSubGL(req, res, next) { try { success(res, await svc.updateSubGL(req.params.id, req.body), 'updated'); } catch (e) { allocFail(res, next, e); } }
+async function deleteSubGL(req, res, next) { try { await svc.deleteSubGL(req.params.id); success(res, null, 'deleted'); } catch (e) { allocFail(res, next, e); } }
 
 async function getMainAccounts(req, res, next) { try { success(res, await svc.getMainAccounts(et(req), req.query.subGlId)); } catch (e) { next(e); } }
 async function createMainAccount(req, res, next) { try { success(res, await svc.createMainAccount(req.body), 'created'); } catch (e) { next(e); } }
-async function updateMainAccount(req, res, next) { try { success(res, await svc.updateMainAccount(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
-async function deleteMainAccount(req, res, next) { try { await svc.deleteMainAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+async function updateMainAccount(req, res, next) { try { success(res, await svc.updateMainAccount(req.params.id, req.body), 'updated'); } catch (e) { allocFail(res, next, e); } }
+async function deleteMainAccount(req, res, next) { try { await svc.deleteMainAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { allocFail(res, next, e); } }
 
 async function getSubAccounts(req, res, next) { try { success(res, await svc.getSubAccounts(et(req), req.query.mainAccountId)); } catch (e) { next(e); } }
 async function createSubAccount(req, res, next) { try { success(res, await svc.createSubAccount(req.body), 'created'); } catch (e) { next(e); } }
-async function updateSubAccount(req, res, next) { try { success(res, await svc.updateSubAccount(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
-async function deleteSubAccount(req, res, next) { try { await svc.deleteSubAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
+async function updateSubAccount(req, res, next) { try { success(res, await svc.updateSubAccount(req.params.id, req.body), 'updated'); } catch (e) { allocFail(res, next, e); } }
+async function deleteSubAccount(req, res, next) { try { await svc.deleteSubAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { allocFail(res, next, e); } }
 async function copyChartToCorporate(req, res, next) { try { success(res, await svc.copyChartToCorporate(), 'copied'); } catch (e) { next(e); } }
 async function getPendingGrnQueue(req, res, next) { try { success(res, await svc.getPendingGrnQueue(et(req))); } catch (e) { next(e); } }
 async function getEmployeesDueForSalary(req, res, next) { try { success(res, await svc.getEmployeesDueForSalary(req.query.month, req.query.year)); } catch (e) { next(e); } }
@@ -332,6 +336,7 @@ async function getDailyIncomeExpenseDiff(req, res, next) {
 }
 
 module.exports = {
+  getAllocationUsage,
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
   getSubGLs, createSubGL, updateSubGL, deleteSubGL,
   getMainAccounts, createMainAccount, updateMainAccount, deleteMainAccount,
