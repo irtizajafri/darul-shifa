@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X, AlertTriangle } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { showSlipClashes } from './slipClashNotice';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
@@ -349,6 +350,7 @@ export default function PatientsListReport() {
           .filter(Boolean).join(' · '),
         { duration: 6000 },
       );
+      showSlipClashes(d.serialClashes);
       // Import ke turant baad refresh ka apna spinner chalta rahi bina
       // "Importing..." khatam hue — ab dono ek hi "busy" state se chalte
       // hain, isliye button states overlap nahi karte.

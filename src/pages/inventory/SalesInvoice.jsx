@@ -839,7 +839,12 @@ export default function SalesInvoice() {
                   <tr key={inv.id}>
                     <td className="px-6 py-4 font-medium">{inv.code}</td>
                     <td className="px-6 py-4">{inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString() : '-'}</td>
-                    <td className="px-6 py-4 capitalize">{inv.customerType === 'customer' ? inv.customerName : 'Walking Customer'}</td>
+                    <td className="px-6 py-4 capitalize">{
+                      inv.customerType === 'customer' ? inv.customerName
+                        : inv.customerType === 'admission' ? `Admission # ${inv.customerName}`
+                          : inv.customerType === 'panel_opd' ? `Panel Slip # ${inv.customerName}`
+                            : 'Walking Customer'
+                    }</td>
                     <td className="px-6 py-4">
                       <ul className="text-xs text-slate-600 space-y-0.5">
                         {(inv.items || []).map((line) => (

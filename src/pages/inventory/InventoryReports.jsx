@@ -1220,7 +1220,8 @@ export default function InventoryReports() {
             department: dept,
             issuedBy,
             location,
-            admissionNumber: gin.admissionNumber || '',
+            // Panel OPD slip GINs (migration 050) group/print as "Slip <no>"
+            admissionNumber: gin.admissionNumber || (gin.opdSlipNo ? `Slip ${gin.opdSlipNo}` : ''),
             patientName: gin.patientName || gin.admissionPatientName || '',
             patientCategory: gin.patientCategory || null,
             panelCompanyCode: gin.panelCompanyCode || '',
@@ -1247,7 +1248,8 @@ export default function InventoryReports() {
             department: dept,
             issuedBy,
             location,
-            admissionNumber: gin.admissionNumber || '',
+            // Panel OPD slip GINs (migration 050) group/print as "Slip <no>"
+            admissionNumber: gin.admissionNumber || (gin.opdSlipNo ? `Slip ${gin.opdSlipNo}` : ''),
             patientName: gin.patientName || gin.admissionPatientName || '',
             patientCategory: gin.patientCategory || null,
             panelCompanyCode: gin.panelCompanyCode || '',
@@ -1268,7 +1270,7 @@ export default function InventoryReports() {
     return issuanceRows.map((row) => ({
       'GIN Code': row.ginCode || '-',
       Date: formatDate(row.date),
-      ...(issuanceShowsPatient ? { 'Admission #': row.admissionNumber || '-', Patient: row.patientName || '-', Company: row.panelCompanyCode || '-' } : {}),
+      ...(issuanceShowsPatient ? { 'Adm / Slip #': row.admissionNumber || '-', Patient: row.patientName || '-', Company: row.panelCompanyCode || '-' } : {}),
       Item: row.item,
       'Item Code': row.itemCode,
       Category: row.category,
@@ -1319,12 +1321,12 @@ export default function InventoryReports() {
       let qty = 0; let amt = 0;
       list.forEach((a) => {
         qty += a.qty; amt += a.amount;
-        out.push({ Type: label, 'Admission #': a.adm, Patient: a.patient || '-', Company: a.company || '-', GINs: a.gins.size, 'Total Qty': a.qty.toFixed(2), Amount: a.amount.toFixed(2) });
+        out.push({ Type: label, 'Adm / Slip #': a.adm, Patient: a.patient || '-', Company: a.company || '-', GINs: a.gins.size, 'Total Qty': a.qty.toFixed(2), Amount: a.amount.toFixed(2) });
       });
-      out.push({ Type: `${label} Total`, 'Admission #': `${list.length} patient(s)`, Patient: '', Company: '', GINs: '', 'Total Qty': qty.toFixed(2), Amount: amt.toFixed(2) });
+      out.push({ Type: `${label} Total`, 'Adm / Slip #': `${list.length} patient(s)`, Patient: '', Company: '', GINs: '', 'Total Qty': qty.toFixed(2), Amount: amt.toFixed(2) });
       gQty += qty; gAmt += amt; gCount += list.length;
     });
-    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${gCount} patient(s)`, Patient: '', Company: '', GINs: '', 'Total Qty': gQty.toFixed(2), Amount: gAmt.toFixed(2) });
+    if (out.length) out.push({ Type: 'Grand Total', 'Adm / Slip #': `${gCount} patient(s)`, Patient: '', Company: '', GINs: '', 'Total Qty': gQty.toFixed(2), Amount: gAmt.toFixed(2) });
     return out;
   }, [issuanceRows]);
 
@@ -1358,15 +1360,15 @@ export default function InventoryReports() {
             const amount = it.qty * it.rate;
             qty += it.qty; amt += amount;
             out.push({
-              Type: TYPE[a.type] || 'Unknown', 'Admission #': adm, Patient: a.patient || '-', Company: a.company || '-',
+              Type: TYPE[a.type] || 'Unknown', 'Adm / Slip #': adm, Patient: a.patient || '-', Company: a.company || '-',
               'Item Code': it.code, Item: it.name, 'Kitni Dafa': it.times,
               'Total Qty': it.qty.toFixed(2), Rate: it.rate.toFixed(2), Amount: amount.toFixed(2),
             });
           });
-        out.push({ Type: 'Total', 'Admission #': adm, Patient: a.patient || '-', Company: a.company || '-', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': qty.toFixed(2), Rate: '', Amount: amt.toFixed(2) });
+        out.push({ Type: 'Total', 'Adm / Slip #': adm, Patient: a.patient || '-', Company: a.company || '-', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': qty.toFixed(2), Rate: '', Amount: amt.toFixed(2) });
         gQty += qty; gAmt += amt;
       });
-    if (out.length) out.push({ Type: 'Grand Total', 'Admission #': `${byAdm.size} patient(s)`, Patient: '', Company: '', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': gQty.toFixed(2), Rate: '', Amount: gAmt.toFixed(2) });
+    if (out.length) out.push({ Type: 'Grand Total', 'Adm / Slip #': `${byAdm.size} patient(s)`, Patient: '', Company: '', 'Item Code': '', Item: '', 'Kitni Dafa': '', 'Total Qty': gQty.toFixed(2), Rate: '', Amount: gAmt.toFixed(2) });
     return out;
   }, [issuanceRows]);
 

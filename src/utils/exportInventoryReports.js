@@ -381,7 +381,9 @@ const money2 = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigit
 function printSalesInvoiceHtml(inv) {
   const who = inv.customerType === 'admission'
     ? ['Admission #', inv.customerName || '-']
-    : ['Patient', inv.customerType === 'customer' ? (inv.customerName || 'N/A') : 'Walking Customer'];
+    : inv.customerType === 'panel_opd'
+      ? ['Panel Slip #', inv.customerName || '-']
+      : ['Patient', inv.customerType === 'customer' ? (inv.customerName || 'N/A') : 'Walking Customer'];
   const date = inv.invoiceDate
     ? new Date(inv.invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
     : '-';

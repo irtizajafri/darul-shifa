@@ -19,14 +19,19 @@ import { formatDate } from '../../utils/helpers';
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 
 // ── Admission Lookup Modal — pick an admitted patient to fill Admission Number ─
-function AdmissionSearchModal({ onSelect, onClose }) {
+// mode 'slip' — same picker for the GD's "Panel Slip": active panel OPD slips
+// (Clinic's Panel Billing slip search), newest first.
+function AdmissionSearchModal({ onSelect, onClose, mode = 'admission' }) {
+  const isSlip = mode === 'slip';
   const [q, setQ] = useState('');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const timer = useRef(null);
 
   function runSearch(term) {
-    fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(term)}`)
+    fetch(isSlip
+      ? `${CLINIC_API}/opd-panel-billing/search?q=${encodeURIComponent(term)}`
+      : `${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(term)}`)
       .then((r) => r.json())
       .then((j) => setRows(j.data || []))
       .catch(() => setRows([]))
@@ -45,7 +50,7 @@ function AdmissionSearchModal({ onSelect, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]">
         <div className="bg-blue-50 border-b border-blue-100 px-5 py-3 flex items-center justify-between shrink-0">
-          <h2 className="text-sm font-bold text-blue-800">Select Admitted Patient</h2>
+          <h2 className="text-sm font-bold text-blue-800">{isSlip ? 'Select Panel OPD Slip' : 'Select Admitted Patient'}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="px-5 py-3 border-b border-slate-100 shrink-0">
@@ -55,7 +60,7 @@ function AdmissionSearchModal({ onSelect, onClose }) {
               autoFocus
               value={q}
               onChange={(e) => handleChange(e.target.value)}
-              placeholder="Search by Admission # or Patient Name…"
+              placeholder={isSlip ? 'Search by Slip # or Patient Name…' : 'Search by Admission # or Patient Name…'}
               className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -67,8 +72,9 @@ function AdmissionSearchModal({ onSelect, onClose }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-500 text-xs uppercase border-b border-slate-200">
-                  <th className="px-4 py-2 text-left">Admission #</th>
+                  <th className="px-4 py-2 text-left">{isSlip ? 'Slip #' : 'Admission #'}</th>
                   <th className="px-4 py-2 text-left">Patient</th>
+                  {isSlip && <th className="px-4 py-2 text-left">Date</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -76,10 +82,11 @@ function AdmissionSearchModal({ onSelect, onClose }) {
                   <tr key={r.id} onClick={() => onSelect(r)} className="cursor-pointer hover:bg-blue-50">
                     <td className="px-4 py-2 font-medium">{r.admissionNo}</td>
                     <td className="px-4 py-2">{r.patientName}</td>
+                    {isSlip && <td className="px-4 py-2 text-slate-500">{r.createdAt ? formatDate(r.createdAt) : ''}</td>}
                   </tr>
                 ))}
                 {!rows.length && (
-                  <tr><td colSpan={2} className="text-center text-slate-400 py-6">Koi admit patient nahi mila</td></tr>
+                  <tr><td colSpan={isSlip ? 3 : 2} className="text-center text-slate-400 py-6">{isSlip ? 'Koi panel slip nahi mili' : 'Koi admit patient nahi mila'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -150,6 +157,11 @@ export default function GoodsIssue() {
   const [gdAdmissionNumber, setGdAdmissionNumber] = useState('');
   const [gdPatientName, setGdPatientName] = useState('');
   const [showGdAdmitModal, setShowGdAdmitModal] = useState(false);
+  // "Panel Slip" — the GD is for a panel OPD slip instead of an admission
+  // (one or the other); its medicine bills to that slip's Panel Billing.
+  const [gdSlipEnabled, setGdSlipEnabled] = useState(false);
+  const [gdSlipNo, setGdSlipNo] = useState('');
+  const [showGdSlipModal, setShowGdSlipModal] = useState(false);
   const [gdCommentEnabled, setGdCommentEnabled] = useState(false);
   const [gdComment, setGdComment] = useState('');
 
@@ -239,7 +251,8 @@ export default function GoodsIssue() {
     active: showGDForm,
     onEsc: () => {
       if (showGdAdmitModal) { setShowGdAdmitModal(false); return; }
-      setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdCommentEnabled(false); setGdComment('');
+      if (showGdSlipModal) { setShowGdSlipModal(false); return; }
+      setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdSlipEnabled(false); setGdSlipNo(''); setGdCommentEnabled(false); setGdComment('');
     },
     onCtrlS: () => handleCreateGD(fakeEvent, false),
     onCtrlP: () => handleCreateGD(fakeEvent, true),
@@ -379,6 +392,7 @@ export default function GoodsIssue() {
     const badQty = gdSelectedItems.find((i) => !i.quantityRequested || Number(i.quantityRequested) <= 0);
     if (badQty) { toast.error(`Enter quantity for: ${badQty.itemName}`); return; }
     if (gdAdmissionEnabled && !gdAdmissionNumber.trim()) { toast.error('Please enter admission number'); return; }
+    if (gdSlipEnabled && !gdSlipNo.trim()) { toast.error('Panel Slip # likhein ya chunein'); return; }
     try {
       const result = await createGDBatch({
         departmentId: Number(gdDepartmentId),
@@ -389,7 +403,8 @@ export default function GoodsIssue() {
           ...(i.locationEnabled && i.location.trim() ? { location: i.location.trim() } : {}),
         })),
         admissionNumber: gdAdmissionEnabled ? gdAdmissionNumber.trim() : undefined,
-        patientName: gdAdmissionEnabled ? gdPatientName.trim() : undefined,
+        opdSlipNo: gdSlipEnabled ? gdSlipNo.trim() : undefined,
+        patientName: (gdAdmissionEnabled || gdSlipEnabled) ? gdPatientName.trim() : undefined,
         comment: gdCommentEnabled ? gdComment.trim() : undefined,
         // Stored once at creation (User ID Management's logged-in name) — print's
         // "Generated by" always reads this back, not whoever is printing right now.
@@ -402,6 +417,8 @@ export default function GoodsIssue() {
       setGdItemSearch('');
       setGdAdmissionEnabled(false);
       setGdAdmissionNumber('');
+      setGdSlipEnabled(false);
+      setGdSlipNo('');
       setGdPatientName('');
       setGdCommentEnabled(false);
       setGdComment('');
@@ -481,7 +498,9 @@ export default function GoodsIssue() {
       // looking for a Save Invoice step.
       toast.success(newGIN?.admissionNumber
         ? `GIN created — Admission # ${newGIN.admissionNumber} ke bill mein add ho gayi`
-        : 'GIN created');
+        : newGIN?.opdSlipNo
+          ? `GIN created — Panel Slip # ${newGIN.opdSlipNo} ki Panel Billing mein add ho gayi`
+          : 'GIN created');
       if (andPrint && newGIN) printGINDocument(newGIN, { printedBy: newGIN.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
     } catch (err) {
       toast.error(err.message || 'Failed to create GIN');
@@ -615,6 +634,14 @@ export default function GoodsIssue() {
         <AdmissionSearchModal
           onClose={() => setShowGdAdmitModal(false)}
           onSelect={(row) => { setGdAdmissionNumber(row.admissionNo); setGdPatientName(row.patientName || ''); setShowGdAdmitModal(false); }}
+        />
+      )}
+
+      {showGdSlipModal && (
+        <AdmissionSearchModal
+          mode="slip"
+          onClose={() => setShowGdSlipModal(false)}
+          onSelect={(row) => { setGdSlipNo(row.admissionNo); setGdPatientName(row.patientName || ''); setShowGdSlipModal(false); }}
         />
       )}
 
@@ -1157,7 +1184,7 @@ export default function GoodsIssue() {
                     checked={gdAdmissionEnabled}
                     onChange={(e) => {
                       setGdAdmissionEnabled(e.target.checked);
-                      if (e.target.checked) { setShowGdAdmitModal(true); }
+                      if (e.target.checked) { setGdSlipEnabled(false); setGdSlipNo(''); setGdPatientName(''); setShowGdAdmitModal(true); }
                       else { setGdAdmissionNumber(''); setGdPatientName(''); }
                     }}
                     className="w-4 h-4 accent-blue-600"
@@ -1178,6 +1205,48 @@ export default function GoodsIssue() {
                         type="button"
                         onClick={() => setShowGdAdmitModal(true)}
                         title="Search admitted patients"
+                        className="shrink-0 p-2 border border-blue-300 rounded-md text-blue-600 hover:bg-blue-50"
+                      >
+                        <Search size={14} />
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Patient name"
+                      value={gdPatientName}
+                      onChange={(e) => setGdPatientName(e.target.value)}
+                      className="px-3 py-2 border border-blue-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={gdSlipEnabled}
+                    onChange={(e) => {
+                      setGdSlipEnabled(e.target.checked);
+                      if (e.target.checked) { setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdPatientName(''); setShowGdSlipModal(true); }
+                      else { setGdSlipNo(''); setGdPatientName(''); }
+                    }}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  Panel Slip
+                </label>
+                {gdSlipEnabled && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Enter panel slip #"
+                        value={gdSlipNo}
+                        onChange={(e) => setGdSlipNo(e.target.value)}
+                        className="px-3 py-2 border border-blue-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowGdSlipModal(true)}
+                        title="Search panel OPD slips"
                         className="shrink-0 p-2 border border-blue-300 rounded-md text-blue-600 hover:bg-blue-50"
                       >
                         <Search size={14} />
@@ -1219,7 +1288,7 @@ export default function GoodsIssue() {
             <div className="flex gap-2">
               <Button type="submit" label={loading ? 'Saving...' : `Save GD (${gdSelectedItems.length} item${gdSelectedItems.length !== 1 ? 's' : ''})`} disabled={loading || gdSelectedItems.length === 0} />
               <Button type="button" label={loading ? 'Saving...' : 'Save & Print'} disabled={loading || gdSelectedItems.length === 0} onClick={(e) => handleCreateGD(e, true)} />
-              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdPatientName(''); setGdCommentEnabled(false); setGdComment(''); }} />
+              <Button type="button" variant="secondary" label="Cancel" onClick={() => { setShowGDForm(false); setGdDepartmentId(''); setGdSelectedItems([]); setGdItemSearch(''); setGdAdmissionEnabled(false); setGdAdmissionNumber(''); setGdSlipEnabled(false); setGdSlipNo(''); setGdPatientName(''); setGdCommentEnabled(false); setGdComment(''); }} />
             </div>
           </form>
         </Card>
@@ -1234,7 +1303,7 @@ export default function GoodsIssue() {
                 value={selectedGDHeaderId}
                 onChange={(v) => { setSelectedGDHeaderId(v); setGinIssuedQtys({}); setGinUnitOptions({}); setGinSelectedUnits({}); }}
                 placeholder="Select GD (by header code)"
-                getLabel={(h) => `${h.code} — ${h.department?.name || '-'} [${h.status}] (${h.gdItems?.length || 0} items)${h.admissionNumber ? ` — Adm# ${h.admissionNumber}` : ''}${h.patientName ? ` (${h.patientName})` : ''}${h.createdByName ? ` — by ${h.createdByName}` : ''}`}
+                getLabel={(h) => `${h.code} — ${h.department?.name || '-'} [${h.status}] (${h.gdItems?.length || 0} items)${h.admissionNumber ? ` — Adm# ${h.admissionNumber}` : ''}${h.opdSlipNo ? ` — Slip# ${h.opdSlipNo}` : ''}${h.patientName ? ` (${h.patientName})` : ''}${h.createdByName ? ` — by ${h.createdByName}` : ''}`}
                 getKey={(h) => h.id}
                 wrapperClassName="flex-1 min-w-[220px]"
                 required
@@ -1295,10 +1364,10 @@ export default function GoodsIssue() {
               </div>
             </div>
 
-            {selectedGDHeader?.admissionNumber && (
+            {(selectedGDHeader?.admissionNumber || selectedGDHeader?.opdSlipNo) && (
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-xs font-medium text-blue-700 w-fit">
-                  Admission #: <span className="font-mono">{selectedGDHeader.admissionNumber}</span>
+                  {selectedGDHeader.opdSlipNo ? 'Panel Slip #' : 'Admission #'}: <span className="font-mono">{selectedGDHeader.opdSlipNo || selectedGDHeader.admissionNumber}</span>
                 </div>
                 {selectedGDHeader.patientName && (
                   <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-xs font-medium text-blue-700 w-fit">

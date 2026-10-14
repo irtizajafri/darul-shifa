@@ -1393,6 +1393,8 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
   const [selections, setSelections] = useState(() =>
     rows.map((r) => ({
       key: r.id, isManual: String(r.id).startsWith('manual-'), originalAmount: r.amount,
+      // OPD slip's Inventory lines — view only (fixed via MRN / GIN, see getPanelOpdVisitBilling)
+      locked: !!r.locked,
       medicine: r.medicine, dosage: r.dosage || '', qty: r.qty, rate: r.rate, date: toInputDate(r.date), checked: false,
     }))
   );
@@ -1508,27 +1510,27 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
                 <tr><td colSpan={8} className="pnb-empty">Koi record nahi mila</td></tr>
               ) : selections.map((r) => (
                 <tr key={r.key} className={r.checked ? 'pnb-pkg-row-selected' : ''}>
-                  <td><input type="checkbox" checked={r.checked} onChange={() => toggle(r.key)} disabled={readOnly} /></td>
+                  <td><input type="checkbox" checked={r.checked} onChange={() => toggle(r.key)} disabled={readOnly || r.locked} /></td>
                   <td>
                     <input type="date" className="pnb-mini-input" value={r.date}
-                      onChange={(e) => updateField(r.key, 'date', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => updateField(r.key, 'date', e.target.value)} disabled={readOnly || r.locked} />
                   </td>
-                  <td>{r.medicine}</td>
+                  <td>{r.medicine}{r.locked && <span className="pnb-locked-tag" title="Inventory GIN se — MRN se theek karein"> (Store)</span>}</td>
                   <td>
                     <input className="pnb-mini-input" value={r.dosage} placeholder="e.g. 1 tab"
-                      onChange={(e) => updateField(r.key, 'dosage', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => updateField(r.key, 'dosage', e.target.value)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">
                     <input type="number" min="0" className="pnb-mini-input pnb-mini-input--num" value={r.qty}
-                      onChange={(e) => updateField(r.key, 'qty', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => updateField(r.key, 'qty', e.target.value)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">
                     <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate}
-                      onChange={(e) => updateField(r.key, 'rate', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => updateField(r.key, 'rate', e.target.value)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>
                   <td>
-                    {!readOnly && (
+                    {!readOnly && !r.locked && (
                       <div className="pnb-row-actions">
                         <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
                           title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>

@@ -674,10 +674,10 @@ async function createGD(req, res, next) {
 
 async function createGDBatch(req, res, next) {
   try {
-    const { departmentId, items, admissionNumber, patientName, comment, createdByName } = req.body || {};
+    const { departmentId, items, admissionNumber, opdSlipNo, patientName, comment, createdByName } = req.body || {};
     if (!isNumericId(departmentId)) return fail(res, 400, 'Invalid departmentId');
     if (!Array.isArray(items) || items.length === 0) return fail(res, 400, 'items array is required');
-    const data = await service.createGDBatch({ departmentId, items, admissionNumber, patientName, comment, createdByName });
+    const data = await service.createGDBatch({ departmentId, items, admissionNumber, opdSlipNo, patientName, comment, createdByName });
     return success(res, data, 'gd batch created');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -1053,6 +1053,15 @@ async function createMRN(req, res, next) {
 }
 
 // MRN "Admission #" mode — the admission's GIN lines with returnable qty + billed rate.
+async function getSlipReturnables(req, res, next) {
+  try {
+    return success(res, await service.getSlipReturnables(req.params.slipNo));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function getAdmissionReturnables(req, res, next) {
   try {
     const data = await service.getAdmissionReturnables(req.params.admissionNo);
@@ -1141,6 +1150,7 @@ module.exports = {
   listMRNs,
   createMRN,
   getAdmissionReturnables,
+  getSlipReturnables,
   previewBulkItems,
   bulkImportItems,
 };

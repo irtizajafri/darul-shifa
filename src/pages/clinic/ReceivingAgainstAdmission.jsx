@@ -7,6 +7,7 @@ import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { useAuthStore } from '../../store/useAuthStore';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
 import { handleSlipKeys } from '../../utils/keyboardNav';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import './ReceivingAgainstAdmission.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -147,7 +148,7 @@ export default function ReceivingAgainstAdmission() {
     loadNextSerial();
   }
 
-  async function submitPayment() {
+  async function submitPayment(confirmNotDuplicate = false) {
     if (!admission) { toast.error('Pehle admission select karein'); return null; }
     const amt = Number(amount);
     if (!amt || amt <= 0) { toast.error('Amount 0 se zyada honi chahiye'); return null; }
@@ -155,9 +156,20 @@ export default function ReceivingAgainstAdmission() {
     const res = await fetch(`${API}/admission/receiving/${admission.id}/pay`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ serialNo, amount: amt, paymentType, receivedBy: printedBy }),
+      body:    JSON.stringify({ serialNo, amount: amt, paymentType, receivedBy: printedBy, confirmNotDuplicate }),
     });
     const json = await res.json();
+    // Same amount already on this admission in Patients List (Excel) under
+    // another Slip # — likely the same receipt with a mistyped number.
+    if (res.status === 409 && json.code === 'POSSIBLE_DUPLICATE_RECEIPT') {
+      const ok = await confirmDialog({
+        title: 'Yeh receipt pehle se to nahi?',
+        message: `${json.message}\n\nNayi (alag) receipt hai to "Haan, nayi receipt hai" dabayein.`,
+        confirmLabel: 'Haan, nayi receipt hai',
+      });
+      if (!ok) return null;
+      return submitPayment(true);
+    }
     if (!res.ok) throw new Error(json.message || 'Payment save nahi hui');
     return json.data;
   }

@@ -365,6 +365,8 @@
 }
 
 .pnb-row-actions { display: flex; align-items: center; gap: 5px; }
+// Pharmacy popup — OPD slip's Inventory (GIN) lines, view only
+.pnb-locked-tag { font-size: 0.7rem; font-weight: 600; color: #0f766e; }
 
 .pnb-del-row-btn {
   background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; border-radius: 4px; padding: 3px 8px;

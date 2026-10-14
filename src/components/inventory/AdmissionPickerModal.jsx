@@ -9,15 +9,20 @@ function fmtAdmDate(d) {
 }
 
 // Browse admitted patients instead of typing the admission number blind —
-// used by Sales Invoice and MRN (Admission # mode).
-export default function AdmissionPickerModal({ onSelect, onClose }) {
+// used by Sales Invoice and MRN (Admission # mode). mode 'slip' browses
+// active panel OPD slips instead (MRN Panel Slip mode); rows keep the same
+// shape (the slip # comes back as admissionNo).
+export default function AdmissionPickerModal({ onSelect, onClose, mode = 'admission' }) {
+  const isSlip = mode === 'slip';
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
   const runSearch = (term) => {
-    fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(term)}`)
+    fetch(isSlip
+      ? `${CLINIC_API}/opd-panel-billing/search?q=${encodeURIComponent(term)}`
+      : `${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(term)}`)
       .then((r) => r.json())
       .then((j) => setRows(j?.data || []))
       .catch(() => setRows([]))
@@ -37,7 +42,7 @@ export default function AdmissionPickerModal({ onSelect, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-          <span className="font-semibold text-slate-800">Select Admitted Patient</span>
+          <span className="font-semibold text-slate-800">{isSlip ? 'Select Panel OPD Slip' : 'Select Admitted Patient'}</span>
           <button className="text-slate-400 hover:text-slate-600" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="px-4 py-2 border-b border-slate-200 relative">
@@ -45,7 +50,7 @@ export default function AdmissionPickerModal({ onSelect, onClose }) {
           <input
             autoFocus
             className="pl-8 pr-2 py-1.5 border border-slate-300 rounded-md text-sm w-full focus:outline-none focus:border-blue-500"
-            placeholder="Search Admission # or Patient Name…"
+            placeholder={isSlip ? 'Search Slip # or Patient Name…' : 'Search Admission # or Patient Name…'}
             value={q}
             onChange={(e) => handleQueryChange(e.target.value)}
           />
@@ -54,12 +59,12 @@ export default function AdmissionPickerModal({ onSelect, onClose }) {
           {loading ? (
             <div className="text-center text-sm text-slate-400 py-6">Loading…</div>
           ) : rows.length === 0 ? (
-            <div className="text-center text-sm text-slate-400 py-6">No admitted patients found</div>
+            <div className="text-center text-sm text-slate-400 py-6">{isSlip ? 'No panel slips found' : 'No admitted patients found'}</div>
           ) : (
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 text-xs text-slate-500 uppercase sticky top-0">
                 <tr>
-                  <th className="px-3 py-2">Admission #</th>
+                  <th className="px-3 py-2">{isSlip ? 'Slip #' : 'Admission #'}</th>
                   <th className="px-3 py-2">Patient</th>
                   <th className="px-3 py-2">Date</th>
                 </tr>

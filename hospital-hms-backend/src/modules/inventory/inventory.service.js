@@ -297,8 +297,14 @@ function normalizeCustomerType(value) {
   const v = String(value || 'walking').trim().toLowerCase();
   if (v === 'customer') return 'customer';
   if (v === 'admission') return 'admission';
+  if (v === 'panel_opd') return 'panel_opd';
   return 'walking';
 }
+
+// A patient's bill (admission, or a panel OPD slip — migration 050): stock
+// has already gone out on the GIN, so the invoice moves none.
+const isPatientBillType = (t) => t === 'admission' || t === 'panel_opd';
+const isNamedCustomerType = (t) => t === 'customer' || isPatientBillType(t);
 
 function buildSearchFilter(search, fields) {
   const q = normalizeSearch(search);
@@ -1021,6 +1027,43 @@ async function assertAdmissionOpenForIssue(admissionNumber, action = 'issue') {
   return admission;
 }
 
+// Medicine for a panel OPD slip (GD/GIN with a Panel Slip, migration 050) is
+// billed to that slip's Panel Billing — it must be a real, active panel slip
+// whose company cheque hasn't come in yet (bill final after that).
+async function assertPanelSlipOpenForIssue(slipNo, action = 'issue') {
+  const no = slipNo ? String(slipNo).trim() : '';
+  if (!no) return null;
+  const visit = await prisma.clinicOpdVisit.findUnique({
+    where: { serialNo: no },
+    select: { id: true, status: true, paymentType: true, patientName: true },
+  });
+  if (!visit) throw Object.assign(new Error(`Slip # ${no} system mein nahi mili — sahi panel slip chunein`), { status: 400 });
+  if (String(visit.paymentType || '').toLowerCase() !== 'panel') {
+    throw Object.assign(new Error(`Slip # ${no} panel ki slip nahi hai`), { status: 400 });
+  }
+  if (visit.status !== 'active') throw Object.assign(new Error(`Slip # ${no} cancel ho chuki hai`), { status: 400 });
+  const cheque = await prisma.clinicPanelChequeReceiptOpdItem.findUnique({ where: { opdVisitId: visit.id }, select: { id: true } });
+  if (cheque) {
+    const what = action === 'return' ? 'medicine wapas nahi li ja sakti' : 'medicine issue nahi ho sakti';
+    throw Object.assign(new Error(`Slip # ${no} ka panel cheque aa chuka hai (bill final) — is par ${what}`), { status: 400 });
+  }
+  return visit;
+}
+
+// Whose bill a GD / GIN / MRN goes to: an admission or a panel OPD slip.
+function patientRefOf(rec) {
+  const slip = rec?.opdSlipNo ? String(rec.opdSlipNo).trim() : '';
+  if (slip) return { kind: 'slip', no: slip, customerType: 'panel_opd', field: 'opdSlipNo', label: `Slip # ${slip}` };
+  const adm = rec?.admissionNumber ? String(rec.admissionNumber).trim() : '';
+  if (adm) return { kind: 'admission', no: adm, customerType: 'admission', field: 'admissionNumber', label: `Admission # ${adm}` };
+  return null;
+}
+
+async function assertPatientRefOpen(ref, action = 'issue') {
+  if (!ref) return null;
+  return ref.kind === 'slip' ? assertPanelSlipOpenForIssue(ref.no, action) : assertAdmissionOpenForIssue(ref.no, action);
+}
+
 // Re-adds a sales invoice header's lines into subTotal / discount / total.
 async function recomputeSalesInvoiceHeaderTotals(tx, headerId) {
   const header = await tx.inventorySalesInvoiceHeader.findUnique({
@@ -1308,14 +1351,16 @@ async function listGDs({ search, departmentId, demandCategoryTypeId, categoryId,
   });
 }
 
-async function listGDHeaders({ departmentId, status, dateFrom, dateTo, admissionNumber } = {}) {
+async function listGDHeaders({ departmentId, status, dateFrom, dateTo, admissionNumber, opdSlipNo } = {}) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const admNo = admissionNumber ? String(admissionNumber).trim() : null;
+  const slipNo = opdSlipNo ? String(opdSlipNo).trim() : null;
   return prisma.inventoryGDHeader.findMany({
     where: {
       ...(parsedDepartmentId ? { departmentId: parsedDepartmentId } : {}),
       ...buildStatusFilter(status),
       ...(admNo ? { admissionNumber: admNo } : {}),
+      ...(slipNo ? { opdSlipNo: slipNo } : {}),
       ...(dateFrom || dateTo
         ? { requestDate: { ...(dateFrom ? { gte: new Date(dateFrom) } : {}), ...(dateTo ? { lte: new Date(dateTo) } : {}) } }
         : {}),
@@ -1411,7 +1456,7 @@ async function createGD(payload) {
   });
 }
 
-async function createGDBatch({ departmentId, items = [], admissionNumber, patientName, comment, createdByName }) {
+async function createGDBatch({ departmentId, items = [], admissionNumber, opdSlipNo, patientName, comment, createdByName }) {
   const deptId = Number(departmentId);
   if (!Number.isFinite(deptId) || deptId <= 0) throw new Error('Invalid departmentId');
   if (!Array.isArray(items) || items.length === 0) throw new Error('items array is required');
@@ -1419,7 +1464,11 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, patien
   const department = await prisma.inventoryDepartment.findUnique({ where: { id: deptId } });
   if (!department) throw new Error('Department not found');
   if (department.status !== ACTIVE) throw new Error('Department is inactive');
+  if (String(admissionNumber || '').trim() && String(opdSlipNo || '').trim()) {
+    throw Object.assign(new Error('GD ya Admission ki hogi ya Panel Slip ki — dono ek saath nahi'), { status: 400 });
+  }
   await assertAdmissionOpenForIssue(admissionNumber);
+  const slipVisit = await assertPanelSlipOpenForIssue(opdSlipNo);
 
   let resolvedDemandType = await prisma.inventoryDemandCategoryType.findFirst({
     where: { status: ACTIVE },
@@ -1451,7 +1500,8 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, patien
       status: 'open',
       requestDate: new Date(),
       admissionNumber: admissionNumber ? String(admissionNumber).trim() : null,
-      patientName: patientName ? String(patientName).trim() : null,
+      opdSlipNo: opdSlipNo ? String(opdSlipNo).trim() : null,
+      patientName: patientName ? String(patientName).trim() : (slipVisit?.patientName || null),
       comment: comment ? String(comment).trim() : null,
       createdByName: createdByName ? String(createdByName).trim() : null,
     },
@@ -1486,13 +1536,14 @@ async function createGDBatch({ departmentId, items = [], admissionNumber, patien
   };
 }
 
-async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber, issuedById, patientType, panelCompanyId }) {
+async function listGINs({ search, departmentId, itemId, categoryId, subcategoryId, dateFrom, dateTo, assetType, admissionNumber, opdSlipNo, issuedById, patientType, panelCompanyId }) {
   const parsedDepartmentId = parsePositiveNumber(departmentId);
   const parsedItemId = parsePositiveNumber(itemId);
   const parsedCategoryId = parsePositiveNumber(categoryId);
   const parsedSubcategoryId = parsePositiveNumber(subcategoryId);
   const parsedIssuedById = parsePositiveNumber(issuedById);
   const admNo = admissionNumber ? String(admissionNumber).trim() : null;
+  const slipNo = opdSlipNo ? String(opdSlipNo).trim() : null;
 
   // Each filter type uses OR to match either single-item GINs (gin.itemId/gin.item)
   // or multi-item GINs from GD headers (items stored in ginItems, gin.itemId is null).
@@ -1518,7 +1569,16 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       },
       select: { admissionNo: true },
     });
-    itemConditions.push({ admissionNumber: { in: admissions.map((a) => a.admissionNo) } });
+    const byAdmission = { admissionNumber: { in: admissions.map((a) => a.admissionNo) } };
+    if (patientType === 'panel') {
+      // Panel OPD slip GINs are panel too (a slip is always panel)
+      const slipWhere = companyId
+        ? { opdSlipNo: { in: (await prisma.clinicOpdVisit.findMany({ where: { panelCompanyId: companyId, paymentType: { equals: 'panel', mode: 'insensitive' } }, select: { serialNo: true } })).map((v) => v.serialNo) } }
+        : { opdSlipNo: { not: null } };
+      itemConditions.push({ OR: [byAdmission, slipWhere] });
+    } else {
+      itemConditions.push(byAdmission);
+    }
   }
 
   const gins = await prisma.inventoryGIN.findMany({
@@ -1526,6 +1586,7 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
       ...buildSearchFilter(search, ['code']),
       ...(parsedDepartmentId ? { departmentId: parsedDepartmentId } : {}),
       ...(admNo ? { admissionNumber: admNo } : {}),
+      ...(slipNo ? { opdSlipNo: slipNo } : {}),
       ...(parsedIssuedById ? { issuedById: parsedIssuedById } : {}),
       ...(dateFrom || dateTo
         ? {
@@ -1553,19 +1614,38 @@ async function listGINs({ search, departmentId, itemId, categoryId, subcategoryI
   // Admitted patient's GIN → 'cash' / 'panel' (Issuance Report's patient-wise
   // summary). Unknown admission numbers stay null.
   const admNos = [...new Set(gins.map((g) => g.admissionNumber).filter(Boolean))];
-  if (!admNos.length) return gins;
-  const admissions = await prisma.clinicAdmission.findMany({
-    where: { admissionNo: { in: admNos } },
-    select: { admissionNo: true, patientCategory: true, patientTitle: true, patientName: true, panelCompanyId: true },
-  });
+  const slipNos = [...new Set(gins.map((g) => g.opdSlipNo).filter(Boolean))];
+  if (!admNos.length && !slipNos.length) return gins;
+  const [admissions, slipVisits] = await Promise.all([
+    admNos.length ? prisma.clinicAdmission.findMany({
+      where: { admissionNo: { in: admNos } },
+      select: { admissionNo: true, patientCategory: true, patientTitle: true, patientName: true, panelCompanyId: true },
+    }) : [],
+    slipNos.length ? prisma.clinicOpdVisit.findMany({
+      where: { serialNo: { in: slipNos } },
+      select: { serialNo: true, patientName: true, panelCompanyId: true },
+    }) : [],
+  ]);
   const byNo = new Map(admissions.map((a) => [a.admissionNo, a]));
-  // Panel admissions' company — printed by its code (soft-linked id).
-  const companyIds = [...new Set(admissions.map((a) => a.panelCompanyId).filter(Boolean))];
+  const visitBySlip = new Map(slipVisits.map((v) => [v.serialNo, v]));
+  // Panel admissions' / slips' company — printed by its code (soft-linked id).
+  const companyIds = [...new Set([...admissions.map((a) => a.panelCompanyId), ...slipVisits.map((v) => v.panelCompanyId)].filter(Boolean))];
   const companies = companyIds.length
     ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, code: true, name: true } })
     : [];
   const companyById = new Map(companies.map((c) => [c.id, c]));
   return gins.map((g) => {
+    if (g.opdSlipNo) {
+      const v = visitBySlip.get(g.opdSlipNo);
+      const company = v ? companyById.get(v.panelCompanyId) : null;
+      return {
+        ...g,
+        patientCategory: 'panel',
+        panelCompanyCode: company?.code || null,
+        panelCompanyName: company?.name || null,
+        admissionPatientName: v?.patientName || null,
+      };
+    }
     const adm = g.admissionNumber ? byNo.get(g.admissionNumber) : null;
     const company = adm?.patientCategory === 'panel' ? companyById.get(adm.panelCompanyId) : null;
     return {
@@ -1673,7 +1753,8 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
 
   if (!header) throw new Error('GD Header not found');
   if (header.status === 'closed') throw new Error('GD already fully issued');
-  await assertAdmissionOpenForIssue(header.admissionNumber);
+  const billTo = patientRefOf(header); // admission or panel OPD slip
+  await assertPatientRefOpen(billTo);
 
   const itemsMap = {};
   // Fixed-asset lines only — which specific serial-tagged units (out of the
@@ -1692,11 +1773,11 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
   }
 
   const ginCode = await generateDocCode('inventoryGIN', 'gin');
-  const invoiceCode = header.admissionNumber ? await generateDocCode('inventorySalesInvoiceHeader', 'sinv') : null;
+  const invoiceCode = billTo ? await generateDocCode('inventorySalesInvoiceHeader', 'sinv') : null;
 
   return prisma.$transaction(async (tx) => {
     const parsedIssuedById = parsePositiveNumber(issuedById);
-    const billableLines = []; // admission GIN → its own Sales Invoice, below
+    const billableLines = []; // admission / panel-slip GIN → its own Sales Invoice, below
     const gin = await tx.inventoryGIN.create({
       data: {
         code: ginCode,
@@ -1704,6 +1785,7 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
         departmentId: header.departmentId,
         issueDate: issueDate ? new Date(issueDate) : new Date(),
         admissionNumber: header.admissionNumber || null,
+        opdSlipNo: header.opdSlipNo || null,
         patientName: header.patientName || null,
         status: 'issued',
         createdByName: createdByName ? String(createdByName).trim() : null,
@@ -1799,10 +1881,11 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
       });
     }
 
-    // Admitted patient: the GIN bills itself — one Sales Invoice per GIN, one
-    // line per GIN line at the GIN's locked rate, each line pointing at its
-    // GIN line. Stock already moved above, so the invoice moves none. The
-    // patient's Provisional Bill "Pharmacy Bill (Hospital Store)" reads these
+    // Admitted patient / panel OPD slip: the GIN bills itself — one Sales
+    // Invoice per GIN, one line per GIN line at the GIN's locked rate, each
+    // line pointing at its GIN line. Stock already moved above, so the
+    // invoice moves none. The admission's Provisional Bill "Pharmacy Bill
+    // (Hospital Store)" — or the slip's Panel Billing Medicine — reads these
     // invoice lines, so the medicine shows on the bill straight away.
     if (invoiceCode && billableLines.length) {
       const subTotal = Number(billableLines
@@ -1812,8 +1895,8 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
         data: {
           code: invoiceCode,
           invoiceDate: gin.issueDate,
-          customerType: 'admission',
-          customerName: gin.admissionNumber,
+          customerType: billTo.customerType,
+          customerName: billTo.no,
           subTotal,
           discountPercent: 0,
           discountAmount: 0,
@@ -1830,8 +1913,8 @@ async function createGINFromHeader({ gdHeaderId, items = [], issueDate, note, is
             headerId: invoiceHeader.id,
             itemId: ginItem.itemId,
             invoiceDate: gin.issueDate,
-            customerType: 'admission',
-            customerName: gin.admissionNumber,
+            customerType: billTo.customerType,
+            customerName: billTo.no,
             quantity,
             purchasePrice: Number(item?.purchasePrice || 0),
             retailPrice: saleRate,
@@ -1937,7 +2020,7 @@ async function createSalesInvoice(payload) {
         itemId,
         invoiceDate: payload.invoiceDate ? new Date(payload.invoiceDate) : new Date(),
         customerType,
-        customerName: (customerType === 'customer' || customerType === 'admission') ? customerName : 'Walking Customer',
+        customerName: isNamedCustomerType(customerType) ? customerName : 'Walking Customer',
         quantity,
         purchasePrice,
         retailPrice,
@@ -2059,7 +2142,7 @@ async function createSalesInvoiceWithItems(payload) {
 
   if (lineItems.length === 0) throw new Error('At least one item is required');
 
-  if ((customerType === 'customer' || customerType === 'admission') && !customerName) {
+  if (isNamedCustomerType(customerType) && !customerName) {
     throw new Error('customerName is required when customerType is customer or admission');
   }
 
@@ -2091,7 +2174,7 @@ async function createSalesInvoiceWithItems(payload) {
       // was issued — this invoice is billing-only for those, not a fresh sale,
       // so it must not re-check or re-deduct stock a second time.
       const stock = Number(item.currentStock || 0);
-      if (customerType !== 'admission' && quantity > stock) {
+      if (!isPatientBillType(customerType) && quantity > stock) {
         throw new Error(`Item ${i + 1}: insufficient stock for ${item.name} (available: ${stock})`);
       }
 
@@ -2134,7 +2217,7 @@ async function createSalesInvoiceWithItems(payload) {
         code: headerCode,
         invoiceDate,
         customerType,
-        customerName: (customerType === 'customer' || customerType === 'admission') ? customerName : 'Walking Customer',
+        customerName: isNamedCustomerType(customerType) ? customerName : 'Walking Customer',
         subTotal,
         discountPercent,
         discountAmount,
@@ -2154,7 +2237,7 @@ async function createSalesInvoiceWithItems(payload) {
           itemId: line.itemId,
           invoiceDate,
           customerType,
-          customerName: (customerType === 'customer' || customerType === 'admission') ? customerName : 'Walking Customer',
+          customerName: isNamedCustomerType(customerType) ? customerName : 'Walking Customer',
           quantity: line.quantity,
           purchasePrice: line.purchasePrice,
           retailPrice: line.retailPrice,
@@ -2174,7 +2257,7 @@ async function createSalesInvoiceWithItems(payload) {
 
       // Admission-billing lines: stock already left the store at GIN-issue time
       // — this invoice must not move stock again (see the guard above).
-      if (customerType !== 'admission') {
+      if (!isPatientBillType(customerType)) {
         const newStock = Number(line.item.currentStock || 0) - line.quantity;
         await tx.inventoryStockMovement.create({
           data: {
@@ -4231,9 +4314,10 @@ async function resyncAllItemCurrentStock() {
 
 // ─── MRN — Material Return Note ───────────────────────────────────────────────
 
-async function listMRNs({ search = '', departmentId = '', ginId = '', admissionNumber = '', dateFrom = '', dateTo = '' } = {}) {
+async function listMRNs({ search = '', departmentId = '', ginId = '', admissionNumber = '', opdSlipNo = '', dateFrom = '', dateTo = '' } = {}) {
   const where = {};
   if (admissionNumber) where.admissionNumber = String(admissionNumber).trim();
+  if (opdSlipNo) where.opdSlipNo = String(opdSlipNo).trim();
   if (departmentId && Number(departmentId) > 0) where.departmentId = Number(departmentId);
   if (ginId && Number(ginId) > 0) where.ginId = Number(ginId);
   if (dateFrom || dateTo) {
@@ -4246,6 +4330,7 @@ async function listMRNs({ search = '', departmentId = '', ginId = '', admissionN
       { code: { contains: search, mode: 'insensitive' } },
       { receivedBy: { contains: search, mode: 'insensitive' } },
       { admissionNumber: { contains: search, mode: 'insensitive' } },
+      { opdSlipNo: { contains: search, mode: 'insensitive' } },
       { patientName: { contains: search, mode: 'insensitive' } },
     ];
   }
@@ -4278,9 +4363,10 @@ function admissionPatientName(adm) {
 // invoice line (auto-invoice / per-GIN Save), else — for older invoices that
 // merged GINs — the one invoice line of that item if there is exactly one,
 // else the GIN line's locked rate. Return lines (mrnItemId) never count.
-async function resolveAdmissionBilledRates(db, admissionNumber, ginItems) {
+// customerType 'panel_opd' for a panel OPD slip's bill (customerName = Slip #).
+async function resolveAdmissionBilledRates(db, admissionNumber, ginItems, customerType = 'admission') {
   const lines = await db.inventorySalesInvoice.findMany({
-    where: { customerType: 'admission', customerName: admissionNumber, mrnItemId: null, quantity: { gt: 0 } },
+    where: { customerType, customerName: admissionNumber, mrnItemId: null, quantity: { gt: 0 } },
     select: { itemId: true, ginItemId: true, ginId: true, saleRate: true },
   });
   const byGinItem = new Map();
@@ -4315,14 +4401,14 @@ async function returnedQtyByGinItem(db, ginItemIds) {
 // Minus "Return" lines on the patient's bill for an admission MRN — a Sales
 // Invoice of its own (customerType 'admission', same customerName), so the
 // Provisional Bill's Pharmacy (Hospital Store) total drops by the return.
-async function createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber, returnDate, createdByName, lines }) {
+async function createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber, returnDate, createdByName, lines, customerType = 'admission' }) {
   if (!lines.length) return;
   const total = Number(lines.reduce((s, l) => s + l.qty * l.rate, 0).toFixed(2));
   const header = await tx.inventorySalesInvoiceHeader.create({
     data: {
       code: invoiceCode,
       invoiceDate: returnDate,
-      customerType: 'admission',
+      customerType,
       customerName: admissionNumber,
       subTotal: -total,
       discountPercent: 0,
@@ -4338,7 +4424,7 @@ async function createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber
         headerId: header.id,
         itemId: l.itemId,
         invoiceDate: returnDate,
-        customerType: 'admission',
+        customerType,
         customerName: admissionNumber,
         quantity: -l.qty,
         purchasePrice: Number(l.purchasePrice || 0),
@@ -4393,9 +4479,31 @@ async function getAdmissionReturnables(admissionNumber) {
     select: { admissionNo: true, patientTitle: true, patientName: true, status: true },
   });
   if (!admission) throw Object.assign(new Error(`Admission # ${admNo} system mein nahi mila`), { status: 404 });
+  return buildReturnables({ kind: 'admission', no: admNo, customerType: 'admission', field: 'admissionNumber' }, {
+    admissionNo: admission.admissionNo,
+    patientName: admissionPatientName(admission),
+    status: admission.status,
+  });
+}
 
+// MRN page "Panel Slip" mode — same as the Admission # mode, for the GINs
+// issued against a panel OPD slip (migration 050).
+async function getSlipReturnables(slipNo) {
+  const no = String(slipNo || '').trim();
+  if (!no) throw Object.assign(new Error('Slip # likhein'), { status: 400 });
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { serialNo: no }, select: { serialNo: true, patientName: true, status: true, paymentType: true } });
+  if (!visit) throw Object.assign(new Error(`Slip # ${no} system mein nahi mili`), { status: 404 });
+  return buildReturnables({ kind: 'slip', no, customerType: 'panel_opd', field: 'opdSlipNo' }, {
+    admissionNo: visit.serialNo,
+    opdSlipNo: visit.serialNo,
+    patientName: visit.patientName,
+    status: visit.status,
+  });
+}
+
+async function buildReturnables(ref, patient) {
   const gins = await prisma.inventoryGIN.findMany({
-    where: { admissionNumber: admNo },
+    where: { [ref.field]: ref.no },
     include: {
       department: { select: { name: true } },
       gdHeader: { select: { department: { select: { name: true } } } },
@@ -4405,16 +4513,12 @@ async function getAdmissionReturnables(admissionNumber) {
   });
   const allGinItems = gins.flatMap((g) => g.ginItems);
   const [rates, returned] = await Promise.all([
-    resolveAdmissionBilledRates(prisma, admNo, allGinItems),
+    resolveAdmissionBilledRates(prisma, ref.no, allGinItems, ref.customerType),
     returnedQtyByGinItem(prisma, allGinItems.map((gi) => gi.id)),
   ]);
 
   return {
-    admission: {
-      admissionNo: admission.admissionNo,
-      patientName: admissionPatientName(admission),
-      status: admission.status,
-    },
+    admission: patient,
     gins: gins
       .map((g) => ({
         id: g.id,
@@ -4444,16 +4548,18 @@ async function getAdmissionReturnables(admissionNumber) {
 }
 
 async function createMRN(payload = {}) {
-  if (payload.admissionNumber) return createAdmissionMRN(payload);
+  if (payload.admissionNumber || payload.opdSlipNo) return createAdmissionMRN(payload);
   return createGinMRN(payload);
 }
 
 // By Admission #: lines from any of the admission's GINs, each capped at
 // what's still returnable on its own GIN line, credited at the billed rate,
 // back into stock, and a minus "Return" invoice on the patient's bill.
-async function createAdmissionMRN({ admissionNumber, returnDate, receivedBy, notes, createdByName, items = [] }) {
-  const admNo = String(admissionNumber).trim();
-  const admission = await assertAdmissionOpenForIssue(admNo, 'return');
+// Panel Slip mode (opdSlipNo) works the same way against the slip's GINs.
+async function createAdmissionMRN({ admissionNumber, opdSlipNo, returnDate, receivedBy, notes, createdByName, items = [] }) {
+  const ref = patientRefOf({ admissionNumber, opdSlipNo });
+  const admNo = ref.no;
+  const admission = await assertPatientRefOpen(ref, 'return');
   const wanted = (Array.isArray(items) ? items : [])
     .map((e) => ({ ginItemId: Number(e.ginItemId), qty: parsePositiveNumber(e.returnedQty) }))
     .filter((e) => e.ginItemId > 0 && e.qty > 0);
@@ -4461,17 +4567,17 @@ async function createAdmissionMRN({ admissionNumber, returnDate, receivedBy, not
 
   const ginItems = await prisma.inventoryGINItem.findMany({
     where: { id: { in: wanted.map((w) => w.ginItemId) } },
-    include: { gin: { select: { id: true, admissionNumber: true } }, item: { select: { name: true, purchasePrice: true } } },
+    include: { gin: { select: { id: true, admissionNumber: true, opdSlipNo: true } }, item: { select: { name: true, purchasePrice: true } } },
   });
   const byId = new Map(ginItems.map((gi) => [gi.id, gi]));
   const [rates, returned] = await Promise.all([
-    resolveAdmissionBilledRates(prisma, admNo, ginItems),
+    resolveAdmissionBilledRates(prisma, admNo, ginItems, ref.customerType),
     returnedQtyByGinItem(prisma, ginItems.map((gi) => gi.id)),
   ]);
   for (const w of wanted) {
     const gi = byId.get(w.ginItemId);
-    if (!gi || gi.gin?.admissionNumber !== admNo) {
-      throw Object.assign(new Error('Ye item is admission ki GIN ka nahi hai'), { status: 400 });
+    if (!gi || gi.gin?.[ref.field] !== admNo) {
+      throw Object.assign(new Error(`Ye item is ${ref.kind === 'slip' ? 'slip' : 'admission'} ki GIN ka nahi hai`), { status: 400 });
     }
     const max = Number(gi.issuedQuantity) - (returned.get(gi.id) || 0);
     if (w.qty > max + 0.0001) {
@@ -4488,8 +4594,8 @@ async function createAdmissionMRN({ admissionNumber, returnDate, receivedBy, not
     const mrn = await tx.inventoryMRN.create({
       data: {
         code: mrnCode,
-        admissionNumber: admNo,
-        patientName: admissionPatientName(admission) || null,
+        [ref.field]: admNo,
+        patientName: (ref.kind === 'slip' ? admission?.patientName : admissionPatientName(admission)) || null,
         createdByName: by,
         returnDate: when,
         receivedBy: receivedBy ? String(receivedBy).trim() : null,
@@ -4509,7 +4615,7 @@ async function createAdmissionMRN({ admissionNumber, returnDate, receivedBy, not
       await restockReturnedItem(tx, { itemId: gi.itemId, qty: w.qty, rate, mrnCode, notes });
       billLines.push({ itemId: gi.itemId, qty: w.qty, rate, mrnItemId: mrnItem.id, purchasePrice: gi.item?.purchasePrice });
     }
-    await createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber: admNo, returnDate: when, createdByName: by, lines: billLines });
+    await createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber: admNo, returnDate: when, createdByName: by, lines: billLines, customerType: ref.customerType });
     return tx.inventoryMRN.findUnique({ where: { id: mrn.id }, include: MRN_INCLUDE });
   });
 }
@@ -4529,8 +4635,10 @@ async function createGinMRN({ ginId, returnDate, receivedBy, notes, createdByNam
     },
   });
   if (!gin) throw new Error('GIN not found');
-  const admNo = gin.admissionNumber ? String(gin.admissionNumber).trim() : '';
-  if (admNo) await assertAdmissionOpenForIssue(admNo, 'return');
+  // Admission or panel OPD slip GIN — the return is credited on that bill
+  const billRef = patientRefOf(gin);
+  const admNo = billRef?.no || '';
+  if (billRef) await assertPatientRefOpen(billRef, 'return');
 
   // Total issued per item in this GIN
   const issuedMap = {};   // itemId → issued qty
@@ -4550,7 +4658,7 @@ async function createGinMRN({ ginId, returnDate, receivedBy, notes, createdByNam
     alreadyReturned[mi.itemId] = (alreadyReturned[mi.itemId] || 0) + Number(mi.returnedQty || 0);
   }
 
-  const rates = admNo ? await resolveAdmissionBilledRates(prisma, admNo, gin.ginItems) : new Map();
+  const rates = billRef ? await resolveAdmissionBilledRates(prisma, admNo, gin.ginItems, billRef.customerType) : new Map();
   const mrnCode = await generateDocCode('inventoryMRN', 'mrn');
   const invoiceCode = admNo ? await generateDocCode('inventorySalesInvoiceHeader', 'sinv') : null;
   const when = returnDate ? new Date(returnDate) : new Date();
@@ -4562,7 +4670,8 @@ async function createGinMRN({ ginId, returnDate, receivedBy, notes, createdByNam
         code: mrnCode,
         ginId: gin.id,
         departmentId: gin.departmentId,
-        admissionNumber: admNo || null,
+        admissionNumber: billRef?.kind === 'admission' ? admNo : null,
+        opdSlipNo: billRef?.kind === 'slip' ? admNo : null,
         patientName: gin.patientName || null,
         createdByName: by,
         returnDate: when,
@@ -4600,7 +4709,7 @@ async function createGinMRN({ ginId, returnDate, receivedBy, notes, createdByNam
     }
 
     if (admNo) {
-      await createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber: admNo, returnDate: when, createdByName: by, lines: billLines });
+      await createAdmissionReturnBillLines(tx, { invoiceCode, admissionNumber: admNo, returnDate: when, createdByName: by, lines: billLines, customerType: billRef.customerType });
     }
     return tx.inventoryMRN.findUnique({ where: { id: mrn.id }, include: MRN_INCLUDE });
   });
@@ -4937,6 +5046,7 @@ module.exports = {
   listMRNs,
   createMRN,
   getAdmissionReturnables,
+  getSlipReturnables,
   previewBulkItems,
   bulkImportItems,
 };
@@ -5231,7 +5341,7 @@ async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId
             ],
           }
         : {}),
-      ...(admissionOnly ? { customerType: { in: ['admission', 'customer'] } } : {}),
+      ...(admissionOnly ? { customerType: { in: ['admission', 'panel_opd', 'customer'] } } : {}),
     },
     include: {
       items: {
@@ -5303,7 +5413,7 @@ async function listDailySalesReport({ dateFrom, dateTo, customerName, categoryId
         invoiceCode: h.code,
         invoiceDate: h.invoiceDate,
         customerType: h.customerType,
-        customerName: (h.customerType === 'customer' || h.customerType === 'admission') ? h.customerName : 'Walking Customer',
+        customerName: isNamedCustomerType(h.customerType) ? h.customerName : 'Walking Customer',
         lines,
         subtotalQty: invTotalQty,
         subtotalPurchase: invTotalPurchase,

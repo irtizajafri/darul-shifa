@@ -138,6 +138,7 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
     ? new Date(row.requestDate).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
     : '-';
   const admissionNumber = row.admissionNumber || null;
+  const opdSlipNo = row.opdSlipNo || null;
   const patientName     = row.patientName || null;
   const comment         = row.comment || null;
 
@@ -208,6 +209,7 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
       <div class="info-value">${department}</div>
     </div>
     ${admissionNumber ? `<div class="info-row"><div class="info-label">Admission No.</div><div class="info-value">${admissionNumber}</div></div>` : ''}
+    ${opdSlipNo ? `<div class="info-row"><div class="info-label">Panel Slip No.</div><div class="info-value">${opdSlipNo}</div></div>` : ''}
     ${patientName ? `<div class="info-row"><div class="info-label">Patient Name</div><div class="info-value">${patientName}</div></div>` : ''}
     ${comment ? `<div class="info-row"><div class="info-label">Comment</div><div class="info-value">${comment}</div></div>` : ''}
   </div>
@@ -245,6 +247,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
   const gdRef     = row.gdHeader?.code || row.gd?.code || '-';
   const department = row.department?.name || row.gdHeader?.department?.name || '-';
   const admissionNumber = row.admissionNumber || row.gdHeader?.admissionNumber || null;
+  const opdSlipNo = row.opdSlipNo || row.gdHeader?.opdSlipNo || null;
   const patientName     = row.patientName || row.gdHeader?.patientName || null;
   const issuedBy  = row.issuedBy ? `${row.issuedBy.firstName} ${row.issuedBy.lastName}` : '-';
   const issueDate  = row.issueDate
@@ -345,6 +348,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
       <div class="info-value">${issuedBy}</div>
     </div>
     ${admissionNumber ? `<div class="info-row"><div class="info-label">Admission No.</div><div class="info-value">${admissionNumber}</div></div>` : ''}
+    ${opdSlipNo ? `<div class="info-row"><div class="info-label">Panel Slip No.</div><div class="info-value">${opdSlipNo}</div></div>` : ''}
     ${patientName ? `<div class="info-row"><div class="info-label">Patient Name</div><div class="info-value">${patientName}</div></div>` : ''}
   </div>
   <table>

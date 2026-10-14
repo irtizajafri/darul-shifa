@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { showSlipClashes } from './slipClashNotice';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import './PatientsListFilter.scss';
 
@@ -221,6 +222,7 @@ export default function PatientsListFilter() {
           .filter(Boolean).join(' · '),
         { duration: 6000 },
       );
+      showSlipClashes(d.serialClashes);
     } catch (err) {
       toast.error(err.message || 'Upload failed');
     } finally {

@@ -590,6 +590,7 @@ export const useInventoryStore = create((set) => ({
 
   // MRN "Admission #" mode — the admission's GIN lines, returnable qty and billed rate.
   fetchAdmissionReturnables: async (admissionNo) => request(`/mrn/admission/${encodeURIComponent(String(admissionNo).trim())}`),
+  fetchSlipReturnables: async (slipNo) => request(`/mrn/slip/${encodeURIComponent(String(slipNo).trim())}`),
 
   fetchMaintenanceRecords: async ({ itemId = '', supplierId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
     set({ loading: true, error: null });

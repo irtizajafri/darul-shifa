@@ -407,22 +407,66 @@ async function getNextSerialNo() {
   return String(n);
 }
 
-// The Serial # field is user-editable (not just auto-filled), so a manually
-// typed number can collide with one already used anywhere in the shared
-// sequence. Checked before every create that accepts a client-supplied
-// serialNo, so a collision surfaces as a clear message instead of a raw
-// Prisma unique-constraint error.
-async function assertSerialNoAvailable(serialNo) {
-  const no = serialNo?.trim();
-  if (!no) return;
-  const [opd, adm, admPay, antenatal] = await Promise.all([
-    prisma.clinicOpdVisit.findUnique({ where: { serialNo: no }, select: { id: true } }),
-    prisma.clinicAdmission.findFirst({ where: { serialNo: no }, select: { id: true } }),
-    prisma.clinicAdmissionPayment.findUnique({ where: { serialNo: no }, select: { id: true } }),
-    prisma.clinicAntenatal.findFirst({ where: { serialNo: no }, select: { id: true } }),
+// The Serial # field is typed by hand (auto-fill is off while the legacy
+// and new numbering differ), so a typo can land on a number already used
+// anywhere in the shared sequence: OPD slips, admissions (advance slip),
+// admission payments, antenatal, provisional bill items, and the legacy
+// Excel rows in Patients List (PatientVisit). Checked before every create /
+// serial change, so a collision surfaces as a clear message.
+//
+// One allowance: the SAME receipt re-entered from the Excel side — an Excel
+// row with this Slip # that belongs to the same admission (admitNo) or the
+// same patient (name, titles/punctuation ignored). Provisional Bill and the
+// Patients List dedup recognise those pairs by Slip #, so blocking them
+// would push staff to a different number and double-count the receipt.
+// ctx: { patientName, admissionNo, source: 'pv', excludePvId }
+//   source 'pv' — changing a Patients List row's own Slip #: a new-system
+//   record of the same patient is that same receipt too.
+const slipNameKey = (s) => String(s || '').toUpperCase()
+  .replace(/^(MR|MRS|MS|MISS|BABY|MASTER|DR|B\/O|D\/O|S\/O|W\/O)\.?\s+/, '')
+  .replace(/[^A-Z]/g, '');
+function sameSlipPatient(a, b) {
+  const x = slipNameKey(a), y = slipNameKey(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+}
+
+async function findSerialClash(serialNo, ctx = {}) {
+  const no = String(serialNo ?? '').trim();
+  if (!no) return null;
+  const noInt = /^\d+$/.test(no) && Number(no) <= 2147483647 ? Number(no) : null;
+  const [opd, adm, admPay, antenatal, pbi, pvRows] = await Promise.all([
+    prisma.clinicOpdVisit.findUnique({ where: { serialNo: no }, select: { patientName: true } }),
+    prisma.clinicAdmission.findFirst({ where: { serialNo: no }, select: { admissionNo: true, patientName: true } }),
+    prisma.clinicAdmissionPayment.findUnique({ where: { serialNo: no }, select: { admission: { select: { admissionNo: true, patientName: true } } } }),
+    prisma.clinicAntenatal.findFirst({ where: { serialNo: no }, select: { patientName: true } }),
+    prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: no }, select: { id: true } }),
+    noInt != null
+      ? prisma.patientVisit.findMany({
+          where: { serialNo: noInt, ...(ctx.excludePvId ? { id: { not: Number(ctx.excludePvId) } } : {}) },
+          select: { patientName: true, department: true, admitNo: true },
+        })
+      : [],
   ]);
-  if (opd || adm || admPay || antenatal) {
-    throw Object.assign(new Error(`Slip # ${no} pehle se istemal ho chuka hai — koi doosra number likhein.`), { status: 409 });
+
+  const samePatient = (name) => ctx.source === 'pv' && sameSlipPatient(name, ctx.patientName);
+  if (opd && !samePatient(opd.patientName)) return `OPD slip — ${opd.patientName}`;
+  if (adm && !samePatient(adm.patientName)) return `Admission ${adm.admissionNo} — ${adm.patientName}`;
+  if (admPay && !samePatient(admPay.admission?.patientName)) return `Admission ${admPay.admission?.admissionNo} ki payment — ${admPay.admission?.patientName}`;
+  if (antenatal && !samePatient(antenatal.patientName)) return `Antenatal — ${antenatal.patientName}`;
+  if (pbi) return 'Provisional Bill item';
+
+  const other = pvRows.find((pv) => {
+    if (ctx.admissionNo && pv.admitNo != null && String(pv.admitNo) === String(ctx.admissionNo).trim()) return false;
+    return !sameSlipPatient(pv.patientName, ctx.patientName);
+  });
+  if (other) return `Patients List (Excel) — ${other.patientName}${other.department ? `, ${other.department}` : ''}`;
+  return null;
+}
+
+async function assertSerialNoAvailable(serialNo, ctx = {}) {
+  const clash = await findSerialClash(serialNo, ctx);
+  if (clash) {
+    throw Object.assign(new Error(`Slip # ${String(serialNo).trim()} pehle se istemal ho chuka hai (${clash}) — koi doosra number likhein.`), { status: 409 });
   }
 }
 
@@ -476,7 +520,7 @@ async function createOpdVisit({
   // A stray space typed with the Slip # (" 2872089") used to be saved as-is,
   // and Reprint's lookup then never matched it.
   const serialNo = typeof serialNoRaw === 'string' ? serialNoRaw.trim() : serialNoRaw;
-  await assertSerialNoAvailable(serialNo);
+  await assertSerialNoAvailable(serialNo, { patientName });
   const now = new Date();
   const shift = await resolveShiftForTime(now);
   return prisma.clinicOpdVisit.create({
@@ -1208,10 +1252,10 @@ async function createAntenatal({
   lmpDate, edd, underTreatmentId, para, gravidia, amount,
   employeeId, panelCompanyId, panelEmployeeId, panelDependentId,
 }) {
-  await assertSerialNoAvailable(serialNo);
+  await assertSerialNoAvailable(serialNo, { patientName });
   return prisma.clinicAntenatal.create({
     data: {
-      serialNo:         serialNo || null,
+      serialNo:         serialNo?.trim() || null,
       mrNo:             mrNo || '',
       antenatalNo:      antenatalNo || '',
       registrationDate: registrationDate ? new Date(registrationDate) : new Date(),
@@ -1232,6 +1276,11 @@ async function createAntenatal({
       panelEmployeeId:  panelEmployeeId ? Number(panelEmployeeId) : null,
       panelDependentId: panelDependentId ? Number(panelDependentId) : null,
     },
+  }).catch((err) => {
+    // Two saves of the same Slip # at the same moment — the DB unique index
+    // (migration 049) stops the second one.
+    if (err.code === 'P2002') throw Object.assign(new Error(`Slip # ${serialNo} abhi abhi kisi aur ne save kiya hai — koi doosra number likhein.`), { status: 409 });
+    throw err;
   });
 }
 
@@ -1551,7 +1600,7 @@ async function updateVisitPersonalInfo(source, id, fields) {
 
     const newSerialNo = fields.serialNo?.trim();
     if (!newSerialNo) throw Object.assign(new Error('Serial # khali nahi ho sakta'), { status: 400 });
-    if (newSerialNo !== visit.serialNo) await assertSerialNoAvailable(newSerialNo);
+    if (newSerialNo !== visit.serialNo) await assertSerialNoAvailable(newSerialNo, { patientName });
 
     return prisma.clinicOpdVisit.update({
       where: { id: Number(id) },
@@ -1582,6 +1631,9 @@ async function updateVisitPersonalInfo(source, id, fields) {
     if (!newSerialNoRaw) throw Object.assign(new Error('Serial # khali nahi ho sakta'), { status: 400 });
     const newSerialNo = Number(newSerialNoRaw);
     if (!Number.isFinite(newSerialNo)) throw Object.assign(new Error('Serial # number hona chahiye'), { status: 400 });
+    if (newSerialNo !== pv.serialNo) {
+      await assertSerialNoAvailable(newSerialNoRaw, { patientName, admissionNo: pv.admitNo, source: 'pv', excludePvId: pv.id });
+    }
 
     return prisma.patientVisit.update({
       where: { id: Number(id) },
@@ -1969,14 +2021,45 @@ async function getAdmissionForReceiving(admissionNo) {
   return { ...admission, paidSoFar: admPaidSoFar(admission) };
 }
 
-async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy }) {
+async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate }) {
   const amt = Number(amount);
   if (!amt || amt <= 0) throw Object.assign(new Error('Amount 0 se zyada hona chahiye'), { status: 400 });
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
   const no = serialNo?.trim() || await getNextSerialNo();
-  if (serialNo?.trim()) await assertSerialNoAvailable(no);
+  if (serialNo?.trim()) await assertSerialNoAvailable(no, { admissionNo: admission.admissionNo, patientName: admission.patientName });
+
+  // Same receipt typed with a different Slip #? Provisional Bill pairs an
+  // Excel admission receipt with its re-entry only by Slip #, so a wrong
+  // number counts the money twice. If this admission already has an Excel
+  // receipt of the same amount that hasn't been re-entered yet, ask first
+  // (a genuine second receipt of the same amount goes through on yes).
+  if (!confirmNotDuplicate) {
+    const admNoInt = Number(admission.admissionNo) || 0;
+    const [pvRows, existing] = await Promise.all([
+      admNoInt ? prisma.patientVisit.findMany({
+        where: {
+          admitNo: admNoInt,
+          OR: [
+            { department: { startsWith: 'adm', mode: 'insensitive' } },
+            { subDepartment: { equals: 'Admission Deposit', mode: 'insensitive' } },
+          ],
+        },
+        select: { serialNo: true, received: true, visitDate: true },
+      }) : [],
+      prisma.clinicAdmissionPayment.findMany({ where: { admissionId: admission.id }, select: { serialNo: true } }),
+    ]);
+    const taken = new Set(existing.map((p) => String(p.serialNo)));
+    const twin = pvRows.find((pv) => pv.serialNo != null && String(pv.serialNo) !== no
+      && !taken.has(String(pv.serialNo)) && Math.abs(Number(pv.received || 0) - amt) < 0.01);
+    if (twin) {
+      throw Object.assign(
+        new Error(`Patients List (Excel) mein admission ${admission.admissionNo} ki Rs. ${amt.toLocaleString()} ki receipt Slip # ${twin.serialNo} se pehle se maujood hai. Agar yeh wahi receipt hai to Slip # ${twin.serialNo} likhein — warna yeh do dafa gini jayegi.`),
+        { status: 409, code: 'POSSIBLE_DUPLICATE_RECEIPT', twinSerialNo: String(twin.serialNo) },
+      );
+    }
+  }
   const payment = await prisma.clinicAdmissionPayment.create({
     data: {
       serialNo: no,
@@ -2830,6 +2913,29 @@ async function getPanelOpdVisitBilling(serialNo) {
     snapshotRows = await prisma.clinicPanelOpdBillingItem.findMany({ where: { opdVisitId: visit.id }, orderBy: { sortOrder: 'asc' } });
   }
 
+  // Medicine issued from Inventory against this slip (GD "Panel Slip" →
+  // GIN → Sales Invoice customerType 'panel_opd', migration 050), MRN
+  // returns as minus lines — same source the admission's Provisional Bill
+  // "Pharmacy Bill (Hospital Store)" reads. Like the admission's Medicine
+  // head, the row is seeded once with that total if it isn't there yet.
+  const invLines = await prisma.inventorySalesInvoice.findMany({
+    where: { customerType: 'panel_opd', customerName: visit.serialNo },
+    include: { item: { select: { code: true, name: true } } },
+    orderBy: [{ invoiceDate: 'asc' }, { id: 'asc' }],
+  });
+  if (invLines.length && !snapshotRows.some((r) => !r.groupInto && r.description === 'Medicine')) {
+    const maxSort = snapshotRows.reduce((m, r) => Math.max(m, r.sortOrder), -1);
+    await prisma.clinicPanelOpdBillingItem.create({
+      data: {
+        opdVisitId: visit.id, billHeadId: null, code: null, description: 'Medicine', kind: 'pharmacy',
+        qty: invLines.length, rate: 0,
+        amount: Number(invLines.reduce((s, l) => s + Number(l.totalAmount || 0), 0).toFixed(2)),
+        remarks: null, date: header.visitDate, sortOrder: maxSort + 1,
+      },
+    });
+    snapshotRows = await prisma.clinicPanelOpdBillingItem.findMany({ where: { opdVisitId: visit.id }, orderBy: { sortOrder: 'asc' } });
+  }
+
   // Manual Medicine/Laboratory/Radiology/Ultrasound adds (groupInto set) roll
   // into their head row's Amount — same grouping pass as getPanelAdmissionBilling.
   const groupedRows = snapshotRows.filter((r) => r.groupInto);
@@ -2855,10 +2961,15 @@ async function getPanelOpdVisitBilling(serialNo) {
 
   const billingAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
-  // No live pull for OPD (see comment above) — every Medicine/Lab/Radiology/
-  // Ultrasound row is a manual add, always `manual-` prefixed, so the shared
-  // Pharmacy/Diagnostic detail popups treat every OPD row as `isManual` and
-  // never take the override/exclude path (that's Admission-only).
+  // Inventory lines (above) show in the Pharmacy popup `locked` — OPD has no
+  // Billing-only override/exclude (Admission-only); fix them with an MRN /
+  // the GIN instead. Every other Medicine/Lab/Radiology/Ultrasound row is a
+  // manual add, `manual-` prefixed, edited/deleted directly.
+  const inventoryPharmacyRows = invLines.map((si) => ({
+    id: `inv-${si.id}`, source: 'hospital', storeName: null, locked: true, code: si.item?.code || null,
+    date: si.invoiceDate, medicine: `${si.quantity < 0 ? 'Return: ' : ''}${si.item?.name || '—'}`,
+    qty: si.quantity, rate: si.saleRate, amount: si.totalAmount,
+  }));
   const manualPharmacyRows = groupedByHead.Medicine?.map((r) => ({
     id: `manual-${r.id}`, source: 'manual', storeName: null, date: r.date, medicine: r.description, dosage: r.dosage, qty: r.qty, rate: r.rate, amount: r.amount,
   })) || [];
@@ -2888,7 +2999,7 @@ async function getPanelOpdVisitBilling(serialNo) {
     company: panelCompany ? { id: panelCompany.id, code: panelCompany.code, name: panelCompany.name } : null,
     employee: panelEmployee ? { id: panelEmployee.id, empCode: panelEmployee.empCode, name: panelEmployee.name } : null,
     rows,
-    pharmacyRows: manualPharmacyRows,
+    pharmacyRows: [...inventoryPharmacyRows, ...manualPharmacyRows],
     diagnosticRows: manualDiagnosticRows,
     billingAmount,
   };
@@ -3950,7 +4061,7 @@ async function checkAdmissionNoDuplicate(admissionNo) {
 }
 
 async function createAdmission(data) {
-  await assertSerialNoAvailable(data.serialNo);
+  await assertSerialNoAvailable(data.serialNo, { admissionNo: data.admissionNo, patientName: data.patientName });
   const admissionNo = data.admissionNo?.trim();
   if (admissionNo) {
     const existing = await prisma.clinicAdmission.findFirst({
@@ -5934,6 +6045,13 @@ async function getAdmissionForAdjustment(id) {
 async function updateAdmissionAdjustment(id, data) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  const newSerial = data.serialNo?.trim() || null;
+  if (newSerial && newSerial !== admission.serialNo) {
+    await assertSerialNoAvailable(newSerial, {
+      admissionNo: data.admissionNo?.trim() || admission.admissionNo,
+      patientName: data.patientName?.trim() || admission.patientName,
+    });
+  }
 
   const newBedId = data.bedId ? Number(data.bedId) : null;
   const oldBedId = admission.bedId;
@@ -7422,7 +7540,56 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
     autoDeduped = dedupResult.deleted;
   }
 
-  return { count: result.count, deleted: deletedCount, autoDeduped };
+  const serialClashes = await findUploadSerialClashes(data);
+
+  return { count: result.count, deleted: deletedCount, autoDeduped, serialClashes };
+}
+
+// Patients List upload — Excel lines whose Slip # is already used in the new
+// system by a DIFFERENT receipt (another patient / admission). The upload
+// itself goes through (the Excel is the legacy system's record), but these
+// are listed back so staff can fix the wrong number on one side. The same
+// receipt on both sides (same patient, or same admission for admission
+// receipts) is normal and left out — Patients List dedup / Provisional Bill
+// already pair those by Slip #.
+async function findUploadSerialClashes(rows) {
+  const serials = [...new Set(rows.map((r) => r.serialNo).filter((n) => n != null).map(String))];
+  if (!serials.length) return [];
+  const [opd, adm, admPay, antenatal, pbi] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({ where: { serialNo: { in: serials } }, select: { serialNo: true, patientName: true } }),
+    prisma.clinicAdmission.findMany({ where: { serialNo: { in: serials } }, select: { serialNo: true, admissionNo: true, patientName: true } }),
+    prisma.clinicAdmissionPayment.findMany({ where: { serialNo: { in: serials } }, select: { serialNo: true, admission: { select: { admissionNo: true, patientName: true } } } }),
+    prisma.clinicAntenatal.findMany({ where: { serialNo: { in: serials } }, select: { serialNo: true, patientName: true } }),
+    prisma.clinicProvisionalBillItem.findMany({ where: { serialNo: { in: serials } }, select: { serialNo: true } }),
+  ]);
+  const used = new Map(); // serial → [{ label, patientName, admissionNo }]
+  const add = (sn, rec) => { const k = String(sn); if (!used.has(k)) used.set(k, []); used.get(k).push(rec); };
+  opd.forEach((r) => add(r.serialNo, { label: 'OPD slip', patientName: r.patientName }));
+  adm.forEach((r) => add(r.serialNo, { label: `Admission ${r.admissionNo}`, patientName: r.patientName, admissionNo: r.admissionNo }));
+  admPay.forEach((r) => add(r.serialNo, { label: `Admission ${r.admission?.admissionNo} ki payment`, patientName: r.admission?.patientName, admissionNo: r.admission?.admissionNo }));
+  antenatal.forEach((r) => add(r.serialNo, { label: 'Antenatal', patientName: r.patientName }));
+  pbi.forEach((r) => add(r.serialNo, { label: 'Provisional Bill item', patientName: null }));
+
+  const clashes = [];
+  const seen = new Set();
+  for (const r of rows) {
+    const recs = r.serialNo != null ? used.get(String(r.serialNo)) : null;
+    if (!recs) continue;
+    for (const rec of recs) {
+      const sameAdmission = rec.admissionNo && r.admitNo != null && String(r.admitNo) === String(rec.admissionNo);
+      if (sameAdmission || sameSlipPatient(rec.patientName, r.patientName)) continue;
+      const key = `${r.serialNo}|${rec.label}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      clashes.push({
+        serialNo: String(r.serialNo),
+        excelPatient: r.patientName,
+        excelDepartment: r.department || '',
+        existing: `${rec.label}${rec.patientName ? ` — ${rec.patientName}` : ''}`,
+      });
+    }
+  }
+  return clashes;
 }
 
 async function getPatientVisitDateCounts(dates) {
@@ -10880,7 +11047,7 @@ async function updateOpdVisitFull(id, payload = {}) {
   const serialNo = String(payload.serialNo || '').trim();
   if (!patientName) throw Object.assign(new Error('Patient name zaroori hai'), { status: 400 });
   if (!serialNo) throw Object.assign(new Error('Slip # zaroori hai'), { status: 400 });
-  if (serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo);
+  if (serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo, { patientName });
 
   const rows = Array.isArray(payload.doctors) ? payload.doctors : [];
   // Slips that never had test lines (Ambulance, older slips) are edited by
@@ -11121,6 +11288,8 @@ module.exports = {
   getPanelChequesReport,
   getPanelChequePostingReport,
   getAdmissionFormPrintData,
+  findSerialClash,
+  findUploadSerialClashes,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,

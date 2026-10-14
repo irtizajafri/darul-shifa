@@ -1174,10 +1174,12 @@ async function getAdmissionForReceiving(req, res, next) {
 
 async function addAdmissionPayment(req, res, next) {
   try {
-    const { serialNo, amount, paymentType, receivedBy } = req.body;
-    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy });
+    const { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate } = req.body;
+    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate: !!confirmNotDuplicate });
     success(res, data, 'Payment receive ho gayi');
   } catch (err) {
+    // POSSIBLE_DUPLICATE_RECEIPT — the screen asks, then resends with confirmNotDuplicate
+    if (err.code === 'POSSIBLE_DUPLICATE_RECEIPT') return res.status(409).json({ ok: false, message: err.message, code: err.code, twinSerialNo: err.twinSerialNo });
     if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
@@ -2283,7 +2285,7 @@ async function bulkCreatePatientVisits(req, res, next) {
       return fail(res, 400, 'rows array required');
     const result = await service.bulkCreatePatientVisits(rows, replaceDates, mergeDates);
     const dedupNote = result.autoDeduped ? `, ${result.autoDeduped} duplicate(s) auto-removed` : '';
-    success(res, { inserted: result.count, deleted: result.deleted, autoDeduped: result.autoDeduped }, `${result.count} records imported${dedupNote}`);
+    success(res, { inserted: result.count, deleted: result.deleted, autoDeduped: result.autoDeduped, serialClashes: result.serialClashes }, `${result.count} records imported${dedupNote}`);
   } catch (err) { next(err); }
 }
 

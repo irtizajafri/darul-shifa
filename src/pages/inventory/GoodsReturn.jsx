@@ -55,6 +55,7 @@ function printMRN(mrn) {
     <div>MRN # <span>${mrn.code}</span></div>
     <div>Return Date <span>${fmtDate(mrn.returnDate)}</span></div>
     ${mrn.admissionNumber ? `<div>Admission # <span>${mrn.admissionNumber}</span></div><div>Patient <span>${mrn.patientName || '-'}</span></div>` : ''}
+    ${mrn.opdSlipNo ? `<div>Panel Slip # <span>${mrn.opdSlipNo}</span></div><div>Patient <span>${mrn.patientName || '-'}</span></div>` : ''}
     ${mrn.gin ? `<div>GIN # <span>${mrn.gin.code}</span></div>` : ''}
     ${mrn.department ? `<div>Department <span>${mrn.department.name}</span></div>` : ''}
     <div>Received By <span>${mrn.receivedBy || '-'}</span></div>
@@ -87,7 +88,7 @@ function printMRN(mrn) {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function GoodsReturn() {
-  const { gins, fetchGINs, mrns, fetchMRNs, createMRN, fetchItems, fetchAdmissionReturnables } = useInventoryStore();
+  const { gins, fetchGINs, mrns, fetchMRNs, createMRN, fetchItems, fetchAdmissionReturnables, fetchSlipReturnables } = useInventoryStore();
   const { user } = useAuthStore();
   const createdByName = user?.name || user?.username || user?.email || '';
 
@@ -163,19 +164,22 @@ export default function GoodsReturn() {
     return map;
   })();
 
+  // 'slip' mode (panel OPD slip, migration 050) runs the same screen.
+  const isSlipMode = mode === 'slip';
+  const refWord = isSlipMode ? 'slip' : 'admission';
   const loadAdmission = async (admissionNoOverride) => {
     const no = String(admissionNoOverride ?? admQuery).trim();
-    if (!no) return toast.error('Admission # likhein');
+    if (!no) return toast.error(isSlipMode ? 'Slip # likhein' : 'Admission # likhein');
     setAdmLoading(true);
     try {
-      const data = await fetchAdmissionReturnables(no);
+      const data = await (isSlipMode ? fetchSlipReturnables(no) : fetchAdmissionReturnables(no));
       setAdmData(data);
       setAdmQuery(no);
       setAdmQtys({});
-      if (!data?.gins?.length) toast('Is admission par koi GIN nahi mili');
+      if (!data?.gins?.length) toast(`Is ${refWord} par koi GIN nahi mili`);
     } catch (err) {
       setAdmData(null);
-      toast.error(err.message || 'Admission load nahi hui');
+      toast.error(err.message || `${isSlipMode ? 'Slip' : 'Admission'} load nahi hui`);
     } finally {
       setAdmLoading(false);
     }
@@ -185,11 +189,13 @@ export default function GoodsReturn() {
 
   const admLines = (admData?.gins || []).flatMap((g) => g.lines);
   const admReturnTotal = admLines.reduce((s, l) => s + (parseFloat(admQtys[l.ginItemId]) || 0) * Number(l.rate || 0), 0);
-  const admClosed = admData && ['closed', 'wipeout'].includes(admData.admission?.status);
+  const admClosed = admData && (isSlipMode
+    ? admData.admission?.status !== 'active'
+    : ['closed', 'wipeout'].includes(admData.admission?.status));
 
   const handleAdmissionSubmit = async (andPrint) => {
-    if (!admData) return toast.error('Pehle admission search karein');
-    if (admClosed) return toast.error('Is admission ki file closed hai — wapsi nahi ho sakti');
+    if (!admData) return toast.error(`Pehle ${refWord} search karein`);
+    if (admClosed) return toast.error(isSlipMode ? 'Yeh slip active nahi — wapsi nahi ho sakti' : 'Is admission ki file closed hai — wapsi nahi ho sakti');
     const items = admLines
       .map((l) => ({ line: l, qty: parseFloat(admQtys[l.ginItemId]) || 0 }))
       .filter((x) => x.qty > 0);
@@ -200,7 +206,7 @@ export default function GoodsReturn() {
     setSaving(true);
     try {
       const mrn = await createMRN({
-        admissionNumber: admData.admission.admissionNo,
+        ...(isSlipMode ? { opdSlipNo: admData.admission.admissionNo } : { admissionNumber: admData.admission.admissionNo }),
         returnDate,
         receivedBy: receivedBy.trim() || undefined,
         notes: notes.trim() || undefined,
@@ -223,7 +229,7 @@ export default function GoodsReturn() {
 
   const handleSubmit = async (e, andPrint = false) => {
     e.preventDefault();
-    if (mode === 'admission') return handleAdmissionSubmit(andPrint);
+    if (mode !== 'gin') return handleAdmissionSubmit(andPrint);
     if (!selectedGIN) return toast.error('GIN select karein pehle');
 
     const items = Object.entries(returnQtys)
@@ -299,8 +305,12 @@ export default function GoodsReturn() {
           {/* Mode */}
           <div className="flex flex-wrap gap-4 text-sm">
             <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input type="radio" name="mrn-mode" checked={mode === 'admission'} onChange={() => setMode('admission')} />
+              <input type="radio" name="mrn-mode" checked={mode === 'admission'} onChange={() => { setMode('admission'); clearAdmission(); }} />
               <span className="font-medium text-slate-700">Admission # se (patient ki wapsi)</span>
+            </label>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input type="radio" name="mrn-mode" checked={mode === 'slip'} onChange={() => { setMode('slip'); clearAdmission(); }} />
+              <span className="font-medium text-slate-700">Panel Slip # se (OPD patient ki wapsi)</span>
             </label>
             <label className="inline-flex items-center gap-2 cursor-pointer">
               <input type="radio" name="mrn-mode" checked={mode === 'gin'} onChange={() => setMode('gin')} />
@@ -308,7 +318,7 @@ export default function GoodsReturn() {
             </label>
           </div>
 
-          {mode === 'admission' && (
+          {mode !== 'gin' && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -317,7 +327,7 @@ export default function GoodsReturn() {
                     value={admQuery}
                     onChange={(e) => { setAdmQuery(e.target.value); setAdmData(null); }}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); loadAdmission(); } }}
-                    placeholder="Admission number likhein..."
+                    placeholder={isSlipMode ? 'Panel slip number likhein...' : 'Admission number likhein...'}
                     className={`${inputCls} pl-9`}
                   />
                 </div>
@@ -331,17 +341,17 @@ export default function GoodsReturn() {
               {admData && (
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
                   <div className="flex flex-wrap gap-4 text-sm">
-                    <div><span className="text-slate-500">Admission #:</span> <span className="font-semibold text-slate-800">{admData.admission.admissionNo}</span></div>
+                    <div><span className="text-slate-500">{isSlipMode ? 'Panel Slip #:' : 'Admission #:'}</span> <span className="font-semibold text-slate-800">{admData.admission.admissionNo}</span></div>
                     <div><span className="text-slate-500">Patient:</span> <span className="font-semibold">{admData.admission.patientName || '-'}</span></div>
                     <div><span className="text-slate-500">Status:</span> <span className="font-semibold capitalize">{admData.admission.status}</span></div>
                   </div>
                   {admClosed && (
                     <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                      Is admission ki file closed hai — bill final ho chuka, wapsi nahi ho sakti.
+                      {isSlipMode ? 'Yeh slip active nahi — wapsi nahi ho sakti.' : 'Is admission ki file closed hai — bill final ho chuka, wapsi nahi ho sakti.'}
                     </p>
                   )}
                   {admData.gins.length === 0 ? (
-                    <div className="text-sm text-slate-400 text-center py-4">Is admission par koi GIN nahi mili</div>
+                    <div className="text-sm text-slate-400 text-center py-4">Is {refWord} par koi GIN nahi mili</div>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -596,6 +606,11 @@ export default function GoodsReturn() {
                             Adm: {mrn.admissionNumber}{mrn.patientName ? ` — ${mrn.patientName}` : ''}
                           </span>
                         )}
+                        {mrn.opdSlipNo && (
+                          <span className="text-xs text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                            Slip: {mrn.opdSlipNo}{mrn.patientName ? ` — ${mrn.patientName}` : ''}
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-500 mt-0.5">
                         {mrn.department?.name ? `${mrn.department.name} — ` : ''}{fmtDate(mrn.returnDate)}
@@ -625,6 +640,7 @@ export default function GoodsReturn() {
 
       {showAdmPicker && (
         <AdmissionPickerModal
+          mode={isSlipMode ? 'slip' : 'admission'}
           onSelect={(r) => { setShowAdmPicker(false); loadAdmission(r.admissionNo); }}
           onClose={() => setShowAdmPicker(false)}
         />
