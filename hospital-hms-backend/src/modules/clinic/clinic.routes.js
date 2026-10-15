@@ -219,6 +219,8 @@ router.get('/admission/panel-billing/search', controller.searchPanelAdmissions);
 router.get('/admission/panel-billing/by-number/:admissionNo', controller.getPanelAdmissionBilling);
 router.patch('/admission/panel-billing/items/:itemId', controller.updatePanelBillingItem);
 router.patch('/admission/panel-billing/header/:admissionId', controller.updatePanelBillingHeader);
+// Company / Employee by hand — sourceType 'admission' | 'opd'
+router.patch('/panel-billing/party/:sourceType/:id', controller.setPanelBillingParty);
 router.post('/admission/panel-billing/:admissionId/items', controller.addPanelBillingItem);
 router.post('/admission/panel-billing/:admissionId/items/bulk', controller.addPanelBillingItemsBulk);
 router.post('/admission/panel-billing/:admissionId/items/override', controller.overrideLiveDetailItem);

@@ -153,6 +153,9 @@
   background: #f8fafc;
 }
 
+// Same add row inside a head's detail popup (Admission Billing)
+.pnb-add-row--popup { margin-bottom: 10px; border: 1px solid #e2e8f0; border-radius: 8px; }
+
 .pnb-fg {
   display: flex;
   flex-direction: column;
@@ -165,6 +168,7 @@
     &:focus { border-color: #3b82f6; }
   }
   &--sm input, &--sm select { min-width: 80px; width: 80px; }
+  &--type select { min-width: 130px; width: 130px; }
   &--search { flex: 1 1 220px; }
   &--search input { width: 100%; min-width: 0; }
 }
@@ -309,7 +313,24 @@
   &:disabled { opacity: 0.55; cursor: not-allowed; &:hover { background: #475569; } }
 
   &--save { background: #0f766e; &:hover { background: #0d6460; } }
+  &--danger { background: #b91c1c; &:hover { background: #991b1b; } &:disabled:hover { background: #b91c1c; } }
 }
+
+// Header Company / Employee pickers (Panels > Billing)
+.pnb-hg--party { min-width: 240px; }
+.pnb-party-row { display: flex; align-items: center; gap: 4px; }
+.pnb-party-new {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1a3c6e; cursor: pointer;
+  &:hover { background: #eff6ff; }
+}
+.pnb-party-form { display: flex; flex-direction: column; gap: 10px; }
+
+// Search lists — option highlighted with ↑ / ↓
+.pnb-combo-opt--active { background: #dbeafe; }
+
+// Detail popup row — shown while that row auto-saves
+.pnb-autosave-dot { font-size: 0.8rem; color: #64748b; margin-right: 4px; }
 
 .pnb-closed-badge {
   display: inline-flex; align-items: center; gap: 6px;

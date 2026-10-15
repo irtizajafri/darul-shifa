@@ -2282,6 +2282,10 @@ async function getPanelAdmissionBilling(admissionNo) {
   // row's Date starts out at the header's Admit Date (must stay within
   // Admit/Discharge — see updatePanelBillingItem).
   const canonicalHeadDescs = new Set(billHeads.filter((h) => h.panelSortOrder != null).map((h) => h.description));
+  // Radiology too (it has no bill head of its own) — Medicine / Lab /
+  // Radiology / Ultrasound items are now added from their own row's detail
+  // popup, so all four rows must always be there to double-click.
+  canonicalHeadDescs.add('Radiology');
   const usedRows = computedRows.filter((r) => Number(r.qty) > 0 || Number(r.amount) !== 0 || canonicalHeadDescs.has(r.description));
 
   let snapshotRows = await prisma.clinicPanelBillingItem.findMany({
@@ -2436,7 +2440,10 @@ async function getPanelAdmissionBilling(admissionNo) {
 
   const admitDate = header.admitDate;
   const dischargeDate = header.dischargeDate;
-  const days = Math.max(1, Math.ceil(((dischargeDate ? new Date(dischargeDate) : new Date()) - new Date(admitDate)) / 86400000));
+  // Billing Days count calendar dates (PKT), not hours: 19→19 and 19→20 are
+  // 1 day, 19→21 is 2 — minimum 1.
+  const pktDay = (d) => Math.floor((new Date(d).getTime() + 5 * 3600000) / 86400000);
+  const days = Math.max(1, pktDay(dischargeDate || new Date()) - pktDay(admitDate));
 
   return {
     admission: {
@@ -3050,6 +3057,44 @@ async function updatePanelOpdBillingItem(itemId, { qty, rate, date, remarks, dos
       ...(dosage !== undefined ? { dosage: dosage?.trim() || null } : {}),
     },
   });
+}
+
+// Panels > Billing header — Company / Employee picked by hand (e.g. a file
+// that came in without one). Saved on the admission / OPD slip itself
+// (panelCompanyId / panelEmployeeId), since Panel Cheque Transaction and the
+// panel reports read it from there. Picking an employee with no company
+// takes that employee's company; changing the employee clears the old
+// dependent. Refused once the file is closed or its company cheque is in.
+async function setPanelBillingParty(sourceType, id, { panelCompanyId, panelEmployeeId }) {
+  const isOpd = sourceType === 'opd';
+  const recId = Number(id);
+  const rec = isOpd
+    ? await prisma.clinicOpdVisit.findUnique({ where: { id: recId }, select: { id: true, panelEmployeeId: true } })
+    : await prisma.clinicAdmission.findUnique({ where: { id: recId }, select: { id: true, status: true, panelEmployeeId: true } });
+  if (!rec) throw Object.assign(new Error(isOpd ? 'Slip nahi mili' : 'Admission nahi mili'), { status: 404 });
+  if (!isOpd && rec.status === 'closed') throw Object.assign(new Error('Ye file close ho chuki hai — Billing ab read-only hai'), { status: 400 });
+  const cheque = isOpd
+    ? await prisma.clinicPanelChequeReceiptOpdItem.findUnique({ where: { opdVisitId: recId }, select: { id: true } })
+    : await prisma.clinicPanelChequeReceiptItem.findUnique({ where: { admissionId: recId }, select: { id: true } });
+  if (cheque) throw Object.assign(new Error('Is ka panel cheque aa chuka hai — Company / Employee ab nahi badal sakte'), { status: 400 });
+
+  const empId = panelEmployeeId ? Number(panelEmployeeId) : null;
+  let compId = panelCompanyId ? Number(panelCompanyId) : null;
+  const employee = empId ? await prisma.clinicPanelEmployee.findUnique({ where: { id: empId }, select: { id: true, companyId: true } }) : null;
+  if (empId && !employee) throw Object.assign(new Error('Employee nahi mila'), { status: 400 });
+  if (!compId && employee) compId = employee.companyId;
+  if (compId && !(await prisma.clinicPanelCompany.findUnique({ where: { id: compId }, select: { id: true } }))) {
+    throw Object.assign(new Error('Company nahi mili'), { status: 400 });
+  }
+
+  const data = {
+    panelCompanyId: compId,
+    panelEmployeeId: empId,
+    ...(empId !== rec.panelEmployeeId ? { panelDependentId: null } : {}),
+  };
+  return isOpd
+    ? prisma.clinicOpdVisit.update({ where: { id: recId }, data, select: { id: true, panelCompanyId: true, panelEmployeeId: true } })
+    : prisma.clinicAdmission.update({ where: { id: recId }, data, select: { id: true, panelCompanyId: true, panelEmployeeId: true } });
 }
 
 async function updatePanelOpdBillingHeader(opdVisitId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq }) {
@@ -11288,6 +11333,7 @@ module.exports = {
   getPanelChequesReport,
   getPanelChequePostingReport,
   getAdmissionFormPrintData,
+  setPanelBillingParty,
   findSerialClash,
   findUploadSerialClashes,
   previewPanelChequeImport,

@@ -46,6 +46,10 @@ export default function SearchableSelect({
   title,
   clearable = true,
   maxUnfiltered = DEFAULT_MAX_UNFILTERED,
+  // Keyboard-first forms (see utils/keyboardNav): once a value is picked,
+  // Enter on the closed box moves on to the next field instead of opening
+  // the list again (arrows / typing still open it).
+  enterAdvances = false,
   emptyText = 'No results found',
   onOpenChange,
 }) {
@@ -171,6 +175,7 @@ export default function SearchableSelect({
   // opens it with that character already in the search box.
   const handleTriggerKeyDown = (e) => {
     if (disabled) return;
+    if (enterAdvances && e.key === 'Enter' && hasValue) return;
     if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       openDropdown();

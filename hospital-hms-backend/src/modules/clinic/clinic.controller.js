@@ -1226,6 +1226,16 @@ async function updatePanelBillingItem(req, res, next) {
   }
 }
 
+async function setPanelBillingParty(req, res, next) {
+  try {
+    const { panelCompanyId, panelEmployeeId } = req.body;
+    success(res, await service.setPanelBillingParty(req.params.sourceType, req.params.id, { panelCompanyId, panelEmployeeId }), 'Updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function updatePanelBillingHeader(req, res, next) {
   try {
     const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor } = req.body;
@@ -2710,6 +2720,7 @@ module.exports = {
   getPanelChequesReport,
   getPanelChequePostingReport,
   getAdmissionFormPrintData,
+  setPanelBillingParty,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,

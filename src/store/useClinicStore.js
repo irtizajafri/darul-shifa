@@ -813,6 +813,11 @@ export const useClinicStore = create((set) => ({
     return request(`/admission/panel-billing/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) });
   },
 
+  // Panels > Billing — Company / Employee picked by hand (sourceType 'admission' | 'opd')
+  setPanelBillingParty: async (sourceType, id, payload) => {
+    return request(`/panel-billing/party/${sourceType}/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
   updatePanelBillingHeader: async (admissionId, payload) => {
     return request(`/admission/panel-billing/header/${admissionId}`, { method: 'PATCH', body: JSON.stringify(payload) });
   },

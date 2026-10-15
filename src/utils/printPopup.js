@@ -43,6 +43,9 @@ function collectStyleTags() {
  * @param {string} [opts.margin='10mm']   `@page margin` value.
  * @param {string} [opts.extraCss]        Extra CSS appended last.
  * @param {boolean} [opts.autoClose=true] Close the popup after printing/cancel.
+ * @param {Window}  [opts.targetWindow]   A window already opened by the caller
+ *        (opened right on the click, before any await, so the browser doesn't
+ *        block it) to print into instead of opening a new one.
  * @returns {boolean} false if there was nothing to print or the popup was blocked.
  */
 export function printElementInPopup(element, opts = {}) {
@@ -53,13 +56,15 @@ export function printElementInPopup(element, opts = {}) {
     extraCss = '',
     autoClose = true,
     windowFeatures = 'width=1000,height=800',
+    targetWindow = null,
   } = opts;
 
   if (!element) {
     toast.error('Nothing to print');
+    if (targetWindow && !targetWindow.closed) targetWindow.close();
     return false;
   }
-  const w = window.open('', '_blank', windowFeatures);
+  const w = targetWindow && !targetWindow.closed ? targetWindow : window.open('', '_blank', windowFeatures);
   if (!w) {
     toast.error('Popup blocked — please allow popups for this site');
     return false;

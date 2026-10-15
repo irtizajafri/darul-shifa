@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { Search, X, Plus } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
@@ -55,6 +56,86 @@ const CUSTOM_TYPES = [
   // medicine checklist (see PackagePickerModal) and skips this form entirely.
   { key: 'panelhead',  label: 'Panel Head', source: 'panelhead' },
 ];
+
+// ── Keyboard (Panels > Billing + its popups) ─────────────────────────────────
+// Enter / ↓ = next field, ↑ = previous (same idea as utils/keyboardNav, but
+// skipping tabIndex -1 helpers like "+ New Medicine" / "+" so a second Enter
+// never opens them by accident; the last field's Enter fires the container's
+// [data-enter-submit] button). A key a
+// control already handled (dropdown list, SearchableSelect, inline cell) is
+// left alone. Inside a detail popup's table: Enter walks the row's boxes only
+// (never lands on the ✕ delete button), ↑ / ↓ go to the same column on the
+// next / previous line. Date boxes keep their own ↑ / ↓ (change the date).
+function billingKeyNav(e) {
+  if (e.defaultPrevented) return;
+  if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.nativeEvent?.isComposing) return;
+  const t = e.target;
+  const isArrow = e.key === 'ArrowDown' || e.key === 'ArrowUp';
+  if (isArrow && t.type === 'date') return;
+  const body = t.tagName === 'INPUT' ? t.closest('.pnb-modal--detail tbody') : null;
+  if (body && (isArrow || e.key === 'Enter')) {
+    e.preventDefault();
+    const focusIt = (el) => { el.focus(); if (el.type !== 'checkbox' && el.type !== 'date') el.select?.(); };
+    if (isArrow) {
+      const td = t.closest('td');
+      const col = [...td.parentElement.children].indexOf(td);
+      let row = td.parentElement;
+      while ((row = e.key === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling)) {
+        const next = row.children[col]?.querySelector('input:not([disabled])');
+        if (next) { focusIt(next); return; }
+      }
+      return;
+    }
+    const boxes = [...body.querySelectorAll('input:not([disabled]):not([type="checkbox"])')];
+    const next = boxes[boxes.indexOf(t) + 1];
+    if (next) focusIt(next); else t.blur();
+    return;
+  }
+  stepBillingFocus(e);
+}
+
+const BILLING_FOCUSABLE = 'input:not([type="hidden"]):not([disabled]):not([readonly]), select:not([disabled]), '
+  + 'textarea:not([disabled]), button:not([disabled]), [tabindex]';
+function stepBillingFocus(e) {
+  const isEnter = e.key === 'Enter';
+  const isArrow = e.key === 'ArrowDown' || e.key === 'ArrowUp';
+  if (!isEnter && !isArrow) return;
+  const t = e.target;
+  if (isEnter && (t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.tagName === 'A')) return;
+  if (isArrow && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  const list = [...e.currentTarget.querySelectorAll(BILLING_FOCUSABLE)]
+    .filter((el) => el.getAttribute('tabindex') !== '-1' && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+  const idx = list.indexOf(t);
+  if (idx === -1) return;
+  e.preventDefault();
+  const next = list[idx + (e.key === 'ArrowUp' ? -1 : 1)];
+  if (next) {
+    next.focus();
+    if ((next.tagName === 'INPUT' && next.type !== 'checkbox' && next.type !== 'date') || next.tagName === 'TEXTAREA') next.select?.();
+    return;
+  }
+  if (e.key !== 'ArrowUp') {
+    const submitBtn = e.currentTarget.querySelector('[data-enter-submit]');
+    if (submitBtn && !submitBtn.disabled) submitBtn.click();
+  }
+}
+
+// ↑ / ↓ highlight an open search list's options, Enter picks the highlighted
+// one (nothing highlighted → Enter just moves on with what was typed).
+function useComboKeys(count, isOpen, onPick) {
+  // highlight starts over whenever the list changes or opens/closes
+  const listKey = `${count}|${isOpen}`;
+  const [state, setState] = useState({ listKey, hi: -1 });
+  const hi = state.listKey === listKey ? state.hi : -1;
+  const setHi = (fn) => setState((s) => ({ listKey, hi: fn(s.listKey === listKey ? s.hi : -1) }));
+  function onKeyDown(e) {
+    if (!isOpen || !count) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi((i) => Math.min(i + 1, count - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && hi >= 0) { e.preventDefault(); onPick(hi); }
+  }
+  return { hi, onKeyDown };
+}
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -169,15 +250,20 @@ const REPORT_TYPES = [
 // statically instead.
 const PRINT_TOP_MARGIN = { covering: '48mm', medicine: '35mm', diagnostic: '35mm' };
 const PRINT_TITLES = { covering: 'Billing Covering Page', medicine: 'Pharmacy Bill', diagnostic: 'Diagnostic Bill' };
-function printPanelReport(printHostEl, reportType) {
+function printPanelReport(printHostEl, reportType, targetWindow) {
   const topMargin = PRINT_TOP_MARGIN[reportType] || '35mm';
   printElementInPopup(printHostEl, {
     title: PRINT_TITLES[reportType] || 'Panel Billing',
     page: 'A4 portrait',
     margin: `${topMargin} 10mm`,
+    targetWindow,
     extraCss: '.pnbr-print-area { display: block !important; position: static !important; }',
   });
 }
+
+// After Save (Yes or No) the three reports open on their own, each in its
+// own window — in this order, each with its own letterhead margin.
+const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
 
 // ── Panel Admission/OPD Lookup Modal — patientCategory/paymentType 'panel'
 // only. Same modal for both Billing modes (see `mode` prop) — just the
@@ -273,6 +359,7 @@ export default function PanelBilling() {
     roomCategories, fetchRoomCategories,
     fetchMedicineList, createMedicine,
     finalizeDischarge,
+    panelCompanies, fetchPanelCompanies, panelEmployees, fetchPanelEmployees, setPanelBillingParty,
   } = useClinicStore();
   const { user } = useAuthStore();
   // Same "Billing" screen, toggled between Admission # (IPD) and Slip #
@@ -298,6 +385,13 @@ export default function PanelBilling() {
   // nothing can be added/edited/deleted anymore. OPD Billing never locks —
   // a panel OPD visit has no "Close File" lifecycle to mirror.
   const readOnly = !isOpd && data?.admission.status === 'closed';
+  // Admission: Medicine / Lab / Radiology / Ultrasound are added from their
+  // own row's detail popup (see HeadAddRow) — the top bar keeps Panel Head
+  // (and packages) only. OPD slips keep the full top bar.
+  const topCustomTypes = isOpd ? CUSTOM_TYPES : CUSTOM_TYPES.filter((t) => t.key === 'panelhead');
+  // Bumped after an add from inside a detail popup — remounts the popup so
+  // its list picks up the new row.
+  const [popupNonce, setPopupNonce] = useState(0);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [closingFile, setClosingFile] = useState(false);
 
@@ -345,6 +439,48 @@ export default function PanelBilling() {
   }, [data?.admission.id]);
 
   useEffect(() => { fetchSubDepartments(); }, [fetchSubDepartments]);
+  useEffect(() => { fetchPanelCompanies(); fetchPanelEmployees(); }, [fetchPanelCompanies, fetchPanelEmployees]);
+
+  // Company / Employee by hand — saved on the admission / slip itself (see
+  // setPanelBillingParty), then the bill reloads so the header shows it.
+  const partyEmployees = useMemo(() => {
+    const compId = data?.company?.id;
+    const list = compId ? panelEmployees.filter((e) => e.companyId === compId || e.billCompanyId === compId) : panelEmployees;
+    // the saved employee stays pickable even if listed under another company
+    if (data?.employee && !list.some((e) => e.id === data.employee.id)) {
+      const cur = panelEmployees.find((e) => e.id === data.employee.id);
+      if (cur) return [cur, ...list];
+    }
+    return list;
+  }, [panelEmployees, data?.company?.id, data?.employee]);
+
+  // "+ Nayi" — a company / employee not in the list, typed in by hand: it is
+  // created in Panel Companies / Panel Employees, then set on this file.
+  const [newParty, setNewParty] = useState(null); // 'company' | 'employee' | null
+  async function handleNewPartySaved(kind, created) {
+    await (kind === 'company' ? fetchPanelCompanies() : fetchPanelEmployees());
+    setNewParty(null);
+    await handlePartyChange(kind, created.id);
+  }
+
+  async function handlePartyChange(field, value) {
+    if (!data) return;
+    const next = {
+      panelCompanyId: field === 'company' ? (value || null) : (data.company?.id || null),
+      panelEmployeeId: field === 'employee' ? (value || null) : (field === 'company' ? null : (data.employee?.id || null)),
+    };
+    try {
+      await setPanelBillingParty(isOpd ? 'opd' : 'admission', data.admission.id, next);
+      await reload();
+      toast.success(field === 'company' ? 'Company save ho gayi' : 'Employee save ho gaya', { id: 'pnb-party' });
+    } catch (e) {
+      toast.error(e.message || 'Save nahi hua');
+    }
+  }
+  useEffect(() => {
+    if (!data) return;
+    if (!isOpd && customType !== 'panelhead') { setCustomType('panelhead'); setCustomQuery(''); setCustomOptions([]); }
+  }, [data?.admission.id, isOpd]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { fetchDoctors(); fetchDiseases(); fetchSurgeryTypes(); fetchRoomCategories(); }, [fetchDoctors, fetchDiseases, fetchSurgeryTypes, fetchRoomCategories]);
 
   // Consultant dropdown — live Doctor list; the already-saved name is added
@@ -374,6 +510,11 @@ export default function PanelBilling() {
     const q = diagnosisQuery.trim().toLowerCase();
     return q ? diagnosisOptions.filter((n) => n.toLowerCase().includes(q)) : diagnosisOptions;
   }, [diagnosisOptions, diagnosisQuery]);
+
+  // Keyboard ↑ / ↓ / Enter on the three search lists (see useComboKeys)
+  const consultantKeys = useComboKeys(filteredConsultantOptions.length, showConsultantOptions, (i) => { const n = filteredConsultantOptions[i]; setConsultantQuery(n); pickConsultant(n); });
+  const diagnosisKeys = useComboKeys(filteredDiagnosisOptions.length, showDiagnosisOptions, (i) => { const n = filteredDiagnosisOptions[i]; setDiagnosisQuery(n); pickDiagnosis(n); });
+  const customKeys = useComboKeys(customOptions.length, showCustomOptions, (i) => pickCustomOption(customOptions[i]));
 
   function handleCustomQueryChange(val) {
     setCustomQuery(val);
@@ -500,6 +641,17 @@ export default function PanelBilling() {
     } finally {
       setAddingCustom(false);
     }
+  }
+
+  // Add from inside a head's detail popup (Admission) — same row the top bar
+  // used to create (folds into that head via mergeInto), then the popup is
+  // remounted on the reloaded data so the new line shows in its list.
+  async function handleAddFromPopup(typeKey, { description, qty, rate, dosage, date }) {
+    const mergeInto = CUSTOM_TYPES.find((t) => t.key === typeKey)?.mergeInto;
+    await addPanelBillingItem(data.admission.id, { description, qty, rate, mergeInto, dosage, date });
+    await reload();
+    setPopupNonce((n) => n + 1);
+    toast.success(`${description} add ho gaya`);
   }
 
   async function handleDeleteCustom(row) {
@@ -689,20 +841,57 @@ export default function PanelBilling() {
     setShowCloseConfirm(true);
   }
 
+  // After Save (No, or Yes once the file closes) the three reports open by
+  // themselves, each in its own window. The windows are opened right on the
+  // click (before any await) — a browser only lets a click open more than
+  // one popup when popups are allowed for the site — then each is filled
+  // with its report once the bill to print is ready.
+  function openReportsWindows() {
+    return SAVE_REPORTS.map((type, i) => {
+      const w = window.open('', `pnb-report-${type}`, `width=900,height=800,left=${40 + i * 60},top=${40 + i * 40}`);
+      if (w) w.document.write('<p style="font-family:Arial;padding:20px">Report tayyar ho rahi hai…</p>');
+      return w;
+    });
+  }
+  // Reports whose window the popup blocker stopped — offered as one-click
+  // buttons instead (each click is its own user action, so it isn't blocked).
+  const [blockedReports, setBlockedReports] = useState([]);
+  function printAllReports(bill, wins) {
+    setPrintData({ type: 'all', data: bill });
+    setBlockedReports(SAVE_REPORTS.filter((_, i) => !wins[i]));
+    setTimeout(() => {
+      SAVE_REPORTS.forEach((type, i) => {
+        const el = printAreaRef.current?.querySelector(`[data-report="${type}"]`);
+        if (wins[i]) printPanelReport(el, type, wins[i]);
+      });
+    }, 300);
+  }
+  function openBlockedReport(type) {
+    const el = printAreaRef.current?.querySelector(`[data-report="${type}"]`);
+    printPanelReport(el, type);
+    setBlockedReports((list) => list.filter((t) => t !== type));
+  }
+
   function handleDeclineCloseFile() {
+    const wins = openReportsWindows();
     setShowCloseConfirm(false);
     toast.success('Billing save ho gayi');
+    printAllReports(data, wins);
   }
 
   async function handleConfirmCloseFile() {
+    const wins = openReportsWindows();
     setClosingFile(true);
     try {
       const changedBy = user?.name || user?.username || user?.email || '';
       await finalizeDischarge(data.admission.id, { discountAmount: 0, changedBy });
       toast.success('File close ho gayi — Billing ab read-only hai');
       setShowCloseConfirm(false);
-      await loadByAdmitNo(data.admission.admissionNo);
+      const fresh = await fetchPanelAdmissionBilling(data.admission.admissionNo);
+      setData(fresh);
+      printAllReports(fresh, wins);
     } catch (e) {
+      wins.forEach((w) => { if (w && !w.closed) w.close(); });
       toast.error(e.message || 'File close nahi ho saki');
     } finally {
       setClosingFile(false);
@@ -775,7 +964,9 @@ export default function PanelBilling() {
       setData((d) => {
         const admitDate = field === 'admitDate' ? updated.admitDate : d.admission.admitDate;
         const dischargeDate = field === 'dischargeDate' ? updated.dischargeDate : d.admission.dischargeDate;
-        const days = Math.max(1, Math.ceil(((dischargeDate ? new Date(dischargeDate) : new Date()) - new Date(admitDate)) / 86400000));
+        // calendar dates, not hours (19→20 = 1 day, 19→21 = 2) — same as the server
+        const dayNo = (v) => { const x = new Date(v); return Date.UTC(x.getFullYear(), x.getMonth(), x.getDate()) / 86400000; };
+        const days = Math.max(1, dayNo(dischargeDate || new Date()) - dayNo(admitDate));
         const serialNo = field === 'admitDate' ? formatBillingSno(d.admission.snoSeq, admitDate) || d.admission.serialNo : d.admission.serialNo;
         return { ...d, admission: { ...d.admission, admitDate, dischargeDate, days, serialNo } };
       });
@@ -873,7 +1064,7 @@ export default function PanelBilling() {
   }
 
   return (
-    <div className="pnb-page">
+    <div className="pnb-page" onKeyDown={billingKeyNav}>
       <ClinicMenuBar />
 
       {showLookup && (
@@ -944,8 +1135,47 @@ export default function PanelBilling() {
             </div>
             <div className="pnb-hg"><label>Days</label><div className="pnb-val">{data?.admission.days ?? '—'}</div></div>
 
-            <div className="pnb-hg"><label>Company</label><div className="pnb-val pnb-val--blue">{data?.company ? `${data.company.code} — ${data.company.name}` : '—'}</div></div>
-            <div className="pnb-hg"><label>Employee</label><div className="pnb-val">{data?.employee ? `${data.employee.empCode} — ${data.employee.name}` : '—'}</div></div>
+            <div className="pnb-hg pnb-hg--party">
+              <label>Company</label>
+              {data && !readOnly ? (
+                <div className="pnb-party-row">
+                  <SearchableSelect
+                    options={panelCompanies}
+                    value={data.company?.id ?? ''}
+                    onChange={(v) => handlePartyChange('company', v)}
+                    getKey={(c) => c.id}
+                    getLabel={(c) => `${c.code} — ${c.name}`}
+                    placeholder="Company code / naam…"
+                    size="sm"
+                    enterAdvances
+                  />
+                  <button type="button" className="pnb-party-new" tabIndex={-1} title="List mein nahi? Nayi company likhein" onClick={() => setNewParty('company')}><Plus size={13} /></button>
+                </div>
+              ) : (
+                <div className="pnb-val pnb-val--blue">{data?.company ? `${data.company.code} — ${data.company.name}` : '—'}</div>
+              )}
+            </div>
+            <div className="pnb-hg pnb-hg--party">
+              <label>Employee</label>
+              {data && !readOnly ? (
+                <div className="pnb-party-row">
+                  <SearchableSelect
+                    options={partyEmployees}
+                    value={data.employee?.id ?? ''}
+                    onChange={(v) => handlePartyChange('employee', v)}
+                    getKey={(e) => e.id}
+                    getLabel={(e) => `${e.empCode} — ${e.name}`}
+                    placeholder="Employee code / naam…"
+                    size="sm"
+                    enterAdvances
+                  />
+                  <button type="button" className="pnb-party-new" tabIndex={-1} title="List mein nahi? Naya employee likhein"
+                    onClick={() => (data.company ? setNewParty('employee') : toast.error('Pehle Company chunein'))}><Plus size={13} /></button>
+                </div>
+              ) : (
+                <div className="pnb-val">{data?.employee ? `${data.employee.empCode} — ${data.employee.name}` : '—'}</div>
+              )}
+            </div>
             <div className="pnb-hg">
               <label>Patient Name</label>
               {data ? (
@@ -965,13 +1195,14 @@ export default function PanelBilling() {
                     onChange={(e) => { setConsultantQuery(e.target.value); setShowConsultantOptions(true); }}
                     onFocus={() => setShowConsultantOptions(true)}
                     onBlur={(e) => setTimeout(() => { setShowConsultantOptions(false); saveConsultant(e.target.value); }, 150)}
+                    onKeyDown={consultantKeys.onKeyDown}
                     placeholder="Naam type karo ya list se select karo…"
                     disabled={readOnly}
                   />
                   {showConsultantOptions && filteredConsultantOptions.length > 0 && (
                     <div className="pnb-combo-list">
-                      {filteredConsultantOptions.map((name) => (
-                        <div key={name} className="pnb-combo-opt" onMouseDown={() => pickConsultant(name)}>{name}</div>
+                      {filteredConsultantOptions.map((name, i) => (
+                        <div key={name} className={`pnb-combo-opt${i === consultantKeys.hi ? ' pnb-combo-opt--active' : ''}`} onMouseDown={() => pickConsultant(name)}>{name}</div>
                       ))}
                     </div>
                   )}
@@ -989,13 +1220,14 @@ export default function PanelBilling() {
                     onChange={(e) => { setDiagnosisQuery(e.target.value); setShowDiagnosisOptions(true); }}
                     onFocus={() => setShowDiagnosisOptions(true)}
                     onBlur={(e) => setTimeout(() => { setShowDiagnosisOptions(false); saveDiagnosis(e.target.value); }, 150)}
+                    onKeyDown={diagnosisKeys.onKeyDown}
                     placeholder="Naam type karo ya list se select karo…"
                     disabled={readOnly}
                   />
                   {showDiagnosisOptions && filteredDiagnosisOptions.length > 0 && (
                     <div className="pnb-combo-list">
-                      {filteredDiagnosisOptions.map((name) => (
-                        <div key={name} className="pnb-combo-opt" onMouseDown={() => pickDiagnosis(name)}>{name}</div>
+                      {filteredDiagnosisOptions.map((name, i) => (
+                        <div key={name} className={`pnb-combo-opt${i === diagnosisKeys.hi ? ' pnb-combo-opt--active' : ''}`} onMouseDown={() => pickDiagnosis(name)}>{name}</div>
                       ))}
                     </div>
                   )}
@@ -1015,6 +1247,7 @@ export default function PanelBilling() {
                   disabled={readOnly}
                   size="sm"
                   style={{ minWidth: 160 }}
+                  enterAdvances
                 />
               ) : <div className="pnb-val">—</div>}
             </div>
@@ -1023,13 +1256,13 @@ export default function PanelBilling() {
           {/* ── Manual add: Medicine / Laboratory / Ultrasound / Radiology ── */}
           {data && !readOnly && (
             <div className="pnb-add-row">
-              <div className="pnb-fg pnb-fg--sm">
+              <div className="pnb-fg pnb-fg--type">
                 <label>Type</label>
                 <select
                   value={customType}
                   onChange={(e) => { setCustomType(e.target.value); setCustomQuery(''); setCustomOptions([]); }}
                 >
-                  {CUSTOM_TYPES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                  {topCustomTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                 </select>
               </div>
               <div className="pnb-fg pnb-fg--search">
@@ -1040,12 +1273,13 @@ export default function PanelBilling() {
                     onChange={(e) => handleCustomQueryChange(e.target.value)}
                     onFocus={() => handleCustomQueryChange(customQuery)}
                     onBlur={() => setTimeout(() => setShowCustomOptions(false), 150)}
+                    onKeyDown={customKeys.onKeyDown}
                     placeholder="Naam type karo ya list se select karo…"
                   />
                   {showCustomOptions && customOptions.length > 0 && (
                     <div className="pnb-combo-list">
-                      {customOptions.map((opt) => (
-                        <div key={opt.id} className="pnb-combo-opt" onMouseDown={() => pickCustomOption(opt)}>
+                      {customOptions.map((opt, i) => (
+                        <div key={opt.id} className={`pnb-combo-opt${i === customKeys.hi ? ' pnb-combo-opt--active' : ''}`} onMouseDown={() => pickCustomOption(opt)}>
                           {opt.name}{opt.code ? <span className="pnb-combo-code"> ({opt.code})</span> : null}
                           {opt.kind === 'package' && <span className="pnb-combo-package"> — Medicine Package ({opt.packageItems.length})</span>}
                         </div>
@@ -1180,11 +1414,30 @@ export default function PanelBilling() {
         {printData?.type === 'covering' && <BillingCoveringPagePrintTemplate data={printData.data} />}
         {printData?.type === 'diagnostic' && <DiagnosticBillPrintTemplate data={printData.data} />}
         {printData?.type === 'medicine' && <MedicineBillPrintTemplate data={printData.data} />}
+        {printData?.type === 'all' && (
+          <>
+            <div data-report="covering"><BillingCoveringPagePrintTemplate data={printData.data} /></div>
+            <div data-report="medicine"><MedicineBillPrintTemplate data={printData.data} /></div>
+            <div data-report="diagnostic"><DiagnosticBillPrintTemplate data={printData.data} /></div>
+          </>
+        )}
       </div>
 
       {popup === 'pharmacy' && data && (
         <PharmacyDetailModal
+          key={`ph-${popupNonce}`}
           rows={data.pharmacyRows}
+          addRow={!isOpd && !readOnly ? (
+            <HeadAddRow
+              typeKey="medicine"
+              subDepartments={subDepartments}
+              fetchMedicineList={fetchMedicineList}
+              createMedicine={createMedicine}
+              minDate={toInputDate(data.admission.admitDate)}
+              maxDate={toInputDate(data.admission.dischargeDate)}
+              onAdd={(payload) => handleAddFromPopup('medicine', payload)}
+            />
+          ) : null}
           onClose={() => setPopup(null)}
           onConfirmAdd={handleConfirmDetailCopy}
           onSaveRow={handleSaveDetailRow}
@@ -1196,7 +1449,19 @@ export default function PanelBilling() {
       )}
       {popup === 'diagnostic' && data && (
         <DiagnosticDetailModal
+          key={`dg-${diagnosticDept}-${popupNonce}`}
           title={diagnosticDept}
+          addRow={!isOpd && !readOnly && CUSTOM_TYPES.some((t) => t.mergeInto === diagnosticDept) ? (
+            <HeadAddRow
+              typeKey={CUSTOM_TYPES.find((t) => t.mergeInto === diagnosticDept).key}
+              subDepartments={subDepartments}
+              fetchMedicineList={fetchMedicineList}
+              createMedicine={createMedicine}
+              minDate={toInputDate(data.admission.admitDate)}
+              maxDate={toInputDate(data.admission.dischargeDate)}
+              onAdd={(payload) => handleAddFromPopup(CUSTOM_TYPES.find((t) => t.mergeInto === diagnosticDept).key, payload)}
+            />
+          ) : null}
           rows={data.diagnosticRows.filter((r) => r.department === diagnosticDept)}
           onClose={() => setPopup(null)}
           onConfirmAdd={handleConfirmDetailCopy}
@@ -1227,6 +1492,37 @@ export default function PanelBilling() {
         />
       )}
 
+      {blockedReports.length > 0 && (
+        <div className="pnb-modal-overlay" onMouseDown={() => setBlockedReports([])}>
+          <div className="pnb-modal pnb-modal--sm" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="pnb-modal-head">
+              <span>Baaki Reports</span>
+              <button onClick={() => setBlockedReports([])}><X size={16} /></button>
+            </div>
+            <div className="pnb-modal-body pnb-party-form">
+              <p className="pnb-close-confirm-hint">
+                Browser ne yeh report window(s) khud nahi kholne di — yahan click karke kholein.
+                (Hamesha ke liye: browser mein is site ke Pop-ups Allow kar dein.)
+              </p>
+              {blockedReports.map((type) => (
+                <button key={type} className="pnb-add-btn" onClick={() => openBlockedReport(type)}>
+                  {PRINT_TITLES[type]} kholein
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {newParty && data && (
+        <NewPartyModal
+          kind={newParty}
+          company={data.company}
+          onClose={() => setNewParty(null)}
+          onSaved={(created) => handleNewPartySaved(newParty, created)}
+        />
+      )}
+
       {showAddMedicine && (
         <QuickAddMedicineModal
           onClose={() => setShowAddMedicine(false)}
@@ -1241,6 +1537,189 @@ export default function PanelBilling() {
 // > Medicine List / Pharmacy Price List, ClinicMedicine) without leaving
 // this screen — same fields/validation as that page's own Add form (code +
 // name required, code must be unique).
+// Add a Medicine / Laboratory / Radiology / Ultrasound line from inside that
+// head's own detail popup (Admission Billing) — the same fields the top bar
+// had for these: item from the Medicine List (with "New Medicine") or that
+// department's tests, Dose (medicine), Qty, Rate, Date (kept within Admit /
+// Discharge). onAdd saves it, the parent reloads and remounts the popup.
+function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine, minDate, maxDate, onAdd }) {
+  const type = CUSTOM_TYPES.find((t) => t.key === typeKey);
+  const isMedicine = typeKey === 'medicine';
+  const [query, setQuery] = useState('');
+  const [options, setOptions] = useState([]);
+  const [showOptions, setShowOptions] = useState(false);
+  const [dose, setDose] = useState('');
+  const [qty, setQty] = useState('1');
+  const [rate, setRate] = useState('');
+  const [date, setDate] = useState(minDate || '');
+  const [adding, setAdding] = useState(false);
+  const [showNewMed, setShowNewMed] = useState(false);
+  const timer = useRef(null);
+
+  function search(val) {
+    setQuery(val);
+    setShowOptions(true);
+    clearTimeout(timer.current);
+    if (type.source === 'subdept') {
+      const q = val.trim().toLowerCase();
+      setOptions(subDepartments
+        .filter((sd) => sd.department?.name === type.deptName && (!q || sd.name.toLowerCase().includes(q)))
+        .slice(0, 30)
+        .map((sd) => ({ id: sd.id, name: sd.name, code: sd.code })));
+      return;
+    }
+    timer.current = setTimeout(() => {
+      fetchMedicineList({ search: val, status: 'active' })
+        .then((meds) => setOptions((meds || []).map((m) => ({ id: m.id, name: m.name, code: m.code, retailPrice: m.retailPrice }))))
+        .catch(() => setOptions([]));
+    }, 300);
+  }
+
+  function pick(opt) {
+    setShowOptions(false);
+    setQuery(opt.name);
+    if (isMedicine && opt.retailPrice != null) setRate(String(opt.retailPrice));
+  }
+  const comboKeys = useComboKeys(options.length, showOptions, (i) => pick(options[i]));
+
+  async function handleNewMedicine(payload) {
+    const med = await createMedicine(payload);
+    toast.success('Medicine List mein add ho gayi');
+    setQuery(med.name);
+    setRate(med.retailPrice ? String(med.retailPrice) : '');
+    setShowNewMed(false);
+  }
+
+  async function handleAdd() {
+    const description = query.trim();
+    if (!description) return toast.error('Item ka naam likho ya list se select karo');
+    const q = Number(qty);
+    const r = Number(rate);
+    if (!Number.isFinite(q) || q <= 0) return toast.error('Qty valid honi chahiye');
+    if (!Number.isFinite(r) || r < 0) return toast.error('Rate valid honi chahiye');
+    setAdding(true);
+    try {
+      await onAdd({ description, qty: q, rate: r, dosage: isMedicine ? dose.trim() || undefined : undefined, date: date || minDate || undefined });
+    } catch (e) {
+      toast.error(e.message || 'Add nahi hua');
+      setAdding(false);
+    }
+  }
+
+  return (
+    <div className="pnb-add-row pnb-add-row--popup" onKeyDown={billingKeyNav}>
+      <div className="pnb-fg pnb-fg--search">
+        <label>{isMedicine ? 'Medicine' : `${type.label} Test`}</label>
+        <div className="pnb-combo">
+          <input
+            value={query}
+            onChange={(e) => search(e.target.value)}
+            onFocus={() => search(query)}
+            onBlur={() => setTimeout(() => setShowOptions(false), 150)}
+            onKeyDown={comboKeys.onKeyDown}
+            placeholder="Naam type karo ya list se select karo…"
+          />
+          {showOptions && options.length > 0 && (
+            <div className="pnb-combo-list">
+              {options.map((opt, i) => (
+                <div key={opt.id} className={`pnb-combo-opt${i === comboKeys.hi ? ' pnb-combo-opt--active' : ''}`} onMouseDown={() => pick(opt)}>
+                  {opt.name}{opt.code ? <span className="pnb-combo-code"> ({opt.code})</span> : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {isMedicine && (
+        <div className="pnb-fg">
+          <label>&nbsp;</label>
+          <button type="button" className="pnb-new-med-btn" tabIndex={-1} onClick={() => setShowNewMed(true)}>
+            <Plus size={13} /> New Medicine
+          </button>
+        </div>
+      )}
+      {isMedicine && (
+        <div className="pnb-fg pnb-fg--sm">
+          <label>Dose</label>
+          <input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="e.g. 1 tab" />
+        </div>
+      )}
+      <div className="pnb-fg pnb-fg--sm">
+        <label>Qty</label>
+        <input value={qty} onChange={(e) => setQty(e.target.value)} />
+      </div>
+      <div className="pnb-fg pnb-fg--sm">
+        <label>Rate</label>
+        <input value={rate} onChange={(e) => setRate(e.target.value)} placeholder="apni rate" />
+      </div>
+      <div className="pnb-fg pnb-fg--sm">
+        <label>Date</label>
+        <input type="date" className="pnb-date-input" value={date} onChange={(e) => setDate(e.target.value)}
+          min={minDate || undefined} max={maxDate || undefined} />
+      </div>
+      <button className="pnb-add-btn" onClick={handleAdd} disabled={adding} data-enter-submit tabIndex={-1}>
+        <Plus size={14} /> {adding ? 'Adding…' : 'Add'}
+      </button>
+      {showNewMed && createPortal(
+        <QuickAddMedicineModal onClose={() => setShowNewMed(false)} onCreate={handleNewMedicine} />,
+        document.body,
+      )}
+    </div>
+  );
+}
+
+// "+ Nayi" Company / Employee — typed in by hand when it isn't in the list.
+// Created in Panel Companies / Panel Employees (employee under the file's
+// company), then the parent sets it on this file. Enter walks Code → Name
+// → Save.
+function NewPartyModal({ kind, company, onClose, onSaved }) {
+  const { createPanelCompany, createPanelEmployee } = useClinicStore();
+  const isCompany = kind === 'company';
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!code.trim()) return toast.error('Code likhein');
+    if (!name.trim()) return toast.error('Naam likhein');
+    setSaving(true);
+    try {
+      const created = isCompany
+        ? await createPanelCompany({ code: code.trim().toUpperCase(), name: name.trim(), status: 'active' })
+        : await createPanelEmployee({ companyId: company.id, empCode: code.trim(), name: name.trim() });
+      toast.success(isCompany ? 'Nayi company ban gayi' : 'Naya employee ban gaya');
+      await onSaved(created);
+    } catch (e) {
+      toast.error(e.message || 'Save nahi hua');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pnb-modal-overlay" onMouseDown={onClose}>
+      <div className="pnb-modal pnb-modal--sm" onMouseDown={(e) => e.stopPropagation()} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); else billingKeyNav(e); }}>
+        <div className="pnb-modal-head">
+          <span>{isCompany ? 'Nayi Panel Company' : `Naya Employee — ${company?.code || ''}`}</span>
+          <button onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="pnb-modal-body pnb-party-form">
+          <div className="pnb-fg">
+            <label>{isCompany ? 'Company Code' : 'Employee Code'}</label>
+            <input value={code} onChange={(e) => setCode(e.target.value)} autoFocus placeholder={isCompany ? 'e.g. ABC' : 'e.g. 36-Z'} />
+          </div>
+          <div className="pnb-fg">
+            <label>Naam</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={isCompany ? 'Company ka naam' : 'Employee ka naam'} />
+          </div>
+          <button className="pnb-add-btn" onClick={handleSave} disabled={saving} data-enter-submit tabIndex={-1}>
+            {saving ? 'Saving…' : 'Save & Lagayein'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function QuickAddMedicineModal({ onClose, onCreate }) {
   const [form, setForm] = useState({ code: '', name: '', packSize: '', retailPrice: '', tradePrice: '' });
   const [saving, setSaving] = useState(false);
@@ -1389,17 +1868,84 @@ function EditableCell({ row, field, editCell, savingCell, onStart, onChange, onS
 // Pharmacy Bill detail — check any number of medicines (Qty/Rate/Date all
 // editable right here first), each checked one gets repeated as its own row
 // on the actual bill below.
-function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, onDeleteRow, confirming, readOnly }) {
+// Pharmacy / Diagnostic detail popups — shared row behaviour:
+//  • Auto-save: a row saves itself the moment its Date changes, or when Qty /
+//    Rate / Dose loses focus (Enter too) — no Save button; nothing is lost on
+//    closing the popup. Same save path the old button used: a manual entry
+//    updates directly, a live Provisional Bill entry becomes / edits its
+//    Billing-only override.
+//  • Select all, and Delete Selected (one confirm for the lot).
+// `fields` — which values make up a save (Medicine also has dosage).
+function useDetailRows({ selections, setSelections, mergeInto, nameOf, fields, onSaveRow, onOverrideRow, onDeleteRow }) {
+  const [savingKey, setSavingKey] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const pick = (r) => Object.fromEntries(fields.map((f) => [f, f === 'qty' || f === 'rate' ? Number(r[f]) || 0 : (r[f] ?? '')]));
+  const same = (a, b) => fields.every((f) => String(a[f]) === String(b[f]));
+
+  async function autoSave(row) {
+    if (row.locked) return;
+    const patch = pick(row);
+    if (row.saved && same(patch, row.saved)) return;
+    if (patch.qty < 0 || patch.rate < 0) return toast.error('Qty / Rate minus nahi ho sakti');
+    setSavingKey(row.key);
+    try {
+      if (row.isManual) await onSaveRow(row.key, patch);
+      else await onOverrideRow(row.key, mergeInto, row.originalAmount, nameOf(row), patch);
+      setSelections((s) => s.map((r) => (r.key === row.key ? { ...r, saved: patch } : r)));
+      toast.success('Save ho gaya', { id: 'pnb-autosave', duration: 1200 });
+    } catch (e) {
+      toast.error(e.message || 'Save nahi hua');
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  const selectable = selections.filter((r) => !r.locked);
+  const allChecked = selectable.length > 0 && selectable.every((r) => r.checked);
+  function toggleAll() {
+    const next = !allChecked;
+    setSelections((s) => s.map((r) => (r.locked ? r : { ...r, checked: next })));
+  }
+
+  async function deleteSelected() {
+    const targets = selections.filter((r) => r.checked && !r.locked);
+    if (!targets.length) return toast.error('Kam az kam ek row select karo');
+    if (!(await confirmDialog({ title: 'Delete from bill', message: `${targets.length} line(s) bill se delete karni hain?`, confirmLabel: 'Delete', danger: true }))) return;
+    setDeleting(true);
+    let done = 0;
+    try {
+      for (const row of targets) {
+        await onDeleteRow(row.key, mergeInto, row.originalAmount);
+        done += 1;
+        setSelections((s) => s.filter((r) => r.key !== row.key));
+      }
+      toast.success(`${done} line(s) delete ho gayin`);
+    } catch (e) {
+      toast.error(`${done} delete hui, phir: ${e.message || 'Delete nahi hua'}`);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return { savingKey, autoSave, allChecked, toggleAll, deleteSelected, deleting, hasSelectable: selectable.length > 0 };
+}
+
+function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, onDeleteRow, confirming, readOnly, addRow }) {
   const [selections, setSelections] = useState(() =>
     rows.map((r) => ({
       key: r.id, isManual: String(r.id).startsWith('manual-'), originalAmount: r.amount,
       // OPD slip's Inventory lines — view only (fixed via MRN / GIN, see getPanelOpdVisitBilling)
       locked: !!r.locked,
       medicine: r.medicine, dosage: r.dosage || '', qty: r.qty, rate: r.rate, date: toInputDate(r.date), checked: false,
+      saved: { date: toInputDate(r.date), qty: Number(r.qty) || 0, rate: Number(r.rate) || 0, dosage: r.dosage || '' },
     }))
   );
-  const [savingKey, setSavingKey] = useState(null);
   const [deletingKey, setDeletingKey] = useState(null);
+  const { savingKey, autoSave, allChecked, toggleAll, deleteSelected, deleting, hasSelectable } = useDetailRows({
+    selections, setSelections, mergeInto: 'Medicine', nameOf: (r) => r.medicine,
+    fields: ['date', 'qty', 'rate', 'dosage'], onSaveRow, onOverrideRow, onDeleteRow,
+  });
   const [bulkDate, setBulkDate] = useState('');
   const [bulkApplying, setBulkApplying] = useState(false);
 
@@ -1444,28 +1990,6 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
     }
   }
 
-  // Correct an already-added entry in place — no duplicate, unlike checking
-  // it and clicking "Add Selected". Manual entries update directly; a live
-  // Provisional Bill entry instead becomes a Billing-only override here (the
-  // real Provisional Bill stays untouched) — see onSaveRow/onOverrideRow.
-  async function handleSaveOne(key) {
-    const row = selections.find((s) => s.key === key);
-    setSavingKey(key);
-    try {
-      const patch = { date: row.date, qty: Number(row.qty) || 0, rate: Number(row.rate) || 0, dosage: row.dosage };
-      if (row.isManual) {
-        await onSaveRow(key, patch);
-      } else {
-        await onOverrideRow(key, 'Medicine', row.originalAmount, row.medicine, patch);
-      }
-      toast.success('Update ho gaya');
-    } catch (e) {
-      toast.error(e.message || 'Save nahi hua');
-    } finally {
-      setSavingKey(null);
-    }
-  }
-
   // Remove an already-added entry — a manual add gets actually deleted; a
   // live Provisional Bill entry instead gets excluded from this Billing
   // screen only (the real Provisional Bill stays untouched) — see
@@ -1487,23 +2011,27 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
 
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
-      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()} onKeyDown={billingKeyNav}>
         <div className="pnb-modal-head">
           <span>Pharmacy Bill</span>
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="pnb-modal-body">
+          {addRow}
           {!readOnly && (
             <div className="pnb-bulk-date-row">
               <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={bulkApplying} />
               <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}>
                 {bulkApplying ? 'Applying…' : `Apply Date to Selected (${checked.length})`}
               </button>
+              <button className="pnb-btn pnb-btn--danger" onClick={deleteSelected} disabled={deleting || !checked.length}>
+                {deleting ? 'Deleting…' : `Delete Selected (${checked.length})`}
+              </button>
             </div>
           )}
           <table className="pnb-table">
             <thead>
-              <tr><th></th><th>Date</th><th>Medicine</th><th>Dose</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
+              <tr><th><input type="checkbox" checked={allChecked} onChange={toggleAll} disabled={readOnly || !hasSelectable} title="Sab select karein" /></th><th>Date</th><th>Medicine</th><th>Dose</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
             </thead>
             <tbody>
               {selections.length === 0 ? (
@@ -1513,29 +2041,26 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
                   <td><input type="checkbox" checked={r.checked} onChange={() => toggle(r.key)} disabled={readOnly || r.locked} /></td>
                   <td>
                     <input type="date" className="pnb-mini-input" value={r.date}
-                      onChange={(e) => updateField(r.key, 'date', e.target.value)} disabled={readOnly || r.locked} />
+                      onChange={(e) => { updateField(r.key, 'date', e.target.value); autoSave({ ...r, date: e.target.value }); }} disabled={readOnly || r.locked} />
                   </td>
                   <td>{r.medicine}{r.locked && <span className="pnb-locked-tag" title="Inventory GIN se — MRN se theek karein"> (Store)</span>}</td>
                   <td>
                     <input className="pnb-mini-input" value={r.dosage} placeholder="e.g. 1 tab"
-                      onChange={(e) => updateField(r.key, 'dosage', e.target.value)} disabled={readOnly || r.locked} />
+                      onChange={(e) => updateField(r.key, 'dosage', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">
                     <input type="number" min="0" className="pnb-mini-input pnb-mini-input--num" value={r.qty}
-                      onChange={(e) => updateField(r.key, 'qty', e.target.value)} disabled={readOnly || r.locked} />
+                      onChange={(e) => updateField(r.key, 'qty', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">
                     <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate}
-                      onChange={(e) => updateField(r.key, 'rate', e.target.value)} disabled={readOnly || r.locked} />
+                      onChange={(e) => updateField(r.key, 'rate', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>
                   <td>
                     {!readOnly && !r.locked && (
                       <div className="pnb-row-actions">
-                        <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
-                          title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>
-                          {savingKey === r.key ? '…' : 'Save'}
-                        </button>
+                        {savingKey === r.key && <span className="pnb-autosave-dot" title="Save ho raha hai">…</span>}
                         <button className="pnb-del-row-btn" onClick={() => handleDeleteOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
                           title={r.isManual ? 'Delete this entry' : 'Delete from this bill (Provisional Bill stays as-is)'}>
                           {deletingKey === r.key ? '…' : '✕'}
@@ -1564,15 +2089,19 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
 // Rate defaults to the original Amount since these aren't naturally qty×rate
 // like medicine), each checked one gets repeated as its own row on the
 // actual bill below.
-function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, onDeleteRow, confirming, readOnly }) {
+function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, onOverrideRow, onDeleteRow, confirming, readOnly, addRow }) {
   const [selections, setSelections] = useState(() =>
     rows.map((r) => ({
       key: r.id, isManual: String(r.id).startsWith('manual-'), originalAmount: r.amount, particulars: r.particulars || r.department,
       qty: r.qty ?? 1, rate: r.rate ?? r.amount, date: toInputDate(r.date), checked: false,
+      saved: { date: toInputDate(r.date), qty: Number(r.qty ?? 1) || 0, rate: Number(r.rate ?? r.amount) || 0 },
     }))
   );
-  const [savingKey, setSavingKey] = useState(null);
   const [deletingKey, setDeletingKey] = useState(null);
+  const { savingKey, autoSave, allChecked, toggleAll, deleteSelected, deleting, hasSelectable } = useDetailRows({
+    selections, setSelections, mergeInto: title, nameOf: (r) => r.particulars,
+    fields: ['date', 'qty', 'rate'], onSaveRow, onOverrideRow, onDeleteRow,
+  });
   const [bulkDate, setBulkDate] = useState('');
   const [bulkApplying, setBulkApplying] = useState(false);
 
@@ -1613,28 +2142,6 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
     }
   }
 
-  // Correct an already-added entry in place — no duplicate. Manual entries
-  // update directly; a live Provisional Bill entry instead becomes a
-  // Billing-only override (the real Provisional Bill stays untouched) —
-  // see onSaveRow/onOverrideRow.
-  async function handleSaveOne(key) {
-    const row = selections.find((s) => s.key === key);
-    setSavingKey(key);
-    try {
-      const patch = { date: row.date, qty: Number(row.qty) || 0, rate: Number(row.rate) || 0 };
-      if (row.isManual) {
-        await onSaveRow(key, patch);
-      } else {
-        await onOverrideRow(key, title, row.originalAmount, row.particulars, patch);
-      }
-      toast.success('Update ho gaya');
-    } catch (e) {
-      toast.error(e.message || 'Save nahi hua');
-    } finally {
-      setSavingKey(null);
-    }
-  }
-
   // Remove an already-added entry — a manual add gets actually deleted; a
   // live Provisional Bill entry instead gets excluded from this Billing
   // screen only (the real Provisional Bill stays untouched) — see
@@ -1656,23 +2163,27 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
 
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
-      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()} onKeyDown={billingKeyNav}>
         <div className="pnb-modal-head">
           <span>{title}</span>
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="pnb-modal-body">
+          {addRow}
           {!readOnly && (
             <div className="pnb-bulk-date-row">
               <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={bulkApplying} />
               <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}>
                 {bulkApplying ? 'Applying…' : `Apply Date to Selected (${checked.length})`}
               </button>
+              <button className="pnb-btn pnb-btn--danger" onClick={deleteSelected} disabled={deleting || !checked.length}>
+                {deleting ? 'Deleting…' : `Delete Selected (${checked.length})`}
+              </button>
             </div>
           )}
           <table className="pnb-table">
             <thead>
-              <tr><th></th><th>Date</th><th>Particulars</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
+              <tr><th><input type="checkbox" checked={allChecked} onChange={toggleAll} disabled={readOnly || !hasSelectable} title="Sab select karein" /></th><th>Date</th><th>Particulars</th><th className="r">Qty</th><th className="r">Rate</th><th className="r">Amount</th><th></th></tr>
             </thead>
             <tbody>
               {selections.length === 0 ? (
@@ -1682,25 +2193,22 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
                   <td><input type="checkbox" checked={r.checked} onChange={() => toggle(r.key)} disabled={readOnly} /></td>
                   <td>
                     <input type="date" className="pnb-mini-input" value={r.date}
-                      onChange={(e) => updateField(r.key, 'date', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => { updateField(r.key, 'date', e.target.value); autoSave({ ...r, date: e.target.value }); }} disabled={readOnly} />
                   </td>
                   <td>{r.particulars}</td>
                   <td className="r">
                     <input type="number" min="0" className="pnb-mini-input pnb-mini-input--num" value={r.qty}
-                      onChange={(e) => updateField(r.key, 'qty', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => updateField(r.key, 'qty', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly} />
                   </td>
                   <td className="r">
                     <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate}
-                      onChange={(e) => updateField(r.key, 'rate', e.target.value)} disabled={readOnly} />
+                      onChange={(e) => updateField(r.key, 'rate', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly} />
                   </td>
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>
                   <td>
                     {!readOnly && (
                       <div className="pnb-row-actions">
-                        <button className="pnb-save-row-btn" onClick={() => handleSaveOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
-                          title={r.isManual ? 'Update this entry' : 'Save as a Billing-only correction (Provisional Bill stays as-is)'}>
-                          {savingKey === r.key ? '…' : 'Save'}
-                        </button>
+                        {savingKey === r.key && <span className="pnb-autosave-dot" title="Save ho raha hai">…</span>}
                         <button className="pnb-del-row-btn" onClick={() => handleDeleteOne(r.key)} disabled={savingKey === r.key || deletingKey === r.key}
                           title={r.isManual ? 'Delete this entry' : 'Delete from this bill (Provisional Bill stays as-is)'}>
                           {deletingKey === r.key ? '…' : '✕'}
