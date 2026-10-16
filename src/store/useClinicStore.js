@@ -613,9 +613,14 @@ export const useClinicStore = create((set) => ({
   // unlike searchAdmissionsForProvisionalBill above which stays status-
   // agnostic on purpose for reprinting an already-closed bill.
   // category: 'cash' | 'panel' (or true = 'panel' for older callers); omitted = all.
-  searchActiveAdmissionsForProvisionalBill: async (q, category) => {
+  searchActiveAdmissionsForProvisionalBill: async (q, category, includeDischarged = false) => {
     const cat = category === true ? 'panel' : category;
-    return request(`/provisional-bill/search-active?q=${encodeURIComponent(q || '')}${cat === 'panel' || cat === 'cash' ? `&category=${cat}` : ''}`);
+    return request(`/provisional-bill/search-active?q=${encodeURIComponent(q || '')}${cat === 'panel' || cat === 'cash' ? `&category=${cat}` : ''}${includeDischarged ? '&includeDischarged=1' : ''}`);
+  },
+
+  // Provisional Bill "Ward Theek Karein" — see correctAdmissionWard
+  correctAdmissionWard: async (admissionId, payload) => {
+    return request(`/admission/${admissionId}/ward-correct`, { method: 'PATCH', body: JSON.stringify(payload) });
   },
 
   fetchAdmissionForAdjustment: async (id) => {

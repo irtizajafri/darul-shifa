@@ -89,9 +89,15 @@ export default function WardWisePaymentDistributionReport() {
       aoa.push([`${w.name} Statement`]);
       aoa.push(COLS.map(([, label]) => label));
       w.rows.forEach((r) => aoa.push(COLS.map(([key]) => r[key])));
-      aoa.push(['', 'TOTAL', ...COLS.slice(2).map(([key]) => w.total[key])]);
+      aoa.push([`${w.rows.length} patient(s)`, 'TOTAL', ...COLS.slice(2).map(([key]) => w.total[key])]);
       aoa.push([]);
     });
+    // Grand Total — one line per ward, then all wards together
+    aoa.push(['Grand Total']);
+    aoa.push(['Ward', 'Patients', ...COLS.slice(2).map(([, label]) => label)]);
+    data.wards.forEach((w) => aoa.push([w.name, w.rows.length, ...COLS.slice(2).map(([key]) => w.total[key])]));
+    aoa.push(['GRAND TOTAL', totalPatients, ...COLS.slice(2).map(([key]) => data.grandTotal?.[key] || 0)]);
+    aoa.push([]);
     if (data.summary) {
       aoa.push(['Salary', data.summary.salary]);
       aoa.push(['Share %', data.summary.sharePercent]);
@@ -106,6 +112,7 @@ export default function WardWisePaymentDistributionReport() {
   };
 
   const hasData = data && data.wards && data.wards.length > 0;
+  const totalPatients = hasData ? data.wards.reduce((n, w) => n + w.rows.length, 0) : 0;
 
   return (
     <div className="ddp-page">
@@ -147,13 +154,43 @@ export default function WardWisePaymentDistributionReport() {
                     </tr>
                   ))}
                   <tr className="wpr-total-row">
-                    <td colSpan={2}>TOTAL</td>
+                    <td colSpan={2}>TOTAL — {w.rows.length} patient{w.rows.length === 1 ? '' : 's'}</td>
                     {COLS.slice(2).map(([key]) => <td key={key} className="td-num">{fmt2(w.total[key])}</td>)}
                   </tr>
                 </tbody>
               </table>
             </div>
           ))}
+
+          {/* Grand Total — each ward's patients and totals, then all wards together */}
+          {!loading && hasData && (
+            <div className="wpr-ward-block">
+              <h2 className="wpr-ward-title">Grand Total — {fmtDate(dateFrom)} to {fmtDate(dateTo)}</h2>
+              <table className="ddp-table wpr-table">
+                <thead>
+                  <tr>
+                    <th>Ward</th>
+                    <th className="num">Patients</th>
+                    {COLS.slice(2).map(([key, label]) => <th key={key} className="num">{label}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.wards.map((w) => (
+                    <tr key={w.id}>
+                      <td>{w.name}</td>
+                      <td className="td-num">{w.rows.length}</td>
+                      {COLS.slice(2).map(([key]) => <td key={key} className="td-num">{fmt2(w.total[key])}</td>)}
+                    </tr>
+                  ))}
+                  <tr className="wpr-total-row">
+                    <td>GRAND TOTAL</td>
+                    <td className="td-num">{totalPatients}</td>
+                    {COLS.slice(2).map(([key]) => <td key={key} className="td-num">{fmt2(data.grandTotal?.[key])}</td>)}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {!loading && hasData && data.summary && (
             <div className="wpr-summary">

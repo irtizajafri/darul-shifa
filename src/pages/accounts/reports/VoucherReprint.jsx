@@ -7,20 +7,34 @@ import './VoucherReprint.scss';
 
 const API = 'http://localhost:5001/api/accounts';
 
-const todayStr    = () => new Date().toISOString().slice(0, 10);
+// Today in Pakistan time — toISOString() is UTC, which until 5 AM is still
+// yesterday and left today's vouchers out of the default range.
+const todayStr    = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
 
+// Voucher Date / Cheque Date are calendar dates saved as UTC midnight —
+// read their Y-M-D as-is (UTC), never through the PC's timezone (which could
+// slide them a day). A value that carries a real time (older rows falling
+// back to createdAt) is read in Pakistan time instead.
+const PK = 'Asia/Karachi';
+const dateZone = (d) => {
+  const dt = new Date(d);
+  return dt.getUTCHours() === 0 && dt.getUTCMinutes() === 0 && dt.getUTCSeconds() === 0 ? 'UTC' : PK;
+};
 const fmtDate = (d) =>
-  new Date(d).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+  new Date(d).toLocaleDateString('en-PK', { timeZone: dateZone(d), day: '2-digit', month: 'short', year: 'numeric' });
 
-const fmtDateLong = (d) => {
+// "15-Oct-2026 Thursday 14:32:07" — the voucher's own date, and the time it
+// was actually made (createdAt / now) in Pakistan time. The Voucher Date has
+// no time of its own, so printing its clock gave a fixed 05:00:00.
+const fmtDateLong = (d, at) => {
   const dt  = new Date(d);
-  const tz  = { timeZone: 'Asia/Karachi' };
+  const tz  = { timeZone: dateZone(d) };
   const day  = dt.toLocaleString('en-US', { ...tz, day:     '2-digit' });
   const mon  = dt.toLocaleString('en-US', { ...tz, month:   'short'   });
   const year = dt.toLocaleString('en-US', { ...tz, year:    'numeric' });
   const wday = dt.toLocaleString('en-US', { ...tz, weekday: 'long'    });
-  const time = dt.toLocaleString('en-US', { ...tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+  const time = new Date(at || Date.now()).toLocaleString('en-US', { timeZone: PK, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
   return `${day}-${mon}-${year} ${wday} ${time}`;
 };
 
@@ -77,7 +91,7 @@ function VoucherCard({ v, isExpense, entityType, pageNum, totalPages, printBy })
               be a fallback for old rows missing voucherDate, not the
               preferred value, or an edited voucher's date-change would never
               show up here. */}
-          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.voucherDate || v.createdAt)}</div>
+          <div className="vr-vc-vdate">VOUCHER DATE: {fmtDateLong(v.voucherDate || v.createdAt, v.createdAt)}</div>
           <div className="vr-vc-page">Page: {pageNum} of {totalPages}</div>
         </div>
       </div>

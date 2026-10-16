@@ -1700,6 +1700,7 @@ async function searchActiveAdmissionsForProvisionalBill(req, res, next) {
       req.query.q,
       req.query.panelOnly === '1' || req.query.panelOnly === 'true',
       req.query.category,
+      req.query.includeDischarged === '1',
     ));
   } catch (err) { next(err); }
 }
@@ -2023,10 +2024,20 @@ async function getBedShiftHistory(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function correctAdmissionWard(req, res, next) {
+  try {
+    const { roomCategoryId, bedId } = req.body;
+    success(res, await service.correctAdmissionWard(req.params.id, { roomCategoryId, bedId }), 'Ward update ho gaya');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function shiftAdmissionBed(req, res, next) {
   try {
-    const { newBedId, shiftedBy } = req.body;
-    const data = await service.shiftAdmissionBed(req.params.id, { newBedId, shiftedBy });
+    const { newBedId, shiftedBy, shiftedAt } = req.body;
+    const data = await service.shiftAdmissionBed(req.params.id, { newBedId, shiftedBy, shiftedAt });
     success(res, data, 'Bed shifted');
   } catch (err) {
     if (err.status === 404) return fail(res, 404, err.message);
@@ -2721,6 +2732,7 @@ module.exports = {
   getPanelChequePostingReport,
   getAdmissionFormPrintData,
   setPanelBillingParty,
+  correctAdmissionWard,
   previewPanelChequeImport,
   confirmPanelChequeImport,
   previewPanelMedicineIssuanceImport,

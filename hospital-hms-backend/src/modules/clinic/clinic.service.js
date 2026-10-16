@@ -4266,11 +4266,13 @@ async function searchAdmissionsForProvisionalBill(q) {
 // category: 'panel' → panel admissions only, 'cash' → everything that is NOT
 // panel (patientCategory 'private' etc.), anything else → all. panelOnly is
 // the older boolean form of category 'panel', kept for compatibility.
-async function searchActiveAdmissionsForProvisionalBill(q, panelOnly, category) {
+// includeDischarged — Provisional Bill lookup's "Discharge / Close bhi"
+// tick: those files open too (e.g. to set their ward — see correctAdmissionWard).
+async function searchActiveAdmissionsForProvisionalBill(q, panelOnly, category, includeDischarged = false) {
   const term = String(q || '').trim();
   const cat = category === 'panel' || category === 'cash' ? category : (panelOnly ? 'panel' : null);
   const where = {
-    status: 'active',
+    status: includeDischarged ? { in: ['active', 'discharge', 'closed'] } : 'active',
     ...(cat === 'panel' ? { patientCategory: 'panel' } : {}),
     ...(cat === 'cash' ? { NOT: { patientCategory: 'panel' } } : {}),
     ...(term
@@ -6271,9 +6273,22 @@ async function getBedShiftHistory(admissionId) {
   });
 }
 
-async function shiftAdmissionBed(admissionId, { newBedId, shiftedBy }) {
+// shiftedAt — optional (Provisional Bill's Bed Shift lets staff enter when
+// the patient actually moved); defaults to now. Must fall after the admission
+// / previous shift and not in the future.
+async function shiftAdmissionBed(admissionId, { newBedId, shiftedBy, shiftedAt }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (admission.status !== 'active') throw Object.assign(new Error('Bed shift sirf admit patient ki ho sakti hai — discharge file mein "Ward Theek Karein" use karein'), { status: 400 });
+  let when = new Date();
+  if (shiftedAt) {
+    when = new Date(shiftedAt);
+    if (Number.isNaN(when.getTime())) throw Object.assign(new Error('Shift ka waqt sahi nahi'), { status: 400 });
+    if (when > new Date(Date.now() + 5 * 60000)) throw Object.assign(new Error('Shift ka waqt aage ka nahi ho sakta'), { status: 400 });
+    const lastShift = await prisma.clinicBedShiftHistory.findFirst({ where: { admissionId: admission.id }, orderBy: { shiftedAt: 'desc' }, select: { shiftedAt: true } });
+    const floor = lastShift?.shiftedAt && lastShift.shiftedAt > admission.createdAt ? lastShift.shiftedAt : admission.createdAt;
+    if (when <= floor) throw Object.assign(new Error('Shift ka waqt admission / pichli shift ke baad ka hona chahiye'), { status: 400 });
+  }
 
   const newBed = await prisma.clinicBed.findUnique({ where: { id: Number(newBedId) } });
   if (!newBed) throw Object.assign(new Error('Bed not found'), { status: 404 });
@@ -6288,7 +6303,7 @@ async function shiftAdmissionBed(admissionId, { newBedId, shiftedBy }) {
   const oldBedId = admission.bedId;
 
   await prisma.clinicBedShiftHistory.create({
-    data: { admissionId: admission.id, fromBedId: oldBedId, toBedId: newBed.id, shiftedBy: shiftedBy || null },
+    data: { admissionId: admission.id, fromBedId: oldBedId, toBedId: newBed.id, shiftedBy: shiftedBy || null, shiftedAt: when },
   });
 
   const updated = await prisma.clinicAdmission.update({
@@ -6301,6 +6316,42 @@ async function shiftAdmissionBed(admissionId, { newBedId, shiftedBy }) {
   }
   await prisma.clinicBed.update({ where: { id: newBed.id }, data: { status: 'occupied', vacatedAt: null } }).catch(() => {});
 
+  return updated;
+}
+
+// Provisional Bill "Ward Theek Karein" — the ward was picked wrong at
+// admission (or never set, e.g. imported files): set the right Room Category
+// for the WHOLE stay, no shift history. Admitted patients also move to a bed
+// of that ward (old bed freed); Discharge / Closed files just get the ward
+// (the patient has left — no bed). A file with bed-shift history is fixed
+// through Bed Shift instead (its ward comes from the shifts).
+async function correctAdmissionWard(admissionId, { roomCategoryId, bedId }) {
+  const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
+  if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (!['active', 'discharge', 'closed'].includes(admission.status)) {
+    throw Object.assign(new Error('Is file ka ward nahi badal sakta'), { status: 400 });
+  }
+  const shifts = await prisma.clinicBedShiftHistory.count({ where: { admissionId: admission.id } });
+  if (shifts) throw Object.assign(new Error('Is file ki bed shift history hai — ward Bed Shift se theek karein'), { status: 400 });
+  const room = await prisma.clinicRoomCategory.findUnique({ where: { id: Number(roomCategoryId) } });
+  if (!room) throw Object.assign(new Error('Ward chunein'), { status: 400 });
+
+  if (admission.status !== 'active') {
+    return prisma.clinicAdmission.update({ where: { id: admission.id }, data: { roomCategoryId: room.id, bedId: null } });
+  }
+
+  const newBedId = bedId ? Number(bedId) : null;
+  if (!newBedId) throw Object.assign(new Error('Bed chunein'), { status: 400 });
+  if (newBedId !== admission.bedId) {
+    const bed = await prisma.clinicBed.findUnique({ where: { id: newBedId } });
+    if (!bed || bed.roomCategoryId !== room.id) throw Object.assign(new Error('Bed is ward ka nahi hai'), { status: 400 });
+    if (bed.status === 'not_working') throw Object.assign(new Error('Yeh bed "Not Working" hai'), { status: 400 });
+    const conflict = await prisma.clinicAdmission.findFirst({ where: { status: 'active', bedId: newBedId, id: { not: admission.id } } });
+    if (conflict) throw Object.assign(new Error('Yeh bed pehle se kisi aur active patient ke pass hai'), { status: 409 });
+  }
+  const updated = await prisma.clinicAdmission.update({ where: { id: admission.id }, data: { roomCategoryId: room.id, bedId: newBedId } });
+  if (admission.bedId && admission.bedId !== newBedId) await releaseBedOrDelay(admission.bedId).catch(() => {});
+  await prisma.clinicBed.update({ where: { id: newBedId }, data: { status: 'occupied', vacatedAt: null } }).catch(() => {});
   return updated;
 }
 
@@ -6449,8 +6500,14 @@ function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesB
   const segments = [];
   const sorted = [...shiftHistory].sort((a, b) => new Date(a.shiftedAt) - new Date(b.shiftedAt));
 
-  let curRoomCategoryId = admission.roomCategoryId || null;
-  let curBedId = admission.bedId || null;
+  // A bed shift overwrites admission.roomCategoryId / bedId with the NEW
+  // ward, so the stay before the first shift is read off that shift's
+  // fromBed — otherwise the days before the shift were charged at the new
+  // ward's rate.
+  const firstShift = sorted[0];
+  const firstFromBed = firstShift?.fromBedId ? bedsById[firstShift.fromBedId] : null;
+  let curRoomCategoryId = firstShift ? (firstFromBed?.roomCategoryId || admission.roomCategoryId || null) : (admission.roomCategoryId || null);
+  let curBedId = firstShift ? (firstShift.fromBedId || null) : (admission.bedId || null);
   let curEnteredAt = admission.createdAt;
 
   const pushSegment = (roomCategoryId, bedId, enteredAt, transferredAt) => {
@@ -9348,7 +9405,8 @@ async function getDailyStatementFromPatientList(date) {
     const key = r._source === 'antenatal' ? 'Antenatal' : canonicalRevenueDept(r.department || (r._source === 'admission' || r._source === 'admission-payment' ? 'Admission' : ''));
     if (!map.has(key)) map.set(key, { department: key, count: 0, amount: 0, discount: 0, cancel: 0 });
     const e = map.get(key);
-    e.count += 1;
+    // + its Administrative Expense line — Patients List counts that line too
+    e.count += 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
     e.amount += Number(r.received) || 0;
     e.discount += Number(r.discount) || 0;
     if (r.cancelled) e.cancel += 1;
@@ -11334,6 +11392,7 @@ module.exports = {
   getPanelChequePostingReport,
   getAdmissionFormPrintData,
   setPanelBillingParty,
+  correctAdmissionWard,
   findSerialClash,
   findUploadSerialClashes,
   previewPanelChequeImport,

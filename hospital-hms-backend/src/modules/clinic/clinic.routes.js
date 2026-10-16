@@ -321,6 +321,7 @@ router.get('/admission/status-change-history', controller.getAdmissionStatusChan
 // Bed Shifting
 router.get('/admission/:id/bed-shifts', controller.getBedShiftHistory);
 router.post('/admission/:id/bed-shift', controller.shiftAdmissionBed);
+router.patch('/admission/:id/ward-correct', controller.correctAdmissionWard);
 
 // Bed Status
 router.put('/beds/:id/status', controller.setBedStatus);

@@ -15,8 +15,10 @@ const API = 'http://localhost:5001/api/clinic';
 // into the visit total, so the backend sends it as `adminExpense` on that
 // visit's first row (with the share of received/balance it accounts for).
 // Show it as its own line under the doctor's row: the doctor row keeps only
-// the doctor's part, the extra line carries the admin expense. Display-only —
-// the line is not a patient, so Total Patients and every total stay the same.
+// the doctor's part, the extra line carries the admin expense. Amounts stay
+// the same; the line does count in Total Patients (owner's decision
+// 2026-10-16 — the legacy list counts it too, see patientLineCount).
+
 function expandAdminExpense(rows) {
   const out = [];
   rows.forEach((v, parentIndex) => {
@@ -46,6 +48,10 @@ function expandAdminExpense(rows) {
   });
   return out;
 }
+
+// Patient count = every line the list shows, Administrative Expense lines
+// included (a visit with adminExpense shows as two lines).
+const patientLineCount = (rows) => rows.reduce((n, v) => n + 1 + (Number(v.adminExpense) > 0 ? 1 : 0), 0);
 
 function excelSerialToDateStr(serial) {
   const d = new Date(Math.round((serial - 25569) * 86400 * 1000));
@@ -383,7 +389,7 @@ export default function PatientsListReport() {
   // tests (see getPatientVisits) expands into one row per test, and each
   // test-row counts as its own patient line here. Revenue Dashboard counts
   // the same way (see its own patients counters) so the two stay consistent.
-  const uniqueSlips = filteredVisits.length;
+  const uniqueSlips = patientLineCount(filteredVisits);
 
   const fmtDisplayDate = (d) => d ? new Date(d).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) : '';
 
@@ -516,7 +522,7 @@ export default function PatientsListReport() {
     const dis = rows.reduce((s, v) => s + Number(v.discount || 0), 0);
     return (
       <tr className="plr-group-subtotal">
-        <td colSpan={3} className="plr-tf-label">Patients: {rows.length}</td>
+        <td colSpan={3} className="plr-tf-label">Patients: {patientLineCount(rows)}</td>
         <td colSpan={6} className="plr-tf-label">Subtotal:</td>
         <td className="plr-td-num plr-tf-val">{fmt(rec)}</td>
         <td className="plr-td-num" />
@@ -672,7 +678,7 @@ export default function PatientsListReport() {
                     <tr key={`${g.user}-${g.shift}`} className={i % 2 === 0 ? 'plr-row-even' : ''}>
                       <td className="plr-td-name">{g.user}</td>
                       <td>{g.shift}</td>
-                      <td className="plr-td-num">{g.rows.length}</td>
+                      <td className="plr-td-num">{patientLineCount(g.rows)}</td>
                       <td className="plr-td-num">{fmt(rec)}</td>
                       <td className="plr-td-num">{fmt(dis)}</td>
                     </tr>

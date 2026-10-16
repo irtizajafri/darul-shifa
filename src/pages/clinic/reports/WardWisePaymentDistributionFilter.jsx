@@ -35,8 +35,7 @@ export default function WardWisePaymentDistributionFilter() {
       .then(r => r.json())
       .then(j => {
         const list = j.data || [];
-        setWards(list);
-        setSelectedWards(new Set(list.map(w => w.id))); // all checked by default
+        setWards(list); // none ticked by default — pick the ward(s) to report on
       })
       .catch((err) => toast.error(err?.message || 'Failed to load wards'));
   }, []);
@@ -50,7 +49,7 @@ export default function WardWisePaymentDistributionFilter() {
   };
 
   const handlePreview = () => {
-    if (!selectedWards.size) { return; }
+    if (!selectedWards.size) { toast.error('Kam az kam ek Ward tick karein'); return; }
     const params = new URLSearchParams({
       admissionFrom, admissionTo, dateFrom, dateTo,
       wardIds: [...selectedWards].join(','),

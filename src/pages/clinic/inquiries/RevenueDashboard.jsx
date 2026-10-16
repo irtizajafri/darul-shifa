@@ -218,11 +218,13 @@ export default function RevenueDashboard() {
           const d   = dayMap[day];
           const amt = Number(r.received || 0);
           const pt  = (r.paymentType || '').toLowerCase();
-          d.slips += 1;
+          // + its Administrative Expense line, same as Patients List's count
+          const n   = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
+          d.slips += n;
           d.totalAmount += amt;
-          if (pt === 'cash')                                   { d.cashSlips += 1;  d.cashAmount  += amt; }
-          else if (pt === 'panel')                             { d.panelSlips += 1; d.panelAmount += amt; }
-          else if (['c card','cc','credit card'].includes(pt)) { d.ccSlips += 1;    d.ccAmount    += amt; }
+          if (pt === 'cash')                                   { d.cashSlips += n;  d.cashAmount  += amt; }
+          else if (pt === 'panel')                             { d.panelSlips += n; d.panelAmount += amt; }
+          else if (['c card','cc','credit card'].includes(pt)) { d.ccSlips += n;    d.ccAmount    += amt; }
         }
 
         const data = Object.values(dayMap).map(d => ({
@@ -232,7 +234,7 @@ export default function RevenueDashboard() {
           ccPatients: d.ccSlips, ccAmount: d.ccAmount,
         }));
 
-        const totalPatients = filtered.length;
+        const totalPatients = filtered.reduce((n, r) => n + 1 + (Number(r.adminExpense) > 0 ? 1 : 0), 0);
         const totalAmount   = filtered.reduce((s, r) => s + Number(r.received || 0), 0);
         const daysWithData  = data.filter(d => d.totalAmount > 0).length;
         const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;

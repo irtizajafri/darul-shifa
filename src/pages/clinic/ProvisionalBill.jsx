@@ -40,23 +40,25 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [category, setCategory] = useState('cash'); // 'cash' | 'panel'
+  // "Discharge / Close bhi" — list those files too (e.g. to set their ward)
+  const [withDischarged, setWithDischarged] = useState(false);
   const timer = useRef(null);
 
   useEffect(() => {
     setLoading(true);
-    searchAdmissions(q, category)
+    searchAdmissions(q, category, withDischarged)
       .then((data) => setRows(data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchAdmissions, category]);
+  }, [searchAdmissions, category, withDischarged]);
 
   function handleQueryChange(val) {
     setQ(val);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setLoading(true);
-      searchAdmissions(val, category)
+      searchAdmissions(val, category, withDischarged)
         .then((data) => setRows(data || []))
         .catch(() => setRows([]))
         .finally(() => setLoading(false));
@@ -88,6 +90,10 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
           >
             {category === 'cash' ? 'Cash' : 'Panel'}
           </button>
+          <label className="pb-lookup-all" title="Discharge aur Close ho chuki files bhi list mein dikhayein">
+            <input type="checkbox" checked={withDischarged} onChange={(e) => setWithDischarged(e.target.checked)} />
+            Discharge / Close bhi
+          </label>
         </div>
         <div className="aa-modal-body">
           {loading ? (
@@ -99,6 +105,7 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
                   <th>Admission #</th>
                   <th>Patient</th>
                   <th>Admission Date</th>
+                  {withDischarged && <th>Status</th>}
                 </tr>
               </thead>
               <tbody>
@@ -107,14 +114,108 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
                     <td>{r.admissionNo}</td>
                     <td>{r.patientName}</td>
                     <td>{fmtDateTime(r.createdAt)}</td>
+                    {withDischarged && <td>{{ active: 'Admit', discharge: 'Discharge', closed: 'Closed' }[r.status] || r.status}</td>}
                   </tr>
                 ))}
                 {!rows.length && (
-                  <tr><td colSpan={3} className="aa-td-empty">Koi admit patient nahi mila</td></tr>
+                  <tr><td colSpan={withDischarged ? 4 : 3} className="aa-td-empty">Koi admit patient nahi mila</td></tr>
                 )}
               </tbody>
             </table>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Ward Theek Karein / Bed Shift (Provisional Bill header) ──────────────────
+// mode 'correct' — wrong ward picked at admission (or never set): the whole
+//   stay moves to the chosen ward; admitted patients also pick a bed of it,
+//   Discharge / Closed files just get the ward (see correctAdmissionWard).
+// mode 'shift' — the patient actually moved (admitted only): new ward + bed
+//   and the time of the move; rooms are charged per ward from then on.
+function WardChangeModal({ mode, detail, roomCategories, fetchAvailableBeds, onSave, onClose }) {
+  const isShift = mode === 'shift';
+  const needsBed = isShift || detail.admission.status === 'active';
+  const [wardId, setWardId] = useState(isShift ? '' : String(detail.admission.roomCategoryId || ''));
+  const [beds, setBeds] = useState([]);
+  const [bedId, setBedId] = useState('');
+  const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+  const [when, setWhen] = useState(nowLocal());
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!needsBed || !wardId) return undefined;
+    let off = false;
+    fetchAvailableBeds(wardId, detail.admission.id)
+      .then((list) => { if (!off) setBeds(list || []); })
+      .catch(() => { if (!off) setBeds([]); });
+    return () => { off = true; };
+  }, [wardId, needsBed, fetchAvailableBeds, detail.admission.id]);
+
+  const shownBeds = needsBed && wardId ? beds : [];
+
+  async function handleSave() {
+    if (!wardId) return toast.error('Ward chunein');
+    if (needsBed && !bedId) return toast.error('Bed chunein');
+    setSaving(true);
+    try {
+      await onSave({ roomCategoryId: Number(wardId), bedId: bedId ? Number(bedId) : null, shiftedAt: isShift ? new Date(when).toISOString() : undefined });
+    } catch (e) {
+      toast.error(e.message || 'Save nahi hua');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="pb-overlay" onClick={onClose}>
+      <div className="pb-info-modal pb-ward-modal" onClick={e => e.stopPropagation()}>
+        <div className="pb-info-hdr">
+          <span>{isShift ? 'Bed Shift' : 'Ward Theek Karein'}</span>
+          <button className="pb-info-close" onClick={onClose}><X size={15} /></button>
+        </div>
+        <div className="pb-info-body pb-ward-body">
+          <p className="pb-ward-now">Abhi: <b>{detail.roomCategory?.name || '— (ward nahi)'}</b>{detail.bed?.name ? ` · Bed ${detail.bed.name}` : ''}</p>
+          <label>{isShift ? 'Naya Ward' : 'Sahi Ward'}</label>
+          <SearchableSelect
+            options={roomCategories}
+            value={wardId}
+            onChange={(v) => { setWardId(v ? String(v) : ''); setBedId(''); }}
+            getKey={(r) => String(r.id)}
+            getLabel={(r) => `${r.code ? `${r.code} - ` : ''}${r.name}`}
+            placeholder="— Ward chunein —"
+            size="sm"
+          />
+          {needsBed && (
+            <>
+              <label>Bed</label>
+              <SearchableSelect
+                options={shownBeds}
+                value={bedId}
+                onChange={(v) => setBedId(v ? String(v) : '')}
+                getKey={(b) => String(b.id)}
+                getLabel={(b) => b.name}
+                placeholder={wardId ? (shownBeds.length ? '— Bed chunein —' : 'Is ward mein khaali bed nahi') : 'Pehle ward chunein'}
+                disabled={!wardId}
+                size="sm"
+              />
+            </>
+          )}
+          {isShift && (
+            <>
+              <label>Shift ka waqt</label>
+              <input type="datetime-local" className="pb-ward-when" value={when} onChange={(e) => setWhen(e.target.value)} />
+            </>
+          )}
+          <p className="pb-ward-hint">
+            {isShift
+              ? 'Shift se pehle ke din purane ward, us ke baad naye ward ke rate se Room Charges lagenge. Purana bed khaali ho jayega.'
+              : needsBed
+                ? 'Poore stay ka ward yehi ho jayega (koi shift history nahi). Purana bed khaali ho jayega.'
+                : 'File discharge/close hai — sirf ward set hoga, bed nahi. Final Bill pehle ban chuka ho to us ke Room Charges nahi badlenge.'}
+          </p>
+          <button className="pb-save-header-btn" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -313,9 +414,11 @@ export default function ProvisionalBill() {
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
   const printedBy = user?.name || user?.username || user?.email || '';
+  const [wardModal, setWardModal] = useState(null); // 'correct' | 'shift' | null
 
   const {
     roomCategories, fetchRoomCategories,
+    fetchAvailableBeds, shiftAdmissionBed, correctAdmissionWard,
     billHeads, fetchBillHeads,
     surgeryTypes, fetchSurgeryTypes,
     dischargeTypes, fetchDischargeTypes,
@@ -418,6 +521,18 @@ export default function ProvisionalBill() {
       setLoading(false);
     }
   }, [fetchProvisionalBillDetail]);
+
+  async function handleWardChange({ roomCategoryId, bedId, shiftedAt }) {
+    if (wardModal === 'shift') {
+      await shiftAdmissionBed(admissionId, { newBedId: bedId, shiftedBy: printedBy, shiftedAt });
+      toast.success('Bed shift ho gaya');
+    } else {
+      await correctAdmissionWard(admissionId, { roomCategoryId, bedId });
+      toast.success('Ward update ho gaya');
+    }
+    setWardModal(null);
+    await loadDetail(admissionId, true);
+  }
 
   async function handleSaveWardRate() {
     if (!wardRateEdit || !admissionId) return;
@@ -692,6 +807,16 @@ export default function ProvisionalBill() {
         />
       )}
       {showPatientInfo && detail && <PatientInfoModal detail={detail} onClose={() => setShowPatientInfo(false)} />}
+      {wardModal && detail && (
+        <WardChangeModal
+          mode={wardModal}
+          detail={detail}
+          roomCategories={roomCategories}
+          fetchAvailableBeds={fetchAvailableBeds}
+          onSave={handleWardChange}
+          onClose={() => setWardModal(null)}
+        />
+      )}
       {showBalanceInfo && detail && <BalanceInfoModal detail={detail} onClose={() => setShowBalanceInfo(false)} />}
 
       <div className="adm-page">
@@ -739,6 +864,19 @@ export default function ProvisionalBill() {
                 <span className={`pb-status-badge pb-status-badge--${detail.admission.status}`}>
                   {{ active: 'Admit', discharge: 'Discharge', closed: 'Closed', wipeout: 'Wipeout' }[detail.admission.status] || detail.admission.status}
                 </span>
+              </div>
+
+              <div className="pb-hdr-row">
+                <label className="pb-hdr-lbl">Ward</label>
+                <div className="pb-hdr-value">{detail.roomCategory?.name || '— (ward nahi)'}</div>
+                <label className="pb-hdr-lbl">Bed</label>
+                <div className="pb-hdr-value">{detail.bed?.name || '—'}</div>
+                {['active', 'discharge', 'closed'].includes(detail.admission.status) && (
+                  <button className="pb-info-btn" onClick={() => setWardModal('correct')}>Ward Theek Karein</button>
+                )}
+                {detail.admission.status === 'active' && (
+                  <button className="pb-info-btn" onClick={() => setWardModal('shift')}>Bed Shift</button>
+                )}
               </div>
 
               <div className="pb-hdr-row pb-hdr-row--surgery">

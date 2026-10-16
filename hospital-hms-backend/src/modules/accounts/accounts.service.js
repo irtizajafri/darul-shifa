@@ -2764,10 +2764,19 @@ async function updateVoucherIncome(id, { mode, bankId, voucherDate, entries }) {
 
 async function getVouchersForReprint({ type, entityType, voucherFrom, voucherTo, dateFrom, dateTo }) {
   const where = { entityType };
-  if (voucherFrom || voucherTo) {
+  // Voucher # — typed in any case, whole or partial:
+  //  • From only → that voucher (or every voucher starting with it, e.g.
+  //    "VE-20261008" = that whole day), not "everything after it".
+  //  • To is inclusive of anything starting with it ("VE-20261008" as To
+  //    still takes VE-20261008-003).
+  const vFrom = String(voucherFrom || '').trim().toUpperCase();
+  const vTo = String(voucherTo || '').trim().toUpperCase();
+  if (vFrom && !vTo) {
+    where.voucherNo = { startsWith: vFrom };
+  } else if (vFrom || vTo) {
     where.voucherNo = {};
-    if (voucherFrom) where.voucherNo.gte = voucherFrom;
-    if (voucherTo)   where.voucherNo.lte = voucherTo;
+    if (vFrom) where.voucherNo.gte = vFrom;
+    if (vTo)   where.voucherNo.lte = `${vTo}\uffff`;
   }
   if (dateFrom || dateTo) {
     where.voucherDate = {};

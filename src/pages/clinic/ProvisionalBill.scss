@@ -757,3 +757,16 @@ $border: #bbb;
     &:disabled { opacity: 0.5; cursor: not-allowed; }
   }
 }
+
+// Lookup — "Discharge / Close bhi" tick
+.pb-lookup-all { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; font-weight: 600; color: #475569; white-space: nowrap; margin-left: 8px; cursor: pointer; }
+
+// Ward Theek Karein / Bed Shift popup
+.pb-ward-modal { max-width: 420px; }
+.pb-ward-body {
+  display: flex; flex-direction: column; gap: 6px;
+  label { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-top: 6px; }
+}
+.pb-ward-now { font-size: 0.85rem; color: #334155; margin: 0 0 4px; }
+.pb-ward-when { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 8px; font-size: 0.85rem; }
+.pb-ward-hint { font-size: 0.75rem; color: #64748b; margin: 8px 0 4px; line-height: 1.4; }
