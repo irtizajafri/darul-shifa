@@ -766,6 +766,7 @@ async function createSalesInvoiceWithItems(req, res, next) {
     const data = await service.createSalesInvoiceWithItems(body);
     return success(res, data, 'sales invoice created');
   } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
     if (String(err.message).includes('required') || String(err.message).includes('Invalid') || String(err.message).includes('must') || String(err.message).includes('insufficient') || String(err.message).includes('Insufficient') || String(err.message).includes('not found') || String(err.message).includes('inactive')) {
       return fail(res, 400, err.message);
     }

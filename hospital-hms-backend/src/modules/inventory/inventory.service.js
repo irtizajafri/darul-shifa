@@ -2282,11 +2282,23 @@ async function createSalesInvoiceWithItems(payload) {
       }
     }
 
+    // Bill each GIN / GIN line once only: flip only those not billed yet, and
+    // if any was already billed (another tab, a second Save, a stale screen)
+    // the whole save rolls back — so the same medicine can't land on the
+    // patient's bill twice.
+    const alreadyBilled = Object.assign(
+      new Error('Is invoice ki kuch GIN lines pehle hi bill ho chuki hain — screen refresh karke dobara dekhein'),
+      { status: 409 },
+    );
     if (allGinIds.length) {
-      await tx.inventoryGIN.updateMany({ where: { id: { in: allGinIds } }, data: { isBilled: true } });
+      const ids = [...new Set(allGinIds)];
+      const r = await tx.inventoryGIN.updateMany({ where: { id: { in: ids }, isBilled: false }, data: { isBilled: true } });
+      if (r.count !== ids.length) throw alreadyBilled;
     }
     if (allGinItemIds.length) {
-      await tx.inventoryGINItem.updateMany({ where: { id: { in: allGinItemIds } }, data: { isBilled: true } });
+      const ids = [...new Set(allGinItemIds)];
+      const r = await tx.inventoryGINItem.updateMany({ where: { id: { in: ids }, isBilled: false }, data: { isBilled: true } });
+      if (r.count !== ids.length) throw alreadyBilled;
     }
 
     return { ...header, items: invoiceLines };

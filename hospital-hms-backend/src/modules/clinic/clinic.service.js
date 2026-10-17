@@ -5581,9 +5581,16 @@ async function loadLiveAdmissionMedicines({ category, scopeMode, admissionNo, da
       : [],
     wantHospital
       ? prisma.inventorySalesInvoice.findMany({
-          where: { customerType: 'admission', customerName: { in: nos }, ...(medRange ? { invoiceDate: medRange } : {}) },
+          where: { customerType: 'admission', customerName: { in: nos } },
           include: { item: { select: { name: true } } },
           orderBy: [{ invoiceDate: 'asc' }, { id: 'asc' }],
+        }).then((all) => {
+          // Same counting as the Provisional Bill (effectiveAdmissionInvoiceLines),
+          // per admission over all its invoices — then the medicine-date range.
+          const byAdm = new Map();
+          all.forEach((l) => { if (!byAdm.has(l.customerName)) byAdm.set(l.customerName, []); byAdm.get(l.customerName).push(l); });
+          return [...byAdm.values()].flatMap(effectiveAdmissionInvoiceLines)
+            .filter((l) => !medRange || (l.invoiceDate >= medRange.gte && l.invoiceDate <= medRange.lte));
         })
       : [],
   ]);
@@ -6549,6 +6556,29 @@ function computeWardHistory({ admission, shiftHistory, bedsById, roomCategoriesB
   return segments;
 }
 
+// Admission medicine bills (Inventory Sales Invoices) — which lines count.
+// Before GIN-linked billing (Oct 2026) the admission's medicine bill was kept
+// as ONE running bill: each update was saved as a NEW invoice carrying the
+// whole bill again (old lines + new), so adding them all up counted the same
+// medicine several times (e.g. a 13,000 bill showing 67,700). Those lines —
+// not tied to a GIN (no ginItemId / ginId) and not an MRN return — are
+// snapshots of that running bill: only the LATEST save counts (a medicine at
+// two rates keeps its two rows inside it). GIN-linked lines (each GIN bills
+// itself once) and MRN return lines always count. One save = one header (or,
+// before headers existed, one invoice timestamp). Owner's rule 2026-10-17.
+function effectiveAdmissionInvoiceLines(lines) {
+  const isSnapshot = (l) => !l.ginItemId && !l.ginId && !l.mrnItemId && Number(l.quantity) > 0;
+  const saveKey = (l) => (l.headerId != null ? `h${l.headerId}` : `d${new Date(l.invoiceDate).getTime()}`);
+  let latest = null;
+  for (const l of lines) {
+    if (!isSnapshot(l)) continue;
+    const t = new Date(l.invoiceDate).getTime();
+    const hid = l.headerId || 0;
+    if (!latest || t > latest.t || (t === latest.t && hid > latest.hid)) latest = { key: saveKey(l), t, hid };
+  }
+  return lines.filter((l) => !isSnapshot(l) || saveKey(l) === latest.key);
+}
+
 async function getProvisionalBillDetail(admissionId) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
@@ -6556,7 +6586,7 @@ async function getProvisionalBillDetail(admissionId) {
   const [
     roomCategory, bed, surgeryType, dischargeType, consultant,
     billItems, labVisits, diagnosticOtherVisits, otherVisits,
-    payments, salesInvoiceItems, outsidePharmacyItems, shiftHistory, rateOverrideRows, latestDiscountRefund,
+    payments, rawSalesInvoiceItems, outsidePharmacyItems, shiftHistory, rateOverrideRows, latestDiscountRefund,
     dischargeCertificate,
   ] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
@@ -6742,7 +6772,7 @@ async function getProvisionalBillDetail(admissionId) {
     }));
 
   const pharmacyRows = [
-    ...salesInvoiceItems.map((si) => ({
+    ...effectiveAdmissionInvoiceLines(rawSalesInvoiceItems).map((si) => ({
       id: `inv-${si.id}`,
       source: 'hospital',
       storeName: null,

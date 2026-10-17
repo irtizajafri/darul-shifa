@@ -217,9 +217,15 @@ export default function SalesInvoice() {
   const printInvoice = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
   const handlePrint = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
 
-  const handleAdmSearch = async (admissionNoOverride) => {
+  // Auto-billing: once an admission is searched, any GIN lines not on a bill
+  // yet are billed by themselves (no Save Invoice button) — once per search,
+  // so a refused save can't loop.
+  const autoBilledRef = useRef(null);
+
+  const handleAdmSearch = async (admissionNoOverride, { fromAutoSave = false } = {}) => {
     const admNo = (admissionNoOverride ?? admQuery).trim();
     if (!admNo) { toast.error('Enter admission number'); return; }
+    if (!fromAutoSave) autoBilledRef.current = null;
     setAdmLoading(true);
     try {
       const [data, invoices] = await Promise.all([
@@ -310,7 +316,6 @@ export default function SalesInvoice() {
 
   const admPendingLines = admGinBlocks.flatMap((b) => b.lines.filter((l) => !l.billed));
   const admGrandTotal = admGinBlocks.reduce((s, b) => s + b.total, 0) + admReturnTotal;
-  const admPendingTotal = admPendingLines.reduce((s, l) => s + l.amount, 0);
 
   const saveBilledRate = async (line) => {
     const draft = billedRateDrafts[line.id];
@@ -332,27 +337,10 @@ export default function SalesInvoice() {
     }
   };
 
-  const buildAdmInvObject = (code = `ADM-${admQuery}`) => ({
-    code,
-    customerType: 'customer',
-    customerName: admQuery,
-    invoiceDate: new Date().toISOString(),
-    items: admPendingLines.map((l) => ({ item: { name: l.item }, saleRate: l.rate, quantity: l.qty, totalAmount: l.amount })),
-    subTotal: admPendingTotal,
-    totalAmount: admPendingTotal,
-    discountPercent: 0,
-    discountAmount: 0,
-  });
-
-  const printAdmInvoice = () => {
-    if (admPendingLines.length === 0) return;
-    generateSalesInvoicePdf({ inv: buildAdmInvObject(), mode: 'print' });
-  };
-
   const [admSaving, setAdmSaving] = useState(false);
 
   const saveAdmInvoice = async () => {
-    if (admPendingLines.length === 0) { toast.error('No items to save'); return; }
+    if (admPendingLines.length === 0) return;
     const invalidItem = admPendingLines.find((r) => !r.itemId);
     if (invalidItem) { toast.error(`Item ID missing for: ${invalidItem.item}`); return; }
     setAdmSaving(true);
@@ -374,19 +362,27 @@ export default function SalesInvoice() {
           ginItemIds: l.ginItemIds,
         })),
       };
-      const created = await createSalesInvoiceWithItems(payload);
+      await createSalesInvoiceWithItems(payload);
       await fetchSalesInvoiceHeaders(filters);
-      toast.success('Admission invoice saved');
-      generateSalesInvoicePdf({ inv: created, mode: 'print' });
+      toast.success(`${admPendingLines.length} line(s) admission ${admQuery} ke bill mein add ho gayin`);
       // Reload the same admission so the just-saved items stay on screen,
       // now marked "Billed", instead of the search clearing to empty.
-      await handleAdmSearch(admQuery);
+      await handleAdmSearch(admQuery, { fromAutoSave: true });
     } catch (err) {
       toast.error(err.message || 'Failed to save admission invoice');
     } finally {
       setAdmSaving(false);
     }
   };
+
+  useEffect(() => {
+    if (admGINs === null || admLoading || admSaving || admPendingLines.length === 0) return;
+    const key = admQuery.trim();
+    if (autoBilledRef.current === key) return;
+    autoBilledRef.current = key;
+    saveAdmInvoice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [admGINs, admLoading, admSaving, admPendingLines.length]);
 
   useModalKeys({
     active: showForm,
@@ -609,12 +605,7 @@ export default function SalesInvoice() {
           </div>
           <Button label={admLoading ? 'Searching...' : 'Search'} disabled={admLoading} onClick={() => handleAdmSearch()} />
           <Button label="Browse" variant="outline" onClick={() => setShowAdmPicker(true)} />
-          {admPendingLines.length > 0 && (
-            <>
-              <Button icon={Printer} label="Print" variant="outline" onClick={printAdmInvoice} />
-              <Button label={admSaving ? 'Saving...' : 'Save Invoice'} disabled={admSaving} onClick={saveAdmInvoice} />
-            </>
-          )}
+          {admSaving && <span className="text-xs text-slate-500">Bill mein add ho raha hai…</span>}
           {admGINs !== null && (
             <button
               onClick={() => { setAdmGINs(null); setAdmQuery(''); setAdmInvoices([]); setBilledRateDrafts({}); }}
