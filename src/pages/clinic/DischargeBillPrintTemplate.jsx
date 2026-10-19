@@ -34,7 +34,7 @@ function numToWords(n) {
 
 export function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
-  const { admission, roomCategory, bed, billItems, paymentHistory, amountReceived, billAmount, discountAmount, balance, refund } = detail;
+  const { admission, roomCategory, bed, billItems, paymentHistory, amountReceived, billAmount, discountAmount, otherIncomeAmount, balance, refund } = detail;
 
   const now = admission.createdAt ? new Date(admission.createdAt) : new Date();
   const dateStr = `${fmtDate(now)} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
@@ -102,6 +102,9 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
           <tr><td className="l">Bill Amount:</td><td className="r">{fmt2(billAmount)}</td></tr>
           <tr><td className="l">Discount:</td><td className="r">{fmt2(discountAmount)}</td></tr>
           <tr><td className="l">Received Amount:</td><td className="r">{fmt2(amountReceived)}</td></tr>
+          {otherIncomeAmount > 0 && (
+            <tr><td className="l">Goes to Other Income:</td><td className="r">-{fmt2(otherIncomeAmount)}</td></tr>
+          )}
           <tr><td className="l">Refund Amount:</td><td className="r">{fmt2(refund)}</td></tr>
           <tr className="dr-print-balance-row">
             <td className="l"><strong>Balance Amount:</strong></td>

@@ -42,27 +42,12 @@ function relationLabel(type) {
 
 export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
-  const { admission, roomCategory, bed, surgeryType, billItems, wardHistory, diagnosticRows, pharmacyAmount, balanceInfo } = detail;
+  const { admission, roomCategory, bed, surgeryType, billItems, diagnosticRows, pharmacyAmount, balanceInfo } = detail;
 
   const now = admission.createdAt ? new Date(admission.createdAt) : new Date();
   const dateStr = `${fmtDate(now)} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 
   const groups = {};
-  // Ward History is computed/read-only (not a billItems row) — synthesized
-  // into the same "Amount Distribution" grouping the existing bill format
-  // already uses, exactly like Diagnostic/Pharmacy below, so the printed
-  // layout itself never changes.
-  (wardHistory || []).forEach((seg, idx) => {
-    const label = seg.roomCategory?.name || 'Ward';
-    if (!groups[label]) groups[label] = [];
-    groups[label].push({
-      id: `ward-${idx}`,
-      billHead: { description: `Ward Stay${seg.transferredAt ? '' : ' (Current)'} — ${seg.days} day${seg.days !== 1 ? 's' : ''}` },
-      qty: seg.days,
-      rate: seg.rate,
-      amount: seg.charges,
-    });
-  });
   billItems.forEach((item) => {
     const label = item.roomCategory?.name || 'Other';
     if (!groups[label]) groups[label] = [];

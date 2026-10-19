@@ -644,8 +644,8 @@ async function deleteDischargeBillItem(req, res, next) {
 
 async function finalizeDischarge(req, res, next) {
   try {
-    const { discountAmount, changedBy } = req.body;
-    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, changedBy });
+    const { discountAmount, otherIncome, changedBy } = req.body;
+    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, otherIncome: !!otherIncome, changedBy });
     success(res, data, 'File closed');
   } catch (err) {
     if (err.status === 404) return fail(res, 404, err.message);
@@ -1609,7 +1609,7 @@ async function importBirthCertificates(req, res, next) {
 
 async function searchSlipsForAppointment(req, res, next) {
   try {
-    const data = await service.searchSlipsForAppointment(req.query.q);
+    const data = await service.searchSlipsForAppointment({ q: req.query.q, fromDate: req.query.fromDate, toDate: req.query.toDate });
     success(res, data);
   } catch (err) { next(err); }
 }
@@ -2151,6 +2151,7 @@ async function refundVisit(req, res, next) {
       amount: Number(amount),
       particulars: `Slip Refund — ${data.patientName} (${data.serialNo || ''})`,
       voucherDate,
+      dayVoucherSource: 'slip-refund',
     });
     if (result.voucherNo) data.voucherNo = result.voucherNo;
     else if (result.warning) data.voucherWarning = result.warning;

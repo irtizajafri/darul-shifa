@@ -2166,8 +2166,7 @@ async function getPanelAdmissionBilling(admissionNo) {
   billHeads.forEach((h) => { if (h.panelSortOrder != null) sortOrderByDesc[h.description] = h.panelSortOrder; });
   panelHeadOrders.forEach((h) => { sortOrderByDesc[h.description] = h.panelSortOrder; });
 
-  // Provisional Bill items grouped by bill head (Room Charges comes from Ward
-  // History instead of a headId-tagged item; Medicine/Laboratory come from
+  // Provisional Bill items grouped by bill head (Medicine/Laboratory come from
   // their own dedicated tabs — see below — never from headId-tagged items).
   const itemsByHeadId = {};
   detail.billItems.forEach((item) => {
@@ -2176,7 +2175,6 @@ async function getPanelAdmissionBilling(admissionNo) {
   });
 
   const pharmacyAmount = detail.pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
-  const wardDays = detail.wardHistory.reduce((s, w) => s + Number(w.days || 0), 0);
 
   // Laboratory / Radiology / Ultra Sound, Echo & Color Doppler used to all
   // fold into one combined "Laboratory" row — now each gets its own row,
@@ -2186,16 +2184,16 @@ async function getPanelAdmissionBilling(admissionNo) {
   detail.diagnosticRows.forEach((r) => { (diagByDept[r.department] ||= []).push(r); });
   const diagAmount = (dept) => diagByDept[dept].reduce((s, r) => s + Number(r.amount || 0), 0);
 
-  // "Room Charges" also exists as its own ClinicBillHead (for manually-added
-  // Provisional Bill items), but this screen's Room Charges row is always the
-  // Ward History total — fold any such manual items into it instead of
-  // showing (or silently dropping) a duplicate-labeled second row.
+  // "Room Charges" is its own ClinicBillHead — the manually added Provisional
+  // Bill items under it make up this screen's Room Charges row.
   const roomHead = billHeads.find((h) => h.description === 'Room Charges');
   const roomHeadItems = roomHead ? (itemsByHeadId[roomHead.id] || []) : [];
   const roomHeadAmount = roomHeadItems.reduce((s, i) => s + Number(i.amount || 0), 0);
   const roomHeadQty = roomHeadItems.reduce((s, i) => s + Number(i.qty || 0), 0);
-  const roomAmount = detail.wardAmount + roomHeadAmount;
-  const roomQty = wardDays + roomHeadQty;
+  // Room Charges = the manually added Room Charges lines only — Ward History
+  // days no longer bill (see getProvisionalBillDetail).
+  const roomAmount = roomHeadAmount;
+  const roomQty = roomHeadQty;
 
   const computedRows = [
     {
@@ -3428,7 +3426,11 @@ async function saveDischargeCertificate(admissionId, {
   if (Number.isNaN(parsedDischargeDate.getTime())) {
     throw Object.assign(new Error('Discharge Date invalid hai'), { status: 400 });
   }
-  if (parsedDischargeDate < admission.createdAt) {
+  // Compared as PKT calendar days — the date-only Discharge Date parses to
+  // 05:00 PKT, so comparing instants refused a same-day discharge for anyone
+  // admitted later that morning.
+  const pktDayOf = (d) => Math.floor((new Date(d).getTime() + 5 * 3600000) / 86400000);
+  if (pktDayOf(parsedDischargeDate) < pktDayOf(admission.createdAt)) {
     throw Object.assign(new Error('Discharge Date, Admission Date se pehle nahi ho sakti'), { status: 400 });
   }
 
@@ -3545,36 +3547,33 @@ function opdVisitConsultantNames(visit) {
   return [...new Set((visit.doctors || []).map(d => d.doctor?.name).filter(Boolean))].join(', ');
 }
 
-async function searchSlipsForAppointment(q) {
+async function searchSlipsForAppointment({ q, fromDate, toDate } = {}) {
   const term = String(q || '').trim();
-  // Only the last 5 days' slips are ever shown for Appointment booking —
-  // narrows an otherwise unbounded search and, as a side effect, keeps old
-  // legacy-migrated ClinicOpdVisit rows (serialNo = "LEGACY-<id>", stamped
-  // with their original historical visitDate, not today) out of the
-  // picker without needing to touch that data. Applies even when
-  // searching by name/slip# — an appointment is only ever booked against a
-  // recent slip.
+  const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  // From/To picked on the lookup (defaults to the last 3 months there). With
+  // no dates at all, fall back to the last 90 days so the search stays bounded.
   //
   // createdAt is a Postgres "timestamp without time zone" column (naive
-  // PKT wall-clock value) — computing the cutoff with a raw SQL interval
-  // instead of a JS Date avoids the Prisma/JS-Date-vs-naive-column skew
-  // already found and fixed elsewhere in this file (see getPatientVisits).
-  const recentRows = await prisma.$queryRawUnsafe(`
-    SELECT id FROM "ClinicOpdVisit" WHERE "createdAt" >= (NOW() - INTERVAL '5 days')
-  `);
-  const recentIds = recentRows.map((r) => r.id);
-
-  const where = {
-    id: { in: recentIds },
-    ...(term ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] } : {}),
-  };
-  const rows = await prisma.clinicOpdVisit.findMany({
-    where,
-    select: { id: true, serialNo: true, patientName: true, department: true, createdAt: true },
-    orderBy: { createdAt: 'desc' },
-    take: 100,
-  });
-  return rows;
+  // PKT wall-clock value) — the range is compared in raw SQL on its calendar
+  // date instead of a JS Date, avoiding the Prisma/JS-Date-vs-naive-column
+  // skew already found and fixed elsewhere in this file (see getPatientVisits).
+  // Legacy-migrated rows (serialNo "LEGACY-<id>") are never bookable slips.
+  const params = [];
+  const conds = [`"serialNo" NOT LIKE 'LEGACY-%'`];
+  if (isYmd(fromDate)) { params.push(fromDate); conds.push(`"createdAt"::date >= $${params.length}::date`); }
+  if (isYmd(toDate))   { params.push(toDate);   conds.push(`"createdAt"::date <= $${params.length}::date`); }
+  if (!isYmd(fromDate) && !isYmd(toDate)) conds.push(`"createdAt" >= (NOW() - INTERVAL '90 days')`);
+  if (term) {
+    params.push(`%${term}%`);
+    conds.push(`("serialNo" ILIKE $${params.length} OR "patientName" ILIKE $${params.length})`);
+  }
+  return prisma.$queryRawUnsafe(`
+    SELECT id, "serialNo", "patientName", department, "createdAt"
+    FROM "ClinicOpdVisit"
+    WHERE ${conds.join(' AND ')}
+    ORDER BY "createdAt" DESC
+    LIMIT 300
+  `, ...params);
 }
 
 async function getAppointmentForSlip(slipNo) {
@@ -6701,10 +6700,12 @@ async function getProvisionalBillDetail(admissionId) {
   const asOfDate = admission.status !== 'active' && dischargeCertificate?.dischargeDate
     ? new Date(dischargeCertificate.dischargeDate)
     : null;
+  // Ward History is a movement record only (owner's decision 2026-10-19):
+  // ward/bed/entered/transferred show, but its auto-counted days never bill —
+  // room days are charged only from the manually added Room Charges lines.
   const wardHistory = computeWardHistory({
     admission, shiftHistory, bedsById, roomCategoriesById: wardById, rateOverridesByEnteredAt, asOfDate,
-  });
-  const wardAmount = wardHistory.reduce((s, seg) => s + seg.charges, 0);
+  }).map(({ days, rate, charges, ...seg }) => seg); // eslint-disable-line no-unused-vars
 
   const resolvedBillItemsAll = billItems.map((item) => ({
     ...item,
@@ -6815,7 +6816,7 @@ async function getProvisionalBillDetail(admissionId) {
   // setDiagnosticBillExcluded (e.g. a panel company billing its own pharmacy
   // separately) — the rows themselves stay visible/untouched either way,
   // only whether they count toward billAmount changes.
-  const billAmount = provisionalAmount + wardAmount
+  const billAmount = provisionalAmount
     + (admission.diagnosticBillExcluded ? 0 : diagnosticAmount)
     + (admission.pharmacyBillExcluded ? 0 : pharmacyAmount);
   const discountAmount = Number(latestDiscountRefund?.discountAmount) || 0;
@@ -6882,7 +6883,6 @@ async function getProvisionalBillDetail(admissionId) {
     consultant,
     billItems: resolvedBillItems,
     wardHistory,
-    wardAmount,
     diagnosticRows,
     diagnosticAmount,
     diagnosticBillExcluded: !!admission.diagnosticBillExcluded,
@@ -7138,8 +7138,8 @@ async function searchAdmissionsForDischargeRefund(q) {
   }));
 }
 
-// One-time snapshot of that admission's Provisional Bill (Bill Heads + Ward
-// History + Diagnostic, collapsed per department like the printed bill +
+// One-time snapshot of that admission's Provisional Bill (Bill Heads +
+// Diagnostic, collapsed per department like the printed bill +
 // summed Pharmacy) into this page's own ClinicDischargeBillItem rows —
 // reuses getProvisionalBillDetail entirely rather than re-deriving any of
 // it. Only runs once per admission (guarded by the caller checking for any
@@ -7151,8 +7151,26 @@ async function searchAdmissionsForDischargeRefund(q) {
 // this name has nowhere to come from except a fixed constant.
 const HOSPITAL_PHARMACY_STORE_NAME = 'Fair Medical Store';
 
+// Pharmacy rows need a payee so Voucher Expense's Pending Consultant Fees
+// can pay the store: the Contractor-category ClinicDoctor whose name matches
+// the store name, else the catch-all code 'PH' doctor. null when neither is
+// set up (row still bills, just isn't payable from Voucher Expense).
+async function resolvePharmacyPayees() {
+  const contractors = await prisma.clinicDoctor.findMany({
+    where: { OR: [{ staffCategory: { name: { equals: 'Contractor', mode: 'insensitive' } } }, { code: 'PH' }] },
+    select: { id: true, code: true, name: true, staffCategory: { select: { name: true } } },
+  });
+  const key = (n) => String(n || '').trim().toLowerCase();
+  const byName = new Map(contractors
+    .filter((d) => key(d.staffCategory?.name) === 'contractor')
+    .map((d) => [key(d.name), d.id]));
+  const fallbackId = contractors.find((d) => d.code === 'PH')?.id || null;
+  return (storeName) => byName.get(key(storeName)) || fallbackId;
+}
+
 async function importProvisionalDataIntoDischargeBill(admissionId) {
   const detail = await getProvisionalBillDetail(admissionId);
+  const pharmacyPayeeFor = await resolvePharmacyPayees();
   const rows = [];
 
   detail.billItems.forEach((item) => {
@@ -7165,20 +7183,6 @@ async function importProvisionalDataIntoDischargeBill(admissionId) {
       rate: Number(item.rate) || 0,
       amount: Number(item.amount) || 0,
       source: 'provisional',
-    });
-  });
-
-  (detail.wardHistory || []).forEach((seg) => {
-    const label = seg.roomCategory?.name || 'Ward';
-    rows.push({
-      admissionId: Number(admissionId),
-      billHeadId: null,
-      doctorId: null,
-      description: `${label} — ${seg.days} day${seg.days !== 1 ? 's' : ''}`,
-      qty: seg.days,
-      rate: seg.rate,
-      amount: seg.charges,
-      source: 'ward',
     });
   });
 
@@ -7214,7 +7218,7 @@ async function importProvisionalDataIntoDischargeBill(admissionId) {
     rows.push({
       admissionId: Number(admissionId),
       billHeadId: null,
-      doctorId: null,
+      doctorId: pharmacyPayeeFor(HOSPITAL_PHARMACY_STORE_NAME),
       description: HOSPITAL_PHARMACY_STORE_NAME,
       qty: 1,
       rate: hospitalPharmacyTotal,
@@ -7235,7 +7239,7 @@ async function importProvisionalDataIntoDischargeBill(admissionId) {
     rows.push({
       admissionId: Number(admissionId),
       billHeadId: null,
-      doctorId: null,
+      doctorId: pharmacyPayeeFor(storeName),
       description: storeName,
       qty: 1,
       rate: total,
@@ -7394,6 +7398,8 @@ async function getDischargeBillDetail(admissionId) {
   const refundGiven = await sumAdmissionRefunds(admissionId);
   const netAmountReceived = Math.max(0, amountReceived - refundGiven);
   const netAmount = Math.max(0, billAmount - discountAmount);
+  // Panel file closed via "Goes to Other Income" (see finalizeDischarge).
+  const otherIncomeAmount = Number(admission.dischargeOtherIncome) || 0;
 
   return {
     admission,
@@ -7406,7 +7412,8 @@ async function getDischargeBillDetail(admissionId) {
     amountReceived: netAmountReceived,
     billAmount,
     discountAmount,
-    balance: Math.max(0, netAmount - netAmountReceived),
+    otherIncomeAmount,
+    balance: Math.max(0, netAmount - netAmountReceived - otherIncomeAmount),
     refund: Math.max(0, netAmountReceived - netAmount),
   };
 }
@@ -7506,7 +7513,7 @@ async function deleteDischargeBillItem(itemId) {
   return prisma.clinicDischargeBillItem.delete({ where: { id: Number(itemId) } });
 }
 
-async function finalizeDischarge(admissionId, { discountAmount, changedBy }) {
+async function finalizeDischarge(admissionId, { discountAmount, otherIncome, changedBy }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
   // This page never discharges anymore (Discharge Certificate does) — it
@@ -7521,32 +7528,42 @@ async function finalizeDischarge(admissionId, { discountAmount, changedBy }) {
   // the discount actually being submitted, not the stale admission.dischargeDiscount
   // (which only gets set by this same call, further down).
   //
-  // Panel patients are exempt — they don't settle via cash Balance Amount at
-  // all, the company pays later through Panel Cheque Transaction (see
-  // getPanelChequeSummary/receivePanelCheque), so a positive Discharge Bill
-  // balance here is normal/expected for them and must not block the close.
+  // Panel files clear it with "Goes to Other Income" (owner's decision
+  // 2026-10-19): the remaining balance is written off as Other Income
+  // (stored on the admission, shown as minus) so Balance reaches 0. Nothing
+  // is posted to Accounts for it. Cash files never get that option.
   const isPanel = admission.patientCategory === 'panel';
-  if (!isPanel) {
-    const detail = await getDischargeBillDetail(admissionId);
-    const netAmount = Math.max(0, detail.billAmount - (Number(discountAmount) || 0));
-    const balance = Math.max(0, netAmount - detail.amountReceived);
-    if (balance > 0) {
-      throw Object.assign(
-        new Error(`File close nahi ho sakti — Balance Amount abhi bhi Rs. ${balance.toFixed(2)} baaki hai`),
-        { status: 400 }
-      );
-    }
+  if (otherIncome && !isPanel) {
+    throw Object.assign(new Error('Other Income sirf Panel file ke liye hai'), { status: 400 });
+  }
+  const detail = await getDischargeBillDetail(admissionId);
+  const netAmount = Math.max(0, detail.billAmount - (Number(discountAmount) || 0));
+  const outstanding = Math.max(0, netAmount - detail.amountReceived);
+  const otherIncomeAmount = isPanel && otherIncome ? outstanding : 0;
+  const balance = outstanding - otherIncomeAmount;
+  if (balance > 0) {
+    throw Object.assign(
+      new Error(isPanel
+        ? `File close nahi ho sakti — Balance Rs. ${balance.toFixed(2)} baaki hai. Panel file ke liye "Goes to Other Income" tick karein`
+        : `File close nahi ho sakti — Balance Amount abhi bhi Rs. ${balance.toFixed(2)} baaki hai`),
+      { status: 400 }
+    );
   }
 
   await prisma.clinicAdmission.update({
     where: { id: Number(admissionId) },
-    data: { dischargeDiscount: discountAmount != null ? Number(discountAmount) : null },
+    data: {
+      dischargeDiscount: discountAmount != null ? Number(discountAmount) : null,
+      dischargeOtherIncome: otherIncomeAmount || null,
+    },
   });
 
   // No user-facing Reason field on this screen (it's a structural transition)
   // — updateAdmissionStatus still requires one for its log, so supply the one
   // true reason this ever happens, per category.
-  const reason = isPanel ? 'Panel — billed to company via Panel Cheque Transaction' : 'Balance cleared — file closed';
+  const reason = otherIncomeAmount
+    ? `Panel — balance Rs. ${otherIncomeAmount.toFixed(2)} goes to Other Income`
+    : isPanel ? 'Panel — balance cleared — file closed' : 'Balance cleared — file closed';
   return updateAdmissionStatus(admissionId, { status: 'closed', reason, changedBy });
 }
 
@@ -8515,8 +8532,10 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     subDepartment: null,
     doctor:        v.consultantId ? (consultantMap[v.consultantId] || null) : null,
     paymentType:   v.patientCategory === 'private' ? 'cash' : (v.patientCategory || null),
-    received:      Number(v.advancePayment) || 0,
-    balance:       0,
+    // CC advance is deferred money — Balance, not Received — same rule as the
+    // OPD and Receiving-against-Admission rows.
+    received:      isCcPaymentType(v.patientCategory) ? 0 : (Number(v.advancePayment) || 0),
+    balance:       isCcPaymentType(v.patientCategory) ? (Number(v.advancePayment) || 0) : 0,
     discount:      0,
     _source:       'admission',
   }));

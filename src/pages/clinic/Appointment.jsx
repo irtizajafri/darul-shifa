@@ -30,26 +30,41 @@ function toDateInput(d) {
 }
 
 // ── Slip Lookup Modal ──────────────────────────────────────────────────────────
+function threeMonthsAgo() {
+  const dt = new Date();
+  dt.setMonth(dt.getMonth() - 3);
+  return toDateInput(dt);
+}
+
 function SlipLookupModal({ onSelect, onClose }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  // Older slips can be booked too — the range opens on the last 3 months
+  // and either end can be moved further back.
+  const [fromDate, setFromDate] = useState(threeMonthsAgo);
+  const [toDate, setToDate] = useState(() => toDateInput());
 
   useModalKeys({ active: true, onEsc: onClose });
 
+  // Searched on the server (debounced) — a client-side filter only ever saw
+  // the rows already loaded, so an older slip past the row limit never matched.
   useEffect(() => {
-    fetch(`${API}/appointment/search`)
-      .then(r => r.json())
-      .then(res => setRows(res.data || []))
-      .catch((err) => { setRows([]); toast.error(err?.message || 'Failed to load slips'); })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const filtered = rows.filter(r =>
-    !q.trim() ||
-    r.serialNo?.toLowerCase().includes(q.trim().toLowerCase()) ||
-    r.patientName?.toLowerCase().includes(q.trim().toLowerCase())
-  );
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      setLoading(true);
+      const qs = new URLSearchParams({ fromDate, toDate, ...(q.trim() ? { q: q.trim() } : {}) });
+      fetch(`${API}/appointment/search?${qs}`, { signal: ctrl.signal })
+        .then(r => r.json())
+        .then(res => { setRows(res.data || []); setLoading(false); })
+        .catch((err) => {
+          if (err?.name === 'AbortError') return;
+          setRows([]); setLoading(false);
+          toast.error(err?.message || 'Failed to load slips');
+        });
+    }, 300);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [q, fromDate, toDate]);
 
   return (
     <div className="apt-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -57,6 +72,13 @@ function SlipLookupModal({ onSelect, onClose }) {
         <div className="apt-modal-hdr">
           <span>Select Slip</span>
           <button className="apt-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
+        </div>
+        <div className="apt-modal-range">
+          <label>From</label>
+          <input type="date" value={fromDate} max={toDate} onChange={e => e.target.value && setFromDate(e.target.value)} />
+          <label>To</label>
+          <input type="date" value={toDate} min={fromDate} onChange={e => e.target.value && setToDate(e.target.value)} />
+          {!loading && <span className="apt-modal-count">{rows.length}{rows.length >= 300 ? '+' : ''} slips</span>}
         </div>
         <div className="apt-modal-search">
           <Search size={13} className="apt-modal-search-icon" />
@@ -77,7 +99,7 @@ function SlipLookupModal({ onSelect, onClose }) {
                 <tr><th>Slip #</th><th>Patient</th><th>Department</th><th>Date</th></tr>
               </thead>
               <tbody>
-                {filtered.map(r => (
+                {rows.map(r => (
                   <tr key={r.id} onClick={() => onSelect(r)}>
                     <td>{r.serialNo}</td>
                     <td>{r.patientName}</td>
@@ -85,7 +107,7 @@ function SlipLookupModal({ onSelect, onClose }) {
                     <td>{fmtDateTime(r.createdAt)}</td>
                   </tr>
                 ))}
-                {!filtered.length && (
+                {!loading && !rows.length && (
                   <tr><td colSpan={4} className="apt-td-empty">Koi slip nahi mila</td></tr>
                 )}
               </tbody>

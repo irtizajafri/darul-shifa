@@ -11,8 +11,10 @@ const API = 'http://localhost:5001/api/clinic';
 // `<input type="date">`'s own value format — used both to default the field
 // to today and to preload an already-saved certificate's date into it.
 function toDateInputValue(d) {
+  // PKT calendar day — a plain UTC slice gave the previous day for anything
+  // between 00:00 and 05:00 PKT (admission time, or "today" after midnight).
   const dt = d ? new Date(d) : new Date();
-  return dt.toISOString().slice(0, 10);
+  return new Date(dt.getTime() + 5 * 3600000).toISOString().slice(0, 10);
 }
 
 const REASON_OPTIONS = [

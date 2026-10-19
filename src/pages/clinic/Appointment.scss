@@ -195,6 +195,29 @@ $bg:      #dde3ea;
 
 .apt-modal-search-icon { color: #777; flex-shrink: 0; }
 
+.apt-modal-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #ddd;
+  background: #f5f7fa;
+  font-size: 12px;
+
+  label { font-weight: 600; color: #555; }
+
+  input[type="date"] {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 12px;
+    background: #fff;
+  }
+}
+
+.apt-modal-count { margin-left: auto; color: #777; font-variant-numeric: tabular-nums; }
+
 .apt-modal-search-input {
   flex: 1;
   font-family: inherit;

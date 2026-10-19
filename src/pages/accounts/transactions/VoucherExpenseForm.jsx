@@ -2117,12 +2117,16 @@ export default function VoucherExpenseForm() {
               <div className="ve-sal-modal__no-data">Is supplier ka koi unpaid GRN ya Maintenance nahi.</div>
             ) : (
               <>
-                {grnModal.grns?.length > 0 && (
+                {/* One scroll area for both lists — two flex:1 scrollers split
+                    the height and squeezed Maintenance to a sliver. */}
                 <div className="ve-grn-modal__table-wrap">
+                {grnModal.grns?.length > 0 && (
+                  <>
+                  <div className="ve-grn-modal__section">GRN <span>{grnModal.grns.length}</span></div>
                   <table className="ve-grn-modal__table">
                     <thead>
                       <tr>
-                        <th>
+                        <th className="ve-grn-modal__chk">
                           <input
                             type="checkbox"
                             onChange={(e) => {
@@ -2136,7 +2140,7 @@ export default function VoucherExpenseForm() {
                         <th>GRN #</th>
                         <th>Item</th>
                         <th>Date</th>
-                        <th>Amount</th>
+                        <th className="ve-grn-modal__amount">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2146,27 +2150,38 @@ export default function VoucherExpenseForm() {
                           className={checkedGrns[g.id] ? 've-grn-modal__row--checked' : ''}
                           onClick={() => setCheckedGrns((prev) => ({ ...prev, [g.id]: !prev[g.id] }))}
                         >
-                          <td><input type="checkbox" checked={!!checkedGrns[g.id]} onChange={() => {}} /></td>
+                          <td className="ve-grn-modal__chk"><input type="checkbox" checked={!!checkedGrns[g.id]} onChange={() => {}} /></td>
                           <td className="ve-grn-modal__code">{g.code}</td>
                           <td>{g.item?.name || '—'}</td>
-                          <td>{new Date(g.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                          <td className="ve-grn-modal__date">{new Date(g.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                           <td className="ve-grn-modal__amount">PKR {Number(g.totalAmount).toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                  </>
                 )}
                 {grnModal.maint?.length > 0 && (
-                  <div className="ve-grn-modal__table-wrap">
+                  <>
+                    <div className="ve-grn-modal__section">Maintenance <span>{grnModal.maint.length}</span></div>
                     <table className="ve-grn-modal__table">
                       <thead>
                         <tr>
-                          <th />
+                          <th className="ve-grn-modal__chk">
+                            <input
+                              type="checkbox"
+                              onChange={(e) => {
+                                const all = {};
+                                if (e.target.checked) grnModal.maint.forEach((m) => { all[m.id] = true; });
+                                setCheckedMaint(all);
+                              }}
+                              checked={grnModal.maint.length > 0 && grnModal.maint.every((m) => checkedMaint[m.id])}
+                            />
+                          </th>
                           <th>Maintenance #</th>
                           <th>Item · Nature of Repair</th>
                           <th>Date</th>
-                          <th>Actual Cost</th>
+                          <th className="ve-grn-modal__amount">Actual Cost</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2176,17 +2191,18 @@ export default function VoucherExpenseForm() {
                             className={checkedMaint[m.id] ? 've-grn-modal__row--checked' : ''}
                             onClick={() => setCheckedMaint((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
                           >
-                            <td><input type="checkbox" checked={!!checkedMaint[m.id]} onChange={() => {}} /></td>
+                            <td className="ve-grn-modal__chk"><input type="checkbox" checked={!!checkedMaint[m.id]} onChange={() => {}} /></td>
                             <td className="ve-grn-modal__code">{m.moNumber || `MO-${m.id}`}</td>
                             <td>{m.item?.name || '—'} · {m.natureOfRepair}</td>
-                            <td>{new Date(m.receivedDate || m.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                            <td className="ve-grn-modal__date">{new Date(m.receivedDate || m.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                             <td className="ve-grn-modal__amount">PKR {Number(m.actualCost || 0).toLocaleString()}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </>
                 )}
+                </div>
                 <div className="ve-grn-modal__footer">
                   <div className="ve-grn-modal__total">
                     <span>Selected Total</span>

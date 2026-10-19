@@ -17,15 +17,13 @@ function normalizeDateOnly(value) {
   const s = String(value).trim();
   const direct = s.match(/^(\d{4}-\d{2}-\d{2})$/);
   if (direct) return direct[1];
-  const pref = s.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (pref) return pref[1];
 
-  const d = new Date(s);
+  // Anything else is a real instant (ISO string or Date) — read its PKT
+  // calendar day. Slicing the ISO prefix gave the UTC day, one behind PKT for
+  // anything before 05:00 PKT (e.g. "2026-08-31T19:00:00.000Z" is 1 Sep).
+  const d = new Date(value instanceof Date ? value.getTime() : s);
   if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Date(d.getTime() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function normalizeTime(value) {

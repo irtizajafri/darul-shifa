@@ -147,6 +147,16 @@ $border: #bbb;
   b { color: $blue; margin-left: 6px; }
 }
 
+.dr-other-income {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+
+  input { margin: 0; }
+  b { color: #b42318; margin-left: 2px; }
+}
+
 .dr-discount-input {
   width: 80px;
   margin-left: 6px;

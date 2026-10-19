@@ -3,6 +3,7 @@ import { Printer, Search, X, User, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import OpdPanelModal from '../../components/clinic/OpdPanelModal';
 import { buildEmergencyReceiptHtml } from './emergencyReceiptUtils';
 import { buildCrfPrintDocument, buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
 import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
@@ -99,80 +100,6 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Panel Modal ───────────────────────────────────────────────────────────────
-function PanelModal({ onSelect, onClose }) {
-  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
-  const [companyId, setCompanyId] = useState('');
-  const [empId, setEmpId] = useState('');
-  const [depIdx, setDepIdx] = useState('');
-
-  useEffect(() => { fetchPanelCompanies(); fetchPanelEmployees(); }, []);
-
-  const company = panelCompanies.find(c => c.id === Number(companyId));
-  const employees = companyId ? panelEmployees.filter(e => e.panelCompanyId === Number(companyId)) : [];
-  const employee = employees.find(e => e.id === Number(empId));
-  const dependents = employee?.dependents || [];
-
-  function handleOk() {
-    if (!companyId) { toast.error('Select a company'); return; }
-    const dep = depIdx !== '' ? dependents[Number(depIdx)] : null;
-    const patientName = dep ? dep.name : (employee ? `${employee.firstName || ''} ${employee.lastName || ''}`.trim() : '');
-    const dob = dep ? formatDob(dep.dob) : (employee ? formatDob(employee.dob) : '');
-    const panelLabel = [company?.code, employee?.empCode].filter(Boolean).join(' / ');
-    onSelect({ panelCompanyId: Number(companyId), panelEmployeeId: empId ? Number(empId) : null, panelDependentId: dep ? dep.id : null, patientName, panelLabel, dob });
-  }
-
-  return (
-    <div className="gopd-modal-overlay" onMouseDown={onClose}>
-      <div className="gopd-modal gopd-modal--panel" onMouseDown={e => e.stopPropagation()}>
-        <div className="gopd-modal-header">
-          <div className="gopd-modal-title"><Building2 size={16} /> Panel Selection</div>
-          <button className="gopd-modal-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="gopd-modal-body">
-          <div className="gopd-modal-row-field">
-            <label>Company</label>
-            <SearchableSelect
-              options={panelCompanies}
-              value={companyId}
-              onChange={v => { setCompanyId(v); setEmpId(''); setDepIdx(''); }}
-              getKey={c => c.id}
-              getLabel={c => `${c.code} — ${c.name}`}
-              placeholder="Select Company"
-            />
-          </div>
-          {companyId && (
-            <div className="gopd-modal-row-field">
-              <label>Employee</label>
-              <SearchableSelect
-                options={employees}
-                value={empId}
-                onChange={v => { setEmpId(v); setDepIdx(''); }}
-                getKey={e => e.id}
-                getLabel={e => `${e.empCode} — ${e.firstName} ${e.lastName}`}
-                placeholder="Select Employee (optional)"
-              />
-            </div>
-          )}
-          {dependents.length > 0 && (
-            <div className="gopd-modal-row-field">
-              <label>Dependent</label>
-              <select value={depIdx} onChange={e => setDepIdx(e.target.value)}>
-                <option value="">— Employee (self) —</option>
-                {dependents.map((d, i) => <option key={i} value={i}>{d.name}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="gopd-modal-actions">
-            <button className="gopd-modal-ok" onClick={handleOk}>Select</button>
-            <button onClick={onClose}>Cancel</button>
-          </div>
         </div>
       </div>
     </div>
@@ -567,7 +494,7 @@ export default function EmergencyOPD() {
         <EmployeeModal searchEmployees={searchEmployees} onSelect={handleEmpSelect} onClose={() => setShowEmpModal(false)} />
       )}
       {showPanelModal && (
-        <PanelModal onSelect={handlePanelSelect} onClose={() => setShowPanelModal(false)} />
+        <OpdPanelModal onSelect={handlePanelSelect} onClose={() => setShowPanelModal(false)} />
       )}
       {showAdmitModal && (
         <AdmitPatientLookupModal

@@ -585,7 +585,7 @@
 .ve-grn-modal {
   background: #fff;
   border-radius: 16px;
-  width: 640px;
+  width: 780px;
   max-width: 95vw;
   max-height: 85vh;
   display: flex;
@@ -596,9 +596,34 @@
   &__table-wrap {
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
     border-top: 1px solid #e2e8f0;
     border-bottom: 1px solid #e2e8f0;
   }
+
+  &__section {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.9rem 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #64748b;
+    background: #fff;
+
+    span {
+      font-size: 0.68rem;
+      padding: 0.05rem 0.45rem;
+      border-radius: 999px;
+      background: $primary-light;
+      color: $dark-blue;
+      letter-spacing: 0;
+    }
+  }
+
+  &__table + &__section { border-top: 1px solid #e2e8f0; margin-top: 0.4rem; }
 
   &__table {
     width: 100%;
@@ -632,8 +657,10 @@
   }
 
   &__row--checked td { background: #eff6ff !important; }
-  &__code   { font-family: monospace; font-size: 0.8rem; color: $primary; font-weight: 600; }
-  &__amount { font-weight: 700; text-align: right; color: $dark-blue; }
+  &__code   { font-family: monospace; font-size: 0.8rem; color: $primary; font-weight: 600; white-space: nowrap; }
+  &__date   { white-space: nowrap; }
+  &__amount { font-weight: 700; text-align: right !important; color: $dark-blue; white-space: nowrap; }
+  &__chk    { width: 2.2rem; padding-right: 0 !important; }
 
   &__footer {
     display: flex;

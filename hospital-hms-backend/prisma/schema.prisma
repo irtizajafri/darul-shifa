@@ -1174,6 +1174,9 @@ model ClinicAdmission {
   antenatal          Boolean  @default(false)
   antenatalNo        String?
   dischargeDiscount  Float?
+  // Panel file closed via "Goes to Other Income" on Discharge and Refund —
+  // the balance written off (positive; shown as minus). Migration 052.
+  dischargeOtherIncome Float?
   // Panel Company/Employee selected via the same Panel picker OPD slips use
   // (patientCategory 'panel') — plain soft-linked ids, no @relation, matching
   // ClinicOpdVisit's identical fields (never enforced as an FK there either).

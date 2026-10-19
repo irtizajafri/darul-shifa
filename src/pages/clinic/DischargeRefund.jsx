@@ -158,6 +158,9 @@ export default function DischargeRefund() {
   const [showLookup, setShowLookup] = useState(true);
 
   const [discount, setDiscount] = useState('0');
+  // Panel file only — "Goes to Other Income" writes the remaining balance
+  // off (shown as minus) so Balance reaches 0 and the file can close.
+  const [otherIncome, setOtherIncome] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [row, setRow] = useState({ billHeadId: '', doctorId: '', subDeptId: '', amount: '' });
@@ -191,6 +194,7 @@ export default function DischargeRefund() {
       setDetail(d);
       setAdmissionId(d.admission.id);
       setDiscount(String(d.discountAmount || 0));
+      setOtherIncome((d.otherIncomeAmount || 0) > 0);
       return d;
     } catch (e) {
       toast.error(e.message || 'Discharge bill load nahi hui');
@@ -235,7 +239,7 @@ export default function DischargeRefund() {
   function printDischargeBillPopup(dup) {
     const w = window.open('', '_blank', 'width=900,height=1000');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
-    const liveDetail = detail ? { ...detail, discountAmount: Number(discount) || 0, balance: liveBalance, refund: liveRefund } : detail;
+    const liveDetail = detail ? { ...detail, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, balance: liveBalance, refund: liveRefund } : detail;
     w.document.write(buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: dup, printedBy }));
     w.document.close();
   }
@@ -251,6 +255,7 @@ export default function DischargeRefund() {
     setAdmissionId(null);
     setDetail(null);
     setDiscount('0');
+    setOtherIncome(false);
     setAmountEdit(null);
     setShowLookup(true);
   }
@@ -335,12 +340,14 @@ export default function DischargeRefund() {
     // also re-checks this — this is just so staff get an immediate, specific
     // message instead of clicking a plain-disabled button).
     if (liveBalance > 0) {
-      toast.error(`Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo`);
+      toast.error(isPanel
+        ? `Balance Rs. ${fmt2(liveBalance)} baaki hai — "Goes to Other Income" tick karein`
+        : `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo`);
       return;
     }
     setSaving(true);
     try {
-      await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, changedBy: printedBy });
+      await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy });
       toast.success('File close ho gayi');
       resetToLookup();
     } catch (e) {
@@ -350,8 +357,11 @@ export default function DischargeRefund() {
     }
   }
 
+  const isPanel = detail?.admission.patientCategory === 'panel';
   const netAmount = detail ? Math.max(0, detail.billAmount - (Number(discount) || 0)) : 0;
-  const liveBalance = detail ? Math.max(0, netAmount - detail.amountReceived) : 0;
+  const outstanding = detail ? Math.max(0, netAmount - detail.amountReceived) : 0;
+  const liveOtherIncome = isPanel && otherIncome ? outstanding : 0;
+  const liveBalance = outstanding - liveOtherIncome;
   const liveRefund = detail ? Math.max(0, detail.amountReceived - netAmount) : 0;
 
   return (
@@ -421,6 +431,13 @@ export default function DischargeRefund() {
 
               <div className="dr-summary-row">
                 <span>Discount <input className="dr-discount-input" value={discount} onChange={e => setDiscount(e.target.value)} /></span>
+                {isPanel && (
+                  <label className="dr-other-income">
+                    <input type="checkbox" checked={otherIncome} onChange={e => setOtherIncome(e.target.checked)} />
+                    Goes to Other Income
+                    {otherIncome && <b>-{fmt2(liveOtherIncome)}</b>}
+                  </label>
+                )}
                 <span>Amount Received <b>{fmt2(detail.amountReceived)}</b></span>
                 <span>Refund <b>{fmt2(liveRefund)}</b></span>
                 <span>Balance <b>{fmt2(liveBalance)}</b></span>
@@ -593,7 +610,7 @@ export default function DischargeRefund() {
                 className="dr-finalize-btn"
                 onClick={handleFinalize}
                 disabled={saving || liveBalance > 0}
-                title={liveBalance > 0 ? `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai` : ''}
+                title={liveBalance > 0 ? `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai${isPanel ? ' — "Goes to Other Income" tick karein' : ''}` : ''}
               >
                 {saving ? 'Saving…' : 'Close File'}
               </button>
