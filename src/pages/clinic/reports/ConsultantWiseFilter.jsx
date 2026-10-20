@@ -7,8 +7,11 @@ import './ConsultantWiseFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
-const todayStr    = () => new Date().toISOString().split('T')[0];
-const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; };
+// Local (PKT) calendar date — toISOString gave the UTC date, a day behind
+// before 05:00.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayStr    = () => ymd(new Date());
+const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate()+1); return ymd(d); };
 
 const PATIENT_TYPES = ['Staff', 'Panel', 'Complem.', 'Cash', 'CC', 'JazzCash'];
 
@@ -23,20 +26,22 @@ export default function ConsultantWiseFilter() {
   const [fromTime,         setFromTime]         = useState('08:00');
   const [toTime,           setToTime]           = useState('07:59');
   const [types,            setTypes]            = useState([]);
-  const [ipd,              setIpd]              = useState(false);
   const [activeOnly,       setActiveOnly]       = useState(false);
   const [reportType,       setReportType]       = useState('detail');
 
+  // Blank From/To = all consultants. "Active Consultants" reloads the list
+  // with only active HMS doctors; a pick no longer in it is cleared.
   useEffect(() => {
-    fetch(`${API}/patient-visits/consultants`)
+    fetch(`${API}/patient-visits/consultants${activeOnly ? '?activeOnly=1' : ''}`)
       .then(r => r.json())
       .then(j => {
         const list = j.data || [];
         setConsultants(list);
-        if (list.length) { setFromConsultant(list[0]); setToConsultant(list[0]); }
+        setFromConsultant((v) => (list.includes(v) ? v : ''));
+        setToConsultant((v) => (list.includes(v) ? v : ''));
       })
       .catch((err) => toast.error(err?.message || 'Failed to load consultants'));
-  }, []);
+  }, [activeOnly]);
 
   const toggleType = (t) => setTypes(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
 
@@ -45,7 +50,6 @@ export default function ConsultantWiseFilter() {
     if (fromConsultant) params.set('fromConsultant', fromConsultant);
     if (toConsultant)   params.set('toConsultant',   toConsultant);
     if (types.length)   params.set('types', types.join(','));
-    if (ipd)            params.set('ipd', '1');
     navigate(`/clinic/reports/consultant-wise/view?${params}`);
   };
 
@@ -122,7 +126,7 @@ export default function ConsultantWiseFilter() {
               </div>
             </div>
 
-            {/* Patient Type + IPD */}
+            {/* Patient Type */}
             <div className="cwf-row cwf-row--types">
               <div className="cwf-section">
                 <fieldset className="cwf-fieldset">
@@ -137,10 +141,6 @@ export default function ConsultantWiseFilter() {
                   </div>
                 </fieldset>
               </div>
-              <label className="cwf-chk-label cwf-chk-label--ipd">
-                <input type="checkbox" checked={ipd} onChange={e => setIpd(e.target.checked)} />
-                IPD
-              </label>
             </div>
 
             {/* Report Type radio */}

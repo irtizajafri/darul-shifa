@@ -2395,6 +2395,11 @@ model AccVoucherExpenseDraft {
   // Cashier Handover can total up "my own" pending drafts for the day.
   createdByUserId String?
   createdByName   String?
+  // Clinic refund drafts (Cancel Slip / Slip Refund / Admission Refund) —
+  // 'slip' | 'admission' + that slip # / admission #; Day Close joins one
+  // kind's drafts into a single voucher line. Migration 053.
+  clinicRefundKind String?
+  clinicRefundRef  String?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 

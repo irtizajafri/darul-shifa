@@ -696,6 +696,8 @@ async function getAdvanceLoanVoucherAccountChain(entityType) {
     mainAccountId: sa.mainAccount.id,
     subGlId:      sa.mainAccount.subGL.id,
     mainGlId:     sa.mainAccount.subGL.mainGL.id,
+    subGlName:    sa.mainAccount.subGL.name,
+    mainGlName:   sa.mainAccount.subGL.mainGL.name,
   };
 }
 
@@ -721,6 +723,8 @@ async function getRefundVoucherAccountChain(entityType) {
     mainAccountId: sa.mainAccount.id,
     subGlId:      sa.mainAccount.subGL.id,
     mainGlId:     sa.mainAccount.subGL.mainGL.id,
+    subGlName:    sa.mainAccount.subGL.name,
+    mainGlName:   sa.mainAccount.subGL.mainGL.name,
   };
 }
 
@@ -744,6 +748,8 @@ async function getDiscountVoucherAccountChain(entityType) {
     mainAccountId: sa.mainAccount.id,
     subGlId:      sa.mainAccount.subGL.id,
     mainGlId:     sa.mainAccount.subGL.mainGL.id,
+    subGlName:    sa.mainAccount.subGL.name,
+    mainGlName:   sa.mainAccount.subGL.mainGL.name,
   };
 }
 
@@ -1490,6 +1496,56 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
   return draft;
 }
 
+// Clinic Cancel Slip / Slip Refund / Admission Refund → Pending Draft
+// (owner's decision 2026-10-20), posted by Day Close with the rest of the
+// day. kind 'slip' | 'admission', ref = slip # / admission #. Not run through
+// assertEntriesPayable — it pays nothing, and a cancel line is 0.
+const CLINIC_REFUND_TEXT = {
+  slip: 'AMOUNT REFUND TO THE PATIENT AGAINST SLIP #',
+  admission: 'AMOUNT REFUND TO THE PATIENT AGAINST ADMISSION #',
+};
+async function saveClinicRefundDraft({ entityType, chain, kind, ref, payeeName, amount, date, createdByUserId, createdByName }) {
+  const today = getBusinessDate();
+  const businessDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today) ? date : today;
+  return prisma.accVoucherExpenseDraft.create({
+    data: {
+      businessDate, entityType, mode: 'cash',
+      mainGlId: Number(chain.mainGlId), mainGlName: chain.mainGlName || '',
+      subGlId: Number(chain.subGlId), subGlName: chain.subGlName || '',
+      mainAccountId: Number(chain.mainAccountId), accountCode: chain.accountCode || '', accountName: chain.accountName || '',
+      subAccountId: chain.subAccountId ? Number(chain.subAccountId) : null, subAccountName: chain.accountName || null,
+      payeeName: payeeName || null,
+      amount: Number(amount) || 0,
+      particulars: `${CLINIC_REFUND_TEXT[kind]}${ref}`,
+      clinicRefundKind: kind,
+      clinicRefundRef: String(ref),
+      createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
+      createdByName: createdByName || null,
+    },
+  });
+}
+
+// Day Close: a day's clinic refund drafts of one kind (and account) become
+// ONE voucher line — "…AGAINST SLIP #a,b,c", amounts summed — the way the
+// old system's voucher showed them.
+function mergeClinicRefundDrafts(drafts) {
+  const byKey = new Map();
+  for (const d of drafts) {
+    const key = `${d.clinicRefundKind}|${d.subAccountId || ''}|${d.mainAccountId}`;
+    if (!byKey.has(key)) byKey.set(key, { first: d, refs: [], amount: 0 });
+    const g = byKey.get(key);
+    if (d.clinicRefundRef && !g.refs.includes(d.clinicRefundRef)) g.refs.push(d.clinicRefundRef);
+    g.amount += Number(d.amount) || 0;
+  }
+  return [...byKey.values()].map(({ first, refs, amount }) => ({
+    mainGlId: first.mainGlId, subGlId: first.subGlId,
+    mainAccountId: first.mainAccountId, subAccountId: first.subAccountId,
+    accountCode: first.accountCode, accountName: first.accountName,
+    payeeName: null, amount,
+    particulars: `${CLINIC_REFUND_TEXT[first.clinicRefundKind]}${refs.join(',')}`,
+  }));
+}
+
 // Every still-pending draft, not just today's — a backdated one must stay
 // visible/manageable here until it's actually posted, not disappear from
 // view just because its date isn't today. userId narrows to "my own"
@@ -1533,9 +1589,14 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
   }
 
   const vouchers = [];
-  for (const entries of Object.values(groups)) {
-    const groupDate = entries[0].businessDate;
-    const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
+  for (const groupDrafts of Object.values(groups)) {
+    const groupDate = groupDrafts[0].businessDate;
+    const totalAmount = groupDrafts.reduce((s, e) => s + Number(e.amount), 0);
+    // Clinic refund drafts collapse into one line per kind (added after the
+    // voucher is created); every other draft stays its own line, in the same
+    // order as voucher.entries, which the linking below relies on.
+    const entries = groupDrafts.filter((e) => !e.clinicRefundKind);
+    const refundLines = mergeClinicRefundDrafts(groupDrafts.filter((e) => e.clinicRefundKind));
     const voucherNo   = await generateVoucherNo(entityType, groupDate);
     const voucher = await prisma.accVoucherExpense.create({
       data: {
@@ -1554,9 +1615,12 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
       },
       include: { entries: true },
     });
+    for (const line of refundLines) {
+      await prisma.accVoucherExpenseEntry.create({ data: { voucherId: voucher.id, ...line } });
+    }
     // Mark all group's drafts as posted
     await prisma.accVoucherExpenseDraft.updateMany({
-      where: { id: { in: entries.map((e) => e.id) } },
+      where: { id: { in: groupDrafts.map((e) => e.id) } },
       data:  { status: 'posted', postedVoucherId: voucher.id },
     });
     // Now that a real voucher actually exists, move each draft's recorded
@@ -1604,7 +1668,7 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
     }
     await linkConsultantFeeItems(entries, voucher.entries);
 
-    vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: entries[0].mainGlName, businessDate: groupDate, entriesCount: entries.length, totalAmount });
+    vouchers.push({ voucherNo: voucher.voucherNo, mainGlName: groupDrafts[0].mainGlName, businessDate: groupDate, entriesCount: entries.length + refundLines.length, totalAmount });
   }
   return vouchers;
 }
@@ -1756,7 +1820,7 @@ async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
     if (!Number.isFinite(amt)) throw Object.assign(new Error('Amount sahi nahi — khali nahi ho sakti'), { status: 400 });
     // A line that pays something (GRN / visit / fee / salary / utility) must
     // carry a real amount. A plain zero line is allowed — e.g. the audit-only
-    // voucher Cancel Slip creates (refundVoucher.service tryCreateCancelSlipVoucher).
+    // line a Cancel Slip's Pending Draft posts (refundVoucher.service tryCreateRefundDraft).
     const paysSomething = (Array.isArray(e.grnIds) && e.grnIds.length) || (Array.isArray(e.visitIds) && e.visitIds.length)
       || (Array.isArray(e.consultantFeeItemIds) && e.consultantFeeItemIds.length) || (Array.isArray(e.utilityBillIds) && e.utilityBillIds.length)
       || (Array.isArray(e.maintenanceIds) && e.maintenanceIds.length)
@@ -3627,7 +3691,7 @@ module.exports = {
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
-  saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,
+  saveDraftExpenseEntry, saveClinicRefundDraft, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,

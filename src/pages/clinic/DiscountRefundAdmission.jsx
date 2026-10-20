@@ -374,8 +374,8 @@ export default function DiscountRefundAdmission() {
       // Show success / warning for Refund voucher
       if (json.data?.voucherWarning) {
         toast(json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
-      } else if (json.data?.voucherNo) {
-        toast.success(`Refund save ho gaya — Voucher ${json.data.voucherNo} auto-create ho gaya`);
+      } else if (json.data?.voucherDrafted) {
+        toast.success('Refund save ho gaya — Pending Draft mein gaya, Day Close par voucher banega');
       }
       // Show success / warning for Discount voucher
       if (json.data?.discountVoucherWarning) {
@@ -620,7 +620,9 @@ export default function DiscountRefundAdmission() {
                             <td className="dra-td-voucher">{h.discountVoucherNo || '—'}</td>
                             <td>{h.permissionBy || '—'}</td>
                             <td className="dra-td-r">{fmt2(h.refundAmount)}</td>
-                            <td className="dra-td-voucher">{h.voucherNo || '—'}</td>
+                            {/* Refunds now post through Pending Draft → Day Close, so
+                                newer ones carry no voucher # here. */}
+                            <td className="dra-td-voucher">{h.voucherNo || (Number(h.refundAmount) > 0 ? 'Draft' : '—')}</td>
                             <td>
                               {Number(h.refundAmount) > 0 && (
                                 <button type="button" className="dra-print-btn" onClick={() => openRefundSlipPopup(h)} title="Payment Refund Slip print karein">

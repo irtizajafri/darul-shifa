@@ -52,25 +52,28 @@ const fmtStmtDate = (dateStr) => {
 // ── Daily Department Statement Modal (double-click a calendar day) ────────────
 // Same underlying data as the "Department wise Patients" report — just this
 // one day, grouped by department, so the numbers reconcile with the cell.
-function DailyStatementModal({ date, onClose, onDeptClick }) {
+function DailyStatementModal({ date, payType, onClose, onDeptClick }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useModalKeys({ active: true, onEsc: onClose });
 
   useEffect(() => {
-    fetch(`${API}/inquiries/daily-department-statement?date=${date}`)
+    // Same Cash / Panel / … radio as the calendar, so the popup's totals
+    // equal the cell that was double-clicked.
+    const q = new URLSearchParams({ date, ...(payType !== 'ALL' ? { paymentType: payType } : {}) });
+    fetch(`${API}/inquiries/daily-department-statement?${q}`)
       .then(r => r.json())
       .then(json => setData(json.data))
       .catch((err) => { setData(null); toast.error(err?.message || 'Failed to load daily statement'); })
       .finally(() => setLoading(false));
-  }, [date]);
+  }, [date, payType]);
 
   return (
     <div className="rd-stmt-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="rd-stmt-modal" role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}>
         <div className="rd-stmt-hdr">
-          <span>Statement for the Date of {fmtStmtDate(date)}</span>
+          <span>Statement for the Date of {fmtStmtDate(date)}{payType !== 'ALL' ? ` — ${PAY_TYPES.find(p => p.value === payType)?.label || payType}` : ''}</span>
           <button className="rd-stmt-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
         </div>
         <div className="rd-stmt-body">
@@ -139,7 +142,8 @@ export default function RevenueDashboard() {
   const [dept,       setDept]       = useState('ALL');
   const [subDept,    setSubDept]    = useState('ALL');
   const [consultant, setConsultant] = useState('ALL');
-  const [payType,    setPayType]    = useState('ALL');
+  // Opens on Cash (owner's decision 2026-10-20); All is one click away.
+  const [payType,    setPayType]    = useState('Cash');
   const [chartType,  setChartType]  = useState('bar');
 
   const [departments,  setDepartments]  = useState([]);
@@ -174,7 +178,11 @@ export default function RevenueDashboard() {
         const fromDate = `${year}-${String(month).padStart(2,'0')}-01`;
         const nm = month === 12 ? `${year+1}-01` : `${year}-${String(month+1).padStart(2,'0')}`;
         const toDate = `${nm}-01`;
+        // Payment type filtered on the server (cash also covers "private",
+        // CC its spellings…) — the same filter the day popup and the
+        // Department wise Patients report use, so all three agree.
         const params = new URLSearchParams({ fromDate, toDate, fromTime: '08:00:00', toTime: '07:59:59' });
+        if (payType !== 'ALL') params.set('paymentTypes', payType);
 
         const res  = await fetch(`${API}/patient-visits?${params}`);
         const json = await res.json();
@@ -184,7 +192,6 @@ export default function RevenueDashboard() {
           if (dept !== 'ALL' && !(r.department || '').toLowerCase().includes(dept.toLowerCase())) return false;
           if (subDept !== 'ALL' && !(r.subDepartment || '').toLowerCase().includes(subDept.toLowerCase())) return false;
           if (consultant !== 'ALL' && !(r.doctor || '').toLowerCase().includes(consultant.toLowerCase())) return false;
-          if (payType !== 'ALL' && (r.paymentType || '').toLowerCase() !== payType.toLowerCase()) return false;
           return true;
         });
 
@@ -277,6 +284,7 @@ export default function RevenueDashboard() {
       fromTime: '08:00', toTime: '07:59',
       reportType: 'detail',
     });
+    if (payType !== 'ALL') q.set('types', payType);
     navigate(`/clinic/reports/department-patients/view?${q}`);
   };
 
@@ -663,6 +671,7 @@ export default function RevenueDashboard() {
       {statementDate && (
         <DailyStatementModal
           date={statementDate}
+          payType={payType}
           onClose={() => setStatementDate(null)}
           onDeptClick={(deptName) => openDeptReport(statementDate, deptName)}
         />

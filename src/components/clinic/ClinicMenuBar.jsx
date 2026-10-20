@@ -27,16 +27,13 @@ const menuItems = [
       { label: 'Discharge Type',       path: '/clinic/parameters/discharge-types',  perm: { sub: 'discharge-types' } },
       { label: 'Shift',                path: '/clinic/parameters/shift',            perm: { sub: 'shift' } },
       { label: 'Credit Card %',        path: '/clinic/parameters/credit-card',      perm: { sub: 'credit-card' } },
-      { label: 'Death Certificate',    path: '/clinic/parameters/death-certificate', perm: { sub: 'death-certificate' } },
       { label: 'Pharmacy Stores',      path: '/clinic/parameters/pharmacy-stores',  perm: { sub: 'pharmacy-stores' } },
+      { label: 'Reception Assets',     path: '/clinic/transactions/reception-assets', perm: { sub: 'transactions', tab: 'reception-assets' } },
     ],
   },
   {
     label: 'Transactions',
     items: [
-      { label: 'General OPD',      path: '/clinic/general-opd',   perm: { sub: 'general-opd' } },
-      { label: 'Emergency OPD',    path: '/clinic/emergency-opd', perm: { sub: 'general-opd' } },
-      { label: 'Slip - Ambulance', path: '/clinic/ambulance',     perm: { sub: 'general-opd' } },
       { label: 'Antenatal',        path: '/clinic/antenatal',     perm: { sub: 'antenatal' } },
       // Cross-module links — always visible if user has clinic access
       // skipGrnQueue=1 — this shortcut is for a quick Clinic-side payment,
@@ -57,6 +54,7 @@ const menuItems = [
       { label: 'Discount & Refund Against Admission',   path: '/clinic/transactions/discount-refund-admission', perm: { sub: 'transactions', tab: 'discount-refund-admission' } },
       { label: 'Appointment',                           path: '/clinic/transactions/appointment',              perm: { sub: 'transactions', tab: 'appointment' } },
       { label: 'OT Register',                           path: '/clinic/transactions/ot-register',              perm: { sub: 'transactions', tab: 'ot-register' } },
+      { label: 'Death Certificate',                      path: '/clinic/parameters/death-certificate',          perm: { sub: 'death-certificate' } },
       { label: 'Birth Certificate',                     path: '/clinic/transactions/birth-certificate',        perm: { sub: 'transactions', tab: 'birth-certificate' } },
       { label: 'Admission Adjustment',                  path: '/clinic/transactions/admission-adjustment',     perm: { sub: 'transactions', tab: 'admission-adjustment' } },
       { label: 'Admission Status Change',               path: '/clinic/transactions/admission-status-change',  perm: { sub: 'transactions', tab: 'admission-status-change' } },
@@ -65,7 +63,6 @@ const menuItems = [
       { label: 'Upload Patient Document',               path: '/clinic/transactions/upload-patient-document',  perm: { sub: 'transactions', tab: 'upload-patient-document' } },
       { label: 'Surgery / Procedure Information',       path: '/clinic/transactions/surgery-information',       perm: { sub: 'transactions', tab: 'surgery-information' } },
       { label: 'Handover',                              path: '/clinic/transactions/handover',                  perm: { sub: 'transactions', tab: 'handover' } },
-      { label: 'Reception Assets',                      path: '/clinic/transactions/reception-assets',          perm: { sub: 'transactions', tab: 'reception-assets' } },
     ],
   },
   {

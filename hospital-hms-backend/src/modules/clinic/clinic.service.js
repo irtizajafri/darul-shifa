@@ -8107,14 +8107,35 @@ async function deleteConsultantRate(id) {
   return prisma.consultantRate.delete({ where: { id: Number(id) } });
 }
 
-async function getConsultantNames() {
-  const rows = await prisma.patientVisit.findMany({
-    where: { doctor: { not: null } },
-    select: { doctor: true },
-    distinct: ['doctor'],
-    orderBy: { doctor: 'asc' },
-  });
-  return rows.map(r => r.doctor).filter(Boolean);
+// Consultant name as compared by the Consultant Wise From/To range — case,
+// spacing and stray padding ignored, so "Dr. Ali" and "DR.  ALI" are one name
+// and the dropdown's order is exactly the order the range filter uses.
+function consultantKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+// Consultant Wise dropdown: legacy Patients List doctor names + the HMS's
+// own ClinicDoctor names (new-system slips carry those) — the legacy list
+// alone never offered a doctor added after the Excel imports. activeOnly
+// ("Active Consultants") = only ClinicDoctor rows with status 'active'.
+async function getConsultantNames({ activeOnly = false } = {}) {
+  const [legacy, doctors] = await Promise.all([
+    activeOnly ? [] : prisma.patientVisit.findMany({
+      where: { doctor: { not: null } },
+      select: { doctor: true },
+      distinct: ['doctor'],
+    }),
+    prisma.clinicDoctor.findMany({
+      where: activeOnly ? { status: 'active' } : {},
+      select: { name: true },
+    }),
+  ]);
+  const byKey = new Map();
+  for (const n of [...doctors.map((d) => d.name), ...legacy.map((r) => r.doctor)]) {
+    const k = consultantKey(n);
+    if (k && !byKey.has(k)) byKey.set(k, String(n).trim());
+  }
+  return [...byKey.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([, n]) => n);
 }
 
 async function getPatientVisitByAdmitNo(admitNo) {
@@ -8248,14 +8269,6 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     where.paymentType = { in: typeVariants };
   }
 
-  if (fromConsultant && toConsultant) {
-    where.doctor = { gte: fromConsultant, lte: toConsultant };
-  } else if (fromConsultant) {
-    where.doctor = { gte: fromConsultant };
-  } else if (toConsultant) {
-    where.doctor = { lte: toConsultant };
-  }
-
   let oldVisits = await prisma.patientVisit.findMany({
     where,
     orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
@@ -8376,7 +8389,11 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     let adminExpense = 0;
     let adminExpenseDoctor = null;
     const adminDocs = (v.doctors || []).filter((d) => d.doctor?.administrativeExpenseEnabled);
-    if (!isCancelled && adminDocs.length && Number(v.totalAmount) > 0) {
+    // Ultrasound slips never split it out (owner's decision 2026-10-20): the
+    // admin expense stays inside the test's own row (850 + 150 = one 1000
+    // line, one patient) — only other departments get the separate line.
+    const isUltrasound = /ultra\s*sound/i.test(String(v.department || ''));
+    if (!isCancelled && !isUltrasound && adminDocs.length && Number(v.totalAmount) > 0) {
       const gross = (v.doctors || []).reduce((s, d) => s + Number(d.amount || 0), 0);
       const doctorNet = Math.max(0, gross - Number(v.discount || 0));
       const diff = Math.round((Number(v.totalAmount) - Number(v.ccCharge || 0) - doctorNet) * 100) / 100;
@@ -8671,6 +8688,17 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   // — the shared running sequence across every source, so the list reads in
   // the same order it was actually issued instead of by source block.
   let merged = [...oldVisits.map(v => ({ ...v, _source: 'old' })), ...mapped, ...mappedAdm, ...mappedAdmPay, ...mappedAnt, ...mappedOpdBalPay];
+  // Consultant From/To (Consultant Wise report) — applied to every source
+  // here, not just the legacy PatientVisit query (new-system OPD/admission
+  // rows used to come back for every consultant regardless of the range).
+  if (fromConsultant || toConsultant) {
+    const lo = fromConsultant ? consultantKey(fromConsultant) : null;
+    const hi = toConsultant ? consultantKey(toConsultant) : null;
+    merged = merged.filter((v) => {
+      const k = consultantKey(v.doctor);
+      return k && (!lo || k >= lo) && (!hi || k <= hi);
+    });
+  }
   merged = merged.map((v) => ({ ...v, patientName: String(v.patientName || '').toUpperCase(), businessDay: patientListBusinessDay(v) }));
   const sortMs = (v) => {
     const d = new Date(v.visitDate);
@@ -9444,11 +9472,14 @@ async function getDailyDepartmentStatement(date) {
 // List rows themselves (same rows, same Received, same patient count), so
 // the popup, the calendar cell and the Patients List always agree. Grouped
 // by the same canonical department names as before.
-async function getDailyStatementFromPatientList(date) {
+// paymentType = the dashboard's radio (Cash / Panel / …; 'ALL' or empty =
+// every type) — same Patients List filter the calendar itself uses.
+async function getDailyStatementFromPatientList(date, paymentType) {
   if (!date) throw Object.assign(new Error('Date is required'), { status: 400 });
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + 1);
-  const rows = await getPatientVisits({ fromDate: date, toDate: next.toISOString().slice(0, 10), fromTime: '08:00:00', toTime: '07:59:59' });
+  const paymentTypes = paymentType && paymentType !== 'ALL' ? [paymentType] : [];
+  const rows = await getPatientVisits({ fromDate: date, toDate: next.toISOString().slice(0, 10), fromTime: '08:00:00', toTime: '07:59:59', paymentTypes });
   const map = new Map();
   for (const r of rows) {
     const key = r._source === 'antenatal' ? 'Antenatal' : canonicalRevenueDept(r.department || (r._source === 'admission' || r._source === 'admission-payment' ? 'Admission' : ''));

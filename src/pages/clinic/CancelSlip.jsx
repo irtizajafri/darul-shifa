@@ -136,8 +136,8 @@ export default function CancelSlip() {
       if (!res.ok) throw new Error(json.message || 'Cancel nahi ho saki');
       if (json.data?.voucherWarning) {
         toast('Slip cancel ho gayi — ' + json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
-      } else if (json.data?.voucherNo) {
-        toast.success(`Slip cancel ho gayi — Voucher ${json.data.voucherNo} bana`);
+      } else if (json.data?.voucherDrafted) {
+        toast.success('Slip cancel ho gayi — Pending Draft mein gayi, Day Close par voucher banega');
       } else {
         toast.success('Slip cancel ho gayi');
       }

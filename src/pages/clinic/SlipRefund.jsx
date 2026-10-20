@@ -130,8 +130,8 @@ export default function SlipRefund() {
       if (!res.ok) throw new Error(json.message || 'Refund nahi ho saka');
       if (json.data?.voucherWarning) {
         toast(json.data.voucherWarning, { icon: '⚠️', duration: 7000 });
-      } else if (json.data?.voucherNo) {
-        toast.success(`Refund process ho gaya — Voucher ${json.data.voucherNo} auto-create ho gaya`);
+      } else if (json.data?.voucherDrafted) {
+        toast.success('Refund process ho gaya — Pending Draft mein gaya, Day Close par voucher banega');
       } else {
         toast.success('Refund process ho gaya');
       }

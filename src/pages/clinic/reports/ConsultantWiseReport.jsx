@@ -12,9 +12,12 @@ const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 const MONTHS_LONG  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DAYS         = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
+// Pakistan date — a slip saved between 00:00 and 05:00 PKT read as the
+// previous day when taken from its UTC date. Date-only values (UTC midnight)
+// land on the same day either way.
 const fmtDate = (d) => {
   if (!d) return '—';
-  const dt = new Date(d);
+  const dt = new Date(new Date(d).getTime() + 5 * 3600000);
   return `${String(dt.getUTCDate()).padStart(2,'0')}-${MONTHS_SHORT[dt.getUTCMonth()]}-${dt.getUTCFullYear()}`;
 };
 
@@ -65,20 +68,29 @@ function calcShares(row, drMap, drFirstMap) {
   return { consAmt, hosAmt: amt - consAmt, hasRate: true };
 }
 
+// Same name rule as the From/To filter (backend consultantKey): case and
+// spacing ignored, so "Emergency" and "EMERGENCY" are one consultant. Groups
+// in the dropdown's A→Z order, "(No Consultant)" last.
+const consultantKey = (s) => String(s || '').trim().replace(/\s+/g, ' ').toUpperCase();
+
 function groupByConsultant(rows) {
   const map = new Map();
   for (const r of rows) {
-    const key = r.doctor || '(No Consultant)';
-    if (!map.has(key)) map.set(key, []);
-    map.get(key).push(r);
+    const key = consultantKey(r.doctor);
+    if (!map.has(key)) map.set(key, { consultant: key ? String(r.doctor).trim() : '(No Consultant)', patients: [] });
+    map.get(key).patients.push(r);
   }
-  return [...map.entries()].map(([consultant, patients]) => ({ consultant, patients }));
+  return [...map.entries()]
+    .sort(([a], [b]) => (!a ? 1 : !b ? -1 : a < b ? -1 : a > b ? 1 : 0))
+    .map(([, g]) => g);
 }
 
 function groupByDate(rows, drMap, drFirstMap) {
   const dateMap = new Map();
   for (const r of rows) {
-    const dateKey = r.visitDate ? String(r.visitDate).split('T')[0] : '—';
+    // Business day (08:00 → 07:59 next day) from the Patients List — same
+    // day a row counts under on the Revenue Dashboard.
+    const dateKey = r.businessDay || (r.visitDate ? String(r.visitDate).split('T')[0] : '—');
     if (!dateMap.has(dateKey)) dateMap.set(dateKey, { count: 0, amount: 0, hosAmt: 0, consAmt: 0 });
     const entry = dateMap.get(dateKey);
     const amt = Number(r.received || 0);
@@ -142,6 +154,14 @@ export default function ConsultantWiseReport() {
   const grandCons  = rows.reduce((s, r) => s + calcShares(r, drMap, drFirstMap).consAmt, 0);
   const grandHos   = grandAmt - grandCons;
 
+  // "Header" report type — one line per consultant (no patient rows).
+  const isHeader   = reportType === 'header';
+  const headerRows = groups.map(({ consultant, patients }) => {
+    const amount = patients.reduce((s, r) => s + Number(r.received || 0), 0);
+    const consAmt = patients.reduce((s, r) => s + calcShares(r, drMap, drFirstMap).consAmt, 0);
+    return { consultant, count: patients.length, amount, consAmt, hosAmt: amount - consAmt };
+  });
+
   const printedBy  = user?.name || 'User';
   const printedAt  = new Date();
   const printedAtStr = `${String(printedAt.getDate()).padStart(2,'0')}-${MONTHS_SHORT[printedAt.getMonth()]}-${printedAt.getFullYear()} ` +
@@ -202,23 +222,25 @@ export default function ConsultantWiseReport() {
   const handleExportExcel = () => {
     if (reportType === 'date_wise_summary') {
       const aoa = [['Consultant Date Wise Summary'], [`Date: ${fmtDate(fromDate)} To ${fmtDate(toDate)}`], []];
-      for (const { consultant, subDepts, consultantTotal } of dwsGroups) {
-        aoa.push([`Consultant: ${consultant}`]);
-        for (const { name, dates, subTotal } of subDepts) {
-          aoa.push(['', name]);
-          aoa.push(['', 'Date', 'Patients', 'Amount', 'Hos. Amt.', 'Cons. Amt.']);
-          for (const d of dates)
-            aoa.push(['', fmtDateWithDay(d.date), d.count, d.amount, d.hosAmt, d.consAmt]);
-          aoa.push(['', `${name} Total`, subTotal.count, subTotal.amount, subTotal.hosAmt, subTotal.consAmt]);
-        }
-        aoa.push(['', 'Consultant Total', consultantTotal.count, consultantTotal.amount, consultantTotal.hosAmt, consultantTotal.consAmt]);
-        aoa.push([]);
-      }
-      aoa.push(['Grand Total', '', rows.length, grandAmt, grandHos, grandCons]);
+      aoa.push(['Date', 'Patients', 'Amount', 'Hos. Amt.', 'Cons. Amt.']);
+      for (const d of dateRows) aoa.push([fmtDateWithDay(d.date), d.count, d.amount, d.hosAmt, d.consAmt]);
+      aoa.push(['Grand Total', rows.length, grandAmt, grandHos, grandCons]);
       const ws  = XLSX.utils.aoa_to_sheet(aoa);
       const wb  = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'DateWiseSummary');
       XLSX.writeFile(wb, `consultant_datewise_${fromDate}_${toDate}.xlsx`);
+      return;
+    }
+
+    if (isHeader) {
+      const aoa = [['Consultant Wise Patients — Header'], [`Date: ${fmtDate(fromDate)} To ${fmtDate(toDate)}`], []];
+      aoa.push(['Consultant', 'Patients', 'Amount', 'Hos. Amt.', 'Cons. Amt.']);
+      for (const h of headerRows) aoa.push([h.consultant, h.count, h.amount, h.hosAmt, h.consAmt]);
+      aoa.push(['Grand Total', rows.length, grandAmt, grandHos, grandCons]);
+      const ws  = XLSX.utils.aoa_to_sheet(aoa);
+      const wb  = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'ConsultantHeader');
+      XLSX.writeFile(wb, `consultant_header_${fromDate}_${toDate}.xlsx`);
       return;
     }
 
@@ -393,7 +415,41 @@ export default function ConsultantWiseReport() {
               <div className="cwr-empty">No records found for the selected filters.</div>
             )}
 
-            {!loading && groups.map(({ consultant, patients }) => {
+            {!loading && isHeader && rows.length > 0 && (
+              <table className="cwr-rpt-table">
+                <thead>
+                  <tr>
+                    <th>Consultant</th>
+                    <th className="cwr-col-num">Patients</th>
+                    <th className="cwr-col-num">Amount</th>
+                    <th className="cwr-col-num cwr-th-hos">Hos. Amt.</th>
+                    <th className="cwr-col-num cwr-th-cons">Cons. Amt.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {headerRows.map((h, i) => (
+                    <tr key={h.consultant} className={i % 2 === 1 ? 'cwr-row-even' : ''}>
+                      <td className="cwr-td-name">{h.consultant}</td>
+                      <td className="cwr-td-num">{h.count}</td>
+                      <td className="cwr-td-num">{h.amount.toFixed(2)}</td>
+                      <td className="cwr-td-num cwr-td-hos">{h.hosAmt.toFixed(2)}</td>
+                      <td className="cwr-td-num cwr-td-cons">{h.consAmt.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="cwr-sub-row">
+                    <td className="cwr-tf-label">Grand Total</td>
+                    <td className="cwr-td-num cwr-tf-val">{rows.length}</td>
+                    <td className="cwr-td-num cwr-tf-val">{grandAmt.toFixed(2)}</td>
+                    <td className="cwr-td-num cwr-tf-val cwr-td-hos">{grandHos.toFixed(2)}</td>
+                    <td className="cwr-td-num cwr-tf-val cwr-td-cons">{grandCons.toFixed(2)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+
+            {!loading && !isHeader && groups.map(({ consultant, patients }) => {
               const subAmt  = patients.reduce((s,r) => s + Number(r.received||0), 0);
               const subCons = patients.reduce((s,r) => s + calcShares(r, drMap, drFirstMap).consAmt, 0);
               const subHos  = subAmt - subCons;
@@ -454,7 +510,7 @@ export default function ConsultantWiseReport() {
               );
             })}
 
-            {!loading && rows.length > 0 && (
+            {!loading && !isHeader && rows.length > 0 && (
               <table className="cwr-rpt-table cwr-grand-table">
                 <tfoot>
                   <tr>

@@ -2102,7 +2102,7 @@ export default function VoucherExpenseForm() {
       {/* ── GRN Modal ── */}
       {grnModal && (
         <div className="ve-sal-modal__backdrop" onClick={() => setGrnModal(null)}>
-          <div className="ve-grn-modal" onClick={(e) => e.stopPropagation()}>
+          <div className={`ve-grn-modal${grnModal.grns?.length && grnModal.maint?.length ? ' ve-grn-modal--split' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="ve-sal-modal__header">
               <div>
                 <div className="ve-sal-modal__title">GRN / Maintenance</div>
@@ -2117,12 +2117,15 @@ export default function VoucherExpenseForm() {
               <div className="ve-sal-modal__no-data">Is supplier ka koi unpaid GRN ya Maintenance nahi.</div>
             ) : (
               <>
-                {/* One scroll area for both lists — two flex:1 scrollers split
-                    the height and squeezed Maintenance to a sliver. */}
-                <div className="ve-grn-modal__table-wrap">
+                {/* GRN on the top half, Maintenance on the bottom half, each
+                    with its own scroll (owner's layout, 2026-10-20) — the
+                    halves are fixed, so a long GRN list can't squeeze
+                    Maintenance. With only one list it takes the whole body. */}
+                <div className="ve-grn-modal__split">
                 {grnModal.grns?.length > 0 && (
-                  <>
+                  <div className="ve-grn-modal__pane">
                   <div className="ve-grn-modal__section">GRN <span>{grnModal.grns.length}</span></div>
+                  <div className="ve-grn-modal__pane-scroll">
                   <table className="ve-grn-modal__table">
                     <thead>
                       <tr>
@@ -2159,11 +2162,13 @@ export default function VoucherExpenseForm() {
                       ))}
                     </tbody>
                   </table>
-                  </>
+                  </div>
+                  </div>
                 )}
                 {grnModal.maint?.length > 0 && (
-                  <>
+                  <div className="ve-grn-modal__pane">
                     <div className="ve-grn-modal__section">Maintenance <span>{grnModal.maint.length}</span></div>
+                    <div className="ve-grn-modal__pane-scroll">
                     <table className="ve-grn-modal__table">
                       <thead>
                         <tr>
@@ -2200,7 +2205,8 @@ export default function VoucherExpenseForm() {
                         ))}
                       </tbody>
                     </table>
-                  </>
+                    </div>
+                  </div>
                 )}
                 </div>
                 <div className="ve-grn-modal__footer">

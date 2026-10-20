@@ -1448,15 +1448,16 @@ async function addAdmissionDiscountRefund(req, res, next) {
     // the voucher creation fails — see tryCreate* helpers.
     const entityType = refundVoucherSvc.entityTypeFromPatientCategory(data.admission.patientCategory);
 
+    // Refund → Pending Draft (Day Close posts it, one line per day for all
+    // admission refunds); Discount still posts its voucher straight away.
     if (Number(refundAmount) > 0) {
-      const result = await refundVoucherSvc.tryCreateRefundVoucher({
-        entityType,
+      const result = await refundVoucherSvc.tryCreateRefundDraft({
+        entityType, kind: 'admission', ref: data.admission.admissionNo,
         payeeName: data.admission.patientName,
         amount: Number(refundAmount),
-        particulars: `Admission Refund — ${data.admission.patientName} (${data.admission.admissionNo})`,
-        voucherDate,
+        voucherDate, createdByName,
       });
-      if (result.voucherNo) data.voucherNo = result.voucherNo;
+      if (result.drafted) data.voucherDrafted = true;
       else if (result.warning) data.voucherWarning = result.warning;
     }
 
@@ -2102,15 +2103,15 @@ async function cancelOpdVisit(req, res, next) {
   try {
     const { reason, note, cancelledBy, voucherDate } = req.body;
     const data = await service.cancelOpdVisit(req.params.id, { reason, note, cancelledBy });
-    // Zero-amount voucher for audit record — never blocks the cancel above.
+    // Zero-amount Pending Draft for the audit record (Day Close joins the
+    // day's cancels into one voucher line) — never blocks the cancel above.
     const entityType = refundVoucherSvc.entityTypeFromPaymentType(data.paymentType);
-    const result = await refundVoucherSvc.tryCreateCancelSlipVoucher({
-      entityType,
-      payeeName: data.patientName,
-      particulars: `Slip Cancel — ${data.patientName} (${data.serialNo})`,
-      voucherDate,
+    const result = await refundVoucherSvc.tryCreateRefundDraft({
+      entityType, kind: 'slip', ref: data.serialNo,
+      payeeName: data.patientName, amount: 0,
+      voucherDate, createdByName: cancelledBy, what: 'Slip cancel ho gayi',
     });
-    if (result.voucherNo) data.voucherNo = result.voucherNo;
+    if (result.drafted) data.voucherDrafted = true;
     else if (result.warning) data.voucherWarning = result.warning;
     success(res, data, 'Slip cancel ho gayi');
   } catch (err) {
@@ -2137,23 +2138,20 @@ async function refundVisit(req, res, next) {
   try {
     const { amount, reason, note, refundedBy, voucherDate } = req.body;
     const data = await service.refundVisit(req.params.source, req.params.id, { amount, reason, note, refundedBy });
-    // Auto Voucher Expense — never blocks the refund save above even if
-    // this fails, see tryCreateRefundVoucher. voucherDate is optional
-    // (Back Date, gated client-side by canBackDate) — falls back to today
-    // inside tryCreateRefundVoucher when not sent. The refund record itself
+    // Pending Draft (Day Close posts it) — never blocks the refund save above
+    // even if this fails, see tryCreateRefundDraft. voucherDate is optional
+    // (Back Date, gated client-side by canBackDate) — the draft's business
+    // day falls back to today when not sent. The refund record itself
     // (refundedAt, above) always stays "now" — that's an activity log of
-    // when the front desk processed it, separate from the voucher's
-    // accounting date.
+    // when the front desk processed it, separate from the accounting date.
     const entityType = refundVoucherSvc.entityTypeFromPaymentType(data.paymentType);
-    const result = await refundVoucherSvc.tryCreateRefundVoucher({
-      entityType,
+    const result = await refundVoucherSvc.tryCreateRefundDraft({
+      entityType, kind: 'slip', ref: data.serialNo || '',
       payeeName: data.patientName,
       amount: Number(amount),
-      particulars: `Slip Refund — ${data.patientName} (${data.serialNo || ''})`,
-      voucherDate,
-      dayVoucherSource: 'slip-refund',
+      voucherDate, createdByName: refundedBy,
     });
-    if (result.voucherNo) data.voucherNo = result.voucherNo;
+    if (result.drafted) data.voucherDrafted = true;
     else if (result.warning) data.voucherWarning = result.warning;
     success(res, data, 'Refund process ho gaya');
   } catch (err) {
@@ -2274,7 +2272,7 @@ async function deleteConsultantRate(req, res, next) {
 
 async function getConsultantNames(req, res, next) {
   try {
-    success(res, await service.getConsultantNames());
+    success(res, await service.getConsultantNames({ activeOnly: req.query.activeOnly === '1' }));
   } catch (err) { next(err); }
 }
 
@@ -2376,7 +2374,7 @@ async function getRevenueDashboard(req, res, next) {
 async function getDailyDepartmentStatement(req, res, next) {
   try {
     // Dashboard popup = the Patients List of that business day.
-    const data = await service.getDailyStatementFromPatientList(req.query.date);
+    const data = await service.getDailyStatementFromPatientList(req.query.date, req.query.paymentType);
     success(res, data);
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
