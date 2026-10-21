@@ -1,9 +1,12 @@
+import ReportWindowControls from '../../../components/reports/ReportWindowControls';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { RefreshCw, Upload, Printer, FileDown, ArrowLeft, BedDouble, X, AlertTriangle } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
+import '../../../components/reports/ReportToolbar.scss'; // .rpt-arial9
 import { showSlipClashes } from './slipClashNotice';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
@@ -474,6 +477,7 @@ export default function PatientsListReport() {
         .plr-badge { font-size: 9px; padding: 1px 4px; border-radius: 8px; }
         .plr-group-header { background: #eef2f8; font-weight: 700; padding: 6px 4px; color: #1a3c6e; font-size: 11px; margin-top: 10px; }
         .plr-group-subtotal td { background: #f4f6fa; font-weight: 700; border-top: 1px solid #1a3c6e; }
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>
       ${clone.innerHTML}
       </body></html>
@@ -581,6 +585,7 @@ export default function PatientsListReport() {
         <div className="plr-toolbar-right">
           {groupBy !== 'without_users' && <span className="plr-last-refresh">Grouping: {GROUP_LABELS[groupBy]}</span>}
           {lastRefresh && <span className="plr-last-refresh">Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+          <ReportWindowControls />
         </div>
       </div>
 
@@ -614,7 +619,7 @@ export default function PatientsListReport() {
 
       {/* ── Report content (Crystal Reports style page) ── */}
       <div className="plr-report-area">
-        <div className="plr-report-page">
+        <div className="plr-report-page rpt-arial9">
 
           {/* Hospital header */}
           <div className="plr-rpt-header">

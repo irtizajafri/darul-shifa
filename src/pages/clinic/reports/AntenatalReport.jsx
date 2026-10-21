@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './AntenatalReport.scss';
 
@@ -30,7 +32,6 @@ const fmt2 = (v) => Number(v || 0).toFixed(2);
 
 export default function AntenatalReport() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const sheetRef = useRef(null);
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
@@ -40,6 +41,7 @@ export default function AntenatalReport() {
   const [rows, setRows] = useState([]);
   const [totalAmount, setTotalAmount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchRows = () => {
     setLoading(true);
@@ -52,6 +54,7 @@ export default function AntenatalReport() {
       .then((j) => {
         setRows(j.data?.rows || []);
         setTotalAmount(j.data?.totalAmount || 0);
+        setLastRefresh(new Date());
       })
       .finally(() => setLoading(false));
   };
@@ -60,6 +63,7 @@ export default function AntenatalReport() {
   useEffect(fetchRows, [fromDate, toDate, dateField, doctorId]);
 
   function handleExportExcel() {
+    if (!rows.length) { toast.error('No data to export'); return; }
     const aoa = [
       ['Antenatal Report'],
       [`From : ${fmtDMY(fromDate)}  To : ${fmtDMY(toDate)}`],
@@ -86,15 +90,16 @@ export default function AntenatalReport() {
     <div className="atr-page">
       <ClinicMenuBar />
 
-      <div className="atr-body">
-        <div className="atr-toolbar no-print">
-          <button className="atr-tool-btn" onClick={() => navigate(-1)}>Back to Filter</button>
-          <div className="atr-tool-spacer" />
-          <button className="atr-tool-btn atr-tool-btn--excel" onClick={handleExportExcel} disabled={!rows.length}>Export Excel</button>
-          <button className="atr-tool-btn atr-tool-btn--pdf" onClick={() => printAntenatalReport(sheetRef.current)} disabled={!rows.length}>Print / PDF</button>
-        </div>
+      <ReportToolbar
+        onPrint={() => printAntenatalReport(sheetRef.current)}
+        onExport={handleExportExcel}
+        onRefresh={fetchRows}
+        refreshing={loading}
+        right={lastRefresh && <span>Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+      />
 
-        <div className="atr-sheet" ref={sheetRef}>
+      <div className="atr-body">
+        <div className="atr-sheet rpt-arial9" ref={sheetRef}>
           <div className="atr-hdr">
             <div className="atr-title">Antenatal Report</div>
             <div className="atr-sub">From : {fmtDMY(fromDate)}&nbsp;&nbsp;To&nbsp;&nbsp;: {fmtDMY(toDate)}</div>

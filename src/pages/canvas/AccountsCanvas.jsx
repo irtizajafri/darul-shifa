@@ -94,7 +94,7 @@ const subModules = [
 
 const accountTypes = [
   { key: 'corporate',     title: 'Corporate',     icon: Building2 },
-  { key: 'non-corporate', title: 'Non-Corporate', icon: Users },
+  { key: 'non-corporate', title: 'Cash GL', icon: Users },
 ];
 
 // ── Tree node (Accounts / Corporate / Parameters / Main GL ...) ───────────

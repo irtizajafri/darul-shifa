@@ -12,7 +12,18 @@
   padding: 14px 18px 40px;
 }
 
-/* ── Toolbar ── */
+/* ── Filter screen (MedicineReportFilter): the old filter pop-up's card,
+   shown as the page itself instead of over the report ── */
+.mrp-filter-screen {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+/* ── Toolbar (still used by MedicineIssuanceTransaction) ── */
 .mrp-toolbar {
   display: flex;
   align-items: center;

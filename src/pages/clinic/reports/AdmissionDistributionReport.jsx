@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
 import './AdmissionDistributionReport.scss';
@@ -29,7 +30,6 @@ const fmtDateTime = (d) => {
 const fmt2 = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function AdmissionDistributionReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const { user } = useAuthStore();
 
@@ -90,6 +90,7 @@ export default function AdmissionDistributionReport() {
         body{font-family:Arial,sans-serif;font-size:9px;margin:0;padding:6px;}
         h1{font-size:12px;margin:0 0 6px;}
         ${reportStyle === 'matrix' ? matrixCss : otherCss}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -134,21 +135,10 @@ export default function AdmissionDistributionReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading} />
 
       <div className="ddp-report-area">
-        <div className={`ddp-report-page adr-report-page adr-report-page--${reportStyle}`} id="adr-printable">
+        <div className={`ddp-report-page adr-report-page adr-report-page--${reportStyle} rpt-arial9`} id="adr-printable">
           <div className="adr-hdr">
             <div className="adr-hosp">Darul Shifa Hospital</div>
             <h1 className="adr-title">{reportTitle}</h1>

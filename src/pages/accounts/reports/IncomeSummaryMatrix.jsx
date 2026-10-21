@@ -56,7 +56,7 @@ function printMatrix({ data, categoryFromName, categoryToName, dateFrom, dateTo,
   const html = `<!DOCTYPE html><html><head><title>Income Summary</title><style>${MATRIX_CSS}</style></head><body>
     <div class="hdr">
       <div class="hdr-left">
-        <b>DARUL SHIFA HOSPITAL</b> (${entityType === 'corporate' ? 'Corporate' : 'Non-Corporate'})
+        <b>DARUL SHIFA HOSPITAL</b> (${entityType === 'corporate' ? 'Corporate' : 'Cash GL'})
         <div class="period">${fmtDate(dateFrom)} — ${fmtDate(dateTo)} &nbsp;|&nbsp; Category: ${categoryFromName || 'First'} — ${categoryToName || 'Last'}</div>
       </div>
       <div class="hdr-right">${printBy || ''}</div>

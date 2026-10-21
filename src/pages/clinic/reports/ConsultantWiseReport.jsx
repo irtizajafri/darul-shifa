@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './ConsultantWiseReport.scss';
 
@@ -106,7 +108,6 @@ function groupByDate(rows, drMap, drFirstMap) {
 }
 
 export default function ConsultantWiseReport() {
-  const navigate        = useNavigate();
   const [params]        = useSearchParams();
   const { user }        = useAuthStore();
   const [rows,       setRows]       = useState([]);
@@ -213,6 +214,7 @@ export default function ConsultantWiseReport() {
         .dws-sign-area{display:flex;justify-content:space-between;margin-top:30px;font-size:10px;}
         .dws-sign-col{text-align:center;min-width:130px;}
         .dws-sign-line{border-top:1px solid #333;margin-bottom:2px;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -277,37 +279,24 @@ export default function ConsultantWiseReport() {
     <div className="cwr-page">
 
       {/* ── Toolbar ── */}
-      <div className="cwr-toolbar no-print">
-        <div className="cwr-toolbar-left">
-          <button className="cwr-tool-btn cwr-tool-btn--back" onClick={() => navigate(-1)}>
-            <ArrowLeft size={14}/> <span>Back</span>
-          </button>
-          <div className="cwr-tool-sep"/>
-          <button className="cwr-tool-btn" onClick={handlePrint}>
-            <Printer size={14}/> <span>Print / PDF</span>
-          </button>
-          <button className="cwr-tool-btn cwr-tool-btn--excel" onClick={handleExportExcel}>
-            <FileDown size={14}/> <span>Export Excel</span>
-          </button>
-          <div className="cwr-tool-sep"/>
-          <button className="cwr-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'cwr-spin' : ''}/> <span>Refresh</span>
-          </button>
-          <button className="cwr-tool-btn cwr-tool-btn--upload"
-            onClick={() => document.getElementById('cwr-file-input').click()} disabled={uploading}>
-            <Upload size={14}/> <span>{uploading ? 'Importing…' : 'Import Excel'}</span>
-          </button>
-          <input id="cwr-file-input" type="file" accept=".xlsx,.xls"
-            style={{display:'none'}} onChange={handleUpload}/>
-        </div>
-        {lastRefresh && (
-          <span className="cwr-last-refresh">Last refresh: {lastRefresh.toLocaleTimeString()}</span>
-        )}
-      </div>
+      <ReportToolbar
+        onPrint={handlePrint}
+        onExport={handleExportExcel}
+        onRefresh={fetchData}
+        refreshing={loading}
+        right={lastRefresh && <span>Last refresh: {lastRefresh.toLocaleTimeString()}</span>}
+      >
+        <button type="button" className="rpt-tool-btn"
+          onClick={() => document.getElementById('cwr-file-input').click()} disabled={uploading}>
+          <Upload size={14}/> <span>{uploading ? 'Importing…' : 'Import Excel'}</span>
+        </button>
+        <input id="cwr-file-input" type="file" accept=".xlsx,.xls"
+          style={{display:'none'}} onChange={handleUpload}/>
+      </ReportToolbar>
 
       {/* ── Report Area ── */}
       <div className="cwr-report-area">
-        <div className="cwr-report-page" id="cwr-printable">
+        <div className="cwr-report-page rpt-arial9" id="cwr-printable">
 
           {/* ═══════════════ DATE WISE SUMMARY VIEW ═══════════════ */}
           {isDateWise ? (

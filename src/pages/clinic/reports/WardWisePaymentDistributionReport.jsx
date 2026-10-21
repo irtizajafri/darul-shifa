@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import './WardWisePaymentDistributionReport.scss';
 
@@ -30,7 +31,6 @@ const COLS = [
 ];
 
 export default function WardWisePaymentDistributionReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
 
   const [data, setData] = useState(null);
@@ -76,6 +76,7 @@ export default function WardWisePaymentDistributionReport() {
         .wpr-summary{margin-top:14px;border-top:2px solid #000;padding-top:6px;font-size:9.5px;}
         .wpr-summary div{display:flex;justify-content:space-between;max-width:320px;padding:1px 0;}
         .wpr-summary .wpr-net{font-weight:800;border-top:1px solid #000;margin-top:4px;padding-top:4px;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -116,21 +117,10 @@ export default function WardWisePaymentDistributionReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading} />
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page wpr-report-page" id="wpr-printable">
+        <div className="ddp-report-page wpr-report-page rpt-arial9" id="wpr-printable">
           {loading && <div className="ddp-empty">Loading data…</div>}
           {!loading && !hasData && <div className="ddp-empty">No records found for the selected filters.</div>}
 

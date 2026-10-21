@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
+import './ConsultantWiseFilter.scss';
 import './AntenatalReportFilter.scss';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -42,27 +43,35 @@ export default function AntenatalReportFilter() {
   }
 
   return (
-    <div className="atrf-page">
+    <div className="cwf-page">
       <ClinicMenuBar />
 
-      <div className="atrf-center">
-        <div className="atrf-window">
-          <div className="atrf-titlebar">Antenatal Report</div>
+      <div className="cwf-center">
+        <div className="cwf-window atrf-window">
+          <div className="cwf-titlebar">
+            <span className="cwf-title-left">Reports — Antenatal Report</span>
+            <span className="cwf-title-right">Antenatal Report</span>
+          </div>
 
-          <div className="atrf-body">
-            <div className="atrf-row">
-              <select className="atrf-select atrf-select--type" value={dateField} onChange={e => setDateField(e.target.value)}>
+          <div className="cwf-body">
+            <div className="cwf-row">
+              <label className="cwf-lbl">Date</label>
+              <select className="cwf-input atrf-type" value={dateField} onChange={e => setDateField(e.target.value)}>
                 <option value="registrationDate">Reg. Date</option>
                 <option value="edd">ED Date</option>
               </select>
-              <span className="atrf-lbl">From :</span>
-              <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
-              <span className="atrf-lbl">To :</span>
-              <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} />
+              <div className="cwf-field-group">
+                <span className="cwf-sub-lbl">From</span>
+                <input type="date" className="cwf-input atrf-date" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+              </div>
+              <div className="cwf-field-group">
+                <span className="cwf-sub-lbl">To</span>
+                <input type="date" className="cwf-input atrf-date" value={toDate} onChange={e => setToDate(e.target.value)} />
+              </div>
             </div>
 
-            <div className="atrf-row atrf-row--consultant">
-              <span className="atrf-lbl atrf-lbl--wide">Consultant :</span>
+            <div className="cwf-row">
+              <label className="cwf-lbl">Consultant</label>
               <SearchableSelect
                 size="sm"
                 style={{ flex: 1, minWidth: 0 }}
@@ -73,11 +82,11 @@ export default function AntenatalReportFilter() {
                 placeholder="ALL"
               />
             </div>
-          </div>
 
-          <div className="atrf-actions">
-            <button className="atrf-btn atrf-btn--preview" onClick={handlePreview}>Preview</button>
-            <button className="atrf-btn atrf-btn--close" onClick={() => navigate(-1)}>Close</button>
+            <div className="cwf-actions">
+              <button className="cwf-btn cwf-btn--ok" onClick={handlePreview}>OK</button>
+              <button className="cwf-btn" onClick={() => navigate(-1)}>Close</button>
+            </div>
           </div>
         </div>
       </div>

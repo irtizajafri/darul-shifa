@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { numberToWords } from '../receiptUtils';
 import './DepartmentDoctorPerformanceReport.scss';
 import './StatementOfSurgeryReport.scss';
@@ -17,11 +18,11 @@ const fmtDateShort = (d) => {
 const fmt2 = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StatementOfSurgeryReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
   const doctorFromCode = params.get('doctorFromCode') || '';
   const doctorToCode   = params.get('doctorToCode') || '';
@@ -37,6 +38,7 @@ export default function StatementOfSurgeryReport() {
       const q = new URLSearchParams({ doctorFromCode, doctorToCode, fromDate, toDate, fromTime, toTime, patientType });
       const res = await fetch(`${API}/reports/statement-of-surgery?${q}`).then(r => r.json());
       setData(res.data || null);
+      setLastRefresh(new Date());
     } catch { toast.error('Data load failed'); }
     finally { setLoading(false); }
   };
@@ -69,6 +71,7 @@ export default function StatementOfSurgeryReport() {
         .sos-sign-row{display:flex;justify-content:space-between;margin-top:40px;text-align:center;}
         .sos-sign-block{width:30%;}
         .sos-sign-line{border-top:1px solid #000;padding-top:3px;font-size:9px;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -104,21 +107,16 @@ export default function StatementOfSurgeryReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar
+        onPrint={handlePrint}
+        onExport={handleExportExcel}
+        onRefresh={fetchData}
+        refreshing={loading}
+        right={lastRefresh && <span>Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+      />
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page sos-report-page" id="sos-printable">
+        <div className="ddp-report-page sos-report-page rpt-arial9" id="sos-printable">
           {loading && <div className="ddp-empty">Loading data…</div>}
           {!loading && !hasRows && <div className="ddp-empty">No records found for the selected filters.</div>}
 

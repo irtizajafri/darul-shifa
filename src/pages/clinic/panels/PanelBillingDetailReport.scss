@@ -12,78 +12,12 @@
   padding: 14px 18px 40px;
 }
 
-/* ── Filter ── */
-.pbd-filter {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-bottom: 14px;
-}
-
-.pbd-filter-title {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin-bottom: 10px;
-}
-
-.pbd-filter-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: flex-end;
-}
-
-.pbd-fg {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-
-  label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  select, input {
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 0.85rem;
-    color: #1e293b;
-    background: #fff;
-    outline: none;
-    min-width: 200px;
-
-    &:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
-  }
-}
-
-.pbd-filter-actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.pbd-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: none;
-  border-radius: 7px;
-  font-size: 0.83rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-
-  &:disabled { opacity: 0.55; cursor: not-allowed; }
-  &--ok     { background: #1a3c6e; color: #fff; &:hover:not(:disabled){ background:#15305a; } }
-  &--upload { background: #0f766e; color: #fff; &:hover:not(:disabled){ background:#0d6460; } }
-  &--print  { background: #475569; color: #fff; &:hover:not(:disabled){ background:#334155; } }
+/* ── Filter screen (PanelBillingDetailFilter) — classic window from
+   ConsultantWiseFilter.scss; only the local tweaks live here ── */
+.pbd-filter-page {
+  .cwf-lbl { width: 100px; }
+  .cwf-btn--icon { display: inline-flex; align-items: center; gap: 5px; }
+  .cwf-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 }
 
 .pbd-spin { animation: pbd-spin 1s linear infinite; }

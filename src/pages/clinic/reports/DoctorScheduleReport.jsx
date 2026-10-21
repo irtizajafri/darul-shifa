@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import './DoctorScheduleReport.scss';
 
@@ -19,7 +20,6 @@ const fmtTime = (t) => {
 };
 
 export default function DoctorScheduleReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
 
   const [data, setData] = useState(null);
@@ -65,6 +65,7 @@ export default function DoctorScheduleReport() {
         td.day{text-align:center;}
         .dsr-tick{color:#0a7a2a;font-weight:800;}
         .dsr-oncall{color:#b45309;font-weight:600;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -92,21 +93,10 @@ export default function DoctorScheduleReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading} />
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page dsr-report-page" id="dsr-printable">
+        <div className="ddp-report-page dsr-report-page rpt-arial9" id="dsr-printable">
           <div className="ddp-print-header">
             <h1>{reportTitle}</h1>
           </div>

@@ -40,14 +40,16 @@ export const useTabStore = create((set, get) => ({
   // instead, which forwards to whichever tab is currently active.
   navigateFns: {},
 
-  createNewTab: () => {
+  // `path` opens the new tab straight on that page (e.g. a minimized report
+  // reopened after its own tab was closed); default is the Dashboard.
+  createNewTab: (path = '/dashboard') => {
     const id = `tab-${tabCounter++}`;
-    const newTab = { id, path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, module: null };
+    const newTab = { id, path, label: 'Dashboard', Icon: LayoutDashboard, module: null };
     syncModule(null);
     set((state) => ({
       tabs: [...state.tabs, newTab],
       activeTabId: id,
-      tabPaths: { ...state.tabPaths, [id]: '/dashboard' },
+      tabPaths: { ...state.tabPaths, [id]: path },
     }));
     return id;
   },

@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentPatientsReport.scss';
 
@@ -67,7 +68,6 @@ function resolveShiftName(visitTime, shifts) {
 }
 
 export default function DepartmentPatientsReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const { user } = useAuthStore();
   const [rows, setRows] = useState([]);
@@ -285,6 +285,7 @@ export default function DepartmentPatientsReport() {
         h1{font-size:13px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
         p{font-size:10px;margin:0;color:#555;}
         @page { size: ${landscape ? 'landscape' : 'portrait'}; margin: 10mm; }
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -346,21 +347,10 @@ export default function DepartmentPatientsReport() {
 
   return (
     <div className="dpr-page">
-      <div className="dpr-toolbar no-print">
-        <div className="dpr-toolbar-left">
-          <button className="dpr-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="dpr-tool-sep"/>
-          <button className="dpr-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="dpr-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="dpr-tool-sep"/>
-          <button className="dpr-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'dpr-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading} />
 
       <div className="dpr-report-area">
-        <div className="dpr-report-page" id="dpr-printable">
+        <div className="dpr-report-page rpt-arial9" id="dpr-printable">
           <div className="dpr-print-header">
             <h1>{reportTitle}</h1>
             <p>Date &amp; Time: {printedAtStr} | Printed By: {printedBy}</p>

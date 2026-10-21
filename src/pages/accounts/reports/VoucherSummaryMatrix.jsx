@@ -57,7 +57,7 @@ function printMatrix({ data, glFromLabel, glToLabel, dateFrom, dateTo, entityTyp
   const html = `<!DOCTYPE html><html><head><title>Expense Summary</title><style>${MATRIX_CSS}</style></head><body>
     <div class="hdr">
       <div class="hdr-left">
-        <b>DARUL SHIFA HOSPITAL</b> (${entityType === 'corporate' ? 'Corporate' : 'Non-Corporate'})
+        <b>DARUL SHIFA HOSPITAL</b> (${entityType === 'corporate' ? 'Corporate' : 'Cash GL'})
         <div class="period">${fmtDate(dateFrom)} — ${fmtDate(dateTo)} &nbsp;|&nbsp; Main GL: ${glFromLabel || 'First'} — ${glToLabel || 'Last'}</div>
       </div>
     </div>

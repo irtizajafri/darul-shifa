@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
 
@@ -30,12 +31,12 @@ const fmtDateTime = (d) => {
 };
 
 export default function DepartmentDoctorPerformanceReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const { user } = useAuthStore();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
   const fromDate       = params.get('fromDate') || '';
   const toDate         = params.get('toDate') || '';
@@ -55,6 +56,7 @@ export default function DepartmentDoctorPerformanceReport() {
       const res = await fetch(`${API}/reports/department-doctor-performance?${q}`).then(r => r.json());
       setRows(res.data?.rows || []);
       setTotal(res.data?.total || null);
+      setLastRefresh(new Date());
     } catch { toast.error('Data load failed'); }
     finally { setLoading(false); }
   };
@@ -84,6 +86,7 @@ export default function DepartmentDoctorPerformanceReport() {
         .ddp-detail-row td{padding-left:34px;color:#334155;}
         h1{font-size:13px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
         p{font-size:10px;margin:0;color:#555;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -113,27 +116,16 @@ export default function DepartmentDoctorPerformanceReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}>
-            <ArrowLeft size={14}/> <span>Back</span>
-          </button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}>
-            <Printer size={14}/> <span>Print / PDF</span>
-          </button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}>
-            <FileDown size={14}/> <span>Export Excel</span>
-          </button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar
+        onPrint={handlePrint}
+        onExport={handleExportExcel}
+        onRefresh={fetchData}
+        refreshing={loading}
+        right={lastRefresh && <span>Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+      />
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page" id="ddp-printable">
+        <div className="ddp-report-page rpt-arial9" id="ddp-printable">
           <div className="ddp-print-header">
             <h1>Department wise Doctor's Performance</h1>
             <p>Date &amp; Time: {printedAtStr} | Printed By: {printedBy}</p>

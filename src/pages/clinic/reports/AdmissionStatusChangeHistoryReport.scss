@@ -2,10 +2,12 @@ $blue:   #1a3c6e;
 $bg:     #dde3ea;
 $border: #bbb;
 
+// View page scrolls inside <main> (not its own box) so the shared sticky
+// ReportToolbar stays flush at the top.
 .aschr-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
   background: $bg;
   font-family: 'Tahoma', 'Segoe UI', Arial, sans-serif;
   font-size: 12px;
@@ -34,9 +36,16 @@ $border: #bbb;
   color: #667;
 }
 
+.aschr-printable { flex: 1; display: flex; flex-direction: column; }
+
+.aschr-filters {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #556;
+}
+
 .aschr-body {
   flex: 1;
-  overflow: auto;
   padding: 14px;
 }
 
@@ -55,8 +64,6 @@ $border: #bbb;
 
   thead tr {
     background: #e8eef8;
-    position: sticky;
-    top: 0;
   }
 
   th {

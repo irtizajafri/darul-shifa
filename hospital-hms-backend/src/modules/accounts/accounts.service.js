@@ -336,7 +336,7 @@ async function copyChartToCorporate() {
     prisma.accMainGL.findMany({ where: { entityType: SRC }, orderBy: { id: 'asc' }, include: treeInclude }),
     prisma.accMainGL.findMany({ where: { entityType: DST }, orderBy: { id: 'asc' }, include: treeInclude }),
   ]);
-  if (srcTree.length === 0) throw new Error('Non-Corporate chart of accounts is empty — nothing to copy.');
+  if (srcTree.length === 0) throw new Error('Cash GL chart of accounts is empty — nothing to copy.');
 
   // System heads exist once per book — make sure Corporate has its own.
   await ensureSystemHeads(SRC);

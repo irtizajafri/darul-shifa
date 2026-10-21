@@ -1,14 +1,22 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { Upload, X, Plus, Pencil, Trash2, Search } from 'lucide-react';
-import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { useSearchParams } from 'react-router-dom';
+import { Upload, X, Plus, Pencil, Trash2 } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
+import { printElementInPopup } from '../../../utils/printPopup';
 import './MedicineListReport.scss';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const STATUS_LABELS = { active: 'Active', inactive: 'Inactive', all: 'All' };
+
+function localYmd(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // Plain price-list export — header row usually has 1-2 blank rows above it
 // (Crystal Reports / Excel print-area quirk, same as the Panel Cheque file),
@@ -73,8 +81,13 @@ export default function MedicineListReport() {
   const { fetchMedicineList, createMedicine, updateMedicine, deleteMedicine } = useClinicStore();
   const [medicines, setMedicines] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('active');
+  // View page — filters come from MedicineListFilter via the URL (defaults
+  // match the old in-page controls: status Active, empty search).
+  const [params] = useSearchParams();
+  const search = params.get('search') || '';
+  const statusParam = params.get('status');
+  const statusFilter = STATUS_LABELS[statusParam] ? statusParam : 'active';
+  const reportRef = useRef(null);
   const [showImport, setShowImport] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null); // medicine object | null (null = adding new)
@@ -162,25 +175,64 @@ export default function MedicineListReport() {
     }
   }
 
+  const filterText = [
+    `Status: ${STATUS_LABELS[statusFilter]}`,
+    search ? `Search: "${search}"` : '',
+  ].filter(Boolean).join(' — ');
+
+  const countText = `${rows.length} medicine${rows.length !== 1 ? 's' : ''}`;
+
+  const handlePrint = () => {
+    printElementInPopup(reportRef.current, {
+      title: 'Medicine List',
+      page: 'A4 portrait',
+      margin: '10mm',
+      // Belt-and-braces: .no-print is already hidden by the popup, but make
+      // sure the row-action column never prints and the toggle badge prints
+      // as plain text.
+      extraCss: '.mlr-actions{display:none!important} .mlr-status-badge{background:none!important;padding:0!important;color:#000!important}',
+    });
+  };
+
+  const handleExportExcel = () => {
+    if (!rows.length) { toast.error('No data to export'); return; }
+    const aoa = [['Medicine List'], [filterText], []];
+    aoa.push(['Code', 'Name', 'Pack Size', 'Retail', 'TP', 'Status']);
+    rows.forEach((m) => aoa.push([
+      m.code,
+      m.name,
+      m.packSize || '—',
+      Number(m.retailPrice || 0),
+      Number(m.tradePrice || 0),
+      m.status,
+    ]));
+    aoa.push([]);
+    aoa.push([countText]);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Medicines');
+    XLSX.writeFile(wb, `medicine_list_${localYmd(new Date())}.xlsx`);
+  };
+
   return (
     <div className="mlr-page">
-      <ClinicMenuBar />
-      <div className="mlr-body">
-        <div className="mlr-toolbar">
-          <div className="mlr-titlebar">Medicine List</div>
-          <div className="mlr-toolbar-actions">
-            <div className="mlr-search">
-              <Search size={14} />
-              <input placeholder="Search code or name…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            </div>
-            <select className="mlr-status-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="all">All</option>
-            </select>
-            <button className="mlr-btn" onClick={openAdd}><Plus size={14} /> Add Medicine</button>
-            <button className="mlr-btn mlr-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={load} refreshing={loading}>
+        <div className="rpt-tool-sep" />
+        <button type="button" className="rpt-tool-btn" onClick={openAdd} title="Add Medicine">
+          <Plus size={14} /> <span>Add Medicine</span>
+        </button>
+        <button type="button" className="rpt-tool-btn" onClick={() => setShowImport(true)} title="Upload Excel">
+          <Upload size={14} /> <span>Upload Excel</span>
+        </button>
+      </ReportToolbar>
+
+      <div className="mlr-printable rpt-arial9" ref={reportRef}>
+        <div className="mlr-header">
+          <div>
+            <span className="mlr-title">Medicine List</span>
+            <div className="mlr-filters">{filterText}</div>
           </div>
+          <span className="mlr-count">{countText}</span>
         </div>
 
         <div className="mlr-report">
@@ -199,7 +251,7 @@ export default function MedicineListReport() {
                     <th className="mlr-r">Retail</th>
                     <th className="mlr-r">TP</th>
                     <th className="mlr-l">Status</th>
-                    <th className="mlr-l"></th>
+                    <th className="mlr-l mlr-actions no-print"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -219,9 +271,11 @@ export default function MedicineListReport() {
                           {m.status}
                         </button>
                       </td>
-                      <td className="mlr-l mlr-row-actions">
+                      <td className="mlr-l mlr-actions no-print">
+                        <div className="mlr-row-actions">
                         <button onClick={() => openEdit(m)} title="Edit"><Pencil size={13} /></button>
                         <button onClick={() => handleDelete(m)} title="Delete"><Trash2 size={13} /></button>
+                        </div>
                       </td>
                     </tr>
                   ))}

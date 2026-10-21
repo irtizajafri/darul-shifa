@@ -3,7 +3,7 @@ const accountsService = require('../accounts/accounts.service');
 
 // Advance/Loan is always posted to the Non-Corporate book, Cash mode — the
 // specific Sub Account is whatever's linked to the 'advance-loan' system
-// head in List Attachments (Accounts → Non-Corporate → Parameters). Not
+// head in List Attachments (Accounts → Cash GL → Parameters). Not
 // configurable per-record: this module doesn't collect entityType/payment
 // mode from the user, by design (see chat with user, 2026-09-09).
 const ADVANCE_LOAN_VOUCHER_ENTITY_TYPE = 'non-corporate';
@@ -17,7 +17,7 @@ async function tryCreateAdvanceLoanVoucher(advanceLoan) {
   try {
     const chain = await accountsService.getAdvanceLoanVoucherAccountChain(ADVANCE_LOAN_VOUCHER_ENTITY_TYPE);
     if (!chain) {
-      return { warning: 'Advance/Loan save ho gaya, lekin voucher nahi bana — Accounts → Non-Corporate → Parameters → List Attachments mein "Employee Advance/Loan" head ko pehle kisi account se link karein.' };
+      return { warning: 'Advance/Loan save ho gaya, lekin voucher nahi bana — Accounts → Cash GL → Parameters → List Attachments mein "Employee Advance/Loan" head ko pehle kisi account se link karein.' };
     }
     const employee = advanceLoan.employee;
     const payeeName = employee ? `${employee.firstName} ${employee.lastName}`.trim() : 'Unknown Employee';

@@ -42,13 +42,3 @@
 }
 
 .pcpr-empty { text-align: center; color: #64748b; padding: 30px 0; }
-
-.pcpr-filter-grid {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 12px 10px;
-  align-items: center;
-
-  label { font-size: 0.83rem; font-weight: 600; color: #334155; }
-  input[type='date'] { padding: 4px 6px; font-size: 0.83rem; }
-}

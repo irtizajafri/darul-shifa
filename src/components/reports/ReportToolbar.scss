@@ -1,0 +1,136 @@
+// Shared report action bar — same look as the Patients List toolbar.
+//
+// The page scrolls inside <main class="p-4 lg:p-6 overflow-auto">, whose
+// padding sits outside the page, so `top` is pulled up by that padding and
+// the bar sits flush against <main>'s top edge instead of letting rows
+// scroll past above it.
+.rpt-sticky {
+  position: sticky;
+  top: -16px;
+  @media (min-width: 1024px) { top: -24px; }
+  z-index: 100;
+  margin: -16px -16px 12px;
+  @media (min-width: 1024px) { margin: -24px -24px 12px; }
+}
+
+.rpt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #f0ede8;
+  border-bottom: 1px solid #b8b4ae;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+
+.rpt-toolbar-left { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+.rpt-toolbar-right { display: flex; align-items: center; gap: 10px; font-size: 0.72rem; color: #666; }
+
+.rpt-tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #e4e0d8;
+  border: 1px solid transparent;
+  border-bottom-color: #888;
+  border-right-color: #888;
+  border-top-color: #fff;
+  border-left-color: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: #1a1a1a;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) { background: #d8d4cc; }
+  &:active:not(:disabled) {
+    border-top-color: #888;
+    border-left-color: #888;
+    border-bottom-color: #fff;
+    border-right-color: #fff;
+  }
+  &:focus-visible { outline: 2px solid #1a3c6e; outline-offset: 1px; }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  &--excel {
+    background: #e0f0e8;
+    border-color: #2a7a4a;
+    color: #0a3a1a;
+    font-weight: 600;
+    &:hover:not(:disabled) { background: #cce8d8; }
+  }
+  &--back {
+    background: #e8e4dc;
+    &:hover:not(:disabled) { background: #dcd8d0; }
+  }
+}
+
+// Minimize / Close — far right, Windows style.
+.rpt-winctl { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
+.rpt-winctl-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 24px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #333;
+  cursor: pointer;
+
+  &:hover { background: #d8d4cc; border-color: #b0aca4; }
+  &:focus-visible { outline: 2px solid #1a3c6e; outline-offset: 1px; }
+  &--close:hover { background: #c42b1c; border-color: #c42b1c; color: #fff; }
+}
+
+.rpt-tool-sep { width: 1px; height: 22px; background: #b0aca4; margin: 0 4px; }
+
+.rpt-spin { animation: rpt-spin 1s linear infinite; }
+@keyframes rpt-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rpt-spin { animation: none; } }
+
+// Report preview + print: Arial 9 everywhere inside (owner's decision
+// 2026-10-21 — only the preview/print, not the filter screen or toolbar).
+// Put `rpt-arial9` on the report body that gets printed; printElementInPopup
+// copies the app's stylesheets, so the print gets it too. A report that
+// builds its own print HTML adds REPORT_PRINT_FONT_CSS (reportFont.js).
+.rpt-arial9,
+.rpt-arial9 * {
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: 9pt !important;
+}
+
+// Black & white print (see reportFont.js for the why): applies to reports
+// printed through printElementInPopup, which copies this stylesheet.
+// `:not(#rpt-bw)` lifts it above any report's own class-based print colours.
+@media print {
+  .rpt-arial9:not(#rpt-bw),
+  .rpt-arial9:not(#rpt-bw) * {
+    color: #000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .rpt-arial9:not(#rpt-bw) th,
+  .rpt-arial9:not(#rpt-bw) thead td {
+    background: #ececec !important;
+    font-weight: 700 !important;
+    border-bottom: 1px solid #000 !important;
+  }
+  .rpt-arial9:not(#rpt-bw) tfoot td, .rpt-arial9:not(#rpt-bw) tfoot th,
+  .rpt-arial9:not(#rpt-bw) tr[class*="total" i] td, .rpt-arial9:not(#rpt-bw) tr[class*="total" i] th,
+  .rpt-arial9:not(#rpt-bw) tr[class*="grand" i] td, .rpt-arial9:not(#rpt-bw) tr[class*="grand" i] th,
+  .rpt-arial9:not(#rpt-bw) td[class*="total" i], .rpt-arial9:not(#rpt-bw) td[class*="grand" i],
+  .rpt-arial9:not(#rpt-bw) tr[class*="sub-row" i] td, .rpt-arial9:not(#rpt-bw) tr[class*="subtotal" i] td {
+    background: #e0e0e0 !important;
+    font-weight: 700 !important;
+    border-top: 1px solid #000 !important;
+    border-bottom: 1px solid #000 !important;
+  }
+  .rpt-arial9:not(#rpt-bw) [class*="badge" i], .rpt-arial9:not(#rpt-bw) [class*="pill" i], .rpt-arial9:not(#rpt-bw) [class*="chip" i] {
+    border: 1px solid #000 !important;
+  }
+}

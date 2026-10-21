@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DeathCertificateReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -33,6 +35,7 @@ function printDeathCertificateReport() {
       .dcr-nowrap { white-space: nowrap; }
       .dcr-sub-line { margin-top: 2px; color: #333; }
       @page { size: A4 landscape; margin: 8mm; }
+      ${REPORT_PRINT_FONT_CSS}
     </style></head><body>${content}</body></html>`);
   win.document.close();
   win.focus();
@@ -180,7 +183,6 @@ const certNo = (r) => (r.arrivedSlipNo ? `${r.arrivedSlipNo}/${r.admissionNo}` :
 
 export default function DeathCertificateReport() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
 
@@ -188,6 +190,7 @@ export default function DeathCertificateReport() {
   const [doctors, setDoctors] = useState({}); // id -> name, for the Doctor line
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
@@ -205,7 +208,7 @@ export default function DeathCertificateReport() {
     if (toDate) q.set('toDate', toDate);
     fetch(`${API}/death-certificates?${q}`)
       .then((r) => r.json())
-      .then((j) => setRows(j.data || []))
+      .then((j) => { setRows(j.data || []); setLastRefresh(new Date()); })
       .catch((err) => toast.error(err?.message || 'Failed to load death certificates'))
       .finally(() => setLoading(false));
   };
@@ -242,6 +245,7 @@ export default function DeathCertificateReport() {
   // header, 2 physical rows per record) so this file can be re-uploaded via
   // "Upload Excel" without any conversion.
   function handleExportExcel() {
+    if (!rows.length) { toast.error('No data to export'); return; }
     const header = [
       ['', '', '', '', '', '', '', 'Death Certificate Report', '', '', '', '', '', ''],
       [],
@@ -272,19 +276,22 @@ export default function DeathCertificateReport() {
     <div className="dcr-page">
       <ClinicMenuBar />
 
-      <div className="dcr-body">
-        <div className="dcr-toolbar no-print">
-          <button className="dcr-tool-btn" onClick={() => navigate(-1)}>Back to Filter</button>
-          <div className="dcr-tool-spacer" />
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUpload} />
-          <button className="dcr-tool-btn dcr-tool-btn--upload" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload Excel'}
-          </button>
-          <button className="dcr-tool-btn dcr-tool-btn--excel" onClick={handleExportExcel} disabled={!rows.length}>Export Excel</button>
-          <button className="dcr-tool-btn dcr-tool-btn--pdf" onClick={printDeathCertificateReport} disabled={!rows.length}>Print / PDF</button>
-        </div>
+      <ReportToolbar
+        onPrint={printDeathCertificateReport}
+        onExport={handleExportExcel}
+        onRefresh={fetchRows}
+        refreshing={loading}
+        right={lastRefresh && <span>Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+      >
+        <div className="rpt-tool-sep" />
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUpload} />
+        <button type="button" className="rpt-tool-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          <Upload size={14} /> <span>{uploading ? 'Uploading…' : 'Upload Excel'}</span>
+        </button>
+      </ReportToolbar>
 
-        <div className="dcr-sheet" id="dcr-rep-printable">
+      <div className="dcr-body">
+        <div className="dcr-sheet rpt-arial9" id="dcr-rep-printable">
           <div className="dcr-hdr">
             <div className="dcr-title">Death Certificate Report</div>
             <div className="dcr-sub">From : {fmtDMY(fromDate)}&nbsp;&nbsp;To&nbsp;&nbsp;: {fmtDMY(toDate)}</div>

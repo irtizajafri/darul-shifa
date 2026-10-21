@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { Upload, RefreshCw, Printer, FileDown } from 'lucide-react';
-import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import { Upload } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './BillComparisonReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -75,9 +75,12 @@ function parseExcel(file) {
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// Preview step — BillComparisonFilter (no filters of its own) opens this at
+// /clinic/panels/bill-comparison/view. Import Excel stays here so the freshly
+// imported rows show straight away.
 export default function BillComparisonReport() {
-  const navigate    = useNavigate();
   const fileRef     = useRef(null);
+  const reportRef   = useRef(null);
   const [rows, setRows]         = useState([]);
   const [loading, setLoading]   = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -132,7 +135,8 @@ export default function BillComparisonReport() {
   const totalDiff       = rows.reduce((s, r) => s + Number(r.diff       || 0), 0);
 
   function handlePrint() {
-    const content = document.querySelector('.bcr-report-wrap');
+    // ref, not document.querySelector — every open tab stays mounted
+    const content = reportRef.current;
     if (!content) return;
     const w = window.open('', '_blank', 'width=1000,height=700');
     w.document.write(`<html><head><title>Bill Comparison Report</title>
@@ -146,6 +150,7 @@ export default function BillComparisonReport() {
       .neg { color: red; font-weight: 700; }
       .num { text-align: right; }
       tfoot td { font-weight: 700; border-top: 2px solid #1a3c6e; background: #eef2f8; }
+      ${REPORT_PRINT_FONT_CSS}
     </style></head><body>
     ${content.innerHTML}
     <script>window.onload=function(){window.print();}<\/script>
@@ -171,28 +176,15 @@ export default function BillComparisonReport() {
 
   return (
     <div className="bcr-page">
-      <ClinicMenuBar />
-
-      <div className="bcr-toolbar">
-        <button className="bcr-btn bcr-btn--back" onClick={() => navigate(-1)}>← Back</button>
-        <div className="bcr-sep" />
-        <button
-          className="bcr-btn bcr-btn--upload"
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-        >
-          <Upload size={14} /> {uploading ? 'Importing...' : 'Import Excel'}
+      <ReportToolbar onPrint={handlePrint} onExport={handleExport} onRefresh={fetchData} refreshing={loading}>
+        <div className="rpt-tool-sep" />
+        <button type="button" className="rpt-tool-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          <Upload size={14} /> <span>{uploading ? 'Importing...' : 'Import Excel'}</span>
         </button>
         <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display:'none' }} onChange={handleUpload} />
-        <div className="bcr-sep" />
-        <button className="bcr-btn" onClick={fetchData} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'bcr-spin' : ''} /> Refresh
-        </button>
-        <button className="bcr-btn" onClick={handlePrint}><Printer size={14} /> Print</button>
-        <button className="bcr-btn bcr-btn--excel" onClick={handleExport}><FileDown size={14} /> Export Excel</button>
-      </div>
+      </ReportToolbar>
 
-      <div className="bcr-report-wrap">
+      <div className="bcr-report-wrap rpt-arial9" ref={reportRef}>
         <h2>ADMISSION WISE PANEL BILLING REPORT</h2>
 
         {rows.length === 0 ? (

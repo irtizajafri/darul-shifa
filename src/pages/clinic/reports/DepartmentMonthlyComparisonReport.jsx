@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentMonthlyComparisonReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -14,7 +15,6 @@ const monthLabel = (ym) => {
 };
 
 export default function DepartmentMonthlyComparisonReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
 
   const [data, setData] = useState(null);
@@ -54,6 +54,7 @@ export default function DepartmentMonthlyComparisonReport() {
         tr.total-row td{font-weight:800;background:#f2f2f2!important;border-top:2px solid #000;
            -webkit-print-color-adjust:exact;print-color-adjust:exact;}
         td.grand-cell{font-weight:800;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -76,19 +77,10 @@ export default function DepartmentMonthlyComparisonReport() {
 
   return (
     <div className="dmr-page">
-      <div className="dmr-toolbar no-print">
-        <button className="dmr-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-        <div className="dmr-tool-sep"/>
-        <button className="dmr-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-        <button className="dmr-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-        <div className="dmr-tool-sep"/>
-        <button className="dmr-tool-btn" onClick={fetchData} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'dmr-spin' : ''}/> <span>Refresh</span>
-        </button>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading} />
 
       <div className="dmr-area">
-        <div className="dmr-sheet" id="dmr-printable">
+        <div className="dmr-sheet rpt-arial9" id="dmr-printable">
           <h2>Department wise Monthly Comparison</h2>
 
           {loading && <div className="dmr-empty">Loading data…</div>}

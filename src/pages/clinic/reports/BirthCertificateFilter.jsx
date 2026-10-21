@@ -42,7 +42,7 @@ export default function BirthCertificateFilter() {
             </div>
 
             <div className="cwf-actions">
-              <button className="cwf-btn cwf-btn--ok" onClick={handleOk}>View</button>
+              <button className="cwf-btn cwf-btn--ok" onClick={handleOk}>OK</button>
               <button className="cwf-btn" onClick={() => navigate(-1)}>Close</button>
             </div>
           </div>

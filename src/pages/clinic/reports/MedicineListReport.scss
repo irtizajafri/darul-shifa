@@ -1,64 +1,30 @@
+// View page scrolls inside <main> (not its own box) so the shared sticky
+// ReportToolbar stays flush at the top.
 .mlr-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
   background: #f1f5f9;
   font-family: 'Inter', sans-serif;
 }
 
-.mlr-body {
-  flex: 1;
-  overflow: auto;
-  padding: 14px 18px 40px;
-}
+.mlr-printable { flex: 1; display: flex; flex-direction: column; }
 
-/* ── Toolbar ── */
-.mlr-toolbar {
+.mlr-header {
+  background: #eef2f7;
+  border-bottom: 1px solid #b8c4d4;
+  padding: 10px 16px;
+  margin-bottom: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-  gap: 10px;
 }
 
-.mlr-titlebar {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: #1e293b;
-  letter-spacing: 0.02em;
-}
+.mlr-title { font-weight: 700; color: #1e293b; }
+.mlr-filters { margin-top: 2px; color: #556; }
+.mlr-count { color: #667; }
 
-.mlr-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-
-.mlr-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  padding: 6px 10px;
-  color: #94a3b8;
-
-  input {
-    border: none;
-    outline: none;
-    font-size: 0.83rem;
-    color: #334155;
-    width: 190px;
-  }
-}
-
-.mlr-status-select {
-  border: 1px solid #cbd5e1;
-  border-radius: 7px;
-  padding: 7px 10px;
-  font-size: 0.83rem;
-  color: #334155;
-  background: #fff;
-}
-
+/* Buttons used inside the Add/Edit + Upload modals. */
 .mlr-btn {
   display: inline-flex;
   align-items: center;
@@ -121,7 +87,7 @@
 }
 
 .mlr-row-actions {
-  display: flex;
+  display: inline-flex;
   gap: 6px;
 
   button {
@@ -211,10 +177,11 @@
 .mlr-import-done { text-align: center; padding: 20px 10px; font-size: 0.9rem; color: #1e293b; }
 
 /* ── Print ── */
+/* Printed via printElementInPopup (A4 portrait set there); the action
+   column is .no-print and hidden by the popup's own CSS. */
 @media print {
-  @page { size: A4 portrait; margin: 10mm; }
   .no-print, .menu-bar, nav { display: none !important; }
-  .mlr-page, .mlr-body { height: auto; overflow: visible; background: #fff; padding: 0; }
-  .mlr-report { border: none; padding: 0; }
-  .mlr-table { font-size: 8pt; }
+  .mlr-page { min-height: 0; background: #fff; }
+  .mlr-report { border: none; padding: 0; border-radius: 0; }
+  .mlr-table thead th { border-bottom: 1px solid #000; }
 }

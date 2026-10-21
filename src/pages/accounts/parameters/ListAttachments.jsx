@@ -454,7 +454,7 @@ export default function ListAttachments() {
       return <p className="list-attach__empty">Koi payee list nahi — sirf ek Account link chahiye. "Link to Account" se Sub Account attach karein; jab Employee Management mein Advance/Loan banega, uska voucher isi account pe post hoga.</p>;
     }
     if (head.sourceType === 'slip-admission-refund') {
-      return <p className="list-attach__empty">Koi payee list nahi — sirf ek Account link chahiye. "Link to Account" se Sub Account attach karein; jab Clinic mein Slip Refund ya Admission Refund process hoga, uska voucher isi account pe post hoga (is book — {entityType === 'corporate' ? 'Corporate' : 'Non-Corporate'} — ki slips/admissions ke liye).</p>;
+      return <p className="list-attach__empty">Koi payee list nahi — sirf ek Account link chahiye. "Link to Account" se Sub Account attach karein; jab Clinic mein Slip Refund ya Admission Refund process hoga, uska voucher isi account pe post hoga (is book — {entityType === 'corporate' ? 'Corporate' : 'Cash GL'} — ki slips/admissions ke liye).</p>;
     }
     if (head.sourceType === 'doctor') {
       if (linkedDoctors.length === 0) return <p className="list-attach__empty">No doctors found in Clinic module</p>;

@@ -274,7 +274,7 @@ export default function AccountsInquiryDashboard() {
   const now = new Date();
   const { entityType } = useParams();
   const navigate = useNavigate();
-  const entityLabel = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+  const entityLabel = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
 
   const [period,      setPeriod]      = useState('monthly_daily');
   const [year,        setYear]        = useState(now.getFullYear());

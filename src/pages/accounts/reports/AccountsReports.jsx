@@ -30,7 +30,7 @@ const REPORTS = [
 export default function AccountsReports() {
   const { entityType } = useParams();
   const navigate = useNavigate();
-  const label = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+  const label = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
 
   return (
     <div className="acc-reports">

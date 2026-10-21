@@ -1,19 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { Filter as FilterIcon, Printer, Search, Upload, X } from 'lucide-react';
-import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
-import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { Upload } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import { buildMedicineIssuancePrintHtml } from './medicineIssuancePrintUtils';
-import useModalKeys from '../../../hooks/useModalKeys';
+import MedicineIssuanceImportModal from './MedicineIssuanceImportModal';
 // Shares Panels > Reports > Medicine Report's styles; the Cash layout's own
 // extras (patient grid, store filter) live in MedicineIssuanceTransaction.scss.
 import './MedicineReport.scss';
 import './MedicineIssuanceTransaction.scss';
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
   if (!d) return '—';
@@ -22,112 +22,24 @@ const fmtDate = (d) => {
 };
 
 // Details prints the legacy CashMed.rpt layout (medicineIssuancePrintUtils);
-// Admit wise Summary prints the on-screen table from a popup, in the same
-// small Arial type. Both print from a popup window, never window.print() on
-// the main window (which could freeze the app on Windows).
+// Admit wise Summary prints the on-screen table from a popup. Both in Arial 9
+// (owner's report format) and both from a popup window, never window.print()
+// on the main window (which could freeze the app on Windows).
 function printMedicineIssuanceTxn(reportEl, data, filters) {
   if (data?.mode === 'details') {
     const w = window.open('', '_blank', 'width=1000,height=800');
     if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
-    w.document.write(buildMedicineIssuancePrintHtml({ data, filters }));
+    const html = buildMedicineIssuancePrintHtml({ data, filters }).replace('</style>', `${REPORT_PRINT_FONT_CSS}</style>`);
+    w.document.write(html);
     w.document.close();
     return;
   }
+  // Font comes from the report body's `rpt-arial9` class (stylesheets are
+  // copied into the popup).
   printElementInPopup(reportEl, {
     title: 'Medicine Issuance',
     page: 'A4 portrait',
     margin: '8mm',
-    extraCss: '[data-print-root], [data-print-root] * { font-family: Arial, Helvetica, sans-serif !important; } [data-print-root] { font-size: 7pt !important; } [data-print-root] table, [data-print-root] th, [data-print-root] td { font-size: 7pt !important; }',
-  });
-}
-
-// Excel's date epoch is 1899-12-30 — this is the standard serial→JS Date
-// conversion (25569 = days between that epoch and the Unix epoch).
-function excelSerialToDate(serial) {
-  const n = Number(serial);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return new Date(Math.round((n - 25569) * 86400 * 1000));
-}
-
-// Same legacy "MADICAL ISSUANCE REPORT FOR PANEL" .xls parser as Medicine
-// Report (Panels > Reports) — see that file's own comment for the full
-// row-shape breakdown. Kept as its own copy here (not imported) so this
-// Transaction screen's parsing never drifts if the Report one is ever
-// tweaked independently, matching the "fully separate" ask for this page.
-function parsePanelMedicineIssuanceExcel(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' });
-
-        const isDayRow = (r) => String(r[9] || '').includes('DAY WISE TOTAL');
-        const isPatientRow = (r) => String(r[1] || '').trim() === 'PATANT :';
-        const isCompanyRow = (r) => String(r[0] || '').trim() === 'COMPANY :';
-        const isColHeaderRow = (r) => String(r[0] || '').trim() === 'SNO' && String(r[1] || '').trim() === 'DESCRIPTION';
-        const isTotalRow = (r) => String(r[5] || '').trim().replace(/:$/, '') === 'TOTAL';
-        const isDetailRow = (r) => Number.isInteger(r[0]) && r[0] > 0 && String(r[1] || '').trim() !== '';
-
-        const admissions = [];
-        let current = null;
-        let totalRows = 0;
-        let totalAmount = 0;
-        let corruptDates = 0;
-
-        for (let i = 0; i < raw.length; i++) {
-          const r = raw[i];
-          if (isDayRow(r) || isColHeaderRow(r) || isTotalRow(r)) continue;
-          if (r.every((c) => String(c).trim() === '')) continue;
-
-          if (isPatientRow(r)) {
-            if (current && current.items.length) admissions.push(current);
-            const admPart = String(r[2] || '');
-            const dash = admPart.indexOf(' - ');
-            const admissionNo = dash !== -1 ? admPart.slice(0, dash).trim() : '';
-            const patientName = dash !== -1 ? admPart.slice(dash + 3).trim() : admPart.trim();
-            const admitDate = excelSerialToDate(r[7]);
-            if (admissionNo && admitDate) {
-              current = { admissionNo, patientName, companyName: '', admitDate: admitDate.toISOString(), dischargeDate: null, items: [] };
-            } else {
-              current = null;
-              if (admissionNo) corruptDates += 1;
-            }
-            continue;
-          }
-
-          if (isCompanyRow(r)) {
-            if (current) {
-              current.companyName = String(r[1] || '').trim();
-              const disDate = excelSerialToDate(r[7]);
-              current.dischargeDate = disDate ? disDate.toISOString() : current.admitDate;
-            }
-            continue;
-          }
-
-          if (isDetailRow(r) && current) {
-            const medDate = excelSerialToDate(r[3]);
-            const rate = Number(r[5]) || 0;
-            const qty = Number(r[6]) || 0;
-            const amount = Number(r[7]) || 0;
-            current.items.push({
-              description: String(r[1] || '').trim(),
-              medDate: medDate ? medDate.toISOString() : current.admitDate,
-              rate, qty, amount,
-              store: String(r[10] || '').trim(),
-            });
-            totalRows += 1;
-            totalAmount += amount;
-          }
-        }
-        if (current && current.items.length) admissions.push(current);
-
-        const truncated = raw.length >= 65535;
-        resolve({ admissions, totalRows, totalAmount, truncated, corruptDates });
-      } catch (err) { reject(err); }
-    };
-    reader.onerror = reject;
-    reader.readAsArrayBuffer(file);
   });
 }
 
@@ -136,6 +48,11 @@ function parsePanelMedicineIssuanceExcel(file) {
 // Bill tab (Hospital Store + Outside Stores), plus anything uploaded from the
 // legacy .xls (ClinicPanelMedicineIssuanceTxn*). Panel admissions' medicine
 // shows in Panels > Reports > Medicine Report instead.
+//
+// Preview step: the filter (Admission # exact OR a date-range by Medicine/
+// Admission/Discharge Date, Medical Store, Details vs Admit-wise Summary) is
+// its own screen, MedicineIssuanceFilter, which opens this at
+// /view?scopeMode&admissionNo&dateType&fromDate&toDate&storeFilter&viewMode.
 const DATE_TYPE_LABEL = { admission: 'Admission Date', discharge: 'Discharge Date', medicine: 'Medicine Date' };
 const fmtDayHeading = (ymd) => {
   if (!ymd || ymd === '—') return '—';
@@ -145,29 +62,26 @@ const fmtDayHeading = (ymd) => {
 
 export default function MedicineIssuanceTransaction() {
   const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceTxnReport } = useClinicStore();
+  const [params] = useSearchParams();
   const reportRef = useRef(null);
 
-  const [showFilter, setShowFilter] = useState(true);
-
-  const [scopeMode, setScopeMode] = useState('date'); // 'admission' | 'date'
-  const [admissionNo, setAdmissionNo] = useState('');
-  const [dateType, setDateType] = useState('medicine'); // 'admission' | 'discharge' | 'medicine'
-  const [fromDate, setFromDate] = useState(todayIso());
-  const [toDate, setToDate] = useState(todayIso());
-
-  const [storeFilter, setStoreFilter] = useState('ALL'); // 'ALL' | 'hospital' | store id
-  const [viewMode, setViewMode] = useState('details'); // 'details' | 'summary'
+  const scopeMode = params.get('scopeMode') || 'date'; // 'admission' | 'date'
+  const admissionNo = (params.get('admissionNo') || '').trim();
+  const dateType = params.get('dateType') || 'medicine'; // 'admission' | 'discharge' | 'medicine'
+  const fromDate = params.get('fromDate') || '';
+  const toDate = params.get('toDate') || '';
+  const storeFilter = params.get('storeFilter') || 'ALL'; // 'ALL' | 'hospital' | store id
+  const viewMode = params.get('viewMode') || 'details'; // 'details' | 'summary'
 
   const [showImport, setShowImport] = useState(false);
 
   const [data, setData] = useState(null);
   const [shown, setShown] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState(null);
+  // true until the first fetch lands, so the empty-state doesn't flash first
+  const [loading, setLoading] = useState(true);
 
+  // Only for the Medical Store label in the report header
   useEffect(() => { fetchPharmacyStores(); }, [fetchPharmacyStores]);
-
-  useModalKeys({ active: showFilter, onEsc: () => setShowFilter(false) });
 
   const storeOptions = [
     { id: 'ALL', label: 'ALL' },
@@ -177,21 +91,27 @@ export default function MedicineIssuanceTransaction() {
     ...pharmacyStores.map((s) => ({ id: String(s.id), label: s.status === 'inactive' ? `${s.name} (inactive)` : s.name })),
   ];
   const storeLabel = storeOptions.find((o) => o.id === storeFilter)?.label || 'ALL';
+  const appliedFilters = { scopeMode, admissionNo, dateType, fromDate, toDate, storeLabel };
+  const scopeText = scopeMode === 'admission'
+    ? `Admission # : ${admissionNo}`
+    : `${DATE_TYPE_LABEL[dateType] || ''} — From : ${fmtDate(fromDate)}  To : ${fmtDate(toDate)}`;
 
-  async function handleView() {
-    if (scopeMode === 'admission' && !admissionNo.trim()) {
+  const handleView = useCallback(async () => {
+    if (scopeMode === 'admission' && !admissionNo) {
       toast.error('Admission # darj karein');
+      setLoading(false);
       return;
     }
     if (scopeMode === 'date' && (!fromDate || !toDate)) {
       toast.error('From/To date select karein');
+      setLoading(false);
       return;
     }
     setLoading(true);
     try {
       const res = await fetchPanelMedicineIssuanceTxnReport({
         scopeMode,
-        admissionNo: scopeMode === 'admission' ? admissionNo.trim() : undefined,
+        admissionNo: scopeMode === 'admission' ? admissionNo : undefined,
         dateType: scopeMode === 'date' ? dateType : undefined,
         fromDate: scopeMode === 'date' ? fromDate : undefined,
         toDate: scopeMode === 'date' ? toDate : undefined,
@@ -200,44 +120,79 @@ export default function MedicineIssuanceTransaction() {
       });
       setData(res);
       setShown(true);
-      setAppliedFilters({ scopeMode, admissionNo: admissionNo.trim(), dateType, fromDate, toDate, storeLabel });
-      setShowFilter(false);
     } catch (err) {
       toast.error(err.message || 'Report load nahi hui');
     } finally {
       setLoading(false);
     }
-  }
+  }, [fetchPanelMedicineIssuanceTxnReport, scopeMode, admissionNo, dateType, fromDate, toDate, storeFilter, viewMode]);
+
+  useEffect(() => { handleView(); }, [handleView]);
 
   const hasRows = data && (data.mode === 'summary' ? data.rows.length > 0 : data.days.length > 0);
   let patientNo = 0;
 
+  function handlePrint() {
+    if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
+    printMedicineIssuanceTxn(reportRef.current, data, appliedFilters);
+  }
+
+  // Same rows / columns / totals as the preview — Summary: one row per
+  // admission + Grand Total; Details: one row per medicine line with its day
+  // / patient, then the patient TOTAL, DAY WISE TOTAL and Grand Total rows.
+  function handleExport() {
+    if (!hasRows) { toast.error('Export ke liye koi data nahi'); return; }
+    const aoa = [
+      ['MEDICINE ISSUANCE REPORT FOR CASH'],
+      [`${scopeText}  |  Medical Store : ${storeLabel}`],
+      [],
+    ];
+    if (data.mode === 'summary') {
+      aoa.push(['Sno', 'Admission #', 'Patient', 'Admit Date', 'Dis. Date', 'Status', 'Items', 'Amount']);
+      data.rows.forEach((r, idx) => aoa.push([idx + 1, r.admissionNo, r.patientName, fmtDate(r.admitDate), fmtDate(r.dischargeDate), r.status || '', r.itemCount, Number(r.total || 0)]));
+      aoa.push(['Grand Total', '', '', '', '', '', '', Number(data.grandTotal || 0)]);
+    } else {
+      aoa.push(['Day', 'Patient #', 'Admission #', 'Patient', 'Admit Date', 'Status', 'Dis. Date', 'Sno', 'Description', 'Med Date', 'Rate', 'Qty', 'Amount', 'Created', 'Date', 'Medical Store']);
+      let n = 0;
+      data.days.forEach((day) => {
+        day.patients.forEach((p) => {
+          n += 1;
+          p.items.forEach((it) => aoa.push([
+            fmtDayHeading(day.date), n, p.admissionNo, p.patientName, fmtDate(p.admitDate), p.status || '', fmtDate(p.dischargeDate),
+            it.sno, it.description, fmtDate(it.medDate), Number(it.rate || 0), it.qty, Number(it.amount || 0),
+            it.createdByName || '', it.createdAt ? fmtDate(it.createdAt) : '', it.store || '',
+          ]));
+          aoa.push(['', n, p.admissionNo, 'TOTAL :', '', '', '', '', '', '', '', '', Number(p.patientTotal || 0)]);
+        });
+        aoa.push([fmtDayHeading(day.date), '', '', 'DAY WISE TOTAL :', '', '', '', '', '', '', '', '', Number(day.dayTotal || 0)]);
+      });
+      aoa.push(['Grand Total', '', '', '', '', '', '', '', '', '', '', '', Number(data.grandTotal || 0)]);
+    }
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Medicine Issuance');
+    XLSX.writeFile(wb, viewMode === 'summary' ? 'Medicine_Issuance_Summary.xlsx' : 'Medicine_Issuance.xlsx');
+  }
+
   return (
     <div className="mrp-page">
-      <ClinicMenuBar />
-      <div className="mrp-body">
-        <div className="mrp-toolbar no-print">
-          <div className="mrp-titlebar">Medicine Issuance</div>
-          <div className="mrp-toolbar-actions">
-            <button className="mrp-btn" onClick={() => setShowFilter(true)}><FilterIcon size={14} /> Filter</button>
-            <button className="mrp-btn mrp-btn--upload" onClick={() => setShowImport(true)}><Upload size={14} /> Upload Excel</button>
-            <button className="mrp-btn mrp-btn--print" onClick={() => printMedicineIssuanceTxn(reportRef.current, data, appliedFilters)} disabled={!hasRows}>
-              <Printer size={14} /> Print
-            </button>
-          </div>
-        </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExport} onRefresh={handleView} refreshing={loading}>
+        <div className="rpt-tool-sep" />
+        <button type="button" className="rpt-tool-btn" onClick={() => setShowImport(true)}>
+          <Upload size={14} /> <span>Upload Excel</span>
+        </button>
+      </ReportToolbar>
 
-        <div className="mrp-report" ref={reportRef}>
+      <div className="mrp-body">
+        <div className="mrp-report rpt-arial9" ref={reportRef}>
           <div className="mrp-rpt-head">
             <div className="mrp-rpt-hospital">Darul Shifa Hospital</div>
             <div className="mrp-rpt-title">MEDICINE ISSUANCE REPORT FOR CASH</div>
-            {appliedFilters && (
+            {shown && (
               <div className="mrp-rpt-meta">
                 <span>
-                  {appliedFilters.scopeMode === 'admission'
-                    ? `Admission # : ${appliedFilters.admissionNo}`
-                    : `${DATE_TYPE_LABEL[appliedFilters.dateType]} — From : ${fmtDate(appliedFilters.fromDate)}  To : ${fmtDate(appliedFilters.toDate)}`}
-                  {'  |  '}Medical Store : {appliedFilters.storeLabel}
+                  {scopeText}
+                  {'  |  '}Medical Store : {storeLabel}
                 </span>
                 <span>Produced On : {new Date().toLocaleString('en-GB')}</span>
               </div>
@@ -247,7 +202,7 @@ export default function MedicineIssuanceTransaction() {
           {loading ? (
             <div className="mrp-empty">Loading…</div>
           ) : !shown ? (
-            <div className="mrp-empty">Filter set karke <b>View</b> dabao.</div>
+            <div className="mrp-empty">Report load nahi hui — Refresh dabayein.</div>
           ) : !hasRows ? (
             <div className="mrp-empty">Is filter par koi record nahi mila.</div>
           ) : data.mode === 'summary' ? (
@@ -360,305 +315,9 @@ export default function MedicineIssuanceTransaction() {
         </div>
       </div>
 
-      {showFilter && (
-        <FilterModal
-          scopeMode={scopeMode} onScopeModeChange={setScopeMode}
-          admissionNo={admissionNo} onAdmissionNoChange={setAdmissionNo}
-          dateType={dateType} onDateTypeChange={setDateType}
-          fromDate={fromDate} onFromDateChange={setFromDate}
-          toDate={toDate} onToDateChange={setToDate}
-          storeFilter={storeFilter} onStoreFilterChange={setStoreFilter} storeOptions={storeOptions}
-          viewMode={viewMode} onViewModeChange={setViewMode}
-          onClose={() => setShowFilter(false)}
-          onView={handleView}
-        />
-      )}
-
       {showImport && (
-        <ImportModal onClose={() => setShowImport(false)} />
+        <MedicineIssuanceImportModal onClose={() => setShowImport(false)} />
       )}
-    </div>
-  );
-}
-
-function FilterModal({
-  scopeMode, onScopeModeChange, admissionNo, onAdmissionNoChange,
-  dateType, onDateTypeChange, fromDate, onFromDateChange, toDate, onToDateChange,
-  storeFilter, onStoreFilterChange, storeOptions,
-  viewMode, onViewModeChange,
-  onClose, onView,
-}) {
-  return (
-    <div className="mrp-modal-overlay" onMouseDown={onClose}>
-      <div className="mrp-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="mrp-modal-head">
-          <span>Medicine Issuance</span>
-          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
-        </div>
-
-        <div className="mrp-modal-body">
-          <div className="mrp-section">
-            <label className="mrp-radio-lbl">
-              <input type="radio" name="mit-scope" checked={scopeMode === 'admission'} onChange={() => onScopeModeChange('admission')} />
-              Admission #
-            </label>
-            <input
-              className="mrp-text-input"
-              value={admissionNo}
-              onChange={(e) => onAdmissionNoChange(e.target.value)}
-              disabled={scopeMode !== 'admission'}
-              onFocus={() => onScopeModeChange('admission')}
-            />
-          </div>
-
-          <div className="mrp-section">
-            <label className="mrp-radio-lbl">
-              <input type="radio" name="mit-scope" checked={scopeMode === 'date'} onChange={() => onScopeModeChange('date')} />
-            </label>
-            <select
-              className="mrp-select"
-              value={dateType}
-              onChange={(e) => { onDateTypeChange(e.target.value); onScopeModeChange('date'); }}
-              disabled={scopeMode !== 'date'}
-            >
-              <option value="medicine">Medicine Date</option>
-              <option value="admission">Admission Date</option>
-              <option value="discharge">Discharge Date</option>
-            </select>
-            <label className="mrp-date-lbl">From :</label>
-            <input
-              type="date" className="mrp-date-input" value={fromDate}
-              onChange={(e) => { onFromDateChange(e.target.value); onScopeModeChange('date'); }}
-              disabled={scopeMode !== 'date'}
-            />
-            <label className="mrp-date-lbl">To :</label>
-            <input
-              type="date" className="mrp-date-input" value={toDate}
-              onChange={(e) => { onToDateChange(e.target.value); onScopeModeChange('date'); }}
-              disabled={scopeMode !== 'date'}
-            />
-          </div>
-
-          <div className="mrp-section">
-            <label className="mrp-company-lbl mit-store-lbl">Medical Store</label>
-            <SearchableSelect
-              options={storeOptions}
-              value={storeFilter}
-              onChange={(v) => onStoreFilterChange(v || 'ALL')}
-              getKey={(o) => o.id}
-              getLabel={(o) => o.label}
-              clearable={false}
-              size="sm"
-              style={{ flex: 1, minWidth: 160 }}
-            />
-          </div>
-
-          <div className="mrp-section mrp-section--viewmode">
-            <label className="mrp-radio-lbl">
-              <input type="radio" name="mit-viewmode" checked={viewMode === 'details'} onChange={() => onViewModeChange('details')} />
-              Details
-            </label>
-            <label className="mrp-radio-lbl">
-              <input type="radio" name="mit-viewmode" checked={viewMode === 'summary'} onChange={() => onViewModeChange('summary')} />
-              Admit wise Summary
-            </label>
-          </div>
-        </div>
-
-        <div className="mrp-modal-footer">
-          <button className="mrp-btn mrp-btn--view" onClick={onView}>View</button>
-          <button className="mrp-btn" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const CONFIRM_BATCH_SIZE = 300; // admissions per request — keeps each POST well under the body-size limit regardless of file size
-
-function ImportModal({ onClose }) {
-  const { previewPanelMedicineIssuanceTxnImport, confirmPanelMedicineIssuanceTxnImportBatch, createPanelCompany } = useClinicStore();
-  const fileRef = useRef(null);
-
-  const [step, setStep] = useState('pick'); // pick | preview | importing | done
-  const [fileName, setFileName] = useState('');
-  const [parsed, setParsed] = useState(null); // { admissions, totalRows, totalAmount, truncated, corruptDates }
-  const [preview, setPreview] = useState(null);
-  const [newCodes, setNewCodes] = useState({});
-  const [parsing, setParsing] = useState(false);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [result, setResult] = useState(null);
-
-  // ESC mirrors the header X button: closable only when not mid-import.
-  const canClose = step === 'pick' || step === 'preview' || step === 'done';
-  useModalKeys({ active: true, onEsc: canClose ? onClose : undefined });
-
-  function suggestCode(name) {
-    return name.split(/\s+/).map((w) => w[0]).join('').toUpperCase().slice(0, 8);
-  }
-
-  async function handlePickFile(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setFileName(file.name);
-    setParsing(true);
-    try {
-      const data = await parsePanelMedicineIssuanceExcel(file);
-      if (!data.admissions.length) { toast.error('Excel mein koi valid admission nahi mili'); return; }
-      const admissionNos = data.admissions.map((a) => a.admissionNo);
-      const companyNames = [...new Set(data.admissions.map((a) => a.companyName).filter(Boolean))];
-      const prev = await previewPanelMedicineIssuanceTxnImport({
-        admissionNos, companyNames, totalRows: data.totalRows, totalAmount: data.totalAmount,
-      });
-      setParsed(data);
-      setPreview(prev);
-      const codes = {};
-      prev.unmatchedCompanies.forEach((name) => { codes[name.trim().toLowerCase()] = suggestCode(name); });
-      setNewCodes(codes);
-      setStep('preview');
-    } catch (err) {
-      toast.error(err.message || 'File parse/preview nahi hui');
-    } finally {
-      setParsing(false);
-      e.target.value = '';
-    }
-  }
-
-  async function handleConfirmImport() {
-    setStep('importing');
-    try {
-      const companyNameMap = {};
-      for (const name of preview.unmatchedCompanies) {
-        const key = name.trim().toLowerCase();
-        const code = (newCodes[key] || suggestCode(name)).trim();
-        if (!code) { toast.error(`"${name}" ke liye code zaroori hai`); setStep('preview'); return; }
-        const company = await createPanelCompany({ code, name: name.trim(), status: 'active' });
-        companyNameMap[key] = company.id;
-      }
-
-      const batches = [];
-      for (let i = 0; i < parsed.admissions.length; i += CONFIRM_BATCH_SIZE) {
-        batches.push(parsed.admissions.slice(i, i + CONFIRM_BATCH_SIZE));
-      }
-      setProgress({ done: 0, total: batches.length });
-
-      const totals = { imported: 0, refreshed: 0, skipped: 0, itemsCreated: 0 };
-      for (const batch of batches) {
-        const res = await confirmPanelMedicineIssuanceTxnImportBatch(batch, companyNameMap);
-        totals.imported += res.imported;
-        totals.refreshed += res.refreshed;
-        totals.skipped += res.skipped;
-        totals.itemsCreated += res.itemsCreated;
-        setProgress((p) => ({ ...p, done: p.done + 1 }));
-      }
-      setResult(totals);
-      setStep('done');
-      toast.success(`${totals.imported + totals.refreshed} patient record(s), ${totals.itemsCreated} medicine rows import ho gaye`);
-    } catch (err) {
-      toast.error(err.message || 'Import fail ho gaya');
-      setStep('preview');
-    }
-  }
-
-  return (
-    <div className="mrp-modal-overlay" onMouseDown={step === 'pick' || step === 'preview' ? onClose : undefined}>
-      <div className="mrp-modal mrp-modal--wide" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="mrp-modal-head">
-          <span>Upload Excel — Medical Issuance Report for Panel</span>
-          {(step === 'pick' || step === 'preview' || step === 'done') && (
-            <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
-          )}
-        </div>
-
-        <div className="mrp-modal-body">
-          {step === 'pick' && (
-            <div className="mrp-import-pick">
-              <p>"MADICAL ISSUANCE REPORT FOR PANEL" jaisa .xls file select karein — patient/company/medicine structure khud detect ho jayega.</p>
-              <input ref={fileRef} type="file" accept=".xls,.xlsx" style={{ display: 'none' }} onChange={handlePickFile} />
-              <button className="mrp-btn mrp-btn--upload" onClick={() => fileRef.current?.click()} disabled={parsing}>
-                <Upload size={14} /> {parsing ? 'Parsing…' : 'Select File'}
-              </button>
-            </div>
-          )}
-
-          {step === 'preview' && preview && (
-            <div className="mrp-import-preview">
-              <div className="mrp-import-file">File: <b>{fileName}</b></div>
-
-              {parsed.truncated && (
-                <div className="mrp-import-warning">
-                  Yeh file 65,535 rows pe cut ho gayi hai — purane .xls format ki hard limit hai. Ho sakta hai
-                  is se aage ka data is export mein shamil na ho — agar zaroorat ho to .xlsx format mein
-                  dobara export kar ke check kar lein.
-                </div>
-              )}
-              {parsed.corruptDates > 0 && (
-                <div className="mrp-import-warning">
-                  {parsed.corruptDates} admission(s) ki Admit Date parse nahi hui (corrupt source data) — yeh skip ho jayengi.
-                </div>
-              )}
-
-              <div className="mrp-import-stats">
-                <div><span>Total admissions found</span><b>{preview.totalAdmissions}</b></div>
-                <div><span>Total medicine rows</span><b>{preview.totalRows}</b></div>
-                <div><span>Will import (new)</span><b>{preview.willCreate}</b></div>
-                <div><span>Will refresh (already imported before)</span><b>{preview.willRefresh}</b></div>
-                <div><span>Total amount</span><b>{fmt(preview.totalAmount)}</b></div>
-              </div>
-
-              {preview.unmatchedCompanies.length > 0 && (
-                <div className="mrp-import-unmatched">
-                  <div className="mrp-import-unmatched-title">Ye company naam DB mein nahi milay — nayi company banegi is code ke sath:</div>
-                  {preview.unmatchedCompanies.map((name) => {
-                    const key = name.trim().toLowerCase();
-                    return (
-                      <div className="mrp-import-unmatched-row" key={key}>
-                        <span>{name}</span>
-                        <input
-                          value={newCodes[key] || ''}
-                          onChange={(e) => setNewCodes((c) => ({ ...c, [key]: e.target.value.toUpperCase() }))}
-                          placeholder="CODE"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {step === 'importing' && (
-            <div className="mrp-import-progress">
-              <p>Import ho raha hai — batch {progress.done} / {progress.total}…</p>
-              <div className="mrp-import-progress-bar">
-                <div className="mrp-import-progress-fill" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
-              </div>
-            </div>
-          )}
-
-          {step === 'done' && result && (
-            <div className="mrp-import-done">
-              <p><b>{result.imported}</b> new patient record(s) imported, <b>{result.refreshed}</b> already-imported one(s) refreshed with this file.</p>
-              <p><b>{result.itemsCreated}</b> medicine rows created.</p>
-              {result.skipped > 0 && <p>{result.skipped} row(s) skipped (admission # ya admit date missing/invalid).</p>}
-            </div>
-          )}
-        </div>
-
-        <div className="mrp-modal-footer">
-          {step === 'preview' && (
-            <button className="mrp-btn mrp-btn--upload" onClick={handleConfirmImport}>
-              Import {preview.willCreate + preview.willRefresh} Records
-            </button>
-          )}
-          {step === 'done' && (
-            <button className="mrp-btn mrp-btn--upload" onClick={onClose}>Done</button>
-          )}
-          {(step === 'pick' || step === 'preview' || step === 'done') && (
-            <button className="mrp-btn" onClick={onClose}>Close</button>
-          )}
-        </div>
-      </div>
     </div>
   );
 }

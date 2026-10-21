@@ -22,7 +22,7 @@ export default function AccountsParameters() {
   const navigate = useNavigate();
   const { copyChartToCorporate } = useAccountsStore();
 
-  const label = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+  const label = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
 
   // Corporate side only — copies whatever Non-Corporate has that Corporate
   // doesn't yet (accounts + List Attachments). Safe to press again any time.
@@ -30,8 +30,8 @@ export default function AccountsParameters() {
 
   const handleCopyFromNonCorporate = async () => {
     if (!(await confirmDialog({
-      title: 'Non-Corporate se Corporate mein copy',
-      message: 'Non-Corporate ka Account Allocation (Main GL → Sub GL → Main Account → Sub Account) aur List Attachments (heads, un ki account linking aur names) Corporate mein copy ho jayenge. Jo Corporate mein pehle se hai woh waisa hi rahega — sirf jo kam hai woh banega. Kuch delete ya overwrite nahi hoga.',
+      title: 'Cash GL se Corporate mein copy',
+      message: 'Cash GL ka Account Allocation (Main GL → Sub GL → Main Account → Sub Account) aur List Attachments (heads, un ki account linking aur names) Corporate mein copy ho jayenge. Jo Corporate mein pehle se hai woh waisa hi rahega — sirf jo kam hai woh banega. Kuch delete ya overwrite nahi hoga.',
       confirmLabel: 'Copy karo',
     }))) return;
     setCopying(true);
@@ -41,7 +41,7 @@ export default function AccountsParameters() {
       const attachments = r.heads + r.headAccounts + r.headMainAccounts + r.staffCategories + r.customHeadLinks + r.entries;
       toast.success(
         accounts + attachments === 0
-          ? 'Corporate pehle se Non-Corporate jaisa hai — kuch naya copy karne ko nahi tha'
+          ? 'Corporate pehle se Cash GL jaisa hai — kuch naya copy karne ko nahi tha'
           : `Copy ho gaya — Accounts: ${r.mainGL} Main GL, ${r.subGL} Sub GL, ${r.mainAccount} Main Account, ${r.subAccount} Sub Account · List Attachments: ${r.heads} heads, ${r.headAccounts + r.headMainAccounts} account links, ${r.entries} names`,
         { duration: 7000 },
       );
@@ -62,18 +62,18 @@ export default function AccountsParameters() {
         </button>
         <div>
           <h2>Parameters</h2>
-          <p>Accounting for {label}</p>
+          <p>{label}</p>
         </div>
       </div>
 
       {showCopyBanner && (
         <div className="acc-parameters__copy-banner">
           <div>
-            <strong>Non-Corporate se copy</strong>
-            <p>Non-Corporate ka Account Allocation (Main GL / Sub GL / Main Account / Sub Account) aur List Attachments Corporate mein copy karein. Sirf jo Corporate mein nahi hai woh banta hai — jitni dafa chahein dabayein, kuch delete ya overwrite nahi hota.</p>
+            <strong>Cash GL se copy</strong>
+            <p>Cash GL ka Account Allocation (Main GL / Sub GL / Main Account / Sub Account) aur List Attachments Corporate mein copy karein. Sirf jo Corporate mein nahi hai woh banta hai — jitni dafa chahein dabayein, kuch delete ya overwrite nahi hota.</p>
           </div>
           <button className="acc-parameters__copy-btn" onClick={handleCopyFromNonCorporate} disabled={copying}>
-            <Copy className="w-4 h-4" /> {copying ? 'Copying…' : 'Copy from Non-Corporate'}
+            <Copy className="w-4 h-4" /> {copying ? 'Copying…' : 'Copy from Cash GL'}
           </button>
         </div>
       )}

@@ -130,7 +130,7 @@ export default function DoctorScheduleFilter() {
             </div>
 
             <div className="cwf-actions">
-              <button className="cwf-btn cwf-btn--ok" onClick={handlePreview}>Preview</button>
+              <button className="cwf-btn cwf-btn--ok" onClick={handlePreview}>OK</button>
               <button className="cwf-btn" onClick={() => navigate(-1)}>Close</button>
             </div>
           </div>

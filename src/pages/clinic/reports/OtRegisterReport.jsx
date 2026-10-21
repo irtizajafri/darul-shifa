@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw, Upload } from 'lucide-react';
+import { Upload } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
 
@@ -107,7 +109,6 @@ function parseOtRegisterExcel(file) {
 }
 
 export default function OtRegisterReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const { user } = useAuthStore();
   const fileRef = useRef(null);
@@ -197,6 +198,7 @@ export default function OtRegisterReport() {
           -webkit-print-color-adjust:exact;print-color-adjust:exact;}
         h1{font-size:13px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
         p{font-size:10px;margin:0;color:#555;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -224,26 +226,16 @@ export default function OtRegisterReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            <Upload size={14}/> <span>{uploading ? 'Importing...' : 'Import Excel'}</span>
-          </button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUpload} />
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading}>
+        <div className="rpt-tool-sep" />
+        <button type="button" className="rpt-tool-btn" onClick={() => fileRef.current?.click()} disabled={uploading}>
+          <Upload size={14} /> <span>{uploading ? 'Importing...' : 'Import Excel'}</span>
+        </button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleUpload} />
+      </ReportToolbar>
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page" id="otr-rep-printable">
+        <div className="ddp-report-page rpt-arial9" id="otr-rep-printable">
           <div className="ddp-print-header">
             <h1>OT Register</h1>
             <p>Date &amp; Time: {printedAtStr} | Printed By: {printedBy}</p>

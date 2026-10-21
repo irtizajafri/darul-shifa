@@ -12,22 +12,12 @@
   padding: 14px 18px 40px;
 }
 
-/* ── Toolbar ── */
-.pcqr-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
+/* ── Filter screen (PanelChequesFilter) — classic window from
+   ConsultantWiseFilter.scss; only the local tweaks live here ── */
+.pcqr-filter-page {
+  .pcqr-btn-icon { display: inline-flex; align-items: center; gap: 5px; }
+  .cwf-input:disabled { background: #ece9e2; color: #8a8a8a; }
 }
-
-.pcqr-titlebar {
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: #1e293b;
-  letter-spacing: 0.02em;
-}
-
-.pcqr-toolbar-actions { display: flex; gap: 8px; }
 
 .pcqr-btn {
   display: inline-flex;
@@ -119,7 +109,7 @@
   &--due { color: #b91c1c; }
 }
 
-/* ── Filter modal ("Bill Report") ── */
+/* ── Modal shell (Upload Excel import) ── */
 .pcqr-modal-overlay {
   position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
   display: flex; align-items: center; justify-content: center; z-index: 60;
@@ -138,57 +128,6 @@
 }
 
 .pcqr-modal-body { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-
-.pcqr-filter-section {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.pcqr-filter-radios { justify-content: space-around; }
-
-.pcqr-radio-lbl, .pcqr-checkbox-lbl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: #334155;
-  cursor: pointer;
-}
-
-.pcqr-date-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.8rem;
-  color: #475569;
-
-  input[type='date'] {
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 5px 8px;
-    font-size: 0.8rem;
-    &:disabled { background: #f1f5f9; color: #94a3b8; }
-  }
-}
-
-.pcqr-company-lbl { font-size: 0.83rem; font-weight: 700; color: #334155; }
-
-.pcqr-filter-section select {
-  flex: 1;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.83rem;
-  min-width: 180px;
-}
-
-.pcqr-filter-summary { justify-content: flex-start; }
 
 .pcqr-modal-footer {
   padding: 12px 16px;

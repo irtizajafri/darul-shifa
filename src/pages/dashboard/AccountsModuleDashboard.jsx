@@ -17,15 +17,15 @@ import './AccountsModuleDashboard.scss';
 const accountTypes = [
   {
     key: 'corporate',
-    title: 'Accounting for Corporate',
+    title: 'Corporate',
     icon: Building2,
-    desc: 'Corporate entity financials — company ledgers, profit centres & consolidated reporting',
+    desc: 'Panel companies — panel patients, panel GRNs, panel cheques & their vouchers',
   },
   {
     key: 'non-corporate',
-    title: 'Accounting for Non-Corporate',
+    title: 'Cash GL',
     icon: Users,
-    desc: 'Trust, NGO or individual entity accounts — donations, funds & general ledger management',
+    desc: 'Cash book — cash patients, cash GRNs, salaries & day-to-day expenses and income',
   },
 ];
 
@@ -133,7 +133,7 @@ export default function AccountsModuleDashboard() {
             <h3>{a.title}</h3>
             <p>{a.desc}</p>
             <button className="type-btn">
-              Open {a.title.split(' ').slice(-1)[0]} →
+              Open {a.title} →
             </button>
           </div>
         ))}

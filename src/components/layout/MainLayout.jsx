@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import TabsContainer from './TabsContainer';
+import MinimizedReportsDock from './MinimizedReportsDock';
 import CommandPalette from '../shared/CommandPalette';
 import { ConfirmDialogHost } from '../ui/ConfirmDialog';
 
@@ -45,6 +46,7 @@ export default function MainLayout() {
       <div className="flex-1 flex flex-col min-w-0 h-screen">
         <Navbar onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
         <TabsContainer />
+        <MinimizedReportsDock />
       </div>
       <CommandPalette />
       <ConfirmDialogHost />

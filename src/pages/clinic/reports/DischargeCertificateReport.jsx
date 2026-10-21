@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './DischargeCertificateReport.scss';
 
@@ -43,13 +45,13 @@ const ynLabel = (v) => (v === 'yes' ? 'Yes' : v === 'no' ? 'No' : '—');
 
 export default function DischargeCertificateReport() {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const sheetRef = useRef(null);
   const fromDate = searchParams.get('fromDate');
   const toDate = searchParams.get('toDate');
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(null);
 
   const fetchRows = () => {
     setLoading(true);
@@ -58,7 +60,7 @@ export default function DischargeCertificateReport() {
     if (toDate) q.set('toDate', toDate);
     fetch(`${API}/reports/discharge-certificate?${q}`)
       .then((r) => r.json())
-      .then((j) => setRows(j.data || []))
+      .then((j) => { setRows(j.data || []); setLastRefresh(new Date()); })
       .finally(() => setLoading(false));
   };
 
@@ -66,6 +68,7 @@ export default function DischargeCertificateReport() {
   useEffect(fetchRows, [fromDate, toDate]);
 
   function handleExportExcel() {
+    if (!rows.length) { toast.error('No data to export'); return; }
     const aoa = [
       ['Discharge Certificate Report'],
       [`From : ${fmtDMY(fromDate)}  To : ${fmtDMY(toDate)}`],
@@ -91,15 +94,16 @@ export default function DischargeCertificateReport() {
     <div className="dcgr-page">
       <ClinicMenuBar />
 
-      <div className="dcgr-body">
-        <div className="dcgr-toolbar no-print">
-          <button className="dcgr-tool-btn" onClick={() => navigate(-1)}>Back to Filter</button>
-          <div className="dcgr-tool-spacer" />
-          <button className="dcgr-tool-btn dcgr-tool-btn--excel" onClick={handleExportExcel} disabled={!rows.length}>Export Excel</button>
-          <button className="dcgr-tool-btn dcgr-tool-btn--pdf" onClick={() => printDischargeCertificateReport(sheetRef.current)} disabled={!rows.length}>Print / PDF</button>
-        </div>
+      <ReportToolbar
+        onPrint={() => printDischargeCertificateReport(sheetRef.current)}
+        onExport={handleExportExcel}
+        onRefresh={fetchRows}
+        refreshing={loading}
+        right={lastRefresh && <span>Refreshed: {lastRefresh.toLocaleTimeString()}</span>}
+      />
 
-        <div className="dcgr-sheet" ref={sheetRef}>
+      <div className="dcgr-body">
+        <div className="dcgr-sheet rpt-arial9" ref={sheetRef}>
           <div className="dcgr-hdr">
             <div className="dcgr-title">Discharge Certificate Report</div>
             <div className="dcgr-sub">From : {fmtDMY(fromDate)}&nbsp;&nbsp;To&nbsp;&nbsp;: {fmtDMY(toDate)}</div>

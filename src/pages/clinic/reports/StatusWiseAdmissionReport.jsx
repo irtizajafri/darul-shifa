@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Printer, FileDown, RefreshCw } from 'lucide-react';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import './StatusWiseAdmissionReport.scss';
 
@@ -21,7 +22,6 @@ const fmtDateTime = (d) => {
 const fmt2 = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function StatusWiseAdmissionReport() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
 
   const [data, setData] = useState(null);
@@ -85,6 +85,7 @@ export default function StatusWiseAdmissionReport() {
         .swa-grand-row td{font-weight:800;border-top:2px solid #000;padding-top:6px;}
         h1{font-size:12px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
         p{font-size:9px;margin:0;color:#555;}
+        ${REPORT_PRINT_FONT_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -143,21 +144,10 @@ export default function StatusWiseAdmissionReport() {
 
   return (
     <div className="ddp-page">
-      <div className="ddp-toolbar no-print">
-        <div className="ddp-toolbar-left">
-          <button className="ddp-tool-btn" onClick={() => navigate(-1)}><ArrowLeft size={14}/> <span>Back</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={handlePrint}><Printer size={14}/> <span>Print / PDF</span></button>
-          <button className="ddp-tool-btn" onClick={handleExportExcel}><FileDown size={14}/> <span>Export Excel</span></button>
-          <div className="ddp-tool-sep"/>
-          <button className="ddp-tool-btn" onClick={fetchData} disabled={loading}>
-            <RefreshCw size={14} className={loading ? 'ddp-spin' : ''}/> <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExportExcel} onRefresh={fetchData} refreshing={loading} />
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page swa-report-page" id="swa-printable">
+        <div className="ddp-report-page swa-report-page rpt-arial9" id="swa-printable">
           <div className="ddp-print-header">
             <h1>{reportTitle}</h1>
             <p>{fmtDate(dateFrom)} to {fmtDate(dateTo)}</p>

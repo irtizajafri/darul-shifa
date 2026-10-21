@@ -12,32 +12,9 @@
   padding: 14px 18px 40px;
 }
 
-/* ── Toolbar (screen only) ── */
-.dcr-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.dcr-tool-spacer { flex: 1; }
-
-.dcr-tool-btn {
-  background: #475569;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  padding: 7px 14px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  cursor: pointer;
-
-  &:hover:not(:disabled) { background: #334155; }
-  &:disabled { opacity: 0.5; cursor: not-allowed; }
-  &--upload { display: inline-flex; align-items: center; gap: 6px; background: #1a3c6e; &:hover:not(:disabled) { background: #15305a; } }
-  &--excel  { background: #0f766e; &:hover:not(:disabled) { background: #0d6460; } }
-  &--pdf    { background: #b91c1c; &:hover:not(:disabled) { background: #991b1b; } }
-}
+/* Shared ReportToolbar sits between the menu bar and the scrolling body
+   (.dcr-body is the scroll box), so drop its flush-to-<main> negative margins. */
+.dcr-page > .rpt-sticky { margin: 6px 0 0; }
 
 /* ── Report sheet ── */
 .dcr-sheet {

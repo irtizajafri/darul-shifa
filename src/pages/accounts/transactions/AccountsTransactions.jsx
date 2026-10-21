@@ -51,7 +51,7 @@ export default function AccountsTransactions() {
   const { entityType } = useParams();
   const navigate = useNavigate();
 
-  const label = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+  const label = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
 
   return (
     <div className="acc-transactions">
@@ -61,7 +61,7 @@ export default function AccountsTransactions() {
         </button>
         <div>
           <h2>Transactions</h2>
-          <p>Accounting for {label}</p>
+          <p>{label}</p>
         </div>
       </div>
 

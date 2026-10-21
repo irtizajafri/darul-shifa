@@ -33,7 +33,7 @@ async function tryCreateRefundDraft({ entityType, kind, ref, payeeName, amount, 
   try {
     const chain = await accountsService.getRefundVoucherAccountChain(entityType);
     if (!chain) {
-      const book = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+      const book = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
       return { warning: `${what}, lekin Pending Draft nahi bana — Accounts → ${book} → Parameters → List Attachments mein "Slip/Admission Refund" head ko pehle kisi account se link karein.` };
     }
     // Back Date (permission-gated in the refund screens) sets the draft's
@@ -58,7 +58,7 @@ async function tryCreateDiscountVoucher({ entityType, payeeName, amount, particu
   try {
     const chain = await accountsService.getDiscountVoucherAccountChain(entityType);
     if (!chain) {
-      const book = entityType === 'corporate' ? 'Corporate' : 'Non-Corporate';
+      const book = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
       return { warning: `Discount save ho gaya, lekin voucher nahi bana — Accounts → ${book} → Parameters → List Attachments mein "Admission Discount" head ko pehle kisi account se link karein.` };
     }
     const voucherDate = requestedDate ? String(requestedDate).slice(0, 10) : todayPkt();
