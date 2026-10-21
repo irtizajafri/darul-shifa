@@ -10,6 +10,7 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildProvisionalBillPrintHtml } from './provisionalBillPrintUtils';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
+import { relationParts } from './relationText';
 import './ProvisionalBill.scss';
 
 function fmtDateTime(d) {
@@ -235,7 +236,7 @@ function PatientInfoModal({ detail, onClose }) {
         <div className="pb-info-body">
           <div className="pb-info-row">
             <div><label>Name</label><span>{admission.patientName}</span></div>
-            <div><label>S/o, W/o, D/o</label><span>{admission.responsibleParty || '—'}</span></div>
+            <div><label>Relation</label><span>{`${relationParts(admission).label} ${relationParts(admission).name || '—'}`}</span></div>
           </div>
           <div className="pb-info-row">
             <div><label>Room #</label><span>{bed?.name || '—'}</span></div>

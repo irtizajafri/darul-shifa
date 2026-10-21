@@ -62,8 +62,8 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
             <td className="v">{dateStr}</td>
           </tr>
           <tr>
-            <td className="l">S/o.</td>
-            <td className="v">{admission.responsibleParty || '—'}</td>
+            <td className="l">{relationParts(admission).label}.</td>
+            <td className="v">{relationParts(admission).name || '—'}</td>
             <td className="l">Category:</td>
             <td className="v">{roomCategory?.name || '—'}</td>
             <td className="l">Room#:</td>
@@ -124,3 +124,4 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate, printedBy }) {
     </div>
   );
 }
+import { relationParts } from './relationText';

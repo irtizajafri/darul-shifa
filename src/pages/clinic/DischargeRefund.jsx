@@ -9,6 +9,7 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildDischargeBillPrintHtml } from './dischargeBillPrintUtils';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
+import { relationParts } from './relationText';
 import './DischargeRefund.scss';
 
 // Laboratory/Radiology(X-Ray)/Ultra Sound — a doctor's fee % is uniform
@@ -406,7 +407,7 @@ export default function DischargeRefund() {
 
               <div className="dr-info-row">
                 <div><label>Name</label><span>{detail.admission.patientTitle} {detail.admission.patientName}</span></div>
-                <div><label>S/o, W/o, D/o</label><span>{detail.admission.responsibleParty || '—'}</span></div>
+                <div><label>Relation</label><span>{`${relationParts(detail.admission).label} ${relationParts(detail.admission).name || '—'}`}</span></div>
                 <div><label>Room #</label><span>{detail.bed?.name || '—'}</span></div>
                 {detail.admission.patientCategory === 'panel' && (
                   <div><label>Company</label><span>{detail.company ? `${detail.company.code} — ${detail.company.name}` : '—'}</span></div>

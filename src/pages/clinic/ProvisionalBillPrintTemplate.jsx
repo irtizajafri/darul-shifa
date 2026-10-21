@@ -32,13 +32,6 @@ function numToWords(n) {
   return cvt(Math.abs(Math.floor(n))).trim();
 }
 
-// "W/o" / "wife" → "W/o"; blank → "S/o" (the bill's default label).
-function relationLabel(type) {
-  const v = String(type || '').trim();
-  if (!v) return 'S/o';
-  if (/^[a-z]\/o$/i.test(v)) return v.charAt(0).toUpperCase() + '/o';
-  return { son: 'S/o', daughter: 'D/o', wife: 'W/o', husband: 'H/o' }[v.toLowerCase()] || v;
-}
 
 export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy }) {
   if (!detail) return null;
@@ -120,11 +113,12 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
             <td className="v">{dateStr}</td>
           </tr>
           <tr>
-            {/* Panel files often have the company typed into Responsible Party,
-                so for panel the S/o line uses the admission's own relation
-                (S/o / W/o / D/o + name) and the company gets its own line. */}
-            <td className="l">{isPanel ? `${relationLabel(admission.relationType)}.` : 'S/o.'}</td>
-            <td className="v">{isPanel ? (admission.relationName || '—') : (admission.responsibleParty || '—')}</td>
+            {/* The admission's own Relation (S/o / W/o / D/o + name) for every
+                file. Panel files often have the company typed into Responsible
+                Party, so a panel file without a Relation shows '—' rather than
+                that (the company has its own line). */}
+            <td className="l">{relationParts(admission).label}.</td>
+            <td className="v">{(isPanel && !admission.relationName) ? '—' : (relationParts(admission).name || '—')}</td>
             <td className="l">Surgery:</td>
             <td className="v">{admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission'}</td>
           </tr>
@@ -226,3 +220,4 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
     </div>
   );
 }
+import { relationParts } from './relationText';

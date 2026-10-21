@@ -1,4 +1,5 @@
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
+import { relationParts } from './relationText';
 
 function numToWords(n) {
   if (n === 0) return 'zero';
@@ -38,6 +39,8 @@ function fmtShort(d) {
 // room it was discharged from), room shifts, payments, discharge date. The
 // typed-in fields still come from `form`.
 export function AdmissionPrintTemplate({ form, doctors, roomCategories, availableBeds, isDuplicate, barcodeDataUrl, record = {} }) {
+  // Old records without a Relation keep the previous S/o / D/o-by-Sex label.
+  const rel = relationParts(form, form?.gender === 'female' ? 'D/o' : 'S/o');
   const consultant = doctors.find(d => String(d.id) === String(form.consultantId));
   const roomCat    = roomCategories.find(r => String(r.id) === String(form.roomCategoryId));
   const bed        = availableBeds.find(b => String(b.id) === String(form.bedId));
@@ -86,8 +89,8 @@ export function AdmissionPrintTemplate({ form, doctors, roomCategories, availabl
           <tr>
             <td className="apf-lbl">Patient Name:</td>
             <td className="apf-val">{form.patientTitle} {form.patientName}</td>
-            <td className="apf-lbl">{form.gender === 'female' ? 'D/o.' : 'S/o.'}:</td>
-            <td className="apf-val">{form.responsibleParty}</td>
+            <td className="apf-lbl">{rel.label}.:</td>
+            <td className="apf-val">{rel.name}</td>
           </tr>
           <tr>
             <td className="apf-lbl">Room Category:</td>
