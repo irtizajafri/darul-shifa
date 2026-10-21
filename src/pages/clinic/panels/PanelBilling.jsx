@@ -146,6 +146,36 @@ function fmtDate(d) {
   return `${day}-${month}-${year}`;
 }
 
+// Bill Date is typed freely (no calendar) — read what was typed as a date
+// and show it in the same dd-Mon-yyyy format as DOD. Accepts 01032026,
+// 010326, 01/03/2026, 1-3-26, 01 Mar 2026…; anything else stays as typed.
+const MONTHS_SHORT = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function parseTypedDate(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  let d, m, y;
+  const digits = t.match(/^(\d{2})(\d{2})(\d{4}|\d{2})$/);
+  if (digits) [, d, m, y] = digits;
+  else {
+    const parts = t.split(/[\s/.-]+/).filter(Boolean);
+    if (parts.length !== 3) return null;
+    [d, m, y] = parts;
+    if (!/^\d+$/.test(m)) {
+      const idx = MONTHS_SHORT.indexOf(m.slice(0, 3).toLowerCase());
+      if (idx < 0) return null;
+      m = String(idx + 1);
+    }
+  }
+  if (![d, m, y].every((v) => /^\d+$/.test(v))) return null;
+  const year = y.length === 2 ? 2000 + Number(y) : Number(y);
+  const dt = new Date(year, Number(m) - 1, Number(d));
+  return dt.getFullYear() === year && dt.getMonth() === Number(m) - 1 && dt.getDate() === Number(d) ? dt : null;
+}
+function formatBillDate(text) {
+  const dt = parseTypedDate(text);
+  return dt ? fmtDate(dt) : String(text || '').trim();
+}
+
 function fmtDateTime(d) {
   if (!d) return '—';
   const dt = new Date(d);
@@ -414,7 +444,12 @@ export default function PanelBilling() {
   // sensible starting point (see the date input's value below), but this
   // stays '' so we can tell "never touched" apart from "explicitly picked
   // the same date as Admit Date" when deciding what to send on Add.
-  const [customDate, setCustomDate] = useState('');
+  // A picked date stays put after Add (owner, 2026-10-21 — several lines of
+  // the same day go in one after another); it's tied to the admission it
+  // was picked on, so opening another file starts again from its Admit Date.
+  const [customDatePick, setCustomDatePick] = useState({ admissionId: null, date: '' });
+  const customDate = customDatePick.admissionId === data?.admission?.id ? customDatePick.date : '';
+  const setCustomDate = (date) => setCustomDatePick({ admissionId: data?.admission?.id ?? null, date });
   const [addingCustom, setAddingCustom] = useState(false);
   const customSearchTimer = useRef(null);
   const [showAddMedicine, setShowAddMedicine] = useState(false); // quick-add straight into the Medicine List
@@ -635,7 +670,6 @@ export default function PanelBilling() {
       setCustomQty('1');
       setCustomRate('');
       setCustomDose('');
-      setCustomDate('');
     } catch (e) {
       toast.error(e.message || 'Add nahi hua');
     } finally {
@@ -1251,6 +1285,24 @@ export default function PanelBilling() {
                 />
               ) : <div className="pnb-val">—</div>}
             </div>
+            {/* Covering Page "Date:" — typed freely, printed exactly as typed
+                (no calendar); blank prints today's date. Admission only. */}
+            {!isOpd && (
+              <div className="pnb-hg">
+                <label>Bill Date</label>
+                {data ? (
+                  <input className="pnb-date-input" type="text" value={data.admission.billDate || ''}
+                    onChange={(e) => handleHeaderTextInput('billDate', e.target.value)}
+                    onBlur={(e) => {
+                      // Saved in DOD's format (01032026 → 01-Mar-2026).
+                      const v = formatBillDate(e.target.value);
+                      handleHeaderTextInput('billDate', v);
+                      handleHeaderTextBlur('billDate', v);
+                    }}
+                    placeholder={fmtDate(new Date())} disabled={readOnly} style={{ width: 120 }} />
+                ) : <div className="pnb-val">—</div>}
+              </div>
+            )}
           </div>
 
           {/* ── Manual add: Medicine / Laboratory / Ultrasound / Radiology ── */}
@@ -1435,6 +1487,8 @@ export default function PanelBilling() {
               createMedicine={createMedicine}
               minDate={toInputDate(data.admission.admitDate)}
               maxDate={toInputDate(data.admission.dischargeDate)}
+              initialDate={customDate}
+              onDateChange={setCustomDate}
               onAdd={(payload) => handleAddFromPopup('medicine', payload)}
             />
           ) : null}
@@ -1459,6 +1513,8 @@ export default function PanelBilling() {
               createMedicine={createMedicine}
               minDate={toInputDate(data.admission.admitDate)}
               maxDate={toInputDate(data.admission.dischargeDate)}
+              initialDate={customDate}
+              onDateChange={setCustomDate}
               onAdd={(payload) => handleAddFromPopup(CUSTOM_TYPES.find((t) => t.mergeInto === diagnosticDept).key, payload)}
             />
           ) : null}
@@ -1542,7 +1598,10 @@ export default function PanelBilling() {
 // had for these: item from the Medicine List (with "New Medicine") or that
 // department's tests, Dose (medicine), Qty, Rate, Date (kept within Admit /
 // Discharge). onAdd saves it, the parent reloads and remounts the popup.
-function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine, minDate, maxDate, onAdd }) {
+// initialDate / onDateChange: the date last picked on this billing (shared
+// with the top add bar) — the popup remounts after every add, so the row
+// would otherwise jump back to Admit Date (owner, 2026-10-21).
+function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine, minDate, maxDate, onAdd, initialDate, onDateChange }) {
   const type = CUSTOM_TYPES.find((t) => t.key === typeKey);
   const isMedicine = typeKey === 'medicine';
   const [query, setQuery] = useState('');
@@ -1551,7 +1610,7 @@ function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine
   const [dose, setDose] = useState('');
   const [qty, setQty] = useState('1');
   const [rate, setRate] = useState('');
-  const [date, setDate] = useState(minDate || '');
+  const [date, setDate] = useState(initialDate || minDate || '');
   const [adding, setAdding] = useState(false);
   const [showNewMed, setShowNewMed] = useState(false);
   const timer = useRef(null);
@@ -1654,7 +1713,7 @@ function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine
       </div>
       <div className="pnb-fg pnb-fg--sm">
         <label>Date</label>
-        <input type="date" className="pnb-date-input" value={date} onChange={(e) => setDate(e.target.value)}
+        <input type="date" className="pnb-date-input" value={date} onChange={(e) => { setDate(e.target.value); onDateChange?.(e.target.value); }}
           min={minDate || undefined} max={maxDate || undefined} />
       </div>
       <button className="pnb-add-btn" onClick={handleAdd} disabled={adding} data-enter-submit tabIndex={-1}>
@@ -2277,6 +2336,13 @@ function ReportsModal({ admitNo, onAdmitNoChange, reportType, onReportTypeChange
 // ── Billing Covering Page (print) ───────────────────────────────────────────
 // Rate×Qty only means something for ward/head-item rows — Medicine/
 // Laboratory/Radiology/Ultrasound are blended totals, shown amount-only.
+// "W/o ABBAS ALI" — or just the name for Self (patient is the employee).
+function relationText(admission) {
+  const name = admission.relationName || '';
+  if (!name) return '—';
+  return admission.relationType && admission.relationType !== 'Self' ? `${admission.relationType} ${name}` : name;
+}
+
 function BillingCoveringPagePrintTemplate({ data }) {
   if (!data) return null;
   const { admission, company } = data;
@@ -2296,7 +2362,7 @@ function BillingCoveringPagePrintTemplate({ data }) {
             <tbody>
               <tr>
                 <td className="pnbr-cov-colL">
-                  {/* Exactly 6 rows, 1-for-1 with the right column below, so
+                  {/* Exactly 7 rows, 1-for-1 with the right column below, so
                       every horizontal rule lines up across the whole box. */}
                   <table>
                     <tbody>
@@ -2306,6 +2372,8 @@ function BillingCoveringPagePrintTemplate({ data }) {
                       <tr><td className="l">Patients Name:</td><td className="v">{admission.patientName}</td></tr>
                       <tr><td className="l">D.O.A</td><td className="v">{fmtDate(admission.admitDate)}</td></tr>
                       <tr><td className="l">Diagnosis:</td><td className="v">{admission.diagnosis || '—'}</td></tr>
+                      {/* Blank — keeps the rules level with the right column's 7 rows. */}
+                      <tr><td className="l">&nbsp;</td><td className="v" /></tr>
                     </tbody>
                   </table>
                 </td>
@@ -2313,8 +2381,10 @@ function BillingCoveringPagePrintTemplate({ data }) {
                   <table>
                     <tbody>
                       <tr><td className="l">Bill No:</td><td className="v">{billNo(admission)}</td></tr>
-                      <tr><td className="l">Date:</td><td className="v">{fmtDate(new Date())}</td></tr>
+                      <tr><td className="l">Date:</td><td className="v">{admission.billDate ? formatBillDate(admission.billDate) : fmtDate(new Date())}</td></tr>
                       <tr><td className="l">Admit No:</td><td className="v">P-{admission.admissionNo}</td></tr>
+                      {/* Relation sits level with Patients Name (owner, 2026-10-21); DOD below it. */}
+                      <tr><td className="l">Relation:</td><td className="v">{relationText(admission)}</td></tr>
                       <tr><td className="l">DOD</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
                       <tr><td className="l">Consultant:</td><td className="v">{admission.consultantName || '—'}</td></tr>
                       <tr><td className="l">Entitled For:</td><td className="v">{admission.entitledFor || '—'}</td></tr>
@@ -2346,11 +2416,12 @@ function BillingCoveringPagePrintTemplate({ data }) {
             <div className="pnbr-cov-words">{numToWords(Math.floor(total))} and only</div>
             <div className="pnbr-cov-total">TOTAL : <span>{fmt(total)}</span></div>
           </div>
+        </div>
 
-          <div className="pnbr-cov-sign">
-            <div className="pnbr-cov-sign-line" />
-            <div className="pnbr-cov-sign-label">Signature</div>
-          </div>
+        {/* Outside the box (owner, 2026-10-21) — the box ends at the Total. */}
+        <div className="pnbr-cov-sign">
+          <div className="pnbr-cov-sign-line" />
+          <div className="pnbr-cov-sign-label">Signature</div>
         </div>
       </div>
     </div>
@@ -2409,8 +2480,8 @@ function DiagnosticBillPrintTemplate({ data }) {
   );
 }
 
-// ── Medicine Bill (print) — mirrors the legacy "PHARMACY/MEDICAL STORE
-// BILL" printout exactly: every Pharmacy row (Hospital Store sales invoices
+// ── Medicine Bill (print) — mirrors the legacy pharmacy store bill
+// printout, headed just "PHARMACY BILL" (owner, 2026-10-21): every Pharmacy row (Hospital Store sales invoices
 // + Outside Store + manual Panel Billing adds — same data as the Pharmacy
 // Bill detail popup), one flat chronological list, "code - name" where a
 // code exists (only Hospital Store rows carry one, same as the legacy data).
@@ -2423,7 +2494,7 @@ function MedicineBillPrintTemplate({ data }) {
   return (
     <div className="pnbr-print-area">
       <div className="pnbr-med">
-        <div className="pnbr-med-title">PHARMACY/MEDICAL STORE BILL</div>
+        <div className="pnbr-med-title">PHARMACY BILL</div>
         <table className="pnbr-med-hdr">
           <tbody>
             <tr>

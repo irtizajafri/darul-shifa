@@ -626,10 +626,11 @@
   border-top: 1px solid #333;
 }
 .pnbr-cov-words { font-style: italic; text-transform: capitalize; font-size: 11px; }
-.pnbr-cov-total { font-weight: normal; span { font-size: 14px; margin-left: 6px; } }
+.pnbr-cov-total { font-weight: 700; span { font-size: 14px; font-weight: 700; margin-left: 6px; } }
 
 .pnbr-cov-sign {
-  margin: 30px 10px 4px;
+  // Below the box, 150px down (owner, 2026-10-21) — room to sign above it.
+  margin: 150px 10px 4px;
   width: 160px;
   margin-left: auto; // right-aligned, under the Total
   text-align: center;

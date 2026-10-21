@@ -4,8 +4,8 @@
 //
 // Black & white (owner's request, 2026-10-21): totals printed as white text
 // on a dark blue bar vanished on the B/W printer. In print every text is
-// black, coloured bars are dropped, and headings / Total / Grand Total rows
-// get a light grey fill + black rules instead. Screen colours are untouched.
+// black, coloured bars are dropped, headings get a light grey fill and
+// Total / Grand Total rows are simply bold (no fill — owner, 2026-10-21). Screen colours are untouched.
 const BW = (root) => `
 ${root}, ${root} * { color:#000 !important; background:transparent !important; box-shadow:none !important; text-shadow:none !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 ${root} th, ${root} thead td { background:#ececec !important; font-weight:700 !important; border-bottom:1px solid #000 !important; }
@@ -14,8 +14,7 @@ ${root} tr[class*="total" i] td, ${root} tr[class*="total" i] th,
 ${root} tr[class*="grand" i] td, ${root} tr[class*="grand" i] th,
 ${root} td[class*="total" i], ${root} td[class*="grand" i],
 ${root} tr[class*="sub-row" i] td, ${root} tr[class*="subtotal" i] td {
-  background:#e0e0e0 !important; font-weight:700 !important;
-  border-top:1px solid #000 !important; border-bottom:1px solid #000 !important;
+  background:transparent !important; font-weight:700 !important;
 }
 ${root} [class*="badge" i], ${root} [class*="pill" i], ${root} [class*="chip" i] { border:1px solid #000 !important; }
 `;

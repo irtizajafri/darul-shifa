@@ -2457,6 +2457,10 @@ async function getPanelAdmissionBilling(admissionNo) {
       diagnosis: header.diagnosis,
       days,
       entitledFor: header.entitledFor,
+      billDate: header.billDate,
+      // Billing Covering Page shows it beside Patients Name.
+      relationType: admission.relationType || null,
+      relationName: admission.relationName || null,
     },
     company: panelCompany ? { id: panelCompany.id, code: panelCompany.code, name: panelCompany.name } : null,
     employee: panelEmployee ? { id: panelEmployee.id, empCode: panelEmployee.empCode, name: panelEmployee.name } : null,
@@ -2549,7 +2553,7 @@ async function updatePanelBillingItem(itemId, { qty, rate, date, remarks, dosage
 // Panels > Billing header — editable Admit Date/Discharge Date (see
 // ClinicPanelBillingHeader). Doesn't touch the real Admission/Discharge
 // Certificate — a Billing-only override, same as everything else here.
-async function updatePanelBillingHeader(admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor }) {
+async function updatePanelBillingHeader(admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor, billDate }) {
   await assertBillingNotClosed(admissionId);
   const header = await prisma.clinicPanelBillingHeader.findUnique({ where: { admissionId: Number(admissionId) } });
   if (!header) throw Object.assign(new Error('Billing header not found — pehle Billing open karo'), { status: 404 });
@@ -2576,6 +2580,7 @@ async function updatePanelBillingHeader(admissionId, { admitDate, dischargeDate,
       ...(diagnosis !== undefined ? { diagnosis: diagnosis?.trim() || null } : {}),
       ...(snoSeq !== undefined ? { snoSeq: snoSeq || null } : {}),
       ...(entitledFor !== undefined ? { entitledFor: entitledFor?.trim() || null } : {}),
+      ...(billDate !== undefined ? { billDate: billDate?.trim() || null } : {}),
     },
   });
 }

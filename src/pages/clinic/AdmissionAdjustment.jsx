@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, DoorOpen, Save, User, Building2, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import { panelRelation } from './panelRelation';
 import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './Antenatal.scss';
@@ -175,6 +176,9 @@ function PanelModal({ onSelect, onClose }) {
       panelDependentId: dep?.id || null,
       patientName:      dep ? `${dep.title} ${dep.name}` : `${selEmp.title} ${selEmp.name}`,
       panelLabel:       `${panelCompanies.find(c => c.id === Number(companyId))?.code} / ${selEmp.empCode}${dep ? ` / ${dep.code}` : ''}`,
+      employeeName:     selEmp.name,
+      isSelf:           !dep,
+      dependentRelation: dep?.relation || '',
     });
   }
 
@@ -308,6 +312,9 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
 }
 
 const TITLES = ['Mr', 'Ms', 'Mrs', 'Master', 'Baby'];
+// Picking the title sets Sex (owner, 2026-10-21): Mr / Master → Male, every
+// other title → Female; Sex can still be changed by hand afterwards.
+const genderForTitle = (t) => (t === 'Mr' || t === 'Master' ? 'male' : 'female');
 const CATEGORIES = [
   { value: 'staff',         label: 'Staff' },
   { value: 'panel',         label: 'Panel' },
@@ -324,6 +331,8 @@ const EMPTY = {
   patientTitle: 'Mr',
   patientCategory: 'private',
   patientName: '',
+  relationType: 'W/o',
+  relationName: '',
   ageYears: '',
   ageMonths: '',
   ageDays: '',
@@ -347,6 +356,9 @@ const EMPTY = {
   antenatalNo: '',
   panelLabel: '',
 };
+
+const RELATION_TYPES = ['W/o', 'S/o', 'D/o', 'M/o', 'F/o', 'Self'];
+function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function AdmissionAdjustment() {
@@ -374,6 +386,14 @@ export default function AdmissionAdjustment() {
   const [showLookup, setShowLookup] = useState(true);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
+
+  // Same RMO list as the Admission form (doctors whose Staff Category name
+  // contains "rmo"); a name saved before that isn't in it stays selectable.
+  const rmoOptions = useMemo(() => {
+    const list = doctors.filter(d => d.status === 'active' && normCat(d.staffCategory?.name).includes('rmo'));
+    const cur = form.arrivedUnderRmo;
+    return cur && !list.some(d => d.name === cur) ? [{ id: `cur-${cur}`, name: cur }, ...list] : list;
+  }, [doctors, form.arrivedUnderRmo]);
 
   useEffect(() => {
     fetchDoctors();
@@ -410,6 +430,10 @@ export default function AdmissionAdjustment() {
         patientTitle:      rec.patientTitle || 'Mr',
         patientCategory:   rec.patientCategory || 'private',
         patientName:       rec.patientName || '',
+        // Loaded and sent back — the save writes these columns, so leaving
+        // them off blanked the admission's relation on every adjustment.
+        relationType:      rec.relationType || 'W/o',
+        relationName:      rec.relationName || '',
         ageYears:          rec.ageYears != null ? String(rec.ageYears) : '',
         ageMonths:         rec.ageMonths != null ? String(rec.ageMonths) : '',
         ageDays:           rec.ageDays != null ? String(rec.ageDays) : '',
@@ -471,8 +495,8 @@ export default function AdmissionAdjustment() {
     setShowEmpModal(false);
   }
 
-  function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }) {
-    setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }));
+  function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel, ...pick }) {
+    setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel, ...panelRelation(pick, f.relationType) }));
     setShowPanelModal(false);
   }
 
@@ -628,7 +652,7 @@ export default function AdmissionAdjustment() {
                     <div className="adm-name-row">
                       <select
                         value={form.patientTitle}
-                        onChange={e => set('patientTitle', e.target.value)}
+                        onChange={e => { const t = e.target.value; setForm(f => ({ ...f, patientTitle: t, gender: genderForTitle(t) })); }}
                         className="adm-title-select"
                       >
                         {TITLES.map(t => <option key={t} value={t}>{t}.</option>)}
@@ -652,6 +676,29 @@ export default function AdmissionAdjustment() {
                       getLabel={r => r.name}
                       getKey={r => r.id}
                     />
+                  </div>
+                </div>
+
+                <div className="adm-row">
+                  <div className="adm-field adm-field--name">
+                    <label>Relation</label>
+                    <div className="adm-name-row">
+                      <select
+                        value={form.relationType}
+                        onChange={e => set('relationType', e.target.value)}
+                        className="adm-title-select"
+                      >
+                        {RELATION_TYPES.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                      <input
+                        type="text"
+                        value={form.relationName}
+                        onChange={e => set('relationName', e.target.value)}
+                        placeholder="Name"
+                        className="adm-name-input"
+                        disabled={form.relationType === 'Self'}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -734,7 +781,14 @@ export default function AdmissionAdjustment() {
                 <div className="adm-row">
                   <div className="adm-field">
                     <label>Arrived under RMO</label>
-                    <input type="text" value={form.arrivedUnderRmo} onChange={e => set('arrivedUnderRmo', e.target.value)} placeholder="NA - Not Applicable" />
+                    <SearchableSelect
+                      options={rmoOptions}
+                      value={form.arrivedUnderRmo}
+                      onChange={val => set('arrivedUnderRmo', val)}
+                      placeholder="NA - Not Applicable"
+                      getLabel={d => d.name}
+                      getKey={d => d.name}
+                    />
                   </div>
                   <div className="adm-field">
                     <label>Referred By</label>

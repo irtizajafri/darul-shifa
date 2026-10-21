@@ -1281,6 +1281,9 @@ model ClinicPanelBillingHeader {
   // Manually picked from Clinic > Parameters > Room Category — shows on the
   // Billing Covering Page's "Entitled For" row.
   entitledFor    String?
+  // Covering Page "Date:" — typed by hand, printed as-is; blank = today.
+  // Migration 054.
+  billDate       String?
   updatedAt      DateTime        @updatedAt
 }
 

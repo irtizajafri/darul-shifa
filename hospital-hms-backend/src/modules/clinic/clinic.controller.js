@@ -1238,8 +1238,8 @@ async function setPanelBillingParty(req, res, next) {
 
 async function updatePanelBillingHeader(req, res, next) {
   try {
-    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor } = req.body;
-    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor });
+    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor, billDate } = req.body;
+    const data = await service.updatePanelBillingHeader(req.params.admissionId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor, billDate });
     success(res, data, 'Header updated');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);

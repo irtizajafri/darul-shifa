@@ -110,6 +110,10 @@ function parseBirthCertificateExcel(file) {
   });
 }
 
+// Stored as 'baba' / 'baby' (Birth Certificate screen) — shown as Male /
+// Female (owner, 2026-10-21); anything else (Excel-imported text) as is.
+const genderLabel = (g) => ({ baba: 'Male', baby: 'Female' }[String(g || '').toLowerCase()] || capitalize(g));
+
 export default function BirthCertificateReport() {
   const [params] = useSearchParams();
   const { user } = useAuthStore();
@@ -197,7 +201,7 @@ export default function BirthCertificateReport() {
     const aoa = [['Birth Certificate Details'], [`Date: ${fmtDate(fromDate)} To ${fmtDate(toDate)}`], []];
     aoa.push(['Reg #', 'Mother Name', 'Father Name', 'Address', 'Date of Birth', 'Gender', 'Weight (kg)', 'Blood Group']);
     for (const r of rows) {
-      aoa.push([r.admissionNo, r.motherName, r.fatherName, r.address, fmtDateTimeShort(r.birthTime), capitalize(r.gender), r.weight, r.bloodGroup]);
+      aoa.push([r.admissionNo, r.motherName, r.fatherName, r.address, fmtDateTimeShort(r.birthTime), genderLabel(r.gender), r.weight, r.bloodGroup]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
@@ -248,7 +252,7 @@ export default function BirthCertificateReport() {
                     <td>{r.fatherName || '—'}</td>
                     <td>{r.address || '—'}</td>
                     <td>{fmtDateTimeShort(r.birthTime)}</td>
-                    <td>{capitalize(r.gender)}</td>
+                    <td>{genderLabel(r.gender)}</td>
                     <td className="td-num">{r.weight ?? '—'}</td>
                     <td>{r.bloodGroup || '—'}</td>
                   </tr>

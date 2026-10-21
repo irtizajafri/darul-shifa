@@ -7,6 +7,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import { panelRelation } from './panelRelation';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
 import { buildAdmissionFormPrintHtml } from './admissionFormPrintUtils';
 import { buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
@@ -218,6 +219,9 @@ function PanelModal({ onSelect, onClose }) {
       panelDependentId: dep?.id || null,
       patientName:      dep ? `${dep.title} ${dep.name}` : `${selEmp.title} ${selEmp.name}`,
       panelLabel:       `${panelCompanies.find(c => c.id === Number(companyId))?.code} / ${selEmp.empCode}${dep ? ` / ${dep.code}` : ''}`,
+      employeeName:     selEmp.name,
+      isSelf:           !dep,
+      dependentRelation: dep?.relation || '',
     });
   }
 
@@ -292,7 +296,11 @@ const PAYMENT_TYPE_MAP = {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const TITLES = ['Mr', 'Ms', 'Mrs', 'Master', 'Baby'];
+// Picking the title sets Sex (owner, 2026-10-21): Mr / Master → Male, every
+// other title → Female; Sex can still be changed by hand afterwards.
+const genderForTitle = (t) => (t === 'Mr' || t === 'Master' ? 'male' : 'female');
 const RELATION_TYPES = ['W/o', 'S/o', 'D/o', 'M/o', 'F/o', 'Self'];
+
 const CATEGORIES = [
   { value: 'staff',         label: 'Staff' },
   { value: 'panel',         label: 'Panel' },
@@ -571,8 +579,8 @@ export default function Admission() {
     setShowEmpModal(false);
   }
 
-  function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }) {
-    setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel }));
+  function handlePanelSelect({ panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel, ...pick }) {
+    setForm(f => ({ ...f, panelCompanyId, panelEmployeeId, panelDependentId, patientName, panelLabel, ...panelRelation(pick, f.relationType) }));
     setShowPanelModal(false);
   }
 
@@ -933,7 +941,7 @@ export default function Admission() {
                   <div className="adm-name-row">
                     <select
                       value={form.patientTitle}
-                      onChange={e => set('patientTitle', e.target.value)}
+                      onChange={e => { const t = e.target.value; setForm(f => ({ ...f, patientTitle: t, gender: genderForTitle(t) })); }}
                       className="adm-title-select"
                     >
                       {TITLES.map(t => <option key={t} value={t}>{t}.</option>)}

@@ -276,11 +276,11 @@ export default function BirthCertificate() {
                 <div className="bc-radio-group">
                   <label className={`bc-radio-btn ${form.gender === 'baba' ? 'bc-radio-btn--active' : ''}`}>
                     <input type="radio" name="gender" checked={form.gender === 'baba'} onChange={() => set('gender', 'baba')} />
-                    Baba
+                    Male
                   </label>
                   <label className={`bc-radio-btn ${form.gender === 'baby' ? 'bc-radio-btn--active' : ''}`}>
                     <input type="radio" name="gender" checked={form.gender === 'baby'} onChange={() => set('gender', 'baby')} />
-                    Baby
+                    Female
                   </label>
                 </div>
               </div>

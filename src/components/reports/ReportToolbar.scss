@@ -125,10 +125,9 @@
   .rpt-arial9:not(#rpt-bw) tr[class*="grand" i] td, .rpt-arial9:not(#rpt-bw) tr[class*="grand" i] th,
   .rpt-arial9:not(#rpt-bw) td[class*="total" i], .rpt-arial9:not(#rpt-bw) td[class*="grand" i],
   .rpt-arial9:not(#rpt-bw) tr[class*="sub-row" i] td, .rpt-arial9:not(#rpt-bw) tr[class*="subtotal" i] td {
-    background: #e0e0e0 !important;
+    // Totals: just bold, no fill.
+    background: transparent !important;
     font-weight: 700 !important;
-    border-top: 1px solid #000 !important;
-    border-bottom: 1px solid #000 !important;
   }
   .rpt-arial9:not(#rpt-bw) [class*="badge" i], .rpt-arial9:not(#rpt-bw) [class*="pill" i], .rpt-arial9:not(#rpt-bw) [class*="chip" i] {
     border: 1px solid #000 !important;

@@ -30,7 +30,7 @@ export function BirthCertificatePrintTemplate({ data }) {
 
         <div className="bthc-row"><span className="bthc-lbl">Date of Birth:</span><span className="bthc-val">{fmtDateTime(c.birthTime)}</span></div>
         <div className="bthc-row bthc-row--triple">
-          <span className="bthc-lbl bthc-lbl--sm">Gender:</span><span className="bthc-val bthc-val--short">{c.gender === 'baby' ? 'Baby' : 'Baba'}</span>
+          <span className="bthc-lbl bthc-lbl--sm">Gender:</span><span className="bthc-val bthc-val--short">{c.gender === 'baby' ? 'Female' : 'Male'}</span>
           <span className="bthc-lbl bthc-lbl--gap">Weight (kg):</span><span className="bthc-val bthc-val--short">{c.weight ?? ''}</span>
           <span className="bthc-lbl bthc-lbl--gap">Blood Group:</span><span className="bthc-val">{c.bloodGroup || ''}</span>
         </div>
