@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
@@ -7,7 +7,10 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import MedicineReportImportModal from './MedicineReportImportModal';
+import usePagedList from '../../../hooks/usePagedList';
+import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './MedicineReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
   if (!d) return '—';
@@ -30,7 +33,7 @@ function printMedicineReport(reportEl) {
 // now its own screen, MedicineReportFilter, which opens this at
 // /view?scopeMode&admissionNo&dateType&fromDate&toDate&companyId&viewMode&storeFilter.
 export default function MedicineReport() {
-  const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceReport } = useClinicStore();
+  const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceReport } = useClinicStore(useShallow((s) => ({ pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, fetchPanelMedicineIssuanceReport: s.fetchPanelMedicineIssuanceReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
 
@@ -99,9 +102,36 @@ export default function MedicineReport() {
 
   const hasRows = data && (data.mode === 'summary' ? data.rows.length > 0 : data.days.length > 0);
 
+  // On-screen paging (up to ~84k medicine lines froze the app for seconds):
+  // Summary draws 300 admission rows at a time; Details draws 300 PATIENT
+  // blocks at a time (each with all its lines and its TOTAL), keeping their
+  // day headers. Day / patient / grand totals come from the data, so they
+  // stay over everything; print and Excel use all of it. Page 1 again on
+  // every new fetch.
+  const groupCount = useMemo(() => {
+    if (!data) return 0;
+    if (data.mode === 'summary') return data.rows.length;
+    return data.days.reduce((n, d) => n + d.patients.length, 0);
+  }, [data]);
+  const page = usePagedList(groupCount, data);
+  const visible = useMemo(() => {
+    if (!data) return null;
+    if (page.limit >= groupCount) return data;
+    if (data.mode === 'summary') return { ...data, rows: data.rows.slice(0, page.limit) };
+    const days = [];
+    let left = page.limit;
+    for (const day of data.days) {
+      if (left <= 0) break;
+      days.push(day.patients.length <= left ? day : { ...day, patients: day.patients.slice(0, left) });
+      left -= day.patients.length;
+    }
+    return { ...data, days };
+  }, [data, groupCount, page.limit]);
+
   function handlePrint() {
     if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
-    printMedicineReport(reportRef.current);
+    // Print clones the on-screen report — render every row/patient for it.
+    page.withAll(() => printMedicineReport(reportRef.current));
   }
 
   // Same rows / columns / totals as the preview — Summary: one row per
@@ -187,7 +217,7 @@ export default function MedicineReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.rows.map((r, idx) => (
+                  {visible.rows.map((r, idx) => (
                     <tr key={r.admissionNo}>
                       <td className="mrp-l">{idx + 1}</td>
                       <td className="mrp-l">{r.admissionNo}</td>
@@ -207,10 +237,11 @@ export default function MedicineReport() {
                   </tr>
                 </tfoot>
               </table>
+              <ShowMoreFooter {...page} noun="admissions" />
             </div>
           ) : (
             <div className="mrp-details">
-              {data.days.map((day) => (
+              {visible.days.map((day) => (
                 <div className="mrp-day-block" key={day.date}>
                   <div className="mrp-day-hdr">
                     <span>{fmtDate(day.date)}</span>
@@ -266,6 +297,7 @@ export default function MedicineReport() {
                 </div>
               ))}
 
+              <ShowMoreFooter {...page} noun="patients" />
               <div className="mrp-grand-total">Grand Total : <b>{fmt(data.grandTotal)}</b></div>
             </div>
           )}

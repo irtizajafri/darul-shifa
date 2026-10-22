@@ -8,9 +8,10 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function ClinicShiftPage() {
-  const { shifts, loading, fetchShifts, createShift, updateShift, deleteShift } = useClinicStore();
+  const { shifts, loading, fetchShifts, createShift, updateShift, deleteShift } = useClinicStore(useShallow((s) => ({ shifts: s.shifts, loading: s.loading, fetchShifts: s.fetchShifts, createShift: s.createShift, updateShift: s.updateShift, deleteShift: s.deleteShift })));
 
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);

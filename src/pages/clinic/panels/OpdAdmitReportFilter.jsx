@@ -7,6 +7,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import OpdAdmitReportImportModal from './OpdAdmitReportImportModal';
 import '../reports/ConsultantWiseFilter.scss';
 import './OpdAdmitReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -19,7 +20,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // OpdAdmitReport at /view.
 export default function OpdAdmitReportFilter() {
   const navigate = useNavigate();
-  const { panelCompanies, fetchPanelCompanies } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies })));
 
   const [scopeType, setScopeType] = useState('admission'); // admission | opd
   const [dateType, setDateType] = useState('discharge'); // discharge | admit

@@ -12,6 +12,8 @@ import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidat
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 // Only these two departments (of the many GeneralOPD.jsx serves) also print the
 // A4 Clinical Record Form after the slip — same form Consultant OPD uses.
@@ -330,7 +332,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Doctor Search Input (Referred By) ─────────────────────────────────────────
 function DoctorSearchInput({ value, onChange }) {
-  const { doctors, fetchDoctors } = useClinicStore();
+  const { doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors })));
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState(value || '');
   const inputRef = useRef(null);
@@ -397,7 +399,7 @@ function DoctorSearchInput({ value, onChange }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor', showDoctorColumn = true }) {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(useShallow((s) => ({ fetchAvailableDoctors: s.fetchAvailableDoctors, fetchNextSerialNo: s.fetchNextSerialNo, fetchNextMrNo: s.fetchNextMrNo, searchEmployees: s.searchEmployees, createOpdVisit: s.createOpdVisit, printOpdVisit: s.printOpdVisit, fetchAntenatalByNo: s.fetchAntenatalByNo, fetchOpdPatientByMrNo: s.fetchOpdPatientByMrNo, fetchOpdPatientsByPhone: s.fetchOpdPatientsByPhone, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, ccConfig: s.ccConfig, fetchCcConfig: s.fetchCcConfig }))); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -698,8 +700,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     if (ageErr) { toast.error(ageErr); return; }
     if (departmentName !== 'General OPD' && !form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
     if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
-    const w = window.open('', '_blank', 'width=420,height=680');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=420,height=680');
     setBusy(true);
     try {
       const created = await createOpdVisit({

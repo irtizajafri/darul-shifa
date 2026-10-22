@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import './DoctorScheduleReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -47,7 +48,7 @@ export default function DoctorScheduleReport() {
   const reportTitle = 'Doctor Schedule Report';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('dsr-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
       <style>

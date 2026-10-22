@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicPanelCompanyFormPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const EMPTY_FORM = {
   code: '',
@@ -67,7 +68,7 @@ export default function ClinicPanelCompanyFormPage() {
     billHeads, fetchBillHeads,
     roomCategories, fetchRoomCategories,
     createPanelCompany, updatePanelCompany, fetchPanelCompanyById,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, createPanelCompany: s.createPanelCompany, updatePanelCompany: s.updatePanelCompany, fetchPanelCompanyById: s.fetchPanelCompanyById })));
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [activeTab, setActiveTab] = useState('subdept');

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentMonthlyComparisonReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -37,7 +38,7 @@ export default function DepartmentMonthlyComparisonReport() {
   useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, []);
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('dmr-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>Department wise Monthly Comparison</title>
       <style>

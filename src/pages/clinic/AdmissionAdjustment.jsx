@@ -10,6 +10,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './Antenatal.scss';
 import './AdmissionAdjustment.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
@@ -150,7 +151,7 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
 
 // ── Panel Modal (identical to Admission.jsx) ───────────────────────────────────
 function PanelModal({ onSelect, onClose }) {
-  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
+  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, panelEmployees: s.panelEmployees, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelEmployees: s.fetchPanelEmployees })));
   const [companyId, setCompanyId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [dependentIdx, setDependentIdx] = useState('');
@@ -374,7 +375,7 @@ export default function AdmissionAdjustment() {
     fetchAdmissionForAdjustment,
     updateAdmissionAdjustment,
     panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, searchEmployees: s.searchEmployees, fetchAvailableBeds: s.fetchAvailableBeds, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, updateAdmissionAdjustment: s.updateAdmissionAdjustment, panelCompanies: s.panelCompanies, panelEmployees: s.panelEmployees, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelEmployees: s.fetchPanelEmployees })));
 
   useEffect(() => { fetchPanelCompanies(); fetchPanelEmployees(); }, [fetchPanelCompanies, fetchPanelEmployees]);
 

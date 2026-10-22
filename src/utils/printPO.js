@@ -1,3 +1,5 @@
+import { printHtml } from './printRelay';
+
 const WATERMARK_CSS = `.watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-45deg); font-size: 70pt; font-weight: 900; color: rgba(160,0,0,0.07); letter-spacing: 5px; white-space: nowrap; pointer-events: none; user-select: none; }`;
 
 function buildReprintFooter(printedBy, generatedAt, isReprint, reprintedBy, reprintedAt) {
@@ -123,10 +125,7 @@ export function printPODocument(result, { printedBy = '', generatedAt = '', isRe
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printHtml(html);
 }
 
 export function printGDDocument(row, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' } = {}) {
@@ -234,10 +233,7 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url  = URL.createObjectURL(blob);
-  const win  = window.open(url, '_blank');
-  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printHtml(html);
 }
 
 export function printGINDocument(row, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' } = {}) {
@@ -383,10 +379,7 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printHtml(html);
 }
 
 export function printAllGINs(rows) {
@@ -515,8 +508,5 @@ export function printAllGINs(rows) {
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printHtml(html);
 }

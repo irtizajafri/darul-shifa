@@ -8,6 +8,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import './SlipAdjustment.scss';
 import './AdmissionAdjustment.scss';
 import './SlipTransfer.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -102,7 +103,7 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissionsForAdjustment
 
 export default function SlipTransfer() {
   const navigate = useNavigate();
-  const { searchAdmissionsForAdjustment } = useClinicStore();
+  const { searchAdmissionsForAdjustment } = useClinicStore(useShallow((s) => ({ searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment })));
 
   // Search — by Slip # or patient name (never by Admission #)
   const [searchTerm, setSearchTerm] = useState('');

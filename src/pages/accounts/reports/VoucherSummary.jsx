@@ -4,6 +4,7 @@ import { ArrowLeft, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { openPrintWindow } from '../../../utils/printRelay';
 import './VoucherReprint.scss';
 
 const ACCOUNTS_API  = 'http://localhost:5001/api/accounts';
@@ -281,16 +282,14 @@ function printVoucherSummary({ vouchers, entityType, printBy }) {
     </div>
   `;
 
-  const win = window.open('', '_blank');
+  const win = openPrintWindow('width=1000,height=800');
   win.document.write(
     `<!DOCTYPE html><html><head><title>Voucher Summary</title><style>${SUMMARY_CSS}</style></head><body>${html}</body></html>`
   );
+  win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
   win.focus();
-  setTimeout(() => {
-    win.print();
-    win.onafterprint = () => win.close();
-  }, 400);
+  win.print();
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────

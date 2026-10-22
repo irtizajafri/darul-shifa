@@ -1,5 +1,14 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { printHtml } from './printRelay';
+
+// Opens a jsPDF document (usually after doc.autoPrint()) in its own tab's
+// PDF viewer, then releases the blob URL once the tab has had time to load it.
+function openPdfInNewTab(doc) {
+  const url = doc.output('bloburl');
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 
 function safeRows(rows) {
   return Array.isArray(rows) ? rows : [];
@@ -167,10 +176,7 @@ export function printRowsHtml({ title = 'Report', rows = [], filterSummary = [],
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
 
-  const w = window.open('', '_blank', 'width=900,height=1000');
-  if (!w) return;
-  w.document.write(html);
-  w.document.close();
+  printHtml(html, 'width=900,height=1000');
 }
 
 // grandTotal: false when the rows already carry their own total lines.
@@ -204,7 +210,7 @@ export function printRowsToPdf({ title = 'Report', rows = [], filterSummary = []
   }
 
   doc.autoPrint();
-  window.open(doc.output('bloburl'), '_blank');
+  openPdfInNewTab(doc);
 }
 
 /**
@@ -231,7 +237,7 @@ export function exportItemLedgerPdf({
     doc.setFontSize(11);
     doc.text('No records found.', 40, startY + 10);
     drawFooter();
-    if (mode === 'print') { doc.autoPrint(); window.open(doc.output('bloburl'), '_blank'); }
+    if (mode === 'print') { doc.autoPrint(); openPdfInNewTab(doc); }
     else doc.save(`${fileName}.pdf`);
     return;
   }
@@ -362,7 +368,7 @@ export function exportItemLedgerPdf({
 
   if (mode === 'print') {
     doc.autoPrint();
-    window.open(doc.output('bloburl'), '_blank');
+    openPdfInNewTab(doc);
   } else {
     doc.save(`${fileName}.pdf`);
   }
@@ -440,10 +446,7 @@ function printSalesInvoiceHtml(inv) {
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
 
-  const w = window.open('', '_blank', 'width=900,height=900');
-  if (!w) return;
-  w.document.write(html);
-  w.document.close();
+  printHtml(html, 'width=900,height=900');
 }
 
 export function generateSalesInvoicePdf({ inv, mode = 'download' }) {
@@ -576,7 +579,7 @@ export function generateSalesInvoicePdf({ inv, mode = 'download' }) {
 
   if (mode === 'print') {
     doc.autoPrint();
-    window.open(doc.output('bloburl'), '_blank');
+    openPdfInNewTab(doc);
   } else {
     doc.save(fileName);
   }
@@ -806,7 +809,7 @@ export function generateMaintenanceBillPdf({ record, billType = 'sent', mode = '
   const fileName = `maintenance-${moNo}-${billType}.pdf`;
   if (mode === 'print') {
     doc.autoPrint();
-    window.open(doc.output('bloburl'), '_blank');
+    openPdfInNewTab(doc);
   } else {
     doc.save(fileName);
   }

@@ -3,6 +3,7 @@ import { ArrowLeft, Printer, PlugZap, Building2, Flame } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { useUtilitiesStore } from '../../store/useUtilitiesStore';
+import { openPrintWindow } from '../../utils/printRelay';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
@@ -61,17 +62,14 @@ export default function CombinedReport({ type, utility = 'electricity', meters, 
 
   const handlePrint = () => {
     if (!tableRef.current) return;
-    const win = window.open('', '_blank');
-    if (!win) { toast.error('Print popup was blocked by the browser'); return; }
+    const win = openPrintWindow('width=1000,height=800');
     const title = `Combined Report — ${groupLabel}`;
     const heading = `<h2>${title} — For the period ${fmtDateLabel(from)} to ${fmtDateLabel(to)}</h2>`;
     win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${PRINT_CSS}</style></head><body>${heading}${tableRef.current.outerHTML}</body></html>`);
+    win.document.write('<script>window.onafterprint = () => window.close();</script>');
     win.document.close();
     win.focus();
-    setTimeout(() => {
-      win.print();
-      win.onafterprint = () => win.close();
-    }, 400);
+    win.print();
   };
 
   // ── Build the date × meter matrix ──────────────────────────────────────────

@@ -4,6 +4,7 @@ import { ArrowLeft, Printer, RefreshCw } from 'lucide-react';
 import { useAuthStore } from '../../../store/useAuthStore';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ConsultantStatementReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -96,7 +97,7 @@ export default function ConsultantStatementReport() {
   const printedBy = user?.name || 'User';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = printRef.current?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>Consultant Statement</title>
 <style>

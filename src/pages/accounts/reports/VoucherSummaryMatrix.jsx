@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -68,12 +69,12 @@ function printMatrix({ data, glFromLabel, glToLabel, dateFrom, dateTo, entityTyp
     </table>
   </body></html>`;
 
-  const win = window.open('', '_blank');
-  if (!win) { toast.error('Popup blocked'); return; }
+  const win = openPrintWindow('width=1000,height=800');
   win.document.write(html);
+  win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); win.onafterprint = () => win.close(); }, 400);
+  win.print();
 }
 
 export default function VoucherSummaryMatrix() {

@@ -7,6 +7,7 @@ import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
 import './WardWiseBillReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -68,7 +69,7 @@ export default function WardWiseBillReport() {
   const reportTitle = billType === 'final' ? 'Ward Wise Final Bill Report' : 'Ward Wise Provisional Bill Report';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('wwb-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
       <style>

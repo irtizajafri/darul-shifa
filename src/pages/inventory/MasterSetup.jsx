@@ -308,7 +308,9 @@ export default function MasterSetup() {
 
     if (shouldPrint) {
       doc.autoPrint();
-      window.open(doc.output('bloburl'), '_blank');
+      const pdfUrl = doc.output('bloburl');
+      window.open(pdfUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
     } else {
       doc.save(`Fixed-Asset-${item.code}.pdf`);
     }

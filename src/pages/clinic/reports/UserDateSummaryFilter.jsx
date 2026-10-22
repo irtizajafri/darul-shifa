@@ -7,6 +7,7 @@ import useModalKeys from '../../../hooks/useModalKeys';
 import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const API_USERS = 'http://localhost:5001/api/users';
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -57,7 +58,7 @@ function UserLookupModal({ onSelect, onClose }) {
 
 export default function UserDateSummaryFilter() {
   const navigate = useNavigate();
-  const { shifts, fetchShifts } = useClinicStore();
+  const { shifts, fetchShifts } = useClinicStore(useShallow((s) => ({ shifts: s.shifts, fetchShifts: s.fetchShifts })));
 
   const [userId, setUserId] = useState('');
   const [userName, setUserName] = useState('');

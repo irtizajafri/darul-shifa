@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
@@ -8,20 +8,31 @@ import Modal from '../../../components/ui/Modal';
 import Button from '../../../components/ui/Button';
 import { useClinicStore } from '../../../store/useClinicStore';
 import '../parameters/ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
+import usePagedList from '../../../hooks/usePagedList';
+import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 
 export default function ClinicPanelEmployeeListPage() {
-  const { panelEmployees, loading, fetchPanelEmployees, deletePanelEmployee } = useClinicStore();
+  const { panelEmployees, loading, fetchPanelEmployees, deletePanelEmployee } = useClinicStore(useShallow((s) => ({ panelEmployees: s.panelEmployees, loading: s.loading, fetchPanelEmployees: s.fetchPanelEmployees, deletePanelEmployee: s.deletePanelEmployee })));
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   useEffect(() => { fetchPanelEmployees(); }, [fetchPanelEmployees]);
 
-  const filtered = panelEmployees.filter((e) =>
-    e.empCode.toLowerCase().includes(query.toLowerCase()) ||
-    e.name.toLowerCase().includes(query.toLowerCase()) ||
-    (e.company?.name || '').toLowerCase().includes(query.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase();
+    return panelEmployees.filter((e) =>
+      e.empCode.toLowerCase().includes(q) ||
+      e.name.toLowerCase().includes(q) ||
+      (e.company?.name || '').toLowerCase().includes(q)
+    );
+  }, [panelEmployees, query]);
+
+  // Search runs over all employees; only 300 matches are drawn at a time
+  // (3k+ rows made the page slow). Page 1 again when the search changes.
+  const page = usePagedList(filtered.length, query);
+  const visible = useMemo(() => (page.limit >= filtered.length ? filtered : filtered.slice(0, page.limit)), [filtered, page.limit]);
 
   async function handleDelete(emp) {
     try {
@@ -85,7 +96,7 @@ export default function ClinicPanelEmployeeListPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((emp, i) => (
+                {visible.map((emp, i) => (
                   <tr key={emp.id}>
                     <td className="cpp-num">{i + 1}</td>
                     <td><strong>{emp.empCode}</strong></td>
@@ -113,6 +124,7 @@ export default function ClinicPanelEmployeeListPage() {
               </tbody>
             </table>
           )}
+          {!loading && <ShowMoreFooter {...page} noun="records" />}
         </div>
       </div>
 

@@ -5,6 +5,7 @@ import { Upload, X } from 'lucide-react';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './DoctorWiseStatement.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // Doctor Wise Statement's "Upload Excel" dialog — moved out of
 // DoctorWiseStatement.jsx unchanged so both the filter screen and the
@@ -141,7 +142,7 @@ function parseDoctorStatementExcel(file) {
 }
 
 export default function DoctorWiseStatementImportModal({ onClose }) {
-  const { previewDoctorStatementImport, confirmDoctorStatementImport } = useClinicStore();
+  const { previewDoctorStatementImport, confirmDoctorStatementImport } = useClinicStore(useShallow((s) => ({ previewDoctorStatementImport: s.previewDoctorStatementImport, confirmDoctorStatementImport: s.confirmDoctorStatementImport })));
   const fileRef = useRef(null);
 
   const [step, setStep] = useState('pick'); // pick | preview | importing | done

@@ -11,6 +11,8 @@ import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import { relationParts } from './relationText';
 import './DischargeRefund.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 // Laboratory/Radiology(X-Ray)/Ultra Sound — a doctor's fee % is uniform
 // across every test they do there, so the Sub-Department auto-resolves with
@@ -151,7 +153,7 @@ export default function DischargeRefund() {
     updateDischargeBillItem,
     deleteDischargeBillItem,
     finalizeDischarge,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, doctors: s.doctors, fetchDoctors: s.fetchDoctors, fetchDoctorSubDeptsForDepartment: s.fetchDoctorSubDeptsForDepartment, searchAdmissionsForDischargeRefund: s.searchAdmissionsForDischargeRefund, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, fetchDischargeBillDetail: s.fetchDischargeBillDetail, addDischargeBillItem: s.addDischargeBillItem, updateDischargeBillItem: s.updateDischargeBillItem, deleteDischargeBillItem: s.deleteDischargeBillItem, finalizeDischarge: s.finalizeDischarge })));
 
   const [detail, setDetail] = useState(null);
   const [admissionId, setAdmissionId] = useState(null);
@@ -238,8 +240,7 @@ export default function DischargeRefund() {
   // File actually runs, so printing beforehand must not show stale/zeroed-out
   // numbers.
   function printDischargeBillPopup(dup) {
-    const w = window.open('', '_blank', 'width=900,height=1000');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=900,height=1000');
     const liveDetail = detail ? { ...detail, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, balance: liveBalance, refund: liveRefund } : detail;
     w.document.write(buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: dup, printedBy }));
     w.document.close();

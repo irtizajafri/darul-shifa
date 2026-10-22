@@ -1,5 +1,6 @@
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { numberToWords, invoiceLabel } from './receiptUtils';
+import { BETA_WATERMARK_HTML } from './betaWatermark';
 
 // ── Antenatal Registration Slip ─────────────────────────────────────────────
 // Same visual template (logo/address/info-grid/barcode/footer) as the
@@ -85,6 +86,7 @@ export function buildAntenatalReceiptHtml({ antenatal, doctor, isDuplicate, barc
 </style>
 </head>
 <body>
+${BETA_WATERMARK_HTML}
   <div class="logo-box">
     <img class="logo-img" src="${RECEIPT_LOGO_DATA_URI}" alt="logo" />
   </div>

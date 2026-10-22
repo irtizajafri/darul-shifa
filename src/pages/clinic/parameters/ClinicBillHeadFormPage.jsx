@@ -6,6 +6,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicBillHeadFormPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const TYPE_OPTIONS = [
   { value: 'both', label: 'Both' },
@@ -57,7 +58,7 @@ export default function ClinicBillHeadFormPage() {
     roomCategories, fetchRoomCategories,
     billHeads, fetchBillHeads,
     createBillHead, updateBillHead, fetchBillHeadById,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ departments: s.departments, fetchDepartments: s.fetchDepartments, staffCategories: s.staffCategories, fetchStaffCategories: s.fetchStaffCategories, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, createBillHead: s.createBillHead, updateBillHead: s.updateBillHead, fetchBillHeadById: s.fetchBillHeadById })));
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [wardRows, setWardRows] = useState([]);

@@ -8,6 +8,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import DoctorWiseStatementImportModal from './DoctorWiseStatementImportModal';
 import './DoctorWiseStatement.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
@@ -35,7 +36,7 @@ function printDoctorWiseStatement(bodyEl) {
 // DoctorWiseStatement.scss), each a self-contained mini-statement with its
 // own repeated doctor/date header, matching the legacy paper output.
 export default function DoctorWiseStatement() {
-  const { fetchDoctorStatement } = useClinicStore();
+  const { fetchDoctorStatement } = useClinicStore(useShallow((s) => ({ fetchDoctorStatement: s.fetchDoctorStatement })));
   const [params] = useSearchParams();
   const bodyRef = useRef(null);
 

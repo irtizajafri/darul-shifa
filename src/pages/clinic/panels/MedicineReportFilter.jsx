@@ -10,6 +10,7 @@ import MedicineReportImportModal from './MedicineReportImportModal';
 import '../reports/ConsultantWiseFilter.scss';
 // Still needed for the Company picker pop-up (.mrp-modal-overlay / .mrp-picker-*).
 import './MedicineReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // Radio + caption in the dark-red label column (wider than .cwf-lbl's 80px).
 const RADIO_LBL = { width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, cursor: 'pointer' };
@@ -25,7 +26,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // plus the Medical Store. View opens MedicineReport at /view.
 export default function MedicineReportFilter() {
   const navigate = useNavigate();
-  const { panelCompanies, fetchPanelCompanies, pharmacyStores, fetchPharmacyStores } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies, pharmacyStores, fetchPharmacyStores } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores })));
 
   const [scopeMode, setScopeMode] = useState('date'); // 'admission' | 'date'
   const [admissionNo, setAdmissionNo] = useState('');

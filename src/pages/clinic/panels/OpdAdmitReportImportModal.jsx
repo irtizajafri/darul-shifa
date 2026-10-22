@@ -5,6 +5,7 @@ import { Upload, X } from 'lucide-react';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './OpdAdmitReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // OPD Admit Report's "Upload Excel" dialog — moved out of OpdAdmitReport.jsx
 // unchanged so both the filter screen and the preview can open it.
@@ -141,7 +142,7 @@ function parseAdmitPanelExcel(file) {
 const CONFIRM_BATCH_SIZE = 300; // admissions per request — same body-size safety margin as Medicine Report's import
 
 export default function OpdAdmitReportImportModal({ onClose }) {
-  const { previewPanelAdmitReportImport, confirmPanelAdmitReportImportBatch, createPanelCompany } = useClinicStore();
+  const { previewPanelAdmitReportImport, confirmPanelAdmitReportImportBatch, createPanelCompany } = useClinicStore(useShallow((s) => ({ previewPanelAdmitReportImport: s.previewPanelAdmitReportImport, confirmPanelAdmitReportImportBatch: s.confirmPanelAdmitReportImportBatch, createPanelCompany: s.createPanelCompany })));
   const fileRef = useRef(null);
 
   const [step, setStep] = useState('pick'); // pick | preview | importing | done

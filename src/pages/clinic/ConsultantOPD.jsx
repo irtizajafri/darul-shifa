@@ -10,6 +10,8 @@ import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidat
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './ConsultantOPD.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const departmentName = 'Consultant OPD';
 const layout = 'doctor';
@@ -205,7 +207,7 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
 
 // ── Panel Select Modal ────────────────────────────────────────────────────────
 function PanelModal({ onSelect, onClose }) {
-  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
+  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, panelEmployees: s.panelEmployees, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelEmployees: s.fetchPanelEmployees })));
   const [companyId, setCompanyId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [dependentIdx, setDependentIdx] = useState('');
@@ -393,7 +395,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ConsultantOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(useShallow((s) => ({ fetchAvailableDoctors: s.fetchAvailableDoctors, fetchNextSerialNo: s.fetchNextSerialNo, fetchNextMrNo: s.fetchNextMrNo, searchEmployees: s.searchEmployees, createOpdVisit: s.createOpdVisit, printOpdVisit: s.printOpdVisit, fetchAntenatalByNo: s.fetchAntenatalByNo, fetchOpdPatientByMrNo: s.fetchOpdPatientByMrNo, fetchOpdPatientsByPhone: s.fetchOpdPatientsByPhone, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, ccConfig: s.ccConfig, fetchCcConfig: s.fetchCcConfig }))); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -678,8 +680,7 @@ export default function ConsultantOPD() {
     // its own separate print job right after the slip's (see
     // clinicalRecordPrintUtils's buildSequentialPrintHtml) — nothing for a
     // popup blocker to block, and no window.print() on the main window to freeze it.
-    const w = window.open('', '_blank', 'width=420,height=680,left=60,top=60');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=420,height=680,left=60,top=60');
     setBusy(true);
     try {
       const created = await createOpdVisit({

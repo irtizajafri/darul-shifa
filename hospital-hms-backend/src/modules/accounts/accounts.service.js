@@ -1208,24 +1208,16 @@ async function getPayeeEntriesBySubAccount(subAccountId, entityType) {
       select: { id: true, name: true, code: true },
       orderBy: { name: 'asc' },
     });
-    // Only suppliers with at least one unpaid GRN belong in the pay-list —
-    // once every GRN is paid off, the supplier drops out until a new GRN
-    // comes in. Which GRNs count depends on the GRN's own Payment Mode
-    // radio (Cash / Panel): Cash GRNs are a Non-Corporate expense, Panel
-    // GRNs are a Corporate expense — so each entity's Voucher Expense only
-    // ever offers suppliers with unpaid GRNs of its own mode.
-    const dueSupplierRows = await prisma.inventoryGRN.findMany({
-      where: { isPaid: false, paymentMode: entityType === 'corporate' ? 'panel' : 'cash' },
-      select: { supplierId: true },
-      distinct: ['supplierId'],
-    });
-    const dueSupplierIds = new Set(dueSupplierRows.map((r) => r.supplierId));
-    const dueSuppliers = allSuppliers.filter((s) => dueSupplierIds.has(s.id));
+    // Every active supplier is offered, not only those with an unpaid GRN
+    // (owner, 2026-10-22 — same as the server fix): a supplier whose GRNs
+    // are all paid still needs old/manual payments, and one with only
+    // Maintenance due has no GRN at all. The GRN / Maintenance popup still
+    // shows only what's unpaid for this book (Cash / Panel).
     const checkedKeys = new Set(checkedNames.map(payeeNameKey));
     const filteredEntries = checkedNames.length > 0
-      ? dueSuppliers.filter((s) => checkedKeys.has(payeeNameKey(s.name)))
-      : dueSuppliers;
-    return { type: 'vendor', headName: head.name, headId: head.id, entries: filteredEntries, allSuppliers: dueSuppliers, checkedNames };
+      ? allSuppliers.filter((s) => checkedKeys.has(payeeNameKey(s.name)))
+      : allSuppliers;
+    return { type: 'vendor', headName: head.name, headId: head.id, entries: filteredEntries, allSuppliers, checkedNames };
   }
 
   if (head.sourceType === 'doctor') {

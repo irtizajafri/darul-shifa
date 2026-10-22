@@ -232,7 +232,9 @@ export default function LeaveEncashment() {
 
     if (print) {
       pdf.autoPrint();
-      window.open(pdf.output('bloburl'), '_blank');
+      const pdfUrl = pdf.output('bloburl');
+      window.open(pdfUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
     } else {
       pdf.save(`leave-encashment-${monthFilter || 'summary'}.pdf`);
     }
@@ -353,7 +355,9 @@ export default function LeaveEncashment() {
     });
 
     pdf.autoPrint();
-    window.open(pdf.output('bloburl'), '_blank');
+    const pdfUrl = pdf.output('bloburl');
+    window.open(pdfUrl, '_blank');
+    setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
   };
 
   const accumulatedMonthNames = useMemo(() => getAccumulatedMonthNames(), []);

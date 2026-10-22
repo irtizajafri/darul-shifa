@@ -10,6 +10,7 @@ import { buildReceiptHtml } from '../receiptUtils';
 import { buildEmergencyReceiptHtml } from '../emergencyReceiptUtils';
 import { buildConsultantReceiptHtml } from '../consultantReceiptUtils';
 import './FullSlipEdit.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 // Clinic > Transactions > Full Slip Edit — superadmin only (route is wrapped in
 // SuperAdminRoute). Edits an entire OPD slip of any department (General OPD,
@@ -234,8 +235,7 @@ export default function FullSlipEdit() {
         // Each department prints on its own slip layout, same as Reprint.
         html = dept === 'consultant opd' ? buildConsultantReceiptHtml(args) : buildReceiptHtml(args);
       }
-      const w = window.open('', '_blank', dept === 'emergency' ? 'width=740,height=900' : 'width=420,height=680');
-      if (!w) return toast.error('Popup blocked — please allow popups for this site');
+      const w = openPrintWindow(dept === 'emergency' ? 'width=740,height=900' : 'width=420,height=680');
       w.document.write(html);
       w.document.close();
     } catch (err) {

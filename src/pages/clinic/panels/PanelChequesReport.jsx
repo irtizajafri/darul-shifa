@@ -8,6 +8,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import PanelChequesImportModal from './PanelChequesImportModal';
 import './PanelChequesReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
@@ -33,7 +34,7 @@ function printChequesReport(reportEl) {
 // REPORT": Company header → Billing-Month subtotal → (Patient depth only)
 // individual admission rows.
 export default function PanelChequesReport() {
-  const { fetchPanelChequesReport } = useClinicStore();
+  const { fetchPanelChequesReport } = useClinicStore(useShallow((s) => ({ fetchPanelChequesReport: s.fetchPanelChequesReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
 

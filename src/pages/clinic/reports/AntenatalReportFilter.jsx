@@ -6,12 +6,13 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ConsultantWiseFilter.scss';
 import './AntenatalReportFilter.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 
 export default function AntenatalReportFilter() {
   const navigate = useNavigate();
-  const { doctors, fetchDoctors } = useClinicStore();
+  const { doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors })));
 
   // Registration Date by default — a patient registered today has an EDD
   // ~9 months out, so defaulting to "ED Date = today" (matching the legacy

@@ -6,8 +6,11 @@ import { buildReceiptHtml } from '../receiptUtils';
 import { buildConsultantReceiptHtml } from '../consultantReceiptUtils';
 import { buildEmergencyReceiptHtml } from '../emergencyReceiptUtils';
 import { useAuthStore, SUPER_ADMIN_EMAIL } from '../../../store/useAuthStore';
+import { buildReprint, REPRINT_POPUP_FEATURES } from './reprintPrinters';
+import { buildSequentialPrintHtml } from '../clinicalRecordPrintUtils';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ReprintFilter.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -62,8 +65,7 @@ export default function ReprintFilter() {
         : buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
     }
 
-    const w = window.open('', '_blank', 'width=420,height=680');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=420,height=680');
     w.document.write(html);
     w.document.close();
   }
@@ -87,39 +89,24 @@ export default function ReprintFilter() {
       return;
     }
 
-    if (docType === 'admission') {
-      navigate(`/clinic/admission?reprintNo=${encodeURIComponent(no)}`);
-      return;
-    }
-
-    if (docType === 'provisional') {
-      navigate(`/clinic/billing/provisional-bill?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
-      return;
-    }
-
-    if (docType === 'discharge') {
-      navigate(`/clinic/transactions/discount-refund-admission?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
-      return;
-    }
-
-    if (docType === 'birth') {
-      navigate(`/clinic/transactions/birth-certificate?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
-      return;
-    }
-
-    if (docType === 'death') {
-      navigate(`/clinic/parameters/death-certificate?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
-      return;
-    }
-
-    if (docType === 'final') {
-      navigate(`/clinic/discharge-refund?admissionNo=${encodeURIComponent(no)}&autoprint=1`);
-      return;
-    }
-
-    if (docType === 'antenatal') {
-      navigate(`/clinic/antenatal?antenatalNo=${encodeURIComponent(no)}&autoprint=1`);
-      return;
+    // Every other document: print-only. Open the popup synchronously on the
+    // click (before any await — otherwise popup blockers kill it), fetch the
+    // saved record and write the same print the document's own screen would
+    // produce. Never navigates to the (editable) working screen.
+    const w = openPrintWindow(REPRINT_POPUP_FEATURES[docType] || 'width=900,height=1000');
+    setBusy(true);
+    try {
+      const printedBy = user?.name || user?.username || user?.email || '';
+      const { html, extraHtml } = await buildReprint(docType, no, printedBy);
+      // A second slip (Antenatal card) prints from the same window, after the
+      // first — never from a hidden iframe (its dialog froze the app).
+      w.document.write(buildSequentialPrintHtml(html, extraHtml));
+      w.document.close();
+    } catch (err) {
+      w.close();
+      toast.error(err.message || `${type.label} reprint nahi ho saka`);
+    } finally {
+      setBusy(false);
     }
   }
 

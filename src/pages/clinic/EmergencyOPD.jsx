@@ -10,6 +10,8 @@ import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidat
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 // Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
@@ -177,7 +179,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function EmergencyOPD() {
-  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
+  const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(useShallow((s) => ({ fetchAvailableDoctors: s.fetchAvailableDoctors, fetchNextSerialNo: s.fetchNextSerialNo, fetchNextMrNo: s.fetchNextMrNo, searchEmployees: s.searchEmployees, createOpdVisit: s.createOpdVisit, printOpdVisit: s.printOpdVisit, fetchOpdPatientByMrNo: s.fetchOpdPatientByMrNo, fetchOpdPatientsByPhone: s.fetchOpdPatientsByPhone, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, ccConfig: s.ccConfig, fetchCcConfig: s.fetchCcConfig }))); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -433,8 +435,7 @@ export default function EmergencyOPD() {
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
     if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
-    const w = window.open('', '_blank', 'width=740,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups'); return; }
+    const w = openPrintWindow('width=740,height=900');
     setBusy(true);
     try {
       const created = await createOpdVisit({

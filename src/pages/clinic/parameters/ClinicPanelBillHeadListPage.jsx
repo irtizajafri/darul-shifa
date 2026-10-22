@@ -9,6 +9,7 @@ import Input from '../../../components/ui/Input';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
 import './ClinicPanelBillHeadListPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
@@ -22,7 +23,7 @@ export default function ClinicPanelBillHeadListPage() {
   const {
     panelBillHeads, loading, fetchPanelBillHeads, createPanelBillHead, updatePanelBillHead, deletePanelBillHead,
     addPanelBillHeadItem, deletePanelBillHeadItem, fetchMedicineList,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ panelBillHeads: s.panelBillHeads, loading: s.loading, fetchPanelBillHeads: s.fetchPanelBillHeads, createPanelBillHead: s.createPanelBillHead, updatePanelBillHead: s.updatePanelBillHead, deletePanelBillHead: s.deletePanelBillHead, addPanelBillHeadItem: s.addPanelBillHeadItem, deletePanelBillHeadItem: s.deletePanelBillHeadItem, fetchMedicineList: s.fetchMedicineList })));
 
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);

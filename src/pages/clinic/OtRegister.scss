@@ -258,3 +258,51 @@ $bg:      #dde3ea;
 }
 
 .otr-td-empty { text-align: center; color: #999; padding: 20px !important; white-space: normal !important; }
+
+// Saved OT entries of the selected admission, each with Edit.
+.otr-list {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #d7dce3;
+  border-radius: 6px;
+}
+.otr-list-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a3c6e;
+  margin-bottom: 8px;
+  span { margin-left: 6px; padding: 0 7px; border-radius: 999px; background: #e8eef8; font-size: 11px; }
+}
+.otr-list-empty { font-size: 12px; color: #667; }
+.otr-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  th { text-align: left; padding: 5px 8px; background: #eef2f8; color: #1a3c6e; border-bottom: 1px solid #c8d3e3; }
+  td { padding: 5px 8px; border-bottom: 1px solid #edf0f4; }
+}
+.otr-list-row--editing td { background: #fff7e0; }
+.otr-list-act { text-align: right; width: 90px; }
+.otr-list-editing { font-size: 11px; color: #9a6a00; font-weight: 700; }
+.otr-edit-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  border: 1px solid #1a3c6e;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a3c6e;
+  cursor: pointer;
+  &:hover { background: #1a3c6e; color: #fff; }
+  &:focus-visible { outline: 2px solid #1a3c6e; outline-offset: 1px; }
+}
+.otr-cancel-btn {
+  margin-right: 8px;
+  padding: 6px 16px;
+  border: 1px solid #9aa4b2;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  &:hover { background: #f1f3f6; }
+}

@@ -7,6 +7,7 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import MedicineIssuanceImportModal from './MedicineIssuanceImportModal';
 import '../reports/ConsultantWiseFilter.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // Radio + caption in the dark-red label column (wider than .cwf-lbl's 80px).
 const RADIO_LBL = { width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, cursor: 'pointer' };
@@ -21,7 +22,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // /view?scopeMode&admissionNo&dateType&fromDate&toDate&storeFilter&viewMode.
 export default function MedicineIssuanceFilter() {
   const navigate = useNavigate();
-  const { pharmacyStores, fetchPharmacyStores } = useClinicStore();
+  const { pharmacyStores, fetchPharmacyStores } = useClinicStore(useShallow((s) => ({ pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores })));
 
   const [scopeMode, setScopeMode] = useState('date'); // 'admission' | 'date'
   const [admissionNo, setAdmissionNo] = useState('');

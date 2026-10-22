@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import useModalKeys from '../../hooks/useModalKeys';
 import { buildBirthCertificatePrintHtml } from './birthCertificatePrintUtils';
 import './BirthCertificate.scss';
+import { openPrintWindow } from '../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
@@ -180,8 +181,7 @@ export default function BirthCertificate() {
   // window (freezes the whole app behind the print dialog on Windows), same
   // fix already applied to Discharge/Death Certificate prints.
   function openBirthCertificatePopup(certificate) {
-    const w = window.open('', '_blank', 'width=700,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildBirthCertificatePrintHtml({ certificate }));
     w.document.close();
   }

@@ -9,6 +9,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import './AdmissionStatusChange.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -137,7 +138,7 @@ export default function AdmissionStatusChange() {
     searchAdmissionsForProvisionalBill,
     fetchAdmissionForAdjustment,
     updateAdmissionStatus,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, beds: s.beds, fetchBeds: s.fetchBeds, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, updateAdmissionStatus: s.updateAdmissionStatus })));
 
   const [admission, setAdmission] = useState(null);
   const [loading, setLoading] = useState(false);

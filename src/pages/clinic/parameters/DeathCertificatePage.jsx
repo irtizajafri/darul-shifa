@@ -6,6 +6,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { buildDeathCertificatePrintHtml } from '../deathCertificatePrintUtils';
 import './DeathCertificatePage.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -77,8 +78,7 @@ export default function DeathCertificatePage() {
         const doctorName = d.medicalOfficerId
           ? (doctorList.find((x) => String(x.id) === String(d.medicalOfficerId)) || {}).name
           : '';
-        const w = window.open('', '_blank', 'width=700,height=900');
-        if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+        const w = openPrintWindow('width=700,height=900');
         w.document.write(buildDeathCertificatePrintHtml({ certificate: d, doctorName }));
         w.document.close();
       } catch {
@@ -178,8 +178,7 @@ export default function DeathCertificatePage() {
     const doctorName = manual.medicalOfficerId
       ? (doctors.find((d) => String(d.id) === String(manual.medicalOfficerId)) || {}).name
       : '';
-    const w = window.open('', '_blank', 'width=700,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildDeathCertificatePrintHtml({ certificate, doctorName }));
     w.document.close();
   }

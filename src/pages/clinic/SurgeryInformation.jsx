@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import './SurgeryInformation.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -192,7 +193,7 @@ const emptyForm = () => ({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function SurgeryInformation() {
   const { user }                          = useAuthStore();
-  const { surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+  const { surgeryTypes, fetchSurgeryTypes } = useClinicStore(useShallow((s) => ({ surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes })));
   const {
     masterOptions, fetchMastersOptions,
     items, fetchItems,

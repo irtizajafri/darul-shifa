@@ -11,6 +11,8 @@ import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidat
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 const ADMISSION_TITLE_MAP = { Mr: 'MR', Mrs: 'MRS', Ms: 'MS', Master: 'MAST', Baby: 'BABY' };
@@ -174,7 +176,7 @@ function AdmitPatientLookupModal({ onSelect, onClose, searchAdmissionsForAdjustm
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function AmbulanceSlip() {
-  const { fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, doctors, fetchDoctors } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
+  const { fetchNextSerialNo, searchEmployees, createOpdVisit, printOpdVisit, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ fetchNextSerialNo: s.fetchNextSerialNo, searchEmployees: s.searchEmployees, createOpdVisit: s.createOpdVisit, printOpdVisit: s.printOpdVisit, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, doctors: s.doctors, fetchDoctors: s.fetchDoctors }))); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
@@ -279,8 +281,7 @@ export default function AmbulanceSlip() {
     if (phoneErr) { toast.error(phoneErr); return; }
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
-    const w = window.open('', '_blank', 'width=740,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups'); return; }
+    const w = openPrintWindow('width=740,height=900');
     setBusy(true);
     try {
       const paymentType = form.billingType === 'staff' ? 'cash' : form.billingType;

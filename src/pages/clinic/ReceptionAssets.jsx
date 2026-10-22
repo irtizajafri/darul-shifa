@@ -8,6 +8,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import { useClinicStore } from '../../store/useClinicStore';
 import './parameters/ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const CONDITIONS = ['working', 'damaged', 'maintenance'];
 
@@ -18,8 +19,7 @@ const emptyForm = () => ({ name: '', quantity: '', condition: 'working', notes: 
 // Handover snapshots this list at handover time; managing the list itself
 // (this page) never touches Handover records already saved.
 export default function ReceptionAssets() {
-  const { receptionAssets, loading, fetchReceptionAssets, createReceptionAsset, updateReceptionAsset, deleteReceptionAsset } =
-    useClinicStore();
+  const { receptionAssets, loading, fetchReceptionAssets, createReceptionAsset, updateReceptionAsset, deleteReceptionAsset } = useClinicStore(useShallow((s) => ({ receptionAssets: s.receptionAssets, loading: s.loading, fetchReceptionAssets: s.fetchReceptionAssets, createReceptionAsset: s.createReceptionAsset, updateReceptionAsset: s.updateReceptionAsset, deleteReceptionAsset: s.deleteReceptionAsset })));
 
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);

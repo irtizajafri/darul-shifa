@@ -7,6 +7,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -183,7 +184,7 @@ export default function OtRegisterReport() {
   const printedAtStr = fmtDateTime(new Date());
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('otr-rep-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>OT Register Report</title>
       <style>

@@ -1,5 +1,5 @@
-import toast from 'react-hot-toast';
 import logoSvgRaw from '../assets/logo.svg?raw';
+import { printHtml } from './printRelay';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtPKR = (n) =>
@@ -396,11 +396,5 @@ export function printUtilityBill({
 </body>
 </html>`;
 
-  const win = window.open('', '_blank');
-  if (!win) {
-    toast.error('Popup blocked — please allow popups in your browser');
-    return;
-  }
-  win.document.write(html);
-  win.document.close();
+  printHtml(html, 'width=1000,height=800');
 }

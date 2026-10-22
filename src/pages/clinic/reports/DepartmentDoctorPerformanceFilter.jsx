@@ -7,6 +7,7 @@ import useModalKeys from '../../../hooks/useModalKeys';
 import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
@@ -49,7 +50,7 @@ function DoctorLookupModal({ doctors, onSelect, onClose }) {
 
 export default function DepartmentDoctorPerformanceFilter({ title = 'Departmental Performance' }) {
   const navigate = useNavigate();
-  const { doctors, fetchDoctors } = useClinicStore();
+  const { doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors })));
 
   const [fromDate, setFromDate] = useState(firstOfMonthStr());
   const [toDate, setToDate] = useState(todayStr());

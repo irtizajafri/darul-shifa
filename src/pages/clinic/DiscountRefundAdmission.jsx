@@ -12,6 +12,8 @@ import useModalKeys from '../../hooks/useModalKeys';
 import { buildDischargeCertificatePrintHtml } from './dischargeCertificatePrintUtils';
 import { buildRefundSlipPrintHtml } from './refundSlipPrintUtils';
 import './DiscountRefundAdmission.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -215,7 +217,7 @@ export default function DiscountRefundAdmission() {
   const { user } = useAuthStore();
   const allowBackDating = canBackDate(user);
   const [searchParams] = useSearchParams();
-  const { diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+  const { diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes } = useClinicStore(useShallow((s) => ({ diseases: s.diseases, fetchDiseases: s.fetchDiseases, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes })));
 
   useEffect(() => {
     fetchDiseases();
@@ -264,8 +266,7 @@ export default function DiscountRefundAdmission() {
   // Popup-based print (never window.print() on the main window — see
   // dischargeCertificatePrintUtils for why that used to freeze the whole app).
   function openDischargeCertificatePopup(data) {
-    const w = window.open('', '_blank', 'width=700,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildDischargeCertificatePrintHtml(data));
     w.document.close();
   }
@@ -274,8 +275,7 @@ export default function DiscountRefundAdmission() {
   // block, letterhead margin). Opened automatically after a refund is saved,
   // and from each refund row in Previous Entries for a reprint.
   function openRefundSlipPopup(entry, data = null) {
-    const w = window.open('', '_blank', 'width=700,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildRefundSlipPrintHtml({
       admission: data?.admission || admission,
       entry,

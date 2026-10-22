@@ -8,7 +8,10 @@ import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import useModalKeys from '../../hooks/useModalKeys';
 import { buildAntenatalReceiptHtml, buildAntenatalCardHtml } from './antenatalReceiptUtils';
+import { buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
 import './Antenatal.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
@@ -19,22 +22,6 @@ function formatDob(val) {
 }
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
-}
-// Prints a full standalone HTML document (with its own <script>window.print()
-// on load) via a hidden, off-screen iframe — used for a second slip that
-// must print independently of a separately-opened popup window, whose
-// document can't be reliably rewritten+reprinted after its first print.
-function printHtmlInHiddenIframe(html) {
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-  document.body.appendChild(iframe);
-  const cleanup = () => { iframe.remove(); };
-  iframe.contentWindow.addEventListener('afterprint', cleanup);
-  setTimeout(cleanup, 8000); // safety net if afterprint never fires
-  const doc = iframe.contentWindow.document;
-  doc.open();
-  doc.write(html);
-  doc.close();
 }
 // Naegele's rule: EDD = LMP + 9 months + 7 days.
 function calcEdd(lmpDateStr) {
@@ -161,7 +148,7 @@ function EmployeeModal({ onSelect, onClose, searchEmployees }) {
 
 // ── Panel Modal ────────────────────────────────────────────────────────────────
 function PanelModal({ onSelect, onClose }) {
-  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
+  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, panelEmployees: s.panelEmployees, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelEmployees: s.fetchPanelEmployees })));
   const [companyId, setCompanyId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [dependentIdx, setDependentIdx] = useState('');
@@ -271,7 +258,7 @@ const EMPTY = {
 };
 
 export default function Antenatal() {
-  const { doctors, fetchDoctors, searchEmployees, createAntenatal, fetchOpdPatientByMrNo, fetchNextSerialNo, fetchAntenatalByNo } = useClinicStore(); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
+  const { doctors, fetchDoctors, searchEmployees, createAntenatal, fetchOpdPatientByMrNo, fetchNextSerialNo, fetchAntenatalByNo } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors, searchEmployees: s.searchEmployees, createAntenatal: s.createAntenatal, fetchOpdPatientByMrNo: s.fetchOpdPatientByMrNo, fetchNextSerialNo: s.fetchNextSerialNo, fetchAntenatalByNo: s.fetchAntenatalByNo }))); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
   const [form, setForm] = useState(EMPTY);
@@ -324,10 +311,12 @@ export default function Antenatal() {
 
   // Reprint (Report > Reprint > Antenatal): ?antenatalNo=...&autoprint=1 —
   // same query-param pattern as Provisional Bill / Discharge Certificate
-  // reprint. Unlike the Save flow (a direct click, so window.open() for the
-  // receipt is allowed), this fires from a mount effect after navigating
-  // from the Reprint screen — no user gesture in this exact tick, so Chrome
-  // would block window.open(). Both slips print via hidden iframes instead.
+  // reprint. Both slips go into ONE print-relay window (receipt first, then
+  // the card from that window's own "Print Form" bar — see
+  // buildSequentialPrintHtml). Hidden iframes were used before, but an
+  // iframe's print dialog is modal to the app window and froze it. This runs
+  // from a mount effect (no user gesture), so a strict popup blocker may
+  // block the window — openPrintWindow then shows its own error toast.
   useEffect(() => {
     const antenatalNo = searchParams.get('antenatalNo');
     const autoprint = searchParams.get('autoprint');
@@ -336,17 +325,22 @@ export default function Antenatal() {
       try {
         const record = await fetchAntenatalByNo(antenatalNo);
         if (!record) { toast.error('Is Antenatal # ka koi record nahi mila'); return; }
-        const doctorList = doctors.length ? doctors : await fetchDoctors();
+        // fetchDoctors() fills the store but returns nothing — read the list
+        // back from the store (a fresh tab opened with ?autoprint used to crash here).
+        if (!doctors.length) await fetchDoctors();
+        const doctorList = doctors.length ? doctors : (useClinicStore.getState().doctors || []);
         const doctor = doctorList.find(d => String(d.id) === String(record.underTreatmentId));
         const canvas = document.createElement('canvas');
         JsBarcode(canvas, record.serialNo || '', { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
         const barcodeDataUrl = canvas.toDataURL('image/png');
         const printedBy = user?.name || user?.username || user?.email || '';
         if (autoprint) {
-          printHtmlInHiddenIframe(buildAntenatalReceiptHtml({ antenatal: record, doctor, isDuplicate: true, barcodeDataUrl, printedBy }));
-          setTimeout(() => {
-            printHtmlInHiddenIframe(buildAntenatalCardHtml({ antenatal: record, doctor, barcodeDataUrl }));
-          }, 800);
+          const w = openPrintWindow('width=420,height=680,left=60,top=60');
+          w.document.write(buildSequentialPrintHtml(
+            buildAntenatalReceiptHtml({ antenatal: record, doctor, isDuplicate: true, barcodeDataUrl, printedBy }),
+            buildAntenatalCardHtml({ antenatal: record, doctor, barcodeDataUrl }),
+          ));
+          w.document.close();
         }
       } catch (e) {
         toast.error(e.message || 'Antenatal reprint lookup failed');
@@ -424,8 +418,7 @@ export default function Antenatal() {
     if (error) { toast.error(error); return; }
     // Popup must open synchronously on the click, before any await — Chrome
     // blocks a popup opened later as spam (same reason ConsultantOPD does this).
-    const w = window.open('', '_blank', 'width=420,height=680,left=60,top=60');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=420,height=680,left=60,top=60');
     setSaving(true);
     try {
       const paymentType = form.patientCategory === 'panel' ? 'panel'
@@ -443,15 +436,11 @@ export default function Antenatal() {
       const antenatalForPrint = { ...form, paymentType };
 
       const html = buildAntenatalReceiptHtml({ antenatal: antenatalForPrint, doctor, isDuplicate: false, barcodeDataUrl, printedBy });
-      w.document.write(html);
+      // Slip 2 (Antenatal Card, no Amount) goes in the SAME window, printed
+      // after the receipt (buildSequentialPrintHtml) — it used to print from
+      // a hidden iframe, whose print dialog is modal to the app and froze it.
+      w.document.write(buildSequentialPrintHtml(html, buildAntenatalCardHtml({ antenatal: antenatalForPrint, doctor, barcodeDataUrl })));
       w.document.close();
-
-      // Slip 2 (Antenatal Card, no Amount) prints via a hidden iframe instead
-      // of reusing the popup — rewriting a popup's document and waiting for
-      // its 'afterprint' isn't reliable across browsers. An iframe's own
-      // window.print() (triggered by the card HTML's own onload script,
-      // same as the popup) fires independently of the popup's print dialog.
-      printHtmlInHiddenIframe(buildAntenatalCardHtml({ antenatal: antenatalForPrint, doctor, barcodeDataUrl }));
 
       setForm({ ...EMPTY, registrationDate: todayStr() });
       // Serial No auto-fill temporarily disabled — see note above.

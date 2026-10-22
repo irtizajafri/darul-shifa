@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import SearchableSelect from '../ui/SearchableSelect';
 import '../../pages/clinic/GeneralOPD.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 function formatDob(val) {
   if (!val) return '';
@@ -15,7 +16,7 @@ function formatDob(val) {
 // older copy that filtered employees on a field that doesn't exist
 // (panelCompanyId), so no employee ever showed.
 export default function OpdPanelModal({ onSelect, onClose }) {
-  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
+  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, panelEmployees: s.panelEmployees, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelEmployees: s.fetchPanelEmployees })));
   const [companyId, setCompanyId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [dependentIdx, setDependentIdx] = useState('');

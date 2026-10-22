@@ -7,6 +7,7 @@ import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
 import './AdmissionDistributionReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -60,7 +61,7 @@ export default function AdmissionDistributionReport() {
   const printedBy = user?.name || user?.username || 'User';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('adr-printable')?.innerHTML || '';
     const matrixCss = `
         table{border-collapse:collapse;border:1px solid #999;}

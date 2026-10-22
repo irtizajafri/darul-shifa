@@ -2280,7 +2280,9 @@ export default function Reports() {
 
       if (autoPrint) {
         pdf.autoPrint();
-        window.open(pdf.output("bloburl"), "_blank");
+        const pdfUrl = pdf.output("bloburl");
+        window.open(pdfUrl, "_blank");
+        setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
         return;
       }
 
@@ -2795,7 +2797,9 @@ export default function Reports() {
 
     if (autoPrint) {
       pdf.autoPrint();
-      window.open(pdf.output("bloburl"), "_blank");
+      const pdfUrl = pdf.output("bloburl");
+      window.open(pdfUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
       return;
     }
     pdf.save(`${scope}-${year}-${month}.pdf`);
@@ -2856,7 +2860,9 @@ export default function Reports() {
 
     if (autoPrint) {
       pdf.autoPrint();
-      window.open(pdf.output("bloburl"), "_blank");
+      const pdfUrl = pdf.output("bloburl");
+      window.open(pdfUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
     } else {
       pdf.save(`leave-encashment-${monthLabel.replace(' ', '-')}.pdf`);
     }

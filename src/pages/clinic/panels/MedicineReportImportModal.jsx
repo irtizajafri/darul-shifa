@@ -5,6 +5,7 @@ import { Upload, X } from 'lucide-react';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './MedicineReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // Medicine Report's "Upload Excel" dialog — moved out of MedicineReport.jsx
 // unchanged so both the filter screen and the preview can open it.
@@ -116,7 +117,7 @@ function parsePanelMedicineIssuanceExcel(file) {
 const CONFIRM_BATCH_SIZE = 300; // admissions per request — keeps each POST well under the body-size limit regardless of file size
 
 export default function MedicineReportImportModal({ onClose }) {
-  const { previewPanelMedicineIssuanceImport, confirmPanelMedicineIssuanceImportBatch, createPanelCompany } = useClinicStore();
+  const { previewPanelMedicineIssuanceImport, confirmPanelMedicineIssuanceImportBatch, createPanelCompany } = useClinicStore(useShallow((s) => ({ previewPanelMedicineIssuanceImport: s.previewPanelMedicineIssuanceImport, confirmPanelMedicineIssuanceImportBatch: s.confirmPanelMedicineIssuanceImportBatch, createPanelCompany: s.createPanelCompany })));
   const fileRef = useRef(null);
 
   const [step, setStep] = useState('pick'); // pick | preview | importing | done

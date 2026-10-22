@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Print</title>
+<style>
+  body { margin: 0; font: 14px Arial, Helvetica, sans-serif; color: #333; background: #fff;
+    display: flex; align-items: center; justify-content: center; height: 100vh; }
+</style>
+</head>
+<body>
+<div id="relay-msg">Print tayyar ho raha hai…</div>
+<script>
+// Print relay (see src/utils/printRelay.js). The app opens this page with
+// `noopener`, so it lives in its own browsing-context group — its print
+// dialog blocks only this window, never the app (an about:blank popup the
+// app writes into shares the app's JS thread, so an open or hidden print
+// dialog froze the whole app). The print HTML arrives over a
+// BroadcastChannel, keyed by the id in the URL hash.
+(function () {
+  var key = location.hash.slice(1);
+  var ch = new BroadcastChannel('hms-print-relay');
+  var got = false;
+  var pendingPrint = false;
+
+  function say(type) { ch.postMessage({ type: type, key: key }); }
+
+  ch.onmessage = function (e) {
+    var m = e.data || {};
+    if (m.key !== key) return;
+    if (m.type === 'html' && !got) {
+      got = true;
+      clearInterval(ping);
+      document.open();
+      document.write(m.html);
+      document.close();
+      if (m.print || pendingPrint) setTimeout(function () { window.focus(); window.print(); }, 400);
+    } else if (m.type === 'print') {
+      if (got) setTimeout(function () { window.focus(); window.print(); }, 150);
+      else pendingPrint = true;
+    } else if (m.type === 'close') {
+      window.close();
+    }
+  };
+
+  // Tell the app this window is open (it shows a "popups blocked" message if
+  // this never arrives). Repeated in case the first one races the app.
+  say('ready');
+  var tries = 0;
+  var ping = setInterval(function () {
+    if (got) return clearInterval(ping);
+    tries += 1;
+    say('ready');
+    if (tries > 100) { // ~30s with no data — the app tab was closed or reloaded
+      clearInterval(ping);
+      document.getElementById('relay-msg').textContent = 'Print ka data nahi mila — yeh window band karke dobara Print karein.';
+    }
+  }, 300);
+})();
+</script>
+</body>
+</html>

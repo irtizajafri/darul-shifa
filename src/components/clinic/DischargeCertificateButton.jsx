@@ -5,6 +5,8 @@ import { useClinicStore } from '../../store/useClinicStore';
 import SearchableSelect from '../ui/SearchableSelect';
 import { buildDischargeCertificatePrintHtml } from '../../pages/clinic/dischargeCertificatePrintUtils';
 import '../../pages/clinic/DiscountRefundAdmission.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -113,7 +115,7 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
 // the admission to 'discharge' status and frees its bed.
 export default function DischargeCertificateButton({ admissionId, visible, className, onDischarged }) {
   const { user } = useAuthStore();
-  const { diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+  const { diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes } = useClinicStore(useShallow((s) => ({ diseases: s.diseases, fetchDiseases: s.fetchDiseases, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes })));
 
   useEffect(() => {
     fetchDiseases();
@@ -136,8 +138,7 @@ export default function DischargeCertificateButton({ admissionId, visible, class
   // Popup-based print (never window.print() on the main window — see
   // dischargeCertificatePrintUtils for why that used to freeze the whole app).
   function openDischargeCertificatePopup(data) {
-    const w = window.open('', '_blank', 'width=700,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildDischargeCertificatePrintHtml(data));
     w.document.close();
   }

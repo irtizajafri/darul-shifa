@@ -11,6 +11,7 @@ import { showSlipClashes } from './slipClashNotice';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -452,7 +453,7 @@ export default function PatientsListReport() {
     const content = document.querySelector('.plr-report-page');
     if (!content) return;
     const clone = content.cloneNode(true);
-    const win = window.open('', '_blank', 'width=900,height=700');
+    const win = openPrintWindow('width=900,height=700');
     win.document.write(`
       <html><head><title>Patients List</title>
       <style>
@@ -480,11 +481,14 @@ export default function PatientsListReport() {
         ${REPORT_PRINT_FONT_CSS}
       </style></head><body>
       ${clone.innerHTML}
+      <script>window.onafterprint = function () { window.close(); };</script>
       </body></html>
     `);
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); win.close(); }, 400);
+    // Closes itself after printing (script above) — a w.close() here would
+    // reach the relay window before its print dialog opened.
+    setTimeout(() => { win.print(); }, 400);
   };
 
   const columns = (

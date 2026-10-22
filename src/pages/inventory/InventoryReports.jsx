@@ -17,6 +17,7 @@ import { printGRNDocument } from '../../utils/printGRN';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
 import { formatDate } from '../../utils/helpers';
+import { useShallow } from 'zustand/react/shallow';
 
 const REPORT_TYPES = [
   'Item List', 'Stock Position', 'Item Ledger', 'Reorder Report',
@@ -73,7 +74,7 @@ export default function InventoryReports() {
   });
   const [showIssuanceAdmPicker, setShowIssuanceAdmPicker] = useState(false);
   // Panel Companies come from the Clinic module (Panels → Panel Companies).
-  const { panelCompanies, fetchPanelCompanies } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies })));
   useEffect(() => {
     if (issuanceFilters.patientType === 'panel' && !(panelCompanies || []).length) fetchPanelCompanies();
   }, [issuanceFilters.patientType, panelCompanies, fetchPanelCompanies]);

@@ -6,9 +6,10 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function ClinicCreditCardConfigPage() {
-  const { fetchCcConfig, updateCcConfig } = useClinicStore();
+  const { fetchCcConfig, updateCcConfig } = useClinicStore(useShallow((s) => ({ fetchCcConfig: s.fetchCcConfig, updateCcConfig: s.updateCcConfig })));
 
   const [percentage, setPercentage] = useState('0');
   const [minAmount, setMinAmount] = useState('0');

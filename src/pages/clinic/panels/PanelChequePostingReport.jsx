@@ -7,6 +7,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './PanelChequesReport.scss';
 import './PanelChequePostingReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // 'YYYY-MM-DD' → 'DD-MM-YYYY' (plain string, no timezone shift)
@@ -28,7 +29,7 @@ const fmtStamp = (d) => {
 // entered; Posted Date = the bill's own month (June file → 30-06).
 // Preview step — PanelChequePostingFilter opens this at /view?from&to&basis.
 export default function PanelChequePostingReport() {
-  const { fetchPanelChequePostingReport } = useClinicStore();
+  const { fetchPanelChequePostingReport } = useClinicStore(useShallow((s) => ({ fetchPanelChequePostingReport: s.fetchPanelChequePostingReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
 

@@ -9,6 +9,7 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './ListAttachments.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/accounts';
 const UTIL_API = 'http://localhost:5001/api/utilities';
@@ -64,7 +65,7 @@ export default function ListAttachments() {
     createPayeeEntry, deletePayeeEntry,
     addHeadAccount, removeHeadAccount,
   } = useAccountsStore();
-  const { staffCategories, fetchStaffCategories } = useClinicStore();
+  const { staffCategories, fetchStaffCategories } = useClinicStore(useShallow((s) => ({ staffCategories: s.staffCategories, fetchStaffCategories: s.fetchStaffCategories })));
   const { user } = useAuthStore();
   const isMaster = Boolean(user?.isSuperAdmin) || user?.email === SUPER_ADMIN_EMAIL;
 

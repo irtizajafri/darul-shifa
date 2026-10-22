@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { useTabStore } from '../../store/useTabStore';
 import ProtectedRoutes from '../../routes/ProtectedRoutes';
@@ -93,7 +93,35 @@ function TabRouteSync({ tabId }) {
 // *other* open tab's already-mounted page. Without this, a heavy page
 // sitting in a background tab (a big grid, a report) would silently
 // re-render every time you did anything in the tab you're actually using.
+//
+// Exception — report previews sleep while hidden (hang report, 2026-10-22):
+// a hidden tab sitting on a report's /view page (often thousands of rows)
+// is unmounted, keeping only its address; measured, 8 tabs of report
+// previews held 1.6 GB and ~1.27M DOM nodes and made opening a new tab take
+// 11s. Coming back re-mounts it at the same address (filter screen + view as
+// its history, so Back still lands on the filter) and the report re-loads.
+// Form/transaction pages never sleep, so half-filled work is never lost.
+const isSleepablePath = (path) => /\/view(\?|$)/.test(String(path || ''));
+
+function entriesFor(path) {
+  if (!isSleepablePath(path)) return { entries: [path], index: 0 };
+  const filterPath = String(path).split('?')[0].replace(/\/view$/, '');
+  return { entries: [filterPath, path], index: 1 };
+}
+
 const TabInstance = memo(function TabInstance({ tabId, initialPath, isActive }) {
+  const currentPath = useTabStore((s) => s.tabPaths[tabId]) || initialPath;
+  const sleeping = !isActive && isSleepablePath(currentPath);
+  // A fresh router (new key + entries) every time the tab wakes from sleep —
+  // adjusted during render from the previous render's state (React's
+  // "storing information from previous renders" pattern).
+  const [mount, setMount] = useState(() => ({ key: 0, ...entriesFor(initialPath) }));
+  const [wasSleeping, setWasSleeping] = useState(false);
+  if (sleeping && !wasSleeping) setWasSleeping(true);
+  if (!sleeping && wasSleeping) {
+    setWasSleeping(false);
+    setMount((m) => ({ key: m.key + 1, ...entriesFor(currentPath) }));
+  }
   return (
     <div
       className={isActive ? 'tabs-container__pane tabs-container__pane--active' : 'tabs-container__pane'}
@@ -105,10 +133,12 @@ const TabInstance = memo(function TabInstance({ tabId, initialPath, isActive }) 
       // visibly and <main> scrolls as before.
       style={{ display: isActive ? 'block' : 'none', height: '100%' }}
     >
-      <MemoryRouter initialEntries={[initialPath]}>
-        <TabRouteSync tabId={tabId} />
-        <ProtectedRoutes />
-      </MemoryRouter>
+      {!sleeping && (
+        <MemoryRouter key={mount.key} initialEntries={mount.entries} initialIndex={mount.index}>
+          <TabRouteSync tabId={tabId} />
+          <ProtectedRoutes />
+        </MemoryRouter>
+      )}
     </div>
   );
 });

@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './AdmissionStatusChangeHistoryReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 function fmtDateTime(d) {
   if (!d) return '—';
@@ -35,7 +36,7 @@ const STATUS_LABEL = { active: 'Admit', discharge: 'Discharge', closed: 'Closed'
 // View page — filters come from AdmissionStatusChangeHistoryFilter via the
 // URL. The endpoint has no params, so they are applied client-side.
 export default function AdmissionStatusChangeHistoryReport() {
-  const { fetchAdmissionStatusChangeHistory } = useClinicStore();
+  const { fetchAdmissionStatusChangeHistory } = useClinicStore(useShallow((s) => ({ fetchAdmissionStatusChangeHistory: s.fetchAdmissionStatusChangeHistory })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
   const [allRows, setAllRows] = useState([]);

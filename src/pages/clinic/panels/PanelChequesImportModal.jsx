@@ -5,6 +5,7 @@ import { Upload, X } from 'lucide-react';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './PanelChequesReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // Panel Cheques Report's "Upload Excel" dialog — moved out of
 // PanelChequesReport.jsx unchanged so both the filter screen and the preview
@@ -91,7 +92,7 @@ function parsePanelChequeExcel(file) {
 // → Confirm (actually writes: one Admission + Billing snapshot + a Cheque
 // Receipt for every already-"received" row).
 export default function PanelChequesImportModal({ onClose, onImported }) {
-  const { previewPanelChequeImport, confirmPanelChequeImport, createPanelCompany } = useClinicStore();
+  const { previewPanelChequeImport, confirmPanelChequeImport, createPanelCompany } = useClinicStore(useShallow((s) => ({ previewPanelChequeImport: s.previewPanelChequeImport, confirmPanelChequeImport: s.confirmPanelChequeImport, createPanelCompany: s.createPanelCompany })));
   const fileRef = useRef(null);
 
   const [step, setStep] = useState('pick'); // pick | preview | done

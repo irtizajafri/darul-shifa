@@ -3,6 +3,7 @@ import { ArrowLeft, Printer, PlugZap, Building2, Flame } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { useUtilitiesStore } from '../../store/useUtilitiesStore';
+import { openPrintWindow } from '../../utils/printRelay';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
@@ -56,8 +57,7 @@ export default function MeterReport({ meter, onBack }) {
   // looks intentional instead of unstyled.
   const handlePrint = () => {
     if (!data) return;
-    const win = window.open('', '_blank');
-    if (!win) { toast.error('Print popup was blocked by the browser'); return; }
+    const win = openPrintWindow('width=1000,height=800');
     const title = `${isBilling ? meter.meterNo : meter.departmentName} — Report`;
     const stats = `
       <div class="stats">
@@ -81,12 +81,10 @@ export default function MeterReport({ meter, onBack }) {
         <tbody>${rows}</tbody>
       </table>`;
     win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${PRINT_CSS}</style></head><body><h2>${title}</h2><h3>${fmtDate(from)} to ${fmtDate(to)}</h3>${stats}${table}</body></html>`);
+    win.document.write('<script>window.onafterprint = () => window.close();</script>');
     win.document.close();
     win.focus();
-    setTimeout(() => {
-      win.print();
-      win.onafterprint = () => win.close();
-    }, 400);
+    win.print();
   };
 
   const Icon = isGas ? Flame : (isBilling ? PlugZap : Building2);

@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Printer, Search, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './VoucherReprint.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -269,17 +270,14 @@ export default function VoucherReprint() {
   };
 
   const printHTML = (content) => {
-    const win = window.open('', '_blank');
-    if (!win) { toast.error('Print popup was blocked by the browser'); return; }
+    const win = openPrintWindow('width=1000,height=800');
     win.document.write(
       `<!DOCTYPE html><html><head><title>Voucher Reprint</title><style>${PRINT_CSS}</style></head><body>${content}</body></html>`
     );
+    win.document.write('<script>window.onafterprint = () => window.close();</script>');
     win.document.close();
     win.focus();
-    setTimeout(() => {
-      win.print();
-      win.onafterprint = () => win.close();
-    }, 400);
+    win.print();
   };
 
   const handlePrint = () => {

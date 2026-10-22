@@ -3,6 +3,7 @@ import { ArrowLeft, Printer, CalendarDays } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { useFuelStore } from '../../store/useFuelStore';
+import { openPrintWindow } from '../../utils/printRelay';
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
@@ -50,8 +51,7 @@ export default function FuelDailyReport({ onBack }) {
 
   const handlePrint = () => {
     if (!data) return;
-    const win = window.open('', '_blank');
-    if (!win) { toast.error('Print popup was blocked by the browser'); return; }
+    const win = openPrintWindow('width=1000,height=800');
     const title = 'Fuel Management — Daily Report';
     const rowsHtml = data.rows.map((r) => `
       <tr>
@@ -92,12 +92,10 @@ export default function FuelDailyReport({ onBack }) {
         </tr></tfoot>
       </table>
     </body></html>`);
+    win.document.write('<script>window.onafterprint = () => window.close();</script>');
     win.document.close();
     win.focus();
-    setTimeout(() => {
-      win.print();
-      win.onafterprint = () => win.close();
-    }, 400);
+    win.print();
   };
 
   const inputCls = 'px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500';

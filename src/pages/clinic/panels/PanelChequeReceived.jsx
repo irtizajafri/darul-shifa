@@ -6,6 +6,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './PanelChequeReceived.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const firstOfMonthIso = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
@@ -51,7 +52,7 @@ function sumRows(rows) {
 // modal opens (checklist of that company's still-unpaid posted bills for
 // that Billing Month).
 export default function PanelChequeReceived() {
-  const { fetchPanelChequeSummary } = useClinicStore();
+  const { fetchPanelChequeSummary } = useClinicStore(useShallow((s) => ({ fetchPanelChequeSummary: s.fetchPanelChequeSummary })));
   const [fromDate, setFromDate] = useState(firstOfMonthIso());
   const [toDate, setToDate] = useState(todayIso());
   const [monthRows, setMonthRows] = useState([]);
@@ -231,7 +232,7 @@ export default function PanelChequeReceived() {
 // actual Cheque amount — Dedection is always auto = (checked bills' Total)
 // − (typed Amuont), matching what the company actually paid vs billed.
 function ChequeReceiveModal({ target, onClose, onSaved }) {
-  const { fetchUnpaidPanelAdmissions, receivePanelCheque } = useClinicStore();
+  const { fetchUnpaidPanelAdmissions, receivePanelCheque } = useClinicStore(useShallow((s) => ({ fetchUnpaidPanelAdmissions: s.fetchUnpaidPanelAdmissions, receivePanelCheque: s.receivePanelCheque })));
   const { user } = useAuthStore();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

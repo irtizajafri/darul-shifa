@@ -11,6 +11,7 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
 import './ClinicDoctorPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -84,7 +85,7 @@ export default function ClinicDoctorPage() {
     doctors, departments, subDepartments, staffCategories, loading,
     fetchDoctors, fetchDepartments, fetchSubDepartments, fetchStaffCategories,
     createDoctor, updateDoctor, deleteDoctor, updateDoctorAntenatalRate,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, departments: s.departments, subDepartments: s.subDepartments, staffCategories: s.staffCategories, loading: s.loading, fetchDoctors: s.fetchDoctors, fetchDepartments: s.fetchDepartments, fetchSubDepartments: s.fetchSubDepartments, fetchStaffCategories: s.fetchStaffCategories, createDoctor: s.createDoctor, updateDoctor: s.updateDoctor, deleteDoctor: s.deleteDoctor, updateDoctorAntenatalRate: s.updateDoctorAntenatalRate })));
 
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);

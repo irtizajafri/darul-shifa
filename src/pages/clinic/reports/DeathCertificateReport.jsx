@@ -7,6 +7,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DeathCertificateReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -19,8 +20,7 @@ const API = 'http://localhost:5001/api/clinic';
 // handlePrint), never window.print() on the main window.
 function printDeathCertificateReport() {
   const content = document.getElementById('dcr-rep-printable')?.innerHTML || '';
-  const win = window.open('', '_blank');
-  if (!win) return;
+  const win = openPrintWindow();
   win.document.write(`<!DOCTYPE html><html><head><title>Death Certificate Report</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }

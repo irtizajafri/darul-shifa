@@ -3,6 +3,7 @@ import { ArrowLeft, Printer, FileBarChart2, Fuel } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Button from '../../components/ui/Button';
 import { useFuelStore } from '../../store/useFuelStore';
+import { openPrintWindow } from '../../utils/printRelay';
 
 const todayStr    = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOString().slice(0, 10); };
@@ -54,8 +55,7 @@ export default function FuelTankReport({ onBack }) {
   // ── Print ──────────────────────────────────────────────────────────────────
   const handlePrint = () => {
     if (!data) return;
-    const win = window.open('', '_blank');
-    if (!win) { toast.error('Print popup blocked by browser'); return; }
+    const win = openPrintWindow('width=1000,height=800');
 
     const title = tankId
       ? `Tank Report — ${allTanks.find((t) => String(t.id) === tankId)?.name || 'Tank'}`
@@ -153,9 +153,10 @@ export default function FuelTankReport({ onBack }) {
         <tfoot><tr><td colspan="3">Total</td><td>${fmtNum(data.totals.tankInQty)}</td><td></td></tr></tfoot>
       </table>
     </body></html>`);
+    win.document.write('<script>window.onafterprint = () => window.close();</script>');
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); win.onafterprint = () => win.close(); }, 400);
+    win.print();
   };
 
   const inputCls = 'px-3 py-2 border border-slate-300 rounded-md text-sm focus:outline-none focus:border-blue-500';

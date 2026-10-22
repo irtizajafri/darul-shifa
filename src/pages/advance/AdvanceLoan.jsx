@@ -13,6 +13,7 @@ import Badge from '../../components/ui/Badge';
 import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import toast from 'react-hot-toast';
 import { formatDate } from '../../utils/helpers';
+import { openPrintWindow } from '../../utils/printRelay';
 import './AdvanceLoan.scss';
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
@@ -411,11 +412,11 @@ export default function AdvanceLoan() {
       </div>
     </body></html>`;
 
-    const win = window.open('', '_blank', 'width=800,height=700');
+    const win = openPrintWindow('width=800,height=700');
     win.document.write(html);
     win.document.close();
     win.focus();
-    setTimeout(() => { win.print(); }, 400);
+    win.print();
   };
 
   // ── Delete ─────────────────────────────────────────────────────────────────

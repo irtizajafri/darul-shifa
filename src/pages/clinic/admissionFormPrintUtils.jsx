@@ -47,6 +47,17 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; 
 .adm-print-form-code { font-size: 8pt; color: #333; }
 .adm-print-barcode { height: 32px; }
 @page { size: A4 portrait; margin: 8mm 10mm; }
+/* One fixed A4 sheet (owner, 2026-10-21): the form fills the printable
+   height (297mm − 2×8mm margins) and the code/barcode footer sits at the
+   bottom of the page whatever the content above it. */
+.adm-print { min-height: 280mm; display: flex; flex-direction: column; }
+.adm-print-footer { margin-top: auto; padding-top: 4px; }
+/* History tables: fixed column widths so a wider print font can never push
+   the "Sig." / "Sign." lines past the right border — each line shrinks to
+   its own cell instead. */
+.adm-print-history { table-layout: fixed; }
+.adm-print-history td { overflow: hidden; }
+.adm-print-history .dln { width: 55%; max-width: 100%; }
 `;
 
 export function buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate, barcodeDataUrl, record }) {

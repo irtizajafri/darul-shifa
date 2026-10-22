@@ -204,9 +204,13 @@ export function buildSequentialPrintHtml(slipFullHtml, extraFullHtml) {
 <head>
 <meta charset="UTF-8"/>
 <title>Print</title>
-<style>
+<style id="seq-css-slip">
 ${slip.css}
+</style>
+<style id="seq-css-extra" media="not all">
 ${extra.css}
+</style>
+<style>
 #seq-print-extra { display: none; }
 body.seq-print-stage-2 #seq-print-slip { display: none; }
 body.seq-print-stage-2 #seq-print-extra { display: block; }
@@ -238,6 +242,11 @@ body.seq-print-stage-2 #seq-print-extra { display: block; }
   window.onafterprint = function(){
     if (seqPrintedExtra) return;
     seqPrintedExtra = true;
+    // Each half keeps only its OWN stylesheet active (as when they were two
+    // separate documents) — e.g. the Antenatal receipt and card share class
+    // names with different spacing.
+    document.getElementById('seq-css-slip').media = 'not all';
+    document.getElementById('seq-css-extra').media = 'all';
     document.body.className = 'seq-print-stage-2';
     document.getElementById('seq-next-bar').style.display = 'flex';
   };

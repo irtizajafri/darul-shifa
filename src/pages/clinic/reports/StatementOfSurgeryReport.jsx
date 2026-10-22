@@ -7,6 +7,7 @@ import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { numberToWords } from '../receiptUtils';
 import './DepartmentDoctorPerformanceReport.scss';
 import './StatementOfSurgeryReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -48,7 +49,7 @@ export default function StatementOfSurgeryReport() {
   const reportTitle = 'Statement of Consultant for Indoor Files';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('sos-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
       <style>

@@ -1,3 +1,5 @@
+import { printHtml } from './printRelay';
+
 export function printGRNDocument({ grnCode, date, supplierName, items = [], printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' }) {
   const grnDate = date
     ? new Date(date).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -114,8 +116,5 @@ export function printGRNDocument({ grnCode, date, supplierName, items = [], prin
 </body>
 </html>`;
 
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if (win) setTimeout(() => URL.revokeObjectURL(url), 60000);
+  printHtml(html);
 }

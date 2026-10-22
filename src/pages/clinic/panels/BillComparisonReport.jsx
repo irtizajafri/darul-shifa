@@ -1,10 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './BillComparisonReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
+import usePagedList from '../../../hooks/usePagedList';
+import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -134,11 +137,21 @@ export default function BillComparisonReport() {
   const totalBillAmount = rows.reduce((s, r) => s + Number(r.billAmount || 0), 0);
   const totalDiff       = rows.reduce((s, r) => s + Number(r.diff       || 0), 0);
 
+  // Draw 300 rows at a time (7k+ rows froze the app); totals, print and
+  // Excel stay on all `rows`. Back to page 1 whenever the data is reloaded.
+  const page = usePagedList(rows.length, rows);
+  const visibleRows = useMemo(() => (page.limit >= rows.length ? rows : rows.slice(0, page.limit)), [rows, page.limit]);
+
+  // Print copies the on-screen table's HTML — render every row for it.
   function handlePrint() {
+    page.withAll(printReport);
+  }
+
+  function printReport() {
     // ref, not document.querySelector — every open tab stays mounted
     const content = reportRef.current;
     if (!content) return;
-    const w = window.open('', '_blank', 'width=1000,height=700');
+    const w = openPrintWindow('width=1000,height=700');
     w.document.write(`<html><head><title>Bill Comparison Report</title>
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }
@@ -207,7 +220,7 @@ export default function BillComparisonReport() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => {
+              {visibleRows.map((r, i) => {
                 const diff = Number(r.diff || 0);
                 return (
                   <tr key={r.id} className={i % 2 === 0 ? 'bcr-even' : ''}>
@@ -234,6 +247,7 @@ export default function BillComparisonReport() {
             </tfoot>
           </table>
         )}
+        <ShowMoreFooter {...page} noun="patients" />
       </div>
     </div>
   );

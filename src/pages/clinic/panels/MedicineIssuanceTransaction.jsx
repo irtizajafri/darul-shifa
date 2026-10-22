@@ -13,6 +13,8 @@ import MedicineIssuanceImportModal from './MedicineIssuanceImportModal';
 // extras (patient grid, store filter) live in MedicineIssuanceTransaction.scss.
 import './MedicineReport.scss';
 import './MedicineIssuanceTransaction.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
@@ -27,8 +29,7 @@ const fmtDate = (d) => {
 // on the main window (which could freeze the app on Windows).
 function printMedicineIssuanceTxn(reportEl, data, filters) {
   if (data?.mode === 'details') {
-    const w = window.open('', '_blank', 'width=1000,height=800');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=1000,height=800');
     const html = buildMedicineIssuancePrintHtml({ data, filters }).replace('</style>', `${REPORT_PRINT_FONT_CSS}</style>`);
     w.document.write(html);
     w.document.close();
@@ -61,7 +62,7 @@ const fmtDayHeading = (ymd) => {
 };
 
 export default function MedicineIssuanceTransaction() {
-  const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceTxnReport } = useClinicStore();
+  const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceTxnReport } = useClinicStore(useShallow((s) => ({ pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, fetchPanelMedicineIssuanceTxnReport: s.fetchPanelMedicineIssuanceTxnReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
 

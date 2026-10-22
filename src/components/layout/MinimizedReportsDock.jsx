@@ -17,9 +17,12 @@ export default function MinimizedReportsDock() {
   const reopen = (item) => {
     const tabStore = useTabStore.getState();
     const nav = tabStore.navigateFns[item.tabId];
-    if (nav && tabStore.tabs.some((t) => t.id === item.tabId)) {
+    if (tabStore.tabs.some((t) => t.id === item.tabId)) {
+      // A hidden report tab may be asleep (no router mounted — see
+      // TabsContainer): point it at the report first, then wake it.
+      if (!nav) tabStore.updateTabPath(item.tabId, item.url);
       tabStore.activateTab(item.tabId);
-      nav(item.url);
+      if (nav) nav(item.url);
     } else {
       // Remember the new tab so the next click lands there too.
       const tabId = tabStore.createNewTab(item.url);

@@ -15,6 +15,8 @@ import { validatePhoneNo, validateAge, validateAdmissionNo } from './opdValidati
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './Admission.scss';
 import './Antenatal.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
@@ -195,7 +197,7 @@ function ArrivedSlipModal({ onSelect, onClose, searchOpdVisitsForAdmission }) {
 
 // ── Panel Modal ────────────────────────────────────────────────────────────────
 function PanelModal({ onSelect, onClose }) {
-  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore();
+  const { panelCompanies, panelEmployees, fetchPanelCompanies, fetchPanelEmployees } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, panelEmployees: s.panelEmployees, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelEmployees: s.fetchPanelEmployees })));
   const [companyId, setCompanyId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [dependentIdx, setDependentIdx] = useState('');
@@ -411,7 +413,7 @@ export default function Admission() {
     fetchNextSerialNo,
     createAdmission,
     checkAdmissionNoDuplicate,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, searchEmployees: s.searchEmployees, fetchOpdPatientByMrNo: s.fetchOpdPatientByMrNo, fetchOpdVisitBySerial: s.fetchOpdVisitBySerial, searchOpdVisitsForAdmission: s.searchOpdVisitsForAdmission, fetchAvailableBeds: s.fetchAvailableBeds, fetchNextSerialNo: s.fetchNextSerialNo, createAdmission: s.createAdmission, checkAdmissionNoDuplicate: s.checkAdmissionNoDuplicate })));
   const { user } = useAuthStore();
   const printedBy = user?.name || user?.username || user?.email || '';
 
@@ -544,8 +546,7 @@ export default function Admission() {
   useEffect(() => {
     if (!reprintReady) return;
     const t = setTimeout(() => {
-      const w = window.open('', '_blank', 'width=900,height=1000');
-      if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+      const w = openPrintWindow('width=900,height=1000');
       const html = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: true, barcodeDataUrl, record: reprintRecord || {} });
       w.document.write(html);
       w.document.close();
@@ -779,15 +780,11 @@ export default function Admission() {
         payments: advAmt > 0 ? [{ date: created.createdAt || new Date(), amount: advAmt, slipNo: created.serialNo || form.serialNo || '' }] : [],
       };
       const admissionHtml = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: false, barcodeDataUrl, record });
-      const w = window.open('', '_blank', 'width=900,height=1000');
-      if (!w) {
-        toast.error('Popup blocked — please allow popups for this site');
-      } else {
-        const primary = advanceHtml || admissionHtml;
-        const extra = advanceHtml ? admissionHtml : null;
-        w.document.write(buildSequentialPrintHtml(primary, extra));
-        w.document.close();
-      }
+      const w = openPrintWindow('width=900,height=1000');
+      const primary = advanceHtml || admissionHtml;
+      const extra = advanceHtml ? admissionHtml : null;
+      w.document.write(buildSequentialPrintHtml(primary, extra));
+      w.document.close();
 
       setForm(EMPTY);
       setAvailableBeds([]);

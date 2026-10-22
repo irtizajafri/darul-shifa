@@ -235,6 +235,7 @@ export default function EmployeeDetail() {
       pdf.autoPrint();
       const pdfUrl = pdf.output('bloburl');
       window.open(pdfUrl, '_blank');
+      setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
       return;
     }
 

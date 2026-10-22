@@ -7,6 +7,7 @@ import useModalKeys from '../../../hooks/useModalKeys';
 import DoctorWiseStatementImportModal from './DoctorWiseStatementImportModal';
 import '../reports/ConsultantWiseFilter.scss';
 import './DoctorWiseStatement.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 // The hospital's own operating day runs 08:00:00 AM to 07:59:59 AM (next
@@ -25,7 +26,7 @@ const DEFAULT_TO_TIME = '07:59:59';
 // only uses the dates. OK opens DoctorWiseStatement at /view.
 export default function DoctorWiseStatementFilter() {
   const navigate = useNavigate();
-  const { doctors, fetchDoctors } = useClinicStore();
+  const { doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors })));
 
   const [activeConsultantsOnly, setActiveConsultantsOnly] = useState(false);
   const [doctorId, setDoctorId] = useState('');

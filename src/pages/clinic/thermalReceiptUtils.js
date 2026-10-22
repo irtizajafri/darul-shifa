@@ -1,5 +1,6 @@
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { numberToWords, invoiceLabel } from './receiptUtils';
+import { BETA_WATERMARK_HTML } from './betaWatermark';
 
 // ── 80mm Thermal Receipt ────────────────────────────────────────────────────
 // Same data/fields as the A6 slip (receiptUtils.js) but laid out single-column
@@ -110,6 +111,7 @@ export function buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDa
 </style>
 </head>
 <body>
+${BETA_WATERMARK_HTML}
   <img class="th-logo" src="${RECEIPT_LOGO_DATA_URI}" alt="logo" />
   <div class="th-addr">Jafar-e-Tayyar Co-op Housing Society, Malir Karachi<br/>Ph.: 4508390-91</div>
 

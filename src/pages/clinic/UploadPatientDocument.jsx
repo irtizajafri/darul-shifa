@@ -6,6 +6,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import './UploadPatientDocument.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const FILES_BASE = 'http://localhost:5001/uploads/';
 
@@ -35,7 +36,7 @@ export default function UploadPatientDocument() {
     searchAdmissionsForDocuments,
     fetchPatientDocuments,
     uploadPatientDocument,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ documentTypes: s.documentTypes, fetchDocumentTypes: s.fetchDocumentTypes, searchAdmissionsForDocuments: s.searchAdmissionsForDocuments, fetchPatientDocuments: s.fetchPatientDocuments, uploadPatientDocument: s.uploadPatientDocument })));
 
   const [searchTerm, setSearchTerm] = useState('');
   const [searching, setSearching] = useState(false);

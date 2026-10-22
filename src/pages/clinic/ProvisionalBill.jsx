@@ -12,6 +12,8 @@ import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import { relationParts } from './relationText';
 import './ProvisionalBill.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -291,7 +293,7 @@ function BalanceInfoModal({ detail, onClose }) {
 // typing something not in the list still works exactly as before (outside
 // stores often sell things not yet catalogued here).
 function MedicineAutocomplete({ value, onTextChange, onSelect }) {
-  const { fetchMedicineList } = useClinicStore();
+  const { fetchMedicineList } = useClinicStore(useShallow((s) => ({ fetchMedicineList: s.fetchMedicineList })));
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState([]);
@@ -436,7 +438,7 @@ export default function ProvisionalBill() {
     deleteProvisionalPharmacyItem,
     setPharmacyBillExcluded,
     setDiagnosticBillExcluded,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchAvailableBeds: s.fetchAvailableBeds, shiftAdmissionBed: s.shiftAdmissionBed, correctAdmissionWard: s.correctAdmissionWard, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, dischargeTypes: s.dischargeTypes, fetchDischargeTypes: s.fetchDischargeTypes, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, searchActiveAdmissionsForProvisionalBill: s.searchActiveAdmissionsForProvisionalBill, fetchProvisionalBillDetail: s.fetchProvisionalBillDetail, addProvisionalBillItem: s.addProvisionalBillItem, addProvisionalBillItemFromVisit: s.addProvisionalBillItemFromVisit, updateProvisionalBillItem: s.updateProvisionalBillItem, deleteProvisionalBillItem: s.deleteProvisionalBillItem, updateProvisionalBillHeader: s.updateProvisionalBillHeader, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, createPharmacyStore: s.createPharmacyStore, addProvisionalPharmacyItem: s.addProvisionalPharmacyItem, deleteProvisionalPharmacyItem: s.deleteProvisionalPharmacyItem, setPharmacyBillExcluded: s.setPharmacyBillExcluded, setDiagnosticBillExcluded: s.setDiagnosticBillExcluded })));
 
   const [admissionId, setAdmissionId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -572,8 +574,7 @@ export default function ProvisionalBill() {
   // Popup-based print (never window.print() on the main window — see
   // provisionalBillPrintUtils for why that used to freeze the whole app).
   function printProvisionalBillPopup() {
-    const w = window.open('', '_blank', 'width=700,height=900');
-    if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildProvisionalBillPrintHtml({ detail, isDuplicate, printedBy }));
     w.document.close();
   }
@@ -808,8 +809,7 @@ export default function ProvisionalBill() {
             </button>
             <button className="aa-tbtn" onClick={() => {
               setIsDuplicate(true);
-              const w = window.open('', '_blank', 'width=700,height=900');
-              if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+              const w = openPrintWindow('width=700,height=900');
               w.document.write(buildProvisionalBillPrintHtml({ detail, isDuplicate: true, printedBy }));
               w.document.close();
             }} disabled={!detail} title="Print">

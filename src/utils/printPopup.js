@@ -1,4 +1,5 @@
 import toast from 'react-hot-toast';
+import { openPrintWindow } from './printRelay';
 
 // Print a piece of the current page from a throwaway popup window.
 //
@@ -64,11 +65,9 @@ export function printElementInPopup(element, opts = {}) {
     if (targetWindow && !targetWindow.closed) targetWindow.close();
     return false;
   }
-  const w = targetWindow && !targetWindow.closed ? targetWindow : window.open('', '_blank', windowFeatures);
-  if (!w) {
-    toast.error('Popup blocked — please allow popups for this site');
-    return false;
-  }
+  // A print-relay window (utils/printRelay.js) — its print dialog can't
+  // freeze the app. A caller may pre-open one on the click (targetWindow).
+  const w = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow(windowFeatures);
 
   const clone = element.cloneNode(true);
   clone.setAttribute('data-print-root', '');

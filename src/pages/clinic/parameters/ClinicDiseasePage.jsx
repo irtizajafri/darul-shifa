@@ -8,10 +8,10 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function ClinicDiseasePage() {
-  const { diseases, loading, fetchDiseases, createDisease, updateDisease, deleteDisease } =
-    useClinicStore();
+  const { diseases, loading, fetchDiseases, createDisease, updateDisease, deleteDisease } = useClinicStore(useShallow((s) => ({ diseases: s.diseases, loading: s.loading, fetchDiseases: s.fetchDiseases, createDisease: s.createDisease, updateDisease: s.updateDisease, deleteDisease: s.deleteDisease })));
 
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);

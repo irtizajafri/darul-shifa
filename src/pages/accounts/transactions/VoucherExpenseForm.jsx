@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import { handleEnterAsTab } from '../../../utils/keyboardNav';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import { openPrintWindow } from '../../../utils/printRelay';
 import './VoucherExpenseForm.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -204,17 +205,14 @@ function printExpenseVoucher({ voucherNo, voucherDate, createdAt, mode, entries,
     </div>
   `;
 
-  const win = window.open('', '_blank');
-  if (!win) throw new Error('Popup blocked');
+  const win = openPrintWindow('width=1000,height=800');
   win.document.write(
     `<!DOCTYPE html><html><head><title>Expense Voucher</title><style>${VOUCHER_PRINT_CSS}</style></head><body>${html}</body></html>`
   );
+  win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
   win.focus();
-  setTimeout(() => {
-    win.print();
-    win.onafterprint = () => win.close();
-  }, 400);
+  win.print();
 }
 
 const SLIP_CSS = `
@@ -265,12 +263,12 @@ function printEntrySlips({ entries, voucherDate, printBy }) {
   const pages = entries
     .map((e, i) => `<div class="slip-page"${i < entries.length - 1 ? ' style="page-break-after:always;break-after:page"' : ''}>${entrySlipHtml(e, voucherDate, printBy)}</div>`)
     .join('');
-  const win = window.open('', '_blank');
-  if (!win) throw new Error('Popup blocked');
+  const win = openPrintWindow('width=1000,height=800');
   win.document.write(`<!DOCTYPE html><html><head><title>Payment Slip</title><style>${SLIP_CSS}</style></head><body>${pages}</body></html>`);
+  win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); win.onafterprint = () => win.close(); }, 400);
+  win.print();
 }
 
 function printEntrySlip({ entry, voucherDate, printBy }) {

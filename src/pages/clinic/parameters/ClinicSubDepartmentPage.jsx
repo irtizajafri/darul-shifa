@@ -9,6 +9,7 @@ import Input from '../../../components/ui/Input';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function ClinicSubDepartmentPage() {
   const {
@@ -20,7 +21,7 @@ export default function ClinicSubDepartmentPage() {
     createSubDepartment,
     updateSubDepartment,
     deleteSubDepartment,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ departments: s.departments, subDepartments: s.subDepartments, loading: s.loading, fetchDepartments: s.fetchDepartments, fetchSubDepartments: s.fetchSubDepartments, createSubDepartment: s.createSubDepartment, updateSubDepartment: s.updateSubDepartment, deleteSubDepartment: s.deleteSubDepartment })));
 
   const [query, setQuery] = useState('');
   const [filterDept, setFilterDept] = useState('');

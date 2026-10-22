@@ -7,6 +7,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import PanelChequesImportModal from './PanelChequesImportModal';
 import '../reports/ConsultantWiseFilter.scss';
 import './PanelChequesReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
 
@@ -16,7 +17,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // now shown as the page itself. OK opens PanelChequesReport at /view.
 export default function PanelChequesFilter() {
   const navigate = useNavigate();
-  const { panelCompanies, fetchPanelCompanies } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies })));
 
   const [status, setStatus] = useState('both'); // due | received | both
   const [postDT, setPostDT] = useState(false);

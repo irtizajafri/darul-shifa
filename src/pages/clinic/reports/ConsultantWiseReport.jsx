@@ -7,6 +7,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './ConsultantWiseReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -170,7 +171,7 @@ export default function ConsultantWiseReport() {
     `${printedAt.getHours() >= 12 ? 'PM' : 'AM'}`;
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('cwr-printable')?.innerHTML || '';
     const title = reportType === 'date_wise_summary'
       ? 'Consultant Date Wise Summary'

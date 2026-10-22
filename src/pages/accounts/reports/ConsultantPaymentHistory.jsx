@@ -4,6 +4,7 @@ import { ArrowLeft, UserCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../../store/useAuthStore';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 const ACCOUNTS_API = 'http://localhost:5001/api/accounts';
@@ -93,12 +94,12 @@ function printConsultantPaymentHistory({ data, printBy }) {
     <div class="footer"><span>${printBy || ''}</span><span>${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span></div>
   </body></html>`;
 
-  const win = window.open('', '_blank');
-  if (!win) { toast.error('Popup blocked'); return; }
+  const win = openPrintWindow('width=1000,height=800');
   win.document.write(html);
+  win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); win.onafterprint = () => win.close(); }, 400);
+  win.print();
 }
 
 const REPORT_TYPES = ['Detail', 'Summary'];

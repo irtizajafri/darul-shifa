@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentPatientsReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -63,7 +64,7 @@ export default function UserDateSummaryReport() {
   const dayName = dateObj ? DAYS[dateObj.getDay()] : '';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('uds-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>Date wise Summary</title>
       <style>

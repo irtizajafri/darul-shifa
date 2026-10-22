@@ -1,4 +1,5 @@
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
+import { BETA_WATERMARK_HTML } from './betaWatermark';
 
 // ── Number to Words (Rupees) ──────────────────────────────────────────────────
 const ONES = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
@@ -186,6 +187,7 @@ export function buildConsultantReceiptHtml({ visit, tokenNo, isDuplicate, barcod
 </style>
 </head>
 <body>
+${BETA_WATERMARK_HTML}
   <div class="logo-box">
     <img class="logo-img" src="${RECEIPT_LOGO_DATA_URI}" alt="logo" />
   </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
@@ -7,7 +7,10 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import OpdAdmitReportImportModal from './OpdAdmitReportImportModal';
+import usePagedList from '../../../hooks/usePagedList';
+import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './OpdAdmitReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
@@ -37,7 +40,7 @@ function printOpdAdmitReport(reportEl) {
 // creates or matches a ClinicAdmission, just reflects the uploaded file's own
 // data as-is.
 export default function OpdAdmitReport() {
-  const { panelCompanies, fetchPanelCompanies, fetchPanelAdmitReport } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies, fetchPanelAdmitReport } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelAdmitReport: s.fetchPanelAdmitReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
 
@@ -86,6 +89,16 @@ export default function OpdAdmitReport() {
   const hasRows = data && data.admissions && data.admissions.length > 0;
   const showSlips = viewMode === 'withSlip';
 
+  // Draw 300 admissions (each with all its dept / slip lines) at a time —
+  // ~9.4k rows froze the app. Totals come from data.totals (all rows);
+  // print and Excel use every admission. Page 1 again on every new fetch.
+  const admissions = data?.admissions;
+  const page = usePagedList(admissions?.length || 0, admissions);
+  const visibleAdmissions = useMemo(
+    () => (!admissions || page.limit >= admissions.length ? admissions : admissions.slice(0, page.limit)),
+    [admissions, page.limit],
+  );
+
   const metaText = [
     scopeType === 'admission' ? 'Admission' : 'OPD',
     dateType === 'discharge' ? 'Discharge Date' : 'Admit Date',
@@ -95,7 +108,8 @@ export default function OpdAdmitReport() {
 
   function handlePrint() {
     if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
-    printOpdAdmitReport(reportRef.current);
+    // Print clones the on-screen table — render every admission for it.
+    page.withAll(() => printOpdAdmitReport(reportRef.current));
   }
 
   // Same rows / columns / totals as the preview: admission row, its dept
@@ -168,7 +182,7 @@ export default function OpdAdmitReport() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.admissions.map((a) => (
+                  {visibleAdmissions.map((a) => (
                     <Fragment key={a.admissionNo}>
                       <tr className="oar-adm-row">
                         <td className="oar-l">{a.admissionNo} - {a.patientName}</td>
@@ -212,6 +226,7 @@ export default function OpdAdmitReport() {
                   </tr>
                 </tfoot>
               </table>
+              <ShowMoreFooter {...page} noun="admissions" />
             </div>
           )}
         </div>

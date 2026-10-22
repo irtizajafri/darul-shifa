@@ -3539,12 +3539,15 @@ async function getOtRegisterForAdmission(admissionNo) {
   });
   if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
 
-  const otRegister = await prisma.clinicOtRegister.findFirst({
-    where: { admissionId: admission.id },
-    orderBy: { id: 'desc' },
+  // Every OT entry of this admission (newest first) — the screen lists them
+  // with Edit; a new Save adds another surgery instead of overwriting the
+  // latest. Imported rows that only carry the Admission # count too.
+  const otRegisters = await prisma.clinicOtRegister.findMany({
+    where: { OR: [{ admissionId: admission.id }, { admissionId: null, admissionNo: admission.admissionNo }] },
+    orderBy: [{ surgeryDateTime: 'desc' }, { id: 'desc' }],
   });
 
-  return { admission, otRegister };
+  return { admission, otRegister: otRegisters[0] || null, otRegisters };
 }
 
 // ─── Appointment ───────────────────────────────────────────────────────────────
@@ -3841,7 +3844,14 @@ async function saveOtRegister(admissionId, payload) {
   };
 
   if (payload.id) {
-    return prisma.clinicOtRegister.update({ where: { id: Number(payload.id) }, data });
+    // Edit — only an entry that belongs to this admission (or an imported
+    // one carrying its Admission #); the creator stamp stays the original.
+    const existing = await prisma.clinicOtRegister.findUnique({ where: { id: Number(payload.id) } });
+    if (!existing || (existing.admissionId !== admission.id && !(existing.admissionId == null && existing.admissionNo === admission.admissionNo))) {
+      throw Object.assign(new Error('Yeh OT entry is admission ki nahi hai'), { status: 400 });
+    }
+    const { createdByUserId, createdByName, ...editData } = data; // eslint-disable-line no-unused-vars
+    return prisma.clinicOtRegister.update({ where: { id: existing.id }, data: { ...editData, admissionId: admission.id } });
   }
   return prisma.clinicOtRegister.create({ data: { admissionId: Number(admissionId), ...data } });
 }

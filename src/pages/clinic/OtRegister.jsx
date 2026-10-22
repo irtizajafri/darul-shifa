@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import useModalKeys from '../../hooks/useModalKeys';
 import './OtRegister.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -212,11 +213,14 @@ const EMPTY_OT = {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function OtRegister() {
   const { user } = useAuthStore();
-  const { doctors, fetchDoctors, surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+  const { doctors, fetchDoctors, surgeryTypes, fetchSurgeryTypes } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes })));
 
   const [showLookup, setShowLookup] = useState(false);
   const [admission, setAdmission] = useState(null);
   const [form, setForm] = useState(EMPTY_OT);
+  // This admission's saved OT entries (newest first) — each can be opened
+  // for Edit; with none open, Save adds a new surgery.
+  const [otList, setOtList] = useState([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -226,33 +230,39 @@ export default function OtRegister() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const doctorName = (id) => doctors.find(d => d.id === Number(id))?.name || '—';
+  const surgeryTypeName = (id) => surgeryTypes.find(t => t.id === Number(id))?.name || '—';
+
+  async function loadAdmission(admissionNo) {
+    const res = await fetch(`${API}/admission/ot-register/by-number/${encodeURIComponent(admissionNo)}`);
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Load failed');
+    setAdmission(json.data.admission);
+    setOtList(json.data.otRegisters || []);
+    setForm(EMPTY_OT);
+  }
+
   async function handleSelect(row) {
     setShowLookup(false);
     try {
-      const res = await fetch(`${API}/admission/ot-register/by-number/${encodeURIComponent(row.admissionNo)}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Load failed');
-      setAdmission(json.data.admission);
-      const ot = json.data.otRegister;
-      setForm(ot ? {
-        id: ot.id,
-        surgeryDateTime: toDatetimeLocal(ot.surgeryDateTime),
-        anaesthesiologistId: ot.anaesthesiologistId, anaesthesiologistOnCall: ot.anaesthesiologistOnCall,
-        surgeon1Id: ot.surgeon1Id, surgeon1OnCall: ot.surgeon1OnCall,
-        surgeon2Id: ot.surgeon2Id, surgeon2OnCall: ot.surgeon2OnCall,
-        tech1Id: ot.tech1Id, tech1OnCall: ot.tech1OnCall,
-        tech2Id: ot.tech2Id, tech2OnCall: ot.tech2OnCall,
-        surgeryTypeId: ot.surgeryTypeId || '',
-        useBlood: ot.useBlood, bloodType: ot.bloodType || BLOOD_TYPES[0], bloodQty: ot.bloodQty || '',
-      } : EMPTY_OT);
+      await loadAdmission(row.admissionNo);
     } catch (e) {
       toast.error(e.message || 'Admission load nahi hui');
     }
   }
 
-  function resetForm() {
-    setAdmission(null);
-    setForm(EMPTY_OT);
+  function handleEdit(ot) {
+    setForm({
+      id: ot.id,
+      surgeryDateTime: toDatetimeLocal(ot.surgeryDateTime),
+      anaesthesiologistId: ot.anaesthesiologistId, anaesthesiologistOnCall: ot.anaesthesiologistOnCall,
+      surgeon1Id: ot.surgeon1Id, surgeon1OnCall: ot.surgeon1OnCall,
+      surgeon2Id: ot.surgeon2Id, surgeon2OnCall: ot.surgeon2OnCall,
+      tech1Id: ot.tech1Id, tech1OnCall: ot.tech1OnCall,
+      tech2Id: ot.tech2Id, tech2OnCall: ot.tech2OnCall,
+      surgeryTypeId: ot.surgeryTypeId || '',
+      useBlood: ot.useBlood, bloodType: ot.bloodType || BLOOD_TYPES[0], bloodQty: ot.bloodQty || '',
+    });
   }
 
   async function handleSave() {
@@ -270,8 +280,9 @@ export default function OtRegister() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
-      toast.success('OT Register save ho gaya');
-      resetForm();
+      toast.success(form.id ? 'OT entry update ho gayi' : 'OT Register save ho gaya');
+      // Stay on this admission: refresh its list, form back to a new entry.
+      await loadAdmission(admission.admissionNo);
     } catch (e) {
       toast.error(e.message || 'Error saving');
     } finally {
@@ -390,8 +401,41 @@ export default function OtRegister() {
           )}
         </div>
 
+        {admission && (
+          <div className="otr-list">
+            <div className="otr-list-title">Is admission ki OT entries <span>{otList.length}</span></div>
+            {otList.length === 0 ? (
+              <div className="otr-list-empty">Abhi koi entry nahi — upar bhar kar Save karein.</div>
+            ) : (
+              <table className="otr-list-table">
+                <thead>
+                  <tr><th>Surgery Date &amp; Time</th><th>Surgery Type</th><th>Surgeon</th><th>Anaesthesiologist</th><th /></tr>
+                </thead>
+                <tbody>
+                  {otList.map(ot => (
+                    <tr key={ot.id} className={form.id === ot.id ? 'otr-list-row--editing' : ''}>
+                      <td>{fmtDateTime(ot.surgeryDateTime)}</td>
+                      <td>{surgeryTypeName(ot.surgeryTypeId)}</td>
+                      <td>{doctorName(ot.surgeon1Id)}</td>
+                      <td>{doctorName(ot.anaesthesiologistId)}</td>
+                      <td className="otr-list-act">
+                        {form.id === ot.id
+                          ? <span className="otr-list-editing">Editing…</span>
+                          : <button type="button" className="otr-edit-btn" onClick={() => handleEdit(ot)}>Edit</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
         <div className="otr-footer">
-          <button className="otr-save-btn" onClick={handleSave} disabled={saving || !admission}>Save</button>
+          {form.id && (
+            <button type="button" className="otr-cancel-btn" onClick={() => setForm(EMPTY_OT)} disabled={saving}>Cancel Edit</button>
+          )}
+          <button className="otr-save-btn" onClick={handleSave} disabled={saving || !admission}>{form.id ? 'Update' : 'Save'}</button>
         </div>
       </div>
 

@@ -10,6 +10,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
 import './BedShifting.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -111,7 +112,7 @@ export default function BedShifting() {
     fetchAvailableBeds,
     fetchBedShiftHistory,
     shiftAdmissionBed,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, beds: s.beds, fetchBeds: s.fetchBeds, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, fetchAvailableBeds: s.fetchAvailableBeds, fetchBedShiftHistory: s.fetchBedShiftHistory, shiftAdmissionBed: s.shiftAdmissionBed })));
 
   const [admission, setAdmission] = useState(null);
   const [history, setHistory] = useState([]);

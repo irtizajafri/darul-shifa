@@ -1,5 +1,6 @@
 import { numberToWords, invoiceLabel } from './receiptUtils';
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
+import { BETA_WATERMARK_HTML } from './betaWatermark';
 
 export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
   const doc   = visit;
@@ -217,6 +218,7 @@ export function buildEmergencyReceiptHtml({ visit, isDuplicate, printedBy }) {
 </style>
 </head>
 <body>
+${BETA_WATERMARK_HTML}
 
   <!-- ══ Hospital Header ══ -->
   <div class="hdr">

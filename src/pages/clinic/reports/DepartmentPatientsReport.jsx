@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentPatientsReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -260,7 +261,7 @@ export default function DepartmentPatientsReport() {
   const slipRange = slipNos.length ? [Math.min(...slipNos), Math.max(...slipNos)] : null;
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('dpr-printable')?.innerHTML || '';
     const landscape = reportType === 'dateTabular';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>

@@ -8,13 +8,13 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 // Provisional Bill > Pharmacy Bill > Outside Hospital Store dropdown is fed
 // entirely by this list — the "Hospital / In-House Store" side needs no such
 // list, it's derived live from Inventory Sales Invoices instead.
 export default function ClinicPharmacyStorePage() {
-  const { pharmacyStores, loading, fetchPharmacyStores, createPharmacyStore, updatePharmacyStore, deletePharmacyStore } =
-    useClinicStore();
+  const { pharmacyStores, loading, fetchPharmacyStores, createPharmacyStore, updatePharmacyStore, deletePharmacyStore } = useClinicStore(useShallow((s) => ({ pharmacyStores: s.pharmacyStores, loading: s.loading, fetchPharmacyStores: s.fetchPharmacyStores, createPharmacyStore: s.createPharmacyStore, updatePharmacyStore: s.updatePharmacyStore, deletePharmacyStore: s.deletePharmacyStore })));
 
   const [query, setQuery] = useState('');
   const [showModal, setShowModal] = useState(false);

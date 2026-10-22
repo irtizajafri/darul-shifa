@@ -12,6 +12,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './ClinicParameterPage.scss';
 import './ClinicBedPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 
 export default function ClinicBedPage() {
@@ -25,7 +26,7 @@ export default function ClinicBedPage() {
     createBed,
     updateBed,
     deleteBed,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ roomCategories: s.roomCategories, beds: s.beds, loading: s.loading, fetchRoomCategories: s.fetchRoomCategories, fetchBeds: s.fetchBeds, createBed: s.createBed, updateBed: s.updateBed, deleteBed: s.deleteBed })));
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [editing, setEditing] = useState(null);

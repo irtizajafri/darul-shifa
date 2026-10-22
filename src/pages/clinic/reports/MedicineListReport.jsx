@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { useSearchParams } from 'react-router-dom';
@@ -8,7 +8,10 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import { printElementInPopup } from '../../../utils/printPopup';
+import usePagedList from '../../../hooks/usePagedList';
+import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './MedicineListReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -78,7 +81,7 @@ function parseMedicineExcel(file) {
 const emptyForm = { code: '', name: '', packSize: '', retailPrice: '', tradePrice: '' };
 
 export default function MedicineListReport() {
-  const { fetchMedicineList, createMedicine, updateMedicine, deleteMedicine } = useClinicStore();
+  const { fetchMedicineList, createMedicine, updateMedicine, deleteMedicine } = useClinicStore(useShallow((s) => ({ fetchMedicineList: s.fetchMedicineList, createMedicine: s.createMedicine, updateMedicine: s.updateMedicine, deleteMedicine: s.deleteMedicine })));
   const [medicines, setMedicines] = useState([]);
   const [loading, setLoading] = useState(true);
   // View page — filters come from MedicineListFilter via the URL (defaults
@@ -89,22 +92,26 @@ export default function MedicineListReport() {
   const statusFilter = STATUS_LABELS[statusParam] ? statusParam : 'active';
   const reportRef = useRef(null);
   const [showImport, setShowImport] = useState(false);
+  // The Add/Edit form's own field state lives in MedicineFormModal — typing
+  // there must not re-render this component (and its 11k-row table): that
+  // cost ~1.7s per keystroke.
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null); // medicine object | null (null = adding new)
-  const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-
-  useModalKeys({ active: showForm, onEsc: () => setShowForm(false) });
+  // Bumped on every (re)load so the on-screen paging goes back to page 1.
+  const [loadSeq, setLoadSeq] = useState(0);
 
   const load = () => {
     setLoading(true);
     fetchMedicineList({ status: 'all' })
-      .then(setMedicines)
+      .then((list) => { setMedicines(list); setLoadSeq((n) => n + 1); })
       .catch((err) => toast.error(err.message || 'Medicine list load nahi hui'))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  // Load once on mount (`loading` already starts true, so load()'s own
+  // setLoading(true) is a no-op here).
+  // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []);
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -113,48 +120,33 @@ export default function MedicineListReport() {
       .filter((m) => !q || m.name.toLowerCase().includes(q) || m.code.toLowerCase().includes(q));
   }, [medicines, search, statusFilter]);
 
+  // Draw 300 rows at a time; count, print and Excel still use all `rows`.
+  // Page 1 again when the filter changes or the list is reloaded (not on a
+  // single row's edit/toggle/delete).
+  const page = usePagedList(rows.length, `${loadSeq}|${statusFilter}|${search}`);
+  const visibleRows = useMemo(() => (page.limit >= rows.length ? rows : rows.slice(0, page.limit)), [rows, page.limit]);
+
+  const closeForm = useCallback(() => setShowForm(false), []);
+
   function openAdd() {
     setEditing(null);
-    setForm(emptyForm);
     setShowForm(true);
   }
 
-  function openEdit(m) {
+  // Stable callbacks (setters / store actions only) so the memoized table
+  // never re-renders because of the form.
+  const openEdit = useCallback((m) => {
     setEditing(m);
-    setForm({ code: m.code, name: m.name, packSize: m.packSize || '', retailPrice: m.retailPrice, tradePrice: m.tradePrice });
     setShowForm(true);
-  }
+  }, []);
 
-  async function handleSaveForm() {
-    if (!form.code.trim()) return toast.error('Code zaroori hai');
-    if (!form.name.trim()) return toast.error('Naam zaroori hai');
-    setSaving(true);
-    try {
-      const payload = {
-        code: form.code.trim(),
-        name: form.name.trim(),
-        packSize: form.packSize.trim() || null,
-        retailPrice: Number(form.retailPrice) || 0,
-        tradePrice: Number(form.tradePrice) || 0,
-      };
-      if (editing) {
-        const updated = await updateMedicine(editing.id, payload);
-        setMedicines((prev) => prev.map((m) => (m.id === editing.id ? updated : m)));
-        toast.success('Medicine update ho gayi');
-      } else {
-        const created = await createMedicine(payload);
-        setMedicines((prev) => [created, ...prev]);
-        toast.success('Medicine add ho gayi');
-      }
-      setShowForm(false);
-    } catch (err) {
-      toast.error(err.message || 'Save nahi hui');
-    } finally {
-      setSaving(false);
-    }
-  }
+  const handleSaved = useCallback((saved, wasEdit) => {
+    if (wasEdit) setMedicines((prev) => prev.map((m) => (m.id === saved.id ? saved : m)));
+    else setMedicines((prev) => [saved, ...prev]);
+    setShowForm(false);
+  }, []);
 
-  async function handleToggleStatus(m) {
+  const handleToggleStatus = useCallback(async (m) => {
     const next = m.status === 'active' ? 'inactive' : 'active';
     try {
       const updated = await updateMedicine(m.id, { status: next });
@@ -162,9 +154,9 @@ export default function MedicineListReport() {
     } catch (err) {
       toast.error(err.message || 'Status update nahi hui');
     }
-  }
+  }, [updateMedicine]);
 
-  async function handleDelete(m) {
+  const handleDelete = useCallback(async (m) => {
     if (!(await confirmDialog({ title: 'Delete medicine', message: `"${m.name}" delete karni hai?`, confirmLabel: 'Delete', danger: true }))) return;
     try {
       await deleteMedicine(m.id);
@@ -173,7 +165,7 @@ export default function MedicineListReport() {
     } catch (err) {
       toast.error(err.message || 'Delete nahi hui');
     }
-  }
+  }, [deleteMedicine]);
 
   const filterText = [
     `Status: ${STATUS_LABELS[statusFilter]}`,
@@ -182,8 +174,9 @@ export default function MedicineListReport() {
 
   const countText = `${rows.length} medicine${rows.length !== 1 ? 's' : ''}`;
 
+  // Print clones the on-screen table, so render every row for the clone.
   const handlePrint = () => {
-    printElementInPopup(reportRef.current, {
+    page.withAll(() => printElementInPopup(reportRef.current, {
       title: 'Medicine List',
       page: 'A4 portrait',
       margin: '10mm',
@@ -191,7 +184,7 @@ export default function MedicineListReport() {
       // sure the row-action column never prints and the toggle badge prints
       // as plain text.
       extraCss: '.mlr-actions{display:none!important} .mlr-status-badge{background:none!important;padding:0!important;color:#000!important}',
-    });
+    }));
   };
 
   const handleExportExcel = () => {
@@ -241,88 +234,22 @@ export default function MedicineListReport() {
           ) : rows.length === 0 ? (
             <div className="mlr-empty">Koi medicine nahi mili.</div>
           ) : (
-            <div className="mlr-table-wrap">
-              <table className="mlr-table">
-                <thead>
-                  <tr>
-                    <th className="mlr-l">Code</th>
-                    <th className="mlr-l">Name</th>
-                    <th className="mlr-l">Pack Size</th>
-                    <th className="mlr-r">Retail</th>
-                    <th className="mlr-r">TP</th>
-                    <th className="mlr-l">Status</th>
-                    <th className="mlr-l mlr-actions no-print"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((m) => (
-                    <tr key={m.id}>
-                      <td className="mlr-l">{m.code}</td>
-                      <td className="mlr-l">{m.name}</td>
-                      <td className="mlr-l">{m.packSize || '—'}</td>
-                      <td className="mlr-r">{fmt(m.retailPrice)}</td>
-                      <td className="mlr-r">{fmt(m.tradePrice)}</td>
-                      <td className="mlr-l">
-                        <button
-                          className={`mlr-status-badge mlr-status-badge--${m.status}`}
-                          onClick={() => handleToggleStatus(m)}
-                          title="Click to toggle"
-                        >
-                          {m.status}
-                        </button>
-                      </td>
-                      <td className="mlr-l mlr-actions no-print">
-                        <div className="mlr-row-actions">
-                        <button onClick={() => openEdit(m)} title="Edit"><Pencil size={13} /></button>
-                        <button onClick={() => handleDelete(m)} title="Delete"><Trash2 size={13} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <MedicineTable rows={visibleRows} onToggle={handleToggleStatus} onEdit={openEdit} onDelete={handleDelete} />
+              <ShowMoreFooter {...page} noun="medicines" />
+            </>
           )}
         </div>
       </div>
 
       {showForm && (
-        <div className="mlr-modal-overlay" onMouseDown={() => setShowForm(false)}>
-          <div className="mlr-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="mlr-modal-head">
-              <span>{editing ? 'Edit Medicine' : 'Add Medicine'}</span>
-              <button onClick={() => setShowForm(false)} aria-label="Close" title="Close"><X size={16} /></button>
-            </div>
-            <div className="mlr-modal-body">
-              <div className="mlr-form-row">
-                <label>Code</label>
-                <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
-              </div>
-              <div className="mlr-form-row">
-                <label>Name</label>
-                <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-              </div>
-              <div className="mlr-form-row">
-                <label>Pack Size</label>
-                <input value={form.packSize} onChange={(e) => setForm((f) => ({ ...f, packSize: e.target.value }))} />
-              </div>
-              <div className="mlr-form-row">
-                <label>Retail</label>
-                <input type="number" value={form.retailPrice} onChange={(e) => setForm((f) => ({ ...f, retailPrice: e.target.value }))} />
-              </div>
-              <div className="mlr-form-row">
-                <label>TP</label>
-                <input type="number" value={form.tradePrice} onChange={(e) => setForm((f) => ({ ...f, tradePrice: e.target.value }))} />
-              </div>
-            </div>
-            <div className="mlr-modal-footer">
-              <button className="mlr-btn mlr-btn--upload" onClick={handleSaveForm} disabled={saving}>
-                {saving ? 'Saving…' : editing ? 'Update' : 'Add'}
-              </button>
-              <button className="mlr-btn" onClick={() => setShowForm(false)}>Cancel</button>
-            </div>
-          </div>
-        </div>
+        <MedicineFormModal
+          editing={editing}
+          onClose={closeForm}
+          onSaved={handleSaved}
+          createMedicine={createMedicine}
+          updateMedicine={updateMedicine}
+        />
       )}
 
       {showImport && (
@@ -335,8 +262,134 @@ export default function MedicineListReport() {
   );
 }
 
+// Memoized: re-renders only when the visible rows or the (stable) row
+// callbacks change — never while typing in the Add/Edit form.
+const MedicineTable = memo(function MedicineTable({ rows, onToggle, onEdit, onDelete }) {
+  return (
+    <div className="mlr-table-wrap">
+      <table className="mlr-table">
+        <thead>
+          <tr>
+            <th className="mlr-l">Code</th>
+            <th className="mlr-l">Name</th>
+            <th className="mlr-l">Pack Size</th>
+            <th className="mlr-r">Retail</th>
+            <th className="mlr-r">TP</th>
+            <th className="mlr-l">Status</th>
+            <th className="mlr-l mlr-actions no-print"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((m) => (
+            <tr key={m.id}>
+              <td className="mlr-l">{m.code}</td>
+              <td className="mlr-l">{m.name}</td>
+              <td className="mlr-l">{m.packSize || '—'}</td>
+              <td className="mlr-r">{fmt(m.retailPrice)}</td>
+              <td className="mlr-r">{fmt(m.tradePrice)}</td>
+              <td className="mlr-l">
+                <button
+                  className={`mlr-status-badge mlr-status-badge--${m.status}`}
+                  onClick={() => onToggle(m)}
+                  title="Click to toggle"
+                >
+                  {m.status}
+                </button>
+              </td>
+              <td className="mlr-l mlr-actions no-print">
+                <div className="mlr-row-actions">
+                <button onClick={() => onEdit(m)} title="Edit"><Pencil size={13} /></button>
+                <button onClick={() => onDelete(m)} title="Delete"><Trash2 size={13} /></button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+// Add / Edit Medicine form — owns its field state so a keystroke re-renders
+// only this modal. `editing` = medicine being edited, or null to add new.
+function MedicineFormModal({ editing, onClose, onSaved, createMedicine, updateMedicine }) {
+  const [form, setForm] = useState(() => (editing
+    ? { code: editing.code, name: editing.name, packSize: editing.packSize || '', retailPrice: editing.retailPrice, tradePrice: editing.tradePrice }
+    : emptyForm));
+  const [saving, setSaving] = useState(false);
+
+  useModalKeys({ active: true, onEsc: onClose });
+
+  async function handleSaveForm() {
+    if (!form.code.trim()) return toast.error('Code zaroori hai');
+    if (!form.name.trim()) return toast.error('Naam zaroori hai');
+    setSaving(true);
+    try {
+      const payload = {
+        code: form.code.trim(),
+        name: form.name.trim(),
+        packSize: form.packSize.trim() || null,
+        retailPrice: Number(form.retailPrice) || 0,
+        tradePrice: Number(form.tradePrice) || 0,
+      };
+      if (editing) {
+        const updated = await updateMedicine(editing.id, payload);
+        toast.success('Medicine update ho gayi');
+        onSaved(updated, true);
+      } else {
+        const created = await createMedicine(payload);
+        toast.success('Medicine add ho gayi');
+        onSaved(created, false);
+      }
+    } catch (err) {
+      toast.error(err.message || 'Save nahi hui');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mlr-modal-overlay" onMouseDown={onClose}>
+      <div className="mlr-modal" role="dialog" aria-modal="true" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="mlr-modal-head">
+          <span>{editing ? 'Edit Medicine' : 'Add Medicine'}</span>
+          <button onClick={onClose} aria-label="Close" title="Close"><X size={16} /></button>
+        </div>
+        <div className="mlr-modal-body">
+          <div className="mlr-form-row">
+            <label>Code</label>
+            <input value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+          </div>
+          <div className="mlr-form-row">
+            <label>Name</label>
+            <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </div>
+          <div className="mlr-form-row">
+            <label>Pack Size</label>
+            <input value={form.packSize} onChange={(e) => setForm((f) => ({ ...f, packSize: e.target.value }))} />
+          </div>
+          <div className="mlr-form-row">
+            <label>Retail</label>
+            <input type="number" value={form.retailPrice} onChange={(e) => setForm((f) => ({ ...f, retailPrice: e.target.value }))} />
+          </div>
+          <div className="mlr-form-row">
+            <label>TP</label>
+            <input type="number" value={form.tradePrice} onChange={(e) => setForm((f) => ({ ...f, tradePrice: e.target.value }))} />
+          </div>
+        </div>
+        <div className="mlr-modal-footer">
+          <button className="mlr-btn mlr-btn--upload" onClick={handleSaveForm} disabled={saving}>
+            {saving ? 'Saving…' : editing ? 'Update' : 'Add'}
+          </button>
+          <button className="mlr-btn" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImportModal({ onClose, onImported }) {
-  const { previewMedicineImport, confirmMedicineImport } = useClinicStore();
+  const { previewMedicineImport, confirmMedicineImport } = useClinicStore(useShallow((s) => ({ previewMedicineImport: s.previewMedicineImport, confirmMedicineImport: s.confirmMedicineImport })));
   const fileRef = useRef(null);
 
   const [step, setStep] = useState('pick'); // pick | preview | done

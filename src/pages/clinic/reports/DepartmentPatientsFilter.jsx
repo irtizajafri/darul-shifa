@@ -5,6 +5,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
@@ -52,7 +53,7 @@ function LookupModal({ title, options, onSelect, onClose }) {
 
 export default function DepartmentPatientsFilter() {
   const navigate = useNavigate();
-  const { subDepartments, fetchSubDepartments } = useClinicStore();
+  const { subDepartments, fetchSubDepartments } = useClinicStore(useShallow((s) => ({ subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments })));
 
   const [fromDate, setFromDate] = useState(firstOfMonthStr());
   const [toDate, setToDate] = useState(todayStr());

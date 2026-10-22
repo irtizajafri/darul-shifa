@@ -8,6 +8,8 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useUserManagementStore } from '../../store/useUserManagementStore';
 import './Handover.scss';
+import { openPrintWindow } from '../../utils/printRelay';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt2 = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const CONDITIONS = ['working', 'damaged', 'maintenance'];
@@ -48,15 +50,13 @@ const HANDOVER_PRINT_CSS = `
   .hop-footer { margin-top: 20px; font-size: 7.5pt; color: #999; }
 `;
 
-function openPrintWindow(title, html) {
-  const win = window.open('', '_blank');
-  if (!win) throw new Error('Popup blocked');
-  win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${HANDOVER_PRINT_CSS}</style></head><body>${html}</body></html>`);
+function openHandoverPrint(title, html) {
+  const win = openPrintWindow();
+  win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${HANDOVER_PRINT_CSS}</style></head><body>${html}<script>window.onafterprint = function () { window.close(); };</script></body></html>`);
   win.document.close();
   win.focus();
   setTimeout(() => {
     win.print();
-    win.onafterprint = () => win.close();
   }, 400);
 }
 
@@ -93,7 +93,7 @@ function printAssetHandoverSlip({ fromUserName, assetToUserName, businessDate, p
       <div class="hop-footer">Printed by ${printBy} — ${new Date().toLocaleString('en-PK')}</div>
     </div>
   `;
-  openPrintWindow('Asset Handover Slip', html);
+  openHandoverPrint('Asset Handover Slip', html);
 }
 
 // Cash Handover — its own separate print: denomination-wise note count, an
@@ -163,7 +163,7 @@ function printCashHandoverSlip({ fromUserName, cashToUserName, businessDate, sli
       <div class="hop-footer">Printed by ${printBy} — ${new Date().toLocaleString('en-PK')}</div>
     </div>
   `;
-  openPrintWindow('Cash Handover Slip', html);
+  openHandoverPrint('Cash Handover Slip', html);
 }
 
 // Cashier Handover — Asset section (Reception items reference + petty cash)
@@ -174,7 +174,7 @@ function printCashHandoverSlip({ fromUserName, cashToUserName, businessDate, sli
 // Reception Assets) — this page only ever reads/snapshots it.
 export default function Handover() {
   const { user } = useAuthStore();
-  const { fetchHandoverSummary, fetchHandoverStatusToday, createHandover, fetchHandovers } = useClinicStore();
+  const { fetchHandoverSummary, fetchHandoverStatusToday, createHandover, fetchHandovers } = useClinicStore(useShallow((s) => ({ fetchHandoverSummary: s.fetchHandoverSummary, fetchHandoverStatusToday: s.fetchHandoverStatusToday, createHandover: s.createHandover, fetchHandovers: s.fetchHandovers })));
   const { users, fetchUsers } = useUserManagementStore();
 
   const [activeTab, setActiveTab] = useState('new');

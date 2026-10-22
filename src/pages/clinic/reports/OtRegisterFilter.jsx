@@ -5,6 +5,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './ConsultantWiseFilter.scss';
 import './OtRegisterFilter.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
@@ -83,7 +84,7 @@ function LookupField({ label, valueLabel, rows, onPick, onClear }) {
 
 export default function OtRegisterFilter() {
   const navigate = useNavigate();
-  const { doctors, fetchDoctors, surgeryTypes, fetchSurgeryTypes } = useClinicStore();
+  const { doctors, fetchDoctors, surgeryTypes, fetchSurgeryTypes } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes })));
 
   const [fromDate, setFromDate] = useState(firstOfMonthStr());
   const [toDate, setToDate] = useState(todayStr());

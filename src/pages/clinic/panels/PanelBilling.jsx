@@ -8,8 +8,10 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { printElementInPopup } from '../../../utils/printPopup';
+import { openPrintWindow } from '../../../utils/printRelay';
 import '../AdmissionAdjustment.scss'; // .aa-* lookup-modal classes
 import './PanelBilling.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 // Medicine Bill (legacy "PHARMACY/MEDICAL STORE BILL") prints Qty/Rate/Amount
@@ -291,9 +293,29 @@ function printPanelReport(printHostEl, reportType, targetWindow) {
   });
 }
 
-// After Save (Yes or No) the three reports open on their own, each in its
-// own window — in this order, each with its own letterhead margin.
+// After Save (Yes or No) the three reports print together from ONE
+// print-relay window (one print dialog — three separate windows meant three
+// print dialogs at once), in this order, each starting on a new page with
+// its own letterhead margin. A single document can carry different page
+// margins through CSS named pages (`page: <name>` + `@page <name>`), so
+// every page of each report — continuation pages too — keeps exactly the
+// margin it had when printed on its own.
 const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
+const PRINT_WINDOW_FEATURES = 'width=900,height=800';
+function printAllPanelReports(printHostEl, targetWindow) {
+  const namedPages = SAVE_REPORTS.map((type) => `
+    @page pnb-${type} { margin: ${PRINT_TOP_MARGIN[type] || '35mm'} 10mm; }
+    [data-report="${type}"] { page: pnb-${type}; }`).join('');
+  printElementInPopup(printHostEl, {
+    title: 'Panel Billing Reports',
+    page: 'A4 portrait',
+    margin: '35mm 10mm',
+    targetWindow,
+    extraCss: `.pnbr-print-area { display: block !important; position: static !important; }
+    ${namedPages}
+    [data-report] + [data-report] { break-before: page; page-break-before: always; }`,
+  });
+}
 
 // ── Panel Admission/OPD Lookup Modal — patientCategory/paymentType 'panel'
 // only. Same modal for both Billing modes (see `mode` prop) — just the
@@ -390,7 +412,7 @@ export default function PanelBilling() {
     fetchMedicineList, createMedicine,
     finalizeDischarge,
     panelCompanies, fetchPanelCompanies, panelEmployees, fetchPanelEmployees, setPanelBillingParty,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ fetchPanelAdmissionBilling: s.fetchPanelAdmissionBilling, searchPanelAdmissions: s.searchPanelAdmissions, updatePanelBillingItem: s.updatePanelBillingItem, updatePanelBillingHeader: s.updatePanelBillingHeader, overrideLiveDetailItem: s.overrideLiveDetailItem, excludeLiveDetailItem: s.excludeLiveDetailItem, addPanelBillingItem: s.addPanelBillingItem, deletePanelBillingItem: s.deletePanelBillingItem, addPanelBillingItemsBulk: s.addPanelBillingItemsBulk, fetchPanelOpdVisitBilling: s.fetchPanelOpdVisitBilling, searchPanelOpdVisits: s.searchPanelOpdVisits, updatePanelOpdBillingItem: s.updatePanelOpdBillingItem, updatePanelOpdBillingHeader: s.updatePanelOpdBillingHeader, addPanelOpdBillingItem: s.addPanelOpdBillingItem, deletePanelOpdBillingItem: s.deletePanelOpdBillingItem, addPanelOpdBillingItemsBulk: s.addPanelOpdBillingItemsBulk, subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments, searchPanelBillHeads: s.searchPanelBillHeads, doctors: s.doctors, fetchDoctors: s.fetchDoctors, diseases: s.diseases, fetchDiseases: s.fetchDiseases, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchMedicineList: s.fetchMedicineList, createMedicine: s.createMedicine, finalizeDischarge: s.finalizeDischarge, panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, panelEmployees: s.panelEmployees, fetchPanelEmployees: s.fetchPanelEmployees, setPanelBillingParty: s.setPanelBillingParty })));
   const { user } = useAuthStore();
   // Same "Billing" screen, toggled between Admission # (IPD) and Slip #
   // (panel OPD visits — Consultant/Ultrasound/etc.) lookup. Which one is
@@ -823,13 +845,16 @@ export default function PanelBilling() {
     if (!no) return toast.error('Admission # daalo');
     const type = REPORT_TYPES.find((t) => t.key === reportType);
     if (!type?.ready) return toast.error('Yeh report abhi available nahi hai');
+    // Print window opened on the click, before the await (popup blockers).
+    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
     setReportLoading(true);
     try {
       const res = await fetchPanelAdmissionBilling(no);
       setPrintData({ type: reportType, data: res });
       setShowReports(false);
-      setTimeout(() => printPanelReport(printAreaRef.current, reportType), 300);
+      setTimeout(() => printPanelReport(printAreaRef.current, reportType, w), 300);
     } catch (e) {
+      w.close();
       toast.error(e.message || 'Report load nahi hui');
     } finally {
       setReportLoading(false);
@@ -875,46 +900,25 @@ export default function PanelBilling() {
     setShowCloseConfirm(true);
   }
 
-  // After Save (No, or Yes once the file closes) the three reports open by
-  // themselves, each in its own window. The windows are opened right on the
-  // click (before any await) — a browser only lets a click open more than
-  // one popup when popups are allowed for the site — then each is filled
-  // with its report once the bill to print is ready.
-  function openReportsWindows() {
-    return SAVE_REPORTS.map((type, i) => {
-      const w = window.open('', `pnb-report-${type}`, `width=900,height=800,left=${40 + i * 60},top=${40 + i * 40}`);
-      if (w) w.document.write('<p style="font-family:Arial;padding:20px">Report tayyar ho rahi hai…</p>');
-      return w;
-    });
-  }
-  // Reports whose window the popup blocker stopped — offered as one-click
-  // buttons instead (each click is its own user action, so it isn't blocked).
-  const [blockedReports, setBlockedReports] = useState([]);
-  function printAllReports(bill, wins) {
+  // After Save (No, or Yes once the file closes) the three reports print by
+  // themselves from ONE print-relay window, opened right on the click
+  // (before any await, so popup blockers allow it) and filled once the bill
+  // to print is ready. If the browser blocks it anyway, openPrintWindow shows
+  // its own "allow popups" toast; the Reports dialog can print them again.
+  function printAllReports(bill, w) {
     setPrintData({ type: 'all', data: bill });
-    setBlockedReports(SAVE_REPORTS.filter((_, i) => !wins[i]));
-    setTimeout(() => {
-      SAVE_REPORTS.forEach((type, i) => {
-        const el = printAreaRef.current?.querySelector(`[data-report="${type}"]`);
-        if (wins[i]) printPanelReport(el, type, wins[i]);
-      });
-    }, 300);
-  }
-  function openBlockedReport(type) {
-    const el = printAreaRef.current?.querySelector(`[data-report="${type}"]`);
-    printPanelReport(el, type);
-    setBlockedReports((list) => list.filter((t) => t !== type));
+    setTimeout(() => printAllPanelReports(printAreaRef.current?.querySelector('[data-report-all]'), w), 300);
   }
 
   function handleDeclineCloseFile() {
-    const wins = openReportsWindows();
+    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
     setShowCloseConfirm(false);
     toast.success('Billing save ho gayi');
-    printAllReports(data, wins);
+    printAllReports(data, w);
   }
 
   async function handleConfirmCloseFile() {
-    const wins = openReportsWindows();
+    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
     setClosingFile(true);
     try {
       const changedBy = user?.name || user?.username || user?.email || '';
@@ -923,9 +927,9 @@ export default function PanelBilling() {
       setShowCloseConfirm(false);
       const fresh = await fetchPanelAdmissionBilling(data.admission.admissionNo);
       setData(fresh);
-      printAllReports(fresh, wins);
+      printAllReports(fresh, w);
     } catch (e) {
-      wins.forEach((w) => { if (w && !w.closed) w.close(); });
+      w.close();
       toast.error(e.message || 'File close nahi ho saki');
     } finally {
       setClosingFile(false);
@@ -1467,11 +1471,11 @@ export default function PanelBilling() {
         {printData?.type === 'diagnostic' && <DiagnosticBillPrintTemplate data={printData.data} />}
         {printData?.type === 'medicine' && <MedicineBillPrintTemplate data={printData.data} />}
         {printData?.type === 'all' && (
-          <>
+          <div data-report-all="">
             <div data-report="covering"><BillingCoveringPagePrintTemplate data={printData.data} /></div>
             <div data-report="medicine"><MedicineBillPrintTemplate data={printData.data} /></div>
             <div data-report="diagnostic"><DiagnosticBillPrintTemplate data={printData.data} /></div>
-          </>
+          </div>
         )}
       </div>
 
@@ -1546,28 +1550,6 @@ export default function PanelBilling() {
           onClose={() => setPackagePicker(null)}
           confirming={confirmingPackage}
         />
-      )}
-
-      {blockedReports.length > 0 && (
-        <div className="pnb-modal-overlay" onMouseDown={() => setBlockedReports([])}>
-          <div className="pnb-modal pnb-modal--sm" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="pnb-modal-head">
-              <span>Baaki Reports</span>
-              <button onClick={() => setBlockedReports([])}><X size={16} /></button>
-            </div>
-            <div className="pnb-modal-body pnb-party-form">
-              <p className="pnb-close-confirm-hint">
-                Browser ne yeh report window(s) khud nahi kholne di — yahan click karke kholein.
-                (Hamesha ke liye: browser mein is site ke Pop-ups Allow kar dein.)
-              </p>
-              {blockedReports.map((type) => (
-                <button key={type} className="pnb-add-btn" onClick={() => openBlockedReport(type)}>
-                  {PRINT_TITLES[type]} kholein
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
       )}
 
       {newParty && data && (
@@ -1732,7 +1714,7 @@ function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine
 // company), then the parent sets it on this file. Enter walks Code → Name
 // → Save.
 function NewPartyModal({ kind, company, onClose, onSaved }) {
-  const { createPanelCompany, createPanelEmployee } = useClinicStore();
+  const { createPanelCompany, createPanelEmployee } = useClinicStore(useShallow((s) => ({ createPanelCompany: s.createPanelCompany, createPanelEmployee: s.createPanelEmployee })));
   const isCompany = kind === 'company';
   const [code, setCode] = useState('');
   const [name, setName] = useState('');

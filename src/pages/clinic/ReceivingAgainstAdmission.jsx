@@ -9,6 +9,7 @@ import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUti
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import './ReceivingAgainstAdmission.scss';
+import { openPrintWindow } from '../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -206,8 +207,7 @@ export default function ReceivingAgainstAdmission() {
       const html = buildAdmissionPaymentReceiptHtml({
         payment: data.payment, admission: data.admission, printedBy, barcodeDataUrl, isDuplicate: false,
       });
-      const w = window.open('', '_blank', 'width=420,height=680');
-      if (!w) { toast.error('Popup blocked — please allow popups for this site'); return; }
+      const w = openPrintWindow('width=420,height=680');
       w.document.write(html);
       w.document.close();
 

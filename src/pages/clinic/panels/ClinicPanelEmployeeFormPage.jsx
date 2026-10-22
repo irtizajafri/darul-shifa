@@ -6,6 +6,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ClinicPanelEmployeeFormPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const TITLES = ['MR', 'MRS', 'MISS', 'DR', 'PROF'];
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister', 'Other'];
@@ -67,7 +68,7 @@ export default function ClinicPanelEmployeeFormPage() {
     fetchPanelEmployeeById,
     createPanelEmployee,
     updatePanelEmployee,
-  } = useClinicStore();
+  } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchPanelEmployeeById: s.fetchPanelEmployeeById, createPanelEmployee: s.createPanelEmployee, updatePanelEmployee: s.updatePanelEmployee })));
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);

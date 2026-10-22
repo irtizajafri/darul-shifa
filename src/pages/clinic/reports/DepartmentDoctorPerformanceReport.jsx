@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -67,7 +68,7 @@ export default function DepartmentDoctorPerformanceReport() {
   const printedAtStr = fmtDateTime(new Date());
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('ddp-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>Department wise Doctor's Performance</title>
       <style>

@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './AdmissionStatusChangeReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 function fmtDateTime(d) {
   if (!d) return '—';
@@ -29,7 +30,7 @@ function localYmd(d) {
 // View page — filters come from AdmissionStatusChangeFilter via the URL. The
 // endpoint has no params, so the date range / search are applied client-side.
 export default function AdmissionStatusChangeReport() {
-  const { fetchAdmissionWipeoutReport } = useClinicStore();
+  const { fetchAdmissionWipeoutReport } = useClinicStore(useShallow((s) => ({ fetchAdmissionWipeoutReport: s.fetchAdmissionWipeoutReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
   const [allRows, setAllRows] = useState([]);

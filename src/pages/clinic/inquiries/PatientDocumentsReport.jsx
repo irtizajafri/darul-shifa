@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './PatientDocumentsReport.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const FILES_BASE = 'http://localhost:5001/uploads/';
 
@@ -17,7 +18,7 @@ function fmtDateTime(d) {
 }
 
 export default function PatientDocumentsReport() {
-  const { documentTypes, fetchDocumentTypes, fetchPatientDocumentsReport } = useClinicStore();
+  const { documentTypes, fetchDocumentTypes, fetchPatientDocumentsReport } = useClinicStore(useShallow((s) => ({ documentTypes: s.documentTypes, fetchDocumentTypes: s.fetchDocumentTypes, fetchPatientDocumentsReport: s.fetchPatientDocumentsReport })));
 
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');

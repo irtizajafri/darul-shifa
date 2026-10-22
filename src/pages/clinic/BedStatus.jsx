@@ -7,6 +7,7 @@ import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import './AdmissionAdjustment.scss';
 import './BedStatus.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const STATUS_OPTIONS = [
   { value: 'available',   label: 'Available' },
@@ -17,7 +18,7 @@ const STATUS_OPTIONS = [
 export default function BedStatus() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { roomCategories, fetchRoomCategories, beds, fetchBeds, setBedStatus } = useClinicStore();
+  const { roomCategories, fetchRoomCategories, beds, fetchBeds, setBedStatus } = useClinicStore(useShallow((s) => ({ roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, beds: s.beds, fetchBeds: s.fetchBeds, setBedStatus: s.setBedStatus })));
 
   const [roomCategoryId, setRoomCategoryId] = useState('');
   const [bedId, setBedId] = useState('');

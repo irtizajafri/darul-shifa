@@ -1,5 +1,6 @@
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { numberToWords } from './receiptUtils';
+import { BETA_WATERMARK_HTML } from './betaWatermark';
 
 // ── Receiving against Admission — payment receipt ────────────────────────────
 export function buildAdmissionPaymentReceiptHtml({ payment, admission, printedBy, barcodeDataUrl, isDuplicate }) {
@@ -51,6 +52,7 @@ export function buildAdmissionPaymentReceiptHtml({ payment, admission, printedBy
 </style>
 </head>
 <body>
+${BETA_WATERMARK_HTML}
   <div class="logo-box">
     <img class="logo-img" src="${RECEIPT_LOGO_DATA_URI}" alt="logo" />
   </div>

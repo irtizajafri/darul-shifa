@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import './StatusWiseAdmissionReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -65,7 +66,7 @@ export default function StatusWiseAdmissionReport() {
   const billAmountOf = (r) => (r.status === 'Active' ? r.provisionalBillAmount : (r.finalBillAmount || r.provisionalBillAmount));
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('swa-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
       <style>

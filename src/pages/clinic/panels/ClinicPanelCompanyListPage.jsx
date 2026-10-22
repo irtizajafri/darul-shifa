@@ -8,9 +8,10 @@ import Modal from '../../../components/ui/Modal';
 import Button from '../../../components/ui/Button';
 import { useClinicStore } from '../../../store/useClinicStore';
 import '../parameters/ClinicParameterPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 export default function ClinicPanelCompanyListPage() {
-  const { panelCompanies, loading, fetchPanelCompanies, deletePanelCompany } = useClinicStore();
+  const { panelCompanies, loading, fetchPanelCompanies, deletePanelCompany } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, loading: s.loading, fetchPanelCompanies: s.fetchPanelCompanies, deletePanelCompany: s.deletePanelCompany })));
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null);

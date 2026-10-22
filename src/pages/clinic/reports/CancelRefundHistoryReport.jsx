@@ -6,6 +6,7 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import './CancelRefundHistoryReport.scss';
+import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -44,7 +45,7 @@ export default function CancelRefundHistoryReport() {
   const reportTitle = 'Cancel & Refund Slip History';
 
   const handlePrint = () => {
-    const win = window.open('', '_blank');
+    const win = openPrintWindow();
     const content = document.getElementById('crh-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
       <style>

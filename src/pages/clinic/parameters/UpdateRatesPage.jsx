@@ -6,6 +6,7 @@ import PageHeader from '../../../components/shared/PageHeader';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './UpdateRatesPage.scss';
+import { useShallow } from 'zustand/react/shallow';
 
 const TABS = [
   { key: 'subdept',    label: 'Sub Department Rates' },
@@ -22,7 +23,7 @@ const TABS = [
 // (brand new — which tab a doctor shows up under is driven purely by that
 // doctor's own Staff Category, set in Clinic > Parameters > Doctor).
 export default function UpdateRatesPage() {
-  const { panelCompanies, fetchPanelCompanies, fetchPanelRateCard, savePanelRateCard } = useClinicStore();
+  const { panelCompanies, fetchPanelCompanies, fetchPanelRateCard, savePanelRateCard } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelRateCard: s.fetchPanelRateCard, savePanelRateCard: s.savePanelRateCard })));
 
   const [panelCompanyId, setPanelCompanyId] = useState('');
   const [loading, setLoading] = useState(false);

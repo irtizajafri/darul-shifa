@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
+import { openPrintWindow } from '../../utils/printRelay';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -78,11 +79,12 @@ function printMRN(mrn) {
   </div>
   </body></html>`;
 
-  const w = window.open('', '_blank');
+  const w = openPrintWindow('width=1000,height=800');
   w.document.write(html);
+  w.document.write('<script>window.onafterprint = () => window.close();</script>');
   w.document.close();
   w.focus();
-  setTimeout(() => { w.print(); w.close(); }, 400);
+  w.print();
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
