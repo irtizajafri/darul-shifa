@@ -8,6 +8,7 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useClinicStore } from '../../../store/useClinicStore';
 import useModalKeys from '../../../hooks/useModalKeys';
 import { printElementInPopup } from '../../../utils/printPopup';
+import { openPrintWindow } from '../../../utils/printRelay';
 import usePagedList from '../../../hooks/usePagedList';
 import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './MedicineListReport.scss';
@@ -175,8 +176,12 @@ export default function MedicineListReport() {
   const countText = `${rows.length} medicine${rows.length !== 1 ? 's' : ''}`;
 
   // Print clones the on-screen table, so render every row for the clone.
+  // The window is opened first, straight on the click — rendering every row
+  // can take a while and must not use up the click's popup permission.
   const handlePrint = () => {
+    const w = openPrintWindow('width=1000,height=800');
     page.withAll(() => printElementInPopup(reportRef.current, {
+      targetWindow: w,
       title: 'Medicine List',
       page: 'A4 portrait',
       margin: '10mm',

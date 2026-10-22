@@ -239,8 +239,7 @@ export default function DischargeRefund() {
   // not-yet-saved) figures — detail's own values only get updated once Close
   // File actually runs, so printing beforehand must not show stale/zeroed-out
   // numbers.
-  function printDischargeBillPopup(dup) {
-    const w = openPrintWindow('width=900,height=1000');
+  function printDischargeBillPopup(dup, w = openPrintWindow('width=900,height=1000')) {
     const liveDetail = detail ? { ...detail, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, balance: liveBalance, refund: liveRefund } : detail;
     w.document.write(buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: dup, printedBy }));
     w.document.close();
@@ -348,11 +347,17 @@ export default function DischargeRefund() {
       return;
     }
     setSaving(true);
+    // Closing prints the Final Bill (owner, 2026-10-22 — the screen resets
+    // after close, so there was no way to print it but Reprint). The window
+    // opens on the click, before the request, so the browser doesn't block it.
+    const printWin = openPrintWindow('width=900,height=1000');
     try {
       await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy });
       toast.success('File close ho gayi');
+      printDischargeBillPopup(false, printWin);
       resetToLookup();
     } catch (e) {
+      printWin.close();
       toast.error(e.message || 'Finalize nahi ho saka');
     } finally {
       setSaving(false);

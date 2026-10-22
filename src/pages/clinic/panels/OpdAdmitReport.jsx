@@ -6,6 +6,7 @@ import { Upload } from 'lucide-react';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
+import { openPrintWindow } from '../../../utils/printRelay';
 import OpdAdmitReportImportModal from './OpdAdmitReportImportModal';
 import usePagedList from '../../../hooks/usePagedList';
 import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
@@ -24,8 +25,8 @@ const fmtDate = (d) => {
 // (same pattern as Panel Cheques Report / Medicine Report's own print).
 // Now prints from a popup window (utils/printPopup.js) instead of
 // window.print() on the main window, which could freeze the app on Windows.
-function printOpdAdmitReport(reportEl) {
-  printElementInPopup(reportEl, { title: 'OPD Admit Report', page: 'A4 portrait', margin: '10mm' });
+function printOpdAdmitReport(reportEl, targetWindow) {
+  printElementInPopup(reportEl, { title: 'OPD Admit Report', page: 'A4 portrait', margin: '10mm', targetWindow });
 }
 
 // Panels > Reports > OPD Admit Report — preview step. The legacy "Panel
@@ -109,7 +110,9 @@ export default function OpdAdmitReport() {
   function handlePrint() {
     if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
     // Print clones the on-screen table — render every admission for it.
-    page.withAll(() => printOpdAdmitReport(reportRef.current));
+    // Window opened first, on the click — the full render can take a while.
+    const w = openPrintWindow('width=1000,height=800');
+    page.withAll(() => printOpdAdmitReport(reportRef.current, w));
   }
 
   // Same rows / columns / totals as the preview: admission row, its dept

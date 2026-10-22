@@ -174,11 +174,12 @@ export default function DeathCertificatePage() {
   // Standalone popup + window.print() — never window.print() on the main
   // window (freezes the whole app behind the print dialog on Windows), same
   // fix already applied to the Discharge Certificate print.
-  function openDeathCertificatePopup(certificate) {
+  // `w` is opened on the click, before the save request — a window opened
+  // after an await is blocked as an unrequested popup.
+  function openDeathCertificatePopup(certificate, w = openPrintWindow('width=700,height=900')) {
     const doctorName = manual.medicalOfficerId
       ? (doctors.find((d) => String(d.id) === String(manual.medicalOfficerId)) || {}).name
       : '';
-    const w = openPrintWindow('width=700,height=900');
     w.document.write(buildDeathCertificatePrintHtml({ certificate, doctorName }));
     w.document.close();
   }
@@ -186,6 +187,7 @@ export default function DeathCertificatePage() {
   async function handleAdd() {
     if (!admission) return;
     if (!manual.causeOfDeath.trim()) return toast.error('Cause of Death daalo');
+    const printWin = openPrintWindow('width=700,height=900');
     setSaving(true);
     try {
       const payload = {
@@ -216,9 +218,10 @@ export default function DeathCertificatePage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message);
       toast.success(existingCertificateId ? 'Death Certificate updated' : 'Death Certificate saved');
-      openDeathCertificatePopup(json.data);
+      openDeathCertificatePopup(json.data, printWin);
       resetToSearch();
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error(err.message || 'Save failed');
     } finally {
       setSaving(false);

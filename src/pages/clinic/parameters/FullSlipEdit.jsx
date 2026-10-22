@@ -222,6 +222,10 @@ export default function FullSlipEdit() {
   }
 
   async function handlePrint() {
+    // Print window opened on the click, before the fetch (popup blockers) —
+    // sized from the slip already on screen (same department as the reprint).
+    const curDept = String(original?.department || '').trim().toLowerCase();
+    const w = openPrintWindow(curDept === 'emergency' ? 'width=740,height=900' : 'width=420,height=680');
     try {
       const { visit, tokenNo, isDuplicate } = await api(`/opd/reprint/${encodeURIComponent(original.serialNo)}`);
       const dept = String(visit.department || '').trim().toLowerCase();
@@ -235,10 +239,10 @@ export default function FullSlipEdit() {
         // Each department prints on its own slip layout, same as Reprint.
         html = dept === 'consultant opd' ? buildConsultantReceiptHtml(args) : buildReceiptHtml(args);
       }
-      const w = openPrintWindow(dept === 'emergency' ? 'width=740,height=900' : 'width=420,height=680');
       w.document.write(html);
       w.document.close();
     } catch (err) {
+      if (!w.filled) w.close();
       toast.error(err.message);
     }
   }

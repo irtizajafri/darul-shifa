@@ -762,6 +762,8 @@ export default function Admission() {
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
     const formErr = validateAdmissionForm(form);
     if (formErr) return toast.error(formErr);
+    // Print window opened on the click, before the save (popup blockers).
+    const w = openPrintWindow('width=900,height=1000');
     setSaving(true);
     try {
       const created = await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes', createdByUserId: user?.id ?? null, createdByName: printedBy });
@@ -780,7 +782,6 @@ export default function Admission() {
         payments: advAmt > 0 ? [{ date: created.createdAt || new Date(), amount: advAmt, slipNo: created.serialNo || form.serialNo || '' }] : [],
       };
       const admissionHtml = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: false, barcodeDataUrl, record });
-      const w = openPrintWindow('width=900,height=1000');
       const primary = advanceHtml || admissionHtml;
       const extra = advanceHtml ? admissionHtml : null;
       w.document.write(buildSequentialPrintHtml(primary, extra));
@@ -791,6 +792,7 @@ export default function Admission() {
       // Serial No auto-fill temporarily disabled — see note above.
       // fetchNextSerialNo().then(s => setForm(f => ({ ...f, serialNo: s }))).catch(() => {});
     } catch (err) {
+      if (!w.filled) w.close();
       toast.error(err.message || 'Failed to save admission');
     } finally {
       setSaving(false);

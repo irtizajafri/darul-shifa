@@ -137,8 +137,9 @@ export default function DischargeCertificateButton({ admissionId, visible, class
 
   // Popup-based print (never window.print() on the main window — see
   // dischargeCertificatePrintUtils for why that used to freeze the whole app).
-  function openDischargeCertificatePopup(data) {
-    const w = openPrintWindow('width=700,height=900');
+  // `w` is opened on the click, before the save request — a window opened
+  // after an await is treated as an unrequested popup and blocked.
+  function openDischargeCertificatePopup(data, w = openPrintWindow('width=700,height=900')) {
     w.document.write(buildDischargeCertificatePrintHtml(data));
     w.document.close();
   }
@@ -174,6 +175,7 @@ export default function DischargeCertificateButton({ admissionId, visible, class
     if (!dcForm.dischargeDate) { toast.error('Discharge Date select karein'); return; }
     if (!dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
     setDcSaving(true);
+    const printWin = openPrintWindow('width=700,height=900');
     try {
       const printedBy = user?.name || user?.username || user?.email || '';
       const res = await fetch(`${API}/admission/discharge-certificate/${admissionId}`, {
@@ -189,9 +191,10 @@ export default function DischargeCertificateButton({ admissionId, visible, class
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
       toast.success('Discharge Certificate save ho gaya — patient discharge ho gaya, bed free ho gaya');
       setDcOpen(false);
-      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy });
+      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy }, printWin);
       if (onDischarged) onDischarged();
     } catch (e) {
+      printWin.close();
       toast.error(e.message || 'Error saving');
     } finally {
       setDcSaving(false);

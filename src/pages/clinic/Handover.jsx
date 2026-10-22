@@ -50,8 +50,10 @@ const HANDOVER_PRINT_CSS = `
   .hop-footer { margin-top: 20px; font-size: 7.5pt; color: #999; }
 `;
 
-function openHandoverPrint(title, html) {
-  const win = openPrintWindow();
+// `targetWindow`: a print window already opened on the click (before the
+// submit's await) — a window opened after an await is blocked as a popup.
+function openHandoverPrint(title, html, targetWindow = null) {
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow();
   win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${HANDOVER_PRINT_CSS}</style></head><body>${html}<script>window.onafterprint = function () { window.close(); };</script></body></html>`);
   win.document.close();
   win.focus();
@@ -62,7 +64,7 @@ function openHandoverPrint(title, html) {
 
 // Asset Handover — its own separate print: Reception items snapshot
 // (name/qty/condition AT handover time) + Petty Cash + Takeover From/To.
-function printAssetHandoverSlip({ fromUserName, assetToUserName, businessDate, pettyCash, assets, printBy }) {
+function assetHandoverSlipHtml({ fromUserName, assetToUserName, businessDate, pettyCash, assets, printBy }) {
   const assetRows = (assets || []).map((a) => `
     <tr><td>${a.name}</td><td>${a.quantity}</td><td style="text-transform:capitalize">${a.condition}</td></tr>
   `).join('');
@@ -93,7 +95,11 @@ function printAssetHandoverSlip({ fromUserName, assetToUserName, businessDate, p
       <div class="hop-footer">Printed by ${printBy} — ${new Date().toLocaleString('en-PK')}</div>
     </div>
   `;
-  openHandoverPrint('Asset Handover Slip', html);
+  return html;
+}
+
+function printAssetHandoverSlip(args) {
+  openHandoverPrint('Asset Handover Slip', assetHandoverSlipHtml(args));
 }
 
 // Cash Handover — its own separate print: denomination-wise note count, an
@@ -101,7 +107,7 @@ function printAssetHandoverSlip({ fromUserName, assetToUserName, businessDate, p
 // (the Voucher Expense drafts), the slip range worked, and Takeover
 // From / Takeover To signature lines. Matches the hospital's existing
 // paper handover sheet.
-function printCashHandoverSlip({ fromUserName, cashToUserName, businessDate, slipCount, firstSlipSerial, firstSlipTime, lastSlipSerial, lastSlipTime, totalCash, draftPaymentsTotal, drafts, otherExpense, netCash, denominations, printBy }) {
+function cashHandoverSlipHtml({ fromUserName, cashToUserName, businessDate, slipCount, firstSlipSerial, firstSlipTime, lastSlipSerial, lastSlipTime, totalCash, draftPaymentsTotal, drafts, otherExpense, netCash, denominations, printBy }) {
   const denomRows = denominations
     .map((d) => `<tr><td>${d.denomination}</td><td>${d.qty}</td><td class="hop-r">${fmt2(d.qty * d.denomination)}</td></tr>`)
     .join('');
@@ -163,7 +169,11 @@ function printCashHandoverSlip({ fromUserName, cashToUserName, businessDate, sli
       <div class="hop-footer">Printed by ${printBy} — ${new Date().toLocaleString('en-PK')}</div>
     </div>
   `;
-  openHandoverPrint('Cash Handover Slip', html);
+  return html;
+}
+
+function printCashHandoverSlip(args) {
+  openHandoverPrint('Cash Handover Slip', cashHandoverSlipHtml(args));
 }
 
 // Cashier Handover — Asset section (Reception items reference + petty cash)
@@ -264,6 +274,10 @@ export default function Handover() {
     if (!cashToUserId) return toast.error('Cash Handover kis employee ko de rahe hain, select karein');
     const assetToUser = otherUsers.find((u) => u.id === assetToUserId);
     const cashToUser = otherUsers.find((u) => u.id === cashToUserId);
+    // Print window opened on the click, before the submit (popup blockers).
+    // Both slips print from this ONE window, each on its own page — a second
+    // window opened from the same click would be blocked.
+    const printWin = andPrint ? openPrintWindow() : null;
     setSubmitting(true);
     try {
       await createHandover({
@@ -289,45 +303,39 @@ export default function Handover() {
       toast.success('Handover submit ho gaya');
       if (andPrint) {
         const printedByName = user.name || user.username || user.email || 'User';
-        try {
-          printAssetHandoverSlip({
-            fromUserName: printedByName,
-            assetToUserName: assetToUser?.name || '',
-            businessDate: summary?.businessDate,
-            pettyCash: pettyCash !== '' ? Number(pettyCash) : 0,
-            assets: (summary?.assets || []).map((a) => ({ ...a, condition: assetConditions[a.id] ?? a.condition })),
-            printBy: printedByName,
-          });
-        } catch {
-          toast.error('Handover save ho gaya, lekin Asset Handover print popup block ho gaya — browser popup allow karein');
-        }
-        try {
-          printCashHandoverSlip({
-            fromUserName: printedByName,
-            cashToUserName: cashToUser?.name || '',
-            businessDate: summary?.businessDate,
-            slipCount: summary?.slipCount ?? 0,
-            firstSlipSerial,
-            firstSlipTime: summary?.firstSlipTime,
-            lastSlipSerial,
-            lastSlipTime: summary?.lastSlipTime,
-            totalCash: summary?.totalCash ?? 0,
-            draftPaymentsTotal: summary?.draftPaymentsTotal ?? 0,
-            drafts: summary?.drafts || [],
-            otherExpense: Number(otherExpense) || 0,
-            netCash: finalNetCash,
-            denominations,
-            printBy: printedByName,
-          });
-        } catch {
-          toast.error('Handover save ho gaya, lekin Cash Handover print popup block ho gaya — browser popup allow karein');
-        }
+        const assetHtml = assetHandoverSlipHtml({
+          fromUserName: printedByName,
+          assetToUserName: assetToUser?.name || '',
+          businessDate: summary?.businessDate,
+          pettyCash: pettyCash !== '' ? Number(pettyCash) : 0,
+          assets: (summary?.assets || []).map((a) => ({ ...a, condition: assetConditions[a.id] ?? a.condition })),
+          printBy: printedByName,
+        });
+        const cashHtml = cashHandoverSlipHtml({
+          fromUserName: printedByName,
+          cashToUserName: cashToUser?.name || '',
+          businessDate: summary?.businessDate,
+          slipCount: summary?.slipCount ?? 0,
+          firstSlipSerial,
+          firstSlipTime: summary?.firstSlipTime,
+          lastSlipSerial,
+          lastSlipTime: summary?.lastSlipTime,
+          totalCash: summary?.totalCash ?? 0,
+          draftPaymentsTotal: summary?.draftPaymentsTotal ?? 0,
+          drafts: summary?.drafts || [],
+          otherExpense: Number(otherExpense) || 0,
+          netCash: finalNetCash,
+          denominations,
+          printBy: printedByName,
+        });
+        openHandoverPrint('Handover Slips', `${assetHtml}<div style="break-before:page;page-break-before:always"></div>${cashHtml}`, printWin);
       }
       setAssetToUserId(''); setCashToUserId(''); setPettyCash(''); setNotes(''); setOtherExpense('');
       setDenomQty(Object.fromEntries(DENOMINATIONS.map((d) => [d, ''])));
       loadSummary();
       if (activeTab === 'history') loadHistory();
     } catch (e) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(e.message || 'Handover submit nahi hua');
     } finally {
       setSubmitting(false);

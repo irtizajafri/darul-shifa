@@ -690,6 +690,8 @@ export default function ProvisionalBill() {
   }
 
   async function handleAddPharmacyItem() {
+    // Outside-store medicine always belongs to a store (owner, 2026-10-22).
+    if (!pharmRow.storeId) return toast.error('Pehle Medical Store select karein');
     if (!pharmRow.medicine.trim()) return toast.error('Medicine naam zaroori hai');
     if (!pharmRow.medDate) return toast.error('Date select karo');
     setAddingPharmRow(true);

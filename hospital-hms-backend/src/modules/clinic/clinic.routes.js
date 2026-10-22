@@ -378,6 +378,7 @@ router.get('/reports/ward-wise-payment-distribution', controller.getWardWisePaym
 router.get('/reports/department-monthly-comparison', controller.getDepartmentMonthlyComparison);
 router.get('/reports/cancel-refund-history', controller.getCancelRefundHistory);
 router.get('/reports/doctor-schedule', controller.getDoctorScheduleReport);
+router.get('/reports/general-payment', controller.getGeneralPaymentReport);
 router.get('/reports/ot-register', controller.getOtRegisterReport);
 router.post('/reports/ot-register/import', controller.importOtRegister);
 router.get('/reports/user-date-summary', controller.getUserDateSummary);

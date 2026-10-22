@@ -145,6 +145,8 @@ import CancelRefundHistoryFilter from '../pages/clinic/reports/CancelRefundHisto
 import CancelRefundHistoryReport from '../pages/clinic/reports/CancelRefundHistoryReport';
 import DoctorScheduleFilter from '../pages/clinic/reports/DoctorScheduleFilter';
 import DoctorScheduleReport from '../pages/clinic/reports/DoctorScheduleReport';
+import GeneralPaymentFilter from '../pages/clinic/reports/GeneralPaymentFilter';
+import GeneralPaymentReport from '../pages/clinic/reports/GeneralPaymentReport';
 import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
 import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTypePage';
@@ -422,6 +424,8 @@ export default function ProtectedRoutes() {
       <Route path="clinic/reports/cancel-refund-history/view"     element={<PermissionGuard module="clinic" subModule="reports"><CancelRefundHistoryReport /></PermissionGuard>} />
       <Route path="clinic/reports/doctor-schedule"                 element={<PermissionGuard module="clinic" subModule="reports" tab="doctor-schedule"><DoctorScheduleFilter /></PermissionGuard>} />
       <Route path="clinic/reports/doctor-schedule/view"            element={<PermissionGuard module="clinic" subModule="reports"><DoctorScheduleReport /></PermissionGuard>} />
+      <Route path="clinic/reports/general-payment"                 element={<PermissionGuard module="clinic" subModule="reports" tab="general-payment"><GeneralPaymentFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/general-payment/view"            element={<PermissionGuard module="clinic" subModule="reports"><GeneralPaymentReport /></PermissionGuard>} />
 
       {/* ── Clinic Inquiries ── */}
       <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic" subModule="inquiries" tab="revenue-dashboard"><RevenueDashboard /></PermissionGuard>} />

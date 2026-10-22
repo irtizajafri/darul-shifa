@@ -10,6 +10,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { canBackDate } from '../../utils/permissions';
 import { printPODocument } from '../../utils/printPO';
+import { openPrintWindow } from '../../utils/printRelay';
 import { formatDate } from '../../utils/helpers';
 
 function SearchableSelect({ options, value, onChange, placeholder, getLabel, getValue, className = '' }) {
@@ -233,6 +234,7 @@ export default function PurchaseOrder() {
 
   const handleCreatePO = async (e, shouldPrint = false) => {
     e.preventDefault();
+    let printWin = null;
     try {
       const validLines = (formData.items || []).filter((line) => (
         Number(line.itemId) > 0 && Number(line.requiredQuantity) > 0
@@ -257,6 +259,8 @@ export default function PurchaseOrder() {
         return;
       }
 
+      // Print window opened on the click, before the save (popup blockers).
+      if (shouldPrint) printWin = openPrintWindow();
       const result = await createPurchaseOrder({
         supplierId: Number(formData.supplierId),
         poDate: new Date(formData.poDate).toISOString(),
@@ -268,7 +272,7 @@ export default function PurchaseOrder() {
         })),
       });
 
-      if (shouldPrint) printPODocument(result, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
+      if (shouldPrint) printPODocument(result, { printedBy: user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }), targetWindow: printWin });
 
       await fetchPurchaseOrders(filters);
       setFormData({
@@ -281,6 +285,7 @@ export default function PurchaseOrder() {
       setShowCreate(false);
       toast.success('PO created');
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message || 'Failed to create PO');
     }
   };

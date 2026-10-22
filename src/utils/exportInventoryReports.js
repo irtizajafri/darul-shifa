@@ -135,7 +135,9 @@ export function exportRowsToPdf({ fileName = 'report', title = 'Report', rows = 
 // Arial 8pt (jsPDF has no Arial). Columns empty on every row ('-' / blank)
 // are dropped so the rest fit the narrower portrait page. Same title,
 // filter line, Grand Total footer and Printed by / Generated line as the PDF.
-export function printRowsHtml({ title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '', grandTotal = true }) {
+// `targetWindow`: a print window opened on the click, before the report's
+// fetch (a window opened after an await is blocked as a popup).
+export function printRowsHtml({ title = 'Report', rows = [], filterSummary = [], printedBy = '', generatedAt = '', grandTotal = true, targetWindow = null }) {
   const data = safeRows(rows);
   const allHeaders = data.length ? Object.keys(data[0]) : [];
   const isBlank = (v) => v === undefined || v === null || String(v).trim() === '' || String(v).trim() === '-';
@@ -176,7 +178,7 @@ export function printRowsHtml({ title = 'Report', rows = [], filterSummary = [],
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
 
-  printHtml(html, 'width=900,height=1000');
+  printHtml(html, 'width=900,height=1000', targetWindow);
 }
 
 // grandTotal: false when the rows already carry their own total lines.
@@ -384,7 +386,7 @@ export function exportItemLedgerPdf({
 const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money2 = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-function printSalesInvoiceHtml(inv) {
+function printSalesInvoiceHtml(inv, targetWindow = null) {
   const who = inv.customerType === 'admission'
     ? ['Admission #', inv.customerName || '-']
     : inv.customerType === 'panel_opd'
@@ -446,12 +448,14 @@ function printSalesInvoiceHtml(inv) {
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`;
 
-  printHtml(html, 'width=900,height=900');
+  printHtml(html, 'width=900,height=900', targetWindow);
 }
 
-export function generateSalesInvoicePdf({ inv, mode = 'download' }) {
-  if (!inv) return;
-  if (mode === 'print') { printSalesInvoiceHtml(inv); return; }
+// `targetWindow` (print mode): a print window opened on the click, before
+// the save's await (a window opened after an await is blocked as a popup).
+export function generateSalesInvoicePdf({ inv, mode = 'download', targetWindow = null }) {
+  if (!inv) { targetWindow?.close(); return; }
+  if (mode === 'print') { printSalesInvoiceHtml(inv, targetWindow); return; }
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();

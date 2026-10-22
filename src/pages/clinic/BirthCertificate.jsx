@@ -180,8 +180,9 @@ export default function BirthCertificate() {
   // Standalone popup + window.print() — never window.print() on the main
   // window (freezes the whole app behind the print dialog on Windows), same
   // fix already applied to Discharge/Death Certificate prints.
-  function openBirthCertificatePopup(certificate) {
-    const w = openPrintWindow('width=700,height=900');
+  // `w` is opened on the click, before the save request — a window opened
+  // after an await is blocked as an unrequested popup.
+  function openBirthCertificatePopup(certificate, w = openPrintWindow('width=700,height=900')) {
     w.document.write(buildBirthCertificatePrintHtml({ certificate }));
     w.document.close();
   }
@@ -189,6 +190,7 @@ export default function BirthCertificate() {
   async function handleSave() {
     if (!admission) { toast.error('Pehle admission select karein'); return; }
     if (!form.motherName.trim()) { toast.error('Mother Name is required'); return; }
+    const printWin = openPrintWindow('width=700,height=900');
     setSaving(true);
     try {
       const res = await fetch(`${API}/admission/birth-certificate/${admission.id}/save`, {
@@ -204,9 +206,10 @@ export default function BirthCertificate() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
       toast.success('Birth Certificate save ho gaya');
-      openBirthCertificatePopup(json.data);
+      openBirthCertificatePopup(json.data, printWin);
       resetForm();
     } catch (e) {
+      if (!printWin.filled) printWin.close();
       toast.error(e.message || 'Error saving');
     } finally {
       setSaving(false);

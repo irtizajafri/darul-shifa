@@ -143,15 +143,17 @@ export default function BillComparisonReport() {
   const visibleRows = useMemo(() => (page.limit >= rows.length ? rows : rows.slice(0, page.limit)), [rows, page.limit]);
 
   // Print copies the on-screen table's HTML — render every row for it.
+  // The window is opened first, straight on the click — rendering every row
+  // can take a while and must not use up the click's popup permission.
   function handlePrint() {
-    page.withAll(printReport);
+    const w = openPrintWindow('width=1000,height=700');
+    page.withAll(() => printReport(w));
   }
 
-  function printReport() {
+  function printReport(w) {
     // ref, not document.querySelector — every open tab stays mounted
     const content = reportRef.current;
-    if (!content) return;
-    const w = openPrintWindow('width=1000,height=700');
+    if (!content) { w.close(); return; }
     w.document.write(`<html><head><title>Bill Comparison Report</title>
     <style>
       * { margin:0; padding:0; box-sizing:border-box; }

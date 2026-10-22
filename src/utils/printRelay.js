@@ -37,6 +37,8 @@ function getChannel() {
     if (!job || m.type !== 'ready') return;
     job.ready = true;
     clearTimeout(job.timer);
+    // close() was called (e.g. the save failed) before the window said ready.
+    if (job.closing) { jobs.delete(m.key); channel.postMessage({ type: 'close', key: m.key }); return; }
     flush(m.key);
   };
   return channel;
@@ -70,6 +72,9 @@ export function openPrintWindow(features = DEFAULT_FEATURES) {
   const handle = {
     closed: false,
     isPrintRelay: true,
+    // true once the print HTML has been handed over (document.close()) — an
+    // error after that (e.g. a refetch after the save) must not close it.
+    get filled() { return job.html != null; },
     document: {
       open() { buffer = ''; },
       write(s) { buffer += String(s); },
@@ -84,7 +89,13 @@ export function openPrintWindow(features = DEFAULT_FEATURES) {
     close() {
       handle.closed = true;
       if (job.sent || job.ready) getChannel().postMessage({ type: 'close', key });
-      else { clearTimeout(job.timer); jobs.delete(key); }
+      else {
+        // Not ready yet (closed right after opening, e.g. the save failed):
+        // close it as soon as it reports ready; give up after a while.
+        clearTimeout(job.timer);
+        job.closing = true;
+        setTimeout(() => jobs.delete(key), READY_TIMEOUT_MS);
+      }
     },
     // Old code sets these on the popup; the relay page's own HTML handles
     // afterprint/close, so they're accepted and ignored.
@@ -95,9 +106,12 @@ export function openPrintWindow(features = DEFAULT_FEATURES) {
   return handle;
 }
 
-// One-shot: open a print window and give it this HTML.
-export function printHtml(html, features = DEFAULT_FEATURES) {
-  const w = openPrintWindow(features);
+// One-shot: open a print window and give it this HTML. Pass `targetWindow`
+// (an openPrintWindow() handle opened on the click, before any await) when
+// the HTML is only ready after a save/fetch — a window opened after an await
+// is blocked as an unrequested popup.
+export function printHtml(html, features = DEFAULT_FEATURES, targetWindow = null) {
+  const w = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow(features);
   w.document.write(html);
   w.document.close();
   return w;

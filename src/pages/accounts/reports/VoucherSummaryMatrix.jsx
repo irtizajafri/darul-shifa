@@ -35,8 +35,8 @@ const MATRIX_CSS = `
   td.grand-cell { font-weight:800; }
 `;
 
-function printMatrix({ data, glFromLabel, glToLabel, dateFrom, dateTo, entityType }) {
-  if (!data || !data.rows.length) { toast.error('No data to print'); return; }
+function printMatrix({ data, glFromLabel, glToLabel, dateFrom, dateTo, entityType, targetWindow }) {
+  if (!data || !data.rows.length) { targetWindow?.close(); toast.error('No data to print'); return; }
   const { mainGLs, rows, columnTotals, grandTotal } = data;
 
   const colHeadHTML = mainGLs.map((g) => `<th>${g.name}</th>`).join('');
@@ -69,7 +69,7 @@ function printMatrix({ data, glFromLabel, glToLabel, dateFrom, dateTo, entityTyp
     </table>
   </body></html>`;
 
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(html);
   win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
@@ -100,6 +100,8 @@ export default function VoucherSummaryMatrix() {
 
   const handlePrint = async () => {
     setLoading(true);
+    // Print window opened on the click, before the fetch (popup blockers).
+    const printWin = openPrintWindow('width=1000,height=800');
     try {
       const glFrom = mainGLs.find((g) => String(g.id) === String(glFromId));
       const glTo = mainGLs.find((g) => String(g.id) === String(glToId));
@@ -113,9 +115,10 @@ export default function VoucherSummaryMatrix() {
       if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
       printMatrix({
         data: j.data, glFromLabel: glFrom?.name, glToLabel: glTo?.name,
-        dateFrom, dateTo, entityType,
+        dateFrom, dateTo, entityType, targetWindow: printWin,
       });
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error(err.message);
     } finally {
       setLoading(false);

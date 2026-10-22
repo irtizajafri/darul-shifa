@@ -118,7 +118,7 @@ const VOUCHER_PRINT_CSS = `
   .vr-sig { text-align:center; font-size:10px; border-top:1.5px solid #000; padding-top:5px; width:140px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
 `;
 
-function printExpenseVoucher({ voucherNo, voucherDate, createdAt, mode, entries, printBy }) {
+function printExpenseVoucher({ voucherNo, voucherDate, createdAt, mode, entries, printBy, targetWindow }) {
   const total   = entries.reduce((s, e) => s + Number(e.amount), 0);
   const modeStr = mode === 'cheque' ? 'Cheque' : mode === 'online' ? 'Online Transfer' : 'Cash';
 
@@ -205,7 +205,7 @@ function printExpenseVoucher({ voucherNo, voucherDate, createdAt, mode, entries,
     </div>
   `;
 
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(
     `<!DOCTYPE html><html><head><title>Expense Voucher</title><style>${VOUCHER_PRINT_CSS}</style></head><body>${html}</body></html>`
   );
@@ -258,12 +258,14 @@ function entrySlipHtml(entry, voucherDate, printBy) {
   `;
 }
 
-function printEntrySlips({ entries, voucherDate, printBy }) {
-  if (!entries?.length) return;
+// `targetWindow`: a print window opened on the click, before the save's
+// await (a window opened after an await is blocked as a popup).
+function printEntrySlips({ entries, voucherDate, printBy, targetWindow }) {
+  if (!entries?.length) { targetWindow?.close(); return; }
   const pages = entries
     .map((e, i) => `<div class="slip-page"${i < entries.length - 1 ? ' style="page-break-after:always;break-after:page"' : ''}>${entrySlipHtml(e, voucherDate, printBy)}</div>`)
     .join('');
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(`<!DOCTYPE html><html><head><title>Payment Slip</title><style>${SLIP_CSS}</style></head><body>${pages}</body></html>`);
   win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
@@ -1213,6 +1215,9 @@ export default function VoucherExpenseForm() {
         subAccountName: subAcc?.name || entry.payeeName || '',
       }];
     }
+    // Print window opened now (still inside the click / confirm-dialog
+    // gesture), before the save's awaits — popup blockers.
+    const printWin = withPrint ? openPrintWindow('width=1000,height=800') : null;
     setSavingDraft(true);
     try {
       for (const e of snapshot) {
@@ -1256,12 +1261,13 @@ export default function VoucherExpenseForm() {
         try {
           // One Payment Slip per line (same slip as the row's Print button),
           // each on its own page.
-          printEntrySlips({ entries: snapshot, voucherDate: date || todayStr(), printBy: user?.name || 'Accountant' });
+          printEntrySlips({ entries: snapshot, voucherDate: date || todayStr(), printBy: user?.name || 'Accountant', targetWindow: printWin });
         } catch {
           toast.error('Draft save hua lekin print popup block ho gaya — browser popup allow karo');
         }
       }
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message);
     } finally {
       setSavingDraft(false);
@@ -1478,6 +1484,8 @@ export default function VoucherExpenseForm() {
 
   const handleConfirm = async () => {
     if (entries.length === 0) { toast.error('Add at least one entry'); return; }
+    // Print window opened on the click, before the save (popup blockers).
+    const printWin = openPrintWindow('width=1000,height=800');
     setSaving(true);
     try {
       const url    = isEditMode ? `${API}/voucher-expense/${editingVoucher.id}` : `${API}/voucher-expense`;
@@ -1506,12 +1514,14 @@ export default function VoucherExpenseForm() {
           mode,
           entries,
           printBy: user?.name || 'System',
+          targetWindow: printWin,
         });
       } catch {
         toast.error('Voucher saved, but the print popup was blocked — reprint it from Voucher Reprint.');
       }
       if (isEditMode) navigate(-1);
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error(err.message);
     } finally {
       setSaving(false);

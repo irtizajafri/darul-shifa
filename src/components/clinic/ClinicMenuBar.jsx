@@ -135,6 +135,7 @@ const menuItems = [
       { label: 'Department wise Monthly Comparison', path: '/clinic/reports/department-monthly-comparison',  perm: { sub: 'reports', tab: 'department-monthly-comparison' } },
       { label: 'Cancel & Refund Slip History',      path: '/clinic/reports/cancel-refund-history',           perm: { sub: 'reports', tab: 'cancel-refund-history' } },
       { label: 'Doctor Schedule Report',            path: '/clinic/reports/doctor-schedule',                 perm: { sub: 'reports', tab: 'doctor-schedule' } },
+      { label: 'General Payment Date Wise',         path: '/clinic/reports/general-payment',                 perm: { sub: 'reports', tab: 'general-payment' } },
     ],
   },
   {

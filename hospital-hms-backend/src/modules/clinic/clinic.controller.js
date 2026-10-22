@@ -2468,6 +2468,13 @@ async function getCancelRefundHistory(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function getGeneralPaymentReport(req, res, next) {
+  try {
+    const { fromDate, toDate, doctorId } = req.query;
+    success(res, await service.getGeneralPaymentReport({ fromDate, toDate, doctorId: doctorId || null }));
+  } catch (err) { next(err); }
+}
+
 async function getDoctorScheduleReport(req, res, next) {
   try {
     const { doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly, day } = req.query;
@@ -2588,6 +2595,7 @@ async function receiveBalancePayment(req, res, next) {
 }
 
 module.exports = {
+  getGeneralPaymentReport,
   getOpdVisitForFullEdit,
   updateOpdVisitFull,
   getOpdVisitEditLogs,

@@ -6,6 +6,7 @@ import { Upload } from 'lucide-react';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { printElementInPopup } from '../../../utils/printPopup';
+import { openPrintWindow } from '../../../utils/printRelay';
 import MedicineReportImportModal from './MedicineReportImportModal';
 import usePagedList from '../../../hooks/usePagedList';
 import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
@@ -23,8 +24,8 @@ const fmtDate = (d) => {
 // (same pattern as Panel Cheques Report / Provisional Bill's own print).
 // Now prints from a popup window (utils/printPopup.js) instead of
 // window.print() on the main window, which could freeze the app on Windows.
-function printMedicineReport(reportEl) {
-  printElementInPopup(reportEl, { title: 'Medicine Report', page: 'A4 portrait', margin: '10mm' });
+function printMedicineReport(reportEl, targetWindow) {
+  printElementInPopup(reportEl, { title: 'Medicine Report', page: 'A4 portrait', margin: '10mm', targetWindow });
 }
 
 // Panels > Reports > Medicine Report — preview step. The legacy "Medican
@@ -131,7 +132,9 @@ export default function MedicineReport() {
   function handlePrint() {
     if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
     // Print clones the on-screen report — render every row/patient for it.
-    page.withAll(() => printMedicineReport(reportRef.current));
+    // Window opened first, on the click — the full render can take a while.
+    const w = openPrintWindow('width=1000,height=800');
+    page.withAll(() => printMedicineReport(reportRef.current, w));
   }
 
   // Same rows / columns / totals as the preview — Summary: one row per

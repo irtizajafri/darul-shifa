@@ -10,6 +10,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission, canBackDate } from '../../utils/permissions';
 import { printGRNDocument } from '../../utils/printGRN';
+import { openPrintWindow } from '../../utils/printRelay';
 import { formatDate } from '../../utils/helpers';
 // Shared portal-based searchable dropdown. Aliased because this file still
 // carries its own inline type-ahead `SearchableSelect` (below) for the PO picker.
@@ -226,6 +227,8 @@ export default function GoodsReceipt() {
         return;
       }
     }
+    // Print window opened on the click, before the saves (popup blockers).
+    const printWin = shouldPrint ? openPrintWindow() : null;
     try {
       const results = [];
       for (const line of draftLines) {
@@ -263,7 +266,10 @@ export default function GoodsReceipt() {
           })),
           printedBy: user?.name || user?.email || '',
           generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+          targetWindow: printWin,
         });
+      } else {
+        printWin?.close();
       }
 
       await Promise.all([fetchGRNs(), fetchPurchaseOrders({ status: 'open' })]);
@@ -277,6 +283,7 @@ export default function GoodsReceipt() {
       setShowCreate(false);
       toast.success(`GRN saved (${draftLines.length} item${draftLines.length !== 1 ? 's' : ''})`);
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message || 'Failed to save GRN');
     }
   };

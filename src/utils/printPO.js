@@ -16,9 +16,9 @@ function buildReprintFooter(printedBy, generatedAt, isReprint, reprintedBy, repr
   return `<div class="generated-footer">${parts.join('&nbsp;&nbsp;|&nbsp;&nbsp;')}${parts.length > 0 && reprintLine ? '<br>' : ''}${reprintLine}</div>`;
 }
 
-export function printPODocument(result, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' } = {}) {
+export function printPODocument(result, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '', targetWindow = null } = {}) {
   const poItems = result?.records ? result.records : Array.isArray(result) ? result : [result];
-  if (!poItems.length) return;
+  if (!poItems.length) { targetWindow?.close(); return; }
 
   const first = poItems[0];
   const poCode = result?.batchCode || first.code || '';
@@ -125,11 +125,11 @@ export function printPODocument(result, { printedBy = '', generatedAt = '', isRe
 </body>
 </html>`;
 
-  printHtml(html);
+  printHtml(html, undefined, targetWindow);
 }
 
-export function printGDDocument(row, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' } = {}) {
-  if (!row) return;
+export function printGDDocument(row, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '', targetWindow = null } = {}) {
+  if (!row) { targetWindow?.close(); return; }
 
   const gdCode      = row.code || '-';
   const department  = row.department?.name || '-';
@@ -233,11 +233,11 @@ export function printGDDocument(row, { printedBy = '', generatedAt = '', isRepri
 </body>
 </html>`;
 
-  printHtml(html);
+  printHtml(html, undefined, targetWindow);
 }
 
-export function printGINDocument(row, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' } = {}) {
-  if (!row) return;
+export function printGINDocument(row, { printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '', targetWindow = null } = {}) {
+  if (!row) { targetWindow?.close(); return; }
 
   const ginCode   = row.code || '-';
   const gdRef     = row.gdHeader?.code || row.gd?.code || '-';
@@ -379,11 +379,11 @@ export function printGINDocument(row, { printedBy = '', generatedAt = '', isRepr
 </body>
 </html>`;
 
-  printHtml(html);
+  printHtml(html, undefined, targetWindow);
 }
 
-export function printAllGINs(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return;
+export function printAllGINs(rows, { targetWindow = null } = {}) {
+  if (!Array.isArray(rows) || rows.length === 0) { targetWindow?.close(); return; }
 
   const printDate = new Date().toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -508,5 +508,5 @@ export function printAllGINs(rows) {
 </body>
 </html>`;
 
-  printHtml(html);
+  printHtml(html, undefined, targetWindow);
 }

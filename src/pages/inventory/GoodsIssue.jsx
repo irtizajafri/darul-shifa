@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
 import { printGINDocument, printAllGINs, printGDDocument } from '../../utils/printPO';
+import { openPrintWindow } from '../../utils/printRelay';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission, canBackDate } from '../../utils/permissions';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
@@ -393,6 +394,8 @@ export default function GoodsIssue() {
     if (badQty) { toast.error(`Enter quantity for: ${badQty.itemName}`); return; }
     if (gdAdmissionEnabled && !gdAdmissionNumber.trim()) { toast.error('Please enter admission number'); return; }
     if (gdSlipEnabled && !gdSlipNo.trim()) { toast.error('Panel Slip # likhein ya chunein'); return; }
+    // Print window opened on the click, before the save (popup blockers).
+    const printWin = andPrint ? openPrintWindow() : null;
     try {
       const result = await createGDBatch({
         departmentId: Number(gdDepartmentId),
@@ -424,8 +427,10 @@ export default function GoodsIssue() {
       setGdComment('');
       setShowGDForm(false);
       setCreatedGDHeader(result);
-      if (andPrint && result) printGDDocument(result, { printedBy: result.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
+      if (andPrint && result) printGDDocument(result, { printedBy: result.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }), targetWindow: printWin });
+      else printWin?.close();
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message || 'Failed to create GD');
     }
   };
@@ -476,6 +481,8 @@ export default function GoodsIssue() {
       issuedQuantity: Number(ginIssuedQtys[gdItem.id] ?? gdItem.quantityRequested),
       ...(ginSelectedUnits[gdItem.id]?.length ? { assetInstanceIds: ginSelectedUnits[gdItem.id] } : {}),
     }));
+    // Print window opened on the click, before the save (popup blockers).
+    const printWin = andPrint ? openPrintWindow() : null;
     try {
       const newGIN = await createGIN({
         gdHeaderId: Number(selectedGDHeaderId),
@@ -501,8 +508,10 @@ export default function GoodsIssue() {
         : newGIN?.opdSlipNo
           ? `GIN created — Panel Slip # ${newGIN.opdSlipNo} ki Panel Billing mein add ho gayi`
           : 'GIN created');
-      if (andPrint && newGIN) printGINDocument(newGIN, { printedBy: newGIN.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) });
+      if (andPrint && newGIN) printGINDocument(newGIN, { printedBy: newGIN.createdByName || user?.name || user?.email || '', generatedAt: new Date().toLocaleString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }), targetWindow: printWin });
+      else printWin?.close();
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message || 'Failed to create GIN');
     }
   };

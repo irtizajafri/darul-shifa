@@ -24,7 +24,9 @@ function fmtDate(str) {
 
 // ─── Print MRN ───────────────────────────────────────────────────────────────
 
-function printMRN(mrn) {
+// `targetWindow`: a print window already opened on the click (before the
+// save's await) — a window opened after an await is blocked as a popup.
+function printMRN(mrn, targetWindow = null) {
   // Admission returns carry the billed rate — show Rate/Amount and a total.
   const priced = (mrn.mrnItems || []).some((mi) => mi.rate != null);
   const td = 'padding:6px 8px;border-bottom:1px solid #e5e7eb;';
@@ -79,7 +81,7 @@ function printMRN(mrn) {
   </div>
   </body></html>`;
 
-  const w = openPrintWindow('width=1000,height=800');
+  const w = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   w.document.write(html);
   w.document.write('<script>window.onafterprint = () => window.close();</script>');
   w.document.close();
@@ -206,6 +208,8 @@ export default function GoodsReturn() {
     if (over) return toast.error(`"${over.line.itemName}": sirf ${fmt(over.line.returnable)} wapas ho sakti hai`);
 
     setSaving(true);
+    // Print window opened on the click, before the save (popup blockers).
+    const printWin = andPrint ? openPrintWindow('width=1000,height=800') : null;
     try {
       const mrn = await createMRN({
         ...(isSlipMode ? { opdSlipNo: admData.admission.admissionNo } : { admissionNumber: admData.admission.admissionNo }),
@@ -221,8 +225,9 @@ export default function GoodsReturn() {
       setReturnDate(today());
       setReceivedBy('');
       setNotes('');
-      if (andPrint) printMRN(mrn);
+      if (andPrint) printMRN(mrn, printWin);
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message);
     } finally {
       setSaving(false);
@@ -241,6 +246,8 @@ export default function GoodsReturn() {
     if (!items.length) return toast.error('Kam az kam ek item ki wapsi qty enter karein');
 
     setSaving(true);
+    // Print window opened on the click, before the save (popup blockers).
+    const printWin = andPrint ? openPrintWindow('width=1000,height=800') : null;
     try {
       const mrn = await createMRN({
         ginId: selectedGIN.id,
@@ -259,8 +266,9 @@ export default function GoodsReturn() {
       setReturnDate(today());
       setReceivedBy('');
       setNotes('');
-      if (andPrint) printMRN(mrn);
+      if (andPrint) printMRN(mrn, printWin);
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message);
     } finally {
       setSaving(false);

@@ -41,7 +41,9 @@ export default function ReprintFilter() {
   const [docType, setDocType] = useState('slip');
   const [busy, setBusy] = useState(false);
 
-  async function reprintSlip(no) {
+  // `w` — the print window, opened by the caller on the click before this
+  // fetch (a window opened after an await is blocked as a popup).
+  async function reprintSlip(no, w) {
     const res = await fetch(`${API}/opd/reprint/${encodeURIComponent(no)}`);
     const json = await res.json();
     if (!res.ok) throw new Error(json.message || 'Slip nahi mila');
@@ -65,7 +67,6 @@ export default function ReprintFilter() {
         : buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
     }
 
-    const w = openPrintWindow('width=420,height=680');
     w.document.write(html);
     w.document.close();
   }
@@ -78,10 +79,12 @@ export default function ReprintFilter() {
     if (!type.enabled) { toast.error(`${type.label} abhi available nahi hai`); return; }
 
     if (docType === 'slip') {
+      const w = openPrintWindow('width=420,height=680');
       setBusy(true);
       try {
-        await reprintSlip(no);
+        await reprintSlip(no, w);
       } catch (err) {
+        w.close();
         toast.error(err.message || 'Slip nahi mila');
       } finally {
         setBusy(false);

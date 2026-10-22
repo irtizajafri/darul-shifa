@@ -265,8 +265,9 @@ export default function DiscountRefundAdmission() {
 
   // Popup-based print (never window.print() on the main window — see
   // dischargeCertificatePrintUtils for why that used to freeze the whole app).
-  function openDischargeCertificatePopup(data) {
-    const w = openPrintWindow('width=700,height=900');
+  // `w` is opened on the click, before the save request — a window opened
+  // after an await is blocked as an unrequested popup.
+  function openDischargeCertificatePopup(data, w = openPrintWindow('width=700,height=900')) {
     w.document.write(buildDischargeCertificatePrintHtml(data));
     w.document.close();
   }
@@ -274,8 +275,7 @@ export default function DiscountRefundAdmission() {
   // Payment Refund Slip — same popup print as the certificates (A4/A5, 130mm
   // block, letterhead margin). Opened automatically after a refund is saved,
   // and from each refund row in Previous Entries for a reprint.
-  function openRefundSlipPopup(entry, data = null) {
-    const w = openPrintWindow('width=700,height=900');
+  function openRefundSlipPopup(entry, data = null, w = openPrintWindow('width=700,height=900')) {
     w.document.write(buildRefundSlipPrintHtml({
       admission: data?.admission || admission,
       entry,
@@ -351,6 +351,9 @@ export default function DiscountRefundAdmission() {
       toast.error(`Refund ${fmt2(refundAmt)} zyada hai — wapas karne ke liye sirf ${fmt2(receivedAmount)} bacha hai`);
       return;
     }
+    // A refund prints its slip after the save — open that window now, on the
+    // click, before the await (popup blockers).
+    const printWin = refundAmt > 0 ? openPrintWindow('width=700,height=900') : null;
     setSaving(true);
     try {
       const res = await fetch(`${API}/admission/discount-refund/${admission.id}/add`, {
@@ -392,8 +395,10 @@ export default function DiscountRefundAdmission() {
       const fresh = await loadAdmissionByNo(admission.admissionNo);
       // A refund was paid out → print the Payment Refund Slip for this entry.
       const saved = (fresh?.history || [])[0];
-      if (refundAmt > 0 && saved && Number(saved.refundAmount) > 0) openRefundSlipPopup(saved, fresh);
+      if (refundAmt > 0 && saved && Number(saved.refundAmount) > 0) openRefundSlipPopup(saved, fresh, printWin);
+      else printWin?.close();
     } catch (e) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(e.message || 'Error saving');
     } finally {
       setSaving(false);
@@ -445,6 +450,7 @@ export default function DiscountRefundAdmission() {
   async function handleDcSaveAndPrint() {
     if (!dcForm.dischargeDate) { toast.error('Discharge Date select karein'); return; }
     if (!dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
+    const printWin = openPrintWindow('width=700,height=900');
     setDcSaving(true);
     try {
       const printedBy = user?.name || user?.username || user?.email || '';
@@ -463,8 +469,9 @@ export default function DiscountRefundAdmission() {
       // flips admission status to 'discharge' and frees the bed.
       toast.success('Discharge Certificate save ho gaya — patient discharge ho gaya, bed free ho gaya');
       setDcOpen(false);
-      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy });
+      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy }, printWin);
     } catch (e) {
+      if (!printWin.filled) printWin.close();
       toast.error(e.message || 'Error saving');
     } finally {
       setDcSaving(false);

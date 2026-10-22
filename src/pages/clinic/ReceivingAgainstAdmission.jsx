@@ -195,10 +195,15 @@ export default function ReceivingAgainstAdmission() {
   }
 
   async function handlePrintSlip() {
+    // Basic checks first (submitPayment shows the message) so no print
+    // window flashes open for a form that can't be saved.
+    if (!admission || !(Number(amount) > 0)) { submitPayment(); return; }
+    // Print window opened on the click, before the save (popup blockers).
+    const w = openPrintWindow('width=420,height=680');
     setSaving(true);
     try {
       const data = await submitPayment();
-      if (!data) return;
+      if (!data) { w.close(); return; }
 
       const canvas = document.createElement('canvas');
       JsBarcode(canvas, data.payment.serialNo, { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
@@ -207,13 +212,13 @@ export default function ReceivingAgainstAdmission() {
       const html = buildAdmissionPaymentReceiptHtml({
         payment: data.payment, admission: data.admission, printedBy, barcodeDataUrl, isDuplicate: false,
       });
-      const w = openPrintWindow('width=420,height=680');
       w.document.write(html);
       w.document.close();
 
       toast.success('Payment receive ho gayi');
       resetForm();
     } catch (e) {
+      if (!w.filled) w.close();
       toast.error(e.message || 'Error saving payment');
     } finally {
       setSaving(false);

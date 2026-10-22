@@ -62,8 +62,8 @@ function buildSelectionLabel({ mainGl, subGl, mainAcc, subAcc, payeeName }) {
   return parts.join('  |  ');
 }
 
-function printGLBalance({ data, dateFrom, dateTo, selectionLabel }) {
-  if (!data || !data.groups.length) { toast.error('No data to print'); return; }
+function printGLBalance({ data, dateFrom, dateTo, selectionLabel, targetWindow }) {
+  if (!data || !data.groups.length) { targetWindow?.close(); toast.error('No data to print'); return; }
   const { reportType, groups, grandTotal } = data;
 
   const wantsVoucherRows = reportType === 'Detail Voucher';
@@ -125,7 +125,7 @@ function printGLBalance({ data, dateFrom, dateTo, selectionLabel }) {
     </table>
   </body></html>`;
 
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(html);
   win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
@@ -201,6 +201,8 @@ export default function GLBalanceReport() {
 
   const handleGenerate = async () => {
     setLoading(true);
+    // Print window opened on the click, before the fetch (popup blockers).
+    const printWin = openPrintWindow('width=1000,height=800');
     try {
       const mainGl = mainGLs.find((g) => String(g.id) === String(mainGlId));
       const subGl = subGLs.find((g) => String(g.id) === String(subGlId));
@@ -225,8 +227,9 @@ export default function GLBalanceReport() {
         subAcc: subAcc ? `${subAcc.code} — ${subAcc.name}` : '',
         payeeName,
       });
-      printGLBalance({ data: j.data, dateFrom, dateTo, selectionLabel });
+      printGLBalance({ data: j.data, dateFrom, dateTo, selectionLabel, targetWindow: printWin });
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error(err.message);
     } finally {
       setLoading(false);

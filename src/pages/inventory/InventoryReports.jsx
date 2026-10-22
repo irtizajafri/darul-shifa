@@ -14,6 +14,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { exportRowsToExcel, exportRowsToPdf, printRowsToPdf, printRowsHtml, exportItemLedgerPdf } from '../../utils/exportInventoryReports';
 import { printPODocument } from '../../utils/printPO';
 import { printGRNDocument } from '../../utils/printGRN';
+import { openPrintWindow } from '../../utils/printRelay';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
 import { formatDate } from '../../utils/helpers';
@@ -621,11 +622,30 @@ export default function InventoryReports() {
     });
   };
 
-  const applyIssuanceFilters = () => {
-    fetchGINs(issuanceFilters).then(() => setPendingPrint(true)).catch((err) => {
+  // Issuance Report prints as HTML in a print window, after its fetch — so
+  // the window is opened right on the Apply click (popup blockers) and kept
+  // here until handlePrint fills it.
+  const issuancePrintWinRef = useRef(null);
+  const openIssuancePrintWin = () => {
+    issuancePrintWinRef.current?.close();
+    issuancePrintWinRef.current = openPrintWindow('width=900,height=1000');
+    return issuancePrintWinRef.current;
+  };
+  const takeIssuancePrintWin = () => {
+    const w = issuancePrintWinRef.current;
+    issuancePrintWinRef.current = null;
+    return w;
+  };
+  const loadIssuanceAndPrint = (filtersToUse) => {
+    const w = openIssuancePrintWin();
+    fetchGINs(filtersToUse).then(() => setPendingPrint(true)).catch((err) => {
+      if (issuancePrintWinRef.current === w) takeIssuancePrintWin();
+      w.close();
       toast.error(err.message || 'Failed to load issuance report');
     });
   };
+
+  const applyIssuanceFilters = () => loadIssuanceAndPrint(issuanceFilters);
 
   const resetIssuanceFilters = () => {
     const emptyFilters = {
@@ -1885,7 +1905,7 @@ export default function InventoryReports() {
     if (activeReport === 'Item Ledger') { exportItemLedgerPdf({ title: ledgerSummary ? 'Item Ledger Summary' : 'Item Ledger Report', rows: ledgerSummary ? ledgerSummaryExportRows : ledgerExportRows, isSummary: ledgerSummary, mode: 'print', ...meta }); return; }
     if (activeReport === 'Receiving Report') { printRowsToPdf({ title: receivingSummary ? 'Receiving Summary' : 'Receiving Report', rows: receivingSummary ? receivingSummaryExportRows : receivingExportRows, ...meta }); return; }
     // Portrait A4, Arial 8pt (HTML print).
-    if (activeReport === 'Issuance Report') { printRowsHtml({ title: issuanceOutput.title, rows: issuanceOutput.rows, grandTotal: issuanceOutput.grandTotal, ...meta }); return; }
+    if (activeReport === 'Issuance Report') { printRowsHtml({ title: issuanceOutput.title, rows: issuanceOutput.rows, grandTotal: issuanceOutput.grandTotal, ...meta, targetWindow: takeIssuancePrintWin() }); return; }
     if (activeReport === 'GD Report') {
       fetchGDs(gdFilters).then((rawData) => {
         const rows = (Array.isArray(rawData) ? rawData : [])
@@ -4254,7 +4274,7 @@ export default function InventoryReports() {
             setShowIssuanceAdmPicker(false);
             const next = { ...issuanceFilters, admissionNumber: r.admissionNo };
             setIssuanceFilters(next);
-            fetchGINs(next).then(() => setPendingPrint(true)).catch((err) => toast.error(err.message || 'Failed to load issuance report'));
+            loadIssuanceAndPrint(next);
           }}
           onClose={() => setShowIssuanceAdmPicker(false)}
         />

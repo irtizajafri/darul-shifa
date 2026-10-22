@@ -37,8 +37,8 @@ const CPH_CSS = `
   .footer { margin-top:24px; display:flex; justify-content:space-between; font-size:10px; }
 `;
 
-function printConsultantPaymentHistory({ data, printBy }) {
-  if (!data || !data.statusGroups.length) { toast.error('No data to print'); return; }
+function printConsultantPaymentHistory({ data, printBy, targetWindow }) {
+  if (!data || !data.statusGroups.length) { targetWindow?.close(); toast.error('No data to print'); return; }
   const { reportType, statusGroups, grandTotal } = data;
   const isDetail = reportType === 'Detail';
 
@@ -94,7 +94,7 @@ function printConsultantPaymentHistory({ data, printBy }) {
     <div class="footer"><span>${printBy || ''}</span><span>${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })}</span></div>
   </body></html>`;
 
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(html);
   win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
@@ -140,6 +140,8 @@ export default function ConsultantPaymentHistory() {
 
   const handleGenerate = async () => {
     setLoading(true);
+    // Print window opened on the click, before the fetch (popup blockers).
+    const printWin = openPrintWindow('width=1000,height=800');
     try {
       const from = doctors.find((d) => String(d.id) === String(consultantFromId));
       const to = doctors.find((d) => String(d.id) === String(consultantToId));
@@ -153,8 +155,9 @@ export default function ConsultantPaymentHistory() {
       const r = await fetch(`${ACCOUNTS_API}/consultant-payment-history?${params}`);
       const j = await r.json();
       if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
-      printConsultantPaymentHistory({ data: j.data, printBy: user?.name || '' });
+      printConsultantPaymentHistory({ data: j.data, printBy: user?.name || '', targetWindow: printWin });
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error(err.message);
     } finally {
       setLoading(false);

@@ -1,0 +1,28 @@
+// General Payment Date Wise — the old system's layout: day heading with the
+// payment mode on the right, then PayDate · Code · Particulars · Amount lines
+// each ruled underneath.
+.gpr-note { font-style: italic; }
+.gpr-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  table-layout: fixed;
+
+  th {
+    text-align: left;
+    text-decoration: underline;
+    font-weight: 400;
+    padding: 4px 6px;
+    &.num { text-align: right; }
+  }
+  td { padding: 4px 6px; vertical-align: top; }
+  .num { text-align: right; white-space: nowrap; }
+}
+.gpr-c-date { width: 120px; }
+.gpr-c-code { width: 60px; }
+.gpr-c-amt { width: 110px; }
+.gpr-day td { font-weight: 700; padding-top: 10px; }
+.gpr-line td { border-bottom: 1px solid #333; }
+.gpr-part { white-space: normal; word-break: break-word; }
+.gpr-subtotal td { font-weight: 700; border-bottom: 1px solid #999; }
+.gpr-grand td { font-weight: 700; border-top: 2px solid #000; padding-top: 6px; }

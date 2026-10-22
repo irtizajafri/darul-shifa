@@ -7103,6 +7103,9 @@ async function listProvisionalPharmacyItems(admissionId) {
 async function addProvisionalPharmacyItem(admissionId, { storeId, medicine, dosage, qty, unit, rate, medDate, remarks, createdByName }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  if (!storeId) throw Object.assign(new Error('Medical Store select karna zaroori hai'), { status: 400 });
+  const store = await prisma.clinicPharmacyStore.findUnique({ where: { id: Number(storeId) }, select: { id: true } });
+  if (!store) throw Object.assign(new Error('Yeh Medical Store nahi mila'), { status: 400 });
   if (!medicine?.trim()) throw Object.assign(new Error('Medicine naam zaroori hai'), { status: 400 });
   if (!medDate) throw Object.assign(new Error('Date zaroori hai'), { status: 400 });
   const q = Number(qty) || 1;
@@ -7110,7 +7113,7 @@ async function addProvisionalPharmacyItem(admissionId, { storeId, medicine, dosa
   return prisma.clinicProvisionalPharmacyItem.create({
     data: {
       admissionId: Number(admissionId),
-      storeId: storeId ? Number(storeId) : null,
+      storeId: store.id,
       medicine: medicine.trim(),
       dosage: dosage?.trim() || null,
       qty: q,
@@ -10628,6 +10631,53 @@ async function getCancelRefundHistory({ type = 'all', dateFrom, dateTo, search }
 // this just filters and shapes that same data as a report. Only doctors with
 // >=1 sub-dept assignment show up — a doctor with none (e.g. a payee-type
 // placeholder like "Admission Deposit") has no schedule to report.
+// ─── Reports > General Payment Date Wise ──────────────────────────────────────
+// Payments that came in through Pending Draft (Cash GL), for any date — the
+// day's ones show up the moment they're saved (real time), and they stay
+// under their date after Day Close posts them into a voucher (owner,
+// 2026-10-22). Mirrors the old system's "General Payment Date Wise":
+// one block per business day, each line PayDate · Code · Particulars ·
+// Amount. Code = the payee's ClinicDoctor code when the payee is a doctor
+// (matched by name, case/spacing ignored). doctorId narrows to one
+// consultant's payments.
+async function getGeneralPaymentReport({ fromDate, toDate, doctorId }) {
+  const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+  const where = { status: { in: ['pending', 'posted'] }, entityType: 'non-corporate' };
+  if (isYmd(fromDate) || isYmd(toDate)) {
+    where.businessDate = {};
+    if (isYmd(fromDate)) where.businessDate.gte = fromDate;
+    if (isYmd(toDate)) where.businessDate.lte = toDate;
+  }
+  const [drafts, doctors] = await Promise.all([
+    prisma.accVoucherExpenseDraft.findMany({ where, orderBy: [{ businessDate: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }] }),
+    prisma.clinicDoctor.findMany({ select: { id: true, code: true, name: true } }),
+  ]);
+  const key = (n) => String(n || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const doctorByName = new Map(doctors.map((d) => [key(d.name), d]));
+  const wanted = doctorId ? doctors.find((d) => d.id === Number(doctorId)) : null;
+  if (doctorId && !wanted) return { rows: [], total: 0 };
+
+  const rows = [];
+  for (const d of drafts) {
+    const doc = doctorByName.get(key(d.payeeName)) || null;
+    if (wanted && doc?.id !== wanted.id) continue;
+    rows.push({
+      id: d.id,
+      businessDate: d.businessDate,
+      mode: d.mode || 'cash',
+      code: doc?.code || '',
+      payeeName: d.payeeName || '',
+      accountName: d.accountName || '',
+      particulars: d.particulars || '',
+      amount: Number(d.amount) || 0,
+      createdByName: d.createdByName || '',
+      createdAt: d.createdAt,
+      posted: d.status === 'posted',
+    });
+  }
+  return { rows, total: rows.reduce((s, r) => s + r.amount, 0) };
+}
+
 async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly, day }) {
   const doctorWhere = {};
   if (doctorFromCode || doctorToCode) {
@@ -11342,6 +11392,7 @@ async function getOpdVisitEditLogs(visitId) {
 }
 
 module.exports = {
+  getGeneralPaymentReport,
   getOpdVisitForFullEdit,
   updateOpdVisitFull,
   getDailyStatementFromPatientList,

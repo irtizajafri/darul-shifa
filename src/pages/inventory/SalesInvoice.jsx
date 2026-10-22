@@ -8,6 +8,7 @@ import { useInventoryStore } from '../../store/useInventoryStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import AdmissionPickerModal from '../../components/inventory/AdmissionPickerModal';
 import { generateSalesInvoicePdf } from '../../utils/exportInventoryReports';
+import { openPrintWindow } from '../../utils/printRelay';
 
 function toDateInput(value) {
   const d = value ? new Date(value) : new Date();
@@ -183,6 +184,8 @@ export default function SalesInvoice() {
       return;
     }
 
+    // Print window opened on the click, before the save (popup blockers).
+    const printWin = withPrint ? openPrintWindow('width=900,height=900') : null;
     try {
       const payload = {
         invoiceDate: header.invoiceDate,
@@ -208,13 +211,14 @@ export default function SalesInvoice() {
       setHeader({ invoiceDate: toDateInput(), customerType: 'walking', customerName: '' });
       setShowForm(false);
       toast.success('Sales invoice created');
-      if (withPrint) printInvoice(created);
+      if (withPrint) printInvoice(created, printWin);
     } catch (err) {
+      if (!printWin?.filled) printWin?.close();
       toast.error(err.message || 'Failed to create sales invoice');
     }
   };
 
-  const printInvoice = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
+  const printInvoice = (inv, targetWindow) => generateSalesInvoicePdf({ inv, mode: 'print', targetWindow });
   const handlePrint = (inv) => generateSalesInvoicePdf({ inv, mode: 'print' });
 
   // Auto-billing: once an admission is searched, any GIN lines not on a bill

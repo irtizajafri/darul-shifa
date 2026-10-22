@@ -40,8 +40,8 @@ const CWV_CSS = `
   tr.grand-row td { font-weight:800; border-top:2px solid #000; border-bottom:none; padding-top:6px; }
 `;
 
-function printChequeWiseVoucherSummary({ data, dateFrom, dateTo, printBy }) {
-  if (!data || !data.rows.length) { toast.error('No data to print'); return; }
+function printChequeWiseVoucherSummary({ data, dateFrom, dateTo, printBy, targetWindow }) {
+  if (!data || !data.rows.length) { targetWindow?.close(); toast.error('No data to print'); return; }
   const { rows, grandTotal } = data;
 
   const bodyHTML = rows.map((r) => `
@@ -80,7 +80,7 @@ function printChequeWiseVoucherSummary({ data, dateFrom, dateTo, printBy }) {
     </table>
   </body></html>`;
 
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(html);
   win.document.write('<script>window.onafterprint = () => window.close();</script>');
   win.document.close();
@@ -104,13 +104,16 @@ export default function ChequeWiseVoucherSummary() {
   const handlePrint = async () => {
     if (!selectedModes.length) { toast.error('Kam se kam ek Mode select karo'); return; }
     setLoading(true);
+    // Print window opened on the click, before the fetch (popup blockers).
+    const printWin = openPrintWindow('width=1000,height=800');
     try {
       const params = new URLSearchParams({ entityType, dateFrom, dateTo, modes: selectedModes.join(',') });
       const r = await fetch(`${API}/cheque-wise-voucher-summary?${params}`);
       const j = await r.json();
       if (!r.ok || j?.ok === false) throw new Error(j?.message || 'Failed');
-      printChequeWiseVoucherSummary({ data: j.data, dateFrom, dateTo });
+      printChequeWiseVoucherSummary({ data: j.data, dateFrom, dateTo, targetWindow: printWin });
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error(err.message);
     } finally {
       setLoading(false);

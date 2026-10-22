@@ -154,7 +154,7 @@ const SUMMARY_CSS = `
 `;
 
 // ── Build print HTML ────────────────────────────────────────────────────────────
-function printVoucherSummary({ vouchers, entityType, printBy }) {
+function printVoucherSummary({ vouchers, entityType, printBy, targetWindow }) {
   const grouped     = groupVouchers(vouchers);
   const fyStart     = getFiscalStart();
   const fyMonthName = fyStart.toLocaleString('en-US', { month: 'long' });
@@ -282,7 +282,7 @@ function printVoucherSummary({ vouchers, entityType, printBy }) {
     </div>
   `;
 
-  const win = openPrintWindow('width=1000,height=800');
+  const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(
     `<!DOCTYPE html><html><head><title>Voucher Summary</title><style>${SUMMARY_CSS}</style></head><body>${html}</body></html>`
   );
@@ -324,6 +324,8 @@ export default function VoucherSummary() {
 
   const handlePrint = async () => {
     setLoading(true);
+    // Print window opened on the click, before the fetch (popup blockers).
+    const printWin = openPrintWindow('width=1000,height=800');
     try {
       const p = new URLSearchParams({ entityType });
       if (filters.voucherFrom)   p.set('voucherFrom',   filters.voucherFrom);
@@ -338,12 +340,14 @@ export default function VoucherSummary() {
       const vouchers = json.data || [];
 
       if (!vouchers.length) {
+        printWin.close();
         toast('No vouchers found for the selected filters.');
         return;
       }
 
-      printVoucherSummary({ vouchers, entityType, printBy: user?.name || 'System' });
+      printVoucherSummary({ vouchers, entityType, printBy: user?.name || 'System', targetWindow: printWin });
     } catch (err) {
+      if (!printWin.filled) printWin.close();
       toast.error('Error: ' + err.message);
     } finally {
       setLoading(false);

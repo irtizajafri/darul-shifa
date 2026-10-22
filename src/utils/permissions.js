@@ -218,6 +218,7 @@ export const PERMISSIONS_MAP = {
           { key: 'department-monthly-comparison',     label: 'Department wise Monthly Comparison' },
           { key: 'cancel-refund-history',              label: 'Cancel & Refund Slip History' },
           { key: 'doctor-schedule',                    label: 'Doctor Schedule Report' },
+          { key: 'general-payment',                    label: 'General Payment Date Wise' },
         ],
       },
 

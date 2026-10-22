@@ -1,6 +1,6 @@
 import { printHtml } from './printRelay';
 
-export function printGRNDocument({ grnCode, date, supplierName, items = [], printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '' }) {
+export function printGRNDocument({ grnCode, date, supplierName, items = [], printedBy = '', generatedAt = '', isReprint = false, reprintedBy = '', reprintedAt = '', targetWindow = null }) {
   const grnDate = date
     ? new Date(date).toLocaleDateString('en-PK', { year: 'numeric', month: 'long', day: 'numeric' })
     : '';
@@ -116,5 +116,5 @@ export function printGRNDocument({ grnCode, date, supplierName, items = [], prin
 </body>
 </html>`;
 
-  printHtml(html);
+  printHtml(html, undefined, targetWindow);
 }
