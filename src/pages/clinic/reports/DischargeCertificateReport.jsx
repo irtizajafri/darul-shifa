@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './DischargeCertificateReport.scss';
@@ -92,7 +91,6 @@ export default function DischargeCertificateReport() {
 
   return (
     <div className="dcgr-page">
-      <ClinicMenuBar />
 
       <ReportToolbar
         onPrint={() => printDischargeCertificateReport(sheetRef.current)}

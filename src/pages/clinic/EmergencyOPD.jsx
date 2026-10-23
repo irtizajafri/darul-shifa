@@ -5,6 +5,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import OpdPanelModal from '../../components/clinic/OpdPanelModal';
 import { buildEmergencyReceiptHtml } from './emergencyReceiptUtils';
+import { buildThermalReceiptHtml } from './thermalReceiptUtils';
 import { buildCrfPrintDocument, buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
 import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -427,7 +428,9 @@ export default function EmergencyOPD() {
     setMrConfirm(null);
   }
 
-  async function handleSaveAndPrint() {
+  // `thermal` — "Thermal & Save" button: same save, 80mm thermal receipt
+  // instead of the A6 slip (owner, 2026-10-23).
+  async function handleSaveAndPrint(thermal = false) {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
     const phoneErr = validatePhoneNo(form.phoneNo);
@@ -472,7 +475,9 @@ export default function EmergencyOPD() {
       if (newId) {
         const { visit, tokenNo, isDuplicate } = await printOpdVisit(newId);
         const printedBy = user?.name || user?.username || user?.email || '';
-        const html = buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
+        const html = thermal
+          ? buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, printedBy })
+          : buildEmergencyReceiptHtml({ visit, tokenNo, isDuplicate, printedBy });
         // CRF prints as its own separate print job in this SAME popup, right
         // after the slip's — see clinicalRecordPrintUtils's buildSequentialPrintHtml.
         const crfDoc = buildCrfPrintDocument({ visit, consultantName, barcodeDataUrl: '', formTitle: 'EMERGENCY FORM' });
@@ -874,11 +879,18 @@ export default function EmergencyOPD() {
                 </div>
                 <div className="gopd-action-btns">
                   <button
-                    className="gopd-print-btn" data-enter-submit onClick={handleSaveAndPrint} disabled={busy}
-                    title="Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
+                    className="gopd-print-btn" data-enter-submit onClick={() => handleSaveAndPrint(false)} disabled={busy}
+                    title="Save + A6 slip · Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
                   >
                     <Printer size={16} />
                     {busy ? 'Please wait...' : 'Save & Print'}
+                  </button>
+                  <button
+                    className="gopd-print-btn gopd-print-btn--thermal" onClick={() => handleSaveAndPrint(true)} disabled={busy}
+                    title="Save + thermal (80mm) slip"
+                  >
+                    <Printer size={16} />
+                    {busy ? 'Please wait...' : 'Thermal & Save'}
                   </button>
                 </div>
               </div>

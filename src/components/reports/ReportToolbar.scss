@@ -12,6 +12,10 @@
   margin: -16px -16px 12px;
   @media (min-width: 1024px) { margin: -24px -24px 12px; }
 }
+// A report that also shows the Clinic menu bar (Antenatal, Discharge /
+// Death Certificate): the bar comes first, so the toolbar must not pull
+// itself up over it — sit just below it instead.
+.clinic-menu-bar + .rpt-sticky { margin-top: 8px; }
 
 .rpt-toolbar {
   display: flex;

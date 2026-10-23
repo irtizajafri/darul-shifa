@@ -428,7 +428,6 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   // Temporary manual switch until QZ Tray auto-routing is wired up — staff
   // picks which slip format to print, then picks the matching printer
   // themselves in the OS print dialog.
-  const [thermalPrint, setThermalPrint] = useState(false);
 
   // Miscellaneous-only: items flagged Quantity/Price-editable open this modal
   // instead of the normal checkbox+transfer flow — the entered value(s)
@@ -691,7 +690,9 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     setMiscModalItem(null);
   }
 
-  async function handleSaveAndPrint() {
+  // `thermal` — "Thermal & Save" button: same save, 80mm thermal receipt
+  // instead of the A6 slip (owner, 2026-10-23; was a checkbox).
+  async function handleSaveAndPrint(thermal = false) {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
     if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
     const phoneErr = validatePhoneNo(form.phoneNo);
@@ -746,7 +747,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
         });
         const barcodeDataUrl = canvas.toDataURL('image/png');
         const printedBy = user?.name || user?.username || user?.email || '';
-        const html = thermalPrint
+        const html = thermal
           ? buildThermalReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy })
           : buildReceiptHtml({ visit, tokenNo, isDuplicate, barcodeDataUrl, printedBy });
 
@@ -1324,17 +1325,20 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                     </>
                   )}
                 </div>
-                <label className="gopd-oncall-lbl" style={{ marginBottom: 6 }}>
-                  <input type="checkbox" checked={thermalPrint} onChange={e => setThermalPrint(e.target.checked)} />
-                  Thermal Print (80mm)
-                </label>
                 <div className="gopd-action-btns">
                   <button
-                    className="gopd-print-btn" data-enter-submit onClick={handleSaveAndPrint} disabled={busy}
-                    title="Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
+                    className="gopd-print-btn" data-enter-submit onClick={() => handleSaveAndPrint(false)} disabled={busy}
+                    title="Save + A6 slip · Ctrl+Enter = Save & Print from anywhere · Esc = close popup"
                   >
                     <Printer size={16} />
                     {busy ? 'Please wait...' : 'Save & Print'}
+                  </button>
+                  <button
+                    className="gopd-print-btn gopd-print-btn--thermal" onClick={() => handleSaveAndPrint(true)} disabled={busy}
+                    title="Save + thermal (80mm) slip"
+                  >
+                    <Printer size={16} />
+                    {busy ? 'Please wait...' : 'Thermal & Save'}
                   </button>
                 </div>
               </div>

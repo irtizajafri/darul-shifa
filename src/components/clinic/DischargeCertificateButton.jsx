@@ -8,6 +8,7 @@ import '../../pages/clinic/DiscountRefundAdmission.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { printedByCode } from '../../utils/printedBy';
 import { useShallow } from 'zustand/react/shallow';
+import useModalKeys from '../../hooks/useModalKeys';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -28,10 +29,30 @@ const REASON_OPTIONS = [
   { value: 'discharge_on_request', label: 'Discharge on Request' },
 ];
 
-function DischargeCertificateModal({ header, form, onChange, onClose, onSave, saving, diagnosisOptions }) {
+function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
+
+// Shared by this button and Discount & Refund's reprint fallback.
+export function DischargeCertificateModal({ header, form, onChange, onClose, onSave, saving, diagnosisOptions }) {
   const { admission, roomCategory, bed, consultant } = header;
   // Panel file: these three aren't asked (owner, 2026-10-23) — see the print.
   const isPanel = admission.patientCategory === 'panel';
+  // ESC only — this is a data-entry form, so no backdrop-click close.
+  useModalKeys({ active: true, onEsc: onClose });
+
+  // Medical Officer is picked from the RMO list (owner, 2026-10-23) — same
+  // list as Admission's "Arrived under RMO": active doctors whose Staff
+  // Category contains "rmo". A name saved before stays selectable.
+  const { doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors })));
+  useEffect(() => {
+    if (!doctors.length) fetchDoctors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const rmoOptions = useMemo(() => {
+    const names = doctors.filter(d => d.status === 'active' && normCat(d.staffCategory?.name).includes('rmo')).map(d => d.name);
+    const cur = form.medicalOfficer;
+    return cur && !names.includes(cur) ? [cur, ...names] : names;
+  }, [doctors, form.medicalOfficer]);
+
   return (
     <div className="dra-overlay">
       <div className="dra-modal dc-modal">
@@ -102,7 +123,13 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
             </div>
             <div className="dc-modal-col">
               <label>Medical Officer</label>
-              <input value={form.medicalOfficer} onChange={e => onChange('medicalOfficer', e.target.value)} />
+              <SearchableSelect
+                options={rmoOptions}
+                value={form.medicalOfficer}
+                onChange={v => onChange('medicalOfficer', v)}
+                placeholder="Select RMO…"
+                size="sm"
+              />
             </div>
           </div>
         </div>

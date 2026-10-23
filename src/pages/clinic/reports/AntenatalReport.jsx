@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
-import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './AntenatalReport.scss';
@@ -88,7 +87,6 @@ export default function AntenatalReport() {
 
   return (
     <div className="atr-page">
-      <ClinicMenuBar />
 
       <ReportToolbar
         onPrint={() => printAntenatalReport(sheetRef.current)}

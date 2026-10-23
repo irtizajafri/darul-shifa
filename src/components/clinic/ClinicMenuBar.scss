@@ -8,6 +8,11 @@
   padding: 0 0.25rem;
   position: relative;
   z-index: 50;
+  // While a dropdown (Parameters / Transactions…) is open, lift the bar over
+  // the sticky report toolbar (.rpt-sticky, z-index 100) so the list opens on
+  // top of it, not behind it (owner, 2026-10-23). Only while open — at rest
+  // it stays at 50 so page popups (Modal z-50, overlays z-60) still cover it.
+  &:has(.menu-dropdown) { z-index: 150; }
 
   .menu-item-wrapper {
     position: relative;

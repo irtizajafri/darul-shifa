@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
-import DischargeCertificateButton from '../../components/clinic/DischargeCertificateButton';
+import DischargeCertificateButton, { DischargeCertificateModal } from '../../components/clinic/DischargeCertificateButton';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useClinicStore } from '../../store/useClinicStore';
@@ -40,13 +40,6 @@ function toDateInputValue(d) {
   return new Date(dt.getTime() + 5 * 3600000).toISOString().slice(0, 10);
 }
 
-const REASON_OPTIONS = [
-  { value: 'treated', label: 'Patient Treated' },
-  { value: 'transfer', label: 'Patient Transfer' },
-  { value: 'lama', label: 'LAMA' },
-  { value: 'expired', label: 'Patient Expired' },
-  { value: 'discharge_on_request', label: 'Discharge on Request' },
-];
 // ── Admission Lookup Modal ─────────────────────────────────────────────────────
 function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
   const [rows, setRows] = useState([]);
@@ -124,89 +117,6 @@ function AdmissionLookupModal({ onSelect, onClose, closedFilesOnly }) {
               </tbody>
             </table>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Discharge Certificate Modal ─────────────────────────────────────────────────
-function DischargeCertificateModal({ header, form, onChange, onClose, onSave, saving, diagnosisOptions }) {
-  const { admission, roomCategory, bed, consultant } = header;
-  // ESC only — this is a data-entry form, so no backdrop-click close.
-  useModalKeys({ active: true, onEsc: onClose });
-  return (
-    <div className="dra-overlay">
-      <div className="dra-modal dc-modal" role="dialog" aria-modal="true">
-        <div className="dra-modal-hdr">
-          <span>Discharge Certificate — {admission.admissionNo}</span>
-          <button className="dra-modal-close" onClick={onClose} aria-label="Close" title="Close">✕</button>
-        </div>
-        <div className="dc-modal-body">
-          <div className="dc-modal-info">
-            {admission.patientTitle} {admission.patientName} · {roomCategory?.name || '—'} / {bed?.name || '—'} · Consultant: {consultant?.name || '—'}
-          </div>
-
-          <div className="dc-modal-row">
-            <label>Discharge Date *</label>
-            <input
-              type="date"
-              value={form.dischargeDate}
-              min={toDateInputValue(admission.createdAt)}
-              onChange={e => onChange('dischargeDate', e.target.value)}
-              required
-            />
-          </div>
-
-          <div className="dc-modal-row">
-            <label>Reason of Discharge *</label>
-            <select value={form.reasonOfDischarge} onChange={e => onChange('reasonOfDischarge', e.target.value)}>
-              <option value="">Select…</option>
-              {REASON_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-            </select>
-          </div>
-
-          <div className="dc-modal-row">
-            <label>Diagnosis</label>
-            <SearchableSelect
-              options={diagnosisOptions}
-              value={form.diagnosis}
-              onChange={v => onChange('diagnosis', v)}
-              placeholder="Select…"
-              size="sm"
-            />
-          </div>
-
-          <div className="dc-modal-row dc-modal-row--split">
-            <div className="dc-modal-col">
-              <label>Further Treatment Needed</label>
-              <div className="dc-modal-yn">
-                <label><input type="radio" name="dc-ftn" checked={form.furtherTreatmentNeeded === 'yes'} onChange={() => onChange('furtherTreatmentNeeded', 'yes')} /> Yes</label>
-                <label><input type="radio" name="dc-ftn" checked={form.furtherTreatmentNeeded === 'no'} onChange={() => onChange('furtherTreatmentNeeded', 'no')} /> No</label>
-              </div>
-            </div>
-            <div className="dc-modal-col">
-              <label>Medicine Prescribed</label>
-              <div className="dc-modal-yn">
-                <label><input type="radio" name="dc-mp" checked={form.medicinePrescribed === 'yes'} onChange={() => onChange('medicinePrescribed', 'yes')} /> Yes</label>
-                <label><input type="radio" name="dc-mp" checked={form.medicinePrescribed === 'no'} onChange={() => onChange('medicinePrescribed', 'no')} /> No</label>
-              </div>
-            </div>
-          </div>
-
-          <div className="dc-modal-row dc-modal-row--split">
-            <div className="dc-modal-col">
-              <label>Follow Up</label>
-              <input value={form.followUp} onChange={e => onChange('followUp', e.target.value)} />
-            </div>
-            <div className="dc-modal-col">
-              <label>Medical Officer</label>
-              <input value={form.medicalOfficer} onChange={e => onChange('medicalOfficer', e.target.value)} />
-            </div>
-          </div>
-        </div>
-        <div className="dc-modal-footer">
-          <button className="dra-add-btn" onClick={onSave} disabled={saving}>Save &amp; Print</button>
         </div>
       </div>
     </div>
@@ -449,7 +359,8 @@ export default function DiscountRefundAdmission() {
 
   async function handleDcSaveAndPrint() {
     if (!dcForm.dischargeDate) { toast.error('Discharge Date select karein'); return; }
-    if (!dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
+    const isPanel = dcHeader?.admission?.patientCategory === 'panel';
+    if (!isPanel && !dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
     const printWin = openPrintWindow('width=700,height=900');
     setDcSaving(true);
     try {

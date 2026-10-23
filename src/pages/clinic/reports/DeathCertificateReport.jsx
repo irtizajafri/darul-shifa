@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
-import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DeathCertificateReport.scss';
@@ -274,7 +273,6 @@ export default function DeathCertificateReport() {
 
   return (
     <div className="dcr-page">
-      <ClinicMenuBar />
 
       <ReportToolbar
         onPrint={printDeathCertificateReport}

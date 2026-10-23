@@ -837,6 +837,10 @@
   white-space: nowrap;
 
   &:hover { background: #1d4ed8; }
+  &:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  // "Thermal & Save" — same action, 80mm thermal slip instead of A6.
+  &--thermal { background: #dc2626; &:hover:not(:disabled) { background: #b91c1c; } }
 }
 
 // ── Employee change button ────────────────────────────────────────────────────
