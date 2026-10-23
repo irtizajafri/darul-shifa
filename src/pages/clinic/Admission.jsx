@@ -337,7 +337,7 @@ const EMPTY = {
   advancePayment: '',
   roomCategoryId: '',
   bedId: '',
-  surgery: false,
+  surgery: null, // General Admission / Surgery — must be picked
   surgeryTypeId: '',
   referralPatient: 'no',
   referralNote: '',
@@ -385,6 +385,7 @@ function validateAdmissionForm(form) {
     }
   }
 
+  if (form.surgery == null) return 'General Admission ya Surgery select karo';
   if (form.surgery && !form.surgeryTypeId) return 'Surgery Type select karo';
   if (form.referralPatient === 'yes' && !form.referralNote.trim()) return 'Referral note likho (referred by name/hospital)';
   if (form.antenatal && !form.antenatalNo.trim()) return 'Antenatal number likho';
@@ -1119,8 +1120,15 @@ export default function Admission() {
               <h3 className="adm-section-title">Additional Flags</h3>
 
               <div className="adm-row adm-row--flags">
-                <label className={`adm-flag-btn ${form.surgery ? 'adm-flag-btn--active' : ''}`}>
-                  <input type="checkbox" checked={form.surgery} onChange={e => set('surgery', e.target.checked)} />
+                {/* General Admission / Surgery — one must be picked (owner, 2026-10-23);
+                    only Surgery files open in Surgery Information and OT Register.
+                    form.surgery: null = not picked yet, false = General, true = Surgery. */}
+                <label className={`adm-flag-btn ${form.surgery === false ? 'adm-flag-btn--active' : ''}`}>
+                  <input type="radio" name="admissionKind" checked={form.surgery === false} onChange={() => setForm(f => ({ ...f, surgery: false, surgeryTypeId: '' }))} />
+                  General Admission
+                </label>
+                <label className={`adm-flag-btn ${form.surgery === true ? 'adm-flag-btn--active' : ''}`}>
+                  <input type="radio" name="admissionKind" checked={form.surgery === true} onChange={() => set('surgery', true)} />
                   Surgery
                 </label>
                 {form.surgery && (

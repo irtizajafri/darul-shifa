@@ -1159,7 +1159,7 @@ async function getAdmissionByNumber(req, res, next) {
 }
 
 async function searchAdmissionsForReceiving(req, res, next) {
-  try { success(res, await service.searchAdmissionsForReceiving(req.query.q)); } catch (err) { next(err); }
+  try { success(res, await service.searchAdmissionsForReceiving(req.query.q, { surgeryOnly: req.query.surgeryOnly === '1' })); } catch (err) { next(err); }
 }
 
 async function getAdmissionForReceiving(req, res, next) {

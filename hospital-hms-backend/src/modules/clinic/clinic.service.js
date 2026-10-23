@@ -1926,11 +1926,14 @@ function admPaidSoFar(admission) {
   return adv + paid;
 }
 
-async function searchAdmissionsForReceiving(q) {
+// `surgeryOnly` — Surgery Information / OT Register pickers list only files
+// admitted as Surgery (owner, 2026-10-23; see assertSurgeryFile).
+async function searchAdmissionsForReceiving(q, { surgeryOnly = false } = {}) {
   const term = String(q || '').trim();
   const where = term
     ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
     : {};
+  if (surgeryOnly) where.surgery = true;
   // No cap, blank search or not — shared by all 5 screens using this search
   // (their own admission pickers). Used to cap the blank/browse case at the
   // most-recent 100, which silently hid any admission not among those 100
@@ -3541,12 +3544,21 @@ async function getDischargeCertificateReport({ fromDate, toDate }) {
 }
 
 // ─── Transactions > OT Register ───────────────────────────────────────────────
+// Surgery Information and OT Register open only files admitted as Surgery
+// (Admission / Admission Adjustment: General Admission vs Surgery).
+function assertSurgeryFile(admission) {
+  if (!admission.surgery) {
+    throw Object.assign(new Error('Yeh General Admission file hai — sirf Surgery files yahan khulti hain (Admission Adjustment mein Surgery select karein)'), { status: 400 });
+  }
+}
+
 async function getOtRegisterForAdmission(admissionNo) {
   const admission = await prisma.clinicAdmission.findFirst({
     where: { admissionNo: String(admissionNo).trim() },
     orderBy: { id: 'desc' },
   });
   if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+  assertSurgeryFile(admission);
 
   // Every OT entry of this admission (newest first) — the screen lists them
   // with Edit; a new Save adds another surgery instead of overwriting the
@@ -3827,6 +3839,7 @@ async function importBirthCertificates(rows) {
 async function saveOtRegister(admissionId, payload) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  assertSurgeryFile(admission);
   if (!payload.surgeryDateTime) throw Object.assign(new Error('Surgery Date and Time is required'), { status: 400 });
 
   const data = {
@@ -12408,6 +12421,7 @@ async function getSurgeryInformationForAdmission(admissionNo) {
     include: { surgeryInformation: true },
   });
   if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+  assertSurgeryFile(admission);
 
   // Also return all doctors (with staff categories) so frontend can build staff grids
   const doctors = await prisma.clinicDoctor.findMany({
@@ -12422,6 +12436,7 @@ async function getSurgeryInformationForAdmission(admissionNo) {
 async function saveSurgeryInformation(admissionId, payload) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  assertSurgeryFile(admission);
 
   const existing = await prisma.clinicSurgeryInformation.findUnique({ where: { admissionId: Number(admissionId) } });
 

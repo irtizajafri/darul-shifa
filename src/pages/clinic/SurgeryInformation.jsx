@@ -59,7 +59,7 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   const [q, setQ]             = useState('');
 
   useEffect(() => {
-    fetch(`${API}/admission/receiving/search`)
+    fetch(`${API}/admission/receiving/search?surgeryOnly=1`) // Surgery files only
       .then(r => r.json())
       .then(res => setRows(res.data || []))
       .catch(() => setRows([]))

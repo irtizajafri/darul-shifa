@@ -522,6 +522,8 @@ export default function AdmissionAdjustment() {
   async function handleSave() {
     if (!form.admissionNo.trim()) return toast.error('Admission # is required');
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
+    if (form.surgery == null) return toast.error('General Admission ya Surgery select karo');
+    if (form.surgery && !form.surgeryTypeId) return toast.error('Surgery Type select karo');
     setSaving(true);
     try {
       const updated = await updateAdmissionAdjustment(admissionId, { ...form, referralPatient: form.referralPatient === 'yes' });
@@ -833,8 +835,15 @@ export default function AdmissionAdjustment() {
                 <h3 className="adm-section-title">Additional Flags</h3>
 
                 <div className="adm-row adm-row--flags">
-                  <label className={`adm-flag-btn ${form.surgery ? 'adm-flag-btn--active' : ''}`}>
-                    <input type="checkbox" checked={form.surgery} onChange={e => set('surgery', e.target.checked)} />
+                  {/* General Admission / Surgery — one must be picked (owner, 2026-10-23);
+                      only Surgery files open in Surgery Information and OT Register.
+                      form.surgery: null = not picked yet, false = General, true = Surgery. */}
+                  <label className={`adm-flag-btn ${form.surgery === false ? 'adm-flag-btn--active' : ''}`}>
+                    <input type="radio" name="admissionKind" checked={form.surgery === false} onChange={() => setForm(f => ({ ...f, surgery: false, surgeryTypeId: '' }))} />
+                    General Admission
+                  </label>
+                  <label className={`adm-flag-btn ${form.surgery === true ? 'adm-flag-btn--active' : ''}`}>
+                    <input type="radio" name="admissionKind" checked={form.surgery === true} onChange={() => set('surgery', true)} />
                     Surgery
                   </label>
                   {form.surgery && (

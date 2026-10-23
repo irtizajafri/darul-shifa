@@ -266,7 +266,7 @@
   transition: all 0.15s;
   white-space: nowrap;
 
-  input[type='checkbox'] { accent-color: #3b82f6; }
+  input[type='checkbox'], input[type='radio'] { accent-color: #3b82f6; }
 
   &--active {
     border-color: #3b82f6;

@@ -56,7 +56,7 @@ function AdmissionLookupModal({ onSelect, onClose }) {
   useModalKeys({ active: true, onEsc: onClose });
 
   useEffect(() => {
-    fetch(`${API}/admission/receiving/search`)
+    fetch(`${API}/admission/receiving/search?surgeryOnly=1`) // Surgery files only
       .then(r => r.json())
       .then(res => setRows(res.data || []))
       .catch((err) => { setRows([]); toast.error(err?.message || 'Failed to load admissions'); })
