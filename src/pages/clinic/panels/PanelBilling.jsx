@@ -2363,6 +2363,11 @@ function relationText(admission) {
   return admission.relationType && admission.relationType !== 'Self' ? `${admission.relationType} ${name}` : name;
 }
 
+// Closing line on all three Panel Billing reports (owner, 2026-10-23).
+function ComputerGeneratedNote() {
+  return <div className="pnbr-cg-note">This is a computer-generated document and does not require a signature</div>;
+}
+
 function BillingCoveringPagePrintTemplate({ data }) {
   if (!data) return null;
   const { admission, company } = data;
@@ -2438,11 +2443,9 @@ function BillingCoveringPagePrintTemplate({ data }) {
           </div>
         </div>
 
-        {/* Outside the box (owner, 2026-10-21) — the box ends at the Total. */}
-        <div className="pnbr-cov-sign">
-          <div className="pnbr-cov-sign-line" />
-          <div className="pnbr-cov-sign-label">Signature</div>
-        </div>
+        {/* Signature line removed (owner, 2026-10-23) — replaced by the
+            computer-generated note, same as the other two reports. */}
+        <ComputerGeneratedNote />
       </div>
     </div>
   );
@@ -2495,6 +2498,7 @@ function DiagnosticBillPrintTemplate({ data }) {
         })}
 
         <div className="pnbr-diag-grand">Grand Total <span>{fmt(grandTotal)}</span></div>
+        <ComputerGeneratedNote />
       </div>
     </div>
   );
@@ -2549,6 +2553,7 @@ function MedicineBillPrintTemplate({ data }) {
         </table>
 
         <div className="pnbr-med-total">Total <span>{fmt2(total)}</span></div>
+        <ComputerGeneratedNote />
       </div>
     </div>
   );

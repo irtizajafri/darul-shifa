@@ -244,7 +244,8 @@ const DOCTOR_INCLUDE = {
 async function getAllDoctors({ minimal } = {}) {
   if (minimal) {
     return prisma.clinicDoctor.findMany({
-      select: { id: true, code: true, name: true, status: true },
+      // staffCategory: Consultant Statement lists only Consultant / Contractor.
+      select: { id: true, code: true, name: true, status: true, staffCategory: { select: { name: true } } },
       orderBy: { name: 'asc' },
     });
   }

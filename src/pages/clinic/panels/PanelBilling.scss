@@ -628,15 +628,8 @@
 .pnbr-cov-words { font-style: italic; text-transform: capitalize; font-size: 11px; }
 .pnbr-cov-total { font-weight: 700; span { font-size: 14px; font-weight: 700; margin-left: 6px; } }
 
-.pnbr-cov-sign {
-  // Below the box, 150px down (owner, 2026-10-21) — room to sign above it.
-  margin: 150px 10px 4px;
-  width: 160px;
-  margin-left: auto; // right-aligned, under the Total
-  text-align: center;
-}
-.pnbr-cov-sign-line { border-top: 1px solid #333; }
-.pnbr-cov-sign-label { font-size: 10px; color: #444; padding-top: 3px; }
+// "This is a computer-generated document…" — closes all three reports.
+.pnbr-cg-note { margin-top: 24px; text-align: center; font-size: 9px; font-style: italic; color: #444; }
 
 // Diagnostic Bill (owner, 2026-10-23): plain weight, one size smaller than
 // the other reports, then 1px more (9px vs 11px); only Subtotal / Grand Total stay bold.

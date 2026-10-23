@@ -6,6 +6,7 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantStatementFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
+const STATEMENT_CATEGORIES = ['consultant', 'contractor'];
 
 const todayStr    = () => new Date().toISOString().split('T')[0];
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; };
@@ -28,7 +29,11 @@ export default function ConsultantStatementFilter() {
     fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
       .then(j => {
-        const list = (j.data || []).filter(d => !activeOnly || d.status === 'active');
+        // Only doctors whose Staff Category is Consultant or Contractor
+        // (owner, 2026-10-23) — not every doctor/RMO/anaesthetist.
+        const list = (j.data || [])
+          .filter(d => STATEMENT_CATEGORIES.includes(String(d.staffCategory?.name || '').trim().toLowerCase()))
+          .filter(d => !activeOnly || d.status === 'active');
         setDoctors(list);
         if (list.length) setConsultant(String(list[0].id));
       })

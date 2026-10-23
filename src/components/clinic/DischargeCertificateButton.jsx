@@ -29,6 +29,9 @@ const REASON_OPTIONS = [
   { value: 'discharge_on_request', label: 'Discharge on Request' },
 ];
 
+// Follow Up is picked from this list (owner, 2026-10-23).
+const FOLLOW_UP_OPTIONS = ['After 1 Day', 'After 3 Days', 'After 5 Days', 'After 1 Week', 'After 2 Weeks', 'After 1 Month', 'After 3 Months'];
+
 function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
 
 // Shared by this button and Discount & Refund's reprint fallback.
@@ -52,6 +55,9 @@ export function DischargeCertificateModal({ header, form, onChange, onClose, onS
     const cur = form.medicalOfficer;
     return cur && !names.includes(cur) ? [cur, ...names] : names;
   }, [doctors, form.medicalOfficer]);
+  // A Follow Up typed before the list existed stays selectable.
+  const followUpOptions = form.followUp && !FOLLOW_UP_OPTIONS.includes(form.followUp)
+    ? [form.followUp, ...FOLLOW_UP_OPTIONS] : FOLLOW_UP_OPTIONS;
 
   return (
     <div className="dra-overlay">
@@ -119,7 +125,13 @@ export function DischargeCertificateModal({ header, form, onChange, onClose, onS
           <div className="dc-modal-row dc-modal-row--split">
             <div className="dc-modal-col">
               <label>Follow Up</label>
-              <input value={form.followUp} onChange={e => onChange('followUp', e.target.value)} />
+              <SearchableSelect
+                options={followUpOptions}
+                value={form.followUp}
+                onChange={v => onChange('followUp', v)}
+                placeholder="Select…"
+                size="sm"
+              />
             </div>
             <div className="dc-modal-col">
               <label>Medical Officer</label>
