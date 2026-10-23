@@ -280,16 +280,25 @@ const REPORT_TYPES = [
 // positioned absolutely by this page's print CSS (it was overlaid on the
 // live page); inside the popup it is the whole document, so render it
 // statically instead.
-const PRINT_TOP_MARGIN = { covering: '48mm', medicine: '35mm', diagnostic: '35mm' };
+//
+// Continuation pages: the reports' own 6mm top padding used to sit on top of
+// the page margin on page 1 only, so page 2+ started 6mm higher and ran into
+// the letterhead (owner, 2026-10-23). The padding now lives in the page
+// margin instead (+6mm) and the report's top padding is dropped in print, so
+// every page starts exactly where page 1 always did. Content width is pinned
+// to A4 (210mm − 2×10mm) so the layout is the same on every printer.
+const PRINT_TOP_MARGIN = { covering: '54mm', medicine: '41mm', diagnostic: '41mm' };
+const PRINT_A4_CSS = `.pnbr-print-area { display: block !important; position: static !important; width: 190mm !important; }
+    .pnbr-cov, .pnbr-diag, .pnbr-med { padding-top: 0 !important; }`;
 const PRINT_TITLES = { covering: 'Billing Covering Page', medicine: 'Pharmacy Bill', diagnostic: 'Diagnostic Bill' };
 function printPanelReport(printHostEl, reportType, targetWindow) {
-  const topMargin = PRINT_TOP_MARGIN[reportType] || '35mm';
+  const topMargin = PRINT_TOP_MARGIN[reportType] || '41mm';
   printElementInPopup(printHostEl, {
     title: PRINT_TITLES[reportType] || 'Panel Billing',
     page: 'A4 portrait',
     margin: `${topMargin} 10mm`,
     targetWindow,
-    extraCss: '.pnbr-print-area { display: block !important; position: static !important; }',
+    extraCss: PRINT_A4_CSS,
   });
 }
 
@@ -304,14 +313,14 @@ const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
 const PRINT_WINDOW_FEATURES = 'width=900,height=800';
 function printAllPanelReports(printHostEl, targetWindow) {
   const namedPages = SAVE_REPORTS.map((type) => `
-    @page pnb-${type} { margin: ${PRINT_TOP_MARGIN[type] || '35mm'} 10mm; }
+    @page pnb-${type} { margin: ${PRINT_TOP_MARGIN[type] || '41mm'} 10mm; }
     [data-report="${type}"] { page: pnb-${type}; }`).join('');
   printElementInPopup(printHostEl, {
     title: 'Panel Billing Reports',
     page: 'A4 portrait',
-    margin: '35mm 10mm',
+    margin: '41mm 10mm',
     targetWindow,
-    extraCss: `.pnbr-print-area { display: block !important; position: static !important; }
+    extraCss: `${PRINT_A4_CSS}
     ${namedPages}
     [data-report] + [data-report] { break-before: page; page-break-before: always; }`,
   });
@@ -2007,6 +2016,17 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
     })));
   }
 
+  // Copy every checked row onto the picked date as new bill rows — the
+  // originals stay on their own date (owner, 2026-10-23: same 3 medicines
+  // given on 10 Aug again on 12 Aug). "Move" below changes the originals.
+  function handleCopyToDate() {
+    if (!bulkDate) return toast.error('Date select karo');
+    if (!checked.length) return toast.error('Kam az kam ek medicine select karo');
+    onConfirmAdd(checked.map((r) => ({
+      description: r.medicine, dosage: r.dosage, qty: Number(r.qty) || 0, rate: Number(r.rate) || 0, date: bulkDate, mergeInto: 'Medicine',
+    })));
+  }
+
   // Change the Date on every checked row at once, already-added entries
   // included — same save path each row's own "Save" button uses (Billing-
   // only override for a live entry, direct update for a manual one), just
@@ -2062,8 +2082,13 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
           {!readOnly && (
             <div className="pnb-bulk-date-row">
               <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={bulkApplying} />
-              <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}>
-                {bulkApplying ? 'Applying…' : `Apply Date to Selected (${checked.length})`}
+              <button className="pnb-btn" onClick={handleCopyToDate} disabled={confirming || bulkApplying || !checked.length}
+                title="Select ki hui lines is date par dobara add hon — purani apni date par rahein">
+                {confirming ? 'Copying…' : `Copy to Date (${checked.length})`}
+              </button>
+              <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}
+                title="Select ki hui lines ki date badal jaye — purani date se hat jayengi">
+                {bulkApplying ? 'Moving…' : `Move to Date (${checked.length})`}
               </button>
               <button className="pnb-btn pnb-btn--danger" onClick={deleteSelected} disabled={deleting || !checked.length}>
                 {deleting ? 'Deleting…' : `Delete Selected (${checked.length})`}
@@ -2161,6 +2186,14 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
     onConfirmAdd(checked.map((r) => ({ description: r.particulars, qty: Number(r.qty) || 0, rate: Number(r.rate) || 0, date: r.date, mergeInto: title })));
   }
 
+  // Copy every checked test onto the picked date as new rows — originals
+  // stay on their own date (see PharmacyDetailModal's handleCopyToDate).
+  function handleCopyToDate() {
+    if (!bulkDate) return toast.error('Date select karo');
+    if (!checked.length) return toast.error('Kam az kam ek test select karo');
+    onConfirmAdd(checked.map((r) => ({ description: r.particulars, qty: Number(r.qty) || 0, rate: Number(r.rate) || 0, date: bulkDate, mergeInto: title })));
+  }
+
   // Change the Date on every checked row at once — same save path each
   // row's own "Save" button uses, looped over the whole selection.
   async function handleBulkDate() {
@@ -2214,8 +2247,13 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
           {!readOnly && (
             <div className="pnb-bulk-date-row">
               <input type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} disabled={bulkApplying} />
-              <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}>
-                {bulkApplying ? 'Applying…' : `Apply Date to Selected (${checked.length})`}
+              <button className="pnb-btn" onClick={handleCopyToDate} disabled={confirming || bulkApplying || !checked.length}
+                title="Select ki hui lines is date par dobara add hon — purani apni date par rahein">
+                {confirming ? 'Copying…' : `Copy to Date (${checked.length})`}
+              </button>
+              <button className="pnb-btn" onClick={handleBulkDate} disabled={bulkApplying || !checked.length}
+                title="Select ki hui lines ki date badal jaye — purani date se hat jayengi">
+                {bulkApplying ? 'Moving…' : `Move to Date (${checked.length})`}
               </button>
               <button className="pnb-btn pnb-btn--danger" onClick={deleteSelected} disabled={deleting || !checked.length}>
                 {deleting ? 'Deleting…' : `Delete Selected (${checked.length})`}

@@ -42,6 +42,7 @@ async function login(email, password) {
       name: user.name,
       email: user.email,
       role: user.role,
+      employeeCode: user.employeeCode || null,
       isSuperAdmin: false,
     },
     permissions: user.permissions,

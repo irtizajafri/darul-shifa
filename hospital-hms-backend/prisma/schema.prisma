@@ -18,6 +18,8 @@ model User {
   password    String
   role        String
   department  String?
+  // HR Employee.empCode of this login (migration 055) — "Printed by" on prints
+  employeeCode String?
   permissions Json      @default("{}")
   isActive     Boolean   @default(true)
   expiresAt    DateTime?

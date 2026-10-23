@@ -232,6 +232,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
     confirmPassword: '',
     role: '',
     department: '',
+    employeeCode: '',
     hasExpiry: false,
     expiresAt: '',
     allowBackDating: false,
@@ -249,6 +250,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
         confirmPassword: '',
         role: editUser.role || '',
         department: editUser.department || '',
+        employeeCode: editUser.employeeCode || '',
         hasExpiry: !!editUser.expiresAt,
         expiresAt: editUser.expiresAt ? editUser.expiresAt.slice(0, 10) : '',
         allowBackDating: editUser.permissions?.allowBackDating === true,
@@ -258,7 +260,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
       setNameSearch(editUser.name || '');
       setDeptSearch(editUser.department || '');
     } else {
-      setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', department: '', hasExpiry: false, expiresAt: '', allowBackDating: false, requiresHandover: false, permissions: {} });
+      setForm({ name: '', email: '', password: '', confirmPassword: '', role: '', department: '', employeeCode: '', hasExpiry: false, expiresAt: '', allowBackDating: false, requiresHandover: false, permissions: {} });
       setNameSearch('');
       setDeptSearch('');
     }
@@ -290,6 +292,7 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
       email: form.email.trim().toLowerCase(),
       role: form.role.trim(),
       department: form.department.trim() || null,
+      employeeCode: form.employeeCode || null,
       permissions: { ...form.permissions, allowBackDating: form.allowBackDating, requiresHandover: form.requiresHandover },
       expiresAt: form.hasExpiry && form.expiresAt ? form.expiresAt : null,
     };
@@ -321,7 +324,9 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
                 type="text"
                 placeholder="Search employee..."
                 value={nameSearch}
-                onChange={(e) => { setNameSearch(e.target.value); set('name', e.target.value); setNameDropdownOpen(true); }}
+                // Typing a name by hand unlinks the employee (its code would
+                // no longer match the name).
+                onChange={(e) => { setNameSearch(e.target.value); setForm((f) => ({ ...f, name: e.target.value, employeeCode: '' })); setNameDropdownOpen(true); }}
                 onFocus={() => setNameDropdownOpen(true)}
                 onBlur={() => setTimeout(() => setNameDropdownOpen(false), 150)}
                 className="pl-9 pr-4 py-2 border border-gray-300 rounded-md text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -335,7 +340,8 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
                       type="button"
                       onMouseDown={() => {
                         const fullName = `${emp.firstName || ''} ${emp.lastName || ''}`.trim();
-                        set('name', fullName);
+                        // Employee code goes on prints as "Printed by".
+                        setForm((f) => ({ ...f, name: fullName, employeeCode: emp.empCode || '' }));
                         setNameSearch(fullName);
                         setNameDropdownOpen(false);
                       }}
@@ -348,6 +354,9 @@ function UserFormModal({ isOpen, onClose, editUser, onSave }) {
                 </div>
               )}
             </div>
+            <p className="text-xs mt-1 text-slate-500">
+              {form.employeeCode ? `Employee Code: ${form.employeeCode} (prints par "Printed by")` : 'List se employee chunein — us ka code prints par aayega'}
+            </p>
           </div>
 
           <Input

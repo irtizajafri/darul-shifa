@@ -10,6 +10,7 @@ import { buildReprint, REPRINT_POPUP_FEATURES } from './reprintPrinters';
 import { buildSequentialPrintHtml } from '../clinicalRecordPrintUtils';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ReprintFilter.scss';
+import { printedByCode } from '../../../utils/printedBy';
 import { openPrintWindow } from '../../../utils/printRelay';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -99,7 +100,8 @@ export default function ReprintFilter() {
     const w = openPrintWindow(REPRINT_POPUP_FEATURES[docType] || 'width=900,height=1000');
     setBusy(true);
     try {
-      const printedBy = user?.name || user?.username || user?.email || '';
+      // Discharge Certificate prints the user's employee code (printedByCode).
+      const printedBy = docType === 'discharge' ? printedByCode(user) : (user?.name || user?.username || user?.email || '');
       const { html, extraHtml } = await buildReprint(docType, no, printedBy);
       // A second slip (Antenatal card) prints from the same window, after the
       // first — never from a hidden iframe (its dialog froze the app).

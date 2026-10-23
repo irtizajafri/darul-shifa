@@ -8,6 +8,8 @@ const REASON_LABELS = {
   expired: 'Patient Expired',
   discharge_on_request: 'Discharge on Request',
 };
+import { relationParts } from './relationText';
+
 const DISCHARGE_MED_LINES = Array.from({ length: 8 });
 
 function fmtDate(d) {
@@ -27,19 +29,24 @@ export function DischargeCertificatePrintTemplate({ data }) {
     admission.ageMonths ? `${admission.ageMonths}m` : null,
     admission.ageDays ? `${admission.ageDays}d` : null,
   ].filter(Boolean).join(' ') || '—';
+  // Panel file (owner, 2026-10-23): no Reason of Discharge / Further
+  // Treatment / Medicine Prescribed, and the employee relation (as on the
+  // Admission form) sits beside the patient's name.
+  const isPanel = admission.patientCategory === 'panel';
+  const rel = relationParts(admission, admission.gender === 'female' ? 'D/o' : 'S/o');
 
   return (
     <div className="dc-print">
       <div className="dc-print-title">DISCHARGE CERTIFICATE</div>
 
       <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--wide"><label>Printed by:</label><span className="dc-print-line">{printedBy}</span></span>
         <span className="dc-print-field"><label>Status:</label><span className="dc-print-line">{admission.status}</span></span>
         <span className="dc-print-field"><label>File #</label><span className="dc-print-line">{admission.admissionNo}</span></span>
       </div>
 
       <div className="dc-print-row">
-        <span className="dc-print-field dc-print-field--full"><label>Pat. Name:</label><span className="dc-print-line">{admission.patientTitle} {admission.patientName}</span></span>
+        <span className={`dc-print-field ${isPanel ? 'dc-print-field--wide' : 'dc-print-field--full'}`}><label>Pat. Name:</label><span className="dc-print-line">{admission.patientTitle} {admission.patientName}</span></span>
+        {isPanel && <span className="dc-print-field"><label>{rel.label}</label><span className="dc-print-line">{rel.name || '—'}</span></span>}
       </div>
 
       <div className="dc-print-row">
@@ -54,14 +61,15 @@ export function DischargeCertificatePrintTemplate({ data }) {
 
       <div className="dc-print-row">
         <span className="dc-print-field dc-print-field--wide"><label>Consultant:</label><span className="dc-print-line">{consultant?.name || '—'}</span></span>
-        <span className="dc-print-field"><label>Ad Date:</label><span className="dc-print-line">{fmtDate(admission.createdAt)}</span></span>
-        <span className="dc-print-field"><label>Di Date:</label><span className="dc-print-line">{fmtDate(certificate?.dischargeDate)}</span></span>
+        <span className="dc-print-field dc-print-field--date"><label>Ad Date:</label><span className="dc-print-line">{fmtDate(admission.createdAt)}</span></span>
+        <span className="dc-print-field dc-print-field--date"><label>Di Date:</label><span className="dc-print-line">{fmtDate(certificate?.dischargeDate)}</span></span>
       </div>
 
       <div className="dc-print-row">
         <span className="dc-print-field dc-print-field--full"><label>Diagnosis:</label><span className="dc-print-line">{certificate?.diagnosis || ''}</span></span>
       </div>
 
+      {!isPanel && <>
       <div className="dc-print-reason">
         <label>Reason of Discharge:</label>
         <span className="dc-print-reason-val">{REASON_LABELS[certificate?.reasonOfDischarge] || '—'}</span>
@@ -77,6 +85,7 @@ export function DischargeCertificatePrintTemplate({ data }) {
         <span className="dc-print-yn"><i className={`dc-print-box${certificate?.medicinePrescribed === 'yes' ? ' checked' : ''}`} />Yes</span>
         <span className="dc-print-yn"><i className={`dc-print-box${certificate?.medicinePrescribed === 'no' ? ' checked' : ''}`} />No</span>
       </div>
+      </>}
 
       <div className="dc-print-med-block">
         <div className="dc-print-med-hdr">Discharge Medicine</div>
@@ -94,9 +103,17 @@ export function DischargeCertificatePrintTemplate({ data }) {
         <span className="dc-print-field dc-print-field--full"><label>Follow Up:</label><span className="dc-print-line">{certificate?.followUp || ''}</span></span>
       </div>
 
+      {/* Printed by sits level with Medical Officer at the bottom (owner,
+          2026-10-23) — it used to head the certificate. */}
       <div className="dc-print-sig">
-        <span>Medical Officer:</span>
-        <span className="dc-print-sig-line">{certificate?.medicalOfficer || ''}</span>
+        <span className="dc-print-sig-item">
+          <span>Medical Officer:</span>
+          <span className="dc-print-sig-line">{certificate?.medicalOfficer || ''}</span>
+        </span>
+        <span className="dc-print-sig-item">
+          <span>Printed by:</span>
+          <span className="dc-print-sig-line">{printedBy}</span>
+        </span>
       </div>
     </div>
   );

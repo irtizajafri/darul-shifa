@@ -24,6 +24,9 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #000;
 .dc-print-field label { font-weight: 700; white-space: nowrap; }
 .dc-print-field--full { flex: 1 1 100%; }
 .dc-print-field--wide { flex: 2.2; }
+/* Ad / Di Date always print in full (were cut to "28-Jul-2…"); Consultant takes what's left. */
+.dc-print-field--date { flex: 0 0 auto; }
+.dc-print-field--date .dc-print-line { overflow: visible; text-overflow: clip; }
 .dc-print-line { flex: 1; border-bottom: 1px solid #000; min-width: 30px; padding: 0 3px 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dc-print-reason { display: flex; align-items: baseline; gap: 6px; margin: 8px 0 5px; font-size: 8.5pt; }
 .dc-print-reason label { font-weight: 700; }
@@ -42,7 +45,8 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #000;
 .dc-print-med-body { height: 210px; border: 1px solid #000; padding: 0 6px; display: flex; flex-direction: column; }
 .dc-print-med-line { flex: 1; border-bottom: 1px solid #999; }
 .dc-print-med-line:last-child { border-bottom: none; }
-.dc-print-sig { display: flex; align-items: flex-end; gap: 6px; margin-top: 22px; font-weight: 700; }
+.dc-print-sig { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; margin-top: 22px; font-weight: 700; }
+.dc-print-sig-item { display: flex; align-items: flex-end; gap: 6px; }
 .dc-print-sig-line { border-bottom: 1px solid #000; min-width: 140px; padding-bottom: 1px; }
 @page { margin: 40mm 9mm 8mm 9mm; }
 `;

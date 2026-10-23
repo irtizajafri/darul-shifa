@@ -10,6 +10,7 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { canBackDate } from '../../utils/permissions';
 import useModalKeys from '../../hooks/useModalKeys';
 import { buildDischargeCertificatePrintHtml } from './dischargeCertificatePrintUtils';
+import { printedByCode } from '../../utils/printedBy';
 import { buildRefundSlipPrintHtml } from './refundSlipPrintUtils';
 import './DiscountRefundAdmission.scss';
 import { openPrintWindow } from '../../utils/printRelay';
@@ -425,8 +426,7 @@ export default function DiscountRefundAdmission() {
       setDcHeader(header);
 
       if (certificate) {
-        const printedBy = user?.name || user?.username || user?.email || '';
-        openDischargeCertificatePopup({ ...header, certificate, printedBy });
+        openDischargeCertificatePopup({ ...header, certificate, printedBy: printedByCode(user) });
       } else {
         toast.error('Is admission ka Discharge Certificate abhi tak nahi bana — pehle bana lein');
         setDcForm({
@@ -469,7 +469,7 @@ export default function DiscountRefundAdmission() {
       // flips admission status to 'discharge' and frees the bed.
       toast.success('Discharge Certificate save ho gaya — patient discharge ho gaya, bed free ho gaya');
       setDcOpen(false);
-      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy }, printWin);
+      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy: printedByCode(user) }, printWin);
     } catch (e) {
       if (!printWin.filled) printWin.close();
       toast.error(e.message || 'Error saving');

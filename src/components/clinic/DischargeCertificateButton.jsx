@@ -6,6 +6,7 @@ import SearchableSelect from '../ui/SearchableSelect';
 import { buildDischargeCertificatePrintHtml } from '../../pages/clinic/dischargeCertificatePrintUtils';
 import '../../pages/clinic/DiscountRefundAdmission.scss';
 import { openPrintWindow } from '../../utils/printRelay';
+import { printedByCode } from '../../utils/printedBy';
 import { useShallow } from 'zustand/react/shallow';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -29,6 +30,8 @@ const REASON_OPTIONS = [
 
 function DischargeCertificateModal({ header, form, onChange, onClose, onSave, saving, diagnosisOptions }) {
   const { admission, roomCategory, bed, consultant } = header;
+  // Panel file: these three aren't asked (owner, 2026-10-23) — see the print.
+  const isPanel = admission.patientCategory === 'panel';
   return (
     <div className="dra-overlay">
       <div className="dra-modal dc-modal">
@@ -52,6 +55,7 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
             />
           </div>
 
+          {!isPanel && (
           <div className="dc-modal-row">
             <label>Reason of Discharge *</label>
             <select value={form.reasonOfDischarge} onChange={e => onChange('reasonOfDischarge', e.target.value)}>
@@ -59,6 +63,7 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
               {REASON_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
+          )}
 
           <div className="dc-modal-row">
             <label>Diagnosis</label>
@@ -71,6 +76,7 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
             />
           </div>
 
+          {!isPanel && (
           <div className="dc-modal-row dc-modal-row--split">
             <div className="dc-modal-col">
               <label>Further Treatment Needed</label>
@@ -87,6 +93,7 @@ function DischargeCertificateModal({ header, form, onChange, onClose, onSave, sa
               </div>
             </div>
           </div>
+          )}
 
           <div className="dc-modal-row dc-modal-row--split">
             <div className="dc-modal-col">
@@ -173,7 +180,8 @@ export default function DischargeCertificateButton({ admissionId, visible, class
 
   async function handleDcSaveAndPrint() {
     if (!dcForm.dischargeDate) { toast.error('Discharge Date select karein'); return; }
-    if (!dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
+    const isPanel = dcHeader?.admission?.patientCategory === 'panel';
+    if (!isPanel && !dcForm.reasonOfDischarge) { toast.error('Reason of Discharge select karein'); return; }
     setDcSaving(true);
     const printWin = openPrintWindow('width=700,height=900');
     try {
@@ -191,7 +199,7 @@ export default function DischargeCertificateButton({ admissionId, visible, class
       if (!res.ok) throw new Error(json.message || 'Save nahi hui');
       toast.success('Discharge Certificate save ho gaya — patient discharge ho gaya, bed free ho gaya');
       setDcOpen(false);
-      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy }, printWin);
+      openDischargeCertificatePopup({ ...dcHeader, certificate: json.data, printedBy: printedByCode(user) }, printWin);
       if (onDischarged) onDischarged();
     } catch (e) {
       printWin.close();

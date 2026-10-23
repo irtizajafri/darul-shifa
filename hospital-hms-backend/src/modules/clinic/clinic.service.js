@@ -3419,6 +3419,15 @@ async function saveDischargeCertificate(admissionId, {
 }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  // Panel file: Reason / Further Treatment / Medicine Prescribed aren't asked
+  // (owner, 2026-10-23) — the reason column and the status-change log still
+  // need one, so it's recorded as a normal "Patient Treated" discharge.
+  const isPanel = admission.patientCategory === 'panel';
+  if (isPanel) {
+    if (!DISCHARGE_REASONS.includes(reasonOfDischarge)) reasonOfDischarge = 'treated';
+    furtherTreatmentNeeded = null;
+    medicinePrescribed = null;
+  }
   if (!DISCHARGE_REASONS.includes(reasonOfDischarge)) {
     throw Object.assign(new Error('Reason of Discharge zaroori hai'), { status: 400 });
   }
