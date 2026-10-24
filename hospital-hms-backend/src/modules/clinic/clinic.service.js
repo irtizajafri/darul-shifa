@@ -6208,7 +6208,7 @@ async function updateAdmissionAdjustment(id, data) {
 
 const WIPEOUT_REASONS = ['Baby file not allowed', 'Billing to other admission', 'Cancelled file', 'Cash Received', 'Panel closed'];
 
-async function updateAdmissionStatus(id, { status, reason, changedBy }) {
+async function updateAdmissionStatus(id, { status, reason, changedBy, changedAt }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
@@ -6289,6 +6289,7 @@ async function updateAdmissionStatus(id, { status, reason, changedBy }) {
       toStatus: status,
       reason: reason.trim(),
       changedBy: changedBy || null,
+      ...(changedAt ? { changedAt } : {}),
     },
   });
 
@@ -7557,7 +7558,22 @@ async function deleteDischargeBillItem(itemId) {
   return prisma.clinicDischargeBillItem.delete({ where: { id: Number(itemId) } });
 }
 
-async function finalizeDischarge(admissionId, { discountAmount, otherIncome, changedBy }) {
+// Closing Date (owner, 2026-10-24): staff pick Current Date or any custom
+// date, past or future. It lands on the ->closed status log's changedAt,
+// which is what "Closing Date" means everywhere (see getAdmissionDistribution).
+// A custom day keeps the current time of day so same-day ordering still holds.
+function resolveClosingDate(closingDate) {
+  if (!closingDate) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(closingDate));
+  if (!m) throw Object.assign(new Error('Closing Date sahi nahi'), { status: 400 });
+  const d = new Date();
+  d.setFullYear(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime())) throw Object.assign(new Error('Closing Date sahi nahi'), { status: 400 });
+  return d;
+}
+
+async function finalizeDischarge(admissionId, { discountAmount, otherIncome, changedBy, closingDate }) {
+  const closedAt = resolveClosingDate(closingDate);
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
   // This page never discharges anymore (Discharge Certificate does) — it
@@ -7608,7 +7624,7 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
   const reason = otherIncomeAmount
     ? `Panel — balance Rs. ${otherIncomeAmount.toFixed(2)} goes to Other Income`
     : isPanel ? 'Panel — balance cleared — file closed' : 'Balance cleared — file closed';
-  return updateAdmissionStatus(admissionId, { status: 'closed', reason, changedBy });
+  return updateAdmissionStatus(admissionId, { status: 'closed', reason, changedBy, changedAt: closedAt });
 }
 
 // ─── Patient Visits ───────────────────────────────────────────────────────────

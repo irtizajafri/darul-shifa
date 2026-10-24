@@ -332,3 +332,39 @@ $border: #bbb;
   &:hover { background: #e2e2e2; }
 }
 
+
+.dr-close-date-modal { width: 360px; }
+
+.dr-close-date-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 8px;
+  font-size: 13px;
+}
+
+.dr-close-date-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dr-close-date-hint { font-weight: 400; color: #666; }
+
+.dr-close-date-input {
+  margin-left: 24px;
+  width: 170px;
+  padding: 5px 8px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.dr-close-date-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px 16px;
+}

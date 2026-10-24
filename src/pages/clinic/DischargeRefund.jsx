@@ -13,6 +13,62 @@ import { relationParts } from './relationText';
 import './DischargeRefund.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import useModalKeys from '../../hooks/useModalKeys';
+
+function localToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Close File asks which date the file closes on — today, or any custom
+// date (past or future). That date becomes the file's Closing Date.
+function CloseDateModal({ onConfirm, onCancel }) {
+  const today = localToday();
+  const [mode, setMode] = useState('today');
+  const [date, setDate] = useState(today);
+  const confirm = () => {
+    const picked = mode === 'today' ? today : date;
+    if (!picked) { toast.error('Closing Date select karein'); return; }
+    onConfirm(picked);
+  };
+  useModalKeys({ active: true, onEsc: onCancel });
+  const fmtDay = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  return (
+    <div className="aa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="aa-modal dr-close-date-modal">
+        <div className="aa-modal-hdr">
+          <span>File kis date pe close karni hai?</span>
+          <button className="aa-modal-close" onClick={onCancel}><X size={14} /></button>
+        </div>
+        <div className="dr-close-date-body">
+          <label className="dr-close-date-opt">
+            <input type="radio" name="closeDateMode" checked={mode === 'today'} onChange={() => setMode('today')} autoFocus />
+            Current Date <span className="dr-close-date-hint">({fmtDay(today)})</span>
+          </label>
+          <label className="dr-close-date-opt">
+            <input type="radio" name="closeDateMode" checked={mode === 'custom'} onChange={() => setMode('custom')} />
+            Custom Date
+          </label>
+          {mode === 'custom' && (
+            <input
+              type="date"
+              className="dr-close-date-input"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') confirm(); }}
+              autoFocus
+            />
+          )}
+        </div>
+        <div className="dr-close-date-actions">
+          <button className="dr-finalize-btn" onClick={confirm}>Close File</button>
+          <button className="dr-close-btn" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Laboratory/Radiology(X-Ray)/Ultra Sound — a doctor's fee % is uniform
 // across every test they do there, so the Sub-Department auto-resolves with
@@ -165,6 +221,7 @@ export default function DischargeRefund() {
   // off (shown as minus) so Balance reaches 0 and the file can close.
   const [otherIncome, setOtherIncome] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [askCloseDate, setAskCloseDate] = useState(false);
 
   const [row, setRow] = useState({ billHeadId: '', doctorId: '', subDeptId: '', amount: '' });
   const [addingRow, setAddingRow] = useState(false);
@@ -336,7 +393,7 @@ export default function DischargeRefund() {
     }
   }
 
-  async function handleFinalize() {
+  function handleCloseFileClick() {
     // Balance must be fully cleared before the file can be closed (backend
     // also re-checks this — this is just so staff get an immediate, specific
     // message instead of clicking a plain-disabled button).
@@ -346,14 +403,19 @@ export default function DischargeRefund() {
         : `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo`);
       return;
     }
+    setAskCloseDate(true);
+  }
+
+  async function handleFinalize(closingDate) {
+    setAskCloseDate(false);
     setSaving(true);
     // Closing prints the Final Bill (owner, 2026-10-22 — the screen resets
     // after close, so there was no way to print it but Reprint). The window
     // opens on the click, before the request, so the browser doesn't block it.
     const printWin = openPrintWindow('width=900,height=1000');
     try {
-      await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy });
-      toast.success('File close ho gayi');
+      await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy, closingDate });
+      toast.success(`File close ho gayi — Closing Date ${closingDate.split('-').reverse().join('-')}`);
       printDischargeBillPopup(false, printWin);
       resetToLookup();
     } catch (e) {
@@ -615,7 +677,7 @@ export default function DischargeRefund() {
             <div className="dr-footer">
               <button
                 className="dr-finalize-btn"
-                onClick={handleFinalize}
+                onClick={handleCloseFileClick}
                 disabled={saving || liveBalance > 0}
                 title={liveBalance > 0 ? `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai${isPanel ? ' — "Goes to Other Income" tick karein' : ''}` : ''}
               >
@@ -627,6 +689,9 @@ export default function DischargeRefund() {
         )}
       </div>
 
+      {askCloseDate && (
+        <CloseDateModal onConfirm={handleFinalize} onCancel={() => setAskCloseDate(false)} />
+      )}
     </>
   );
 }

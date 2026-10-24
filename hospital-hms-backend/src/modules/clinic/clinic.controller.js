@@ -644,8 +644,8 @@ async function deleteDischargeBillItem(req, res, next) {
 
 async function finalizeDischarge(req, res, next) {
   try {
-    const { discountAmount, otherIncome, changedBy } = req.body;
-    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, otherIncome: !!otherIncome, changedBy });
+    const { discountAmount, otherIncome, changedBy, closingDate } = req.body;
+    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, otherIncome: !!otherIncome, changedBy, closingDate });
     success(res, data, 'File closed');
   } catch (err) {
     if (err.status === 404) return fail(res, 404, err.message);
