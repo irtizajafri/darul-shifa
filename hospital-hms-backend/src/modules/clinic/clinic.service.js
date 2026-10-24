@@ -4267,6 +4267,9 @@ async function searchAdmissionsForAdjustment(q, entityType, includeDischarged = 
     patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
     createdAt: a.createdAt,
     status: a.status,
+    // Clinic General Payment lists both books' files and tags each (Cash /
+    // Panel) — the tag decides which save button the payment may use.
+    patientCategory: a.patientCategory,
   }));
 }
 
@@ -10663,9 +10666,13 @@ async function getCancelRefundHistory({ type = 'all', dateFrom, dateTo, search }
 // Amount. Code = the payee's ClinicDoctor code when the payee is a doctor
 // (matched by name, case/spacing ignored). doctorId narrows to one
 // consultant's payments.
+// Both books (owner, 2026-10-24): non-corporate drafts = 'cash', corporate
+// drafts = 'panel' — the report prints a Cash page and a Panel page per day.
+// Clinic refund drafts (clinicRefundKind set) are patient refunds, not
+// general payments, so they're left out.
 async function getGeneralPaymentReport({ fromDate, toDate, doctorId }) {
   const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
-  const where = { status: { in: ['pending', 'posted'] }, entityType: 'non-corporate' };
+  const where = { status: { in: ['pending', 'posted'] }, entityType: { in: ['non-corporate', 'corporate'] }, clinicRefundKind: null };
   if (isYmd(fromDate) || isYmd(toDate)) {
     where.businessDate = {};
     if (isYmd(fromDate)) where.businessDate.gte = fromDate;
@@ -10678,7 +10685,7 @@ async function getGeneralPaymentReport({ fromDate, toDate, doctorId }) {
   const key = (n) => String(n || '').trim().replace(/\s+/g, ' ').toLowerCase();
   const doctorByName = new Map(doctors.map((d) => [key(d.name), d]));
   const wanted = doctorId ? doctors.find((d) => d.id === Number(doctorId)) : null;
-  if (doctorId && !wanted) return { rows: [], total: 0 };
+  if (doctorId && !wanted) return { rows: [], cashTotal: 0, panelTotal: 0, total: 0 };
 
   const rows = [];
   for (const d of drafts) {
@@ -10687,6 +10694,7 @@ async function getGeneralPaymentReport({ fromDate, toDate, doctorId }) {
     rows.push({
       id: d.id,
       businessDate: d.businessDate,
+      book: d.entityType === 'corporate' ? 'panel' : 'cash',
       mode: d.mode || 'cash',
       code: doc?.code || '',
       payeeName: d.payeeName || '',
@@ -10698,7 +10706,10 @@ async function getGeneralPaymentReport({ fromDate, toDate, doctorId }) {
       posted: d.status === 'posted',
     });
   }
-  return { rows, total: rows.reduce((s, r) => s + r.amount, 0) };
+  const sum = (list) => list.reduce((s, r) => s + r.amount, 0);
+  const cashTotal = sum(rows.filter((r) => r.book === 'cash'));
+  const panelTotal = sum(rows.filter((r) => r.book === 'panel'));
+  return { rows, cashTotal, panelTotal, total: cashTotal + panelTotal };
 }
 
 async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromCode, deptToCode, activeOnly, day }) {

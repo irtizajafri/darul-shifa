@@ -213,6 +213,8 @@ async function removePayeeHeadStaffCategory(req, res, next) {
 async function saveDraftExpenseEntry(req, res, next) { try { success(res, await svc.saveDraftExpenseEntry({ ...req.body, entityType: et(req) }), 'Draft saved'); } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); } }
 async function getDraftExpenses(req, res, next) { try { success(res, await svc.getDraftExpenses(et(req), req.query.userId)); } catch (e) { next(e); } }
 async function deleteDraftExpense(req, res, next) { try { await svc.deleteDraftExpense(req.params.id); success(res, null, 'Draft deleted'); } catch (e) { next(e); } }
+// Pending Draft "Panel" / "Cash" button — body { entityType } is the book to move it TO.
+async function moveDraftExpense(req, res, next) { try { success(res, await svc.moveDraftExpense(req.params.id, req.body?.entityType), 'Draft moved'); } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); } }
 async function flashDraftsNow(req, res, next) {
   try {
     const { date } = req.query; // optional — default today's business date
@@ -355,7 +357,7 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,
-  saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, flashDraftsNow,
+  saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, moveDraftExpense, flashDraftsNow,
   addHeadAccount, removeHeadAccount, addInventoryHeadMainAccount, removeInventoryHeadMainAccount,
   createBankDeposit, getBankDeposits, getBankDepositForDate,
   bulkImportBankStatement, getBankStatementLines,

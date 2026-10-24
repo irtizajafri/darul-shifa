@@ -2117,6 +2117,7 @@ model ClinicAntenatal {
   panelCompanyId   Int?
   panelEmployeeId  Int?
   panelDependentId Int?
+  isPaid           Boolean   @default(false) // migration 057 — doctor paid via Voucher Expense
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }

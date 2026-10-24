@@ -311,6 +311,32 @@
     &:hover:not(:disabled) { background: #fee2e2; }
     &:disabled { opacity: 0.4; cursor: not-allowed; }
   }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  &__move {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 8px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 6px;
+    color: #c2410c;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s;
+    &:hover:not(:disabled) { background: #ffedd5; }
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+  }
 }
 
 // ── Responsive ────────────────────────────────────────────────────────────────

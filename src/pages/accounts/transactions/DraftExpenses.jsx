@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Trash2, RefreshCw, Clock, FileText, Zap } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Trash2, RefreshCw, Clock, FileText, Zap, ArrowRightLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import './DraftExpenses.scss';
@@ -24,6 +24,12 @@ export default function DraftExpenses() {
   const [loading,  setLoading]  = useState(true);
   const [deleting, setDeleting] = useState({});
   const [posting,  setPosting]  = useState(false);
+  const [moving,   setMoving]   = useState({});
+
+  // Cash page moves a draft to Panel, Panel page moves it back to Cash.
+  const isPanel    = entityType === 'corporate';
+  const moveTo     = isPanel ? 'non-corporate' : 'corporate';
+  const moveLabel  = isPanel ? 'Cash' : 'Panel';
 
   const fetchDrafts = useCallback(async () => {
     setLoading(true);
@@ -78,6 +84,36 @@ export default function DraftExpenses() {
     }
   };
 
+  // Moves one pending draft to the other book's Pending Draft (same date,
+  // same Payee / amount — heads re-pointed to that book's same-named heads
+  // by the backend, which refuses with a reason if it can't).
+  const handleMove = async (d) => {
+    const ok = await confirmDialog({
+      title: isPanel ? 'Cash mein wapas bhejein?' : 'Panel payment?',
+      message: isPanel
+        ? `${d.payeeName || d.subAccountName || d.accountName || 'Draft'} — PKR ${fmtAmt(d.amount)}: yeh draft wapas Cash (Non-Corporate) Pending Draft mein chali jayegi aur 8:00 AM Day Close par Cash voucher banegi.`
+        : `${d.payeeName || d.subAccountName || d.accountName || 'Draft'} — PKR ${fmtAmt(d.amount)}: yeh Panel ka kharcha hai? Draft Panel (Corporate) Pending Draft mein chali jayegi — 8 AM par Cash mein post nahi hogi; Corporate page par "Post Now" se Corporate Voucher Expense banegi.`,
+      confirmLabel: isPanel ? 'Haan, Cash mein bhejein' : 'Haan, Panel mein bhejein',
+    });
+    if (!ok) return;
+    setMoving((p) => ({ ...p, [d.id]: true }));
+    try {
+      const r = await fetch(`${API}/expense-drafts/${d.id}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entityType: moveTo }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.message || 'Move failed');
+      toast.success(isPanel ? 'Draft Cash mein chali gayi' : 'Draft Panel (Corporate) mein chali gayi');
+      setDrafts((prev) => prev.filter((x) => x.id !== d.id));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setMoving((p) => ({ ...p, [d.id]: false }));
+    }
+  };
+
   // Group by (businessDate + Main GL) — matches flashDraftsToVouchers exactly,
   // so "N vouchers will create" here is never wrong: a backdated draft (Date
   // field earlier than today) becomes its own group/voucher, dated
@@ -123,14 +159,18 @@ export default function DraftExpenses() {
             Pending Expense Drafts
           </h2>
           <p className="drafts__sub">
-            Sab pending drafts (backdated bhi) — auto-post hogi subah 8:00 AM pe, apni-apni date pe (Date + Main GL wise grouping)
+            {isPanel
+              ? 'Panel payments (backdated bhi) — 8:00 AM par auto-post NAHI hoti; "Post Now" dabane par apni-apni date pe Corporate voucher banti hai (Date + Main GL wise grouping)'
+              : 'Sab pending drafts (backdated bhi) — auto-post hogi subah 8:00 AM pe, apni-apni date pe (Date + Main GL wise grouping)'}
           </p>
         </div>
         <div className="drafts__header-right">
-          <div className="drafts__countdown">
-            <Clock size={14} />
-            <span>Post in <strong>{hoursLeft}h {minsLeft}m</strong></span>
-          </div>
+          {!isPanel && (
+            <div className="drafts__countdown">
+              <Clock size={14} />
+              <span>Post in <strong>{hoursLeft}h {minsLeft}m</strong></span>
+            </div>
+          )}
           {drafts.length > 0 && (
             <button
               className="drafts__flash-btn"
@@ -227,14 +267,26 @@ export default function DraftExpenses() {
                         <td className="drafts__td-particulars">{d.particulars || '—'}</td>
                         <td className="drafts__td-amt">PKR {fmtAmt(d.amount)}</td>
                         <td>
-                          <button
-                            className="drafts__del"
-                            onClick={() => handleDelete(d.id)}
-                            disabled={deleting[d.id]}
-                            title="Delete draft"
-                          >
-                            {deleting[d.id] ? '…' : <Trash2 size={13} />}
-                          </button>
+                          <div className="drafts__actions">
+                            {!d.clinicRefundKind && (
+                              <button
+                                className="drafts__move"
+                                onClick={() => handleMove(d)}
+                                disabled={moving[d.id]}
+                                title={isPanel ? 'Galti se Panel mein aayi? Wapas Cash Pending Draft mein bhejein' : 'Panel ka kharcha hai — Panel (Corporate) Pending Draft mein bhejein'}
+                              >
+                                {moving[d.id] ? '…' : <><ArrowRightLeft size={12} /> {moveLabel}</>}
+                              </button>
+                            )}
+                            <button
+                              className="drafts__del"
+                              onClick={() => handleDelete(d.id)}
+                              disabled={deleting[d.id]}
+                              title="Delete draft"
+                            >
+                              {deleting[d.id] ? '…' : <Trash2 size={13} />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

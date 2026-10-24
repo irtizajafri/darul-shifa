@@ -5063,7 +5063,7 @@ module.exports = {
   bulkImportItems,
 };
 
-async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType } = {}) {
+async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId, dateFrom, dateTo, assetType, departmentId } = {}) {
   const where = {};
 
   if (itemId && Number(itemId) > 0) where.itemId = Number(itemId);
@@ -5084,6 +5084,15 @@ async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId,
   if (assetType) {
     where.item = { ...where.item, itemType: assetType };
   }
+  if (departmentId && Number(departmentId) > 0) {
+    where.assetInstances = {
+      some: {
+        ginItem: {
+          gin: { gdHeader: { departmentId: Number(departmentId) } },
+        },
+      },
+    };
+  }
 
   return prisma.inventoryMaintenance.findMany({
     where,
@@ -5091,7 +5100,12 @@ async function listMaintenances({ itemId, supplierId, categoryId, subcategoryId,
       item: { include: { category: true, subcategory: true } },
       supplier: true,
       employee: { select: { id: true, firstName: true, lastName: true, empCode: true } },
-      assetInstances: { select: { id: true, assetTag: true, condition: true, location: true } },
+      assetInstances: {
+        select: {
+          id: true, assetTag: true, condition: true, location: true,
+          ginItem: { include: { gin: { include: { gdHeader: { include: { department: true } } } } } },
+        },
+      },
     },
     orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   });

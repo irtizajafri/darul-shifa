@@ -219,6 +219,7 @@ const SLIP_CSS = `
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:Arial,sans-serif; font-size:11px; color:#000; background:#fff; }
   .slip-page { padding:28px 32px; }
+  .slip-book { font-size:12px; font-weight:900; letter-spacing:0.08em; margin-bottom:8px; }
   .slip-table { width:100%; border-collapse:collapse; margin-bottom:32px; }
   .slip-table th { font-size:11px; font-weight:700; text-transform:uppercase; border-bottom:2px solid #000; padding:5px 6px; text-align:left; }
   .slip-table td { font-size:11px; padding:8px 6px; vertical-align:top; border-bottom:1px solid #ccc; }
@@ -260,10 +261,13 @@ function entrySlipHtml(entry, voucherDate, printBy) {
 
 // `targetWindow`: a print window opened on the click, before the save's
 // await (a window opened after an await is blocked as a popup).
-function printEntrySlips({ entries, voucherDate, printBy, targetWindow }) {
+// `panel` — Panel Payment slips carry a "PANEL PAYMENT" line on top so the
+// paper copy shows which book it went to (Cash slips unchanged).
+function printEntrySlips({ entries, voucherDate, printBy, targetWindow, panel = false }) {
   if (!entries?.length) { targetWindow?.close(); return; }
+  const panelTag = panel ? '<div class="slip-book">PANEL PAYMENT</div>' : '';
   const pages = entries
-    .map((e, i) => `<div class="slip-page"${i < entries.length - 1 ? ' style="page-break-after:always;break-after:page"' : ''}>${entrySlipHtml(e, voucherDate, printBy)}</div>`)
+    .map((e, i) => `<div class="slip-page"${i < entries.length - 1 ? ' style="page-break-after:always;break-after:page"' : ''}>${panelTag}${entrySlipHtml(e, voucherDate, printBy)}</div>`)
     .join('');
   const win = targetWindow && !targetWindow.closed ? targetWindow : openPrintWindow('width=1000,height=800');
   win.document.write(`<!DOCTYPE html><html><head><title>Payment Slip</title><style>${SLIP_CSS}</style></head><body>${pages}</body></html>`);
@@ -410,7 +414,12 @@ export default function VoucherExpenseForm() {
   // column for this list — entry.admissionNo stays the single text field it
   // already was, just holding a comma-joined string (kept in sync below),
   // so no schema change was needed.
-  const [selectedAdmissions, setSelectedAdmissions] = useState([]); // [{admissionNo, patientName}]
+  const [selectedAdmissions, setSelectedAdmissions] = useState([]); // [{admissionNo, patientName, panel}]
+  // Clinic General Payment: the admission picker lists Cash AND Panel files
+  // (owner, 2026-10-24) — a Panel file's payment may only use "Panel
+  // Payment", a Cash file's only the Cash button; a line with no file is the
+  // user's choice. Elsewhere the list stays this book's files only.
+  const admissionBookParam = isClinic ? '' : entityType;
   const admissionSearchTimer = useRef(null);
   // IPD Consultant Fee — payee list loads straight off the Main Account (no
   // Sub Account, no admission picker); the admission(s) instead get picked
@@ -794,7 +803,7 @@ export default function VoucherExpenseForm() {
         // Show recent admissions immediately so the picker isn't empty —
         // entityType narrows to this book's Cash (non-corporate) or Panel
         // (corporate) files only, same split GRN/Doctor payments already use.
-        fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${entityType}&includeDischarged=1`)
+        fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${admissionBookParam}&includeDischarged=1`)
           .then((r) => r.json())
           .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
           .catch((err) => toast.error(err?.message || 'Failed to load admissions'));
@@ -850,7 +859,7 @@ export default function VoucherExpenseForm() {
     clearTimeout(admissionSearchTimer.current);
     admissionSearchTimer.current = setTimeout(async () => {
       try {
-        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}&entityType=${entityType}&includeDischarged=1`);
+        const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}&entityType=${admissionBookParam}&includeDischarged=1`);
         const j = await r.json();
         setAdmissionResults(Array.isArray(j?.data) ? j.data : []);
       } catch { setAdmissionResults([]); }
@@ -858,10 +867,15 @@ export default function VoucherExpenseForm() {
   };
 
   const handleAdmissionSelect = (row) => {
+    const panel = row.patientCategory === 'panel';
+    if (selectedAdmissions.some((a) => a.panel !== panel)) {
+      toast.error('Cash aur Panel files ek hi payment mein nahi aa sakti — alag alag payment karein');
+      return;
+    }
     setSelectedAdmissions((prev) =>
       prev.some((a) => a.admissionNo === row.admissionNo)
         ? prev // already picked — ignore duplicate click
-        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName }]
+        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName, panel }]
     );
     setEntry((e) => ({ ...e, accountName: mainAccs.find((a) => String(a.id) === String(e.mainAccountId))?.name || e.accountName }));
     setAdmissionQuery('');
@@ -874,10 +888,13 @@ export default function VoucherExpenseForm() {
 
   // Keep entry.admissionNo (the field actually persisted/validated/used in
   // narration) as a comma-joined string of whatever's currently picked.
+  // admissionBook ('panel' | 'cash' | '') rides along so the save buttons can
+  // check it (never sent to the backend).
   useEffect(() => {
     setEntry((e) => {
       const joined = selectedAdmissions.map((a) => a.admissionNo).join(', ');
-      return e.admissionNo === joined ? e : { ...e, admissionNo: joined };
+      const book = selectedAdmissions.length ? (selectedAdmissions[0].panel ? 'panel' : 'cash') : '';
+      return e.admissionNo === joined && e.admissionBook === book ? e : { ...e, admissionNo: joined, admissionBook: book };
     });
   }, [selectedAdmissions]);
 
@@ -1192,7 +1209,11 @@ export default function VoucherExpenseForm() {
 
   // Save all confirmed table entries as drafts (not the current form entry).
   // Flow: fill form → Confirm → table mein aaya → Save as Draft → sab drafts save
-  const handleSaveDraft = async (withPrint = false) => {
+  // `panel` — Clinic "Panel Payment" button: the same lines go to the Panel
+  // (corporate) Pending Draft instead of Cash; the backend re-points them at
+  // the Panel book's same-named heads, and they post only on that page's
+  // "Post Now" (Day Close posts Cash drafts only).
+  const handleSaveDraft = async (withPrint = false, panel = false) => {
     // Confirm now saves straight into a voucher, so a draft is made from the
     // line currently filled in the form (or, in older flows, from unsaved
     // lines still waiting in the table).
@@ -1215,13 +1236,27 @@ export default function VoucherExpenseForm() {
         subAccountName: subAcc?.name || entry.payeeName || '',
       }];
     }
+    // A line paid against a file goes the file's way: Panel file → Panel
+    // Payment only, Cash file → Cash only. Lines with no file: user's choice.
+    const books = new Set(snapshot.map((e) => e.admissionBook).filter(Boolean));
+    if (books.size > 1) { toast.error('Cash aur Panel files ki lines ek saath save nahi ho sakti — alag alag save karein'); return; }
+    if (books.has('panel') && !panel) { toast.error('Yeh panel file hai — "Panel Payment" button se save karein'); return; }
+    if (books.has('cash') && panel) { toast.error('Yeh cash file hai — Cash wale "Save as Draft & Print" se save karein'); return; }
     // Print window opened now (still inside the click / confirm-dialog
     // gesture), before the save's awaits — popup blockers.
     const printWin = withPrint ? openPrintWindow('width=1000,height=800') : null;
     setSavingDraft(true);
     try {
+      const draftBook = panel ? 'corporate' : entityType;
+      // Cash Serial runs per book — a Panel line takes the Panel book's next
+      // serial, not the Cash one the form showed.
+      if (panel && mode === 'cash') {
+        const sr = await fetch(`${API}/cash-serial/next?entityType=corporate`).then((r) => r.json()).catch(() => null);
+        const next = Number(sr?.data?.nextSerial) || 1;
+        snapshot = snapshot.map((e, i) => ({ ...e, chequeNo: String(next + i).padStart(2, '0') }));
+      }
       for (const e of snapshot) {
-        const r = await fetch(`${API}/expense-drafts?entityType=${entityType}`, {
+        const r = await fetch(`${API}/expense-drafts?entityType=${draftBook}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1252,7 +1287,9 @@ export default function VoucherExpenseForm() {
         const j = await r.json();
         if (!r.ok) throw new Error(j?.message || 'Failed to save draft');
       }
-      toast.success(`${snapshot.length} entr${snapshot.length > 1 ? 'ies' : 'y'} draft mein save — 8:00 AM pe post hogi`);
+      toast.success(panel
+        ? `${snapshot.length} entr${snapshot.length > 1 ? 'ies' : 'y'} Panel draft mein save — Corporate Pending Drafts se "Post Now" par post hogi`
+        : `${snapshot.length} entr${snapshot.length > 1 ? 'ies' : 'y'} draft mein save — 8:00 AM pe post hogi`);
       setEntries([]);
       setEntry(emptyEntry());
       setSubGLs([]); setMainAccs([]); setSubAccs([]);
@@ -1261,7 +1298,7 @@ export default function VoucherExpenseForm() {
         try {
           // One Payment Slip per line (same slip as the row's Print button),
           // each on its own page.
-          printEntrySlips({ entries: snapshot, voucherDate: date || todayStr(), printBy: user?.name || 'Accountant', targetWindow: printWin });
+          printEntrySlips({ entries: snapshot, voucherDate: date || todayStr(), printBy: user?.name || 'Accountant', targetWindow: printWin, panel });
         } catch {
           toast.error('Draft save hua lekin print popup block ho gaya — browser popup allow karo');
         }
@@ -1651,7 +1688,7 @@ export default function VoucherExpenseForm() {
                   <div className="ve-form__admission-chips">
                     {selectedAdmissions.map((a) => (
                       <span key={a.admissionNo} className="ve-form__admission-chip">
-                        {a.admissionNo}{a.patientName ? ` — ${a.patientName}` : ''}
+                        {a.admissionNo}{a.patientName ? ` — ${a.patientName}` : ''}{isClinic ? ` (${a.panel ? 'Panel' : 'Cash'})` : ''}
                         <button type="button" onMouseDown={(ev) => { ev.preventDefault(); handleAdmissionRemove(a.admissionNo); }}>✕</button>
                       </span>
                     ))}
@@ -1676,6 +1713,7 @@ export default function VoucherExpenseForm() {
                       <div key={r.id} className="ve-form__payee-item" onMouseDown={() => handleAdmissionSelect(r)}>
                         <span className="ve-form__payee-code">{r.admissionNo}</span>
                         <span>{r.patientName}</span>
+                        {isClinic && <span className="ve-form__admission-tag">{r.patientCategory === 'panel' ? 'Panel' : 'Cash'}</span>}
                         {r.status === 'discharge' && <span className="ve-form__admission-tag">Discharged</span>}
                       </div>
                     ))}
@@ -1922,6 +1960,16 @@ export default function VoucherExpenseForm() {
                 title="Save as draft aur print bhi karo"
               >
                 {savingDraft ? 'Saving…' : '🖨️ Save as Draft & Print'}
+              </button>
+            )}
+            {!isEditMode && isClinic && entityType === 'non-corporate' && (
+              <button
+                className="ve-form__draft-btn ve-form__draft-btn--panel"
+                onClick={() => handleSaveDraft(true, true)}
+                disabled={savingDraft}
+                title="Panel ka kharcha — Panel (Corporate) Pending Draft mein save aur print. Corporate page par 'Post Now' se Corporate Voucher Expense banega."
+              >
+                {savingDraft ? 'Saving…' : '🖨️ Panel Payment — Save Draft & Print'}
               </button>
             )}
             {isEditMode && user?.isSuperAdmin && (
@@ -2434,7 +2482,7 @@ export default function VoucherExpenseForm() {
                         // entirely, so the backend never received a valid id and that
                         // visit's isPaid flag never flipped. Legacy (plain numeric) IDs
                         // still convert normally.
-                        const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map((k) => k.startsWith('opd-') ? k : Number(k));
+                        const ids = Object.keys(checkedVisits).filter((k) => checkedVisits[k]).map((k) => (k.startsWith('opd-') || k.startsWith('ant-')) ? k : Number(k));
                         setEntry((f) => ({ ...f, amount: String(Math.round(cvCheckedTotal)), visitIds: ids, amountLocked: true }));
                         setConsultantModal(null);
                       }}

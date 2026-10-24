@@ -102,6 +102,7 @@ router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccou
 router.get('/expense-drafts', ctrl.getDraftExpenses);
 router.post('/expense-drafts', ctrl.saveDraftExpenseEntry);
 router.delete('/expense-drafts/:id', ctrl.deleteDraftExpense);
+router.post('/expense-drafts/:id/move', ctrl.moveDraftExpense);
 router.post('/expense-drafts/flash-now', ctrl.flashDraftsNow);
 
 router.post('/payee-head-main-accounts', ctrl.addInventoryHeadMainAccount);

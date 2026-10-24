@@ -1449,6 +1449,11 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
   // Same central check as Confirm — no draft for something already paid or
   // already sitting in another pending draft.
   await assertEntriesPayable([{ amount, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear }]);
+  // Clinic "Panel Payment" button: the form's heads are the Cash book's, the
+  // draft goes to the Panel book — re-point at the Panel book's same-named
+  // head (null when the heads already belong to `entityType`).
+  const mapped = await mapDraftAccountsToBook({ mainGlId, subGlId, mainAccountId, subAccountId, accountCode, bankId }, entityType);
+  if (mapped) await assertDraftLinksFitBook({ grnIds, consultantFeeItemIds }, entityType);
   const today = getBusinessDate();
   const businessDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today) ? date : today;
   const draft = await prisma.accVoucherExpenseDraft.create({
@@ -1459,6 +1464,7 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
       subGlId: Number(subGlId),   subGlName:  subGlName  || '',
       mainAccountId: Number(mainAccountId), accountCode: accountCode || '', accountName: accountName || '',
       subAccountId:  subAccountId ? Number(subAccountId) : null, subAccountName: subAccountName || null,
+      ...(mapped || {}),
       payeeName: payeeName || null,
       amount: Number(amount),
       chequeNo: chequeNo || null, chequeDate: chequeDate ? new Date(chequeDate) : null, chequeType: chequeType || null,
@@ -1557,6 +1563,131 @@ async function deleteDraftExpense(id) {
   return prisma.accVoucherExpenseDraft.delete({ where: { id: Number(id) } });
 }
 
+// ── Cash ↔ Panel book for a General Payment draft (owner, 2026-10-24) ────────
+// Cash (non-corporate) and Panel (corporate) keep SEPARATE charts of accounts
+// — same heads, same names, but their own rows/ids/codes (e.g. "fuel" is E-1
+// in Cash and E-4 in Panel). A draft moving books is re-pointed at the other
+// book's head with the same name at every level (Main GL → Sub GL → Account
+// → Sub Account); no match → refused, never posted under the wrong book.
+const BOOK_LABEL = { corporate: 'Panel (Corporate)', 'non-corporate': 'Cash (Non-Corporate)' };
+const sameName = (name) => ({ equals: String(name || '').trim(), mode: 'insensitive' });
+
+async function mapDraftAccountsToBook(d, entityType) {
+  const mainGl = await prisma.accMainGL.findUnique({ where: { id: Number(d.mainGlId) } });
+  // Already this book's head (normal Cash save / Panel form) — nothing to map.
+  if (!mainGl || mainGl.entityType === entityType) return null;
+  const [subGl, mainAcc, subAcc] = await Promise.all([
+    prisma.accSubGL.findUnique({ where: { id: Number(d.subGlId) } }),
+    prisma.accMainAccount.findUnique({ where: { id: Number(d.mainAccountId) } }),
+    d.subAccountId ? prisma.accSubAccount.findUnique({ where: { id: Number(d.subAccountId) } }) : null,
+  ]);
+  const path = [mainGl?.name, subGl?.name, mainAcc?.name, subAcc?.name].filter(Boolean).join(' → ');
+  const noMatch = () => Object.assign(new Error(
+    `${BOOK_LABEL[entityType]} book mein yeh head nahi mila: "${path}". Pehle ${BOOK_LABEL[entityType]} Chart of Accounts mein bilkul isi naam se banayein.`,
+  ), { status: 400 });
+  if (!subGl || !mainAcc || (d.subAccountId && !subAcc)) throw noMatch();
+
+  const toMainGl = await prisma.accMainGL.findFirst({ where: { entityType, name: sameName(mainGl.name) } });
+  const toSubGl = toMainGl && await prisma.accSubGL.findFirst({ where: { entityType, mainGlId: toMainGl.id, name: sameName(subGl.name) } });
+  const toMainAcc = toSubGl && await prisma.accMainAccount.findFirst({ where: { entityType, subGlId: toSubGl.id, name: sameName(mainAcc.name) } });
+  const toSubAcc = toMainAcc && subAcc
+    ? await prisma.accSubAccount.findFirst({ where: { entityType, mainAccountId: toMainAcc.id, name: sameName(subAcc.name) } })
+    : null;
+  if (!toMainAcc || (subAcc && !toSubAcc)) throw noMatch();
+
+  // Bank lines — same bank (name + account #) must exist in the other book.
+  let bankId = d.bankId ? Number(d.bankId) : null;
+  if (bankId) {
+    const bank = await prisma.accBankAccount.findUnique({ where: { id: bankId } });
+    if (bank && bank.entityType !== entityType) {
+      const toBank = await prisma.accBankAccount.findFirst({ where: { entityType, bankName: sameName(bank.bankName), accountNumber: bank.accountNumber } });
+      if (!toBank) throw Object.assign(new Error(`${BOOK_LABEL[entityType]} book mein bank "${bank.bankName} ${bank.accountNumber}" nahi hai`), { status: 400 });
+      bankId = toBank.id;
+    }
+  }
+
+  // accountCode is the Sub Account's code when one is picked, else the
+  // Account's (see VoucherExpenseForm) — swap whichever one it was.
+  const accountCode = subAcc && d.accountCode === subAcc.code ? toSubAcc.code
+    : d.accountCode === mainAcc.code ? toMainAcc.code
+      : (toSubAcc?.code || toMainAcc.code);
+  return {
+    bankId,
+    mainGlId: toMainGl.id, mainGlName: toMainGl.name,
+    subGlId: toSubGl.id, subGlName: toSubGl.name,
+    mainAccountId: toMainAcc.id, accountCode,
+    subAccountId: toSubAcc?.id ?? null,
+  };
+}
+
+// Linked items that belong to ONE book can't be paid from the other: a GRN
+// is Cash or Panel by its paymentMode, an IPD/OPD consultant fee by the
+// admission's patientCategory (same split getSupplierGRNs /
+// getPendingConsultantFees list them by). Doctor visits and salary months
+// aren't split by book, so they move as they are.
+async function assertDraftLinksFitBook({ grnIds, consultantFeeItemIds }, entityType) {
+  const label = BOOK_LABEL[entityType];
+  const ids = (grnIds || []).map(Number).filter(Boolean);
+  if (ids.length) {
+    const want = entityType === 'corporate' ? 'panel' : 'cash';
+    const bad = await prisma.inventoryGRN.findMany({ where: { id: { in: ids }, NOT: { paymentMode: want } }, select: { code: true } });
+    if (bad.length) {
+      throw Object.assign(new Error(`Is payment mein ${bad.map((g) => g.code).join(', ')} GRN hai jo ${label} book ki nahi — isay ${label} mein nahi bheja ja sakta`), { status: 400 });
+    }
+  }
+  const f = splitFeeIds(consultantFeeItemIds);
+  const isPanel = (cat) => cat === 'panel';
+  const fits = (cat) => (entityType === 'corporate' ? isPanel(cat) : !isPanel(cat));
+  if (f.dbi.length) {
+    const rows = await prisma.clinicDischargeBillItem.findMany({ where: { id: { in: f.dbi } }, select: { admission: { select: { admissionNo: true, patientCategory: true } } } });
+    const bad = rows.filter((r) => !fits(r.admission?.patientCategory));
+    if (bad.length) {
+      throw Object.assign(new Error(`Is payment mein Admission #${bad.map((r) => r.admission?.admissionNo).join(', ')} ki consultant fee hai jo ${label} book ki nahi — isay ${label} mein nahi bheja ja sakta`), { status: 400 });
+    }
+  }
+  if (f.opdv.length) {
+    const rows = await prisma.clinicOpdVisitDoctor.findMany({ where: { id: { in: f.opdv } }, select: { visit: { select: { admitNo: true } } } });
+    const admitNos = [...new Set(rows.map((r) => r.visit?.admitNo).filter(Boolean))];
+    const adms = admitNos.length
+      ? await prisma.clinicAdmission.findMany({ where: { admissionNo: { in: admitNos } }, select: { admissionNo: true, patientCategory: true } })
+      : [];
+    const catByNo = new Map(adms.map((a) => [a.admissionNo, a.patientCategory]));
+    const bad = rows.filter((r) => !r.visit?.admitNo || !catByNo.has(r.visit.admitNo) || !fits(catByNo.get(r.visit.admitNo)));
+    if (bad.length) {
+      throw Object.assign(new Error(`Is payment mein consultant fee (Admission #${[...new Set(bad.map((r) => r.visit?.admitNo || '?'))].join(', ')}) hai jo ${label} book ki nahi — isay ${label} mein nahi bheja ja sakta`), { status: 400 });
+    }
+  }
+}
+
+// Pending Draft "Panel" / "Cash" button — moves one pending draft to the
+// other book's Pending Draft, in place: same row, same businessDate, its
+// GRN / visit / fee / salary links untouched (so they stay reserved and get
+// marked paid when that book posts it — Day Close for Cash, "Post Now" for
+// Panel). Clinic refund drafts always stay in Cash.
+async function moveDraftExpense(id, entityType) {
+  if (!BOOK_LABEL[entityType]) throw Object.assign(new Error('Invalid book'), { status: 400 });
+  const draft = await prisma.accVoucherExpenseDraft.findUnique({
+    where: { id: Number(id) },
+    include: { grnPayments: { select: { grnId: true } } },
+  });
+  if (!draft) throw Object.assign(new Error('Draft not found'), { status: 404 });
+  if (draft.status !== 'pending') throw Object.assign(new Error('Yeh draft post ho chuki hai — move nahi ho sakti'), { status: 400 });
+  if (draft.clinicRefundKind) throw Object.assign(new Error('Refund / Cancel Slip draft move nahi ho sakti'), { status: 400 });
+  if (draft.entityType === entityType) throw Object.assign(new Error(`Draft pehle se ${BOOK_LABEL[entityType]} mein hai`), { status: 400 });
+
+  const mapped = await mapDraftAccountsToBook(draft, entityType);
+  await assertDraftLinksFitBook({ grnIds: draft.grnPayments.map((g) => g.grnId), consultantFeeItemIds: draft.consultantFeeItemIds }, entityType);
+
+  // Guarded on still-pending in the old book, so a Day Close / Post Now
+  // that ran meanwhile can't be overwritten.
+  const { count } = await prisma.accVoucherExpenseDraft.updateMany({
+    where: { id: draft.id, status: 'pending', entityType: draft.entityType },
+    data: { entityType, ...(mapped || {}) },
+  });
+  if (!count) throw Object.assign(new Error('Draft abhi post ho gayi ya badal gayi — page refresh karein'), { status: 409 });
+  return prisma.accVoucherExpenseDraft.findUnique({ where: { id: draft.id } });
+}
+
 // Called by day-close job (and the manual "Post Now" button): flashes every
 // PENDING draft dated `date` or EARLIER — not just exactly `date` — so a
 // backdated draft (Date field set to an earlier day than it was actually
@@ -1625,8 +1756,10 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
     // createVoucherExpense's own `entries` param does, so the exact same
     // linking logic/function applies unchanged.
     const allVisitIds = entries.flatMap((e) => Array.isArray(e.visitIds) ? e.visitIds : []);
-    const oldVisitIds = allVisitIds.filter((id) => !String(id).startsWith('opd-')).map(Number).filter(Boolean);
-    const opdDoctorIds = allVisitIds.filter((id) => String(id).startsWith('opd-')).map((id) => Number(String(id).slice(4))).filter(Boolean);
+    const { old: oldVisitIds, opd: opdDoctorIds, ant: antenatalIds } = splitVisitIds(allVisitIds);
+    if (antenatalIds.length > 0) {
+      await prisma.clinicAntenatal.updateMany({ where: { id: { in: antenatalIds } }, data: { isPaid: true } });
+    }
     if (oldVisitIds.length > 0) {
       await prisma.patientVisit.updateMany({ where: { id: { in: oldVisitIds } }, data: { isPaid: true } });
     }
@@ -1651,10 +1784,10 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
       const v = splitVisitIds(e.visitIds);
       const salary = e.salaryEmpCode && e.salaryMonth && e.salaryYear
         ? { empCode: String(e.salaryEmpCode), month: String(e.salaryMonth), year: String(e.salaryYear) } : null;
-      if (v.old.length || v.opd.length || salary) {
+      if (v.old.length || v.opd.length || v.ant.length || salary) {
         await prisma.accVoucherExpenseEntry.update({
           where: { id: voucher.entries[i].id },
-          data: { paidRefs: { visitIds: v.old, opdDoctorIds: v.opd, utilityBillIds: [], salary } },
+          data: { paidRefs: { visitIds: v.old, opdDoctorIds: v.opd, antenatalIds: v.ant, utilityBillIds: [], salary } },
         });
       }
     }
@@ -1721,11 +1854,15 @@ async function generateVoucherNo(entityType, voucherDate) {
 // the line arrives via Confirm (new/append), or anywhere else that creates
 // expense vouchers. Lists then simply hide whatever is paid or reserved.
 
+// Visit ids: plain number = PatientVisit (legacy), "opd-<id>" =
+// ClinicOpdVisitDoctor, "ant-<id>" = ClinicAntenatal registration.
 const splitVisitIds = (ids) => {
   const arr = Array.isArray(ids) ? ids : [];
+  const tagged = (prefix) => arr.filter((id) => String(id).startsWith(prefix)).map((id) => Number(String(id).slice(prefix.length))).filter(Boolean);
   return {
-    old: arr.filter((id) => !String(id).startsWith('opd-')).map(Number).filter(Boolean),
-    opd: arr.filter((id) => String(id).startsWith('opd-')).map((id) => Number(String(id).slice(4))).filter(Boolean),
+    old: arr.filter((id) => !String(id).startsWith('opd-') && !String(id).startsWith('ant-')).map(Number).filter(Boolean),
+    opd: tagged('opd-'),
+    ant: tagged('ant-'),
   };
 };
 const splitFeeIds = (ids) => {
@@ -1742,12 +1879,13 @@ async function getPendingDraftReservations() {
     where: { status: 'pending' },
     select: { visitIds: true, consultantFeeItemIds: true, salaryEmpCode: true, salaryMonth: true, salaryYear: true, grnPayments: { select: { grnId: true } } },
   });
-  const res = { grnIds: [], visitIds: [], opdDoctorIds: [], dbiIds: [], salaryKeys: [] };
+  const res = { grnIds: [], visitIds: [], opdDoctorIds: [], antenatalIds: [], dbiIds: [], salaryKeys: [] };
   for (const d of drafts) {
     res.grnIds.push(...d.grnPayments.map((g) => g.grnId));
     const v = splitVisitIds(d.visitIds);
     res.visitIds.push(...v.old);
     res.opdDoctorIds.push(...v.opd);
+    res.antenatalIds.push(...v.ant);
     const f = splitFeeIds(d.consultantFeeItemIds);
     res.dbiIds.push(...f.dbi);
     res.opdDoctorIds.push(...f.opdv);
@@ -1802,7 +1940,7 @@ async function assertSurgeryPaidOnce(entries, { excludeVoucherId } = {}) {
 }
 
 async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
-  const grnIds = [], oldVisit = [], opdDoc = [], dbi = [], utilIds = [], salary = [], maintIds = [];
+  const grnIds = [], oldVisit = [], opdDoc = [], antIds = [], dbi = [], utilIds = [], salary = [], maintIds = [];
   for (const e of entries) {
     const amt = Number(e.amount);
     // Minus amounts are allowed on lines that pay nothing (refund /
@@ -1819,26 +1957,27 @@ async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
       || (e.salaryEmpCode && e.salaryMonth && e.salaryYear);
     if (paysSomething && !(amt > 0)) throw Object.assign(new Error('Har line ki amount 0 se zyada honi chahiye'), { status: 400 });
     grnIds.push(...(Array.isArray(e.grnIds) ? e.grnIds.map(Number).filter(Boolean) : []));
-    const v = splitVisitIds(e.visitIds); oldVisit.push(...v.old); opdDoc.push(...v.opd);
+    const v = splitVisitIds(e.visitIds); oldVisit.push(...v.old); opdDoc.push(...v.opd); antIds.push(...v.ant);
     const f = splitFeeIds(e.consultantFeeItemIds); dbi.push(...f.dbi); opdDoc.push(...f.opdv);
     utilIds.push(...(Array.isArray(e.utilityBillIds) ? e.utilityBillIds.map(Number).filter(Boolean) : []));
     maintIds.push(...(Array.isArray(e.maintenanceIds) ? e.maintenanceIds.map(Number).filter(Boolean) : []));
     if (e.salaryEmpCode && e.salaryMonth && e.salaryYear) salary.push({ empCode: String(e.salaryEmpCode), salaryMonth: String(e.salaryMonth), salaryYear: String(e.salaryYear) });
   }
   const dup = (arr) => arr.find((x, i) => arr.indexOf(x) !== i);
-  if (dup(grnIds) || dup(oldVisit) || dup(opdDoc) || dup(dbi) || dup(utilIds) || dup(maintIds)) throw payErr('Ek hi cheez is voucher mein do dafa daali gayi hai');
+  if (dup(grnIds) || dup(oldVisit) || dup(opdDoc) || dup(antIds) || dup(dbi) || dup(utilIds) || dup(maintIds)) throw payErr('Ek hi cheez is voucher mein do dafa daali gayi hai');
 
-  const [paidGrns, paidVisits, paidOpd, paidDbi, paidUtil, paidSalary, paidMaint] = await Promise.all([
+  const [paidGrns, paidVisits, paidOpd, paidAnt, paidDbi, paidUtil, paidSalary, paidMaint] = await Promise.all([
     grnIds.length ? prisma.inventoryGRN.findMany({ where: { id: { in: grnIds }, isPaid: true }, select: { code: true } }) : [],
     oldVisit.length ? prisma.patientVisit.findMany({ where: { id: { in: oldVisit }, isPaid: true }, select: { serialNo: true } }) : [],
     opdDoc.length ? prisma.clinicOpdVisitDoctor.findMany({ where: { id: { in: opdDoc }, isPaid: true }, select: { id: true } }) : [],
+    antIds.length ? prisma.clinicAntenatal.findMany({ where: { id: { in: antIds }, isPaid: true }, select: { id: true } }) : [],
     dbi.length ? prisma.clinicDischargeBillItem.findMany({ where: { id: { in: dbi }, isPaid: true }, select: { id: true } }) : [],
     utilIds.length ? prisma.utilityActualBill.findMany({ where: { id: { in: utilIds }, isPaid: true }, select: { id: true } }) : [],
     salary.length ? prisma.employeeSalaryPayment.findMany({ where: { OR: salary }, select: { empCode: true, salaryMonth: true, salaryYear: true, voucherNo: true } }) : [],
     maintIds.length ? prisma.inventoryMaintenance.findMany({ where: { id: { in: maintIds }, isPaid: true }, select: { moNumber: true } }) : [],
   ]);
   if (paidGrns.length) throw payErr(`Yeh GRN pehle hi pay ho chuka hai: ${paidGrns.map((g) => g.code).join(', ')}`);
-  if (paidVisits.length || paidOpd.length) throw payErr('Kuch doctor visits ki fee pehle hi pay ho chuki hai — popup dobara khol kar select karein');
+  if (paidVisits.length || paidOpd.length || paidAnt.length) throw payErr('Kuch doctor visits ki fee pehle hi pay ho chuki hai — popup dobara khol kar select karein');
   if (paidDbi.length) throw payErr('Kuch IPD consultant fees pehle hi pay ho chuki hain — popup dobara khol kar select karein');
   if (paidUtil.length) throw payErr('Yeh utility bill pehle hi pay ho chuka hai');
   if (paidMaint.length) throw payErr(`Yeh maintenance pehle hi pay ho chuki hai: ${paidMaint.map((m) => m.moNumber || '-').join(', ')}`);
@@ -1850,7 +1989,7 @@ async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
   if (!ignoreDrafts) {
     const r = await getPendingDraftReservations();
     const inDraft = grnIds.some((x) => r.grnIds.includes(x)) || oldVisit.some((x) => r.visitIds.includes(x))
-      || opdDoc.some((x) => r.opdDoctorIds.includes(x)) || dbi.some((x) => r.dbiIds.includes(x))
+      || opdDoc.some((x) => r.opdDoctorIds.includes(x)) || antIds.some((x) => r.antenatalIds.includes(x)) || dbi.some((x) => r.dbiIds.includes(x))
       || salary.some((x) => r.salaryKeys.includes(`${x.empCode}|${x.salaryMonth}|${x.salaryYear}`));
     if (inDraft) throw payErr('Is payment ka Draft pehle se bana hua hai (abhi post nahi hua) — dobara pay nahi ho sakta');
   }
@@ -1869,6 +2008,7 @@ async function markEntriesPaid(entries, createdEntries, voucherNo) {
     if (maintIds.length) await prisma.inventoryMaintenance.updateMany({ where: { id: { in: maintIds } }, data: { isPaid: true, paidVoucherEntryId: createdEntries[i].id } });
     if (v.old.length) await prisma.patientVisit.updateMany({ where: { id: { in: v.old } }, data: { isPaid: true } });
     if (v.opd.length) await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: v.opd } }, data: { isPaid: true } });
+    if (v.ant.length) await prisma.clinicAntenatal.updateMany({ where: { id: { in: v.ant } }, data: { isPaid: true } });
     if (utilIds.length) await prisma.utilityActualBill.updateMany({ where: { id: { in: utilIds } }, data: { isPaid: true, paidVoucherEntryId: createdEntries[i].id } });
     let salary = null;
     if (e.salaryEmpCode && e.salaryMonth && e.salaryYear) {
@@ -1877,10 +2017,10 @@ async function markEntriesPaid(entries, createdEntries, voucherNo) {
         data: { empCode: salary.empCode, salaryMonth: salary.month, salaryYear: salary.year, voucherNo },
       });
     }
-    if (v.old.length || v.opd.length || utilIds.length || maintIds.length || salary) {
+    if (v.old.length || v.opd.length || v.ant.length || utilIds.length || maintIds.length || salary) {
       await prisma.accVoucherExpenseEntry.update({
         where: { id: createdEntries[i].id },
-        data: { paidRefs: { visitIds: v.old, opdDoctorIds: v.opd, utilityBillIds: utilIds, maintenanceIds: maintIds, salary } },
+        data: { paidRefs: { visitIds: v.old, opdDoctorIds: v.opd, antenatalIds: v.ant, utilityBillIds: utilIds, maintenanceIds: maintIds, salary } },
       });
     }
   }
@@ -1902,6 +2042,7 @@ async function unmarkEntryPaid(entryId, voucherNo) {
   const opdIds = [...opdFeeIds, ...(Array.isArray(refs.opdDoctorIds) ? refs.opdDoctorIds : [])];
   if (opdIds.length) await prisma.clinicOpdVisitDoctor.updateMany({ where: { id: { in: opdIds } }, data: { isPaid: false } });
   if (Array.isArray(refs.visitIds) && refs.visitIds.length) await prisma.patientVisit.updateMany({ where: { id: { in: refs.visitIds } }, data: { isPaid: false } });
+  if (Array.isArray(refs.antenatalIds) && refs.antenatalIds.length) await prisma.clinicAntenatal.updateMany({ where: { id: { in: refs.antenatalIds } }, data: { isPaid: false } });
   if (Array.isArray(refs.utilityBillIds) && refs.utilityBillIds.length) {
     await prisma.utilityActualBill.updateMany({ where: { id: { in: refs.utilityBillIds } }, data: { isPaid: false, paidVoucherEntryId: null } });
   }
@@ -2268,7 +2409,21 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     opdVisitWhere.visit = { ...opdVisitWhere.visit, createdAt: { ...(opdVisitWhere.visit.createdAt || {}), lte: to } };
   }
 
-  const [visits, opdDoctorRows, rateRows] = await Promise.all([
+  // Antenatal registrations under this doctor (underTreatmentId) — the
+  // registration amount is the doctor's flat Antenatal Rate, paid out as is.
+  // Panel registrations are billed to the panel, so not paid here.
+  const antenatalDoctor = await prisma.clinicDoctor.findFirst({ where: { name: { equals: doctorName, mode: 'insensitive' } }, select: { id: true } });
+  const antenatalWhere = {
+    underTreatmentId: antenatalDoctor?.id ?? -1,
+    isPaid: false,
+    paymentType: { not: 'panel' },
+    amount: { gt: 0 },
+    ...(draftRes.antenatalIds.length ? { id: { notIn: draftRes.antenatalIds } } : {}),
+  };
+  if (dateFrom) antenatalWhere.registrationDate = { ...(antenatalWhere.registrationDate || {}), gte: new Date(dateFrom) };
+  if (dateTo)   antenatalWhere.registrationDate = { ...(antenatalWhere.registrationDate || {}), lte: new Date(dateTo) };
+
+  const [visits, opdDoctorRows, antenatalRows, rateRows] = await Promise.all([
     prisma.patientVisit.findMany({
       where,
       orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
@@ -2282,6 +2437,11 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
         subDept: { select: { name: true } },
         visit: { select: { serialNo: true, patientName: true, paymentType: true, createdAt: true, totalAmount: true, discount: true } },
       },
+    }),
+    prisma.clinicAntenatal.findMany({
+      where: antenatalWhere,
+      orderBy: [{ registrationDate: 'asc' }, { id: 'asc' }],
+      select: { id: true, serialNo: true, antenatalNo: true, registrationDate: true, patientName: true, paymentType: true, amount: true, createdAt: true },
     }),
     // Same doctor/sub-department fee-share table the Consultant Wise Report
     // uses (Clinic → Doctors → Sub-Department Rates) — reused here so the
@@ -2342,7 +2502,22 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     };
   });
 
-  return [...oldRows, ...newRows];
+  const antRows = antenatalRows.map((a) => {
+    const amount = Number(a.amount || 0);
+    const pkt = new Date(new Date(a.createdAt).getTime() + 5 * 60 * 60 * 1000);
+    return {
+      id: `ant-${a.id}`,
+      serialNo: a.serialNo || a.antenatalNo,
+      visitDate: a.registrationDate,
+      visitTime: `${String(pkt.getUTCHours()).padStart(2, '0')}:${String(pkt.getUTCMinutes()).padStart(2, '0')}`,
+      patientName: a.patientName,
+      subDepartment: 'Antenatal',
+      paymentType: a.paymentType,
+      received: amount, payableAmount: amount, hasRate: true, ratePercent: null,
+    };
+  });
+
+  return [...oldRows, ...newRows, ...antRows];
 }
 
 // Inventory Maintenance jobs back from repair (completed / discarded) with an
@@ -3683,7 +3858,7 @@ module.exports = {
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
   getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
-  saveDraftExpenseEntry, saveClinicRefundDraft, getDraftExpenses, deleteDraftExpense, flashDraftsToVouchers,
+  saveDraftExpenseEntry, saveClinicRefundDraft, getDraftExpenses, deleteDraftExpense, moveDraftExpense, flashDraftsToVouchers,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getNextVoucherNo,

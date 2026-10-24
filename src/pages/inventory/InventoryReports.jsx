@@ -133,6 +133,7 @@ export default function InventoryReports() {
     categoryId: '',
     subcategoryId: '',
     assetType: '',
+    departmentId: '',
   });
   const [poFilters, setPoFilters] = useState({
     status: '',
@@ -542,7 +543,7 @@ export default function InventoryReports() {
   };
 
   const resetRepairingFilters = () => {
-    const empty = { dateFrom: '', dateTo: '', itemId: '', supplierId: '', categoryId: '', subcategoryId: '', assetType: '' };
+    const empty = { dateFrom: '', dateTo: '', itemId: '', supplierId: '', categoryId: '', subcategoryId: '', assetType: '', departmentId: '' };
     setRepairingFilters(empty);
     fetchMaintenanceRecords(empty).catch((err) => {
       toast.error(err.message || 'Failed to load repairing report');
@@ -1791,7 +1792,7 @@ export default function InventoryReports() {
     } else if (report === 'Repairing Report') {
       push('From', fmtDate(repairingFilters.dateFrom));
       push('To', fmtDate(repairingFilters.dateTo));
-      push('Status', repairingFilters.status);
+      push('Department', deptName(repairingFilters.departmentId));
       push('Category', catName(repairingFilters.categoryId));
       push('Subcategory', subName(repairingFilters.subcategoryId));
       push('Item', itemName(repairingFilters.itemId));
@@ -3450,6 +3451,17 @@ export default function InventoryReports() {
                       onChange={(val) => updateRepairingFilter('supplierId', val)}
                       placeholder="All Suppliers"
                       getLabel={(opt) => `${opt.name} (${opt.code})`}
+                      getKey={(opt) => opt.id}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block mb-1">Department</label>
+                    <SearchableSelect
+                      options={masterOptions?.departments || []}
+                      value={repairingFilters.departmentId}
+                      onChange={(val) => updateRepairingFilter('departmentId', val)}
+                      placeholder="All Departments"
+                      getLabel={(opt) => opt.name}
                       getKey={(opt) => opt.id}
                     />
                   </div>

@@ -592,7 +592,7 @@ export const useInventoryStore = create((set) => ({
   fetchAdmissionReturnables: async (admissionNo) => request(`/mrn/admission/${encodeURIComponent(String(admissionNo).trim())}`),
   fetchSlipReturnables: async (slipNo) => request(`/mrn/slip/${encodeURIComponent(String(slipNo).trim())}`),
 
-  fetchMaintenanceRecords: async ({ itemId = '', supplierId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '' } = {}) => {
+  fetchMaintenanceRecords: async ({ itemId = '', supplierId = '', categoryId = '', subcategoryId = '', dateFrom = '', dateTo = '', assetType = '', departmentId = '' } = {}) => {
     set({ loading: true, error: null });
     try {
       const qs = new URLSearchParams();
@@ -603,6 +603,7 @@ export const useInventoryStore = create((set) => ({
       if (dateFrom) qs.set('dateFrom', String(dateFrom));
       if (dateTo) qs.set('dateTo', String(dateTo));
       if (assetType) qs.set('assetType', String(assetType));
+      if (departmentId) qs.set('departmentId', String(departmentId));
       const data = await request(`/maintenance?${qs.toString()}`);
       set({ maintenanceRecords: Array.isArray(data) ? data : [], loading: false });
       return data;

@@ -684,13 +684,13 @@
 .pnbr-diag-grand { text-align: right; font-weight: 700; font-size: 11px; margin-top: 14px; span { margin-left: 8px; } }
 
 /* ── Medicine Bill (print) ── */
-// Pharmacy Bill (owner, 2026-10-23): three sizes smaller, then 1px more (7px vs 11px).
-.pnbr-med { font-size: 7px; }
-.pnbr-med-title { text-align: center; font-weight: normal; text-decoration: underline; margin-bottom: 14px; font-size: 10px; }
+// Pharmacy Bill: same sizes as the Diagnostic Bill (owner, 2026-10-24) — 9px text.
+.pnbr-med { font-size: 9px; }
+.pnbr-med-title { text-align: center; font-weight: normal; text-decoration: underline; margin-bottom: 14px; font-size: 12px; }
 .pnbr-med-hdr { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; td { vertical-align: top; padding: 2px 14px 2px 0; } }
 .pnbr-med-tbl {
   th, td { border: none; border-bottom: 1px solid #ddd; padding: 4px 10px 4px 0; }
   thead th { border-bottom: 1px solid #333; font-weight: normal; text-align: left; &.r { text-align: right; } }
 }
 .pnbr-med-empty { text-align: center; color: #666; padding: 12px 0; }
-.pnbr-med-total { text-align: right; font-weight: 700; font-size: 9px; margin-top: 10px; padding-top: 6px; border-top: 1px solid #333; span { margin-left: 8px; } }
+.pnbr-med-total { text-align: right; font-weight: 700; font-size: 11px; margin-top: 10px; padding-top: 6px; border-top: 1px solid #333; span { margin-left: 8px; } }

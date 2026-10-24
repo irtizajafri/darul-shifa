@@ -1,7 +1,35 @@
 // General Payment Date Wise — the old system's layout: day heading with the
 // payment mode on the right, then PayDate · Code · Particulars · Amount lines
-// each ruled underneath.
-.gpr-note { font-style: italic; }
+// each ruled underneath. One sheet per day per book (Cash, then Panel); every
+// sheet after the first starts a new printed page.
+.gpr-sheet { break-inside: auto; }
+.gpr-sheet-break {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 3px dashed #94a3b8;
+}
+.gpr-hospital { font-weight: 700; font-size: 1.05rem; margin-bottom: 2px; }
+.gpr-sheet-head {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 4px 0;
+  border-top: 1px solid #000;
+  border-bottom: 1px solid #000;
+  font-weight: 700;
+}
+.gpr-book { text-transform: uppercase; letter-spacing: 0.04em; }
+.gpr-summary { margin-top: 24px; break-inside: avoid; page-break-inside: avoid; }
+.gpr-summary-title { font-weight: 700; border-bottom: 1px solid #000; }
+@media print {
+  .gpr-sheet-break {
+    break-before: page;
+    page-break-before: always;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}
 .gpr-table {
   width: 100%;
   border-collapse: collapse;
