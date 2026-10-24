@@ -1175,7 +1175,7 @@ export default function VoucherExpenseForm() {
   };
 
   const pfCheckedTotal = pendingFeesModal?.fees
-    ? pendingFeesModal.fees.filter((f) => checkedFees[f.id]).reduce((s, f) => s + Number(f.amount || 0), 0)
+    ? Math.round(pendingFeesModal.fees.filter((f) => checkedFees[f.id]).reduce((s, f) => s + Number(f.amount || 0), 0))
     : 0;
 
   // Utility provider payee (k-electric / ssgc / ptcl) — show that category's
@@ -2566,8 +2566,8 @@ export default function VoucherExpenseForm() {
                           <td>{f.dischargeDate ? new Date(f.dischargeDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                           <td>{f.patientName}</td>
                           <td>{f.subDeptName || '—'}</td>
-                          <td>PKR {Number(f.rate || 0).toLocaleString()}</td>
-                          <td className="ve-grn-modal__amount">PKR {Number(f.amount || 0).toLocaleString()}</td>
+                          <td>PKR {Math.round(Number(f.rate || 0)).toLocaleString()}</td>
+                          <td className="ve-grn-modal__amount">PKR {Math.round(Number(f.amount || 0)).toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>

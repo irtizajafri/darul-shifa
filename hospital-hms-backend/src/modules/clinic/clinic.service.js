@@ -7194,7 +7194,7 @@ async function searchAdmissionsForDischargeRefund(q) {
 // Only one in-house pharmacy exists in this system and Sales Invoices carry
 // no store field of their own — so unlike Outside Store (ClinicPharmacyStore),
 // this name has nowhere to come from except a fixed constant.
-const HOSPITAL_PHARMACY_STORE_NAME = 'Fair Medical Store';
+const HOSPITAL_PHARMACY_STORE_NAME = 'FAIR PRICE MEDICAL STORE';
 
 // Pharmacy rows need a payee so Voucher Expense's Pending Consultant Fees
 // can pay the store: the Contractor-category ClinicDoctor whose name matches
@@ -7202,12 +7202,16 @@ const HOSPITAL_PHARMACY_STORE_NAME = 'Fair Medical Store';
 // set up (row still bills, just isn't payable from Voucher Expense).
 async function resolvePharmacyPayees() {
   const contractors = await prisma.clinicDoctor.findMany({
-    where: { OR: [{ staffCategory: { name: { equals: 'Contractor', mode: 'insensitive' } } }, { code: 'PH' }] },
+    where: { OR: [
+      { staffCategory: { name: { equals: 'Contractor', mode: 'insensitive' } } },
+      { staffCategory: { name: { equals: 'MEDICIAN SUPPLIER', mode: 'insensitive' } } },
+      { code: 'PH' },
+    ] },
     select: { id: true, code: true, name: true, staffCategory: { select: { name: true } } },
   });
   const key = (n) => String(n || '').trim().toLowerCase();
   const byName = new Map(contractors
-    .filter((d) => key(d.staffCategory?.name) === 'contractor')
+    .filter((d) => ['contractor', 'medician supplier'].includes(key(d.staffCategory?.name)))
     .map((d) => [key(d.name), d.id]));
   const fallbackId = contractors.find((d) => d.code === 'PH')?.id || null;
   return (storeName) => byName.get(key(storeName)) || fallbackId;
@@ -7597,7 +7601,9 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
     throw Object.assign(new Error('Other Income sirf Panel file ke liye hai'), { status: 400 });
   }
   const detail = await getDischargeBillDetail(admissionId);
-  const netAmount = Math.max(0, detail.billAmount - (Number(discountAmount) || 0));
+  // Bill Amount is rounded on screen (DischargeRefund) — the check uses the
+  // same rounded figure, else a .40 fraction blocks a Balance shown as 0.
+  const netAmount = Math.max(0, Math.round(detail.billAmount) - (Number(discountAmount) || 0));
   const outstanding = Math.max(0, netAmount - detail.amountReceived);
   const otherIncomeAmount = isPanel && otherIncome ? outstanding : 0;
   const balance = outstanding - otherIncomeAmount;

@@ -427,7 +427,7 @@ export default function DischargeRefund() {
   }
 
   const isPanel = detail?.admission.patientCategory === 'panel';
-  const netAmount = detail ? Math.max(0, detail.billAmount - (Number(discount) || 0)) : 0;
+  const netAmount = detail ? Math.max(0, Math.round(detail.billAmount) - (Number(discount) || 0)) : 0;
   const outstanding = detail ? Math.max(0, netAmount - detail.amountReceived) : 0;
   const liveOtherIncome = isPanel && otherIncome ? outstanding : 0;
   const liveBalance = outstanding - liveOtherIncome;
@@ -671,7 +671,7 @@ export default function DischargeRefund() {
                 </tbody>
               </table>
 
-              <div className="dr-bill-amount">Bill Amount <span>{fmt2(detail.billAmount)}</span></div>
+              <div className="dr-bill-amount">Bill Amount <span>{fmt2(Math.round(detail.billAmount))}</span></div>
             </div>
 
             <div className="dr-footer">

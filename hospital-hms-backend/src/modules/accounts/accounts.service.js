@@ -2464,9 +2464,9 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     const received = Number(v.received || 0);
     const rate = bySubDept[normDoctorRateName(v.subDepartment)] || firstRate;
     const hasRate = !!(rate && rate.normalFees);
-    const payableAmount = hasRate
+    const payableAmount = Math.round(hasRate
       ? (rate.paymentType === 'percent' ? received * rate.normalFees / 100 : rate.normalFees)
-      : received;
+      : received);
     return { ...v, received, payableAmount, hasRate, ratePercent: hasRate && rate.paymentType === 'percent' ? rate.normalFees : null };
   });
 
@@ -2485,9 +2485,9 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     const subDept = d.subDept?.name || '';
     const rate = bySubDept[normDoctorRateName(subDept)] || firstRate;
     const hasRate = !!(rate && rate.normalFees);
-    const payableAmount = hasRate
+    const payableAmount = Math.round(hasRate
       ? (rate.paymentType === 'percent' ? received * rate.normalFees / 100 : rate.normalFees)
-      : received;
+      : received);
     const pkt = new Date(new Date(d.visit.createdAt).getTime() + 5 * 60 * 60 * 1000);
     return {
       id: `opd-${d.id}`,
