@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
-import { Search, X, Plus } from 'lucide-react';
+import { Search, X, Plus, Printer } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -111,6 +111,12 @@ function stepBillingFocus(e) {
   if (idx === -1) return;
   e.preventDefault();
   const next = list[idx + (e.key === 'ArrowUp' ? -1 : 1)];
+  // The submit button itself is in the Tab order (so Tab reaches it); Enter
+  // on the field before it still submits straight away, not just focuses it.
+  if (next && isEnter && next.hasAttribute('data-enter-submit')) {
+    if (!next.disabled) next.click();
+    return;
+  }
   if (next) {
     next.focus();
     if ((next.tagName === 'INPUT' && next.type !== 'checkbox' && next.type !== 'date') || next.tagName === 'TEXTAREA') next.select?.();
@@ -258,6 +264,8 @@ function numToWords(n) {
 // Panels > Billing > Reports — matches the reference dialog exactly; only
 // the first two are wired up so far, the rest are placeholders for later.
 const REPORT_TYPES = [
+  // Default (owner, 2026-10-24): all three together in the Report Viewer.
+  { key: 'all',           label: 'All 3 Reports (Covering + Medicine + Diagnostic)', ready: true },
   { key: 'covering',      label: 'Billing Covering Page',              ready: true },
   { key: 'medicine',      label: 'Medicine Bill',                      ready: true },
   { key: 'diagnostic',    label: 'Diagnostic Bill',                    ready: true },
@@ -302,8 +310,8 @@ function printPanelReport(printHostEl, reportType, targetWindow) {
   });
 }
 
-// After Save (Yes or No) the three reports print together from ONE
-// print-relay window (one print dialog — three separate windows meant three
+// The Report Viewer's Print (after Save) prints the three reports together
+// from ONE print-relay window (one print dialog — three separate windows meant three
 // print dialogs at once), in this order, each starting on a new page with
 // its own letterhead margin. A single document can carry different page
 // margins through CSS named pages (`page: <name>` + `@page <name>`), so
@@ -459,9 +467,11 @@ export default function PanelBilling() {
   // ── Reports dialog ─────────────────────────────────────────────────────────
   const [showReports, setShowReports] = useState(false);
   const [reportAdmitNo, setReportAdmitNo] = useState('');
-  const [reportType, setReportType] = useState('covering');
+  const [reportType, setReportType] = useState('all');
   const [reportLoading, setReportLoading] = useState(false);
-  const [printData, setPrintData] = useState(null); // { type, data } | null — feeds the hidden print template
+  // Report Viewer: { bill, reports: ['covering', …] } | null — after Save
+  // (all three) and from the Reports dialog (all three or one).
+  const [viewer, setViewer] = useState(null);
 
   // ── Manual add: Medicine / Laboratory / Ultrasound / Radiology ────────────
   const [customType, setCustomType] = useState('medicine');
@@ -843,27 +853,23 @@ export default function PanelBilling() {
 
   function openReports() {
     setReportAdmitNo(data?.admission.admissionNo || admitNo || '');
-    setReportType('covering');
+    setReportType('all');
     setShowReports(true);
   }
-
-  const printAreaRef = useRef(null);
 
   async function handleGenerateReport() {
     const no = reportAdmitNo.trim();
     if (!no) return toast.error('Admission # daalo');
     const type = REPORT_TYPES.find((t) => t.key === reportType);
     if (!type?.ready) return toast.error('Yeh report abhi available nahi hai');
-    // Print window opened on the click, before the await (popup blockers).
-    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
+    // Opens in the Report Viewer (all three, or the one picked); printing
+    // happens from its Print button.
     setReportLoading(true);
     try {
       const res = await fetchPanelAdmissionBilling(no);
-      setPrintData({ type: reportType, data: res });
       setShowReports(false);
-      setTimeout(() => printPanelReport(printAreaRef.current, reportType, w), 300);
+      setViewer({ bill: res, reports: reportType === 'all' ? SAVE_REPORTS : [reportType] });
     } catch (e) {
-      w.close();
       toast.error(e.message || 'Report load nahi hui');
     } finally {
       setReportLoading(false);
@@ -914,20 +920,20 @@ export default function PanelBilling() {
   // (before any await, so popup blockers allow it) and filled once the bill
   // to print is ready. If the browser blocks it anyway, openPrintWindow shows
   // its own "allow popups" toast; the Reports dialog can print them again.
-  function printAllReports(bill, w) {
-    setPrintData({ type: 'all', data: bill });
-    setTimeout(() => printAllPanelReports(printAreaRef.current?.querySelector('[data-report-all]'), w), 300);
+  // After Save the three reports open together in the in-app Report Viewer
+  // (owner, 2026-10-24 — "like Crystal Reports, inside the browser"); its
+  // Print sends all three to the printer in one go.
+  function showAllReports(bill) {
+    setViewer({ bill, reports: SAVE_REPORTS });
   }
 
   function handleDeclineCloseFile() {
-    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
     setShowCloseConfirm(false);
     toast.success('Billing save ho gayi');
-    printAllReports(data, w);
+    showAllReports(data);
   }
 
   async function handleConfirmCloseFile() {
-    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
     setClosingFile(true);
     try {
       const changedBy = user?.name || user?.username || user?.email || '';
@@ -936,9 +942,8 @@ export default function PanelBilling() {
       setShowCloseConfirm(false);
       const fresh = await fetchPanelAdmissionBilling(data.admission.admissionNo);
       setData(fresh);
-      printAllReports(fresh, w);
+      showAllReports(fresh);
     } catch (e) {
-      w.close();
       toast.error(e.message || 'File close nahi ho saki');
     } finally {
       setClosingFile(false);
@@ -1475,18 +1480,7 @@ export default function PanelBilling() {
         />
       )}
 
-      <div ref={printAreaRef}>
-        {printData?.type === 'covering' && <BillingCoveringPagePrintTemplate data={printData.data} />}
-        {printData?.type === 'diagnostic' && <DiagnosticBillPrintTemplate data={printData.data} />}
-        {printData?.type === 'medicine' && <MedicineBillPrintTemplate data={printData.data} />}
-        {printData?.type === 'all' && (
-          <div data-report-all="">
-            <div data-report="covering"><BillingCoveringPagePrintTemplate data={printData.data} /></div>
-            <div data-report="medicine"><MedicineBillPrintTemplate data={printData.data} /></div>
-            <div data-report="diagnostic"><DiagnosticBillPrintTemplate data={printData.data} /></div>
-          </div>
-        )}
-      </div>
+      {viewer && <PanelReportViewer bill={viewer.bill} reports={viewer.reports} onClose={() => setViewer(null)} />}
 
       {popup === 'pharmacy' && data && (
         <PharmacyDetailModal
@@ -1707,7 +1701,8 @@ function HeadAddRow({ typeKey, subDepartments, fetchMedicineList, createMedicine
         <input type="date" className="pnb-date-input" value={date} onChange={(e) => { setDate(e.target.value); onDateChange?.(e.target.value); }}
           min={minDate || undefined} max={maxDate || undefined} />
       </div>
-      <button className="pnb-add-btn" onClick={handleAdd} disabled={adding} data-enter-submit tabIndex={-1}>
+      {/* In the Tab order: Date → Tab → Add → Enter/Space (owner, 2026-10-24). */}
+      <button className="pnb-add-btn" onClick={handleAdd} disabled={adding} data-enter-submit>
         <Plus size={14} /> {adding ? 'Adding…' : 'Add'}
       </button>
       {showNewMed && createPortal(
@@ -2361,6 +2356,57 @@ function relationText(admission) {
   const name = admission.relationName || '';
   if (!name) return '—';
   return admission.relationType && admission.relationType !== 'Self' ? `${admission.relationType} ${name}` : name;
+}
+
+// ── Report Viewer ──────────────────────────────────────────────────────────
+// The reports open inside the app (after Save: all three; from Reports: all
+// three by default, or the one picked), each as an A4 sheet one under the
+// other (letterhead space at the top, as printed); Print sends them to the
+// printer as one job. Esc closes.
+const VIEWER_REPORTS = [
+  { key: 'covering', Template: BillingCoveringPagePrintTemplate },
+  { key: 'medicine', Template: MedicineBillPrintTemplate },
+  { key: 'diagnostic', Template: DiagnosticBillPrintTemplate },
+];
+function PanelReportViewer({ bill, reports, onClose }) {
+  const shown = VIEWER_REPORTS.filter((r) => reports.includes(r.key));
+  const allRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  function handlePrint() {
+    // Opened on the click itself, so popup blockers allow it.
+    const w = openPrintWindow(PRINT_WINDOW_FEATURES);
+    if (shown.length === 1) printPanelReport(allRef.current.querySelector('[data-report]'), shown[0].key, w);
+    else printAllPanelReports(allRef.current, w);
+  }
+
+  return createPortal(
+    <div className="pnbr-viewer" role="dialog" aria-modal="true">
+      <div className="pnbr-viewer-bar">
+        <span className="pnbr-viewer-title">Panel Billing Reports — {bill.admission.admissionNo} · {bill.admission.patientName}</span>
+        <button type="button" className="pnbr-viewer-btn pnbr-viewer-btn--print" onClick={handlePrint} autoFocus>
+          <Printer size={14} /> {shown.length > 1 ? `Print (all ${shown.length})` : 'Print'}
+        </button>
+        <button type="button" className="pnbr-viewer-btn" onClick={onClose} title="Esc">
+          <X size={14} /> Close
+        </button>
+      </div>
+      <div className="pnbr-viewer-body">
+        <div data-report-all="" ref={allRef}>
+          {shown.map((r) => (
+            <div key={r.key} data-report={r.key} className="pnbr-viewer-sheet" style={{ '--pnbr-top': PRINT_TOP_MARGIN[r.key] }}>
+              <r.Template data={bill} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 // Closing line on all three Panel Billing reports (owner, 2026-10-23).
