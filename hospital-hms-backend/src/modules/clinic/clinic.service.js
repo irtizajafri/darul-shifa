@@ -7623,12 +7623,85 @@ async function resolvePharmacyPayees() {
   return (storeName) => byName.get(key(storeName)) || fallbackId;
 }
 
+// Discharge & Refund: every Laboratory / Radiology / Ultrasound / Blood Bank
+// slip of the file (Admit No + Adjust Payment, same as the Provisional Bill)
+// comes in by itself — even a Radiology / Ultrasound / Blood Bank slip nobody
+// double-clicked into the Provisional Bill — one row per test (sub-
+// department) with its rate (owner, 2026-10-26). While the file is open the
+// rows follow the slips: a new slip/test adds a row, a changed amount updates
+// it, a slip taken off the file removes it. Staff can still edit or delete a
+// row here: an edited amount (amountEdited) is no longer overwritten, and a
+// deleted row stays as excluded (amount 0) so it doesn't come back. A closed
+// file keeps what it had.
+const DISCHARGE_SLIP_DEPTS = ['LABORATORY', 'RADIOLOGY', 'ULTRA SOUND, ECHO & COLOR DOPPLER', 'BLOOD BANK'];
+const isDischargeSlipDept = (dept) => !!dept && DISCHARGE_SLIP_DEPTS.includes(String(dept).trim().toUpperCase());
+
+async function syncDischargeSlipRows(admission) {
+  const admissionId = admission.id;
+  const [visits, provItems, existing] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({
+      where: { admitNo: admission.admissionNo, adjustPayment: true },
+      include: { doctors: { orderBy: { id: 'asc' }, include: { subDept: { select: { name: true } } } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    }),
+    prisma.clinicProvisionalBillItem.findMany({
+      where: { admissionId, sourceOpdVisitId: { not: null } },
+      select: { sourceOpdVisitId: true, amount: true },
+    }),
+    prisma.clinicDischargeBillItem.findMany({ where: { admissionId, source: { in: ['slip', 'diagnostic'] } } }),
+  ]);
+  const provAmount = new Map(provItems.map((i) => [i.sourceOpdVisitId, Number(i.amount) || 0]));
+  // One line per test. A slip without tests, or one added to the Provisional
+  // Bill at an amount other than its tests' sum, is one line for the slip.
+  const live = [];
+  visits.filter((v) => isDischargeSlipDept(v.department)).forEach((v) => {
+    const tests = v.doctors || [];
+    const testsSum = tests.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+    const prov = provAmount.get(v.id);
+    if (tests.length && (prov == null || Math.abs(prov - testsSum) < 0.01)) {
+      tests.forEach((d) => {
+        const qty = Number(d.quantity) || 1;
+        const amount = Number(d.amount) || 0;
+        live.push({ key: `${v.id}:${d.id}`, visitId: v.id, description: d.subDept?.name || v.department, qty, rate: amount / qty, amount });
+      });
+    } else {
+      const amount = prov != null ? prov : Number(v.totalAmount) || 0;
+      live.push({ key: `${v.id}:0`, visitId: v.id, description: `${v.department} slip`, qty: 1, rate: amount, amount });
+    }
+  });
+  const liveKeys = new Set(live.map((l) => l.key));
+  const byKey = new Map(existing.filter((e) => e.source === 'slip' && e.sourceLineKey).map((e) => [e.sourceLineKey, e]));
+
+  // The old one-row-per-department / per-slip lines are replaced by the
+  // per-test rows; so is a row whose slip or test left the file.
+  const drop = existing.filter((e) => e.source === 'diagnostic' || !e.sourceLineKey || !liveKeys.has(e.sourceLineKey)).map((e) => e.id);
+  const ops = [];
+  if (drop.length) ops.push(prisma.clinicDischargeBillItem.deleteMany({ where: { id: { in: drop } } }));
+  const toCreate = [];
+  for (const l of live) {
+    const row = byKey.get(l.key);
+    if (!row) {
+      toCreate.push({
+        admissionId, billHeadId: null, doctorId: null, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount,
+        source: 'slip', sourceOpdVisitId: l.visitId, sourceLineKey: l.key,
+      });
+    } else if (row.excluded || row.amountEdited) {
+      if (row.description !== l.description) ops.push(prisma.clinicDischargeBillItem.update({ where: { id: row.id }, data: { description: l.description } }));
+    } else if (row.amount !== l.amount || row.qty !== l.qty || row.description !== l.description) {
+      ops.push(prisma.clinicDischargeBillItem.update({ where: { id: row.id }, data: { description: l.description, qty: l.qty, rate: l.rate, amount: l.amount } }));
+    }
+  }
+  if (toCreate.length) ops.push(prisma.clinicDischargeBillItem.createMany({ data: toCreate, skipDuplicates: true }));
+  if (ops.length) await prisma.$transaction(ops);
+}
+
 async function importProvisionalDataIntoDischargeBill(admissionId) {
   const detail = await getProvisionalBillDetail(admissionId);
   const pharmacyPayeeFor = await resolvePharmacyPayees();
   const rows = [];
 
   detail.billItems.forEach((item) => {
+    if (isDischargeSlipDept(item.sourceDepartment)) return;
     rows.push({
       admissionId: Number(admissionId),
       billHeadId: item.billHeadId || null,
@@ -7641,25 +7714,8 @@ async function importProvisionalDataIntoDischargeBill(admissionId) {
     });
   });
 
-  // Same department-level collapse as the Provisional Bill print — one row
-  // per department, not a test-by-test breakdown.
-  const diagTotalsByDept = {};
-  (detail.diagnosticRows || []).forEach((row) => {
-    const dept = row.department || 'Diagnostic';
-    diagTotalsByDept[dept] = (diagTotalsByDept[dept] || 0) + Number(row.amount || 0);
-  });
-  Object.entries(diagTotalsByDept).forEach(([dept, total]) => {
-    rows.push({
-      admissionId: Number(admissionId),
-      billHeadId: null,
-      doctorId: null,
-      description: dept,
-      qty: 1,
-      rate: total,
-      amount: total,
-      source: 'diagnostic',
-    });
-  });
+  // Lab / Radiology / Ultrasound / Blood Bank are not imported here — each
+  // slip is its own live row instead (see syncDischargeSlipRows).
 
   // Pharmacy splits into one row per store instead of a single combined
   // total — Hospital Store (the in-house pharmacy; only one exists in this
@@ -7713,16 +7769,18 @@ async function getDischargeBillDetail(admissionId) {
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
   const alreadyImported = await prisma.clinicDischargeBillItem.count({
-    where: { admissionId: Number(admissionId), source: { not: 'manual' } },
+    where: { admissionId: Number(admissionId), source: { notIn: ['manual', 'slip'] } },
   });
   if (!alreadyImported) {
     await importProvisionalDataIntoDischargeBill(admissionId);
   }
+  if (admission.status !== 'closed') await syncDischargeSlipRows(admission);
 
   const [roomCategory, bed, billItems, payments, surgeryExpenseEntries, panelCompany, panelEmployee] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
-    prisma.clinicDischargeBillItem.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
+    // A slip row staff deleted stays as excluded (see syncDischargeSlipRows).
+    prisma.clinicDischargeBillItem.findMany({ where: { admissionId: Number(admissionId), excluded: false }, orderBy: { id: 'asc' } }),
     prisma.clinicAdmissionPayment.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
     // Surgeon/Anaesthetic fees paid via Voucher Expense (Surgery/Anesthesia
     // payee heads) — admissionNo only ever gets set by that one feature, so
@@ -7747,7 +7805,8 @@ async function getDischargeBillDetail(admissionId) {
   const billHeadIds = [...new Set(billItems.map((i) => i.billHeadId).filter(Boolean))];
   const doctorIds = [...new Set(billItems.map((i) => i.doctorId).filter(Boolean))];
   const subDeptIds = [...new Set(billItems.map((i) => i.subDeptId).filter(Boolean))];
-  const [headRows, doctorRows, subDeptRows] = await Promise.all([
+  const slipVisitIds = billItems.filter((i) => i.source === 'slip' && i.sourceOpdVisitId).map((i) => i.sourceOpdVisitId);
+  const [headRows, doctorRows, subDeptRows, slipVisits] = await Promise.all([
     // refDepartment (name, not just id) included so the frontend can decide
     // "hide the Sub-Department picker for Lab/Radiology/Ultrasound" by
     // department NAME — the numeric refDepartmentId is per-database and
@@ -7755,9 +7814,20 @@ async function getDischargeBillDetail(admissionId) {
     billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } }, include: { refDepartment: { select: { id: true, name: true } } } }) : [],
     doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } } }) : [],
     subDeptIds.length ? prisma.clinicSubDepartment.findMany({ where: { id: { in: subDeptIds } } }) : [],
+    slipVisitIds.length ? prisma.clinicOpdVisit.findMany({
+      where: { id: { in: slipVisitIds } },
+      select: { id: true, department: true, serialNo: true, createdAt: true },
+    }) : [],
   ]);
   const headById = {}; headRows.forEach((h) => { headById[h.id] = h; });
   const doctorById = {}; doctorRows.forEach((d) => { doctorById[d.id] = d; });
+  // Slip rows (one per test) show under one header per department; the
+  // header and the slip no / date come from the slip itself.
+  const slipById = new Map(slipVisits.map((v) => [v.id, v]));
+  const slipInfo = (item) => {
+    const v = slipById.get(item.sourceOpdVisitId);
+    return v ? { department: v.department, serialNo: v.serialNo, date: v.createdAt } : null;
+  };
   const subDeptById = {}; subDeptRows.forEach((s) => { subDeptById[s.id] = s; });
 
   const resolvedBillItems = billItems.map((item) => ({
@@ -7765,6 +7835,7 @@ async function getDischargeBillDetail(admissionId) {
     billHead: item.billHeadId ? headById[item.billHeadId] || null : null,
     doctor: item.doctorId ? doctorById[item.doctorId] || null : null,
     subDept: item.subDeptId ? subDeptById[item.subDeptId] || null : null,
+    ...(item.source === 'slip' ? { slip: slipInfo(item) } : {}),
   }));
 
   const liveSurgeryRows = surgeryExpenseEntries.map((e) => ({
@@ -7859,6 +7930,20 @@ async function getDischargeBillDetail(admissionId) {
   // Panel file closed via "Goes to Other Income" (see finalizeDischarge).
   const otherIncomeAmount = Number(admission.dischargeOtherIncome) || 0;
 
+  // Itemised Medical Bill print header/footer (owner, 2026-10-26): Dis Date,
+  // Closed On, and Created By / Last updated By = whoever closed the file
+  // first / last (the ->closed status logs).
+  const [certificate, closeLogs] = await Promise.all([
+    prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: admission.id }, select: { dischargeDate: true } }),
+    prisma.clinicAdmissionStatusLog.findMany({
+      where: { admissionId: admission.id, toStatus: 'closed' },
+      orderBy: { id: 'asc' },
+      select: { changedBy: true, changedAt: true },
+    }),
+  ]);
+  const firstClose = closeLogs[0] || null;
+  const lastClose = closeLogs[closeLogs.length - 1] || null;
+
   return {
     admission,
     roomCategory,
@@ -7866,6 +7951,14 @@ async function getDischargeBillDetail(admissionId) {
     company: panelCompany,
     employee: panelEmployee,
     billItems: allBillItems,
+    dischargeDate: certificate?.dischargeDate || null,
+    billLog: {
+      closedOn: admission.status === 'closed' ? lastClose?.changedAt || null : null,
+      createdBy: firstClose?.changedBy || null,
+      createdAt: firstClose?.changedAt || null,
+      updatedBy: lastClose?.changedBy || null,
+      updatedAt: lastClose?.changedAt || null,
+    },
     paymentHistory,
     amountReceived: netAmountReceived,
     billAmount,
@@ -7985,11 +8078,19 @@ async function updateDischargeBillItem(itemId, { amount }) {
   if (item.hospitalShare != null) {
     data.doctorFee = amt;
   }
+  // From now on the slip no longer overwrites this amount.
+  if (item.source === 'slip') data.amountEdited = true;
 
   return prisma.clinicDischargeBillItem.update({ where: { id: Number(itemId) }, data });
 }
 
 async function deleteDischargeBillItem(itemId) {
+  const item = await prisma.clinicDischargeBillItem.findUnique({ where: { id: Number(itemId) }, select: { source: true } });
+  // A slip row would come straight back from the slip — keep it hidden
+  // with no amount instead (see syncDischargeSlipRows).
+  if (item?.source === 'slip') {
+    return prisma.clinicDischargeBillItem.update({ where: { id: Number(itemId) }, data: { excluded: true, amount: 0, rate: 0 } });
+  }
   return prisma.clinicDischargeBillItem.delete({ where: { id: Number(itemId) } });
 }
 
@@ -10372,7 +10473,7 @@ async function getWardWiseBillReport({
   if (!filtered.length) return { billType, withSummary, wards: [], grandTotal: { totalAmount: 0, discount: 0, amount: 0 } };
 
   const admissionById = new Map(filtered.map(a => [a.id, a]));
-  const itemWhere = { admissionId: { in: filtered.map(a => a.id) } };
+  const itemWhere = { admissionId: { in: filtered.map(a => a.id) }, excluded: false };
   if (billHeadIds && billHeadIds.length) itemWhere.billHeadId = { in: billHeadIds.map(Number) };
 
   const items = billType === 'final'
@@ -10485,7 +10586,7 @@ async function getStatementOfSurgery({
   const fromDt = fromDate ? new Date(`${fromDate}T${fromTime || '00:00'}:00`) : null;
   const toDt   = toDate   ? new Date(`${toDate}T${toTime || '23:59'}:59`)     : null;
 
-  const itemWhere = { doctorId: { in: doctorIds } };
+  const itemWhere = { doctorId: { in: doctorIds }, excluded: false };
   if (fromDt || toDt) {
     itemWhere.createdAt = {};
     if (fromDt) itemWhere.createdAt.gte = fromDt;
@@ -10609,7 +10710,7 @@ async function getStatusWiseAdmission({
   const admissionIds = admissions.map((a) => a.id);
   const [provItems, finalItems, doctors] = await Promise.all([
     prisma.clinicProvisionalBillItem.findMany({ where: { admissionId: { in: admissionIds } }, select: { admissionId: true, amount: true } }),
-    prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: admissionIds } }, select: { admissionId: true, amount: true } }),
+    prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: admissionIds }, excluded: false }, select: { admissionId: true, amount: true } }),
     prisma.clinicDoctor.findMany({ select: { id: true, code: true, name: true } }),
   ]);
   const provByAdm = new Map();
@@ -10718,7 +10819,7 @@ async function getAdmissionDistribution({
     billHeadIdFilter = headsInRange.map((h) => h.id);
   }
 
-  const itemWhere = { admissionId: { in: scopedIds } };
+  const itemWhere = { admissionId: { in: scopedIds }, excluded: false };
   if (billHeadIdFilter) itemWhere.billHeadId = { in: billHeadIdFilter };
 
   const [items, billHeads] = await Promise.all([
@@ -10888,7 +10989,7 @@ async function getWardWisePaymentDistribution({
     });
     if (!scoped.length) continue;
 
-    const items = await prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: scoped.map((a) => a.id) } } });
+    const items = await prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: scoped.map((a) => a.id) }, excluded: false } });
     const itemsByAdm = new Map();
     items.forEach((it) => {
       if (!itemsByAdm.has(it.admissionId)) itemsByAdm.set(it.admissionId, []);
@@ -12573,9 +12674,8 @@ async function getBillComparisons() {
 
 // Bill Comparison Report — live "Bill Report" filter (owner, 2026-10-26):
 // Admission or OPD, From/To on the admission / slip date, Company, and
-// ALL / Billed / Unbilled. Billed = the panel bill is posted (Admission: file
-// Closed; OPD: the day-bill Saved);
-// Unbilled = everything still open. "Amount" = the hospital's own bill
+// ALL / Billed / Unbilled. Billed = Amount or Bill Amount (either one) is
+// non-zero; Unbilled = both are zero (owner, 2026-10-26). "Amount" = the hospital's own bill
 // (Provisional Bill's Bill Amount; OPD: the slip total), "Bill Amount" =
 // the Panel Billing total sent to the company, DEFF = Bill Amount − Amount
 // (owner, 2026-10-26 — same as the legacy Excel).
@@ -12649,16 +12749,15 @@ async function getBillComparisonLive({ mode, from, to, panelCompanyId, billed })
         refNo: owner.serialNo, date: owner.createdAt,
         patientName: h?.patientName || owner.patientName,
         panelCompanyId: owner.panelCompanyId, panelEmployeeId: owner.panelEmployeeId, panelDependentId: owner.panelDependentId,
-        billed: !!h?.closedAt,
         slipCount: members.length,
         hospitalAmount: members.reduce((s, m) => s + (Number(m.totalAmount) || 0), 0),
         billAmount: amt.get(owner.id) || 0,
       };
-    }).filter((r) => (bill === 'billed' ? r.billed : bill === 'unbilled' ? !r.billed : true));
+    });
   } else {
     const where = { patientCategory: 'panel', createdAt: { gte: start, lte: end } };
     if (companyId) where.panelCompanyId = companyId;
-    where.status = bill === 'billed' ? 'closed' : bill === 'unbilled' ? { in: ['active', 'discharge'] } : { in: ['active', 'discharge', 'closed'] };
+    where.status = { in: ['active', 'discharge', 'closed'] };
     const admissions = await prisma.clinicAdmission.findMany({
       where,
       orderBy: { createdAt: 'asc' },
@@ -12686,11 +12785,12 @@ async function getBillComparisonLive({ mode, from, to, panelCompanyId, billed })
       refNo: a.admissionNo, date: a.createdAt,
       patientName: a.panelBillingHeader?.patientName || `${a.patientTitle || ''} ${a.patientName}`.trim(),
       panelCompanyId: a.panelCompanyId, panelEmployeeId: a.panelEmployeeId, panelDependentId: a.panelDependentId,
-      billed: a.status === 'closed',
       hospitalAmount: prov.get(a.id) || 0,
       billAmount: amt.get(a.id) || 0,
     }));
   }
+  recs.forEach((r) => { r.billed = !!(r.hospitalAmount || r.billAmount); });
+  recs = recs.filter((r) => (bill === 'billed' ? r.billed : bill === 'unbilled' ? !r.billed : true));
 
   const compIds = [...new Set(recs.map((r) => r.panelCompanyId).filter(Boolean))];
   const empIds = [...new Set(recs.map((r) => r.panelEmployeeId).filter(Boolean))];

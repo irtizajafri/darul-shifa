@@ -89,6 +89,7 @@ const SOURCE_LABELS = {
   provisional: 'Bill Head',
   ward: 'Ward',
   diagnostic: 'Diagnostic',
+  slip: 'Slip',
   pharmacy: 'Pharmacy',
   'surgery-expense': 'Voucher Expense',
   'hospital-share': 'Auto',
@@ -104,6 +105,27 @@ function fmtDateTime(d) {
   return `${day}-${month}-${year} ${time}`;
 }
 function fmt2(n) { return Number(n || 0).toFixed(2); }
+function fmtDay(d) {
+  if (!d) return '';
+  const dt = new Date(d);
+  return `${String(dt.getDate()).padStart(2, '0')}-${String(dt.getMonth() + 1).padStart(2, '0')}-${dt.getFullYear()}`;
+}
+
+// Slip rows (Lab / Radiology / Ultrasound / Blood Bank — one per test) print
+// their department once as a header, where its first slip sits, with every
+// test underneath as its own editable line (owner, 2026-10-26).
+function groupSlipRows(items) {
+  const out = [];
+  const headers = new Map();
+  items.forEach((i) => {
+    if (i.source !== 'slip') { out.push({ kind: 'item', item: i }); return; }
+    const dept = i.slip?.department || 'Slip';
+    let h = headers.get(dept);
+    if (!h) { h = { kind: 'slip-header', key: `slip-h-${dept}`, dept, lines: [] }; headers.set(dept, h); out.push(h); }
+    h.lines.push({ kind: 'item', item: i, slipLine: i.slip ? `Slip ${i.slip.serialNo} · ${fmtDay(i.slip.date)}` : 'Slip' });
+  });
+  return out.flatMap((r) => (r.kind === 'slip-header' ? [r, ...r.lines] : [r]));
+}
 
 // Mirrors the backend's calcFeeSplit — used only for the live preview while
 // filling the Add Row form; the server recomputes authoritatively on save.
@@ -296,9 +318,21 @@ export default function DischargeRefund() {
   // not-yet-saved) figures — detail's own values only get updated once Close
   // File actually runs, so printing beforehand must not show stale/zeroed-out
   // numbers.
-  function printDischargeBillPopup(dup, w = openPrintWindow('width=900,height=1000')) {
-    const liveDetail = detail ? { ...detail, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, balance: liveBalance, refund: liveRefund } : detail;
-    w.document.write(buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: dup, printedBy }));
+  // closingDate (Close File only): the file is closed right now by this user,
+  // so Closed On / Last updated By come from here, not the pre-close detail.
+  // A file never closed yet shows the user printing it as Created By too.
+  function printDischargeBillPopup(dup, w = openPrintWindow('width=900,height=1000'), closingDate = null) {
+    const now = new Date().toISOString();
+    const log = detail?.billLog || {};
+    const billLog = {
+      closedOn: closingDate ? `${closingDate}T12:00:00` : log.closedOn,
+      createdBy: log.createdBy || printedBy,
+      createdAt: log.createdAt || now,
+      updatedBy: closingDate ? printedBy : (log.updatedBy || printedBy),
+      updatedAt: closingDate ? now : (log.updatedAt || now),
+    };
+    const liveDetail = detail ? { ...detail, billLog, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, balance: liveBalance, refund: liveRefund } : detail;
+    w.document.write(buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: dup }));
     w.document.close();
   }
 
@@ -416,7 +450,7 @@ export default function DischargeRefund() {
     try {
       await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy, closingDate });
       toast.success(`File close ho gayi — Closing Date ${closingDate.split('-').reverse().join('-')}`);
-      printDischargeBillPopup(false, printWin);
+      printDischargeBillPopup(false, printWin, closingDate);
       resetToLookup();
     } catch (e) {
       printWin.close();
@@ -609,16 +643,24 @@ export default function DischargeRefund() {
                   </tr>
                 </thead>
                 <tbody>
-                  {detail.billItems.map(i => {
+                  {groupSlipRows(detail.billItems).map(row => {
+                    if (row.kind === 'slip-header') {
+                      return (
+                        <tr key={row.key} className="dr-slip-head">
+                          <td colSpan={6}>{row.dept}</td>
+                        </tr>
+                      );
+                    }
+                    const i = row.item;
                     const isEditing = amountEdit?.itemId === i.id;
                     return (
-                      <tr key={i.id}>
+                      <tr key={i.id} className={row.slipLine ? 'dr-slip-line' : undefined}>
                         {/* Amount here is already just the doctor's fee (see backend) —
                             its matching Hospital Share isn't repeated per-row, it only
                             shows once, combined, in the single "Hospital Share" row below. */}
                         <td>{i.billHead?.description || i.billHead?.headCode || i.description || '—'}</td>
                         <td>
-                          {i.doctor?.name || SOURCE_LABELS[i.source] || ''}
+                          {row.slipLine || i.doctor?.name || SOURCE_LABELS[i.source] || ''}
                           {/* Lab/X-Ray/Ultrasound auto-pick whichever test happened to be
                               first — not a meaningful choice, so it stays hidden. Const Fee's
                               Sub-Department (which consultant/specialty) is worth showing. */}

@@ -753,32 +753,16 @@ async function getDiscountVoucherAccountChain(entityType) {
   };
 }
 
-// Laboratory/Radiology/Ultrasound Final Bill charges are billed as ONE
-// collapsed row per department (see getDischargeBillDetail's diagByDept),
-// which never carries a doctor — so their per-test doctor fees can only be
-// found at the source: ClinicOpdVisitDoctor rows on the admission-linked OPD
-// visit. Matches clinic.service.js's own Laboratory + DIAGNOSTIC_DEPTS scope.
-const OPD_DOCTOR_FEE_DEPTS = ['Laboratory', 'Radiology', 'Ultra Sound, Echo & Color Doppler'];
-
 // Unpaid doctor fees for one doctor, optionally narrowed to a date range —
-// merged from two sources so Voucher Expense's IPD Consultant Fee picker
-// shows everything payable without the Final Bill screen itself changing:
+// for Voucher Expense's IPD Consultant Fee picker. Only Discharge & Refund
+// rows count (server PC change, 2026-10-26): the OPD slips' own doctor
+// fees (ClinicOpdVisitDoctor, "opdv-<id>") no longer show here.
 //   "dbi-<id>"  — ClinicDischargeBillItem rows (Const Fee, or any row added
 //                 manually via the Doctor+Sub-Department picker — not
 //                 Const-Fee-only, billHead.refDepartmentId also covers
 //                 Laboratory/Ultrasound/X-Ray, see that model's subDeptId
 //                 comment). doctorFee is already split and stored.
-//   "opdv-<id>" — ClinicOpdVisitDoctor rows from Laboratory/Radiology/
-//                 Ultrasound OPD visits linked to this admission
-//                 (visit.admitNo), which the Final Bill collapses into one
-//                 lump-sum row per department and never assigns a doctor to.
-//                 doctorFee is computed here the same way
-//                 addDischargeBillItem does — from that doctor+sub-dept's
-//                 configured %/amount (ClinicDoctorSubDept).
-// Both use string-prefixed ids since they're picked from the same list and
-// need to resolve back to two different tables on payment (see
-// linkConsultantFeeItems).
-// entityType, when passed, narrows both sources by patientCategory the same
+// entityType, when passed, narrows it by patientCategory the same
 // way GRN/Doctor payments and the Surgery/Anesthesia admission picker already
 // split Cash vs Panel elsewhere in Accounts ('corporate' book = Panel
 // admissions only, 'non-corporate' book = everything except Panel).
@@ -833,65 +817,8 @@ async function getPendingConsultantFees(doctorId, fromDate, toDate, entityType) 
     amount: r.doctorFee !== null ? Number(r.doctorFee) : Number(r.amount) || 0,
   }));
 
-  // ── Source 2: Laboratory/Radiology/Ultrasound OPD visit-doctor rows ────
-  const opdWhere = {
-    doctorId: docId,
-    isPaid: false,
-    ...(draftRes.opdDoctorIds.length ? { id: { notIn: draftRes.opdDoctorIds } } : {}),
-    visit: { admitNo: { not: null }, adjustPayment: true, department: { in: OPD_DOCTOR_FEE_DEPTS } },
-  };
-  if (fromDate || toDate) opdWhere.createdAt = dateRange;
-  const opdRows = await prisma.clinicOpdVisitDoctor.findMany({
-    where: opdWhere,
-    orderBy: { createdAt: 'desc' },
-    include: {
-      visit: { select: { admitNo: true, patientName: true } },
-      subDept: { select: { id: true, name: true } },
-    },
-  });
-
-  let opdResults = [];
-  if (opdRows.length) {
-    const subDeptIds = [...new Set(opdRows.map((r) => r.subDeptId))];
-    const links = await prisma.clinicDoctorSubDept.findMany({ where: { doctorId: docId, subDeptId: { in: subDeptIds } } });
-    const linkBySubDept = new Map(links.map((l) => [l.subDeptId, l]));
-
-    const admitNos = [...new Set(opdRows.map((r) => r.visit.admitNo).filter(Boolean))];
-    const admissions = admitNos.length
-      ? await prisma.clinicAdmission.findMany({
-          where: { admissionNo: { in: admitNos } },
-          select: { id: true, admissionNo: true, patientCategory: true, dischargeCertificate: { select: { dischargeDate: true } } },
-        })
-      : [];
-    const admissionByNo = new Map(admissions.map((a) => [a.admissionNo, a]));
-
-    opdResults = opdRows.map((r) => {
-      const link = linkBySubDept.get(r.subDeptId);
-      // No pricing link configured for this doctor+sub-dept pair — can't
-      // split a real amount, so skip rather than showing 0/wrong.
-      if (!link) return null;
-      const admission = admissionByNo.get(r.visit.admitNo);
-      // Can't classify Cash vs Panel without a resolved admission — exclude
-      // rather than guess, same as an actual category mismatch.
-      if (entityType === 'corporate' && admission?.patientCategory !== 'panel') return null;
-      if (entityType === 'non-corporate' && (!admission || admission.patientCategory === 'panel')) return null;
-      const split = clinicSvc.calcFeeSplit(Number(r.amount) || 0, link.paymentType, link.normalFees);
-      return {
-        id: `opdv-${r.id}`,
-        admissionId: admission?.id || null,
-        admissionNo: r.visit.admitNo || '',
-        patientName: r.visit.patientName || '',
-        date: r.createdAt,
-        dischargeDate: admission?.dischargeCertificate?.dischargeDate || null,
-        subDeptName: r.subDept?.name || null,
-        rate: Number(r.amount) || 0,
-        amount: split.doctorFee,
-      };
-    }).filter(Boolean);
-  }
-
   // Oldest file first, today's at the bottom (owner, 2026-10-26).
-  return [...dbiResults, ...opdResults].sort((a, b) => new Date(a.date) - new Date(b.date));
+  return dbiResults.sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
 async function getInventorySubcategories() {

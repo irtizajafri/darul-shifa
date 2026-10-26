@@ -239,6 +239,13 @@ $border: #bbb;
 
 .dr-split-sep { color: #999; font-weight: 400; }
 
+.dr-slip-head td {
+  font-weight: 700;
+  background: #f1f4f8;
+}
+.dr-slip-line td:first-child {
+  padding-left: 22px;
+}
 .dr-td-sub-line {
   margin-top: 2px;
   font-size: 10.5px;

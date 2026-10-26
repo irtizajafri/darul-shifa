@@ -1784,11 +1784,18 @@ model ClinicDischargeBillItem {
   qty            Float           @default(1)
   rate           Float           @default(0)
   amount         Float           @default(0)
-  source         String          @default("manual") // manual | provisional | ward | diagnostic | pharmacy
+  source         String          @default("manual") // manual | provisional | ward | diagnostic | pharmacy | slip
+  // source='slip': the Lab / Radiology / Ultrasound / Blood Bank slip (and
+  // its test line) this row mirrors — see syncDischargeSlipRows.
+  sourceOpdVisitId Int?
+  sourceLineKey  String?
+  amountEdited   Boolean         @default(false)
+  excluded       Boolean         @default(false)
   createdAt      DateTime        @default(now())
 
   consultantFeePayments AccVoucherExpenseEntryConsultantFee[]
 
+  @@unique([admissionId, sourceLineKey])
   @@index([admissionId])
 }
 
