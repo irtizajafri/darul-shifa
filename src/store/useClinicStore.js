@@ -876,6 +876,19 @@ export const useClinicStore = create((set) => ({
     return request(`/opd-panel-billing/${opdVisitId}/items/bulk`, { method: 'POST', body: JSON.stringify({ items }) });
   },
 
+  overridePanelOpdLiveDetailItem: async (opdVisitId, payload) => {
+    return request(`/opd-panel-billing/${opdVisitId}/items/override`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  excludePanelOpdLiveDetailItem: async (opdVisitId, payload) => {
+    return request(`/opd-panel-billing/${opdVisitId}/items/exclude`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  // Slip bill "Save" → Yes: locks it (Billed), like a closed Admission file.
+  closePanelOpdBilling: async (opdVisitId, payload = {}) => {
+    return request(`/opd-panel-billing/${opdVisitId}/close`, { method: 'POST', body: JSON.stringify(payload) });
+  },
+
   // ── Panels > Panel Cheque Transaction ────────────────────────────────────────
   fetchPanelChequeSummary: async ({ from, to } = {}) => {
     const q = new URLSearchParams();

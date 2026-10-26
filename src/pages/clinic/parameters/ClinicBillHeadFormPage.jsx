@@ -12,6 +12,10 @@ const TYPE_OPTIONS = [
   { value: 'both', label: 'Both' },
   { value: 'provisional', label: 'Provisional Bill' },
   { value: 'final', label: 'Final Bill' },
+  // Panel Billing only — never offered in Provisional Bill / Discharge and
+  // Refund (they list 'provisional'/'final' + 'both'); Panel Billing lists
+  // every active head whatever its type (owner, 2026-10-26).
+  { value: 'panel', label: 'Panel Billing Only' },
     { value: 'final', label: 'miscellaneous' },
 
 ];

@@ -9,7 +9,10 @@ import '../reports/ConsultantWiseFilter.scss';
 import './OpdAdmitReport.scss';
 import { useShallow } from 'zustand/react/shallow';
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 // Panels > Reports > OPD Admit Report — filter step (owner's report format:
 // filter screen first, then the preview). Same fields/defaults as the old
@@ -24,10 +27,8 @@ export default function OpdAdmitReportFilter() {
 
   const [scopeType, setScopeType] = useState('admission'); // admission | opd
   const [dateType, setDateType] = useState('discharge'); // discharge | admit
-  // Wide-open by default (this report's data is legacy/bulk-imported, not
-  // "today"-centric) — narrows to today-today would silently show zero rows
-  // right after a fresh import. User can tighten the range from here.
-  const [fromDate, setFromDate] = useState('2000-01-01');
+  // Both dates default to today (owner, 2026-10-26).
+  const [fromDate, setFromDate] = useState(todayIso());
   const [toDate, setToDate] = useState(todayIso());
   const [companyId, setCompanyId] = useState('ALL');
   // Defaults to 'details' rather than the legacy dialog's own 'headers'
@@ -73,7 +74,7 @@ export default function OpdAdmitReportFilter() {
               <div className="cwf-radios">
                 {[['discharge', 'Discharge'], ['admit', 'Admit']].map(([v, l]) => (
                   <label key={v} className="cwf-radio-label">
-                    <input type="radio" name="oar-datetype" value={v} checked={dateType === v} onChange={() => setDateType(v)} />
+                    <input type="radio" name="oar-datetype" value={v} checked={dateType === v} onChange={() => setDateType(v)} disabled={scopeType === 'opd'} />
                     {l}
                   </label>
                 ))}

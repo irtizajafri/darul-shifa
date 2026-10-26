@@ -422,14 +422,14 @@ export default function PanelBilling() {
     addPanelBillingItem, deletePanelBillingItem, addPanelBillingItemsBulk,
     fetchPanelOpdVisitBilling, searchPanelOpdVisits, updatePanelOpdBillingItem,
     updatePanelOpdBillingHeader, addPanelOpdBillingItem, deletePanelOpdBillingItem,
-    addPanelOpdBillingItemsBulk,
+    addPanelOpdBillingItemsBulk, overridePanelOpdLiveDetailItem, excludePanelOpdLiveDetailItem, closePanelOpdBilling,
     subDepartments, fetchSubDepartments, searchPanelBillHeads,
     doctors, fetchDoctors, diseases, fetchDiseases, surgeryTypes, fetchSurgeryTypes,
     roomCategories, fetchRoomCategories,
     fetchMedicineList, createMedicine,
     finalizeDischarge,
     panelCompanies, fetchPanelCompanies, panelEmployees, fetchPanelEmployees, setPanelBillingParty,
-  } = useClinicStore(useShallow((s) => ({ fetchPanelAdmissionBilling: s.fetchPanelAdmissionBilling, searchPanelAdmissions: s.searchPanelAdmissions, updatePanelBillingItem: s.updatePanelBillingItem, updatePanelBillingHeader: s.updatePanelBillingHeader, overrideLiveDetailItem: s.overrideLiveDetailItem, excludeLiveDetailItem: s.excludeLiveDetailItem, addPanelBillingItem: s.addPanelBillingItem, deletePanelBillingItem: s.deletePanelBillingItem, addPanelBillingItemsBulk: s.addPanelBillingItemsBulk, fetchPanelOpdVisitBilling: s.fetchPanelOpdVisitBilling, searchPanelOpdVisits: s.searchPanelOpdVisits, updatePanelOpdBillingItem: s.updatePanelOpdBillingItem, updatePanelOpdBillingHeader: s.updatePanelOpdBillingHeader, addPanelOpdBillingItem: s.addPanelOpdBillingItem, deletePanelOpdBillingItem: s.deletePanelOpdBillingItem, addPanelOpdBillingItemsBulk: s.addPanelOpdBillingItemsBulk, subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments, searchPanelBillHeads: s.searchPanelBillHeads, doctors: s.doctors, fetchDoctors: s.fetchDoctors, diseases: s.diseases, fetchDiseases: s.fetchDiseases, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchMedicineList: s.fetchMedicineList, createMedicine: s.createMedicine, finalizeDischarge: s.finalizeDischarge, panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, panelEmployees: s.panelEmployees, fetchPanelEmployees: s.fetchPanelEmployees, setPanelBillingParty: s.setPanelBillingParty })));
+  } = useClinicStore(useShallow((s) => ({ fetchPanelAdmissionBilling: s.fetchPanelAdmissionBilling, searchPanelAdmissions: s.searchPanelAdmissions, updatePanelBillingItem: s.updatePanelBillingItem, updatePanelBillingHeader: s.updatePanelBillingHeader, overrideLiveDetailItem: s.overrideLiveDetailItem, excludeLiveDetailItem: s.excludeLiveDetailItem, addPanelBillingItem: s.addPanelBillingItem, deletePanelBillingItem: s.deletePanelBillingItem, addPanelBillingItemsBulk: s.addPanelBillingItemsBulk, fetchPanelOpdVisitBilling: s.fetchPanelOpdVisitBilling, searchPanelOpdVisits: s.searchPanelOpdVisits, updatePanelOpdBillingItem: s.updatePanelOpdBillingItem, updatePanelOpdBillingHeader: s.updatePanelOpdBillingHeader, addPanelOpdBillingItem: s.addPanelOpdBillingItem, deletePanelOpdBillingItem: s.deletePanelOpdBillingItem, addPanelOpdBillingItemsBulk: s.addPanelOpdBillingItemsBulk, overridePanelOpdLiveDetailItem: s.overridePanelOpdLiveDetailItem, excludePanelOpdLiveDetailItem: s.excludePanelOpdLiveDetailItem, closePanelOpdBilling: s.closePanelOpdBilling, subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments, searchPanelBillHeads: s.searchPanelBillHeads, doctors: s.doctors, fetchDoctors: s.fetchDoctors, diseases: s.diseases, fetchDiseases: s.fetchDiseases, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchMedicineList: s.fetchMedicineList, createMedicine: s.createMedicine, finalizeDischarge: s.finalizeDischarge, panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, panelEmployees: s.panelEmployees, fetchPanelEmployees: s.fetchPanelEmployees, setPanelBillingParty: s.setPanelBillingParty })));
   const { user } = useAuthStore();
   // Same "Billing" screen, toggled between Admission # (IPD) and Slip #
   // (panel OPD visits — Consultant/Ultrasound/etc.) lookup. Which one is
@@ -448,16 +448,17 @@ export default function PanelBilling() {
   const [savingCell, setSavingCell] = useState(false);
 
   const isOpd = data?.admission.sourceType === 'opd';
+  // Reports dialog looks up a Slip # when a slip bill is open (or Slip # mode).
+  const reportIsOpd = data ? isOpd : lookupMode === 'opd';
 
-  // Once the real Admission File is closed (see handleConfirmCloseFile below)
-  // this Billing snapshot goes read-only — data stays visible/printable, but
-  // nothing can be added/edited/deleted anymore. OPD Billing never locks —
-  // a panel OPD visit has no "Close File" lifecycle to mirror.
-  const readOnly = !isOpd && data?.admission.status === 'closed';
-  // Admission: Medicine / Lab / Radiology / Ultrasound are added from their
-  // own row's detail popup (see HeadAddRow) — the top bar keeps Panel Head
-  // (and packages) only. OPD slips keep the full top bar.
-  const topCustomTypes = isOpd ? CUSTOM_TYPES : CUSTOM_TYPES.filter((t) => t.key === 'panelhead');
+  // Once the real Admission File is closed — or a Slip day-bill is saved
+  // (see handleConfirmCloseFile below) — this Billing snapshot goes
+  // read-only: data stays visible/printable, nothing can be changed.
+  const readOnly = data?.admission.status === 'closed';
+  // Medicine / Lab / Radiology / Ultrasound are added from their own row's
+  // detail popup (see HeadAddRow) — the top bar keeps Panel Head (and
+  // packages) only. Same for Slip bills (Admission replica, 2026-10-26).
+  const topCustomTypes = CUSTOM_TYPES.filter((t) => t.key === 'panelhead');
   // Bumped after an add from inside a detail popup — remounts the popup so
   // its list picks up the new row.
   const [popupNonce, setPopupNonce] = useState(0);
@@ -555,7 +556,7 @@ export default function PanelBilling() {
   }
   useEffect(() => {
     if (!data) return;
-    if (!isOpd && customType !== 'panelhead') { setCustomType('panelhead'); setCustomQuery(''); setCustomOptions([]); }
+    if (customType !== 'panelhead') { setCustomType('panelhead'); setCustomQuery(''); setCustomOptions([]); }
   }, [data?.admission.id, isOpd]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { fetchDoctors(); fetchDiseases(); fetchSurgeryTypes(); fetchRoomCategories(); }, [fetchDoctors, fetchDiseases, fetchSurgeryTypes, fetchRoomCategories]);
 
@@ -790,11 +791,11 @@ export default function PanelBilling() {
   // never touched. This creates a Billing-only override in its place (see
   // overrideLiveDetailItem) that replaces it in both display and totals;
   // saving the same live entry again from here on just edits that override.
-  // Admission-only — an OPD visit has no live rows at all (every OPD
-  // pharmacyRows/diagnosticRows entry is already `manual-` prefixed, so this
-  // is never actually called in OPD mode).
+  // Slip bills: the live lines are the day's Lab/Radiology/Ultrasound slips
+  // and medicine — same Billing-only override.
   async function handleOverrideDetailRow(liveId, mergeInto, originalAmount, description, patch) {
-    await overrideLiveDetailItem(data.admission.id, { liveId, mergeInto, description, originalAmount, ...patch });
+    const overrideFn = isOpd ? overridePanelOpdLiveDetailItem : overrideLiveDetailItem;
+    await overrideFn(data.admission.id, { liveId, mergeInto, description, originalAmount, ...patch });
     reload();
   }
 
@@ -809,7 +810,8 @@ export default function PanelBilling() {
       const delFn = isOpd ? deletePanelOpdBillingItem : deletePanelBillingItem;
       await delFn(key.replace('manual-', ''));
     } else {
-      await excludeLiveDetailItem(data.admission.id, { liveId: key, mergeInto, originalAmount });
+      const excludeFn = isOpd ? excludePanelOpdLiveDetailItem : excludeLiveDetailItem;
+      await excludeFn(data.admission.id, { liveId: key, mergeInto, originalAmount });
     }
     reload();
   }
@@ -859,14 +861,14 @@ export default function PanelBilling() {
 
   async function handleGenerateReport() {
     const no = reportAdmitNo.trim();
-    if (!no) return toast.error('Admission # daalo');
+    if (!no) return toast.error(reportIsOpd ? 'Slip # daalo' : 'Admission # daalo');
     const type = REPORT_TYPES.find((t) => t.key === reportType);
     if (!type?.ready) return toast.error('Yeh report abhi available nahi hai');
     // Opens in the Report Viewer (all three, or the one picked); printing
     // happens from its Print button.
     setReportLoading(true);
     try {
-      const res = await fetchPanelAdmissionBilling(no);
+      const res = reportIsOpd ? await fetchPanelOpdVisitBilling(no) : await fetchPanelAdmissionBilling(no);
       setShowReports(false);
       setViewer({ bill: res, reports: reportType === 'all' ? SAVE_REPORTS : [reportType] });
     } catch (e) {
@@ -937,10 +939,18 @@ export default function PanelBilling() {
     setClosingFile(true);
     try {
       const changedBy = user?.name || user?.username || user?.email || '';
-      await finalizeDischarge(data.admission.id, { discountAmount: 0, changedBy });
-      toast.success('File close ho gayi — Billing ab read-only hai');
+      if (isOpd) {
+        // Slip day-bill: Save locks it and stamps the Billing Date (Billed).
+        await closePanelOpdBilling(data.admission.id, { closedBy: changedBy });
+        toast.success('Bill save ho gaya — Billing ab read-only hai');
+      } else {
+        await finalizeDischarge(data.admission.id, { discountAmount: 0, changedBy });
+        toast.success('File close ho gayi — Billing ab read-only hai');
+      }
       setShowCloseConfirm(false);
-      const fresh = await fetchPanelAdmissionBilling(data.admission.admissionNo);
+      const fresh = isOpd
+        ? await fetchPanelOpdVisitBilling(data.admission.admissionNo)
+        : await fetchPanelAdmissionBilling(data.admission.admissionNo);
       setData(fresh);
       showAllReports(fresh);
     } catch (e) {
@@ -1132,7 +1142,7 @@ export default function PanelBilling() {
         <div className="pnb-window">
           <div className="pnb-titlebar">
             <span>Transaction — Panel Billing</span>
-            <span className="pnb-title-right">Panel Admission Billing</span>
+            <span className="pnb-title-right">{isOpd ? 'Panel OPD Billing' : 'Panel Admission Billing'}</span>
           </div>
 
           {/* ── Header ── */}
@@ -1186,6 +1196,13 @@ export default function PanelBilling() {
               ) : <div className="pnb-val">—</div>}
             </div>
             <div className="pnb-hg"><label>Days</label><div className="pnb-val">{data?.admission.days ?? '—'}</div></div>
+            {/* Slip bill = the patient's slips of one business day (8 AM – 8 AM). */}
+            {isOpd && (
+              <div className="pnb-hg pnb-hg--wide">
+                <label>Slips (is din ki)</label>
+                <div className="pnb-val">{data.admission.slips?.map((sl) => `${sl.serialNo} (${sl.department})`).join(', ') || '—'}</div>
+              </div>
+            )}
 
             <div className="pnb-hg pnb-hg--party">
               <label>Company</label>
@@ -1304,23 +1321,21 @@ export default function PanelBilling() {
               ) : <div className="pnb-val">—</div>}
             </div>
             {/* Covering Page "Date:" — typed freely, printed exactly as typed
-                (no calendar); blank prints today's date. Admission only. */}
-            {!isOpd && (
-              <div className="pnb-hg">
-                <label>Bill Date</label>
-                {data ? (
-                  <input className="pnb-date-input" type="text" value={data.admission.billDate || ''}
-                    onChange={(e) => handleHeaderTextInput('billDate', e.target.value)}
-                    onBlur={(e) => {
-                      // Saved in DOD's format (01032026 → 01-Mar-2026).
-                      const v = formatBillDate(e.target.value);
-                      handleHeaderTextInput('billDate', v);
-                      handleHeaderTextBlur('billDate', v);
-                    }}
-                    placeholder={fmtDate(new Date())} disabled={readOnly} style={{ width: 120 }} />
-                ) : <div className="pnb-val">—</div>}
-              </div>
-            )}
+                (no calendar); blank prints today's date. */}
+            <div className="pnb-hg">
+              <label>Bill Date</label>
+              {data ? (
+                <input className="pnb-date-input" type="text" value={data.admission.billDate || ''}
+                  onChange={(e) => handleHeaderTextInput('billDate', e.target.value)}
+                  onBlur={(e) => {
+                    // Saved in DOD's format (01032026 → 01-Mar-2026).
+                    const v = formatBillDate(e.target.value);
+                    handleHeaderTextInput('billDate', v);
+                    handleHeaderTextBlur('billDate', v);
+                  }}
+                  placeholder={fmtDate(new Date())} disabled={readOnly} style={{ width: 120 }} />
+              ) : <div className="pnb-val">—</div>}
+            </div>
           </div>
 
           {/* ── Manual add: Medicine / Laboratory / Ultrasound / Radiology ── */}
@@ -1424,7 +1439,7 @@ export default function PanelBilling() {
                         <EditableCell row={r} field="remarks" type="text" editCell={editCell} savingCell={savingCell}
                           onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
                           onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.remarks || <span className="pnb-hint">add remarks</span>} />
-                        <td>{(isOpd || r.kind === 'custom') && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
+                        <td>{r.kind === 'custom' && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
                       </tr>
                       {/* Read-only breakdown — always visible now, no click
                           needed; double-click the parent row above still
@@ -1449,18 +1464,13 @@ export default function PanelBilling() {
 
           {/* ── Footer ── */}
           <div className="pnb-footer">
-            {/* Reports (Billing Covering Page / Diagnostic Bill / Medicine Bill)
-                are Admission-only prints — not offered for a Slip # record. */}
-            {!isOpd && <button className="pnb-btn" onClick={openReports}>Reports</button>}
-            {/* "Close File" has no OPD equivalent (see readOnly/isOpd above) —
-                OPD mode has nothing to Save either, every edit already
-                autosaves, so just Cancel + the live total remain. */}
-            {!isOpd && (
-              readOnly ? (
-                <span className="pnb-closed-badge" title="Is admission ki file close ho chuki hai — Billing ab sirf dekhne/print ke liye hai">File Closed</span>
-              ) : (
-                <button className="pnb-btn pnb-btn--save" onClick={handleSaveClick} disabled={!data}>Save</button>
-              )
+            {/* Reports (Billing Covering Page / Diagnostic Bill / Medicine
+                Bill) — Admission and Slip day-bills alike. */}
+            <button className="pnb-btn" onClick={openReports}>Reports</button>
+            {readOnly ? (
+              <span className="pnb-closed-badge" title={isOpd ? 'Yeh bill save (lock) ho chuka hai — ab sirf dekhne/print ke liye hai' : 'Is admission ki file close ho chuki hai — Billing ab sirf dekhne/print ke liye hai'}>{isOpd ? 'Bill Saved' : 'File Closed'}</span>
+            ) : (
+              <button className="pnb-btn pnb-btn--save" onClick={handleSaveClick} disabled={!data}>Save</button>
             )}
             <button className="pnb-btn" onClick={handleCancel}>Cancel</button>
             <div className="pnb-total">Billing Amt <span>{fmt(data?.billingAmount)}</span></div>
@@ -1472,6 +1482,7 @@ export default function PanelBilling() {
         <ReportsModal
           admitNo={reportAdmitNo}
           onAdmitNoChange={setReportAdmitNo}
+          isOpd={reportIsOpd}
           reportType={reportType}
           onReportTypeChange={setReportType}
           onClose={() => setShowReports(false)}
@@ -1486,7 +1497,7 @@ export default function PanelBilling() {
         <PharmacyDetailModal
           key={`ph-${popupNonce}`}
           rows={data.pharmacyRows}
-          addRow={!isOpd && !readOnly ? (
+          addRow={!readOnly ? (
             <HeadAddRow
               typeKey="medicine"
               subDepartments={subDepartments}
@@ -1512,7 +1523,7 @@ export default function PanelBilling() {
         <DiagnosticDetailModal
           key={`dg-${diagnosticDept}-${popupNonce}`}
           title={diagnosticDept}
-          addRow={!isOpd && !readOnly && CUSTOM_TYPES.some((t) => t.mergeInto === diagnosticDept) ? (
+          addRow={!readOnly && CUSTOM_TYPES.some((t) => t.mergeInto === diagnosticDept) ? (
             <HeadAddRow
               typeKey={CUSTOM_TYPES.find((t) => t.mergeInto === diagnosticDept).key}
               subDepartments={subDepartments}
@@ -1538,6 +1549,7 @@ export default function PanelBilling() {
 
       {showCloseConfirm && (
         <CloseFileConfirmModal
+          isOpd={isOpd}
           onYes={handleConfirmCloseFile}
           onNo={handleDeclineCloseFile}
           onClose={() => setShowCloseConfirm(false)}
@@ -1820,7 +1832,7 @@ function QuickAddMedicineModal({ onClose, onCreate }) {
 // Billing footer's "Save" — every field already auto-saves as you type, so
 // this is purely the Yes/No fork: Yes closes the real Admission File
 // (finalizeDischarge), No just dismisses the warning.
-function CloseFileConfirmModal({ onYes, onNo, onClose, loading }) {
+function CloseFileConfirmModal({ isOpd, onYes, onNo, onClose, loading }) {
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
       <div className="pnb-modal pnb-modal--sm" onMouseDown={(e) => e.stopPropagation()}>
@@ -1829,16 +1841,28 @@ function CloseFileConfirmModal({ onYes, onNo, onClose, loading }) {
           <button onClick={onClose}><X size={16} /></button>
         </div>
         <div className="pnb-modal-body pnb-close-confirm-body">
-          <p>Kya aap is file ko <b>close</b> karna chahte hain?</p>
-          <p className="pnb-close-confirm-hint">
-            Yes — real Admission File close ho jayegi (sirf tab kaamyaab hogi jab Balance Amount pehle se clear ho), Billing hamesha ke liye read-only ho jayegi.<br />
-            No — bas save ho jayegi, aap update karte reh sakte hain.
-          </p>
+          {isOpd ? (
+            <>
+              <p>Kya aap is bill ko <b>save (lock)</b> karna chahte hain?</p>
+              <p className="pnb-close-confirm-hint">
+                Yes — bill Billed ho jayega (Billing Date lag jayegi), Billing hamesha ke liye read-only ho jayegi.<br />
+                No — bas save ho jayegi, aap update karte reh sakte hain.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>Kya aap is file ko <b>close</b> karna chahte hain?</p>
+              <p className="pnb-close-confirm-hint">
+                Yes — real Admission File close ho jayegi (sirf tab kaamyaab hogi jab Balance Amount pehle se clear ho), Billing hamesha ke liye read-only ho jayegi.<br />
+                No — bas save ho jayegi, aap update karte reh sakte hain.
+              </p>
+            </>
+          )}
         </div>
         <div className="pnb-pkg-footer">
           <button className="pnb-btn" onClick={onNo} disabled={loading}>No</button>
           <button className="pnb-add-btn" onClick={onYes} disabled={loading} style={{ marginLeft: 'auto' }}>
-            {loading ? 'Closing…' : 'Yes, Close File'}
+            {loading ? 'Saving…' : isOpd ? 'Yes, Save Bill' : 'Yes, Close File'}
           </button>
         </div>
       </div>
@@ -2308,7 +2332,7 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
 // Panels > Billing > Reports — matches the reference "Reports" dialog: pick
 // an Admission #, pick a report, Ok prints it. Only Billing Covering Page and
 // Diagnostic Bill are wired up so far — the rest are shown but disabled.
-function ReportsModal({ admitNo, onAdmitNoChange, reportType, onReportTypeChange, onClose, onGenerate, loading }) {
+function ReportsModal({ admitNo, onAdmitNoChange, isOpd, reportType, onReportTypeChange, onClose, onGenerate, loading }) {
   return (
     <div className="pnb-modal-overlay" onMouseDown={onClose}>
       <div className="pnb-modal pnb-reports-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -2318,8 +2342,8 @@ function ReportsModal({ admitNo, onAdmitNoChange, reportType, onReportTypeChange
         </div>
         <div className="pnb-modal-body">
           <div className="pnb-reports-num-row">
-            <label>Admission #</label>
-            <input value={admitNo} onChange={(e) => onAdmitNoChange(e.target.value)} placeholder="e.g. 174628" />
+            <label>{isOpd ? 'Slip #' : 'Admission #'}</label>
+            <input value={admitNo} onChange={(e) => onAdmitNoChange(e.target.value)} placeholder={isOpd ? 'e.g. 2840123' : 'e.g. 174628'} />
           </div>
           <div className="pnb-reports-types">
             {REPORT_TYPES.map((t) => (
@@ -2417,6 +2441,7 @@ function ComputerGeneratedNote() {
 function BillingCoveringPagePrintTemplate({ data }) {
   if (!data) return null;
   const { admission, company } = data;
+  const isOpd = admission.sourceType === 'opd';
   const rows = data.rows.filter((r) => Number(r.amount) !== 0);
   const total = data.billingAmount;
 
@@ -2441,7 +2466,7 @@ function BillingCoveringPagePrintTemplate({ data }) {
                       <tr className="pnbr-cov-noline"><td className="l" colSpan={2}>C.M.O</td></tr>
                       <tr><td className="l pnbr-cov-org" colSpan={2}>{company?.name || '—'}</td></tr>
                       <tr><td className="l">Patients Name:</td><td className="v">{admission.patientName}</td></tr>
-                      <tr><td className="l">D.O.A</td><td className="v">{fmtDate(admission.admitDate)}</td></tr>
+                      <tr><td className="l">{isOpd ? 'Visit Date' : 'D.O.A'}</td><td className="v">{fmtDate(admission.admitDate)}</td></tr>
                       <tr><td className="l">Diagnosis:</td><td className="v">{admission.diagnosis || '—'}</td></tr>
                       {/* Blank — keeps the rules level with the right column's 7 rows. */}
                       <tr><td className="l">&nbsp;</td><td className="v" /></tr>
@@ -2453,10 +2478,10 @@ function BillingCoveringPagePrintTemplate({ data }) {
                     <tbody>
                       <tr><td className="l">Bill No:</td><td className="v">{billNo(admission)}</td></tr>
                       <tr><td className="l">Date:</td><td className="v">{admission.billDate ? formatBillDate(admission.billDate) : fmtDate(new Date())}</td></tr>
-                      <tr><td className="l">Admit No:</td><td className="v">P-{admission.admissionNo}</td></tr>
+                      <tr><td className="l">{isOpd ? 'Slip No:' : 'Admit No:'}</td><td className="v">{isOpd ? admission.admissionNo : `P-${admission.admissionNo}`}</td></tr>
                       {/* Relation sits level with Patients Name (owner, 2026-10-21); DOD below it. */}
                       <tr><td className="l">Relation:</td><td className="v">{relationText(admission)}</td></tr>
-                      <tr><td className="l">DOD</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
+                      <tr><td className="l">{isOpd ? 'Billing Date' : 'DOD'}</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
                       <tr><td className="l">Consultant:</td><td className="v">{admission.consultantName || '—'}</td></tr>
                       <tr><td className="l">Entitled For:</td><td className="v">{admission.entitledFor || '—'}</td></tr>
                     </tbody>
@@ -2501,6 +2526,7 @@ function BillingCoveringPagePrintTemplate({ data }) {
 function DiagnosticBillPrintTemplate({ data }) {
   if (!data) return null;
   const { admission } = data;
+  const isOpd = admission.sourceType === 'opd';
   const byDept = {};
   data.diagnosticRows.forEach((r) => { (byDept[r.department] ||= []).push(r); });
   Object.values(byDept).forEach((rows) => rows.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)));
@@ -2513,12 +2539,12 @@ function DiagnosticBillPrintTemplate({ data }) {
         <table className="pnbr-diag-hdr">
           <tbody>
             <tr>
-              <td className="l">Admission #</td><td className="v">{admission.admissionNo}</td>
+              <td className="l">{isOpd ? 'Slip #' : 'Admission #'}</td><td className="v">{admission.admissionNo}</td>
               <td className="l">Patient Name:</td><td className="v">{admission.patientName}</td>
             </tr>
             <tr>
-              <td className="l">Admission date</td><td className="v">{fmtDate(admission.admitDate)}</td>
-              <td className="l">Discharge date:</td><td className="v">{admission.dischargeDate ? fmtDate(admission.dischargeDate) : '—'}</td>
+              <td className="l">{isOpd ? 'Visit date' : 'Admission date'}</td><td className="v">{fmtDate(admission.admitDate)}</td>
+              <td className="l">{isOpd ? 'Billing date:' : 'Discharge date:'}</td><td className="v">{admission.dischargeDate ? fmtDate(admission.dischargeDate) : '—'}</td>
             </tr>
           </tbody>
         </table>
@@ -2558,6 +2584,7 @@ function DiagnosticBillPrintTemplate({ data }) {
 function MedicineBillPrintTemplate({ data }) {
   if (!data) return null;
   const { admission } = data;
+  const isOpd = admission.sourceType === 'opd';
   const rows = [...data.pharmacyRows].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
   const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
@@ -2568,12 +2595,12 @@ function MedicineBillPrintTemplate({ data }) {
         <table className="pnbr-med-hdr">
           <tbody>
             <tr>
-              <td className="l">Admission #</td><td className="v">{admission.admissionNo}</td>
+              <td className="l">{isOpd ? 'Slip #' : 'Admission #'}</td><td className="v">{admission.admissionNo}</td>
               <td className="l">Patient Name</td><td className="v">{admission.patientName}</td>
             </tr>
             <tr>
-              <td className="l">Admission date</td><td className="v">{fmtDdMmYyyyNum(admission.admitDate)}</td>
-              <td className="l">Discharge date</td><td className="v">{admission.dischargeDate ? fmtDdMonYyyy(admission.dischargeDate) : '—'}</td>
+              <td className="l">{isOpd ? 'Visit date' : 'Admission date'}</td><td className="v">{fmtDdMmYyyyNum(admission.admitDate)}</td>
+              <td className="l">{isOpd ? 'Billing date' : 'Discharge date'}</td><td className="v">{admission.dischargeDate ? fmtDdMonYyyy(admission.dischargeDate) : '—'}</td>
             </tr>
           </tbody>
         </table>

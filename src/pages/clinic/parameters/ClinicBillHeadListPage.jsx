@@ -94,7 +94,7 @@ export default function ClinicBillHeadListPage() {
                     <td className="cpp-num">{i + 1}</td>
                     <td><strong>{bh.headCode}</strong></td>
                     <td>{bh.description}</td>
-                    <td style={{ textTransform: 'capitalize' }}>{bh.type === 'both' ? 'Both' : bh.type === 'provisional' ? 'Provisional Bill' : 'Final Bill'}</td>
+                    <td style={{ textTransform: 'capitalize' }}>{bh.type === 'both' ? 'Both' : bh.type === 'provisional' ? 'Provisional Bill' : bh.type === 'panel' ? 'Panel Billing Only' : 'Final Bill'}</td>
                     <td>{bh.refDepartment?.name || '—'}</td>
                     <td>{bh.panelSortOrder ?? '—'}</td>
                     <td>

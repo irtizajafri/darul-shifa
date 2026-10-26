@@ -107,7 +107,7 @@ export default function GeneralPaymentReport() {
       <ReportToolbar onPrint={handlePrint} onExport={handleExport} onRefresh={fetchData} refreshing={loading} />
 
       <div className="ddp-report-area">
-        <div className="ddp-report-page gpr-page rpt-arial9" ref={printRef}>
+        <div className={`gpr-page rpt-arial9${pages.length && !loading ? ' gpr-page--sheets' : ' ddp-report-page'}`} ref={printRef}>
           {(loading || !data?.rows?.length) && (
             <div className="ddp-print-header">
               <h1>{title}</h1>
@@ -162,20 +162,21 @@ export default function GeneralPaymentReport() {
                   </tr>
                 </tfoot>
               </table>
+              {/* Whole-range Summary closes the last page. */}
+              {i === pages.length - 1 && (
+                <table className="gpr-table gpr-summary">
+                  <colgroup><col /><col className="gpr-c-amt" /></colgroup>
+                  <tbody>
+                    <tr><td colSpan={2} className="gpr-summary-title">Summary — {subtitle}</td></tr>
+                    <tr><td>Cash Total</td><td className="num">{fmt2(data.cashTotal)}</td></tr>
+                    <tr><td>Panel Total</td><td className="num">{fmt2(data.panelTotal)}</td></tr>
+                    <tr className="gpr-grand"><td>Grand Total — {data.rows.length} payment{data.rows.length !== 1 ? 's' : ''}</td><td className="num">{fmt2(data.total)}</td></tr>
+                  </tbody>
+                </table>
+              )}
+              <div className="gpr-page-no">Page {i + 1} of {pages.length}</div>
             </section>
           ))}
-
-          {!loading && data?.rows?.length > 0 && (
-            <table className="gpr-table gpr-summary">
-              <colgroup><col /><col className="gpr-c-amt" /></colgroup>
-              <tbody>
-                <tr><td colSpan={2} className="gpr-summary-title">Summary — {subtitle}</td></tr>
-                <tr><td>Cash Total</td><td className="num">{fmt2(data.cashTotal)}</td></tr>
-                <tr><td>Panel Total</td><td className="num">{fmt2(data.panelTotal)}</td></tr>
-                <tr className="gpr-grand"><td>Grand Total — {data.rows.length} payment{data.rows.length !== 1 ? 's' : ''}</td><td className="num">{fmt2(data.total)}</td></tr>
-              </tbody>
-            </table>
-          )}
         </div>
       </div>
     </div>

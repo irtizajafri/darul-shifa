@@ -1330,9 +1330,41 @@ async function updatePanelOpdBillingItem(req, res, next) {
 
 async function updatePanelOpdBillingHeader(req, res, next) {
   try {
-    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq } = req.body;
-    const data = await service.updatePanelOpdBillingHeader(req.params.opdVisitId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq });
+    const { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor, billDate } = req.body;
+    const data = await service.updatePanelOpdBillingHeader(req.params.opdVisitId, { admitDate, dischargeDate, patientName, consultantName, diagnosis, snoSeq, entitledFor, billDate });
     success(res, data, 'Header updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function closePanelOpdBilling(req, res, next) {
+  try {
+    const data = await service.closePanelOpdBilling(req.params.opdVisitId, { closedBy: req.body?.closedBy });
+    success(res, data, 'Bill saved');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function overridePanelOpdLiveDetailItem(req, res, next) {
+  try {
+    const { liveId, mergeInto, description, qty, rate, date, dosage } = req.body;
+    const data = await service.overridePanelOpdLiveDetailItem(req.params.opdVisitId, liveId, { mergeInto, description, qty, rate, date, dosage });
+    success(res, data, 'Row updated');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function excludePanelOpdLiveDetailItem(req, res, next) {
+  try {
+    const { liveId, mergeInto } = req.body;
+    const data = await service.excludePanelOpdLiveDetailItem(req.params.opdVisitId, liveId, { mergeInto });
+    success(res, data, 'Row deleted');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -1847,8 +1879,10 @@ async function confirmPanelAdmitReportImportBatch(req, res, next) {
 
 async function getPanelAdmitReport(req, res, next) {
   try {
-    const { dateType, fromDate, toDate, panelCompanyId } = req.query;
-    success(res, await service.getPanelAdmitReport({ dateType, fromDate, toDate, panelCompanyId }));
+    const { scopeType, dateType, fromDate, toDate, panelCompanyId } = req.query;
+    success(res, scopeType === 'opd'
+      ? await service.getPanelOpdAdmitReport({ fromDate, toDate, panelCompanyId })
+      : await service.getPanelAdmitReport({ dateType, fromDate, toDate, panelCompanyId }));
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -2773,6 +2807,9 @@ module.exports = {
   getPanelOpdVisitBilling,
   updatePanelOpdBillingItem,
   updatePanelOpdBillingHeader,
+  closePanelOpdBilling,
+  overridePanelOpdLiveDetailItem,
+  excludePanelOpdLiveDetailItem,
   addPanelOpdBillingItem,
   deletePanelOpdBillingItem,
   addPanelOpdBillingItemsBulk,
@@ -2877,9 +2914,15 @@ async function importBillComparison(req, res, next) {
 
 async function getBillComparisons(req, res, next) {
   try {
-    const data = await service.getBillComparisons();
+    const { mode, from, to, companyId, billed } = req.query;
+    const data = mode
+      ? await service.getBillComparisonLive({ mode, from, to, panelCompanyId: companyId, billed })
+      : await service.getBillComparisons();
     success(res, data);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status === 400) return fail(res, 400, err.message);
+    next(err);
+  }
 }
 
 // ─── Panel Billing Detail (bill-head wise) ───────────────────────────────────

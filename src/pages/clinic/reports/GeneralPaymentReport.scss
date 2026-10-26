@@ -1,12 +1,28 @@
 // General Payment Date Wise — the old system's layout: day heading with the
 // payment mode on the right, then PayDate · Code · Particulars · Amount lines
 // each ruled underneath. One sheet per day per book (Cash, then Panel); every
-// sheet after the first starts a new printed page.
-.gpr-sheet { break-inside: auto; }
-.gpr-sheet-break {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 3px dashed #94a3b8;
+// sheet after the first starts a new printed page. On screen each sheet is
+// its own A4-looking page with its "Page X of N".
+.gpr-sheet { break-inside: auto; display: flex; flex-direction: column; }
+.gpr-page--sheets {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 900px;
+  .gpr-sheet {
+    background: #fff;
+    padding: 20px 24px;
+    min-height: 1100px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15);
+  }
+}
+.gpr-page-no {
+  margin-top: auto;
+  padding-top: 14px;
+  text-align: right;
+  font-size: 0.72rem;
+  color: #333;
 }
 .gpr-hospital { font-weight: 700; font-size: 1.05rem; margin-bottom: 2px; }
 .gpr-sheet-head {
@@ -22,12 +38,11 @@
 .gpr-summary { margin-top: 24px; break-inside: avoid; page-break-inside: avoid; }
 .gpr-summary-title { font-weight: 700; border-bottom: 1px solid #000; }
 @media print {
+  .gpr-page--sheets { display: block; max-width: none; }
+  .gpr-page--sheets .gpr-sheet { box-shadow: none; padding: 0; min-height: 0; display: block; }
   .gpr-sheet-break {
     break-before: page;
     page-break-before: always;
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
   }
 }
 .gpr-table {

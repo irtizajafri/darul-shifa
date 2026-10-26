@@ -1312,6 +1312,10 @@ model ClinicPanelOpdBillingItem {
   // Manual Medicine/Laboratory/Radiology/Ultrasound add — same
   // merge-into-head-row behavior as ClinicPanelBillingItem.groupInto.
   groupInto   String?
+  // Migration 058 — same live-line override / delete marker as
+  // ClinicPanelBillingItem.overridesLiveId / excluded.
+  overridesLiveId String?
+  excluded    Boolean        @default(false)
   sortOrder   Int            @default(0)
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
@@ -1331,6 +1335,12 @@ model ClinicPanelOpdBillingHeader {
   consultantName String?
   diagnosis      String?
   snoSeq         String?
+  // Migration 058 — Admission-Billing replica (see getPanelOpdVisitBilling).
+  entitledFor    String?
+  billDate       String?
+  closedAt       DateTime?
+  closedBy       String?
+  seededVisitIds Int[]          @default([])
   updatedAt      DateTime       @updatedAt
 }
 
@@ -2406,6 +2416,9 @@ model AccVoucherExpenseDraft {
   // kind's drafts into a single voucher line. Migration 053.
   clinicRefundKind String?
   clinicRefundRef  String?
+  // Admission file #(s) the line pays for (comma-joined) — copied onto the
+  // voucher entry at posting. Migration 059.
+  admissionNo      String?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 

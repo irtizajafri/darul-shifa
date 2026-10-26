@@ -62,7 +62,8 @@ export default function OpdAdmitReport() {
   useEffect(() => { fetchPanelCompanies(); }, [fetchPanelCompanies]);
 
   const selectedCompany = panelCompanies.find((c) => String(c.id) === String(companyId));
-  const notBuiltYet = scopeType !== 'admission' || (viewMode !== 'details' && viewMode !== 'withSlip');
+  const notBuiltYet = viewMode !== 'details' && viewMode !== 'withSlip';
+  const isOpd = scopeType === 'opd';
 
   const handlePreview = useCallback(async () => {
     if (notBuiltYet) {
@@ -74,7 +75,7 @@ export default function OpdAdmitReport() {
     setLoading(true);
     try {
       const res = await fetchPanelAdmitReport({
-        dateType, fromDate, toDate,
+        scopeType, dateType, fromDate, toDate,
         panelCompanyId: companyId !== 'ALL' ? companyId : undefined,
       });
       setData(res);
@@ -83,7 +84,7 @@ export default function OpdAdmitReport() {
     } finally {
       setLoading(false);
     }
-  }, [fetchPanelAdmitReport, notBuiltYet, dateType, fromDate, toDate, companyId]);
+  }, [fetchPanelAdmitReport, notBuiltYet, scopeType, dateType, fromDate, toDate, companyId]);
 
   useEffect(() => { handlePreview(); }, [handlePreview]);
 
@@ -102,10 +103,13 @@ export default function OpdAdmitReport() {
 
   const metaText = [
     scopeType === 'admission' ? 'Admission' : 'OPD',
-    dateType === 'discharge' ? 'Discharge Date' : 'Admit Date',
+    scopeType === 'opd' ? 'Slip Date (8 AM – 8 AM)' : dateType === 'discharge' ? 'Discharge Date' : 'Admit Date',
     `From : ${fmtDate(fromDate)}   To : ${fmtDate(toDate)}`,
     selectedCompany ? `Company : ${selectedCompany.code} - ${selectedCompany.name}` : null,
   ].filter(Boolean).join('   |   ');
+
+  const reportTitle = isOpd ? 'OPD WISE PANEL REPORT' : 'ADMISSION WISE PANEL REPORT';
+  const totalLabel = isOpd ? 'Total Patients' : 'Total Admissions';
 
   function handlePrint() {
     if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
@@ -120,13 +124,17 @@ export default function OpdAdmitReport() {
   function handleExport() {
     if (!hasRows) { toast.error('Export ke liye koi data nahi'); return; }
     const aoa = [
-      ['ADMISSION WISE PANEL REPORT'],
+      [reportTitle],
       [metaText],
       [],
-      ['Admit Number & Patient Name', 'Employee Name', 'Company', 'Status', 'Admit Date', 'Dis Date', 'Slip', 'Amount'],
+      isOpd
+        ? ['Patient Name', 'Employee Name', 'Company', 'Relation', 'Date', '', 'Slip', 'Amount']
+        : ['Admit Number & Patient Name', 'Employee Name', 'Company', 'Status', 'Admit Date', 'Dis Date', 'Slip', 'Amount'],
     ];
     data.admissions.forEach((a) => {
-      aoa.push([`${a.admissionNo} - ${a.patientName}`, a.employeeName || '', a.companyName || '', a.status || '', fmtDate(a.admitDate), fmtDate(a.dischargeDate), a.slip, Number(a.amount || 0)]);
+      aoa.push(isOpd
+        ? [a.patientName, a.employeeName || '', a.companyName || '', a.relation || '', fmtDate(a.date), '', a.slip, Number(a.amount || 0)]
+        : [`${a.admissionNo} - ${a.patientName}`, a.employeeName || '', a.companyName || '', a.status || '', fmtDate(a.admitDate), fmtDate(a.dischargeDate), a.slip, Number(a.amount || 0)]);
       a.depts.forEach((d) => {
         aoa.push(['', '', '', d.dept, '', '', d.slip, Number(d.amount || 0)]);
         if (showSlips) {
@@ -134,7 +142,7 @@ export default function OpdAdmitReport() {
         }
       });
     });
-    aoa.push([`Total Admissions : ${data.totals.admissionCount}`, '', '', '', '', '', data.totals.slip, Number(data.totals.amount || 0)]);
+    aoa.push([`${totalLabel} : ${data.totals.admissionCount}`, '', '', '', '', '', data.totals.slip, Number(data.totals.amount || 0)]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'OPD Admit Report');
@@ -154,7 +162,7 @@ export default function OpdAdmitReport() {
         <div className="oar-report rpt-arial9" ref={reportRef}>
           <div className="oar-rpt-head">
             <div className="oar-rpt-sub">Darul Shifa Hospital</div>
-            <div className="oar-rpt-title">ADMISSION WISE PANEL REPORT</div>
+            <div className="oar-rpt-title">{reportTitle}</div>
             <div className="oar-rpt-meta">
               <span>{metaText}</span>
               <span>Produced On : {new Date().toLocaleString('en-GB')}</span>
@@ -165,7 +173,7 @@ export default function OpdAdmitReport() {
             <div className="oar-empty">Loading…</div>
           ) : notBuiltYet ? (
             <div className="oar-empty">
-              Yeh combination (OPD scope / Headers / Summary) abhi banaya nahi gaya — filhal sirf <b>Admission</b> + <b>Details</b>/<b>With Slip</b> available hai.
+              Yeh combination (Headers / Summary) abhi banaya nahi gaya — filhal sirf <b>Details</b>/<b>With Slip</b> available hai.
             </div>
           ) : !hasRows ? (
             <div className="oar-empty">Is filter par koi record nahi mila.</div>
@@ -174,12 +182,12 @@ export default function OpdAdmitReport() {
               <table className="oar-table">
                 <thead>
                   <tr>
-                    <th className="oar-l">Admit Number &amp; Patient Name</th>
+                    <th className="oar-l">{isOpd ? 'Patient Name' : <>Admit Number &amp; Patient Name</>}</th>
                     <th className="oar-l">Employee Name</th>
                     <th className="oar-l">Company</th>
-                    <th className="oar-l">Status</th>
-                    <th className="oar-l">Admit Date</th>
-                    <th className="oar-l">Dis Date</th>
+                    <th className="oar-l">{isOpd ? 'Relation' : 'Status'}</th>
+                    <th className="oar-l">{isOpd ? 'Date' : 'Admit Date'}</th>
+                    <th className="oar-l">{isOpd ? '' : 'Dis Date'}</th>
                     <th className="oar-r">Slip</th>
                     <th className="oar-r">Amount</th>
                   </tr>
@@ -188,12 +196,12 @@ export default function OpdAdmitReport() {
                   {visibleAdmissions.map((a) => (
                     <Fragment key={a.admissionNo}>
                       <tr className="oar-adm-row">
-                        <td className="oar-l">{a.admissionNo} - {a.patientName}</td>
+                        <td className="oar-l">{isOpd ? a.patientName : `${a.admissionNo} - ${a.patientName}`}</td>
                         <td className="oar-l">{a.employeeName || '—'}</td>
                         <td className="oar-l">{a.companyName || '—'}</td>
-                        <td className="oar-l">{a.status || '—'}</td>
-                        <td className="oar-l">{fmtDate(a.admitDate)}</td>
-                        <td className="oar-l">{fmtDate(a.dischargeDate)}</td>
+                        <td className="oar-l">{(isOpd ? a.relation : a.status) || '—'}</td>
+                        <td className="oar-l">{fmtDate(isOpd ? a.date : a.admitDate)}</td>
+                        <td className="oar-l">{isOpd ? '' : fmtDate(a.dischargeDate)}</td>
                         <td className="oar-r">{a.slip}</td>
                         <td className="oar-r">{fmt(a.amount)}</td>
                       </tr>
@@ -223,13 +231,13 @@ export default function OpdAdmitReport() {
                 </tbody>
                 <tfoot>
                   <tr className="oar-totals">
-                    <td className="oar-l" colSpan={6}>Total Admissions : {data.totals.admissionCount}</td>
+                    <td className="oar-l" colSpan={6}>{totalLabel} : {data.totals.admissionCount}</td>
                     <td className="oar-r">{data.totals.slip}</td>
                     <td className="oar-r">{fmt(data.totals.amount)}</td>
                   </tr>
                 </tfoot>
               </table>
-              <ShowMoreFooter {...page} noun="admissions" />
+              <ShowMoreFooter {...page} noun={isOpd ? 'patients' : 'admissions'} />
             </div>
           )}
         </div>

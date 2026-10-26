@@ -17,7 +17,7 @@
   font-weight: 900;
   text-align: center;
   color: #1a3c6e;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   letter-spacing: 1px;
 }
 
@@ -67,6 +67,7 @@
 
 .bcr-col-sno    { width: 50px; }
 .bcr-col-admit  { width: 90px; }
+.bcr-col-date   { width: 80px; }
 .bcr-col-patient{ }
 .bcr-col-emp    { }
 .bcr-col-co     { }
@@ -140,4 +141,11 @@
   color: #fff;
   &:hover { background: #334155; }
   &--ok { background: #1a3c6e; &:hover { background: #15305a; } }
+}
+
+.bcr-sub {
+  text-align: center;
+  font-size: 11px;
+  color: #333;
+  margin-bottom: 10px;
 }

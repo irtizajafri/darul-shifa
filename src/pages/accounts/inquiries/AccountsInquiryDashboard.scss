@@ -70,6 +70,8 @@ $ora:   #e65100;
 
 .aid-filter-group { display: flex; flex-direction: column; gap: 3px; }
 
+.aid-period-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 6px; }
+
 .aid-flabel {
   font-size: 10px;
   font-weight: 600;

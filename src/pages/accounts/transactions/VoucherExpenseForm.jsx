@@ -10,6 +10,10 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { openPrintWindow } from '../../../utils/printRelay';
 import './VoucherExpenseForm.scss';
 
+
+// IPD / Surgery file picker — oldest file at the top, today's at the bottom
+// (owner, 2026-10-26); the search endpoint returns newest first.
+const oldestFirst = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id - b.id) : []);
 const API = 'http://localhost:5001/api/accounts';
 const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 const UTIL_API = 'http://localhost:5001/api/utilities';
@@ -805,7 +809,7 @@ export default function VoucherExpenseForm() {
         // (corporate) files only, same split GRN/Doctor payments already use.
         fetch(`${CLINIC_API}/admission/adjustment/search?q=&entityType=${admissionBookParam}&includeDischarged=1`)
           .then((r) => r.json())
-          .then((j) => setAdmissionResults(Array.isArray(j?.data) ? j.data : []))
+          .then((j) => setAdmissionResults(oldestFirst(j?.data)))
           .catch((err) => toast.error(err?.message || 'Failed to load admissions'));
         // Only one role linked — no need to make the user pick, load it directly
         if (cats.length === 1) {
@@ -861,7 +865,7 @@ export default function VoucherExpenseForm() {
       try {
         const r = await fetch(`${CLINIC_API}/admission/adjustment/search?q=${encodeURIComponent(val)}&entityType=${admissionBookParam}&includeDischarged=1`);
         const j = await r.json();
-        setAdmissionResults(Array.isArray(j?.data) ? j.data : []);
+        setAdmissionResults(oldestFirst(j?.data));
       } catch { setAdmissionResults([]); }
     }, 300);
   };
@@ -1274,6 +1278,7 @@ export default function VoucherExpenseForm() {
             chequeDate:    e.chequeDate    || null,
             chequeType:    e.chequeType    || null,
             particulars:   e.particulars   || null,
+            admissionNo:   e.admissionNo   || null, // posted onto the voucher line → Discharge and Refund
             grnIds:        Array.isArray(e.grnIds) ? e.grnIds : [],
             visitIds:      Array.isArray(e.visitIds) ? e.visitIds : [],
             consultantFeeItemIds: Array.isArray(e.consultantFeeItemIds) ? e.consultantFeeItemIds : [],

@@ -890,7 +890,8 @@ async function getPendingConsultantFees(doctorId, fromDate, toDate, entityType) 
     }).filter(Boolean);
   }
 
-  return [...dbiResults, ...opdResults].sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Oldest file first, today's at the bottom (owner, 2026-10-26).
+  return [...dbiResults, ...opdResults].sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
 async function getInventorySubcategories() {
@@ -1445,7 +1446,7 @@ function getBusinessDate() {
 // the draft now posts under THAT day instead of always today's business
 // date. A blank/invalid/future date falls back to today's business date
 // (never post something dated ahead of when it was actually entered).
-async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear }) {
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear, admissionNo }) {
   // Same central check as Confirm — no draft for something already paid or
   // already sitting in another pending draft.
   await assertEntriesPayable([{ amount, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear }]);
@@ -1469,6 +1470,7 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
       amount: Number(amount),
       chequeNo: chequeNo || null, chequeDate: chequeDate ? new Date(chequeDate) : null, chequeType: chequeType || null,
       particulars: particulars || null,
+      admissionNo: splitAdmissionNos(admissionNo).join(', ') || null,
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
       salaryEmpCode: salaryEmpCode || null,
@@ -1733,6 +1735,9 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
             payeeName:    e.payeeName,    amount:       Number(e.amount),
             chequeNo:     e.chequeNo,     chequeDate:   e.chequeDate,
             chequeType:   e.chequeType,   particulars:  e.particulars,
+            // Admission file(s) — Discharge and Refund shows the posted line
+            // on each one (migration 059).
+            admissionNo:  e.admissionNo || null,
           })),
         },
       },

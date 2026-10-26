@@ -29,6 +29,14 @@ const VOUCHER_TYPES = [
   { value: 'income',  label: 'Income' },
 ];
 
+// Year picker range — oldest clinic data is legacy-imported from 2010s.
+const YEAR_OPTIONS = (() => {
+  const last = new Date().getFullYear() + 1;
+  const out = [];
+  for (let y = last; y >= 2010; y--) out.push(y);
+  return out;
+})();
+
 const fmtN = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const fmtA = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -572,6 +580,27 @@ export default function AccountsInquiryDashboard() {
               {PERIODS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
             </select>
           </div>
+
+          {/* Jump straight to any month / year (owner, 2026-10-26) — the
+              calendar's arrows still step one at a time. */}
+          {(period === 'monthly_daily' || period === 'yearly_monthly') && (
+            <div className="aid-period-pick">
+              {period === 'monthly_daily' && (
+                <div className="aid-filter-group">
+                  <label className="aid-flabel">Month</label>
+                  <select className="aid-select" value={month} onChange={e => setMonth(Number(e.target.value))}>
+                    {MNF.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="aid-filter-group">
+                <label className="aid-flabel">Year</label>
+                <select className="aid-select" value={year} onChange={e => setYear(Number(e.target.value))}>
+                  {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
 
           <button className="aid-last-run" onClick={fetchData} disabled={loading}>
             <RefreshCw size={12} className={loading ? 'aid-spin' : ''}/>

@@ -235,6 +235,9 @@ router.patch('/opd-panel-billing/items/:itemId', controller.updatePanelOpdBillin
 router.patch('/opd-panel-billing/header/:opdVisitId', controller.updatePanelOpdBillingHeader);
 router.post('/opd-panel-billing/:opdVisitId/items', controller.addPanelOpdBillingItem);
 router.post('/opd-panel-billing/:opdVisitId/items/bulk', controller.addPanelOpdBillingItemsBulk);
+router.post('/opd-panel-billing/:opdVisitId/items/override', controller.overridePanelOpdLiveDetailItem);
+router.post('/opd-panel-billing/:opdVisitId/items/exclude', controller.excludePanelOpdLiveDetailItem);
+router.post('/opd-panel-billing/:opdVisitId/close', controller.closePanelOpdBilling);
 router.delete('/opd-panel-billing/items/:itemId', controller.deletePanelOpdBillingItem);
 
 // Panels > Panel Cheque Transaction
