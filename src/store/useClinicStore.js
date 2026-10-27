@@ -1,6 +1,7 @@
 import toast from 'react-hot-toast';
 import { create } from 'zustand';
 import { useAuthStore } from './useAuthStore';
+import { getBackDate } from '../components/clinic/BackDateField';
 
 const API_URL = 'http://localhost:5001/api/clinic';
 
@@ -335,6 +336,7 @@ export const useClinicStore = create((set) => ({
         ...payload,
         createdByUserId: user?.id != null ? String(user.id) : null,
         createdByName: user?.name || user?.username || user?.email || null,
+        backDate: getBackDate(),
       }),
     });
   },
@@ -594,7 +596,7 @@ export const useClinicStore = create((set) => ({
   },
 
   createAdmission: async (payload) => {
-    return request('/admission', { method: 'POST', body: JSON.stringify(payload) });
+    return request('/admission', { method: 'POST', body: JSON.stringify({ ...payload, backDate: getBackDate() }) });
   },
 
   checkAdmissionNoDuplicate: async (admissionNo) => {

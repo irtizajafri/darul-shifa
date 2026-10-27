@@ -13,6 +13,7 @@ import { handleSlipKeys } from '../../utils/keyboardNav';
 import './ConsultantOPD.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import BackDateField from '../../components/clinic/BackDateField';
 
 const departmentName = 'Consultant OPD';
 const layout = 'doctor';
@@ -875,6 +876,7 @@ export default function ConsultantOPD() {
             </button>
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
+            <BackDateField style={{ marginLeft: '0.75rem' }} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
             <input
               className="gopd-serial-input gopd-mr-input"

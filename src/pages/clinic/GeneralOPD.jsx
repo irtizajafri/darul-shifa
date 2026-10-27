@@ -14,6 +14,7 @@ import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import BackDateField from '../../components/clinic/BackDateField';
 
 // Only these two departments (of the many GeneralOPD.jsx serves) also print the
 // A4 Clinical Record Form after the slip — same form Consultant OPD uses.
@@ -914,6 +915,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
             </button>
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
+            <BackDateField style={{ marginLeft: '0.75rem' }} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
             <input
               className="gopd-serial-input gopd-mr-input"

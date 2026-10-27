@@ -1373,7 +1373,7 @@ function getBusinessDate() {
 // the draft now posts under THAT day instead of always today's business
 // date. A blank/invalid/future date falls back to today's business date
 // (never post something dated ahead of when it was actually entered).
-async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear, admissionNo }) {
+async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainGlName, subGlId, subGlName, mainAccountId, accountCode, accountName, subAccountId, subAccountName, payeeName, amount, chequeNo, chequeDate, chequeType, particulars, date, createdByUserId, createdByName, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear, admissionNo, admissionAmounts }) {
   // Same central check as Confirm — no draft for something already paid or
   // already sitting in another pending draft.
   await assertEntriesPayable([{ amount, grnIds, visitIds, consultantFeeItemIds, salaryEmpCode, salaryMonth, salaryYear }]);
@@ -1398,6 +1398,7 @@ async function saveDraftExpenseEntry({ entityType, mode, bankId, mainGlId, mainG
       chequeNo: chequeNo || null, chequeDate: chequeDate ? new Date(chequeDate) : null, chequeType: chequeType || null,
       particulars: particulars || null,
       admissionNo: splitAdmissionNos(admissionNo).join(', ') || null,
+      admissionAmounts: cleanAdmissionAmounts(admissionNo, admissionAmounts, amount) ?? undefined,
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
       salaryEmpCode: salaryEmpCode || null,
@@ -1665,6 +1666,7 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
             // Admission file(s) — Discharge and Refund shows the posted line
             // on each one (migration 059).
             admissionNo:  e.admissionNo || null,
+            admissionAmounts: e.admissionAmounts ?? undefined,
           })),
         },
       },
@@ -1834,6 +1836,24 @@ const payErr = (msg) => Object.assign(new Error(msg), { status: 409 });
 // excludeVoucherId — editing a voucher re-saves its own lines, so they don't
 // count against themselves.
 const splitAdmissionNos = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+
+// A line covering several files carries each file's own amount (owner,
+// 2026-10-27): every file needs one above 0 and they must add up to the
+// line's amount. One file (or none) → null, the line's amount is the file's.
+function cleanAdmissionAmounts(admissionNo, amounts, total) {
+  const files = splitAdmissionNos(admissionNo);
+  if (files.length < 2) return null;
+  const src = amounts && typeof amounts === 'object' ? amounts : {};
+  const out = {};
+  for (const no of files) {
+    const a = Number(src[no]);
+    if (!(a > 0)) throw Object.assign(new Error(`File ${no} ki amount likhein`), { status: 400 });
+    out[no] = a;
+  }
+  const sum = Object.values(out).reduce((s, a) => s + a, 0);
+  if (Math.abs(sum - Number(total)) > 0.01) throw Object.assign(new Error(`Files ki amounts ka total (${sum}) line ki amount (${Number(total)}) ke barabar nahi`), { status: 400 });
+  return out;
+}
 const payeeKey = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 async function assertSurgeryPaidOnce(entries, { excludeVoucherId } = {}) {
@@ -2003,6 +2023,7 @@ const entryCreateData = (e) => ({
   chequeType: e.chequeType || null,
   particulars: e.particulars || null,
   admissionNo: e.admissionNo || null,
+  admissionAmounts: cleanAdmissionAmounts(e.admissionNo, e.admissionAmounts, e.amount) ?? undefined,
 });
 
 // Confirm on an already-open voucher: add one more line to it.
@@ -2073,6 +2094,7 @@ async function createVoucherExpense({ entityType, mode, bankId, voucherDate, ent
           chequeType: e.chequeType || null,
           particulars: e.particulars || null,
           admissionNo: e.admissionNo || null,
+          admissionAmounts: cleanAdmissionAmounts(e.admissionNo, e.admissionAmounts, e.amount) ?? undefined,
         })),
       },
     },
@@ -2262,6 +2284,7 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
           chequeType: e.chequeType || null,
           particulars: e.particulars || null,
           admissionNo: e.admissionNo || null,
+          admissionAmounts: cleanAdmissionAmounts(e.admissionNo, e.admissionAmounts, e.amount) ?? undefined,
         })),
       },
     },

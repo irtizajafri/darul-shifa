@@ -552,6 +552,17 @@ async function updateCcConfig({ percentage, minAmount }) {
   return prisma.clinicCreditCardConfig.create({ data });
 }
 
+// Super Admin back-dating (owner, 2026-10-27): a slip/admission saved with
+// `backDate` takes that date-time as its own (createdAt) instead of now.
+// Only the Super Admin's screens send it. Never a future time.
+function resolveBackDate(backDate) {
+  if (!backDate) return null;
+  const d = new Date(backDate);
+  if (Number.isNaN(d.getTime())) throw Object.assign(new Error('Back Date sahi nahi'), { status: 400 });
+  if (d > new Date()) throw Object.assign(new Error('Back Date aage ki nahi ho sakti'), { status: 400 });
+  return d;
+}
+
 async function createOpdVisit({
   mrNo, serialNo: serialNoRaw, patientType, patientName, admitPatient, admitNo, adjustPayment, antenatal, antenatalNo,
   age, ageMonths, ageDays, gender, phoneNo, referredBy, driver, location, hospitalPatient, advisedBy,
@@ -560,7 +571,7 @@ async function createOpdVisit({
   ccPercentage, ccMinAmount, ccCharge,
   panelCompanyId, panelEmployeeId, panelDependentId,
   department,
-  createdByUserId, createdByName,
+  createdByUserId, createdByName, backDate,
   doctors = [],
 }) {
   // A stray space typed with the Slip # (" 2872089") used to be saved as-is,
@@ -568,10 +579,12 @@ async function createOpdVisit({
   const serialNo = typeof serialNoRaw === 'string' ? serialNoRaw.trim() : serialNoRaw;
   await assertSerialNoAvailable(serialNo, { patientName });
   await assertPanelPrimarySlip({ paymentType, department, panelCompanyId, panelEmployeeId, panelDependentId, patientName });
-  const now = new Date();
+  const back = resolveBackDate(backDate);
+  const now = back || new Date();
   const shift = await resolveShiftForTime(now);
   return prisma.clinicOpdVisit.create({
     data: {
+      ...(back ? { createdAt: back } : {}),
       mrNo: mrNo ? Number(mrNo) : null,
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
@@ -4443,8 +4456,10 @@ async function createAdmission(data) {
       );
     }
   }
+  const back = resolveBackDate(data.backDate);
   const admission = await prisma.clinicAdmission.create({
     data: {
+      ...(back ? { createdAt: back } : {}),
       serialNo:          data.serialNo?.trim() || null,
       admissionNo:       data.admissionNo?.trim() || '',
       mrNo:              data.mrNo ? Number(data.mrNo) : null,
@@ -7782,6 +7797,39 @@ async function syncDischargeSlipRows(admission) {
   if (ops.length) await prisma.$transaction(ops);
 }
 
+// General Payment lines paid against this file (Surgery/Anesthesia heads —
+// AccVoucherExpenseEntry.admissionNo, may list several files) as this bill's
+// own rows, one per voucher line, so staff can edit or delete them here
+// (owner, 2026-10-27). Same rules as the slip rows: an edited amount stays,
+// a deleted row stays hidden, and a line taken off its voucher drops off.
+// Editing here changes only this bill, never the voucher. Each file gets its
+// own share (admissionAmounts), or the line's full amount on older lines.
+async function syncDischargeVoucherRows(admission, entries) {
+  const admissionId = admission.id;
+  const existing = await prisma.clinicDischargeBillItem.findMany({ where: { admissionId, source: 'surgery-expense' } });
+  const fileAmount = (e) => {
+    const own = e.admissionAmounts && Number(e.admissionAmounts[admission.admissionNo]);
+    return own > 0 ? own : Number(e.amount) || 0;
+  };
+  const live = entries.map((e) => ({ key: `ve:${e.id}`, description: e.accountName || 'General Payment', amount: fileAmount(e) }));
+  const liveKeys = new Set(live.map((l) => l.key));
+  const byKey = new Map(existing.map((e) => [e.sourceLineKey, e]));
+  const ops = [];
+  const drop = existing.filter((e) => !liveKeys.has(e.sourceLineKey)).map((e) => e.id);
+  if (drop.length) ops.push(prisma.clinicDischargeBillItem.deleteMany({ where: { id: { in: drop } } }));
+  const toCreate = [];
+  for (const l of live) {
+    const row = byKey.get(l.key);
+    if (!row) {
+      toCreate.push({ admissionId, description: l.description, qty: 1, rate: l.amount, amount: l.amount, source: 'surgery-expense', sourceLineKey: l.key });
+    } else if (!row.excluded && !row.amountEdited && row.amount !== l.amount) {
+      ops.push(prisma.clinicDischargeBillItem.update({ where: { id: row.id }, data: { qty: 1, rate: l.amount, amount: l.amount } }));
+    }
+  }
+  if (toCreate.length) ops.push(prisma.clinicDischargeBillItem.createMany({ data: toCreate, skipDuplicates: true }));
+  if (ops.length) await prisma.$transaction(ops);
+}
+
 async function importProvisionalDataIntoDischargeBill(admissionId) {
   const detail = await getProvisionalBillDetail(admissionId);
   const pharmacyPayeeFor = await resolvePharmacyPayees();
@@ -7856,32 +7904,25 @@ async function getDischargeBillDetail(admissionId) {
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
   const alreadyImported = await prisma.clinicDischargeBillItem.count({
-    where: { admissionId: Number(admissionId), source: { notIn: ['manual', 'slip'] } },
+    where: { admissionId: Number(admissionId), source: { notIn: ['manual', 'slip', 'surgery-expense'] } },
   });
   if (!alreadyImported) {
     await importProvisionalDataIntoDischargeBill(admissionId);
   }
   if (admission.status !== 'closed') await syncDischargeSlipRows(admission);
+  // A line may carry several files ("175129, 175130" — General Payment).
+  const surgeryExpenseEntries = admission.admissionNo
+    ? (await prisma.accVoucherExpenseEntry.findMany({ where: { admissionNo: { contains: admission.admissionNo } }, orderBy: { id: 'asc' } }))
+      .filter((e) => String(e.admissionNo).split(',').map((x) => x.trim()).includes(admission.admissionNo))
+    : [];
+  await syncDischargeVoucherRows(admission, surgeryExpenseEntries);
 
-  const [roomCategory, bed, billItems, payments, surgeryExpenseEntries, panelCompany, panelEmployee] = await Promise.all([
+  const [roomCategory, bed, billItems, payments, panelCompany, panelEmployee] = await Promise.all([
     admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId } }) : null,
     admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId } }) : null,
     // A slip row staff deleted stays as excluded (see syncDischargeSlipRows).
     prisma.clinicDischargeBillItem.findMany({ where: { admissionId: Number(admissionId), excluded: false }, orderBy: { id: 'asc' } }),
     prisma.clinicAdmissionPayment.findMany({ where: { admissionId: Number(admissionId) }, orderBy: { id: 'asc' } }),
-    // Surgeon/Anaesthetic fees paid via Voucher Expense (Surgery/Anesthesia
-    // payee heads) — admissionNo only ever gets set by that one feature, so
-    // any entry with it is by definition one of these. Queried live on every
-    // fetch (not snapshot-imported like Ward/Diagnostic/Pharmacy/Bill Heads
-    // above) so a payment made after Final Bill was first opened still shows
-    // up immediately, and it's read-only here — the voucher entry is the
-    // source of truth, corrections happen in Voucher Expense, not here.
-    // A line may carry several files ("175129, 175130" — General Payment);
-    // it shows on each of them with its full amount (owner, 2026-10-26).
-    admission.admissionNo
-      ? prisma.accVoucherExpenseEntry.findMany({ where: { admissionNo: { contains: admission.admissionNo } }, orderBy: { id: 'asc' } })
-        .then((rows) => rows.filter((e) => String(e.admissionNo).split(',').map((x) => x.trim()).includes(admission.admissionNo)))
-      : [],
     // Panel patient's Company/Employee — same lookup as getPanelAdmissionBilling
     // — Final Bill previously showed the patient but never who's actually
     // being billed for a panel admission.
@@ -7917,32 +7958,17 @@ async function getDischargeBillDetail(admissionId) {
   };
   const subDeptById = {}; subDeptRows.forEach((s) => { subDeptById[s.id] = s; });
 
+  const payeeByKey = new Map(surgeryExpenseEntries.map((e) => [`ve:${e.id}`, e.payeeName || '']));
   const resolvedBillItems = billItems.map((item) => ({
     ...item,
     billHead: item.billHeadId ? headById[item.billHeadId] || null : null,
     doctor: item.doctorId ? doctorById[item.doctorId] || null : null,
     subDept: item.subDeptId ? subDeptById[item.subDeptId] || null : null,
     ...(item.source === 'slip' ? { slip: slipInfo(item) } : {}),
+    // General Payment row: the payee (surgeon/anaesthetist) shows in Dr./Staff.
+    ...(item.source === 'surgery-expense' ? { doctor: payeeByKey.get(item.sourceLineKey) ? { name: payeeByKey.get(item.sourceLineKey) } : null } : {}),
   }));
 
-  const liveSurgeryRows = surgeryExpenseEntries.map((e) => ({
-    id: `surgery-${e.id}`,
-    billHeadId: null,
-    doctorId: null,
-    billHead: null,
-    // Payee name (the surgeon/anaesthetist actually paid) belongs in the
-    // Dr./Staff column like every other row, not crammed into the
-    // description text — a lightweight { name } object is enough since
-    // nothing here needs the full ClinicDoctor record (row is read-only).
-    doctor: e.payeeName ? { name: e.payeeName } : null,
-    description: e.accountName,
-    qty: 1,
-    rate: Number(e.amount),
-    amount: Number(e.amount),
-    source: 'surgery-expense',
-    readOnly: true,
-    createdAt: e.createdAt,
-  }));
 
   // Every split row (Const Fee/Laboratory/Ultrasound/X-Ray) only carries its
   // own doctorFee as its Amount — their combined hospitalShare instead shows
@@ -7966,7 +7992,7 @@ async function getDischargeBillDetail(admissionId) {
     readOnly: true,
   }] : [];
 
-  const allBillItems = [...resolvedBillItems, ...liveSurgeryRows, ...hospitalShareRow];
+  const allBillItems = [...resolvedBillItems, ...hospitalShareRow];
 
   // A legacy-imported admission's REAL deposit history lives in PatientVisit
   // (department='Admission' rows, one per payment the old Excel system
@@ -8166,7 +8192,7 @@ async function updateDischargeBillItem(itemId, { amount }) {
     data.doctorFee = amt;
   }
   // From now on the slip no longer overwrites this amount.
-  if (item.source === 'slip') data.amountEdited = true;
+  if (item.source === 'slip' || item.source === 'surgery-expense') data.amountEdited = true;
 
   return prisma.clinicDischargeBillItem.update({ where: { id: Number(itemId) }, data });
 }
@@ -8175,7 +8201,7 @@ async function deleteDischargeBillItem(itemId) {
   const item = await prisma.clinicDischargeBillItem.findUnique({ where: { id: Number(itemId) }, select: { source: true } });
   // A slip row would come straight back from the slip — keep it hidden
   // with no amount instead (see syncDischargeSlipRows).
-  if (item?.source === 'slip') {
+  if (item?.source === 'slip' || item?.source === 'surgery-expense') {
     return prisma.clinicDischargeBillItem.update({ where: { id: Number(itemId) }, data: { excluded: true, amount: 0, rate: 0 } });
   }
   return prisma.clinicDischargeBillItem.delete({ where: { id: Number(itemId) } });

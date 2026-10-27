@@ -418,7 +418,10 @@ export default function VoucherExpenseForm() {
   // column for this list — entry.admissionNo stays the single text field it
   // already was, just holding a comma-joined string (kept in sync below),
   // so no schema change was needed.
-  const [selectedAdmissions, setSelectedAdmissions] = useState([]); // [{admissionNo, patientName, panel}]
+  // With 2+ files each one carries its own amount (owner, 2026-10-27): the
+  // line's Amount becomes their total, and Discharge and Refund shows each
+  // file only its own share (entry.admissionAmounts).
+  const [selectedAdmissions, setSelectedAdmissions] = useState([]); // [{admissionNo, patientName, panel, amount}]
   // Clinic General Payment: the admission picker lists Cash AND Panel files
   // (owner, 2026-10-24) — a Panel file's payment may only use "Panel
   // Payment", a Cash file's only the Cash button; a line with no file is the
@@ -879,7 +882,7 @@ export default function VoucherExpenseForm() {
     setSelectedAdmissions((prev) =>
       prev.some((a) => a.admissionNo === row.admissionNo)
         ? prev // already picked — ignore duplicate click
-        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName, panel }]
+        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName, panel, amount: '' }]
     );
     setEntry((e) => ({ ...e, accountName: mainAccs.find((a) => String(a.id) === String(e.mainAccountId))?.name || e.accountName }));
     setAdmissionQuery('');
@@ -890,6 +893,11 @@ export default function VoucherExpenseForm() {
     setSelectedAdmissions((prev) => prev.filter((a) => a.admissionNo !== admissionNo));
   };
 
+  const handleAdmissionAmount = (admissionNo, amount) => {
+    setSelectedAdmissions((prev) => prev.map((a) => (a.admissionNo === admissionNo ? { ...a, amount } : a)));
+  };
+  const multiFile = selectedAdmissions.length > 1;
+
   // Keep entry.admissionNo (the field actually persisted/validated/used in
   // narration) as a comma-joined string of whatever's currently picked.
   // admissionBook ('panel' | 'cash' | '') rides along so the save buttons can
@@ -898,7 +906,15 @@ export default function VoucherExpenseForm() {
     setEntry((e) => {
       const joined = selectedAdmissions.map((a) => a.admissionNo).join(', ');
       const book = selectedAdmissions.length ? (selectedAdmissions[0].panel ? 'panel' : 'cash') : '';
-      return e.admissionNo === joined && e.admissionBook === book ? e : { ...e, admissionNo: joined, admissionBook: book };
+      if (selectedAdmissions.length > 1) {
+        const admissionAmounts = Object.fromEntries(selectedAdmissions.map((a) => [a.admissionNo, Number(a.amount) || 0]));
+        const sum = Object.values(admissionAmounts).reduce((t, a) => t + a, 0);
+        return { ...e, admissionNo: joined, admissionBook: book, admissionAmounts, amount: sum ? String(sum) : '' };
+      }
+      const next = { ...e, admissionNo: joined, admissionBook: book, admissionAmounts: null };
+      // Back to one file after a split: its own amount becomes the line's.
+      if (e.admissionAmounts && selectedAdmissions.length === 1) next.amount = selectedAdmissions[0].amount || e.amount;
+      return e.admissionNo === joined && e.admissionBook === book && !e.admissionAmounts ? e : next;
     });
   }, [selectedAdmissions]);
 
@@ -961,7 +977,7 @@ export default function VoucherExpenseForm() {
     // Patient names aren't stored on the entry itself — re-editing shows just
     // the admission numbers as chips (still fully removable/re-searchable).
     setSelectedAdmissions(
-      e.admissionNo ? e.admissionNo.split(',').map((s) => s.trim()).filter(Boolean).map((no) => ({ admissionNo: no, patientName: '' })) : []
+      e.admissionNo ? e.admissionNo.split(',').map((s) => s.trim()).filter(Boolean).map((no) => ({ admissionNo: no, patientName: '', amount: e.admissionAmounts?.[no] != null ? String(e.admissionAmounts[no]) : '' })) : []
     );
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
 
@@ -1279,6 +1295,7 @@ export default function VoucherExpenseForm() {
             chequeType:    e.chequeType    || null,
             particulars:   e.particulars   || null,
             admissionNo:   e.admissionNo   || null, // posted onto the voucher line → Discharge and Refund
+            admissionAmounts: e.admissionAmounts || null,
             grnIds:        Array.isArray(e.grnIds) ? e.grnIds : [],
             visitIds:      Array.isArray(e.visitIds) ? e.visitIds : [],
             consultantFeeItemIds: Array.isArray(e.consultantFeeItemIds) ? e.consultantFeeItemIds : [],
@@ -1348,6 +1365,10 @@ export default function VoucherExpenseForm() {
     if (!entry.subGlId)       { toast.error('Select Sub GL'); return; }
     if (!entry.mainAccountId) { toast.error('Select Main Account'); return; }
     if (isSurgeryAcc && !entry.admissionNo) { toast.error('Select an Admission'); return; }
+    if (isSurgeryAcc && multiFile) {
+      const blank = selectedAdmissions.find((a) => !(Number(a.amount) > 0));
+      if (blank) { toast.error(`File ${blank.admissionNo} ki amount likhein`); return; }
+    }
     // Minus amounts are allowed (refund / correction lines) — only blank,
     // non-numbers and 0 are refused here; lines tied to a GRN / salary / fee /
     // utility / maintenance always come from their popup as a plus amount.
@@ -1694,6 +1715,16 @@ export default function VoucherExpenseForm() {
                     {selectedAdmissions.map((a) => (
                       <span key={a.admissionNo} className="ve-form__admission-chip">
                         {a.admissionNo}{a.patientName ? ` — ${a.patientName}` : ''}{isClinic ? ` (${a.panel ? 'Panel' : 'Cash'})` : ''}
+                        {multiFile && (
+                          <input
+                            type="number" step="0.01" min="0"
+                            className="ve-form__admission-amt"
+                            placeholder="Amount"
+                            value={a.amount}
+                            onChange={(ev) => handleAdmissionAmount(a.admissionNo, ev.target.value)}
+                            title="Is file ki amount"
+                          />
+                        )}
                         <button type="button" onMouseDown={(ev) => { ev.preventDefault(); handleAdmissionRemove(a.admissionNo); }}>✕</button>
                       </span>
                     ))}
@@ -1864,6 +1895,7 @@ export default function VoucherExpenseForm() {
             <div className="ve-form__field">
               <label>
                 Amount
+                {isSurgeryAcc && multiFile && <span style={{ fontWeight: 400, color: '#64748b' }}> (files ka total)</span>}
                 {entry.amountLocked && (
                   <span title="Yeh amount linked module (GRN/Consultant/Salary/etc) se auto-fill hui hai — Accounts mein edit nahi ho sakti.">
                     {' '}<Lock size={11} style={{ display: 'inline', verticalAlign: 'middle', color: '#64748b' }} />
@@ -1874,9 +1906,9 @@ export default function VoucherExpenseForm() {
                 type="number" step="0.01"
                 value={entry.amount}
                 onChange={upd('amount')}
-                readOnly={entry.amountLocked}
+                readOnly={entry.amountLocked || (isSurgeryAcc && multiFile)}
                 placeholder="0.00"
-                style={entry.amountLocked ? { background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' } : undefined}
+                style={entry.amountLocked || (isSurgeryAcc && multiFile) ? { background: '#f1f5f9', color: '#475569', cursor: 'not-allowed' } : undefined}
               />
             </div>
             </div>

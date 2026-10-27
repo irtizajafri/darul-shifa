@@ -276,6 +276,18 @@
     margin-bottom: 0.4rem;
   }
 
+  &__admission-amt {
+    width: 6rem;
+    height: 1.5rem;
+    padding: 0 0.4rem;
+    border: 1px solid #f9a8d4;
+    border-radius: 4px;
+    background: #fff;
+    color: #111827;
+    font-size: 0.76rem;
+    text-align: right;
+  }
+
   &__admission-chip {
     display: inline-flex;
     align-items: center;

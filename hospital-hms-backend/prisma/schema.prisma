@@ -2426,6 +2426,8 @@ model AccVoucherExpenseDraft {
   // Admission file #(s) the line pays for (comma-joined) — copied onto the
   // voucher entry at posting. Migration 059.
   admissionNo      String?
+  // Per-file amounts when the line covers several files: { "175129": 5000, ... } (migration 061)
+  admissionAmounts Json?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -2534,6 +2536,9 @@ model AccVoucherExpenseEntry {
   // an admission instead of a normal Sub Account — the admission number is
   // kept here so reprints/reports can show which patient this payment was for.
   admissionNo   String?
+  // Per-file amounts when the line covers several files: { "175129": 5000, ... }
+  // — each file shows its own share on Discharge and Refund (migration 061).
+  admissionAmounts Json?
   // Items this line marked paid that have no link table (migration 041) —
   // { visitIds, opdDoctorIds, salary: {empCode, month, year}, utilityBillIds }
   paidRefs      Json?

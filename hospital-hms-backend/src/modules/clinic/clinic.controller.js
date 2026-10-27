@@ -800,6 +800,7 @@ async function createOpdVisit(req, res, next) {
     success(res, data, 'OPD Visit saved');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Serial No already exists');
+    if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }

@@ -13,6 +13,7 @@ import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import BackDateField from '../../components/clinic/BackDateField';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 const ADMISSION_TITLE_MAP = { Mr: 'MR', Mrs: 'MRS', Ms: 'MS', Master: 'MAST', Baby: 'BABY' };
@@ -353,6 +354,7 @@ export default function AmbulanceSlip() {
             <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Date &amp; Time</span>
             <input className="gopd-serial-input gopd-mr-input" style={{ width: 160 }} value={dateTime} readOnly />
+            <BackDateField style={{ marginLeft: '0.75rem' }} />
           </div>
           <div className="gopd-title">Slip - Ambulance</div>
         </div>

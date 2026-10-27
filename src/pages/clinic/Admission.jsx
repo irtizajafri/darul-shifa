@@ -17,6 +17,7 @@ import './Admission.scss';
 import './Antenatal.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import BackDateField from '../../components/clinic/BackDateField';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
@@ -835,6 +836,7 @@ export default function Admission() {
                   <label>Serial #</label>
                   <input type="text" value={form.serialNo} onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))} className="adm-serial-input" title="Auto-generated — same running sequence as OPD slips, but editable" />
                 </div>
+                <BackDateField style={{ alignSelf: 'flex-end', marginBottom: 2 }} />
                 <div className="adm-field">
                   <label>Admission #</label>
                   <div className="adm-lookup-row">
