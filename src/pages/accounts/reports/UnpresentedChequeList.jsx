@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -59,6 +60,8 @@ export default function UnpresentedChequeList() {
 
   return (
     <div style={{ padding: '2rem' }}>
+      {/* Same toolbar as the Clinic reports (owner, 2026-10-27). */}
+      <ReportToolbar menuBar={null} title="Un-Presented Cheque List" onRefresh={load} refreshing={loading} />
       {/* Breadcrumb */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: '#64748b', marginBottom: '1.25rem' }}>
         <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem' }}>

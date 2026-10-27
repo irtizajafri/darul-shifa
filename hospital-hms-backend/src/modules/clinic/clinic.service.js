@@ -6324,6 +6324,15 @@ async function getPanelAdmitReport({ dateType, fromDate, toDate, panelCompanyId 
     };
   });
 
+  // The import only covers files up to the legacy cut-over — every live
+  // panel admission not on file is added from the live tables (owner,
+  // 2026-10-27).
+  const imported = new Set((await prisma.clinicPanelAdmitReportAdmission.findMany({ select: { admissionNo: true } })).map((r) => r.admissionNo));
+  const live = (await getLivePanelAdmitRows({ dateType, fromDate, toDate, panelCompanyId })).filter((a) => !imported.has(a.admissionNo));
+  admissions.push(...live);
+  const dateKey = dateType === 'admit' ? 'admitDate' : 'dischargeDate';
+  admissions.sort((x, y) => new Date(x[dateKey] || x.admitDate) - new Date(y[dateKey] || y.admitDate));
+
   const totals = {
     admissionCount: admissions.length,
     slip: admissions.reduce((s, a) => s + a.slip, 0),
@@ -6331,6 +6340,84 @@ async function getPanelAdmitReport({ dateType, fromDate, toDate, panelCompanyId 
   };
 
   return { mode: 'details', admissions, totals };
+}
+
+// Legacy report's short department names, so live and imported rows read alike.
+const ADMIT_REPORT_DEPT = {
+  LABORATORY: 'Lab', RADIOLOGY: 'XRAY', 'ULTRA SOUND, ECHO & COLOR DOPPLER': 'US', 'BLOOD BANK': 'BB',
+  'CONSULTANT OPD': 'COPD', 'GENERAL OPD': 'GOPD', EMERGENCY: 'EMR',
+};
+const LIVE_ADMISSION_STATUS = { active: 'Admit', discharge: 'Discharge', closed: 'Closed' };
+
+// Live panel admissions in the same shape as getPanelAdmitReport's rows:
+// an ADMIT line for the admission itself, then the slips made against it
+// (ClinicOpdVisit.admitNo) per department. Discharge date = Discharge
+// Certificate, else when the file was moved to Discharge.
+async function getLivePanelAdmitRows({ dateType, fromDate, toDate, panelCompanyId }) {
+  const where = { panelCompanyId: { not: null }, status: { in: Object.keys(LIVE_ADMISSION_STATUS) } };
+  if (panelCompanyId && panelCompanyId !== 'ALL') where.panelCompanyId = Number(panelCompanyId);
+  const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+  const to = toDate ? new Date(`${toDate}T23:59:59.999`) : null;
+  if (dateType === 'admit' && from && to) where.createdAt = { gte: from, lte: to };
+  if (dateType !== 'admit') where.status = { in: ['discharge', 'closed'] };
+
+  let rows = await prisma.clinicAdmission.findMany({
+    where,
+    select: { id: true, admissionNo: true, serialNo: true, patientName: true, status: true, createdAt: true, panelCompanyId: true, panelEmployeeId: true },
+  });
+  if (!rows.length) return [];
+  const ids = rows.map((a) => a.id);
+  const [certs, logs] = await Promise.all([
+    prisma.clinicDischargeCertificate.findMany({ where: { admissionId: { in: ids } }, select: { admissionId: true, dischargeDate: true } }),
+    prisma.clinicAdmissionStatusLog.findMany({ where: { admissionId: { in: ids }, toStatus: 'discharge' }, orderBy: { changedAt: 'asc' }, select: { admissionId: true, changedAt: true } }),
+  ]);
+  const disDate = new Map(logs.map((l) => [l.admissionId, l.changedAt]));
+  certs.forEach((c) => { if (c.dischargeDate) disDate.set(c.admissionId, c.dischargeDate); });
+  if (dateType !== 'admit' && from && to) {
+    rows = rows.filter((a) => { const d = disDate.get(a.id); return d && d >= from && d <= to; });
+  }
+  if (!rows.length) return [];
+
+  const empIds = [...new Set(rows.map((a) => a.panelEmployeeId).filter(Boolean))];
+  const compIds = [...new Set(rows.map((a) => a.panelCompanyId).filter(Boolean))];
+  const [visits, employees, companies] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({
+      where: { admitNo: { in: rows.map((a) => a.admissionNo) }, status: 'active', paymentType: { not: 'canceled' } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { serialNo: true, admitNo: true, patientName: true, department: true, totalAmount: true },
+    }),
+    empIds.length ? prisma.clinicPanelEmployee.findMany({ where: { id: { in: empIds } }, select: { id: true, name: true } }) : [],
+    prisma.clinicPanelCompany.findMany({ where: { id: { in: compIds } }, select: { id: true, name: true } }),
+  ]);
+  const empName = new Map(employees.map((e) => [e.id, e.name]));
+  const compName = new Map(companies.map((c) => [c.id, c.name]));
+  const visitsByAdm = new Map();
+  visits.forEach((v) => { if (!visitsByAdm.has(v.admitNo)) visitsByAdm.set(v.admitNo, []); visitsByAdm.get(v.admitNo).push(v); });
+
+  return rows.map((a) => {
+    const depts = [{ dept: 'ADMIT', slip: 1, amount: 0, slips: [{ slipNo: a.serialNo || a.admissionNo, patientName: a.patientName, amount: 0 }] }];
+    (visitsByAdm.get(a.admissionNo) || []).forEach((v) => {
+      const name = ADMIT_REPORT_DEPT[String(v.department || '').toUpperCase()] || v.department || 'MISC';
+      let d = depts.find((x) => x.dept === name);
+      if (!d) { d = { dept: name, slip: 0, amount: 0, slips: [] }; depts.push(d); }
+      const amount = Number(v.totalAmount) || 0;
+      d.slip += 1;
+      d.amount += amount;
+      d.slips.push({ slipNo: v.serialNo, patientName: v.patientName, amount });
+    });
+    return {
+      admissionNo: a.admissionNo,
+      patientName: a.patientName,
+      employeeName: empName.get(a.panelEmployeeId) || null,
+      companyName: compName.get(a.panelCompanyId) || null,
+      status: LIVE_ADMISSION_STATUS[a.status],
+      admitDate: a.createdAt,
+      dischargeDate: disDate.get(a.id) || null,
+      slip: depts.reduce((s, d) => s + d.slip, 0),
+      amount: depts.reduce((s, d) => s + d.amount, 0),
+      depts,
+    };
+  });
 }
 
 // Panels > Reports > Doctor Wise Statement — bulk import for the legacy

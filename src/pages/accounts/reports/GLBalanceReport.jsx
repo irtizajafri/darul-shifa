@@ -4,6 +4,7 @@ import { ArrowLeft, BookOpen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { openReportPreview } from './reportPreview';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -201,8 +202,8 @@ export default function GLBalanceReport() {
 
   const handleGenerate = async () => {
     setLoading(true);
-    // Print window opened on the click, before the fetch (popup blockers).
-    const printWin = openPrintWindow('width=1000,height=800');
+    // Opens the report's preview (toolbar: Print, Excel, Refresh…) once it's built.
+    const printWin = openReportPreview({ navigate, entityType, reportKey: 'gl-balance-report', title: 'GL Balance Report', regenerate: () => handleGenerate() });
     try {
       const mainGl = mainGLs.find((g) => String(g.id) === String(mainGlId));
       const subGl = subGLs.find((g) => String(g.id) === String(subGlId));

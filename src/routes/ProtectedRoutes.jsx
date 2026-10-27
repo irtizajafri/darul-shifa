@@ -36,6 +36,7 @@ import ConsultantPaymentHistory from '../pages/accounts/reports/ConsultantPaymen
 import SupplierPaymentHistory from '../pages/accounts/reports/SupplierPaymentHistory';
 import UnpresentedChequeList from '../pages/accounts/reports/UnpresentedChequeList';
 import ChequeWiseVoucherSummary from '../pages/accounts/reports/ChequeWiseVoucherSummary';
+import AccountsReportView from '../pages/accounts/reports/AccountsReportView';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import ConsultantOPD from '../pages/clinic/ConsultantOPD';
 import EmergencyOPD from '../pages/clinic/EmergencyOPD';
@@ -273,6 +274,7 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/reports/supplier-payment-history" element={<SupplierPaymentHistory />} />
         <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<UnpresentedChequeList />} />
         <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<ChequeWiseVoucherSummary />} />
+        <Route path="accounts/:entityType/reports/:reportKey/view" element={<AccountsReportView />} />
         <Route path="accounts/:entityType/reports/*" element={<ComingSoon />} />
       </Route>
       <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />
@@ -310,6 +312,7 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/reports/supplier-payment-history" element={<PermissionGuard module="accounts"><SupplierPaymentHistory /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts"><UnpresentedChequeList /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts"><ChequeWiseVoucherSummary /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts"><AccountsReportView /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts"><ComingSoon /></PermissionGuard>} />
 
       <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />

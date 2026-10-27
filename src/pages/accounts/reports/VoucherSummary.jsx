@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { openReportPreview } from './reportPreview';
 import './VoucherReprint.scss';
 
 const ACCOUNTS_API  = 'http://localhost:5001/api/accounts';
@@ -324,8 +325,8 @@ export default function VoucherSummary() {
 
   const handlePrint = async () => {
     setLoading(true);
-    // Print window opened on the click, before the fetch (popup blockers).
-    const printWin = openPrintWindow('width=1000,height=800');
+    // Opens the report's preview (toolbar: Print, Excel, Refresh…) once it's built.
+    const printWin = openReportPreview({ navigate, entityType, reportKey: 'voucher-summary', title: 'Voucher Summary', regenerate: () => handlePrint() });
     try {
       const p = new URLSearchParams({ entityType });
       if (filters.voucherFrom)   p.set('voucherFrom',   filters.voucherFrom);

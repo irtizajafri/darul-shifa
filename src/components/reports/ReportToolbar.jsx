@@ -12,12 +12,13 @@ import './ReportToolbar.scss';
 // buttons. Leave a handler out to hide that button.
 //
 // The Clinic menu bar sits above it on every report (owner, 2026-10-23 —
-// some reports had it, most didn't), so pages don't add their own.
-export default function ReportToolbar({ onBack, onPrint, onExport, onRefresh, refreshing = false, children, right, title }) {
+// some reports had it, most didn't), so pages don't add their own. Accounts
+// reports pass menuBar={null} — they have no Clinic menu.
+export default function ReportToolbar({ onBack, onPrint, onExport, onRefresh, refreshing = false, children, right, title, menuBar = <ClinicMenuBar /> }) {
   const navigate = useNavigate();
   return (
     <>
-      <ClinicMenuBar />
+      {menuBar}
       <div className="rpt-sticky no-print">
         <div className="rpt-toolbar">
           <div className="rpt-toolbar-left">

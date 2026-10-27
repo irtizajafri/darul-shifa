@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { openReportPreview } from './reportPreview';
 
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 const ACCOUNTS_API = 'http://localhost:5001/api/accounts';
@@ -140,8 +141,8 @@ export default function ConsultantPaymentHistory() {
 
   const handleGenerate = async () => {
     setLoading(true);
-    // Print window opened on the click, before the fetch (popup blockers).
-    const printWin = openPrintWindow('width=1000,height=800');
+    // Opens the report's preview (toolbar: Print, Excel, Refresh…) once it's built.
+    const printWin = openReportPreview({ navigate, entityType, reportKey: 'consultant-payment-history', title: 'Consultant Payment History', regenerate: () => handleGenerate() });
     try {
       const from = doctors.find((d) => String(d.id) === String(consultantFromId));
       const to = doctors.find((d) => String(d.id) === String(consultantToId));

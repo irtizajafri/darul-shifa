@@ -63,10 +63,15 @@ export default function SearchableSelect({
   const listRef = useRef(null);
 
   const term = searchTerm.trim().toLowerCase();
+  // Dots / spaces / dashes don't have to be typed: "pcsir" finds
+  // "P.C.S.I.R" (owner, 2026-10-27).
+  const squash = (v) => v.replace(/[^a-z0-9]/g, '');
+  const squashedTerm = squash(term);
   const allMatches = term
     ? options.filter((opt) => {
         try {
-          return getLabel(opt).toLowerCase().includes(term);
+          const label = getLabel(opt).toLowerCase();
+          return label.includes(term) || (squashedTerm !== '' && squash(label).includes(squashedTerm));
         } catch {
           return true;
         }

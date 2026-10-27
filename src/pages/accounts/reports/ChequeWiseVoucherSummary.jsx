@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, CheckSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { openReportPreview } from './reportPreview';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -104,8 +105,8 @@ export default function ChequeWiseVoucherSummary() {
   const handlePrint = async () => {
     if (!selectedModes.length) { toast.error('Kam se kam ek Mode select karo'); return; }
     setLoading(true);
-    // Print window opened on the click, before the fetch (popup blockers).
-    const printWin = openPrintWindow('width=1000,height=800');
+    // Opens the report's preview (toolbar: Print, Excel, Refresh…) once it's built.
+    const printWin = openReportPreview({ navigate, entityType, reportKey: 'cheque-wise-voucher-summary', title: 'Cheque Wise Voucher Summary', regenerate: () => handlePrint() });
     try {
       const params = new URLSearchParams({ entityType, dateFrom, dateTo, modes: selectedModes.join(',') });
       const r = await fetch(`${API}/cheque-wise-voucher-summary?${params}`);

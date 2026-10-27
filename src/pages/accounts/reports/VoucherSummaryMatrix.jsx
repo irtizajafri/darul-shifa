@@ -4,6 +4,7 @@ import { ArrowLeft, Printer } from 'lucide-react';
 import toast from 'react-hot-toast';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { openReportPreview } from './reportPreview';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -100,8 +101,8 @@ export default function VoucherSummaryMatrix() {
 
   const handlePrint = async () => {
     setLoading(true);
-    // Print window opened on the click, before the fetch (popup blockers).
-    const printWin = openPrintWindow('width=1000,height=800');
+    // Opens the report's preview (toolbar: Print, Excel, Refresh…) once it's built.
+    const printWin = openReportPreview({ navigate, entityType, reportKey: 'voucher-summary-matrix', title: 'Expense Summary Matrix', regenerate: () => handlePrint() });
     try {
       const glFrom = mainGLs.find((g) => String(g.id) === String(glFromId));
       const glTo = mainGLs.find((g) => String(g.id) === String(glToId));

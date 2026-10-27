@@ -11,27 +11,35 @@ import '../parameters/ClinicParameterPage.scss';
 import { useShallow } from 'zustand/react/shallow';
 import usePagedList from '../../../hooks/usePagedList';
 import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
+import SearchableSelect from '../../../components/ui/SearchableSelect';
 
 export default function ClinicPanelEmployeeListPage() {
-  const { panelEmployees, loading, fetchPanelEmployees, deletePanelEmployee } = useClinicStore(useShallow((s) => ({ panelEmployees: s.panelEmployees, loading: s.loading, fetchPanelEmployees: s.fetchPanelEmployees, deletePanelEmployee: s.deletePanelEmployee })));
+  const { panelEmployees, loading, fetchPanelEmployees, deletePanelEmployee, panelCompanies, fetchPanelCompanies } = useClinicStore(useShallow((s) => ({ panelEmployees: s.panelEmployees, loading: s.loading, fetchPanelEmployees: s.fetchPanelEmployees, deletePanelEmployee: s.deletePanelEmployee, panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies })));
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const [companyId, setCompanyId] = useState('ALL');
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  useEffect(() => { fetchPanelEmployees(); }, [fetchPanelEmployees]);
+  useEffect(() => { fetchPanelEmployees(); fetchPanelCompanies(); }, [fetchPanelEmployees, fetchPanelCompanies]);
 
+  // Company filter + search (owner, 2026-10-27): pick a Company to see only
+  // its employees. Every word typed must match the code, name or company —
+  // "mohsin pcsir" finds the Mohsin of P.C.S.I.R, not every Mohsin.
   const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return panelEmployees.filter((e) =>
-      e.empCode.toLowerCase().includes(q) ||
-      e.name.toLowerCase().includes(q) ||
-      (e.company?.name || '').toLowerCase().includes(q)
-    );
-  }, [panelEmployees, query]);
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const squash = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    return panelEmployees.filter((e) => {
+      if (companyId !== 'ALL' && String(e.companyId ?? e.company?.id) !== String(companyId)) return false;
+      if (!words.length) return true;
+      const text = `${e.empCode} ${e.name} ${e.company?.code || ''} ${e.company?.name || ''}`.toLowerCase();
+      const flat = squash(text);
+      return words.every((w) => text.includes(w) || (squash(w) && flat.includes(squash(w))));
+    });
+  }, [panelEmployees, query, companyId]);
 
   // Search runs over all employees; only 300 matches are drawn at a time
   // (3k+ rows made the page slow). Page 1 again when the search changes.
-  const page = usePagedList(filtered.length, query);
+  const page = usePagedList(filtered.length, `${query}|${companyId}`);
   const visible = useMemo(() => (page.limit >= filtered.length ? filtered : filtered.slice(0, page.limit)), [filtered, page.limit]);
 
   async function handleDelete(emp) {
@@ -63,11 +71,21 @@ export default function ClinicPanelEmployeeListPage() {
         />
 
         <div className="cpp-toolbar">
+          <SearchableSelect
+            options={[{ id: 'ALL' }, ...panelCompanies]}
+            value={companyId}
+            onChange={(v) => setCompanyId(v || 'ALL')}
+            getKey={(c) => c.id}
+            getLabel={(c) => (c.id === 'ALL' ? '— Sab companies —' : `${c.code} — ${c.name}`)}
+            clearable={false}
+            size="sm"
+            style={{ width: 280 }}
+          />
           <div className="cpp-search">
             <Search className="cpp-search-icon" />
             <input
               type="text"
-              placeholder="Search by code, name or company..."
+              placeholder="Search by code or name..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="cpp-search-input"

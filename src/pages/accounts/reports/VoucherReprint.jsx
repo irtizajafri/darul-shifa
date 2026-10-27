@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './VoucherReprint.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import ReportToolbar from '../../../components/reports/ReportToolbar';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -299,6 +300,14 @@ export default function VoucherReprint() {
 
   return (
     <div className="vr-page">
+      {/* Same toolbar as the Clinic reports (owner, 2026-10-27). */}
+      <ReportToolbar
+        menuBar={null}
+        title="Voucher Reprint"
+        onPrint={vouchers?.length ? handlePrint : undefined}
+        onRefresh={searched ? handleSearch : undefined}
+        refreshing={loading}
+      />
 
       {/* Breadcrumb */}
       <div className="vr-breadcrumb">
