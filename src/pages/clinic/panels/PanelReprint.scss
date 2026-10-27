@@ -1,0 +1,79 @@
+// Panels > Reports > Reprint Panel Bill/Form — the Clinic Reprint window
+// (ReprintFilter.scss) with the panel file list under it.
+.prp-center {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 24px 16px;
+  overflow: auto;
+}
+
+.prp-list {
+  width: 100%;
+  max-width: 760px;
+  background: #fff;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.prp-list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 7px 12px;
+  background: #eef2f7;
+  border-bottom: 1px solid #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.prp-list-hint {
+  margin-left: auto;
+  font-weight: 400;
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.prp-list-scroll {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.prp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+
+  th {
+    position: sticky;
+    top: 0;
+    background: #f8fafc;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid #cbd5e1;
+    color: #334155;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 5px 10px;
+    border-bottom: 1px solid #eef2f7;
+    color: #1e293b;
+  }
+
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: #f1f5f9; }
+  .prp-row--active td { background: #dbeafe; }
+}
+
+.prp-status { text-transform: capitalize; }
+
+.prp-empty {
+  text-align: center;
+  color: #94a3b8;
+  padding: 18px 10px !important;
+  cursor: default;
+}

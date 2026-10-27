@@ -317,7 +317,7 @@ function printPanelReport(printHostEl, reportType, targetWindow) {
 // margins through CSS named pages (`page: <name>` + `@page <name>`), so
 // every page of each report — continuation pages too — keeps exactly the
 // margin it had when printed on its own.
-const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
+export const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
 const PRINT_WINDOW_FEATURES = 'width=900,height=800';
 function printAllPanelReports(printHostEl, targetWindow) {
   const namedPages = SAVE_REPORTS.map((type) => `
@@ -2392,7 +2392,8 @@ const VIEWER_REPORTS = [
   { key: 'medicine', Template: MedicineBillPrintTemplate },
   { key: 'diagnostic', Template: DiagnosticBillPrintTemplate },
 ];
-function PanelReportViewer({ bill, reports, onClose }) {
+// Also used by Panels > Reports > Reprint Panel Bill/Form (PanelReprint.jsx).
+export function PanelReportViewer({ bill, reports, onClose }) {
   const shown = VIEWER_REPORTS.filter((r) => reports.includes(r.key));
   const allRef = useRef(null);
   useEffect(() => {

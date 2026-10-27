@@ -7,6 +7,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import DischargeCertificateButton from '../../components/clinic/DischargeCertificateButton';
 import SearchableSelect from '../../components/ui/SearchableSelect';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { buildProvisionalBillPrintHtml } from './provisionalBillPrintUtils';
 import './Admission.scss';
 import './AdmissionAdjustment.scss';
@@ -34,15 +35,16 @@ function todayIso() { return new Date().toISOString().slice(0, 10); }
 
 
 // ── Admission Lookup Modal — active/admitted patients only ────────────────────
-// Cash / Panel switch: the button shows which list is on screen — "Cash"
-// (default) = non-panel admissions only, click → "Panel" = panel admissions
-// only, click again → back to Cash. searchAdmissions is
-// searchActiveAdmissionsForProvisionalBill(q, category).
-function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
+// category is fixed by the page (owner, 2026-10-27): Billing → Provisional
+// Bill lists Cash (every non-panel) files, Panels → Transaction → Provisional
+// Bill lists Panel files — no switch between them any more. searchAdmissions
+// is searchActiveAdmissionsForProvisionalBill(q, category).
+// opd (Panels → Transaction → OPD Bill): panel General / Consultant OPD
+// slips instead, each with its OPD Bill's state.
+function AdmissionLookupModal({ onSelect, onClose, searchAdmissions, category, opd = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [category, setCategory] = useState('cash'); // 'cash' | 'panel'
   // "Discharge / Close bhi" — list those files too (e.g. to set their ward)
   const [withDischarged, setWithDischarged] = useState(false);
   const timer = useRef(null);
@@ -72,7 +74,7 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
     <div className="aa-overlay">
       <div className="aa-modal">
         <div className="aa-modal-hdr">
-          <span>Select Admitted Patient</span>
+          <span>{opd ? 'Select Panel Slip — General / Consultant OPD' : `Select Admitted Patient — ${category === 'panel' ? 'Panel' : 'Cash'}`}</span>
           <button className="aa-modal-close" onClick={onClose}><X size={14} /></button>
         </div>
         <div className="aa-modal-search">
@@ -80,23 +82,16 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
           <input
             autoFocus
             className="aa-modal-search-input"
-            placeholder="Search Admission # or Patient Name…"
+            placeholder={opd ? 'Search Slip # or Patient Name…' : 'Search Admission # or Patient Name…'}
             value={q}
             onChange={e => handleQueryChange(e.target.value)}
           />
-          <button
-            type="button"
-            className={`aa-modal-panel-toggle ${category === 'panel' ? 'aa-modal-panel-toggle--active' : 'aa-modal-panel-toggle--cash'}`}
-            onClick={() => setCategory((c) => (c === 'cash' ? 'panel' : 'cash'))}
-            title={category === 'cash' ? 'Abhi Cash patients dikh rahe hain — click karein Panel patients ke liye' : 'Abhi Panel patients dikh rahe hain — click karein Cash patients ke liye'}
-            aria-pressed={category === 'panel'}
-          >
-            {category === 'cash' ? 'Cash' : 'Panel'}
-          </button>
-          <label className="pb-lookup-all" title="Discharge aur Close ho chuki files bhi list mein dikhayein">
-            <input type="checkbox" checked={withDischarged} onChange={(e) => setWithDischarged(e.target.checked)} />
-            Discharge / Close bhi
-          </label>
+          {!opd && (
+            <label className="pb-lookup-all" title="Discharge aur Close ho chuki files bhi list mein dikhayein">
+              <input type="checkbox" checked={withDischarged} onChange={(e) => setWithDischarged(e.target.checked)} />
+              Discharge / Close bhi
+            </label>
+          )}
         </div>
         <div className="aa-modal-body">
           {loading ? (
@@ -104,24 +99,36 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
           ) : (
             <table className="aa-modal-tbl">
               <thead>
-                <tr>
-                  <th>Admission #</th>
-                  <th>Patient</th>
-                  <th>Admission Date</th>
-                  {withDischarged && <th>Status</th>}
-                </tr>
+                {opd ? (
+                  <tr><th>Slip #</th><th>Patient</th><th>Department</th><th>Slip Date</th><th>OPD Bill</th></tr>
+                ) : (
+                  <tr>
+                    <th>Admission #</th>
+                    <th>Patient</th>
+                    <th>Admission Date</th>
+                    {withDischarged && <th>Status</th>}
+                  </tr>
+                )}
               </thead>
               <tbody>
-                {rows.map(r => (
+                {rows.map(r => (opd ? (
+                  <tr key={r.id} onClick={() => onSelect(r)}>
+                    <td>{r.admissionNo}</td>
+                    <td>{r.patientName}</td>
+                    <td>{r.department}</td>
+                    <td>{fmtDateTime(r.createdAt)}</td>
+                    <td>{{ active: 'Open', closed: 'Closed' }[r.status] || '—'}</td>
+                  </tr>
+                ) : (
                   <tr key={r.id} onClick={() => onSelect(r)}>
                     <td>{r.admissionNo}</td>
                     <td>{r.patientName}</td>
                     <td>{fmtDateTime(r.createdAt)}</td>
                     {withDischarged && <td>{{ active: 'Admit', discharge: 'Discharge', closed: 'Closed' }[r.status] || r.status}</td>}
                   </tr>
-                ))}
+                )))}
                 {!rows.length && (
-                  <tr><td colSpan={withDischarged ? 4 : 3} className="aa-td-empty">Koi admit patient nahi mila</td></tr>
+                  <tr><td colSpan={opd ? 5 : (withDischarged ? 4 : 3)} className="aa-td-empty">{opd ? 'Koi panel General / Consultant slip nahi mili' : 'Koi admit patient nahi mila'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -412,7 +419,21 @@ function MedicineAutocomplete({ value, onTextChange, onSelect }) {
 const PATIENT_TYPE_OPTIONS = ['In House', 'Discharge'];
 const TABS = ['Provisional Bill', 'Diagnostic Bill', 'Pharmacy Bill'];
 
-export default function ProvisionalBill() {
+// One screen, two doors (owner, 2026-10-27): Billing → Provisional Bill is
+// Cash files only, Panels → Transaction → Provisional Bill (`panel`) is Panel
+// files only. A file of the other kind — typed, from the Bed screen or a
+// link — is refused with a message pointing to the right menu.
+const wrongProvisionalDoorMessage = (isPanelFile, panel) => {
+  if (isPanelFile && !panel) return 'Yeh panel file hai — Panels → Transaction → Provisional Bill se kholein';
+  if (!isPanelFile && panel) return 'Yeh panel file nahi — Billing → Provisional Bill se kholein';
+  return null;
+};
+
+// `opd` — Panels → Transaction → OPD Bill (owner, 2026-10-27): the same
+// screen for a panel OPD patient's OPD Bill (see getPanelOpdBillDetail) —
+// opened from a General / Consultant slip, no ward / bed / surgery /
+// discharge; Close OPD Bill instead of the Discharge Certificate.
+export default function ProvisionalBill({ panel = false, opd = false }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
@@ -438,7 +459,34 @@ export default function ProvisionalBill() {
     deleteProvisionalPharmacyItem,
     setPharmacyBillExcluded,
     setDiagnosticBillExcluded,
-  } = useClinicStore(useShallow((s) => ({ roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchAvailableBeds: s.fetchAvailableBeds, shiftAdmissionBed: s.shiftAdmissionBed, correctAdmissionWard: s.correctAdmissionWard, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, dischargeTypes: s.dischargeTypes, fetchDischargeTypes: s.fetchDischargeTypes, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, searchActiveAdmissionsForProvisionalBill: s.searchActiveAdmissionsForProvisionalBill, fetchProvisionalBillDetail: s.fetchProvisionalBillDetail, addProvisionalBillItem: s.addProvisionalBillItem, addProvisionalBillItemFromVisit: s.addProvisionalBillItemFromVisit, updateProvisionalBillItem: s.updateProvisionalBillItem, deleteProvisionalBillItem: s.deleteProvisionalBillItem, updateProvisionalBillHeader: s.updateProvisionalBillHeader, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, createPharmacyStore: s.createPharmacyStore, addProvisionalPharmacyItem: s.addProvisionalPharmacyItem, deleteProvisionalPharmacyItem: s.deleteProvisionalPharmacyItem, setPharmacyBillExcluded: s.setPharmacyBillExcluded, setDiagnosticBillExcluded: s.setDiagnosticBillExcluded })));
+    searchPanelOpdBills, openPanelOpdBill, fetchPanelOpdBillDetail,
+    addPanelOpdBillItem, addPanelOpdBillItemFromVisit, updatePanelOpdBillItem, deletePanelOpdBillItem,
+    addPanelOpdBillPharmacyItem, deletePanelOpdBillPharmacyItem, setPanelOpdBillExcluded, closePanelOpdBill,
+  } = useClinicStore(useShallow((s) => ({ searchPanelOpdBills: s.searchPanelOpdBills, openPanelOpdBill: s.openPanelOpdBill, fetchPanelOpdBillDetail: s.fetchPanelOpdBillDetail, addPanelOpdBillItem: s.addPanelOpdBillItem, addPanelOpdBillItemFromVisit: s.addPanelOpdBillItemFromVisit, updatePanelOpdBillItem: s.updatePanelOpdBillItem, deletePanelOpdBillItem: s.deletePanelOpdBillItem, addPanelOpdBillPharmacyItem: s.addPanelOpdBillPharmacyItem, deletePanelOpdBillPharmacyItem: s.deletePanelOpdBillPharmacyItem, setPanelOpdBillExcluded: s.setPanelOpdBillExcluded, closePanelOpdBill: s.closePanelOpdBill, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchAvailableBeds: s.fetchAvailableBeds, shiftAdmissionBed: s.shiftAdmissionBed, correctAdmissionWard: s.correctAdmissionWard, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, dischargeTypes: s.dischargeTypes, fetchDischargeTypes: s.fetchDischargeTypes, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, searchActiveAdmissionsForProvisionalBill: s.searchActiveAdmissionsForProvisionalBill, fetchProvisionalBillDetail: s.fetchProvisionalBillDetail, addProvisionalBillItem: s.addProvisionalBillItem, addProvisionalBillItemFromVisit: s.addProvisionalBillItemFromVisit, updateProvisionalBillItem: s.updateProvisionalBillItem, deleteProvisionalBillItem: s.deleteProvisionalBillItem, updateProvisionalBillHeader: s.updateProvisionalBillHeader, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, createPharmacyStore: s.createPharmacyStore, addProvisionalPharmacyItem: s.addProvisionalPharmacyItem, deleteProvisionalPharmacyItem: s.deleteProvisionalPharmacyItem, setPharmacyBillExcluded: s.setPharmacyBillExcluded, setDiagnosticBillExcluded: s.setDiagnosticBillExcluded })));
+
+  // Same calls on an admission's Provisional Bill or an OPD Bill.
+  const api = opd ? {
+    fetchDetail: fetchPanelOpdBillDetail,
+    addItem: addPanelOpdBillItem,
+    addItemFromVisit: addPanelOpdBillItemFromVisit,
+    updateItem: updatePanelOpdBillItem,
+    deleteItem: deletePanelOpdBillItem,
+    addPharmacyItem: addPanelOpdBillPharmacyItem,
+    deletePharmacyItem: deletePanelOpdBillPharmacyItem,
+    setPharmacyExcluded: (id, excluded) => setPanelOpdBillExcluded(id, { pharmacy: excluded }),
+    setDiagnosticExcluded: (id, excluded) => setPanelOpdBillExcluded(id, { diagnostic: excluded }),
+  } : {
+    fetchDetail: fetchProvisionalBillDetail,
+    addItem: addProvisionalBillItem,
+    addItemFromVisit: addProvisionalBillItemFromVisit,
+    updateItem: updateProvisionalBillItem,
+    deleteItem: deleteProvisionalBillItem,
+    addPharmacyItem: addProvisionalPharmacyItem,
+    deletePharmacyItem: deleteProvisionalPharmacyItem,
+    setPharmacyExcluded: setPharmacyBillExcluded,
+    setDiagnosticExcluded: setDiagnosticBillExcluded,
+  };
+  const fetchDetail = api.fetchDetail;
 
   const [admissionId, setAdmissionId] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -498,7 +546,9 @@ export default function ProvisionalBill() {
   const loadDetail = useCallback(async (id, isFreshSelect) => {
     setLoading(true);
     try {
-      const d = await fetchProvisionalBillDetail(id);
+      const d = await fetchDetail(id);
+      const wrongDoor = opd ? null : wrongProvisionalDoorMessage(d.admission.patientCategory === 'panel', panel);
+      if (wrongDoor) { toast.error(wrongDoor); return null; }
       setDetail(d);
       setAdmissionId(d.admission.id);
       setSurgery(!!d.admission.surgery);
@@ -517,7 +567,7 @@ export default function ProvisionalBill() {
     } finally {
       setLoading(false);
     }
-  }, [fetchProvisionalBillDetail]);
+  }, [fetchDetail, panel, opd]);
 
   async function handleWardChange({ roomCategoryId, bedId, shiftedAt }) {
     if (wardModal === 'shift') {
@@ -548,14 +598,26 @@ export default function ProvisionalBill() {
     setRow(r => ({ ...r, billHeadId: '', qty: '1', rate: '', remarks: '' }));
     setEditingItemId(null);
     setPharmRow(emptyPharmRow);
-    await loadDetail(rowSel.id, true);
+    let id = rowSel.id;
+    if (opd) {
+      // Slip → its OPD Bill (a General / Consultant slip opens a new one).
+      try {
+        id = (await openPanelOpdBill(rowSel.admissionNo, printedBy)).id;
+      } catch (e) {
+        toast.error(e.message || 'OPD Bill nahi khula');
+        setShowLookup(true);
+        return;
+      }
+    }
+    const d = await loadDetail(id, true);
+    if (!d) setShowLookup(true);
   }
 
   // Reprint (Report > Reprint > Provisional Bill): ?admissionNo=...&autoprint=1
   useEffect(() => {
     const admissionNo = searchParams.get('admissionNo');
     const autoprint = searchParams.get('autoprint');
-    if (!admissionNo) return;
+    if (!admissionNo || opd) return;
     (async () => {
       try {
         const rows = await searchAdmissionsForProvisionalBill(admissionNo);
@@ -623,11 +685,11 @@ export default function ProvisionalBill() {
     setAddingRow(true);
     try {
       if (editingItemId) {
-        await updateProvisionalBillItem(editingItemId, row);
+        await api.updateItem(editingItemId, row);
         toast.success('Row updated');
         setEditingItemId(null);
       } else {
-        await addProvisionalBillItem(admissionId, row);
+        await api.addItem(admissionId, row);
       }
       setRow({ roomCategoryId: row.roomCategoryId, patientType: row.patientType, billHeadId: '', qty: '1', rate: '', remarks: '' });
       await loadDetail(admissionId);
@@ -669,7 +731,7 @@ export default function ProvisionalBill() {
     if (isNaN(amt) || amt < 0) { toast.error('Valid amount enter karo'); return; }
     setAddingSlip(true);
     try {
-      await addProvisionalBillItemFromVisit(admissionId, slipModal.id, amt);
+      await api.addItemFromVisit(admissionId, slipModal.id, amt);
       toast.success('Slip Provisional Bill mein add ho gayi');
       setSlipModal(null);
       await loadDetail(admissionId);
@@ -682,7 +744,7 @@ export default function ProvisionalBill() {
 
   async function handleDeleteRow(itemId) {
     try {
-      await deleteProvisionalBillItem(itemId);
+      await api.deleteItem(itemId);
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Row delete nahi hui');
@@ -696,7 +758,7 @@ export default function ProvisionalBill() {
     if (!pharmRow.medDate) return toast.error('Date select karo');
     setAddingPharmRow(true);
     try {
-      await addProvisionalPharmacyItem(admissionId, {
+      await api.addPharmacyItem(admissionId, {
         ...pharmRow,
         createdByName: user?.name || user?.username || user?.email || null,
       });
@@ -713,7 +775,7 @@ export default function ProvisionalBill() {
 
   async function handleDeletePharmacyItem(itemId) {
     try {
-      await deleteProvisionalPharmacyItem(itemId);
+      await api.deletePharmacyItem(itemId);
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Row delete nahi hui');
@@ -725,30 +787,46 @@ export default function ProvisionalBill() {
   // invoices / OPD visits those totals are computed from.
   async function handleExcludePharmacy() {
     try {
-      await setPharmacyBillExcluded(admissionId, true);
+      await api.setPharmacyExcluded(admissionId, true);
       await loadDetail(admissionId);
     } catch (e) { toast.error(e.message || 'Failed'); }
   }
 
   async function handleRestorePharmacy() {
     try {
-      await setPharmacyBillExcluded(admissionId, false);
+      await api.setPharmacyExcluded(admissionId, false);
       await loadDetail(admissionId);
     } catch (e) { toast.error(e.message || 'Failed'); }
   }
 
   async function handleExcludeDiagnostic() {
     try {
-      await setDiagnosticBillExcluded(admissionId, true);
+      await api.setDiagnosticExcluded(admissionId, true);
       await loadDetail(admissionId);
     } catch (e) { toast.error(e.message || 'Failed'); }
   }
 
   async function handleRestoreDiagnostic() {
     try {
-      await setDiagnosticBillExcluded(admissionId, false);
+      await api.setDiagnosticExcluded(admissionId, false);
       await loadDetail(admissionId);
     } catch (e) { toast.error(e.message || 'Failed'); }
+  }
+
+  async function handleCloseOpdBill() {
+    const ok = await confirmDialog({
+      title: 'Close OPD Bill',
+      message: `OPD Bill (Slip # ${detail.admission.admissionNo}) close karein? Is ke baad is patient ki nayi slips is bill mein nahi aayengi — agla OPD Bill nayi General / Consultant slip se khulega.`,
+      confirmLabel: 'Close OPD Bill',
+    });
+    if (!ok) return;
+    try {
+      await closePanelOpdBill(admissionId, printedBy);
+      toast.success('OPD Bill close ho gaya');
+      await loadDetail(admissionId);
+    } catch (e) {
+      toast.error(e.message || 'OPD Bill close nahi hua');
+    }
   }
 
   async function handleAddStore() {
@@ -785,7 +863,9 @@ export default function ProvisionalBill() {
           // already-closed Provisional Bill (below, via ?admissionNo=) still
           // uses the status-agnostic search — that's a historical record,
           // not a "start new work" lookup.
-          searchAdmissions={searchActiveAdmissionsForProvisionalBill}
+          searchAdmissions={opd ? searchPanelOpdBills : searchActiveAdmissionsForProvisionalBill}
+          category={panel ? 'panel' : 'cash'}
+          opd={opd}
         />
       )}
       {showPatientInfo && detail && <PatientInfoModal detail={detail} onClose={() => setShowPatientInfo(false)} />}
@@ -818,7 +898,7 @@ export default function ProvisionalBill() {
               <Printer size={16} />
             </button>
           </div>
-          <span className="aa-toolbar-title">Provisional Bill</span>
+          <span className="aa-toolbar-title">{opd ? 'OPD Bill' : panel ? 'Panel Provisional Bill' : 'Provisional Bill'}</span>
         </div>
 
         {loading && <div className="aa-loading">Loading…</div>}
@@ -827,9 +907,9 @@ export default function ProvisionalBill() {
           <div className="pb-body">
             <div className="pb-card">
               <div className="pb-hdr-row">
-                <label className="pb-hdr-lbl">Admission #</label>
+                <label className="pb-hdr-lbl">{opd ? 'Slip #' : 'Admission #'}</label>
                 <div className="pb-hdr-value">{detail.admission.admissionNo}</div>
-                <button className="pb-lookup-btn" onClick={() => setShowLookup(true)} title="Search admissions">
+                <button className="pb-lookup-btn" onClick={() => setShowLookup(true)} title={opd ? 'Search slips' : 'Search admissions'}>
                   <Search size={13} />
                 </button>
                 <span className="pb-inline-patient">{detail.admission.patientTitle} {detail.admission.patientName}</span>
@@ -843,10 +923,30 @@ export default function ProvisionalBill() {
                 <div className="pb-hdr-value">{detail.consultant?.name || '—'}</div>
                 <label className="pb-hdr-lbl">Status</label>
                 <span className={`pb-status-badge pb-status-badge--${detail.admission.status}`}>
-                  {{ active: 'Admit', discharge: 'Discharge', closed: 'Closed', wipeout: 'Wipeout' }[detail.admission.status] || detail.admission.status}
+                  {(opd ? { active: 'Open', closed: 'Closed' } : { active: 'Admit', discharge: 'Discharge', closed: 'Closed', wipeout: 'Wipeout' })[detail.admission.status] || detail.admission.status}
                 </span>
+                {opd && detail.panelCompanyName && (
+                  <>
+                    <label className="pb-hdr-lbl">Company</label>
+                    <div className="pb-hdr-value">{detail.panelCompanyName}</div>
+                  </>
+                )}
               </div>
 
+              {opd && (
+                <div className="pb-hdr-row">
+                  <label className="pb-hdr-lbl">Slips</label>
+                  <div className="pb-hdr-value pb-opd-slips">
+                    {detail.slips.map((sl) => `${sl.serialNo} (${sl.department}, ${fmtDate(sl.date)})`).join(' · ') || '—'}
+                  </div>
+                  <button className="pb-info-btn" onClick={() => setShowPatientInfo(true)}>
+                    Patient Info. - Received: {fmt2(detail.patientInfo.amountReceived)}
+                  </button>
+                  <button className="pb-info-btn" onClick={() => setShowBalanceInfo(true)}>Balance Info.</button>
+                </div>
+              )}
+
+              {!opd && (<>
               <div className="pb-hdr-row">
                 <label className="pb-hdr-lbl">Ward</label>
                 <div className="pb-hdr-value">{detail.roomCategory?.name || '— (ward nahi)'}</div>
@@ -897,6 +997,7 @@ export default function ProvisionalBill() {
                 </button>
                 <button className="pb-info-btn" onClick={() => setShowBalanceInfo(true)}>Balance Info.</button>
               </div>
+              </>)}
 
               {detail.pendingSlips.length > 0 && (
                 <div className="pb-pending-box">
@@ -1331,18 +1432,26 @@ export default function ProvisionalBill() {
                 never blocks the certificate — everyone else still needs
                 Balance cleared to 0 first. Only offered while still admitted
                 — an already-discharged/closed file has nothing to discharge. */}
-            <DischargeCertificateButton
-              admissionId={detail.admission.id}
-              visible={detail.admission.status === 'active' && (detail.balanceInfo.balance === 0 || detail.admission.patientCategory === 'panel')}
-              onDischarged={() => loadDetail(admissionId)}
-            />
+            {opd ? (
+              detail.admission.status === 'active' && (
+                <div className="dc-trigger-row">
+                  <button className="dc-trigger-btn" onClick={handleCloseOpdBill}>Close OPD Bill</button>
+                </div>
+              )
+            ) : (
+              <DischargeCertificateButton
+                admissionId={detail.admission.id}
+                visible={detail.admission.status === 'active' && (detail.balanceInfo.balance === 0 || detail.admission.patientCategory === 'panel')}
+                onDischarged={() => loadDetail(admissionId)}
+              />
+            )}
 
             <div className="pb-footer">
               <div className="pb-footer-amt">Bill Amount <span>{fmt2(detail.balanceInfo.billAmount)}</span></div>
               <div className="pb-footer-amt pb-footer-amt--discount">Discount <span>-{fmt2(detail.balanceInfo.discount)}</span></div>
               <div className="pb-footer-amt pb-footer-amt--refund">Refund <span>{fmt2(detail.balanceInfo.refund)}</span></div>
               <div className="pb-footer-amt pb-footer-amt--balance">Balance <span>{fmt2(detail.balanceInfo.balance)}</span></div>
-              <button className="pb-close-btn" onClick={resetToLookup}>Select Another Admission</button>
+              <button className="pb-close-btn" onClick={resetToLookup}>{opd ? 'Select Another Slip' : 'Select Another Admission'}</button>
             </div>
           </div>
         )}

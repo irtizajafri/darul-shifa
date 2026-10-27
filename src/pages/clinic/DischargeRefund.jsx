@@ -136,25 +136,26 @@ function calcFeeSplitPreview(amount, paymentType, normalFees) {
 
 // ── Admission Lookup Modal — only admissions already 'discharge'd (patient
 // leaves via the Discharge Certificate now, not here — see below) ─────────────
-function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
+// opd (Panels → Transaction → Distribution OPD): closed OPD Bills instead.
+function AdmissionLookupModal({ onSelect, onClose, searchAdmissions, category, opd = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const timer = useRef(null);
 
   useEffect(() => {
-    searchAdmissions('')
+    searchAdmissions('', category)
       .then((data) => setRows(data || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [searchAdmissions]);
+  }, [searchAdmissions, category]);
 
   function handleQueryChange(val) {
     setQ(val);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
       setLoading(true);
-      searchAdmissions(val)
+      searchAdmissions(val, category)
         .then((data) => setRows(data || []))
         .catch(() => setRows([]))
         .finally(() => setLoading(false));
@@ -165,7 +166,7 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
     <div className="aa-overlay">
       <div className="aa-modal">
         <div className="aa-modal-hdr">
-          <span>Select Discharged Patient</span>
+          <span>{opd ? 'Select OPD Bill — closed OPD Bills' : `Select Discharged Patient — ${category === 'panel' ? 'Panel' : 'Cash'}`}</span>
           <button className="aa-modal-close" onClick={onClose}><X size={14} /></button>
         </div>
         <div className="aa-modal-search">
@@ -185,9 +186,9 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
             <table className="aa-modal-tbl">
               <thead>
                 <tr>
-                  <th>Admission #</th>
+                  <th>{opd ? 'Slip #' : 'Admission #'}</th>
                   <th>Patient</th>
-                  <th>Admission Date</th>
+                  <th>{opd ? 'OPD Bill Date' : 'Admission Date'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -199,7 +200,7 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
                   </tr>
                 ))}
                 {!rows.length && (
-                  <tr><td colSpan={3} className="aa-td-empty">Koi discharged patient nahi mila</td></tr>
+                  <tr><td colSpan={3} className="aa-td-empty">{opd ? 'Koi closed OPD Bill nahi mila' : 'Koi discharged patient nahi mila'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -210,7 +211,20 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions }) {
   );
 }
 
-export default function DischargeRefund() {
+// One screen, two doors (owner, 2026-10-27): Billing → Discharge and Refund
+// is Cash files only, Panels → Transaction → Distribution (`panel`) is Panel
+// files only — same rule as Provisional Bill. A file of the other kind is
+// refused with a message pointing to the right menu. The print stays the
+// Itemised Medical Bill either way.
+const wrongDischargeDoorMessage = (isPanelFile, panel) => {
+  if (isPanelFile && !panel) return 'Yeh panel file hai — Panels → Transaction → Distribution se kholein';
+  if (!isPanelFile && panel) return 'Yeh panel file nahi — Billing → Discharge and Refund se kholein';
+  return null;
+};
+
+// `opd` — Panels → Transaction → Distribution OPD (owner, 2026-10-27): the
+// same screen for a closed OPD Bill (see getPanelOpdDistDetail).
+export default function DischargeRefund({ panel = false, opd = false }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user } = useAuthStore();
@@ -231,7 +245,26 @@ export default function DischargeRefund() {
     updateDischargeBillItem,
     deleteDischargeBillItem,
     finalizeDischarge,
-  } = useClinicStore(useShallow((s) => ({ billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, doctors: s.doctors, fetchDoctors: s.fetchDoctors, fetchDoctorSubDeptsForDepartment: s.fetchDoctorSubDeptsForDepartment, searchAdmissionsForDischargeRefund: s.searchAdmissionsForDischargeRefund, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, fetchDischargeBillDetail: s.fetchDischargeBillDetail, addDischargeBillItem: s.addDischargeBillItem, updateDischargeBillItem: s.updateDischargeBillItem, deleteDischargeBillItem: s.deleteDischargeBillItem, finalizeDischarge: s.finalizeDischarge })));
+    searchPanelOpdDistributions, fetchPanelOpdDistDetail, addPanelOpdDistItem, updatePanelOpdDistItem, deletePanelOpdDistItem, finalizePanelOpdDist,
+  } = useClinicStore(useShallow((s) => ({ searchPanelOpdDistributions: s.searchPanelOpdDistributions, fetchPanelOpdDistDetail: s.fetchPanelOpdDistDetail, addPanelOpdDistItem: s.addPanelOpdDistItem, updatePanelOpdDistItem: s.updatePanelOpdDistItem, deletePanelOpdDistItem: s.deletePanelOpdDistItem, finalizePanelOpdDist: s.finalizePanelOpdDist, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, doctors: s.doctors, fetchDoctors: s.fetchDoctors, fetchDoctorSubDeptsForDepartment: s.fetchDoctorSubDeptsForDepartment, searchAdmissionsForDischargeRefund: s.searchAdmissionsForDischargeRefund, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, fetchDischargeBillDetail: s.fetchDischargeBillDetail, addDischargeBillItem: s.addDischargeBillItem, updateDischargeBillItem: s.updateDischargeBillItem, deleteDischargeBillItem: s.deleteDischargeBillItem, finalizeDischarge: s.finalizeDischarge })));
+
+  // Same calls on an admission's Discharge Bill or an OPD Bill's Distribution.
+  const api = opd ? {
+    search: searchPanelOpdDistributions,
+    fetchDetail: fetchPanelOpdDistDetail,
+    addItem: addPanelOpdDistItem,
+    updateItem: updatePanelOpdDistItem,
+    deleteItem: deletePanelOpdDistItem,
+    finalize: finalizePanelOpdDist,
+  } : {
+    search: searchAdmissionsForDischargeRefund,
+    fetchDetail: fetchDischargeBillDetail,
+    addItem: addDischargeBillItem,
+    updateItem: updateDischargeBillItem,
+    deleteItem: deleteDischargeBillItem,
+    finalize: finalizeDischarge,
+  };
+  const fetchDetail = api.fetchDetail;
 
   const [detail, setDetail] = useState(null);
   const [admissionId, setAdmissionId] = useState(null);
@@ -272,7 +305,9 @@ export default function DischargeRefund() {
   const loadDetail = useCallback(async (id) => {
     setLoading(true);
     try {
-      const d = await fetchDischargeBillDetail(id);
+      const d = await fetchDetail(id);
+      const wrongDoor = opd ? null : wrongDischargeDoorMessage(d.admission.patientCategory === 'panel', panel);
+      if (wrongDoor) { toast.error(wrongDoor); return null; }
       setDetail(d);
       setAdmissionId(d.admission.id);
       setDiscount(String(d.discountAmount || 0));
@@ -284,11 +319,12 @@ export default function DischargeRefund() {
     } finally {
       setLoading(false);
     }
-  }, [fetchDischargeBillDetail]);
+  }, [fetchDetail, panel, opd]);
 
   async function handleSelect(row_) {
     setShowLookup(false);
-    await loadDetail(row_.id);
+    const d = await loadDetail(row_.id);
+    if (!d) setShowLookup(true);
   }
 
   // Reprint (Report > Reprint > Final Bill): ?admissionNo=...&autoprint=1 —
@@ -296,7 +332,7 @@ export default function DischargeRefund() {
   useEffect(() => {
     const admissionNo = searchParams.get('admissionNo');
     const autoprint = searchParams.get('autoprint');
-    if (!admissionNo) return;
+    if (!admissionNo || opd) return;
     (async () => {
       try {
         const rows = await searchAdmissionsForProvisionalBill(admissionNo);
@@ -392,7 +428,7 @@ export default function DischargeRefund() {
     if (amt <= 0) return toast.error('Amount 0 se zyada honi chahiye');
     setAddingRow(true);
     try {
-      await addDischargeBillItem(admissionId, row);
+      await api.addItem(admissionId, row);
       setRow({ billHeadId: '', doctorId: row.doctorId, subDeptId: '', amount: '' });
       await loadDetail(admissionId);
     } catch (e) {
@@ -404,7 +440,7 @@ export default function DischargeRefund() {
 
   async function handleDeleteRow(itemId) {
     try {
-      await deleteDischargeBillItem(itemId);
+      await api.deleteItem(itemId);
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Row delete nahi hui');
@@ -417,7 +453,7 @@ export default function DischargeRefund() {
     if (!Number.isFinite(amt) || amt < 0) { toast.error('Amount valid number honi chahiye'); return; }
     setSavingAmount(true);
     try {
-      await updateDischargeBillItem(amountEdit.itemId, { amount: amt });
+      await api.updateItem(amountEdit.itemId, { amount: amt });
       setAmountEdit(null);
       await loadDetail(admissionId);
     } catch (e) {
@@ -448,7 +484,7 @@ export default function DischargeRefund() {
     // opens on the click, before the request, so the browser doesn't block it.
     const printWin = openPrintWindow('width=900,height=1000');
     try {
-      await finalizeDischarge(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy, closingDate });
+      await api.finalize(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy, closingDate });
       toast.success(`File close ho gayi — Closing Date ${closingDate.split('-').reverse().join('-')}`);
       printDischargeBillPopup(false, printWin, closingDate);
       resetToLookup();
@@ -473,7 +509,9 @@ export default function DischargeRefund() {
         <AdmissionLookupModal
           onSelect={handleSelect}
           onClose={() => navigate(-1)}
-          searchAdmissions={searchAdmissionsForDischargeRefund}
+          searchAdmissions={api.search}
+          category={panel ? 'panel' : 'cash'}
+          opd={opd}
         />
       )}
 
@@ -489,7 +527,7 @@ export default function DischargeRefund() {
               <Printer size={16} />
             </button>
           </div>
-          <span className="aa-toolbar-title">Discharge and Refund</span>
+          <span className="aa-toolbar-title">{opd ? 'Distribution OPD' : panel ? 'Distribution' : 'Discharge and Refund'}</span>
         </div>
 
         {loading && <div className="aa-loading">Loading…</div>}
@@ -498,19 +536,21 @@ export default function DischargeRefund() {
           <div className="dr-body">
             <div className="dr-card">
               <div className="dr-hdr-row">
-                <label className="dr-hdr-lbl">Admission #</label>
+                <label className="dr-hdr-lbl">{opd ? 'Slip #' : 'Admission #'}</label>
                 <div className="dr-hdr-value">{detail.admission.admissionNo}</div>
-                <button className="dr-lookup-btn" onClick={() => setShowLookup(true)} title="Search admissions">
+                <button className="dr-lookup-btn" onClick={() => setShowLookup(true)} title={opd ? 'Search OPD Bills' : 'Search admissions'}>
                   <Search size={13} />
                 </button>
                 <span className="dr-inline-patient">{detail.admission.patientTitle} {detail.admission.patientName}</span>
-                <span className="dr-status-badge">Discharged</span>
+                <span className="dr-status-badge">{opd ? 'OPD Bill Closed' : 'Discharged'}</span>
               </div>
 
               <div className="dr-info-row">
                 <div><label>Name</label><span>{detail.admission.patientTitle} {detail.admission.patientName}</span></div>
                 <div><label>Relation</label><span>{`${relationParts(detail.admission).label} ${relationParts(detail.admission).name || '—'}`}</span></div>
-                <div><label>Room #</label><span>{detail.bed?.name || '—'}</span></div>
+                {opd
+                  ? <div><label>OPD Bill Closed</label><span>{fmtDateTime(detail.dischargeDate)}</span></div>
+                  : <div><label>Room #</label><span>{detail.bed?.name || '—'}</span></div>}
                 {detail.admission.patientCategory === 'panel' && (
                   <div><label>Company</label><span>{detail.company ? `${detail.company.code} — ${detail.company.name}` : '—'}</span></div>
                 )}
@@ -725,7 +765,7 @@ export default function DischargeRefund() {
               >
                 {saving ? 'Saving…' : 'Close File'}
               </button>
-              <button className="dr-close-btn" onClick={resetToLookup} disabled={saving}>Select Another Admission</button>
+              <button className="dr-close-btn" onClick={resetToLookup} disabled={saving}>{opd ? 'Select Another OPD Bill' : 'Select Another Admission'}</button>
             </div>
           </div>
         )}

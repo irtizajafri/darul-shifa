@@ -71,7 +71,6 @@ import MedicineReportFilter from '../pages/clinic/panels/MedicineReportFilter';
 import OpdAdmitReportFilter from '../pages/clinic/panels/OpdAdmitReportFilter';
 import DoctorWiseStatementFilter from '../pages/clinic/panels/DoctorWiseStatementFilter';
 import PanelBillingDetailReport from '../pages/clinic/panels/PanelBillingDetailReport';
-import PanelProvisionalBill from '../pages/clinic/panels/PanelProvisionalBill';
 import PanelBilling from '../pages/clinic/panels/PanelBilling';
 import PanelChequeReceived from '../pages/clinic/panels/PanelChequeReceived';
 import PanelChequesReport from '../pages/clinic/panels/PanelChequesReport';
@@ -91,6 +90,7 @@ import DischargeCertificateReport from '../pages/clinic/reports/DischargeCertifi
 import AntenatalReportFilter from '../pages/clinic/reports/AntenatalReportFilter';
 import AntenatalReport from '../pages/clinic/reports/AntenatalReport';
 import ReprintFilter from '../pages/clinic/reports/ReprintFilter';
+import PanelReprint from '../pages/clinic/panels/PanelReprint';
 import ConsultantWiseFilter from '../pages/clinic/reports/ConsultantWiseFilter';
 import ConsultantWiseReport from '../pages/clinic/reports/ConsultantWiseReport';
 import DepartmentDoctorPerformanceFilter from '../pages/clinic/reports/DepartmentDoctorPerformanceFilter';
@@ -358,7 +358,10 @@ export default function ProtectedRoutes() {
       <Route path="clinic/panels/bill-comparison/view" element={<PermissionGuard module="clinic" subModule="panels"><BillComparisonReport /></PermissionGuard>} />
       <Route path="clinic/panels/billing-detail"    element={<PermissionGuard module="clinic" subModule="panels" tab="billing-detail"><PanelBillingDetailFilter /></PermissionGuard>} />
       <Route path="clinic/panels/billing-detail/view" element={<PermissionGuard module="clinic" subModule="panels"><PanelBillingDetailReport /></PermissionGuard>} />
-      <Route path="clinic/panels/provisional-bill"  element={<PermissionGuard module="clinic" subModule="panels" tab="provisional-bill"><PanelProvisionalBill /></PermissionGuard>} />
+      <Route path="clinic/panels/opd-bill" element={<PermissionGuard module="clinic" subModule="panels" tab="opd-bill"><ProvisionalBill opd /></PermissionGuard>} />
+      <Route path="clinic/panels/distribution-opd" element={<PermissionGuard module="clinic" subModule="panels" tab="distribution-opd"><DischargeRefund opd /></PermissionGuard>} />
+      <Route path="clinic/panels/distribution" element={<PermissionGuard module="clinic" subModule="panels" tab="distribution"><DischargeRefund panel /></PermissionGuard>} />
+      <Route path="clinic/panels/provisional-bill"  element={<PermissionGuard module="clinic" subModule="panels" tab="provisional-bill"><ProvisionalBill panel /></PermissionGuard>} />
       <Route path="clinic/panels/billing"           element={<PermissionGuard module="clinic" subModule="panels" tab="billing"><PanelBilling /></PermissionGuard>} />
       <Route path="clinic/reports/medicine-issuance" element={<PermissionGuard module="clinic" subModule="reports" tab="medicine-issuance"><MedicineIssuanceFilter /></PermissionGuard>} />
       <Route path="clinic/reports/medicine-issuance/view"     element={<PermissionGuard module="clinic" subModule="reports"><MedicineIssuanceTransaction /></PermissionGuard>} />
@@ -371,6 +374,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/panels/medicine-report"   element={<PermissionGuard module="clinic" subModule="panels" tab="medicine-report"><MedicineReportFilter /></PermissionGuard>} />
       <Route path="clinic/panels/medicine-report/view" element={<PermissionGuard module="clinic" subModule="panels"><MedicineReport /></PermissionGuard>} />
       <Route path="clinic/panels/opd-admit-report"  element={<PermissionGuard module="clinic" subModule="panels" tab="opd-admit-report"><OpdAdmitReportFilter /></PermissionGuard>} />
+      <Route path="clinic/panels/reprint" element={<PermissionGuard module="clinic" subModule="panels" tab="reprint"><PanelReprint /></PermissionGuard>} />
       <Route path="clinic/panels/opd-admit-report/view" element={<PermissionGuard module="clinic" subModule="panels"><OpdAdmitReport /></PermissionGuard>} />
       <Route path="clinic/panels/doctor-wise-statement" element={<PermissionGuard module="clinic" subModule="panels" tab="doctor-wise-statement"><DoctorWiseStatementFilter /></PermissionGuard>} />
       <Route path="clinic/panels/doctor-wise-statement/view" element={<PermissionGuard module="clinic" subModule="panels"><DoctorWiseStatement /></PermissionGuard>} />

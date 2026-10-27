@@ -80,7 +80,10 @@ const menuItems = [
       {
         label: 'Transaction',
         subItems: [
-          // { label: 'Provisional Bill', path: '/clinic/panels/provisional-bill', perm: { sub: 'panels', tab: 'provisional-bill' } },
+          { label: 'Provisional Bill', path: '/clinic/panels/provisional-bill', perm: { sub: 'panels', tab: 'provisional-bill' } },
+          { label: 'OPD Bill',         path: '/clinic/panels/opd-bill',         perm: { sub: 'panels', tab: 'opd-bill' } },
+          { label: 'Distribution',     path: '/clinic/panels/distribution',     perm: { sub: 'panels', tab: 'distribution' } },
+          { label: 'Distribution OPD', path: '/clinic/panels/distribution-opd', perm: { sub: 'panels', tab: 'distribution-opd' } },
           { label: 'Billing',          path: '/clinic/panels/billing',          perm: { sub: 'panels', tab: 'billing' } },
         ],
       },
@@ -94,6 +97,7 @@ const menuItems = [
           { label: 'Medicine Report',        path: '/clinic/panels/medicine-report', perm: { sub: 'panels', tab: 'medicine-report' } },
           { label: 'OPD Admit Report',       path: '/clinic/panels/opd-admit-report', perm: { sub: 'panels', tab: 'opd-admit-report' } },
           { label: 'Doctor Wise Statement',  path: '/clinic/panels/doctor-wise-statement', perm: { sub: 'panels', tab: 'doctor-wise-statement' } },
+          { label: 'Reprint Panel Bill/Form', path: '/clinic/panels/reprint', perm: { sub: 'panels', tab: 'reprint' } },
         ],
       },
       { label: 'Panel Cheque Transaction', path: '/clinic/panels/cheque-received', perm: { sub: 'panels', tab: 'cheque-received' } },

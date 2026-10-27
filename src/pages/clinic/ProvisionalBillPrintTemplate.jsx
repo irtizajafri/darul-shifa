@@ -88,6 +88,9 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
   }
 
   const isPanel = admission.patientCategory === 'panel';
+  // OPD Bill (Panels → Transaction → OPD Bill): Slip # instead of Admission #,
+  // no surgery / ward / room.
+  const isOpd = !!detail.isOpd;
   const categoryLabel = { private: 'Private Patient', staff: 'Staff Patient', panel: 'Panel Patient', cc: 'CC Patient', complementary: 'Complementary Patient' }[admission.patientCategory] || 'Private Patient';
   const balanceWords = balanceInfo.balance > 0 ? numToWords(Math.floor(balanceInfo.balance)) : (balanceInfo.refund > 0 ? numToWords(Math.floor(balanceInfo.refund)) : 'zero');
 
@@ -107,7 +110,7 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
           <tr>
             <td className="l">Patient:</td>
             <td className="v">{admission.patientTitle} {admission.patientName}</td>
-            <td className="l">Admission #:</td>
+            <td className="l">{isOpd ? 'Slip #:' : 'Admission #:'}</td>
             <td className="v">{admission.admissionNo}</td>
             <td className="l">Date:</td>
             <td className="v">{dateStr}</td>
@@ -119,8 +122,8 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
                 that (the company has its own line). */}
             <td className="l">{relationParts(admission).label}.</td>
             <td className="v">{(isPanel && !admission.relationName) ? '—' : (relationParts(admission).name || '—')}</td>
-            <td className="l">Surgery:</td>
-            <td className="v">{admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission'}</td>
+            <td className="l">{isOpd ? '' : 'Surgery:'}</td>
+            <td className="v">{isOpd ? '' : (admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission')}</td>
           </tr>
           {isPanel && (
             <tr>
@@ -128,12 +131,14 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
               <td className="v" colSpan={3}>{detail.panelCompanyName || '—'}</td>
             </tr>
           )}
-          <tr>
-            <td className="l">Category:</td>
-            <td className="v">{roomCategory?.name || '—'}</td>
-            <td className="l">Room#:</td>
-            <td className="v">{bed?.name || '—'}</td>
-          </tr>
+          {!isOpd && (
+            <tr>
+              <td className="l">Category:</td>
+              <td className="v">{roomCategory?.name || '—'}</td>
+              <td className="l">Room#:</td>
+              <td className="v">{bed?.name || '—'}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 
@@ -196,7 +201,7 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
               <td className="r">{fmt2(balanceInfo.amountReceived)}</td>
             </tr>
             <tr>
-              <td className="l"><strong>Admitted</strong></td>
+              <td className="l"><strong>{isOpd ? 'OPD' : 'Admitted'}</strong></td>
               <td className="l">Refund Amount:</td>
               <td className="r">{fmt2(balanceInfo.refund)}</td>
             </tr>

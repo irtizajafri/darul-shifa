@@ -586,7 +586,7 @@ async function deleteProvisionalPharmacyItem(req, res, next) {
 
 async function searchAdmissionsForDischargeRefund(req, res, next) {
   try {
-    success(res, await service.searchAdmissionsForDischargeRefund(req.query.q));
+    success(res, await service.searchAdmissionsForDischargeRefund(req.query.q, req.query.category));
   } catch (err) {
     next(err);
   }
@@ -1745,6 +1745,13 @@ async function searchPanelAdmissions(req, res, next) {
   } catch (err) { next(err); }
 }
 
+async function listPanelReprintAdmissions(req, res, next) {
+  try {
+    const { q, fromDate, toDate } = req.query;
+    success(res, await service.listPanelReprintAdmissions({ q, fromDate, toDate }));
+  } catch (err) { next(err); }
+}
+
 async function getPanelChequeSummary(req, res, next) {
   try {
     const { from, to } = req.query;
@@ -1877,6 +1884,33 @@ async function confirmPanelAdmitReportImportBatch(req, res, next) {
     next(err);
   }
 }
+
+// ─── Panels > Transaction > OPD Bill ─────────────────────────────────────────
+const opdBillHandler = (fn) => async (req, res, next) => {
+  try {
+    success(res, await fn(req));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+};
+const searchPanelOpdBills = opdBillHandler((req) => service.searchPanelOpdBills(req.query.q));
+const openPanelOpdBill = opdBillHandler((req) => service.openPanelOpdBill(req.body?.serialNo, { createdByName: req.body?.createdByName }));
+const getPanelOpdBillDetail = opdBillHandler((req) => service.getPanelOpdBillDetail(req.params.billId));
+const addPanelOpdBillItem = opdBillHandler((req) => service.addPanelOpdBillItem(req.params.billId, req.body || {}));
+const addPanelOpdBillItemFromVisit = opdBillHandler((req) => service.addPanelOpdBillItemFromVisit(req.params.billId, req.body?.opdVisitId, req.body?.amount));
+const updatePanelOpdBillItem = opdBillHandler((req) => service.updatePanelOpdBillItem(req.params.itemId, req.body || {}));
+const deletePanelOpdBillItem = opdBillHandler((req) => service.deletePanelOpdBillItem(req.params.itemId));
+const addPanelOpdBillPharmacyItem = opdBillHandler((req) => service.addPanelOpdBillPharmacyItem(req.params.billId, req.body || {}));
+const deletePanelOpdBillPharmacyItem = opdBillHandler((req) => service.deletePanelOpdBillPharmacyItem(req.params.itemId));
+const setPanelOpdBillExcluded = opdBillHandler((req) => service.setPanelOpdBillExcluded(req.params.billId, req.body || {}));
+const closePanelOpdBill = opdBillHandler((req) => service.closePanelOpdBill(req.params.billId, { closedBy: req.body?.closedBy }));
+const searchPanelOpdDistributions = opdBillHandler((req) => service.searchPanelOpdDistributions(req.query.q));
+const getPanelOpdDistDetail = opdBillHandler((req) => service.getPanelOpdDistDetail(req.params.billId));
+const addPanelOpdDistItem = opdBillHandler((req) => service.addPanelOpdDistItem(req.params.billId, req.body || {}));
+const updatePanelOpdDistItem = opdBillHandler((req) => service.updatePanelOpdDistItem(req.params.itemId, req.body || {}));
+const deletePanelOpdDistItem = opdBillHandler((req) => service.deletePanelOpdDistItem(req.params.itemId));
+const finalizePanelOpdDist = opdBillHandler((req) => service.finalizePanelOpdDist(req.params.billId, req.body || {}));
 
 async function getPanelAdmitReport(req, res, next) {
   try {
@@ -2769,6 +2803,7 @@ module.exports = {
   getAdmissionForDiscountRefund,
   getPanelAdmissionBilling,
   searchPanelAdmissions,
+  listPanelReprintAdmissions,
   getPanelChequeSummary,
   getPanelChequesReport,
   getPanelChequePostingReport,
@@ -2786,6 +2821,23 @@ module.exports = {
   previewPanelAdmitReportImport,
   confirmPanelAdmitReportImportBatch,
   getPanelAdmitReport,
+  searchPanelOpdBills,
+  openPanelOpdBill,
+  getPanelOpdBillDetail,
+  addPanelOpdBillItem,
+  addPanelOpdBillItemFromVisit,
+  updatePanelOpdBillItem,
+  deletePanelOpdBillItem,
+  addPanelOpdBillPharmacyItem,
+  deletePanelOpdBillPharmacyItem,
+  setPanelOpdBillExcluded,
+  closePanelOpdBill,
+  searchPanelOpdDistributions,
+  getPanelOpdDistDetail,
+  addPanelOpdDistItem,
+  updatePanelOpdDistItem,
+  deletePanelOpdDistItem,
+  finalizePanelOpdDist,
   previewDoctorStatementImport,
   confirmDoctorStatementImport,
   getDoctorStatement,

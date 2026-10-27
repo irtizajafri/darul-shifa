@@ -102,7 +102,7 @@ export default function ReprintFilter() {
     try {
       // Discharge Certificate prints the user's employee code (printedByCode).
       const printedBy = docType === 'discharge' ? printedByCode(user) : (user?.name || user?.username || user?.email || '');
-      const { html, extraHtml } = await buildReprint(docType, no, printedBy);
+      const { html, extraHtml } = await buildReprint(docType, no, printedBy, { category: 'cash' });
       // A second slip (Antenatal card) prints from the same window, after the
       // first — never from a hidden iframe (its dialog froze the app).
       w.document.write(buildSequentialPrintHtml(html, extraHtml));

@@ -803,6 +803,19 @@ export const useClinicStore = create((set) => ({
   },
 
   // ── Provisional Bill ─────────────────────────────────────────────────────────
+  // ── Panels > Transaction > OPD Bill (Provisional Bill for panel OPD) ──
+  searchPanelOpdBills: async (q) => request(`/panel-opd-bill/search?q=${encodeURIComponent(q || '')}`),
+  openPanelOpdBill: async (serialNo, createdByName) => request('/panel-opd-bill/open', { method: 'POST', body: JSON.stringify({ serialNo, createdByName }) }),
+  fetchPanelOpdBillDetail: async (billId) => request(`/panel-opd-bill/${billId}`),
+  addPanelOpdBillItem: async (billId, payload) => request(`/panel-opd-bill/${billId}/items`, { method: 'POST', body: JSON.stringify(payload) }),
+  addPanelOpdBillItemFromVisit: async (billId, opdVisitId, amount) => request(`/panel-opd-bill/${billId}/add-from-visit`, { method: 'POST', body: JSON.stringify({ opdVisitId, ...(amount != null ? { amount } : {}) }) }),
+  updatePanelOpdBillItem: async (itemId, payload) => request(`/panel-opd-bill/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deletePanelOpdBillItem: async (itemId) => request(`/panel-opd-bill/items/${itemId}`, { method: 'DELETE' }),
+  addPanelOpdBillPharmacyItem: async (billId, payload) => request(`/panel-opd-bill/${billId}/pharmacy-items`, { method: 'POST', body: JSON.stringify(payload) }),
+  deletePanelOpdBillPharmacyItem: async (itemId) => request(`/panel-opd-bill/pharmacy-items/${itemId}`, { method: 'DELETE' }),
+  setPanelOpdBillExcluded: async (billId, payload) => request(`/panel-opd-bill/${billId}/excluded`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  closePanelOpdBill: async (billId, closedBy) => request(`/panel-opd-bill/${billId}/close`, { method: 'POST', body: JSON.stringify({ closedBy }) }),
+
   fetchProvisionalBillDetail: async (admissionId) => {
     return request(`/provisional-bill/${admissionId}`);
   },
@@ -1141,9 +1154,17 @@ export const useClinicStore = create((set) => ({
   // ── Discharge and Refund ─────────────────────────────────────────────────────
   // Only ever operates on admissions already in 'discharge' status — the
   // patient is discharged by saving the Discharge Certificate, not here.
-  searchAdmissionsForDischargeRefund: async (q) => {
-    return request(`/discharge-bill/search?q=${encodeURIComponent(q || '')}`);
+  searchAdmissionsForDischargeRefund: async (q, category) => {
+    return request(`/discharge-bill/search?q=${encodeURIComponent(q || '')}${category ? `&category=${category}` : ''}`);
   },
+
+  // ── Panels > Transaction > Distribution OPD (OPD Bill's Discharge and Refund) ──
+  searchPanelOpdDistributions: async (q) => request(`/panel-opd-dist/search?q=${encodeURIComponent(q || '')}`),
+  fetchPanelOpdDistDetail: async (billId) => request(`/panel-opd-dist/${billId}`),
+  addPanelOpdDistItem: async (billId, payload) => request(`/panel-opd-dist/${billId}/items`, { method: 'POST', body: JSON.stringify(payload) }),
+  updatePanelOpdDistItem: async (itemId, payload) => request(`/panel-opd-dist/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deletePanelOpdDistItem: async (itemId) => request(`/panel-opd-dist/items/${itemId}`, { method: 'DELETE' }),
+  finalizePanelOpdDist: async (billId, payload) => request(`/panel-opd-dist/${billId}/finalize`, { method: 'PUT', body: JSON.stringify(payload) }),
 
   fetchDischargeBillDetail: async (admissionId) => {
     return request(`/discharge-bill/${admissionId}`);

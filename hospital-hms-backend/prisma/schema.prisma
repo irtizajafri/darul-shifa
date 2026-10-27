@@ -1341,7 +1341,108 @@ model ClinicPanelOpdBillingHeader {
   closedAt       DateTime?
   closedBy       String?
   seededVisitIds Int[]          @default([])
+  // Migration 062 — OPD Bill heads already added into this bill's rows.
+  seededOpdBillItemIds Int[]    @default([])
   updatedAt      DateTime       @updatedAt
+}
+
+// Panels > Transaction > OPD Bill (owner, 2026-10-27) — the Provisional Bill
+// for a panel OPD patient. Opened from a General / Consultant OPD panel slip
+// (opdVisitId, the "primary"); every panel slip of the same patient (Panel
+// Employee + Dependent, or Company + Patient Name) from startAt until the
+// bill is closed belongs to it. A new bill only starts after Close. Soft
+// links (no @relation), same as the other panel tables.
+model ClinicPanelOpdBill {
+  id                     Int       @id @default(autoincrement())
+  opdVisitId             Int       @unique
+  serialNo               String
+  startAt                DateTime
+  panelCompanyId         Int?
+  panelEmployeeId        Int?
+  panelDependentId       Int?
+  patientName            String    @default("")
+  pharmacyBillExcluded   Boolean   @default(false)
+  diagnosticBillExcluded Boolean   @default(false)
+  closedAt               DateTime?
+  closedBy               String?
+  createdByName          String?
+  // Migration 063 — Panels > Transaction > Distribution OPD (the OPD Bill's
+  // Discharge and Refund): rows copied in once (distImported), its own
+  // discount / Other Income, and its own Close File.
+  distImported           Boolean   @default(false)
+  distDiscount           Float?
+  distOtherIncome        Float?
+  distClosedAt           DateTime?
+  distClosedBy           String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@index([panelEmployeeId])
+  @@index([panelCompanyId])
+}
+
+// Distribution OPD rows — same shape and rules as ClinicDischargeBillItem
+// (slip rows one per test, amountEdited / excluded).
+model ClinicPanelOpdDistItem {
+  id               Int      @id @default(autoincrement())
+  opdBillId        Int
+  billHeadId       Int?
+  doctorId         Int?
+  subDeptId        Int?
+  doctorFee        Float?
+  hospitalShare    Float?
+  description      String?
+  qty              Float    @default(1)
+  rate             Float    @default(0)
+  amount           Float    @default(0)
+  source           String   @default("manual") // manual | provisional | pharmacy | slip
+  sourceOpdVisitId Int?
+  sourceLineKey    String?
+  amountEdited     Boolean  @default(false)
+  excluded         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  @@unique([opdBillId, sourceLineKey])
+  @@index([opdBillId])
+}
+
+// OPD Bill's "Provisional Bill" tab rows — same shape as ClinicProvisionalBillItem.
+model ClinicPanelOpdBillItem {
+  id               Int      @id @default(autoincrement())
+  opdBillId        Int
+  roomCategoryId   Int?
+  billHeadId       Int?
+  qty              Int      @default(1)
+  rate             Float    @default(0)
+  amount           Float    @default(0)
+  remarks          String?
+  patientType      String?
+  sourceOpdVisitId Int?
+  serialNo         String?
+  createdAt        DateTime @default(now())
+
+  @@index([opdBillId])
+}
+
+// OPD Bill's Pharmacy tab — Outside Hospital Store medicine, same shape as
+// ClinicProvisionalPharmacyItem.
+model ClinicPanelOpdBillPharmacyItem {
+  id            Int      @id @default(autoincrement())
+  opdBillId     Int
+  storeId       Int?
+  medicine      String
+  dosage        String?
+  qty           Float    @default(1)
+  unit          String?
+  rate          Float    @default(0)
+  amount        Float    @default(0)
+  medDate       DateTime
+  remarks       String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([opdBillId])
 }
 
 // Panels > Reports > Medicine Report — standalone import store for the

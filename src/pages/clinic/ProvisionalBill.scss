@@ -770,3 +770,12 @@ $border: #bbb;
 .pb-ward-now { font-size: 0.85rem; color: #334155; margin: 0 0 4px; }
 .pb-ward-when { border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px 8px; font-size: 0.85rem; }
 .pb-ward-hint { font-size: 0.75rem; color: #64748b; margin: 8px 0 4px; line-height: 1.4; }
+
+// OPD Bill (Panels → Transaction → OPD Bill): the bill's slips in the header.
+.pb-opd-slips {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: normal;
+}

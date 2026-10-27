@@ -97,7 +97,7 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate }) {
       <table className="imb-hdr">
         <tbody>
           <tr>
-            <td className="l">Admission #:</td><td className="v b">{admission.admissionNo}</td>
+            <td className="l">{detail.isOpd ? 'Slip #:' : 'Admission #:'}</td><td className="v b">{admission.admissionNo}</td>
             <td className="l">Patient:</td><td className="v b" colSpan={2}>{`${admission.patientTitle || ''} ${admission.patientName || ''}`.trim().toUpperCase()}</td>
           </tr>
           <tr>

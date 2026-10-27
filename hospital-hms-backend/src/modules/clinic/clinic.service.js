@@ -494,22 +494,30 @@ async function assertPanelPrimarySlip({ paymentType, department, panelCompanyId,
   if (PANEL_PRIMARY_DEPARTMENTS.includes(dept) || PANEL_PRIMARY_EXEMPT_DEPARTMENTS.includes(dept)) return;
 
   const { start, end } = currentBusinessDayWindow();
-  const where = {
-    paymentType: { equals: 'panel', mode: 'insensitive' },
-    status: 'active',
-    department: { in: PANEL_PRIMARY_DEPARTMENTS },
-    createdAt: { gte: start, lt: end },
-  };
+  const patientMatch = {};
   if (panelEmployeeId) {
-    where.panelEmployeeId = Number(panelEmployeeId);
-    where.panelDependentId = panelDependentId ? Number(panelDependentId) : null;
+    patientMatch.panelEmployeeId = Number(panelEmployeeId);
+    patientMatch.panelDependentId = panelDependentId ? Number(panelDependentId) : null;
   } else {
     if (!patientName?.trim()) return;
-    if (panelCompanyId) where.panelCompanyId = Number(panelCompanyId);
-    where.patientName = { equals: patientName.trim(), mode: 'insensitive' };
+    if (panelCompanyId) patientMatch.panelCompanyId = Number(panelCompanyId);
+    patientMatch.patientName = { equals: patientName.trim(), mode: 'insensitive' };
   }
-  const primary = await prisma.clinicOpdVisit.findFirst({ where, select: { id: true } });
-  if (!primary) {
+  const primary = await prisma.clinicOpdVisit.findFirst({
+    where: {
+      paymentType: { equals: 'panel', mode: 'insensitive' },
+      status: 'active',
+      department: { in: PANEL_PRIMARY_DEPARTMENTS },
+      createdAt: { gte: start, lt: end },
+      ...patientMatch,
+    },
+    select: { id: true },
+  });
+  // An open OPD Bill (Panels > Transaction > OPD Bill) covers the patient
+  // beyond its first day — its later slips need no new primary (owner,
+  // 2026-10-27).
+  const openOpdBill = primary ? null : await prisma.clinicPanelOpdBill.findFirst({ where: { ...patientMatch, closedAt: null }, select: { id: true } });
+  if (!primary && !openOpdBill) {
     throw Object.assign(new Error(
       `Is panel patient (${patientName?.trim() || '—'}) ki aaj General OPD ya Consultant OPD slip nahi bani — pehle woh banayein, phir ${dept} slip banegi`
     ), { status: 400 });
@@ -2939,6 +2947,24 @@ function panelPatientWhere(v) {
 // slip that already has a bill (kept as-is), else the first primary slip,
 // else the first slip.
 async function resolvePanelOpdGroup(visit) {
+  // A slip on an OPD Bill (Panels > Transaction > OPD Bill) bills with that
+  // OPD Bill's slips — first slip to its close — not just its own day.
+  const opdBill = await findOpdBillForVisit(visit);
+  if (opdBill) {
+    const members = await prisma.clinicOpdVisit.findMany({
+      where: opdBillMemberWhere(opdBill),
+      include: { doctors: { include: { doctor: true, subDept: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    if (!members.some((m) => m.id === visit.id)) members.push(visit);
+    const headers = await prisma.clinicPanelOpdBillingHeader.findMany({
+      where: { opdVisitId: { in: members.map((m) => m.id) } },
+      select: { opdVisitId: true },
+    });
+    const billed = new Set(headers.map((h) => h.opdVisitId));
+    const owner = members.find((m) => billed.has(m.id)) || members.find((m) => m.id === opdBill.opdVisitId) || members[0];
+    return { owner, members, opdBill };
+  }
   const day = new Date(new Date(visit.createdAt).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
   const start = new Date(`${day}T03:00:00.000Z`);
   const end = new Date(start.getTime() + 24 * 3600 * 1000);
@@ -2997,7 +3023,13 @@ async function getPanelOpdVisitBilling(serialNo) {
   }
   if (visit.status !== 'active') throw Object.assign(new Error('Yeh slip cancel ho chuki hai'), { status: 400 });
 
-  const { owner, members } = await resolvePanelOpdGroup(visit);
+  const { owner, members, opdBill } = await resolvePanelOpdGroup(visit);
+  // OPD Bill: its heads add into this bill's rows once each, and its Outside
+  // Store medicine bills as live Medicine lines.
+  const [opdBillItems, opdBillOutside] = opdBill ? await Promise.all([
+    prisma.clinicPanelOpdBillItem.findMany({ where: { opdBillId: opdBill.id, sourceOpdVisitId: null, billHeadId: { not: null } }, orderBy: { id: 'asc' } }),
+    prisma.clinicPanelOpdBillPharmacyItem.findMany({ where: { opdBillId: opdBill.id }, orderBy: { id: 'asc' } }),
+  ]) : [[], []];
 
   const [billHeads, panelHeadOrders, simplePanelHeads, panelCompany, panelEmployee, panelDependent, invLines] = await Promise.all([
     prisma.clinicBillHead.findMany({ where: { status: 'active' }, orderBy: { id: 'asc' } }),
@@ -3048,6 +3080,10 @@ async function getPanelOpdVisitBilling(serialNo) {
     id: `inv-${si.id}`, source: 'hospital', storeName: null, code: si.item?.code || null,
     date: si.invoiceDate, medicine: `${si.quantity < 0 ? 'Return: ' : ''}${si.item?.name || '—'}`,
     qty: si.quantity, rate: si.saleRate, amount: si.totalAmount,
+  }));
+  opdBillOutside.forEach((pi) => livePharmacyRows.push({
+    id: `opdout-${pi.id}`, source: 'outside', storeName: null, code: null,
+    date: pi.medDate, medicine: pi.medicine, qty: pi.qty, rate: pi.rate, amount: pi.amount,
   }));
 
   const livePatientName = owner.patientName;
@@ -3138,6 +3174,37 @@ async function getPanelOpdVisitBilling(serialNo) {
       header = await prisma.clinicPanelOpdBillingHeader.update({
         where: { opdVisitId: owner.id },
         data: { seededVisitIds: [...seeded, ...newSlips.map((m) => m.id)] },
+      });
+    }
+
+    // OPD Bill heads not yet on this bill → add into their head row once each.
+    const seededItems = new Set(header.seededOpdBillItemIds || []);
+    const newItems = opdBillItems.filter((i) => !seededItems.has(i.id));
+    if (newItems.length) {
+      const heads = await prisma.clinicBillHead.findMany({ where: { id: { in: [...new Set(newItems.map((i) => i.billHeadId))] } }, select: { id: true, description: true, headCode: true } });
+      const headById = new Map(heads.map((h) => [h.id, h]));
+      for (const it of newItems) {
+        const head = headById.get(it.billHeadId);
+        if (!head) continue;
+        const row = snapshotRows.find((r) => !r.groupInto && r.description === head.description);
+        if (row) {
+          const qty = row.qty + it.qty;
+          const amount = row.amount + it.amount;
+          await prisma.clinicPanelOpdBillingItem.update({ where: { id: row.id }, data: { qty, amount, rate: qty ? amount / qty : 0 } });
+        } else {
+          const maxSort = snapshotRows.reduce((mx, r) => Math.max(mx, r.sortOrder), -1);
+          await prisma.clinicPanelOpdBillingItem.create({
+            data: {
+              opdVisitId: owner.id, billHeadId: head.id, code: head.headCode, description: head.description, kind: 'item',
+              qty: it.qty, rate: it.rate, amount: it.amount, date: header.visitDate, sortOrder: maxSort + 1,
+            },
+          });
+        }
+        await reloadSnapshot();
+      }
+      header = await prisma.clinicPanelOpdBillingHeader.update({
+        where: { opdVisitId: owner.id },
+        data: { seededOpdBillItemIds: [...seededItems, ...newItems.map((i) => i.id)] },
       });
     }
 
@@ -4658,6 +4725,28 @@ async function searchPanelAdmissions(q) {
     id: a.id,
     admissionNo: a.admissionNo,
     patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    createdAt: a.createdAt,
+    status: a.status,
+  }));
+}
+
+// Panels > Reports > Reprint Panel Bill/Form — panel files only, any
+// status, admitted in the From/To range (or matching the search), newest
+// first, with their company (owner, 2026-10-27).
+async function listPanelReprintAdmissions({ q, fromDate, toDate }) {
+  const term = String(q || '').trim();
+  const where = { patientCategory: 'panel' };
+  if (term) where.OR = [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }];
+  else if (fromDate && toDate) where.createdAt = { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59.999`) };
+  const rows = await prisma.clinicAdmission.findMany({ where, orderBy: { id: 'desc' }, take: 300 });
+  const compIds = [...new Set(rows.map((a) => a.panelCompanyId).filter(Boolean))];
+  const companies = compIds.length ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: compIds } }, select: { id: true, name: true } }) : [];
+  const compName = new Map(companies.map((c) => [c.id, c.name]));
+  return rows.map((a) => ({
+    id: a.id,
+    admissionNo: a.admissionNo,
+    patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+    companyName: compName.get(a.panelCompanyId) || '',
     createdAt: a.createdAt,
     status: a.status,
   }));
@@ -7597,6 +7686,370 @@ async function updateProvisionalBillHeader(admissionId, { surgery, surgeryTypeId
   });
 }
 
+// ─── Panels > Transaction > OPD Bill ─────────────────────────────────────────
+// The Provisional Bill for a panel OPD patient (owner, 2026-10-27), same
+// screen and flow as an admission's: opened from a General / Consultant OPD
+// panel slip, then every panel slip of the same patient (Panel Employee +
+// Dependent, or Company + Patient Name — panelPatientWhere) belongs to it
+// until it is closed — Laboratory shows in the Diagnostic tab by itself,
+// Radiology / Ultrasound and the other slips are double-click-to-add, Panel
+// Slip medicine (Sales Invoices 'panel_opd') fills the Pharmacy tab and
+// Outside Store medicine is entered here. Once closed, the patient's next
+// General / Consultant slip opens a new bill. Slips made against an
+// admission (Adjust Payment) stay with the admission.
+
+const OPD_BILL_PRIMARY_DEPTS = PANEL_PRIMARY_DEPARTMENTS;
+
+function opdBillMemberWhere(bill) {
+  return {
+    paymentType: { equals: 'panel', mode: 'insensitive' },
+    status: 'active',
+    adjustPayment: false,
+    ...panelPatientWhere(bill),
+    createdAt: { gte: bill.startAt, ...(bill.closedAt ? { lte: bill.closedAt } : {}) },
+  };
+}
+
+// The OPD Bill a panel slip belongs to (or null): the patient's latest bill
+// that started at or before the slip and was still open when it was made.
+async function findOpdBillForVisit(visit) {
+  if (String(visit.paymentType || '').toLowerCase() !== 'panel' || visit.adjustPayment) return null;
+  const at = new Date(visit.createdAt);
+  return prisma.clinicPanelOpdBill.findFirst({
+    where: {
+      ...panelPatientWhere(visit),
+      startAt: { lte: at },
+      OR: [{ closedAt: null }, { closedAt: { gte: at } }],
+    },
+    orderBy: { startAt: 'desc' },
+  });
+}
+
+async function assertOpdBillOpen(billId) {
+  const bill = await prisma.clinicPanelOpdBill.findUnique({ where: { id: Number(billId) } });
+  if (!bill) throw Object.assign(new Error('OPD Bill nahi mila'), { status: 404 });
+  if (bill.closedAt) throw Object.assign(new Error('Yeh OPD Bill close ho chuka hai — ab is mein kuch nahi badal sakta'), { status: 400 });
+  return bill;
+}
+
+// Lookup: panel General / Consultant OPD slips, newest first, each with its
+// OPD Bill's state when it opened one.
+async function searchPanelOpdBills(q) {
+  const term = String(q || '').trim();
+  const rows = await prisma.clinicOpdVisit.findMany({
+    where: {
+      paymentType: { equals: 'panel', mode: 'insensitive' },
+      status: 'active',
+      adjustPayment: false,
+      department: { in: OPD_BILL_PRIMARY_DEPTS },
+      ...(term ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] } : {}),
+    },
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  const bills = rows.length
+    ? await prisma.clinicPanelOpdBill.findMany({ where: { opdVisitId: { in: rows.map((v) => v.id) } }, select: { opdVisitId: true, closedAt: true } })
+    : [];
+  const billByVisit = new Map(bills.map((b) => [b.opdVisitId, b]));
+  return rows.map((v) => {
+    const b = billByVisit.get(v.id);
+    return {
+      id: v.id,
+      admissionNo: v.serialNo, // same key as the admission lookups — the modal reuses its row shape
+      patientName: v.patientName,
+      department: v.department,
+      createdAt: v.createdAt,
+      status: b ? (b.closedAt ? 'closed' : 'active') : null,
+    };
+  });
+}
+
+// Slip # → its OPD Bill, opening a new one from a General / Consultant slip.
+async function openPanelOpdBill(serialNo, { createdByName } = {}) {
+  const no = String(serialNo || '').trim();
+  const visit = await prisma.clinicOpdVisit.findFirst({ where: { serialNo: no } });
+  if (!visit) throw Object.assign(new Error('Is Slip # ka koi record nahi mila'), { status: 404 });
+  if (String(visit.paymentType || '').toLowerCase() !== 'panel') throw Object.assign(new Error('Yeh slip panel ki nahi hai'), { status: 400 });
+  if (visit.status !== 'active') throw Object.assign(new Error('Yeh slip cancel ho chuki hai'), { status: 400 });
+  if (visit.adjustPayment) throw Object.assign(new Error(`Yeh slip Admission # ${visit.admitNo || ''} ke bill mein jati hai — Panel Provisional Bill se dekhein`), { status: 400 });
+
+  const existing = await findOpdBillForVisit(visit);
+  if (existing) return { id: existing.id };
+  if (!OPD_BILL_PRIMARY_DEPTS.includes(visit.department)) {
+    throw Object.assign(new Error('Is slip ka koi OPD Bill nahi — OPD Bill General OPD ya Consultant OPD ki slip se khulta hai'), { status: 400 });
+  }
+  const later = await prisma.clinicPanelOpdBill.findFirst({
+    where: { ...panelPatientWhere(visit), startAt: { gt: visit.createdAt } },
+    select: { serialNo: true },
+  });
+  if (later) throw Object.assign(new Error(`Is patient ka is slip ke baad wala OPD Bill (Slip # ${later.serialNo}) pehle se bana hua hai`), { status: 400 });
+
+  const bill = await prisma.clinicPanelOpdBill.create({
+    data: {
+      opdVisitId: visit.id,
+      serialNo: visit.serialNo,
+      startAt: visit.createdAt,
+      panelCompanyId: visit.panelCompanyId,
+      panelEmployeeId: visit.panelEmployeeId,
+      panelDependentId: visit.panelDependentId,
+      patientName: String(visit.patientName || '').trim(),
+      createdByName: createdByName ? String(createdByName).trim() || null : null,
+    },
+  });
+  return { id: bill.id };
+}
+
+// Same response shape as getProvisionalBillDetail (the page renders both),
+// with `admission` standing in for the bill and isOpd set.
+async function getPanelOpdBillDetail(billId) {
+  const bill = await prisma.clinicPanelOpdBill.findUnique({ where: { id: Number(billId) } });
+  if (!bill) throw Object.assign(new Error('OPD Bill nahi mila'), { status: 404 });
+
+  const [primary, members, items, outsideItems, panelCompany, panelEmployee, panelDependent] = await Promise.all([
+    prisma.clinicOpdVisit.findUnique({ where: { id: bill.opdVisitId }, include: { doctors: { include: { doctor: true } } } }),
+    prisma.clinicOpdVisit.findMany({
+      where: opdBillMemberWhere(bill),
+      include: { doctors: { include: { doctor: true, subDept: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    }),
+    prisma.clinicPanelOpdBillItem.findMany({ where: { opdBillId: bill.id }, orderBy: { id: 'asc' } }),
+    prisma.clinicPanelOpdBillPharmacyItem.findMany({ where: { opdBillId: bill.id }, orderBy: { id: 'asc' } }),
+    bill.panelCompanyId ? prisma.clinicPanelCompany.findUnique({ where: { id: bill.panelCompanyId }, select: { name: true } }) : null,
+    bill.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: bill.panelEmployeeId }, select: { name: true } }) : null,
+    bill.panelDependentId ? prisma.clinicPanelEmployeeDependent.findUnique({ where: { id: bill.panelDependentId }, select: { relation: true } }) : null,
+  ]);
+
+  const memberSerials = members.map((m) => m.serialNo);
+  const roomCategoryIds = [...new Set(items.map((i) => i.roomCategoryId).filter(Boolean))];
+  const billHeadIds = [...new Set(items.map((i) => i.billHeadId).filter(Boolean))];
+  const storeIds = [...new Set(outsideItems.map((i) => i.storeId).filter(Boolean))];
+  const [wardRows, headRows, stores, invLines] = await Promise.all([
+    roomCategoryIds.length ? prisma.clinicRoomCategory.findMany({ where: { id: { in: roomCategoryIds } } }) : [],
+    billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } } }) : [],
+    storeIds.length ? prisma.clinicPharmacyStore.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true } }) : [],
+    memberSerials.length ? prisma.inventorySalesInvoice.findMany({
+      where: { customerType: 'panel_opd', customerName: { in: memberSerials } },
+      include: { item: { select: { code: true, name: true } } },
+      orderBy: [{ invoiceDate: 'asc' }, { id: 'asc' }],
+    }) : [],
+  ]);
+  const wardById = new Map(wardRows.map((w) => [w.id, w]));
+  const headById = new Map(headRows.map((h) => [h.id, h]));
+  const storeName = new Map(stores.map((s) => [s.id, s.name]));
+  const memberById = new Map(members.map((m) => [m.id, m]));
+
+  const resolvedAll = items.map((item) => ({
+    ...item,
+    roomCategory: item.roomCategoryId ? wardById.get(item.roomCategoryId) || null : null,
+    billHead: item.billHeadId ? headById.get(item.billHeadId) || null : null,
+    sourceDepartment: item.sourceOpdVisitId ? memberById.get(item.sourceOpdVisitId)?.department || null : null,
+  }));
+  const isAddedDiagnostic = (i) => i.sourceDepartment && DIAGNOSTIC_DEPTS.includes(i.sourceDepartment);
+  const billItems = resolvedAll.filter((i) => !isAddedDiagnostic(i));
+  const addedDiagnosticItems = resolvedAll.filter(isAddedDiagnostic);
+
+  const diagnosticRows = [];
+  members.filter((v) => v.department === 'Laboratory').forEach((v) => {
+    (v.doctors || []).forEach((d) => {
+      diagnosticRows.push({ id: `${v.id}-${d.id}`, date: v.createdAt, conCode: d.doctor?.code || null, department: v.department, particulars: d.subDept?.name || null, amount: d.amount || 0 });
+    });
+    if (!v.doctors?.length) diagnosticRows.push({ id: `${v.id}`, date: v.createdAt, conCode: null, department: v.department, particulars: null, amount: v.totalAmount || 0 });
+  });
+  addedDiagnosticItems.forEach((item) => {
+    const src = memberById.get(item.sourceOpdVisitId)?.doctors?.[0];
+    diagnosticRows.push({
+      id: `item-${item.id}`, date: item.createdAt, conCode: src?.doctor?.code || null, department: item.sourceDepartment,
+      particulars: item.billHead?.description || src?.subDept?.name || null, amount: item.amount || 0,
+    });
+  });
+
+  const addedVisitIds = new Set(resolvedAll.map((i) => i.sourceOpdVisitId).filter(Boolean));
+  const slipRow = (v) => ({ id: v.id, date: v.createdAt, department: v.department, patientName: v.patientName, amount: v.totalAmount || 0, serialNo: v.serialNo });
+  const pendingSlips = members.filter((v) => v.department !== 'Laboratory' && !DIAGNOSTIC_DEPTS.includes(v.department) && !addedVisitIds.has(v.id)).map(slipRow);
+  const pendingDiagnosticSlips = members.filter((v) => DIAGNOSTIC_DEPTS.includes(v.department) && !addedVisitIds.has(v.id)).map(slipRow);
+
+  const pharmacyRows = [
+    ...invLines.map((si) => ({
+      id: `inv-${si.id}`, source: 'hospital', storeName: null, code: si.item?.code || null, date: si.invoiceDate,
+      medicine: `${si.quantity < 0 ? 'Return: ' : ''}${si.item?.name || '—'}`, qty: si.quantity, rate: si.saleRate, amount: si.totalAmount,
+    })),
+    ...outsideItems.map((pi) => ({
+      id: `out-${pi.id}`, itemId: pi.id, source: 'outside', storeName: storeName.get(pi.storeId) || null, date: pi.medDate,
+      medicine: pi.medicine, dosage: pi.dosage, qty: pi.qty, unit: pi.unit, rate: pi.rate, amount: pi.amount, remarks: pi.remarks,
+    })),
+  ];
+
+  const provisionalAmount = billItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const diagnosticAmount = diagnosticRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const pharmacyAmount = pharmacyRows.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const billAmount = provisionalAmount
+    + (bill.diagnosticBillExcluded ? 0 : diagnosticAmount)
+    + (bill.pharmacyBillExcluded ? 0 : pharmacyAmount);
+  // Panel slips are paid by the company — whatever a slip did receive shows.
+  const paymentHistory = members.filter((m) => Number(m.receive) > 0).map((m) => ({ date: m.createdAt, slipNo: m.serialNo, amount: Number(m.receive) }));
+  const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
+
+  return {
+    isOpd: true,
+    admission: {
+      id: bill.id,
+      admissionNo: bill.serialNo,
+      mrNo: primary?.mrNo ?? null,
+      patientTitle: '',
+      patientName: bill.patientName || primary?.patientName || '',
+      patientCategory: 'panel',
+      relationType: panelDependent ? (panelDependent.relation || 'Dependent') : null,
+      relationName: panelDependent ? (panelEmployee?.name || null) : null,
+      status: bill.closedAt ? 'closed' : 'active',
+      createdAt: bill.startAt,
+      closedAt: bill.closedAt,
+      closedBy: bill.closedBy,
+      surgery: false,
+    },
+    panelCompanyName: panelCompany?.name || null,
+    roomCategory: null,
+    bed: null,
+    surgeryType: null,
+    dischargeType: null,
+    consultant: primary?.doctors?.[0]?.doctor ? { id: primary.doctors[0].doctor.id, name: primary.doctors[0].doctor.name } : null,
+    slips: members.map((m) => ({ serialNo: m.serialNo, department: m.department, date: m.createdAt })),
+    billItems,
+    wardHistory: [],
+    diagnosticRows,
+    diagnosticAmount,
+    diagnosticBillExcluded: bill.diagnosticBillExcluded,
+    pendingSlips,
+    pendingDiagnosticSlips,
+    pharmacyRows,
+    pharmacyAmount,
+    pharmacyBillExcluded: bill.pharmacyBillExcluded,
+    patientInfo: { paymentHistory, amountReceived },
+    balanceInfo: {
+      billAmount,
+      discount: 0,
+      discountPermissionBy: null,
+      netBillAmount: billAmount,
+      amountReceived,
+      balance: Math.max(0, billAmount - amountReceived),
+      refund: Math.max(0, amountReceived - billAmount),
+    },
+  };
+}
+
+async function addPanelOpdBillItem(billId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType }) {
+  await assertOpdBillOpen(billId);
+  if (billHeadId) {
+    const dup = await prisma.clinicPanelOpdBillItem.findFirst({
+      where: { opdBillId: Number(billId), billHeadId: Number(billHeadId), roomCategoryId: roomCategoryId ? Number(roomCategoryId) : null, sourceOpdVisitId: null },
+      select: { id: true },
+    });
+    if (dup) throw Object.assign(new Error('Yeh Head pehle se bill mein hai — dobara add nahi ho sakta, wahi row edit karein'), { status: 400 });
+  }
+  const q = Number(qty) || 1;
+  const r = Number(rate) || 0;
+  return prisma.clinicPanelOpdBillItem.create({
+    data: {
+      opdBillId: Number(billId),
+      roomCategoryId: roomCategoryId ? Number(roomCategoryId) : null,
+      billHeadId: billHeadId ? Number(billHeadId) : null,
+      qty: q, rate: r, amount: q * r,
+      remarks: remarks?.trim() || null,
+      patientType: patientType || null,
+      serialNo: await getNextSerialNo(),
+    },
+  });
+}
+
+async function addPanelOpdBillItemFromVisit(billId, opdVisitId, overrideAmount) {
+  const bill = await assertOpdBillOpen(billId);
+  const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(opdVisitId) } });
+  if (!visit) throw Object.assign(new Error('Slip not found'), { status: 404 });
+  const owner = await findOpdBillForVisit(visit);
+  if (!owner || owner.id !== bill.id) throw Object.assign(new Error('Yeh slip is OPD Bill ki nahi hai'), { status: 400 });
+  if (visit.department === 'Laboratory') throw Object.assign(new Error('Laboratory slips khud-ba-khud Diagnostic Bill mein aati hain'), { status: 400 });
+  const already = await prisma.clinicPanelOpdBillItem.findFirst({ where: { opdBillId: bill.id, sourceOpdVisitId: visit.id }, select: { id: true } });
+  if (already) throw Object.assign(new Error('Yeh slip pehle se bill mein hai'), { status: 400 });
+
+  const heads = await prisma.clinicBillHead.findMany({ where: { type: { in: ['provisional', 'both'] } } });
+  const matchedHead = heads.find((h) => firstWordKey(h.description) === firstWordKey(visit.department)) || null;
+  const amount = overrideAmount != null ? Number(overrideAmount) : (Number(visit.totalAmount) || 0);
+  return prisma.clinicPanelOpdBillItem.create({
+    data: {
+      opdBillId: bill.id, billHeadId: matchedHead?.id || null, qty: 1, rate: amount, amount,
+      remarks: `Auto-added from ${visit.department} slip (${visit.serialNo})`, sourceOpdVisitId: visit.id,
+    },
+  });
+}
+
+async function updatePanelOpdBillItem(itemId, { roomCategoryId, billHeadId, qty, rate, remarks, patientType }) {
+  const item = await prisma.clinicPanelOpdBillItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Bill item not found'), { status: 404 });
+  await assertOpdBillOpen(item.opdBillId);
+  const q = Number(qty) || 1;
+  const r = Number(rate) || 0;
+  return prisma.clinicPanelOpdBillItem.update({
+    where: { id: item.id },
+    data: {
+      roomCategoryId: roomCategoryId ? Number(roomCategoryId) : null,
+      billHeadId: billHeadId ? Number(billHeadId) : null,
+      qty: q, rate: r, amount: q * r,
+      remarks: remarks?.trim() || null,
+      patientType: patientType || null,
+    },
+  });
+}
+
+async function deletePanelOpdBillItem(itemId) {
+  const item = await prisma.clinicPanelOpdBillItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Bill item not found'), { status: 404 });
+  await assertOpdBillOpen(item.opdBillId);
+  return prisma.clinicPanelOpdBillItem.delete({ where: { id: item.id } });
+}
+
+async function addPanelOpdBillPharmacyItem(billId, { storeId, medicine, dosage, qty, unit, rate, medDate, remarks, createdByName }) {
+  await assertOpdBillOpen(billId);
+  if (!storeId) throw Object.assign(new Error('Medical Store select karna zaroori hai'), { status: 400 });
+  const store = await prisma.clinicPharmacyStore.findUnique({ where: { id: Number(storeId) }, select: { id: true } });
+  if (!store) throw Object.assign(new Error('Yeh Medical Store nahi mila'), { status: 400 });
+  if (!medicine?.trim()) throw Object.assign(new Error('Medicine naam zaroori hai'), { status: 400 });
+  if (!medDate) throw Object.assign(new Error('Date zaroori hai'), { status: 400 });
+  const q = Number(qty) || 1;
+  const r = Number(rate) || 0;
+  return prisma.clinicPanelOpdBillPharmacyItem.create({
+    data: {
+      opdBillId: Number(billId), storeId: store.id, medicine: medicine.trim(), dosage: dosage?.trim() || null,
+      qty: q, unit: unit?.trim() || null, rate: r, amount: q * r, medDate: new Date(medDate),
+      remarks: remarks?.trim() || null, createdByName: createdByName ? String(createdByName).trim() || null : null,
+    },
+  });
+}
+
+async function deletePanelOpdBillPharmacyItem(itemId) {
+  const item = await prisma.clinicPanelOpdBillPharmacyItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Row not found'), { status: 404 });
+  await assertOpdBillOpen(item.opdBillId);
+  return prisma.clinicPanelOpdBillPharmacyItem.delete({ where: { id: item.id } });
+}
+
+async function setPanelOpdBillExcluded(billId, { pharmacy, diagnostic }) {
+  await assertOpdBillOpen(billId);
+  return prisma.clinicPanelOpdBill.update({
+    where: { id: Number(billId) },
+    data: {
+      ...(pharmacy !== undefined ? { pharmacyBillExcluded: Boolean(pharmacy) } : {}),
+      ...(diagnostic !== undefined ? { diagnosticBillExcluded: Boolean(diagnostic) } : {}),
+    },
+  });
+}
+
+async function closePanelOpdBill(billId, { closedBy } = {}) {
+  await assertOpdBillOpen(billId);
+  return prisma.clinicPanelOpdBill.update({
+    where: { id: Number(billId) },
+    data: { closedAt: new Date(), closedBy: closedBy ? String(closedBy).trim() || null : null },
+  });
+}
+
 // ─── Pharmacy Stores (Provisional Bill > Pharmacy > Outside Hospital Store) ───
 // A small hospital-managed list of external pharmacy names. The "Hospital /
 // In-House Store" side needs no such list — it's derived live from Inventory
@@ -7618,7 +8071,8 @@ async function updatePharmacyStore(id, { name, status }) {
 }
 
 async function deletePharmacyStore(id) {
-  const inUse = await prisma.clinicProvisionalPharmacyItem.findFirst({ where: { storeId: Number(id) } });
+  const inUse = await prisma.clinicProvisionalPharmacyItem.findFirst({ where: { storeId: Number(id) } })
+    || await prisma.clinicPanelOpdBillPharmacyItem.findFirst({ where: { storeId: Number(id) } });
   if (inUse) {
     throw Object.assign(new Error('Ye store kisi outside-pharmacy entry se linked hai — pehle "Disable" karein, delete nahi ho sakti'), { status: 400 });
   }
@@ -7674,10 +8128,14 @@ async function deleteProvisionalPharmacyItem(itemId) {
 // admission to 'discharge' and frees its bed. This page only ever operates
 // on admissions already in 'discharge' status, and its one action is to
 // finalize/close that file once billing here is done.
-async function searchAdmissionsForDischargeRefund(q) {
+// category (owner, 2026-10-27): 'cash' → Billing → Discharge and Refund
+// (every non-panel file), 'panel' → Panels → Distribution; anything else → all.
+async function searchAdmissionsForDischargeRefund(q, category) {
   const term = String(q || '').trim();
   const where = {
     status: 'discharge',
+    ...(category === 'panel' ? { patientCategory: 'panel' } : {}),
+    ...(category === 'cash' ? { NOT: { patientCategory: 'panel' } } : {}),
     ...(term
       ? { OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
       : {}),
@@ -8276,6 +8734,274 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
     ? `Panel — balance Rs. ${otherIncomeAmount.toFixed(2)} goes to Other Income`
     : isPanel ? 'Panel — balance cleared — file closed' : 'Balance cleared — file closed';
   return updateAdmissionStatus(admissionId, { status: 'closed', reason, changedBy, changedAt: closedAt });
+}
+
+// ─── Panels > Transaction > Distribution OPD ─────────────────────────────────
+// The OPD Bill's Discharge and Refund (owner, 2026-10-27), same screen and
+// rules as Distribution: a closed OPD Bill's heads and pharmacy are copied
+// in once (like importProvisionalDataIntoDischargeBill), its Lab / Radiology
+// / Ultrasound / Blood Bank slips are one row per test kept in step with
+// the slips (like syncDischargeSlipRows), rows can be added / edited /
+// deleted, and Close File (Discount, Goes to Other Income) ends it.
+
+async function assertOpdDistOpen(billId) {
+  const bill = await prisma.clinicPanelOpdBill.findUnique({ where: { id: Number(billId) } });
+  if (!bill) throw Object.assign(new Error('OPD Bill nahi mila'), { status: 404 });
+  if (!bill.closedAt) throw Object.assign(new Error('Pehle OPD Bill close karein — Distribution OPD us ke baad khulta hai'), { status: 400 });
+  if (bill.distClosedAt) throw Object.assign(new Error('Is OPD ki file close ho chuki hai'), { status: 400 });
+  return bill;
+}
+
+// Closed OPD Bills whose file isn't closed yet.
+async function searchPanelOpdDistributions(q) {
+  const term = String(q || '').trim();
+  const rows = await prisma.clinicPanelOpdBill.findMany({
+    where: {
+      closedAt: { not: null },
+      distClosedAt: null,
+      ...(term ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] } : {}),
+    },
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  return rows.map((b) => ({ id: b.id, admissionNo: b.serialNo, patientName: b.patientName, createdAt: b.startAt }));
+}
+
+async function syncOpdDistSlipRows(bill) {
+  const [visits, provItems, existing] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({
+      where: opdBillMemberWhere(bill),
+      include: { doctors: { orderBy: { id: 'asc' }, include: { subDept: { select: { name: true } } } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    }),
+    prisma.clinicPanelOpdBillItem.findMany({ where: { opdBillId: bill.id, sourceOpdVisitId: { not: null } }, select: { sourceOpdVisitId: true, amount: true } }),
+    prisma.clinicPanelOpdDistItem.findMany({ where: { opdBillId: bill.id, source: 'slip' } }),
+  ]);
+  const provAmount = new Map(provItems.map((i) => [i.sourceOpdVisitId, Number(i.amount) || 0]));
+  const live = [];
+  visits.filter((v) => isDischargeSlipDept(v.department)).forEach((v) => {
+    const tests = v.doctors || [];
+    const testsSum = tests.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+    const prov = provAmount.get(v.id);
+    if (tests.length && (prov == null || Math.abs(prov - testsSum) < 0.01)) {
+      tests.forEach((d) => {
+        const qty = Number(d.quantity) || 1;
+        const amount = Number(d.amount) || 0;
+        live.push({ key: `${v.id}:${d.id}`, visitId: v.id, description: d.subDept?.name || v.department, qty, rate: amount / qty, amount });
+      });
+    } else {
+      const amount = prov != null ? prov : Number(v.totalAmount) || 0;
+      live.push({ key: `${v.id}:0`, visitId: v.id, description: `${v.department} slip`, qty: 1, rate: amount, amount });
+    }
+  });
+  const liveKeys = new Set(live.map((l) => l.key));
+  const byKey = new Map(existing.map((e) => [e.sourceLineKey, e]));
+  const ops = [];
+  const drop = existing.filter((e) => !liveKeys.has(e.sourceLineKey)).map((e) => e.id);
+  if (drop.length) ops.push(prisma.clinicPanelOpdDistItem.deleteMany({ where: { id: { in: drop } } }));
+  const toCreate = [];
+  for (const l of live) {
+    const row = byKey.get(l.key);
+    if (!row) {
+      toCreate.push({ opdBillId: bill.id, description: l.description, qty: l.qty, rate: l.rate, amount: l.amount, source: 'slip', sourceOpdVisitId: l.visitId, sourceLineKey: l.key });
+    } else if (row.excluded || row.amountEdited) {
+      if (row.description !== l.description) ops.push(prisma.clinicPanelOpdDistItem.update({ where: { id: row.id }, data: { description: l.description } }));
+    } else if (row.amount !== l.amount || row.qty !== l.qty || row.description !== l.description) {
+      ops.push(prisma.clinicPanelOpdDistItem.update({ where: { id: row.id }, data: { description: l.description, qty: l.qty, rate: l.rate, amount: l.amount } }));
+    }
+  }
+  if (toCreate.length) ops.push(prisma.clinicPanelOpdDistItem.createMany({ data: toCreate, skipDuplicates: true }));
+  if (ops.length) await prisma.$transaction(ops);
+}
+
+async function importOpdBillIntoDistribution(bill) {
+  const detail = await getPanelOpdBillDetail(bill.id);
+  const pharmacyPayeeFor = await resolvePharmacyPayees();
+  const rows = [];
+  detail.billItems.forEach((item) => {
+    if (isDischargeSlipDept(item.sourceDepartment)) return;
+    rows.push({
+      opdBillId: bill.id, billHeadId: item.billHeadId || null,
+      description: item.billHead?.description || item.billHead?.headCode || null,
+      qty: Number(item.qty) || 1, rate: Number(item.rate) || 0, amount: Number(item.amount) || 0, source: 'provisional',
+    });
+  });
+  const hospitalTotal = detail.pharmacyRows.filter((r) => r.source === 'hospital').reduce((s, r) => s + Number(r.amount || 0), 0);
+  if (hospitalTotal > 0) {
+    rows.push({ opdBillId: bill.id, doctorId: pharmacyPayeeFor(HOSPITAL_PHARMACY_STORE_NAME), description: HOSPITAL_PHARMACY_STORE_NAME, qty: 1, rate: hospitalTotal, amount: hospitalTotal, source: 'pharmacy' });
+  }
+  const outsideByStore = {};
+  detail.pharmacyRows.filter((r) => r.source === 'outside').forEach((r) => {
+    const label = r.storeName || 'Outside Store';
+    outsideByStore[label] = (outsideByStore[label] || 0) + Number(r.amount || 0);
+  });
+  Object.entries(outsideByStore).forEach(([storeName, total]) => {
+    if (total > 0) rows.push({ opdBillId: bill.id, doctorId: pharmacyPayeeFor(storeName), description: storeName, qty: 1, rate: total, amount: total, source: 'pharmacy' });
+  });
+  await prisma.$transaction([
+    ...(rows.length ? [prisma.clinicPanelOpdDistItem.createMany({ data: rows })] : []),
+    prisma.clinicPanelOpdBill.update({ where: { id: bill.id }, data: { distImported: true } }),
+  ]);
+}
+
+// Same response shape as getDischargeBillDetail (the page renders both),
+// `admission` standing in for the OPD Bill, isOpd set.
+async function getPanelOpdDistDetail(billId) {
+  let bill = await prisma.clinicPanelOpdBill.findUnique({ where: { id: Number(billId) } });
+  if (!bill) throw Object.assign(new Error('OPD Bill nahi mila'), { status: 404 });
+  if (!bill.closedAt) throw Object.assign(new Error('Pehle OPD Bill close karein — Distribution OPD us ke baad khulta hai'), { status: 400 });
+  if (!bill.distImported) {
+    await importOpdBillIntoDistribution(bill);
+    bill = await prisma.clinicPanelOpdBill.findUnique({ where: { id: bill.id } });
+  }
+  if (!bill.distClosedAt) await syncOpdDistSlipRows(bill);
+
+  const [items, opdDetail, company, employee] = await Promise.all([
+    prisma.clinicPanelOpdDistItem.findMany({ where: { opdBillId: bill.id, excluded: false }, orderBy: { id: 'asc' } }),
+    getPanelOpdBillDetail(bill.id),
+    bill.panelCompanyId ? prisma.clinicPanelCompany.findUnique({ where: { id: bill.panelCompanyId } }) : null,
+    bill.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: bill.panelEmployeeId } }) : null,
+  ]);
+  const billHeadIds = [...new Set(items.map((i) => i.billHeadId).filter(Boolean))];
+  const doctorIds = [...new Set(items.map((i) => i.doctorId).filter(Boolean))];
+  const subDeptIds = [...new Set(items.map((i) => i.subDeptId).filter(Boolean))];
+  const slipVisitIds = items.filter((i) => i.source === 'slip' && i.sourceOpdVisitId).map((i) => i.sourceOpdVisitId);
+  const [headRows, doctorRows, subDeptRows, slipVisits] = await Promise.all([
+    billHeadIds.length ? prisma.clinicBillHead.findMany({ where: { id: { in: billHeadIds } }, include: { refDepartment: { select: { id: true, name: true } } } }) : [],
+    doctorIds.length ? prisma.clinicDoctor.findMany({ where: { id: { in: doctorIds } } }) : [],
+    subDeptIds.length ? prisma.clinicSubDepartment.findMany({ where: { id: { in: subDeptIds } } }) : [],
+    slipVisitIds.length ? prisma.clinicOpdVisit.findMany({ where: { id: { in: slipVisitIds } }, select: { id: true, department: true, serialNo: true, createdAt: true } }) : [],
+  ]);
+  const headById = new Map(headRows.map((h) => [h.id, h]));
+  const doctorById = new Map(doctorRows.map((d) => [d.id, d]));
+  const subDeptById = new Map(subDeptRows.map((s) => [s.id, s]));
+  const slipById = new Map(slipVisits.map((v) => [v.id, v]));
+  const resolved = items.map((item) => {
+    const v = item.source === 'slip' ? slipById.get(item.sourceOpdVisitId) : null;
+    return {
+      ...item,
+      billHead: item.billHeadId ? headById.get(item.billHeadId) || null : null,
+      doctor: item.doctorId ? doctorById.get(item.doctorId) || null : null,
+      subDept: item.subDeptId ? subDeptById.get(item.subDeptId) || null : null,
+      ...(item.source === 'slip' ? { slip: v ? { department: v.department, serialNo: v.serialNo, date: v.createdAt } : null } : {}),
+    };
+  });
+  const hospitalShareTotal = resolved.reduce((s, i) => s + (Number(i.hospitalShare) || 0), 0);
+  const billItems = hospitalShareTotal > 0 ? [...resolved, {
+    id: 'hospital-share', billHeadId: null, doctorId: null, subDeptId: null, billHead: null, doctor: null, subDept: null,
+    description: 'Hospital Share', qty: 1, rate: hospitalShareTotal, amount: hospitalShareTotal, source: 'hospital-share', readOnly: true,
+  }] : resolved;
+
+  const { paymentHistory, amountReceived } = opdDetail.patientInfo;
+  const billAmount = billItems.reduce((s, i) => s + Number(i.amount || 0), 0);
+  const discountAmount = Number(bill.distDiscount) || 0;
+  const netAmount = Math.max(0, billAmount - discountAmount);
+  const otherIncomeAmount = Number(bill.distOtherIncome) || 0;
+
+  return {
+    isOpd: true,
+    admission: { ...opdDetail.admission, status: bill.distClosedAt ? 'closed' : 'discharge' },
+    roomCategory: { name: 'OPD' },
+    bed: null,
+    company,
+    employee,
+    billItems,
+    dischargeDate: bill.closedAt,
+    billLog: {
+      closedOn: bill.distClosedAt,
+      createdBy: bill.distClosedBy,
+      createdAt: bill.distClosedAt,
+      updatedBy: bill.distClosedBy,
+      updatedAt: bill.distClosedAt,
+    },
+    paymentHistory,
+    amountReceived,
+    billAmount,
+    discountAmount,
+    otherIncomeAmount,
+    balance: Math.max(0, netAmount - amountReceived - otherIncomeAmount),
+    refund: Math.max(0, amountReceived - netAmount),
+  };
+}
+
+async function addPanelOpdDistItem(billId, { billHeadId, doctorId, subDeptId, amount }) {
+  await assertOpdDistOpen(billId);
+  const amt = Number(amount) || 0;
+  const billHead = billHeadId ? await prisma.clinicBillHead.findUnique({ where: { id: Number(billHeadId) } }) : null;
+  if (billHead) {
+    const dup = await prisma.clinicPanelOpdDistItem.findFirst({
+      where: {
+        opdBillId: Number(billId), billHeadId: billHead.id, excluded: false,
+        ...(billHead.refDepartmentId ? { doctorId: doctorId ? Number(doctorId) : null, subDeptId: subDeptId ? Number(subDeptId) : null } : {}),
+      },
+      select: { id: true },
+    });
+    if (dup) throw Object.assign(new Error(`${billHead.description} pehle se bill mein hai — dobara add nahi ho sakta, wahi row ki Amount edit karein`), { status: 400 });
+  }
+  let doctorFee = null;
+  let hospitalShare = null;
+  let rowAmount = amt;
+  if (billHead?.refDepartmentId) {
+    if (!doctorId || !subDeptId) throw Object.assign(new Error(`${billHead.description || 'Ye head'} ke liye Doctor aur Sub-Department dono select karna zaroori hai`), { status: 400 });
+    const link = await prisma.clinicDoctorSubDept.findFirst({ where: { doctorId: Number(doctorId), subDeptId: Number(subDeptId) } });
+    if (!link) throw Object.assign(new Error('Is doctor ki is Sub-Department ke liye fees set nahi hai'), { status: 400 });
+    ({ doctorFee, hospitalShare } = calcFeeSplit(amt, link.paymentType, link.normalFees));
+    rowAmount = doctorFee;
+  }
+  return prisma.clinicPanelOpdDistItem.create({
+    data: {
+      opdBillId: Number(billId), billHeadId: billHead?.id || null, doctorId: doctorId ? Number(doctorId) : null, subDeptId: subDeptId ? Number(subDeptId) : null,
+      doctorFee, hospitalShare, qty: 1, rate: rowAmount, amount: rowAmount, source: 'manual',
+    },
+  });
+}
+
+async function updatePanelOpdDistItem(itemId, { amount }) {
+  const item = await prisma.clinicPanelOpdDistItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Row not found'), { status: 404 });
+  await assertOpdDistOpen(item.opdBillId);
+  const amt = Number(amount);
+  if (!Number.isFinite(amt) || amt < 0) throw Object.assign(new Error('Amount valid number honi chahiye'), { status: 400 });
+  const qty = Number(item.qty) || 1;
+  return prisma.clinicPanelOpdDistItem.update({
+    where: { id: item.id },
+    data: {
+      amount: amt, rate: qty ? amt / qty : amt,
+      ...(item.hospitalShare != null ? { doctorFee: amt } : {}),
+      ...(item.source === 'slip' ? { amountEdited: true } : {}),
+    },
+  });
+}
+
+async function deletePanelOpdDistItem(itemId) {
+  const item = await prisma.clinicPanelOpdDistItem.findUnique({ where: { id: Number(itemId) } });
+  if (!item) throw Object.assign(new Error('Row not found'), { status: 404 });
+  await assertOpdDistOpen(item.opdBillId);
+  // A slip row would come straight back from its slip — kept hidden instead.
+  if (item.source === 'slip') return prisma.clinicPanelOpdDistItem.update({ where: { id: item.id }, data: { excluded: true, amount: 0, rate: 0 } });
+  return prisma.clinicPanelOpdDistItem.delete({ where: { id: item.id } });
+}
+
+async function finalizePanelOpdDist(billId, { discountAmount, otherIncome, changedBy, closingDate }) {
+  await assertOpdDistOpen(billId);
+  const closedAt = resolveClosingDate(closingDate) || new Date();
+  const detail = await getPanelOpdDistDetail(billId);
+  const netAmount = Math.max(0, Math.round(detail.billAmount) - (Number(discountAmount) || 0));
+  const outstanding = Math.max(0, netAmount - detail.amountReceived);
+  const otherIncomeAmount = otherIncome ? outstanding : 0;
+  const balance = outstanding - otherIncomeAmount;
+  if (balance > 0) {
+    throw Object.assign(new Error(`File close nahi ho sakti — Balance Rs. ${balance.toFixed(2)} baaki hai. "Goes to Other Income" tick karein`), { status: 400 });
+  }
+  return prisma.clinicPanelOpdBill.update({
+    where: { id: Number(billId) },
+    data: {
+      distDiscount: discountAmount != null ? Number(discountAmount) : null,
+      distOtherIncome: otherIncomeAmount || null,
+      distClosedAt: closedAt,
+      distClosedBy: changedBy ? String(changedBy).trim() || null : null,
+    },
+  });
 }
 
 // ─── Patient Visits ───────────────────────────────────────────────────────────
@@ -12237,6 +12963,7 @@ module.exports = {
   getAdmissionForDiscountRefund,
   getPanelAdmissionBilling,
   searchPanelAdmissions,
+  listPanelReprintAdmissions,
   getPanelChequeSummary,
   getPanelChequesReport,
   getPanelChequePostingReport,
@@ -12257,6 +12984,23 @@ module.exports = {
   confirmPanelAdmitReportImportBatch,
   getPanelAdmitReport,
   getPanelOpdAdmitReport,
+  searchPanelOpdBills,
+  openPanelOpdBill,
+  getPanelOpdBillDetail,
+  addPanelOpdBillItem,
+  addPanelOpdBillItemFromVisit,
+  updatePanelOpdBillItem,
+  deletePanelOpdBillItem,
+  addPanelOpdBillPharmacyItem,
+  deletePanelOpdBillPharmacyItem,
+  setPanelOpdBillExcluded,
+  closePanelOpdBill,
+  searchPanelOpdDistributions,
+  getPanelOpdDistDetail,
+  addPanelOpdDistItem,
+  updatePanelOpdDistItem,
+  deletePanelOpdDistItem,
+  finalizePanelOpdDist,
   previewDoctorStatementImport,
   confirmDoctorStatementImport,
   getDoctorStatement,

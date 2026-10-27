@@ -216,6 +216,7 @@ router.get('/admission/receiving/payment/:id/print', controller.getAdmissionPaym
 router.get('/admission/discount-refund/by-number/:admissionNo', controller.getAdmissionForDiscountRefund);
 router.post('/admission/discount-refund/:admissionId/add', controller.addAdmissionDiscountRefund);
 router.get('/admission/panel-billing/search', controller.searchPanelAdmissions);
+router.get('/admission/panel-reprint/list', controller.listPanelReprintAdmissions);
 router.get('/admission/panel-billing/by-number/:admissionNo', controller.getPanelAdmissionBilling);
 router.patch('/admission/panel-billing/items/:itemId', controller.updatePanelBillingItem);
 router.patch('/admission/panel-billing/header/:admissionId', controller.updatePanelBillingHeader);
@@ -261,6 +262,25 @@ router.get('/panel-medicine-issuance-txn/report', controller.getPanelMedicineIss
 router.post('/panel-admit-report/import/preview', controller.previewPanelAdmitReportImport);
 router.post('/panel-admit-report/import/confirm', controller.confirmPanelAdmitReportImportBatch);
 router.get('/panel-admit-report/report', controller.getPanelAdmitReport);
+// Panels > Transaction > OPD Bill
+router.get('/panel-opd-bill/search', controller.searchPanelOpdBills);
+router.post('/panel-opd-bill/open', controller.openPanelOpdBill);
+router.get('/panel-opd-bill/:billId', controller.getPanelOpdBillDetail);
+router.post('/panel-opd-bill/:billId/items', controller.addPanelOpdBillItem);
+router.post('/panel-opd-bill/:billId/add-from-visit', controller.addPanelOpdBillItemFromVisit);
+router.patch('/panel-opd-bill/items/:itemId', controller.updatePanelOpdBillItem);
+router.delete('/panel-opd-bill/items/:itemId', controller.deletePanelOpdBillItem);
+router.post('/panel-opd-bill/:billId/pharmacy-items', controller.addPanelOpdBillPharmacyItem);
+router.delete('/panel-opd-bill/pharmacy-items/:itemId', controller.deletePanelOpdBillPharmacyItem);
+router.patch('/panel-opd-bill/:billId/excluded', controller.setPanelOpdBillExcluded);
+router.post('/panel-opd-bill/:billId/close', controller.closePanelOpdBill);
+// Panels > Transaction > Distribution OPD
+router.get('/panel-opd-dist/search', controller.searchPanelOpdDistributions);
+router.get('/panel-opd-dist/:billId', controller.getPanelOpdDistDetail);
+router.post('/panel-opd-dist/:billId/items', controller.addPanelOpdDistItem);
+router.patch('/panel-opd-dist/items/:itemId', controller.updatePanelOpdDistItem);
+router.delete('/panel-opd-dist/items/:itemId', controller.deletePanelOpdDistItem);
+router.put('/panel-opd-dist/:billId/finalize', controller.finalizePanelOpdDist);
 
 // Panels > Reports > Doctor Wise Statement — bulk import ("Statement of Consultant for Indoor Files")
 router.post('/doctor-statement/import/preview', controller.previewDoctorStatementImport);

@@ -115,9 +115,16 @@ async function admission(no) {
 }
 
 // ── Provisional Bill (ProvisionalBill.jsx autoprint) ───────────────────────
-async function provisional(no, printedBy) {
+// category 'cash' (Clinic → Reprint) / 'panel' (Panels → Reprint Panel
+// Bill/Form) — a file of the other kind is refused, same as the screens.
+async function provisional(no, printedBy, { category } = {}) {
   const id = await findAdmissionId(no);
   const detail = await store().fetchProvisionalBillDetail(id);
+  if (category) {
+    const isPanelFile = detail.admission.patientCategory === 'panel';
+    if (isPanelFile && category === 'cash') throw new Error('Yeh panel file hai — Panels → Reports → Reprint Panel Bill/Form se nikalein');
+    if (!isPanelFile && category === 'panel') throw new Error('Yeh panel file nahi');
+  }
   return { html: buildProvisionalBillPrintHtml({ detail, isDuplicate: true, printedBy }) };
 }
 
@@ -196,8 +203,8 @@ async function antenatal(no, printedBy) {
 const BUILDERS = { admission, provisional, discharge, birth, death, final, antenatal };
 
 // → { html, extraHtml? }
-export function buildReprint(docType, no, printedBy) {
+export function buildReprint(docType, no, printedBy, opts) {
   const fn = BUILDERS[docType];
   if (!fn) return Promise.reject(new Error('Unknown document type'));
-  return fn(no, printedBy);
+  return fn(no, printedBy, opts);
 }
