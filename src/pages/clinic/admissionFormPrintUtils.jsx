@@ -52,6 +52,26 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; 
    bottom of the page whatever the content above it. */
 .adm-print { min-height: 280mm; display: flex; flex-direction: column; }
 .adm-print-footer { margin-top: auto; padding-top: 4px; }
+/* Fill the whole A4 sheet (owner, 2026-10-28): roomier rows and type, and
+   the Diagnosis block stretches to take whatever height is left, so the
+   form reaches the barcode footer instead of stopping halfway down. */
+body { font-size: 11pt; }
+.adm-print-logo { height: 62px; }
+.adm-print-hosp-addr { font-size: 8.5pt; }
+.adm-print-status-bar { padding: 6px 10px; font-size: 10pt; }
+.adm-print-form-title { font-size: 15pt; }
+.adm-print-fields, .adm-print-history, .adm-print-diag, .adm-print-recv-line { font-size: 10pt; }
+.adm-print-fields td { padding: 7px 8px; }
+.adm-print-section-hdr { font-size: 10pt; padding: 4px; }
+.adm-print-history td { padding: 7px 8px; }
+.adm-print-oath { padding: 8px 10px; }
+.adm-print-oath-title { font-size: 13pt; margin-bottom: 4px; }
+.adm-print-oath-text { font-size: 10.5pt; line-height: 1.9; }
+.adm-print-sig-row { padding: 12px 10px; font-size: 10pt; }
+.dln-lg { width: 230px; }
+.adm-print-diag { flex: 1 1 auto; height: 30mm; }
+.adm-print-diag td { padding: 6px 8px; vertical-align: top; }
+.adm-print-barcode { height: 38px; }
 /* History tables: fixed column widths so a wider print font can never push
    the "Sig." / "Sign." lines past the right border — each line shrinks to
    its own cell instead. */
