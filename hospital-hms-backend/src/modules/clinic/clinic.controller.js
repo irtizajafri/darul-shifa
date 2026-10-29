@@ -1208,8 +1208,29 @@ async function getAdmissionForDiscountRefund(req, res, next) {
 
 async function getPanelAdmissionBilling(req, res, next) {
   try {
-    const data = await service.getPanelAdmissionBilling(req.params.admissionNo);
+    const data = req.query.report === '1'
+      ? await service.getPanelAdmissionBillingForReport(req.params.admissionNo)
+      : await service.getPanelAdmissionBilling(req.params.admissionNo);
     success(res, data);
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function getPanelDummyDischargeCert(req, res, next) {
+  try {
+    success(res, await service.getPanelDummyDischargeCert(req.params.admissionNo));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function savePanelDummyDischargeCert(req, res, next) {
+  try {
+    const { userName, ...data } = req.body || {};
+    success(res, await service.savePanelDummyDischargeCert(req.params.admissionNo, data, { userName }), 'Saved');
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -2426,8 +2447,8 @@ async function getPatientVisits(req, res, next) {
 
 async function getConsultantStatement(req, res, next) {
   try {
-    const { consultantId, fromDate, toDate, fromTime, toTime } = req.query;
-    const data = await service.getConsultantStatement({ consultantId, fromDate, toDate, fromTime, toTime });
+    const { consultantId, fromDate, toDate, fromTime, toTime, shift } = req.query;
+    const data = await service.getConsultantStatement({ consultantId, fromDate, toDate, fromTime, toTime, shift });
     success(res, data);
   } catch (err) { next(err); }
 }
@@ -2520,9 +2541,9 @@ async function getWardWisePaymentDistribution(req, res, next) {
 
 async function getDepartmentMonthlyComparison(req, res, next) {
   try {
-    const { deptFromCode, deptToCode, months } = req.query;
+    const { deptFrom, deptTo, months } = req.query;
     const data = await service.getDepartmentMonthlyComparison({
-      deptFromCode, deptToCode,
+      deptFrom, deptTo,
       months: months ? months.split(',').filter(Boolean) : [],
     });
     success(res, data);
@@ -2574,10 +2595,13 @@ async function getWardWiseBillReport(req, res, next) {
 
 async function getUserDateSummary(req, res, next) {
   try {
-    const { userId, date, shift } = req.query;
-    const data = await service.getUserDateSummary({ userId, date, shift });
+    const { userId, date, shift, userName } = req.query;
+    const data = await service.getUserDateSummary({ userId, date, shift, userName });
     success(res, data);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
 }
 
 // ─── Cashier Handover ───────────────────────────────────────────────────────
@@ -2821,6 +2845,8 @@ module.exports = {
   previewPanelAdmitReportImport,
   confirmPanelAdmitReportImportBatch,
   getPanelAdmitReport,
+  getPanelDummyDischargeCert,
+  savePanelDummyDischargeCert,
   searchPanelOpdBills,
   openPanelOpdBill,
   getPanelOpdBillDetail,

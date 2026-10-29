@@ -3279,3 +3279,17 @@ model InventoryMRNItem {
   @@index([ginItemId])
   @@index([ginId])
 }
+
+// Panels > Billing > Discharge Certificate (migration 064) — a print-only
+// certificate in the panel format, its own details (`data`), saved for
+// reprint. Not linked to ClinicDischargeCertificate in any way.
+model ClinicPanelDummyDischargeCert {
+  id            Int      @id @default(autoincrement())
+  admissionId   Int      @unique
+  admissionNo   String
+  data          Json
+  createdByName String?
+  updatedByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

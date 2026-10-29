@@ -218,6 +218,8 @@ router.post('/admission/discount-refund/:admissionId/add', controller.addAdmissi
 router.get('/admission/panel-billing/search', controller.searchPanelAdmissions);
 router.get('/admission/panel-reprint/list', controller.listPanelReprintAdmissions);
 router.get('/admission/panel-billing/by-number/:admissionNo', controller.getPanelAdmissionBilling);
+router.get('/admission/panel-dummy-discharge-cert/:admissionNo', controller.getPanelDummyDischargeCert);
+router.put('/admission/panel-dummy-discharge-cert/:admissionNo', controller.savePanelDummyDischargeCert);
 router.patch('/admission/panel-billing/items/:itemId', controller.updatePanelBillingItem);
 router.patch('/admission/panel-billing/header/:admissionId', controller.updatePanelBillingHeader);
 // Company / Employee by hand — sourceType 'admission' | 'opd'

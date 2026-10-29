@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
+import { REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import './AntenatalReport.scss';
 
 const API = 'http://localhost:5001/api/clinic';
@@ -12,7 +13,7 @@ const API = 'http://localhost:5001/api/clinic';
 // can freeze the whole app behind a modal print dialog on Windows) — see
 // utils/printPopup.js. The @page size/margin travels with the call.
 function printAntenatalReport(sheetEl) {
-  printElementInPopup(sheetEl, { title: 'Antenatal Report', page: 'A4 landscape', margin: '8mm' });
+  printElementInPopup(sheetEl, { title: 'Antenatal Report', page: 'A4 landscape', margin: '8mm', extraCss: REPORT_PRINT_TIGHT8_CSS });
 }
 
 function fmtDMY(iso) {

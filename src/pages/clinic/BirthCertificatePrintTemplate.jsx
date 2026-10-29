@@ -34,7 +34,7 @@ export function BirthCertificatePrintTemplate({ data }) {
           <span className="bthc-lbl bthc-lbl--gap">Weight (kg):</span><span className="bthc-val bthc-val--short">{c.weight ?? ''}</span>
           <span className="bthc-lbl bthc-lbl--gap">Blood Group:</span><span className="bthc-val">{c.bloodGroup || ''}</span>
         </div>
-        <div className="bthc-row"><span className="bthc-lbl">Remarks:</span><span className="bthc-val">{c.remarks || ''}</span></div>
+        <div className="bthc-row"><span className="bthc-lbl">Mode of Delivery:</span><span className="bthc-val">{c.remarks || ''}</span></div>
       </div>
 
       <div className="bthc-sig-row">

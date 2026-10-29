@@ -266,6 +266,93 @@ async function ensureSingleActiveLoan(employeeId, excludeId = null) {
   }
 }
 
+// ─── Advance → oldest unpaid salary month (owner, designed 2026-10-02) ────────
+// An advance is deducted from the employee's OLDEST salary month that Accounts
+// hasn't paid yet (EmployeeSalaryPayment, written when a salary voucher is
+// posted) — not simply the month it was given in — and can't exceed what the
+// employee has earned in that month so far minus the advances already taken
+// against it. The month moves on only once that month's salary is paid.
+//
+// Kept safe for staff whose salaries aren't paid through Voucher Expense yet:
+// an employee with no salary payment on record keeps the old rule (the issue
+// date's month). Loans are untouched.
+const ADVANCE_UNPAID_LOOKBACK_MONTHS = 3; // same backlog window as Accounts' salary lock
+
+function issueMonthKey(issueDate) {
+  const m = String(issueDate || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return { key: `${m[1]}-${m[2]}`, day: Number(m[3]) };
+  // No date given: today on the PKT clock.
+  const pkt = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+  return { key: pkt.slice(0, 7), day: Number(pkt.slice(8, 10)) };
+}
+
+function daysInMonthKey(monthKey) {
+  const [y, mo] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(y, mo, 0)).getUTCDate();
+}
+
+// Month an advance given on issueDate belongs to, and how much more can be
+// given against it. excludeId leaves one record out of "already taken".
+async function getAdvanceTarget({ employeeId, issueDate, excludeId = null }) {
+  const empId = parseInt(employeeId, 10);
+  if (!empId) throw businessError('Invalid employeeId');
+  const employee = await prisma.employee.findUnique({ where: { id: empId }, select: { id: true, empCode: true, salaryMonthly: true } });
+  if (!employee) throw businessError('Employee not found', 404);
+
+  const issue = issueMonthKey(issueDate);
+  const salaryMonthly = Number(employee.salaryMonthly) || 0;
+
+  // Paid salary months on record, as YYYY-MM.
+  const paidRows = employee.empCode
+    ? await prisma.employeeSalaryPayment.findMany({ where: { empCode: String(employee.empCode) }, select: { salaryMonth: true, salaryYear: true } })
+    : [];
+  const paidKeys = new Set(paidRows.map((r) => `${r.salaryYear}-${String(r.salaryMonth).padStart(2, '0')}`));
+
+  let month = issue.key;
+  let basis = 'issue-month';
+  if (paidKeys.size) {
+    // Oldest unpaid month from the lookback window up to the issue month;
+    // if those are all paid, the first unpaid month after it.
+    let cursor = addMonthsToKey(issue.key, -ADVANCE_UNPAID_LOOKBACK_MONTHS);
+    const lastPaid = [...paidKeys].sort().pop();
+    // Never before the month after the employee's first-ever paid month
+    // window — months before payroll tracking began aren't "unpaid".
+    const firstPaid = [...paidKeys].sort()[0];
+    if (cursor < firstPaid) cursor = firstPaid;
+    while (paidKeys.has(cursor) && cursor <= lastPaid) cursor = addMonthsToKey(cursor, 1);
+    month = cursor;
+    basis = 'oldest-unpaid';
+  }
+
+  // Earned so far in that month as of the issue date: a month already over
+  // in full; the issue month up to the issue day; a later month nothing yet.
+  let accrued = 0;
+  if (month < issue.key) accrued = salaryMonthly;
+  else if (month === issue.key) accrued = salaryMonthly * issue.day / daysInMonthKey(month);
+
+  const others = await prisma.advanceLoan.findMany({
+    where: { employeeId: empId, type: 'advance', NOT: { status: { in: CLOSED_LOAN_STATUSES } }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    select: { amount: true, reason: true },
+  });
+  const alreadyTaken = others.reduce((sum, row) => {
+    const parsed = parseReason(row.reason);
+    const sched = Array.isArray(parsed.baseSchedule) ? parsed.baseSchedule : (Array.isArray(parsed.schedule) ? parsed.schedule : []);
+    return sum + sched.filter((e) => e.month === month).reduce((s2, e) => s2 + (Number(e.amount) || 0), 0);
+  }, 0);
+
+  return {
+    month,
+    basis,
+    issueMonth: issue.key,
+    salaryMonthly,
+    accrued: Math.floor(accrued),
+    alreadyTaken: round2(alreadyTaken),
+    // No salary set on the employee → no limit can be worked out (the
+    // advance isn't blocked; the screen says so).
+    available: salaryMonthly > 0 ? Math.max(0, Math.floor(accrued - alreadyTaken)) : null,
+  };
+}
+
 async function list() {
   const rows = await prisma.advanceLoan.findMany({
     orderBy: { id: 'desc' },
@@ -305,8 +392,21 @@ async function create(payload) {
     await ensureSingleActiveLoan(parsedEmployeeId);
   }
 
-  const baseSchedule = autoShiftSchedule(schedule, parsedAmount);
-  const normalizedRecoveries = normalizeRecoveries(recoveries);
+  // Advance: its month and limit come from the salary-payment record (see
+  // getAdvanceTarget) — whatever month the screen sent is replaced.
+  let advanceSchedule = schedule;
+  let advanceRecoveries = recoveries;
+  if (normalizedType === 'advance') {
+    const target = await getAdvanceTarget({ employeeId: parsedEmployeeId, issueDate });
+    if (target.available != null && parsedAmount > target.available) {
+      throw businessError(`${target.month} ki tankhwah mein se abhi sirf Rs. ${target.available.toLocaleString('en-PK')} advance ho sakta hai (ab tak ki tankhwah Rs. ${target.accrued.toLocaleString('en-PK')} − pehle se advance Rs. ${target.alreadyTaken.toLocaleString('en-PK')})`);
+    }
+    advanceSchedule = [{ month: target.month, amount: parsedAmount }];
+    advanceRecoveries = [{ month: target.month, receivedAmount: parsedAmount }];
+  }
+
+  const baseSchedule = autoShiftSchedule(advanceSchedule, parsedAmount);
+  const normalizedRecoveries = normalizeRecoveries(advanceRecoveries);
   const reasonJson = JSON.stringify({
     baseSchedule,
     schedule: baseSchedule,
@@ -442,4 +542,4 @@ async function remove(id) {
   await prisma.advanceLoan.delete({ where: { id } });
 }
 
-module.exports = { list, create, update, remove };
+module.exports = { list, create, update, remove, getAdvanceTarget };

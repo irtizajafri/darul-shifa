@@ -6,18 +6,12 @@ import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { DEPARTMENTS, canonicalDept } from './departmentNames';
 
-const todayStr = () => new Date().toISOString().split('T')[0];
-const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
-
-// The only departments any part of this app actually writes visits into —
-// used as the lookup list instead of the separate (differently-cased,
-// legacy-named) ClinicDepartment parameter table.
-const DEPARTMENTS = [
-  'General OPD', 'Consultant OPD', 'Emergency', 'Dental OPD', 'Therapy',
-  'Laboratory', 'Ultra Sound, Echo & Color Doppler', 'Radiology',
-  'Blood Bank', 'Miscellaneous', 'Ambulance', 'Admission',
-];
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayStr = () => ymd(new Date());
+const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return ymd(d); };
+const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return ymd(d); };
 
 const PATIENT_TYPES = ['Staff', 'Panel', 'Complementary', 'Cash', 'CC'];
 
@@ -56,7 +50,9 @@ export default function DepartmentPatientsFilter() {
   const { subDepartments, fetchSubDepartments } = useClinicStore(useShallow((s) => ({ subDepartments: s.subDepartments, fetchSubDepartments: s.fetchSubDepartments })));
 
   const [fromDate, setFromDate] = useState(firstOfMonthStr());
-  const [toDate, setToDate] = useState(todayStr());
+  // To = tomorrow 07:59, so today's business day (08:00 → 07:59) is in —
+  // with To = today the range stopped at this morning 07:59 (owner, 2026-10-29).
+  const [toDate, setToDate] = useState(tomorrowStr());
   const [fromTime, setFromTime] = useState('08:00');
   const [toTime, setToTime] = useState('07:59');
   const [fromDept, setFromDept] = useState('');
@@ -76,8 +72,7 @@ export default function DepartmentPatientsFilter() {
   // takes priority, matching "select Department first, its Sub Departments open").
   const scopeDeptName = fromDept || toDept;
   const subDeptOptions = scopeDeptName
-    ? subDepartments.filter(sd => sd.department?.name?.toLowerCase().includes(scopeDeptName.toLowerCase())
-        || scopeDeptName.toLowerCase().includes(sd.department?.name?.toLowerCase() || '###')).map(sd => sd.name)
+    ? subDepartments.filter(sd => canonicalDept(sd.department?.name) === canonicalDept(scopeDeptName)).map(sd => sd.name)
     : subDepartments.map(sd => sd.name);
 
   function handleLookupSelect(val) {
@@ -89,13 +84,15 @@ export default function DepartmentPatientsFilter() {
   }
 
   const handleOk = () => {
-    const params = new URLSearchParams({ fromDate, toDate, fromTime, toTime, reportType });
+    // Today's All = today's whole business day, whatever the dates say.
+    const params = todaysAll
+      ? new URLSearchParams({ fromDate: todayStr(), toDate: tomorrowStr(), fromTime: '08:00', toTime: '07:59', reportType })
+      : new URLSearchParams({ fromDate, toDate, fromTime, toTime, reportType });
     if (fromDept) params.set('fromDept', fromDept);
     if (toDept) params.set('toDept', toDept);
     if (fromSubDept) params.set('fromSubDept', fromSubDept);
     if (toSubDept) params.set('toSubDept', toSubDept);
     if (types.length) params.set('types', types.join(','));
-    if (todaysAll) params.set('todaysAll', '1');
     navigate(`/clinic/reports/department-patients/view?${params}`);
   };
 

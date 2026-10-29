@@ -4,14 +4,11 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantStatementFilter.scss';
+import { todayStr, tomorrowStr } from './reportDates';
 
 const API = 'http://localhost:5001/api/clinic';
 const STATEMENT_CATEGORIES = ['consultant', 'contractor'];
 
-const todayStr    = () => new Date().toISOString().split('T')[0];
-const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; };
-
-const SHIFTS = ['ALL', 'Morning', 'Evening', 'Night'];
 
 export default function ConsultantStatementFilter() {
   const navigate = useNavigate();
@@ -24,6 +21,12 @@ export default function ConsultantStatementFilter() {
   const [fromTime,   setFromTime]   = useState('08:00');
   const [toTime,     setToTime]     = useState('07:59');
   const [shift,      setShift]      = useState('ALL');
+  // The configured shifts (Parameters > Shift) — the list used to be a fixed
+  // Morning / Evening / Night that matched nothing (owner, 2026-10-29).
+  const [shifts,     setShifts]     = useState([]);
+  useEffect(() => {
+    fetch(`${API}/shifts`).then(r => r.json()).then(j => setShifts(j.data || [])).catch(() => setShifts([]));
+  }, []);
 
   useEffect(() => {
     fetch(`${API}/doctors?minimal=true`)
@@ -99,7 +102,8 @@ export default function ConsultantStatementFilter() {
               <div className="csf-shift-group">
                 <span className="csf-shift-lbl">Shift</span>
                 <select className="csf-input csf-input--shift" value={shift} onChange={e => setShift(e.target.value)}>
-                  {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="ALL">ALL</option>
+                  {shifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             </div>

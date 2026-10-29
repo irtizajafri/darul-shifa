@@ -821,8 +821,9 @@ export const useClinicStore = create((set) => ({
   },
 
   // ── Panel Billing (Panels > Transaction > Billing) ──────────────────────────
-  fetchPanelAdmissionBilling: async (admissionNo) => {
-    return request(`/admission/panel-billing/by-number/${encodeURIComponent(admissionNo)}`);
+  // report: Reports / Reprint — opens for any status (see getPanelAdmissionBillingForReport).
+  fetchPanelAdmissionBilling: async (admissionNo, { report = false } = {}) => {
+    return request(`/admission/panel-billing/by-number/${encodeURIComponent(admissionNo)}${report ? '?report=1' : ''}`);
   },
 
   searchPanelAdmissions: async (q) => {

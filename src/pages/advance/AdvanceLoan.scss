@@ -159,3 +159,19 @@
 @media (max-width: 560px) {
   .advance-page .schedule-grid { grid-template-columns: 1fr; }
 }
+
+// New Advance — the salary month it's deducted from + amount available.
+.advance-target-box {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.advance-target-why { color: #475569; font-size: 0.78rem; }
+.advance-target-over { color: #b91c1c; }

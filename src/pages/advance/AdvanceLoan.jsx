@@ -104,6 +104,12 @@ const buildLiveSchedule = ({ baseSchedule = [], recoveries = [], isLoan = false 
   return rows;
 };
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtMonth = (monthKey) => {
+  const [y, m] = String(monthKey || '').split('-').map(Number);
+  return y && m ? `${MONTH_NAMES[m - 1]} ${y}` : monthKey;
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AdvanceLoan() {
@@ -119,6 +125,10 @@ export default function AdvanceLoan() {
   const [showEmpDropdown, setShowEmpDropdown]     = useState(false);
   // Dashboard list search
   const [listSearch, setListSearch]               = useState('');
+  // New Advance: the salary month it will be deducted from and how much is
+  // still available against it (backend getAdvanceTarget — oldest unpaid
+  // salary month, owner 2026-10-02).
+  const [advanceTarget, setAdvanceTarget]         = useState(null);
 
   const { setModule }         = useModuleStore();
   const { employees, fetchEmployees } = useEmployeeStore();
@@ -170,6 +180,18 @@ export default function AdvanceLoan() {
     Promise.all([fetchEmployees(), fetchAdvanceLoans()]).then(() => setLoading(false));
   }, [setModule, fetchEmployees, fetchAdvanceLoans]);
 
+  // ── New Advance: fetch its deduction month + available amount ─────────────
+  const selectedEmployeeId = selectedEmployee?.id;
+  useEffect(() => {
+    if (!isAdvance || editingRecord?.id || !selectedEmployeeId || !issueDate) { setAdvanceTarget(null); return; }
+    let alive = true;
+    fetch(`http://localhost:5001/api/advance/advance-target?employeeId=${selectedEmployeeId}&issueDate=${issueDate}`)
+      .then((r) => r.json())
+      .then((j) => { if (alive) setAdvanceTarget(j?.data || null); })
+      .catch(() => { if (alive) setAdvanceTarget(null); });
+    return () => { alive = false; };
+  }, [isAdvance, editingRecord?.id, selectedEmployeeId, issueDate]);
+
   // ── Auto-generate schedule ────────────────────────────────────────────────
   useEffect(() => {
     if (manualScheduleMode) return;
@@ -183,15 +205,18 @@ export default function AdvanceLoan() {
     }
 
     const start = new Date(issueDate);
-    // Advance: same month as issue date
+    // Advance: the salary month from advanceTarget (oldest unpaid; the issue
+    //          month for staff not paid through Accounts yet)
     // Loan:    next month after issue date
     const startOffset = isAdvance ? 0 : 1;
 
-    const entries = Array.from({ length: installmentValues.length }, (_, i) => {
-      const d        = new Date(start.getFullYear(), start.getMonth() + i + startOffset, 1);
-      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      return { month: monthKey, amount: installmentValues[i] || 0 };
-    });
+    const entries = isAdvance && advanceTarget?.month
+      ? [{ month: advanceTarget.month, amount: installmentValues[0] || 0 }]
+      : Array.from({ length: installmentValues.length }, (_, i) => {
+        const d        = new Date(start.getFullYear(), start.getMonth() + i + startOffset, 1);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        return { month: monthKey, amount: installmentValues[i] || 0 };
+      });
 
     setSchedule(entries);
     setRecoveries((prev) =>
@@ -203,7 +228,7 @@ export default function AdvanceLoan() {
         };
       })
     );
-  }, [issueDate, effectiveMonths, amount, manualScheduleMode, isAdvance]);
+  }, [issueDate, effectiveMonths, amount, manualScheduleMode, isAdvance, advanceTarget?.month]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const onSave = async (data) => {
@@ -217,6 +242,10 @@ export default function AdvanceLoan() {
     }
     if (!isAdvance && !(Number(data.installmentMonths) >= 1)) {
       toast.error('Installment months must be at least 1');
+      return;
+    }
+    if (isAdvance && !editingRecord?.id && advanceTarget?.available != null && Number(amount) > advanceTarget.available) {
+      toast.error(`${fmtMonth(advanceTarget.month)} ki tankhwah mein se abhi sirf Rs. ${advanceTarget.available.toLocaleString()} advance ho sakta hai`);
       return;
     }
     try {
@@ -432,6 +461,7 @@ export default function AdvanceLoan() {
 
   // ── Close modal helper ────────────────────────────────────────────────────
   const closeModal = () => {
+    setAdvanceTarget(null);
     setModalOpen(false);
     setEditingRecord(null);
     setManualScheduleMode(false);
@@ -684,9 +714,31 @@ export default function AdvanceLoan() {
             </div>
           )}
 
+          {/* ── New Advance: which salary month + how much is available ── */}
+          {isAdvance && !editingRecord?.id && advanceTarget && (
+            <div className="advance-target-box">
+              <div>
+                Deduct hoga: <strong>{fmtMonth(advanceTarget.month)}</strong> ki tankhwah se
+                <span className="advance-target-why">
+                  {advanceTarget.basis === 'oldest-unpaid'
+                    ? (advanceTarget.month < advanceTarget.issueMonth ? ' — is mahine ki tankhwah abhi Accounts se pay nahi hui' : ' — pichhli tankhwah pay ho chuki')
+                    : ' — is employee ki koi tankhwah abhi Accounts se record nahi, is liye issue ka mahina'}
+                </span>
+              </div>
+              {advanceTarget.available != null ? (
+                <div>
+                  Ab tak ki tankhwah Rs. {advanceTarget.accrued.toLocaleString()} − pehle se advance Rs. {advanceTarget.alreadyTaken.toLocaleString()} ={' '}
+                  <strong className={Number(amount) > advanceTarget.available ? 'advance-target-over' : ''}>Rs. {advanceTarget.available.toLocaleString()} mil sakta hai</strong>
+                </div>
+              ) : (
+                <div className="advance-target-why">Employee ki monthly salary set nahi — hadd nahi lag sakti.</div>
+              )}
+            </div>
+          )}
+
           {/* ── Monthly Deduction preview ── */}
           <div className="form-group">
-            <label>{isAdvance ? 'Deduction (same month as issue)' : 'Monthly Deduction (auto)'}</label>
+            <label>{isAdvance ? 'Deduction' : 'Monthly Deduction (auto)'}</label>
             <input
               type="text"
               className="form-input"

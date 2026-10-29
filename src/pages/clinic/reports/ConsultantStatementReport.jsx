@@ -77,7 +77,7 @@ export default function ConsultantStatementReport() {
     setLoading(true);
     setError('');
     try {
-      const q = new URLSearchParams({ consultantId, fromDate, toDate, fromTime, toTime });
+      const q = new URLSearchParams({ consultantId, fromDate, toDate, fromTime, toTime, shift });
       const res = await fetch(`${API}/consultant-statement?${q}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Failed');
@@ -165,7 +165,7 @@ th,td{padding:2px 5px;font-size:10px;}
             </div>
             <div className="csr-filter-bar">
               <span>Date: {fmtDate(fromDate)} To {fmtDate(toDate)}</span>
-              {shift !== 'ALL' && <span>Shift: {shift}</span>}
+              {shift !== 'ALL' && <span>Shift: {data?.shiftName || shift}</span>}
               {fromTime && <span>Time: {fromTime} — {toTime}</span>}
             </div>
           </div>

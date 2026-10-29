@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
-import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
+import { REPORT_PRINT_FONT_CSS, REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import './DepartmentDoctorPerformanceReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 
@@ -53,6 +53,7 @@ export default function AppointmentReport() {
         h1{font-size:13px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
         p{font-size:10px;margin:0;color:#555;}
         ${REPORT_PRINT_FONT_CSS}
+        ${REPORT_PRINT_TIGHT8_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();

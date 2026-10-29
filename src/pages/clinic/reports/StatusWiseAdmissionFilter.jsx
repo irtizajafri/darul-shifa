@@ -8,8 +8,12 @@ import './StatusWiseAdmissionFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 
-const todayStr    = () => new Date().toISOString().split('T')[0];
-const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; };
+// Local date — toISOString() gave yesterday's date before 05:00 PKT. The
+// report reads dates as business days (08:00 → 07:59), so To = today
+// already runs to 07:59 tomorrow.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayStr = () => ymd(new Date());
+const byCode = (a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
 
 const PATIENT_TYPES = [
   ['staff', 'Staff'], ['panel', 'Panel'], ['complementary', 'Complementary'], ['private', 'Cash'], ['cc', 'CC'],
@@ -26,7 +30,7 @@ export default function StatusWiseAdmissionFilter() {
   const [activeOnly, setActiveOnly] = useState(false);
 
   const [dateFrom, setDateFrom] = useState(todayStr());
-  const [dateTo, setDateTo] = useState(tomorrowStr());
+  const [dateTo, setDateTo] = useState(todayStr());
 
   const [admissionFrom, setAdmissionFrom] = useState('');
   const [admissionTo, setAdmissionTo] = useState('');
@@ -44,14 +48,16 @@ export default function StatusWiseAdmissionFilter() {
   useEffect(() => {
     fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
-      .then(j => setDoctors((j.data || []).filter(d => !activeOnly || d.status === 'active')))
+      // In code order — the From / To range runs by code (owner, 2026-10-29);
+      // in name order picking first → last dropped some doctors.
+      .then(j => setDoctors((j.data || []).filter(d => !activeOnly || d.status === 'active').sort(byCode)))
       .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [activeOnly]);
 
   useEffect(() => {
     fetch(`${API}/surgery-types`)
       .then(r => r.json())
-      .then(j => setSurgeryTypes(j.data || []))
+      .then(j => setSurgeryTypes((j.data || []).slice().sort(byCode)))
       .catch((err) => toast.error(err?.message || 'Failed to load surgery types'));
   }, []);
 

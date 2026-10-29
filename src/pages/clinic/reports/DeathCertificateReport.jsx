@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
-import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
+import { REPORT_PRINT_FONT_CSS, REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import './DeathCertificateReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 
@@ -23,18 +23,24 @@ function printDeathCertificateReport() {
   win.document.write(`<!DOCTYPE html><html><head><title>Death Certificate Report</title>
     <style>
       * { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; padding: 12px; }
-      .dcr-hdr { text-align: center; border-bottom: 2px solid #1e293b; padding-bottom: 8px; margin-bottom: 10px; }
-      .dcr-title { font-size: 14pt; font-weight: 700; text-decoration: underline; }
-      .dcr-sub { font-size: 9pt; margin-top: 4px; }
-      table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-      th, td { padding: 6px 8px; vertical-align: top; border-bottom: 1px solid #cbd5e1; text-align: left; }
-      thead th { font-weight: 700; border-bottom: 2px solid #1e293b; padding-bottom: 6px; }
+      /* A4 portrait, Arial 8pt, tight rows (owner, 2026-10-29) — long text
+         wraps inside its own cell instead of running into the next one. */
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; line-height: 1.2; color: #000; }
+      .dcr-hdr { text-align: center; border-bottom: 1.5px solid #000; padding-bottom: 3px; margin-bottom: 4px; }
+      .dcr-title { font-weight: 700; text-decoration: underline; }
+      .dcr-sub { margin-top: 1px; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th, td { padding: 2px 4px; vertical-align: top; border-bottom: 1px solid #999; text-align: left; overflow-wrap: break-word; }
+      td.dcr-nowrap { white-space: normal; }
+      thead th { font-weight: 700; border-bottom: 1.5px solid #000; }
+      thead { display: table-header-group; }
+      tr { break-inside: avoid; page-break-inside: avoid; }
       .dcr-c { text-align: center; }
       .dcr-nowrap { white-space: nowrap; }
-      .dcr-sub-line { margin-top: 2px; color: #333; }
-      @page { size: A4 landscape; margin: 8mm; }
+      .dcr-sub-line { margin-top: 0; color: #333; }
+      @page { size: A4 portrait; margin: 8mm; }
       ${REPORT_PRINT_FONT_CSS}
+      ${REPORT_PRINT_TIGHT8_CSS}
     </style></head><body>${content}</body></html>`);
   win.document.close();
   win.focus();
@@ -301,6 +307,19 @@ export default function DeathCertificateReport() {
             <div className="dcr-empty">Is date range mein koi Death Certificate nahi mila.</div>
           ) : (
             <table className="dcr-table">
+              {/* Fixed shares of the A4 portrait width so no column gets
+                  squeezed into breaking words mid-way. */}
+              <colgroup>
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '12%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th className="dcr-l">Certificate /<br />Reason</th>

@@ -12,6 +12,7 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { resolveShiftName } from './reportDates';
 
 const API = 'http://localhost:5001/api/clinic';
 
@@ -288,12 +289,20 @@ export default function PatientsListReport() {
   // koi user/shift record hi nahi hota, is liye unke rows "Not Recorded"
   // bucket me chale jaate hain — yeh data ki asal limitation hai, banayi
   // hui nahi.
+  // Rows without a saved shift (Excel import, admissions, antenatal, older
+  // slips) get theirs from their time, same as Department wise Patients
+  // (owner, 2026-10-29) — they all used to land in "Not Recorded".
+  const [shifts, setShifts] = useState([]);
+  useEffect(() => {
+    fetch(`${API}/shifts`).then(r => r.json()).then(j => setShifts(j.data || [])).catch(() => setShifts([]));
+  }, []);
+
   const groups = useMemo(() => {
     if (groupBy === 'without_users') return null;
     const map = new Map();
     for (const v of filteredVisits) {
       const user = v.createdByName || 'Not Recorded';
-      const shift = groupBy === 'user_wise' ? null : (v.shiftName || 'Not Recorded');
+      const shift = groupBy === 'user_wise' ? null : (v.shiftName || resolveShiftName(v.visitTime, shifts) || 'Not Recorded');
       const key = shift === null ? user : `${user} ${shift}`;
       if (!map.has(key)) map.set(key, { user, shift, rows: [] });
       map.get(key).rows.push(v);
@@ -301,7 +310,7 @@ export default function PatientsListReport() {
     return [...map.values()].sort((a, b) =>
       a.user.localeCompare(b.user) || String(a.shift || '').localeCompare(String(b.shift || ''))
     );
-  }, [filteredVisits, groupBy]);
+  }, [filteredVisits, groupBy, shifts]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];

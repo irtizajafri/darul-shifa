@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { DEPARTMENTS } from './departmentNames';
+import { monthStr } from './reportDates';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './DepartmentMonthlyComparisonFilter.scss';
 
-const API = 'http://localhost:5001/api/clinic';
-
-const thisMonthStr = () => new Date().toISOString().slice(0, 7); // YYYY-MM
+// Same department list as Department wise Patients (owner, 2026-10-29); the
+// report counts every spelling of a department under that one name.
+const DEPT_OPTIONS = DEPARTMENTS.map((name) => ({ id: name, name }));
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthLabel = (ym) => {
@@ -19,23 +21,12 @@ const monthLabel = (ym) => {
 export default function DepartmentMonthlyComparisonFilter() {
   const navigate = useNavigate();
 
-  const [departments, setDepartments] = useState([]);
-  const [deptFrom, setDeptFrom] = useState('');
-  const [deptTo, setDeptTo] = useState('');
+  // Whole list by default — first to last.
+  const [deptFrom, setDeptFrom] = useState(DEPARTMENTS[0]);
+  const [deptTo, setDeptTo] = useState(DEPARTMENTS[DEPARTMENTS.length - 1]);
 
-  const [monthPicker, setMonthPicker] = useState(thisMonthStr());
+  const [monthPicker, setMonthPicker] = useState(monthStr());
   const [months, setMonths] = useState([]); // list of 'YYYY-MM', accumulated via >>
-
-  useEffect(() => {
-    fetch(`${API}/departments`)
-      .then(r => r.json())
-      .then(j => {
-        const list = j.data || [];
-        setDepartments(list);
-        if (list.length) { setDeptFrom(String(list[0].id)); setDeptTo(String(list[0].id)); }
-      })
-      .catch((err) => toast.error(err?.message || 'Failed to load departments'));
-  }, []);
 
   const addMonth = () => {
     if (!monthPicker) return;
@@ -45,11 +36,9 @@ export default function DepartmentMonthlyComparisonFilter() {
 
   const handlePreview = () => {
     if (!months.length) { toast.error('Kam az kam ek Month add karein (>> button se)'); return; }
-    const fromDept = departments.find(d => String(d.id) === deptFrom);
-    const toDept = departments.find(d => String(d.id) === deptTo);
     const params = new URLSearchParams({
-      deptFromCode: fromDept?.code || '',
-      deptToCode: toDept?.code || '',
+      deptFrom,
+      deptTo,
       months: months.join(','),
     });
     navigate(`/clinic/reports/department-monthly-comparison/view?${params}`);
@@ -78,7 +67,7 @@ export default function DepartmentMonthlyComparisonFilter() {
               <SearchableSelect
                 size="sm"
                 wrapperClassName="dmc-half"
-                options={departments}
+                options={DEPT_OPTIONS}
                 value={deptFrom}
                 onChange={v => setDeptFrom(v)}
                 getLabel={d => d.name}
@@ -87,7 +76,7 @@ export default function DepartmentMonthlyComparisonFilter() {
               <SearchableSelect
                 size="sm"
                 wrapperClassName="dmc-half"
-                options={departments}
+                options={DEPT_OPTIONS}
                 value={deptTo}
                 onChange={v => setDeptTo(v)}
                 getLabel={d => d.name}

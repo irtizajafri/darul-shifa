@@ -2187,7 +2187,98 @@ async function getAdmissionForDiscountRefund(admissionNo) {
 // recomputed live from the actual Provisional Bill data — Ward History,
 // bill-head items, Diagnostic tab, Pharmacy tab — nothing here is a stored
 // copy yet; editing dates/rates and custom items comes later).
-async function getPanelAdmissionBilling(admissionNo) {
+// Panels > Billing > Discharge Certificate (owner, 2026-10-29): a dummy,
+// print-only certificate in the panel format — its own details, saved for
+// reprint, nothing to do with the real Discharge Certificate. `defaults`
+// fills a first print from the file; `saved` is what was printed last.
+async function getPanelDummyDischargeCert(admissionNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo || '').trim() },
+    orderBy: { id: 'desc' },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+  if (admission.patientCategory !== 'panel') throw Object.assign(new Error('Yeh admission Panel category ka nahi hai'), { status: 400 });
+
+  const [saved, roomCategory, bed, consultant, realCert] = await Promise.all([
+    prisma.clinicPanelDummyDischargeCert.findUnique({ where: { admissionId: admission.id } }),
+    admission.roomCategoryId ? prisma.clinicRoomCategory.findUnique({ where: { id: admission.roomCategoryId }, select: { name: true } }) : null,
+    admission.bedId ? prisma.clinicBed.findUnique({ where: { id: admission.bedId }, select: { name: true } }) : null,
+    admission.consultantId ? prisma.clinicDoctor.findUnique({ where: { id: admission.consultantId }, select: { name: true } }) : null,
+    prisma.clinicDischargeCertificate.findUnique({ where: { admissionId: admission.id }, select: { dischargeDate: true, diagnosis: true } }),
+  ]);
+  const ymdPkt = (d) => (d ? new Date(new Date(d).getTime() + 5 * 3600 * 1000).toISOString().slice(0, 10) : '');
+  const defaults = {
+    status: admission.status,
+    patientName: `${admission.patientTitle || ''} ${admission.patientName || ''}`.trim(),
+    relationType: admission.relationType || '',
+    relationName: admission.relationName || '',
+    ageYears: admission.ageYears || 0,
+    ageMonths: admission.ageMonths || 0,
+    ageDays: admission.ageDays || 0,
+    gender: admission.gender || 'male',
+    room: roomCategory?.name || '',
+    bed: bed?.name || '',
+    consultant: consultant?.name || '',
+    admitDate: ymdPkt(admission.createdAt),
+    dischargeDate: ymdPkt(realCert?.dischargeDate || new Date()),
+    diagnosis: realCert?.diagnosis || '',
+    followUp: '',
+    medicalOfficer: '',
+  };
+  return {
+    admissionNo: admission.admissionNo,
+    defaults,
+    saved: saved ? { ...saved.data, savedAt: saved.updatedAt, savedBy: saved.updatedByName || saved.createdByName } : null,
+  };
+}
+
+const PANEL_DUMMY_DC_FIELDS = ['status', 'patientName', 'relationType', 'relationName', 'ageYears', 'ageMonths', 'ageDays', 'gender', 'room', 'bed', 'consultant', 'admitDate', 'dischargeDate', 'diagnosis', 'followUp', 'medicalOfficer'];
+
+async function savePanelDummyDischargeCert(admissionNo, payload = {}, { userName } = {}) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo || '').trim() },
+    orderBy: { id: 'desc' },
+    select: { id: true, admissionNo: true, patientCategory: true },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+  if (admission.patientCategory !== 'panel') throw Object.assign(new Error('Yeh admission Panel category ka nahi hai'), { status: 400 });
+  const data = {};
+  PANEL_DUMMY_DC_FIELDS.forEach((k) => { if (payload[k] !== undefined) data[k] = typeof payload[k] === 'string' ? payload[k].trim() : payload[k]; });
+  if (!data.patientName) throw Object.assign(new Error('Patient Name zaroori hai'), { status: 400 });
+  const who = userName ? String(userName).trim() || null : null;
+  const row = await prisma.clinicPanelDummyDischargeCert.upsert({
+    where: { admissionId: admission.id },
+    update: { data, updatedByName: who },
+    create: { admissionId: admission.id, admissionNo: admission.admissionNo, data, createdByName: who, updatedByName: who },
+  });
+  return { ...row.data, savedAt: row.updatedAt, savedBy: row.updatedByName || row.createdByName };
+}
+
+// Panel Billing's Reports / Reprint (owner, 2026-10-29): any panel file,
+// whatever its status — Admit too. A file not yet open for Billing (no
+// certificate, not discharged) is built just for the report and its Billing
+// rows are removed again, so the real Billing still starts fresh from the
+// final Provisional Bill when the file gets there.
+async function getPanelAdmissionBillingForReport(admissionNo) {
+  const admission = await prisma.clinicAdmission.findFirst({
+    where: { admissionNo: String(admissionNo).trim() },
+    orderBy: { id: 'desc' },
+    select: { id: true, status: true, dischargeCertificate: { select: { id: true } } },
+  });
+  if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
+  const billable = admission.dischargeCertificate || ['discharge', 'closed'].includes(admission.status);
+  const hadBilling = await prisma.clinicPanelBillingHeader.findUnique({ where: { admissionId: admission.id }, select: { admissionId: true } });
+  const data = await getPanelAdmissionBilling(admissionNo, { report: true });
+  if (!billable && !hadBilling) {
+    await prisma.$transaction([
+      prisma.clinicPanelBillingItem.deleteMany({ where: { admissionId: admission.id } }),
+      prisma.clinicPanelBillingHeader.deleteMany({ where: { admissionId: admission.id } }),
+    ]);
+  }
+  return data;
+}
+
+async function getPanelAdmissionBilling(admissionNo, { report = false } = {}) {
   const admission = await prisma.clinicAdmission.findFirst({
     where: { admissionNo: String(admissionNo).trim() },
     orderBy: { id: 'desc' },
@@ -2201,7 +2292,10 @@ async function getPanelAdmissionBilling(admissionNo) {
   // Same gate as the search modal (see searchPanelAdmissions) — enforced here
   // too so typing an Admission # in directly can't skip it: a saved
   // Discharge Certificate, or (panel files) status Discharge.
-  if (!dischargeCertificate && admission.status !== 'discharge') {
+  // A file discharged from Admission Status Change (no certificate) stays
+  // viewable after it's closed too (owner, 2026-10-29) — it used to vanish
+  // from Billing and its Reports the moment it went to Closed.
+  if (!report && !dischargeCertificate && !['discharge', 'closed'].includes(admission.status)) {
     throw Object.assign(new Error('Is admission ka Discharge Certificate abhi tak nahi bana aur file Discharge bhi nahi hui — Billing sirf uske baad show hoti hai'), { status: 400 });
   }
   // Discharged via Admission Status Change (no certificate) → take the
@@ -2285,7 +2379,7 @@ async function getPanelAdmissionBilling(admissionNo) {
       // clickable, diagnostic-sourced row so it opens the same detail-popup
       // Laboratory/Radiology already do, matching department = the real
       // diagnostic department name — see rowDoubleClick's DIAG_DEPT_ALIASES).
-      if (h.description === 'Ultrasound') {
+      if (h.description.toLowerCase() === 'ultrasound') {
         return { billHeadId: h.id, code: h.headCode, description: h.description, kind: 'diagnostic', qty: diagByDept['Ultra Sound, Echo & Color Doppler'].length, rate: 0, amount: diagAmount('Ultra Sound, Echo & Color Doppler'), remarks: null };
       }
       const items = itemsByHeadId[h.id] || [];
@@ -2304,7 +2398,7 @@ async function getPanelAdmissionBilling(admissionNo) {
       billHeadId: null, code: null, description: 'Radiology', kind: 'diagnostic',
       qty: diagByDept.Radiology.length, rate: 0, amount: diagAmount('Radiology'), remarks: null,
     },
-  ];
+  ].filter(((seen) => (r) => { if (seen.has(r.description)) return false; seen.add(r.description); return true; })(new Set()));
 
   // Billing header — its own editable Admit Date/Discharge Date/Patient Name/
   // Consultant/Diagnosis/Sno, seeded once from the real admission/
@@ -2460,13 +2554,14 @@ async function getPanelAdmissionBilling(admissionNo) {
   groupedRows.forEach((r) => { (groupedByHead[r.groupInto] ||= []).push(r); });
 
   const rows = ungroupedRows.map((r) => {
+    const kind = r.description.toLowerCase() === 'ultrasound' && r.kind !== 'diagnostic' ? 'diagnostic' : r.kind;
     const extra = groupedByHead[r.description];
-    if (!extra) return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind: r.kind, qty: r.qty, rate: r.rate, amount: r.amount, remarks: r.remarks, date: r.date };
+    if (!extra) return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind, qty: r.qty, rate: r.rate, amount: r.amount, remarks: r.remarks, date: r.date };
     const extraQty = extra.reduce((s, x) => s + x.qty, 0);
     const extraAmount = extra.reduce((s, x) => s + x.amount, 0);
     const qty = r.qty + extraQty;
     const amount = r.amount + extraAmount;
-    return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind: r.kind, qty, rate: qty ? amount / qty : 0, amount, remarks: r.remarks, date: r.date };
+    return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind, qty, rate: qty ? amount / qty : 0, amount, remarks: r.remarks, date: r.date };
   });
   // A groupInto head with no matching row yet (this admission never had one
   // from the live Provisional Bill) — show it anyway, built purely from the
@@ -2486,6 +2581,21 @@ async function getPanelAdmissionBilling(admissionNo) {
     const ob = sortOrderByDesc[b.description] ?? Infinity;
     return oa !== ob ? oa - ob : 0;
   });
+
+  // Deduplicate rows with identical description
+  const seenRowDesc = new Set();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const desc = rows[i].description;
+    if (seenRowDesc.has(desc)) {
+      const kept = rows.find((r) => r.description === desc);
+      if (kept && Number(rows[i].amount) > Number(kept.amount)) {
+        kept.amount = rows[i].amount; kept.qty = rows[i].qty; kept.rate = rows[i].rate;
+      }
+      rows.splice(i, 1);
+    } else {
+      seenRowDesc.add(desc);
+    }
+  }
 
   const billingAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
@@ -3125,7 +3235,7 @@ async function getPanelOpdVisitBilling(serialNo) {
       { billHeadId: headCodeByDesc['Room Charges']?.billHeadId ?? null, code: headCodeByDesc['Room Charges']?.code ?? null, description: 'Room Charges', kind: 'ward' },
       ...billHeads.filter((h) => h.description !== 'Room Charges' && h.panelSortOrder != null).map((h) => ({
         billHeadId: h.id, code: h.headCode, description: h.description,
-        kind: h.description === 'Medicine' ? 'pharmacy' : (h.description === 'Laboratory' || h.description === 'Ultrasound') ? 'diagnostic' : 'item',
+        kind: h.description === 'Medicine' ? 'pharmacy' : (h.description === 'Laboratory' || h.description.toLowerCase() === 'ultrasound') ? 'diagnostic' : 'item',
       })),
       { billHeadId: null, code: null, description: 'Radiology', kind: 'diagnostic' },
       ...simplePanelHeads.map((h) => ({ billHeadId: null, code: h.headCode, description: h.description, kind: 'item' })),
@@ -3242,11 +3352,12 @@ async function getPanelOpdVisitBilling(serialNo) {
   const extrasFor = (desc) => [...(groupedByHead[desc] || []), ...(desc === 'Ultrasound' ? groupedByHead['Ultra Sound, Echo & Color Doppler'] || [] : [])];
 
   const rows = ungroupedRows.map((r) => {
+    const kind = r.description.toLowerCase() === 'ultrasound' && r.kind !== 'diagnostic' ? 'diagnostic' : r.kind;
     const extra = extrasFor(r.description);
-    if (!extra.length) return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind: r.kind, qty: r.qty, rate: r.rate, amount: r.amount, remarks: r.remarks, date: r.date };
+    if (!extra.length) return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind, qty: r.qty, rate: r.rate, amount: r.amount, remarks: r.remarks, date: r.date };
     const qty = r.qty + extra.reduce((s, x) => s + x.qty, 0);
     const amount = r.amount + extra.reduce((s, x) => s + x.amount, 0);
-    return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind: r.kind, qty, rate: qty ? amount / qty : 0, amount, remarks: r.remarks, date: r.date };
+    return { id: r.id, billHeadId: r.billHeadId, code: r.code, description: r.description, kind, qty, rate: qty ? amount / qty : 0, amount, remarks: r.remarks, date: r.date };
   });
   Object.entries(groupedByHead).forEach(([head, extra]) => {
     if (rows.some((r) => r.description === head || (head === 'Ultra Sound, Echo & Color Doppler' && r.description === 'Ultrasound'))) return;
@@ -3259,6 +3370,20 @@ async function getPanelOpdVisitBilling(serialNo) {
     const ob = sortOrderByDesc[b.description] ?? Infinity;
     return oa !== ob ? oa - ob : 0;
   });
+  // Deduplicate rows with identical description (same as Admission Billing).
+  const seenRowDesc = new Set();
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const desc = rows[i].description;
+    if (seenRowDesc.has(desc)) {
+      const kept = rows.find((r) => r.description === desc);
+      if (kept && Number(rows[i].amount) > Number(kept.amount)) {
+        kept.amount = rows[i].amount; kept.qty = rows[i].qty; kept.rate = rows[i].rate;
+      }
+      rows.splice(i, 1);
+    } else {
+      seenRowDesc.add(desc);
+    }
+  }
   const billingAmount = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
 
   const overriddenLiveIds = new Set(groupedRows.filter((r) => r.overridesLiveId).map((r) => r.overridesLiveId));
@@ -4087,11 +4212,20 @@ async function getBirthCertificateForAdmission(admissionNo, sequenceNo) {
   if (!admission) throw Object.assign(new Error('Is Admission # ka koi record nahi mila'), { status: 404 });
 
   const seq = Number(sequenceNo) || 1;
-  const birthCertificate = await prisma.clinicBirthCertificate.findUnique({
-    where: { admissionId_sequenceNo: { admissionId: admission.id, sequenceNo: seq } },
-  });
+  const [birthCertificate, surgeryInfo] = await Promise.all([
+    prisma.clinicBirthCertificate.findUnique({
+      where: { admissionId_sequenceNo: { admissionId: admission.id, sequenceNo: seq } },
+    }),
+    prisma.clinicSurgeryInformation.findUnique({ where: { admissionId: admission.id }, select: { surgeryTypeId: true } }),
+  ]);
+  // Mode of Delivery (owner, 2026-10-29) comes from the admission's surgery —
+  // Surgery Information first, else the surgery ticked on the admission.
+  const surgeryTypeId = surgeryInfo?.surgeryTypeId || (admission.surgery ? admission.surgeryTypeId : null);
+  const surgeryType = surgeryTypeId
+    ? await prisma.clinicSurgeryType.findUnique({ where: { id: surgeryTypeId }, select: { id: true, code: true, name: true } })
+    : null;
 
-  return { admission, birthCertificate };
+  return { admission, birthCertificate, surgeryType };
 }
 
 async function saveBirthCertificate(admissionId, payload) {
@@ -4714,7 +4848,7 @@ async function searchPanelAdmissions(q) {
     // would otherwise drop out of Provisional Bill (active-only) and never
     // reach Billing either (owner's decision, 2026-10-08).
     AND: [
-      { OR: [{ dischargeCertificate: { isNot: null } }, { status: 'discharge' }] },
+      { OR: [{ dischargeCertificate: { isNot: null } }, { status: { in: ['discharge', 'closed'] } }] },
       ...(term
         ? [{ OR: [{ admissionNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }]
         : []),
@@ -9991,6 +10125,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     received:      isCcPaymentType(v.patientCategory) ? 0 : (Number(v.advancePayment) || 0),
     balance:       isCcPaymentType(v.patientCategory) ? (Number(v.advancePayment) || 0) : 0,
     discount:      0,
+    // Who made the admission — User wise / shift wise grouping (owner, 2026-10-29).
+    createdByName: v.createdByName || null,
     _source:       'admission',
   }));
 
@@ -10267,7 +10403,7 @@ async function importDoctorSubDeptRates(doctorId, rows, deptTitle, doctorName) {
   return { matched, created, updated, autoCreatedSubDepts, notFound };
 }
 
-async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime, toTime }) {
+async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime, toTime, shift }) {
   const doctorId = Number(consultantId);
   if (!doctorId) throw new Error('consultantId required');
 
@@ -10297,32 +10433,50 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
       : rateInfo.normalFees;
   };
 
-  const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
-  const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
-
-  const timeInRange = (t) => {
-    if (!fromTime || !toTime || fromTime === toTime) return true;
-    if (fromTime <= toTime) return t >= fromTime && t <= toTime;
-    return t >= fromTime || t <= toTime;   // overnight
-  };
+  // One window from From date+time to To date+time (owner, 2026-10-29) —
+  // "today 08:00 → tomorrow 07:59" is one business day. The time used to be
+  // checked on its own, so that default always passed and two whole
+  // calendar days came back.
+  const fT = (fromTime || '00:00').slice(0, 5);
+  const tT = (toTime || '23:59').slice(0, 5);
+  const fromKey = fromDate ? `${fromDate} ${fT}` : null;
+  const toKey   = toDate   ? `${toDate} ${tT}` : null;
+  const inWindow = (key) => (!fromKey || key >= fromKey) && (!toKey || key <= toKey);
+  const fromDt = fromDate ? new Date(`${fromDate}T${fT}:00`) : null;
+  const toDt   = toDate   ? new Date(`${toDate}T${tT}:59.999`) : null;
 
   const toHHMM = (dt) => {
     const d = new Date(dt);
     return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   };
 
+  // Shift (by id): a slip that saved its shift matches by it, every other
+  // row by its time against the configured shifts.
+  const shifts = shift && shift !== 'ALL' ? await prisma.clinicShift.findMany() : [];
+  const pickedShift = shifts.find((s) => String(s.id) === String(shift)) || null;
+  const shiftOfTime = (t) => shifts.find((s) => (s.fromTime <= s.toTime ? (t >= s.fromTime && t < s.toTime) : (t >= s.fromTime || t < s.toTime)))?.id ?? null;
+  const inShift = (t, savedShiftId) => !pickedShift || (savedShiftId ? savedShiftId === pickedShift.id : shiftOfTime(t) === pickedShift.id);
+
   const result = [];
 
   // ── 1. Old PatientVisit table (imported data) ──────────────────────────────
+  // visitDate is date-only — its bounds are the plain dates (PKT midnight
+  // used to land on the day before).
   const oldWhere = { doctor: { equals: consultant.name, mode: 'insensitive' } };
-  if (fromDt && toDt) oldWhere.visitDate = { gte: fromDt, lte: toDt };
+  if (fromDate || toDate) {
+    oldWhere.visitDate = {
+      ...(fromDate ? { gte: new Date(`${fromDate}T00:00:00.000Z`) } : {}),
+      ...(toDate ? { lte: new Date(`${toDate}T23:59:59.999Z`) } : {}),
+    };
+  }
   const oldVisits = await prisma.patientVisit.findMany({
     where: oldWhere,
     orderBy: [{ visitDate: 'asc' }, { visitTime: 'asc' }],
   });
   for (const v of oldVisits) {
-    const t = v.visitTime || '00:00';
-    if (!timeInRange(t)) continue;
+    const t = (v.visitTime || '00:00').slice(0, 5);
+    if (!inWindow(`${new Date(v.visitDate).toISOString().slice(0, 10)} ${t}`)) continue;
+    if (!inShift(t, null)) continue;
     const rateInfo = rateBySubDeptName[normNameSvc(v.subDepartment || '')] || null;
     const amount   = Number(v.received || 0);
     result.push({
@@ -10342,7 +10496,7 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
 
   // ── 2. New ClinicOpdVisit table ────────────────────────────────────────────
   const newWhere = { doctors: { some: { doctorId } } };
-  if (fromDt && toDt) newWhere.createdAt = { gte: fromDt, lte: toDt };
+  if (fromDt || toDt) newWhere.createdAt = { ...(fromDt ? { gte: fromDt } : {}), ...(toDt ? { lte: toDt } : {}) };
   const newVisits = await prisma.clinicOpdVisit.findMany({
     where: newWhere,
     include: {
@@ -10357,7 +10511,7 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
     const docEntry = v.doctors[0];
     if (!docEntry) continue;
     const t = toHHMM(v.createdAt);
-    if (!timeInRange(t)) continue;
+    if (!inShift(t, v.shiftId)) continue;
     const rateInfo = rateBySubDeptId[docEntry.subDeptId] || null;
     result.push({
       id:            `new_${v.id}`,
@@ -10374,7 +10528,7 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
     });
   }
 
-  return { consultant, visits: result };
+  return { consultant, visits: result, shiftName: pickedShift?.name || 'ALL' };
 }
 
 // ─── Revenue Dashboard (Inquiries) ───────────────────────────────────────────
@@ -10985,8 +11139,9 @@ async function getDepartmentDoctorPerformance({
   // numbers — range filtering has to be lexicographic.
   const where = activeOnly ? { status: 'active' } : {};
   let doctorScope = await prisma.clinicDoctor.findMany({ where, select: { code: true, name: true } });
-  const fromCode = fromDoctorCode ? fromDoctorCode.trim().toUpperCase() : null;
-  const toCode   = toDoctorCode   ? toDoctorCode.trim().toUpperCase()   : null;
+  let fromCode = fromDoctorCode ? fromDoctorCode.trim().toUpperCase() : null;
+  let toCode   = toDoctorCode   ? toDoctorCode.trim().toUpperCase()   : null;
+  if (fromCode != null && toCode != null && fromCode > toCode) [fromCode, toCode] = [toCode, fromCode];
   if (fromCode != null || toCode != null) {
     doctorScope = doctorScope.filter(d => {
       const code = (d.code || '').trim().toUpperCase();
@@ -11008,6 +11163,12 @@ async function getDepartmentDoctorPerformance({
 
   const fromDt = fromDate ? new Date(fromDate + 'T00:00:00') : null;
   const toDt   = toDate   ? new Date(toDate   + 'T23:59:59') : null;
+  // Either end may be left blank (owner, 2026-10-29) — a blank end used to
+  // drop the date filter altogether. PatientVisit.visitDate is date-only, so
+  // its bounds are the plain dates (PKT midnight fell on the day before).
+  const range = (lo, hi) => (lo || hi ? { ...(lo ? { gte: lo } : {}), ...(hi ? { lte: hi } : {}) } : null);
+  const createdRange = range(fromDt, toDt);
+  const visitDateRange = range(fromDate ? new Date(`${fromDate}T00:00:00.000Z`) : null, toDate ? new Date(`${toDate}T23:59:59.999Z`) : null);
 
   const bump = (nameLower, key, row) => {
     const a = acc.get(nameLower);
@@ -11026,8 +11187,9 @@ async function getDepartmentDoctorPerformance({
       ? { AND: [cond, ...cfg.excludes.map(x => ({ NOT: { department: { contains: x, mode: 'insensitive' } } }))] }
       : cond;
   });
-  const oldWhere = { OR: ownOrConds };
-  if (fromDt && toDt) oldWhere.visitDate = { gte: fromDt, lte: toDt };
+  // Cancelled slips aren't patients.
+  const oldWhere = { OR: ownOrConds, NOT: { paymentType: { in: ['CANCELED', 'Canceled', 'canceled', 'CANCELLED', 'Cancelled', 'cancelled'] } } };
+  if (visitDateRange) oldWhere.visitDate = visitDateRange;
   const oldVisits = await prisma.patientVisit.findMany({ where: oldWhere });
   for (const v of oldVisits) {
     const nameLower = (v.doctor || '').trim().toLowerCase();
@@ -11048,8 +11210,8 @@ async function getDepartmentDoctorPerformance({
 
   // ── New ClinicOpdVisit — own-patient counts (GOPD/COPD/EMR) ─────────────
   const ownNewNames = Object.values(OWN_DEPT_BUCKETS).map(c => c.newName);
-  const ownOpdWhere = { department: { in: ownNewNames } };
-  if (fromDt && toDt) ownOpdWhere.createdAt = { gte: fromDt, lte: toDt };
+  const ownOpdWhere = { department: { in: ownNewNames }, status: { not: 'cancelled' } };
+  if (createdRange) ownOpdWhere.createdAt = createdRange;
   const ownOpdVisits = await prisma.clinicOpdVisit.findMany({
     where: ownOpdWhere,
     include: { doctors: { include: { doctor: { select: { name: true } } } } },
@@ -11113,8 +11275,8 @@ async function getDepartmentDoctorPerformance({
 
   // ── New ClinicOpdVisit — referral counts (LAB/US/XRAY), via referredBy ──
   const referralNewNames = Object.values(REFERRAL_DEPT_BUCKETS);
-  const refWhere = { department: { in: referralNewNames }, referredBy: { not: null } };
-  if (fromDt && toDt) refWhere.createdAt = { gte: fromDt, lte: toDt };
+  const refWhere = { department: { in: referralNewNames }, referredBy: { not: null }, status: { not: 'cancelled' } };
+  if (createdRange) refWhere.createdAt = createdRange;
   const refVisits = await prisma.clinicOpdVisit.findMany({ where: refWhere });
   for (const v of refVisits) {
     const nameLower = (v.referredBy || '').trim().toLowerCase();
@@ -11505,21 +11667,30 @@ async function getStatementOfSurgery({
 const PAT_STATUS_LABEL = { private: 'Private', staff: 'Staff', panel: 'Panel', complementary: 'Complementary', cc: 'CC' };
 const ADMISSION_STATUS_LABEL = { active: 'Active', discharge: 'Discharge', closed: 'Closed' };
 
+// Business day of an admission time. Imported files carry only a date,
+// stored as midnight UTC — that date is their day.
+function statusWiseBusinessDay(createdAt) {
+  const t = new Date(createdAt);
+  if (t.getUTCHours() === 0 && t.getUTCMinutes() === 0 && t.getUTCSeconds() === 0 && t.getUTCMilliseconds() === 0) {
+    return t.toISOString().slice(0, 10);
+  }
+  return new Date(t.getTime() + (5 - 8) * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 async function getStatusWiseAdmission({
   dateFrom, dateTo, admissionFrom, admissionTo,
   doctorFromCode, doctorToCode, surgeryFromCode, surgeryToCode,
   patientTypes, admissionTypes, groupMode = 'normal',
 }) {
   const where = {};
+  // Date = the hospital business day (08:00 → 07:59 PKT, named for its
+  // start), not the calendar day — a 01:00 admission belongs to the day
+  // before (owner, 2026-10-29). Fetched with a day's margin either side and
+  // narrowed by statusWiseBusinessDay below.
   if (dateFrom || dateTo) {
     where.createdAt = {};
-    if (dateFrom) where.createdAt.gte = new Date(`${dateFrom}T00:00:00`);
-    if (dateTo) where.createdAt.lte = new Date(`${dateTo}T23:59:59`);
-  }
-  if (admissionFrom || admissionTo) {
-    where.admissionNo = {};
-    if (admissionFrom) where.admissionNo.gte = admissionFrom;
-    if (admissionTo) where.admissionNo.lte = admissionTo;
+    if (dateFrom) { const d = new Date(`${dateFrom}T00:00:00Z`); d.setUTCDate(d.getUTCDate() - 1); where.createdAt.gte = d; }
+    if (dateTo) { const d = new Date(`${dateTo}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 2); where.createdAt.lt = d; }
   }
   if (patientTypes && patientTypes.length) where.patientCategory = { in: patientTypes };
   if (admissionTypes && admissionTypes.length) where.status = { in: admissionTypes };
@@ -11539,11 +11710,28 @@ async function getStatusWiseAdmission({
     where.surgeryTypeId = { in: surgeriesInRange.map((s) => s.id) };
   }
 
-  const admissions = await prisma.clinicAdmission.findMany({
+  let admissions = await prisma.clinicAdmission.findMany({
     where,
     include: { dischargeCertificate: { select: { dischargeDate: true } } },
     orderBy: { admissionNo: 'asc' },
   });
+  if (dateFrom || dateTo) {
+    admissions = admissions.filter((a) => {
+      const day = statusWiseBusinessDay(a.createdAt);
+      return (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
+    });
+  }
+  // Admission # range as numbers — as text "17380" fell between 170000 and
+  // 180000, and a stray non-numeric number matched any open-ended range.
+  if (admissionFrom || admissionTo) {
+    const lo = admissionFrom ? Number(admissionFrom) : null;
+    const hi = admissionTo ? Number(admissionTo) : null;
+    admissions = admissions.filter((a) => {
+      const n = Number(a.admissionNo);
+      if (!Number.isFinite(n)) return false;
+      return (lo == null || n >= lo) && (hi == null || n <= hi);
+    });
+  }
   if (!admissions.length) return { groupMode, rows: [], groups: [], grandTotal: emptyStatusTotal() };
 
   const admissionIds = admissions.map((a) => a.id);
@@ -11901,55 +12089,82 @@ function sumPaymentRows(rows) {
 // legacy PatientVisit department strings don't match a ClinicDepartment name
 // exactly (typos like "ECO" vs "Echo", or a slightly reworded Emergency
 // variant) — those rows won't land in any department bucket.
-async function getDepartmentMonthlyComparison({ deptFromCode, deptToCode, months }) {
+// Department wise Monthly Comparison (owner, 2026-10-29): rows are the same
+// departments as Department wise Patients / Revenue Dashboard — every
+// spelling of a department counted under one name (canonicalRevenueDept), in
+// the filter's list order; From / To (names) pick a stretch of that list.
+// Admissions come from ClinicAdmission only (the legacy "ADMISSION" visit
+// rows are the same files), and cancelled slips don't count.
+const MONTHLY_DEPT_ORDER = [
+  'General OPD', 'Consultant OPD', 'Emergency', 'Dental OPD', 'Therapy',
+  'Laboratory', 'Ultra Sound, Echo & Color Doppler', 'Radiology',
+  'Blood Bank', 'Miscellaneous', 'Ambulance', 'Admission', 'Antenatal',
+].map(canonicalRevenueDept);
+const monthlyDeptRank = (name) => {
+  const i = MONTHLY_DEPT_ORDER.indexOf(canonicalRevenueDept(name));
+  return i === -1 ? MONTHLY_DEPT_ORDER.length : i;
+};
+
+async function getDepartmentMonthlyComparison({ deptFrom, deptTo, months }) {
   if (!months || !months.length) return { departments: [], months: [], columnTotals: {}, grandTotal: 0 };
   const sortedMonths = [...months].sort();
 
   const rangeFrom = new Date(`${sortedMonths[0]}-01T00:00:00`);
   const [ly, lm] = sortedMonths[sortedMonths.length - 1].split('-').map(Number);
   const rangeTo = new Date(ly, lm, 0, 23, 59, 59);
+  // PatientVisit.visitDate is date-only — its bounds are the plain dates.
+  const lastDay = new Date(Date.UTC(ly, lm, 0)).toISOString().slice(0, 10);
+  const visitRange = { gte: new Date(`${sortedMonths[0]}-01T00:00:00.000Z`), lte: new Date(`${lastDay}T23:59:59.999Z`) };
 
-  const deptWhere = {};
-  if (deptFromCode || deptToCode) {
-    deptWhere.code = {};
-    if (deptFromCode) deptWhere.code.gte = deptFromCode;
-    if (deptToCode) deptWhere.code.lte = deptToCode;
-  }
-  const departments = await prisma.clinicDepartment.findMany({ where: deptWhere, orderBy: { name: 'asc' } });
-  if (!departments.length) return { departments: [], months: sortedMonths, columnTotals: {}, grandTotal: 0 };
+  let lo = deptFrom ? monthlyDeptRank(deptFrom) : -Infinity;
+  let hi = deptTo ? monthlyDeptRank(deptTo) : Infinity;
+  if (lo > hi) [lo, hi] = [hi, lo];
+  // To = the list's last department also takes in anything not on the list.
+  if (hi === MONTHLY_DEPT_ORDER.length - 1) hi = Infinity;
 
   const [oldVisits, opdVisits, admissions] = await Promise.all([
-    prisma.patientVisit.findMany({ where: { visitDate: { gte: rangeFrom, lte: rangeTo } }, select: { department: true, visitDate: true } }),
-    prisma.clinicOpdVisit.findMany({ where: { createdAt: { gte: rangeFrom, lte: rangeTo } }, select: { department: true, createdAt: true } }),
+    prisma.patientVisit.findMany({
+      where: { visitDate: visitRange, NOT: { paymentType: { in: ['CANCELED', 'Canceled', 'canceled', 'CANCELLED', 'Cancelled', 'cancelled'] } } },
+      select: { department: true, visitDate: true },
+    }),
+    prisma.clinicOpdVisit.findMany({ where: { createdAt: { gte: rangeFrom, lte: rangeTo }, status: { not: 'cancelled' } }, select: { department: true, createdAt: true } }),
     prisma.clinicAdmission.findMany({ where: { createdAt: { gte: rangeFrom, lte: rangeTo } }, select: { createdAt: true } }),
   ]);
 
   const monthKey = (d) => { const dt = new Date(d); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`; };
-  const norm = (s) => (s || '').trim().toLowerCase();
+  // visitDate is a plain date (UTC midnight) — its month is the UTC one.
+  const visitMonthKey = (d) => new Date(d).toISOString().slice(0, 7);
 
-  const counts = new Map(); // normalized dept name -> Map(monthKey -> count)
-  const bump = (deptName, mKey) => {
-    const key = norm(deptName);
-    if (!key) return;
-    if (!counts.has(key)) counts.set(key, new Map());
-    const m = counts.get(key);
+  const counts = new Map(); // canonical dept -> Map(monthKey -> count)
+  const bump = (dept, mKey) => {
+    if (!counts.has(dept)) counts.set(dept, new Map());
+    const m = counts.get(dept);
     m.set(mKey, (m.get(mKey) || 0) + 1);
   };
-  oldVisits.forEach((v) => bump(v.department, monthKey(v.visitDate)));
-  opdVisits.forEach((v) => bump(v.department, monthKey(v.createdAt)));
-  admissions.forEach((a) => bump('ADMISSION', monthKey(a.createdAt)));
-
-  const rows = departments.map((d) => {
-    const m = counts.get(norm(d.name)) || new Map();
-    const cells = {};
-    sortedMonths.forEach((mo) => { cells[mo] = m.get(mo) || 0; });
-    const rowTotal = Object.values(cells).reduce((s, v) => s + v, 0);
-    return { id: d.id, code: d.code, name: d.name, cells, rowTotal };
+  oldVisits.forEach((v) => {
+    const dept = canonicalRevenueDept(v.department);
+    if (dept !== 'Admission') bump(dept, visitMonthKey(v.visitDate));
   });
+  opdVisits.forEach((v) => bump(canonicalRevenueDept(v.department), monthKey(v.createdAt)));
+  admissions.forEach((a) => bump('Admission', monthKey(a.createdAt)));
+
+  // Every listed department shows (0 if none that month); anything else
+  // only when it had visits.
+  const rows = [...new Set([...MONTHLY_DEPT_ORDER, ...counts.keys()])]
+    .filter((dept) => { const r = monthlyDeptRank(dept); return r >= lo && r <= hi; })
+    .sort((a, b) => (monthlyDeptRank(a) - monthlyDeptRank(b)) || a.localeCompare(b))
+    .map((dept) => {
+      const m = counts.get(dept) || new Map();
+      const cells = {};
+      sortedMonths.forEach((mo) => { cells[mo] = m.get(mo) || 0; });
+      const rowTotal = Object.values(cells).reduce((sum, v) => sum + v, 0);
+      return { id: dept, code: '', name: dept, cells, rowTotal };
+    })
+    .filter((r) => r.rowTotal > 0 || MONTHLY_DEPT_ORDER.includes(r.name));
 
   const columnTotals = {};
-  sortedMonths.forEach((mo) => { columnTotals[mo] = rows.reduce((s, r) => s + r.cells[mo], 0); });
-  const grandTotal = Object.values(columnTotals).reduce((s, v) => s + v, 0);
+  sortedMonths.forEach((mo) => { columnTotals[mo] = rows.reduce((sum, r) => sum + r.cells[mo], 0); });
+  const grandTotal = Object.values(columnTotals).reduce((sum, v) => sum + v, 0);
 
   return { departments: rows, months: sortedMonths, columnTotals, grandTotal };
 }
@@ -12165,12 +12380,18 @@ async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromC
 // (createdByUserId/createdByName, tagged automatically since the Shift
 // feature was added) — only visits created after that point have this, same
 // caveat as the Shift/User report above.
-async function getUserDateSummary({ userId, date, shift }) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true } });
-  if (!user) throw new Error('User not found');
+async function getUserDateSummary({ userId, date, shift, userName }) {
+  // The Super Admin login isn't a row in the users table (owner, 2026-10-29)
+  // — its slips are tagged 'super-admin' and must still be reportable.
+  const user = userId === 'super-admin'
+    ? { id: userId, name: userName || 'Super Admin' }
+    : await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true } });
+  if (!user) throw Object.assign(new Error('User not found'), { status: 404 });
 
-  const dayStart = new Date(date + 'T00:00:00');
-  const dayEnd   = new Date(date + 'T23:59:59');
+  // The hospital business day: 08:00 → 07:59:59 next morning (server runs
+  // on PKT), so Shift C's after-midnight hours stay on their own day.
+  const dayStart = new Date(date + 'T08:00:00');
+  const dayEnd   = new Date(dayStart.getTime() + 24 * 3600 * 1000 - 1);
   const visits = await prisma.clinicOpdVisit.findMany({
     where: { createdByUserId: userId, createdAt: { gte: dayStart, lte: dayEnd } },
   });
@@ -12182,9 +12403,14 @@ async function getUserDateSummary({ userId, date, shift }) {
     return shifts.find(s => inRange(hhmm, s.fromTime, s.toTime))?.name || null;
   };
 
-  const scoped = (!shift || shift === 'ALL')
+  // Shift picked by id (a name is still accepted from old links) — a slip
+  // that recorded its shift id matches by id, so renaming a shift doesn't
+  // drop its older slips; slips without one go by their time.
+  const picked = (!shift || shift === 'ALL') ? null
+    : shifts.find(s => String(s.id) === String(shift)) || shifts.find(s => s.name === shift) || { id: null, name: shift };
+  const scoped = !picked
     ? visits
-    : visits.filter(v => (v.shiftName || resolveShift(v.createdAt)) === shift);
+    : visits.filter(v => (v.shiftId ? v.shiftId === picked.id : resolveShift(v.createdAt) === picked.name));
 
   const ptMap = new Map();
   for (const v of scoped) {
@@ -12204,7 +12430,7 @@ async function getUserDateSummary({ userId, date, shift }) {
     total: [...dm.values()].reduce((s, e) => ({ count: s.count + e.count, amount: s.amount + e.amount }), { count: 0, amount: 0 }),
   }));
 
-  const usedShift = scoped.length ? (scoped[0].shiftName || resolveShift(scoped[0].createdAt)) : (shift !== 'ALL' ? shift : null);
+  const usedShift = picked ? picked.name : 'ALL';
   const grandTotal = groups.reduce((s, g) => ({ count: s.count + g.total.count, amount: s.amount + g.total.amount }), { count: 0, amount: 0 });
 
   return { userName: user.name, shiftUsed: usedShift, groups, grandTotal };
@@ -12434,10 +12660,14 @@ async function getHandoverSummary(userId) {
 
   const assets = await prisma.clinicReceptionAsset.findMany({ orderBy: { name: 'asc' } });
 
-  const toDt = new Date(`${businessDate}T08:00:00`);
-  toDt.setDate(toDt.getDate() + 1);
-  const dayStart = `${businessDate} 08:00:00`;
-  const toDateTime = `${toDt.getFullYear()}-${String(toDt.getMonth() + 1).padStart(2, '0')}-${String(toDt.getDate()).padStart(2, '0')} 07:59:59`;
+  // createdAt holds UTC, so the PKT window (08:00 → 07:59:59 next morning)
+  // goes in as UTC too — compared as plain PKT clock strings it ran 5 hours
+  // late and left the morning's cash slips out (owner, 2026-10-29).
+  const pktToUtcSql = (d, t) => new Date(`${d}T${t}+05:00`).toISOString().replace('T', ' ').slice(0, 19);
+  const nextDay = new Date(`${businessDate}T00:00:00Z`);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  const dayStart = pktToUtcSql(businessDate, '08:00:00');
+  const toDateTime = pktToUtcSql(nextDay.toISOString().slice(0, 10), '07:59:59');
 
   // If this cashier already submitted a handover earlier TODAY, a new one
   // must only cover what's happened SINCE that handover — otherwise the
@@ -12451,7 +12681,7 @@ async function getHandoverSummary(userId) {
     select: { createdAt: true },
   });
   const fromDateTime = lastHandover
-    ? `${lastHandover.createdAt.getFullYear()}-${String(lastHandover.createdAt.getMonth() + 1).padStart(2, '0')}-${String(lastHandover.createdAt.getDate()).padStart(2, '0')} ${String(lastHandover.createdAt.getHours()).padStart(2, '0')}:${String(lastHandover.createdAt.getMinutes()).padStart(2, '0')}:${String(lastHandover.createdAt.getSeconds()).padStart(2, '0')}`
+    ? lastHandover.createdAt.toISOString().replace('T', ' ').slice(0, 19)
     : dayStart;
 
   const cashRows = await prisma.$queryRawUnsafe(`
@@ -12987,6 +13217,9 @@ module.exports = {
   searchPanelOpdBills,
   openPanelOpdBill,
   getPanelOpdBillDetail,
+  getPanelAdmissionBillingForReport,
+  getPanelDummyDischargeCert,
+  savePanelDummyDischargeCert,
   addPanelOpdBillItem,
   addPanelOpdBillItemFromVisit,
   updatePanelOpdBillItem,

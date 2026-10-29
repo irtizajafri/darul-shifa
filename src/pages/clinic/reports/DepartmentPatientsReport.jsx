@@ -7,6 +7,8 @@ import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentPatientsReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { canonicalDept, deptRank } from './departmentNames';
+import { resolveShiftName } from './reportDates';
 
 const API = 'http://localhost:5001/api/clinic';
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -20,30 +22,6 @@ const DEPT_CODE = {
   'Ambulance': 'AMB', 'Admission': 'ADMIT', 'Antenatal': 'ANTE',
 };
 
-// Kept identical to canonicalRevenueDept() in the backend's
-// getRevenueDashboard/getDailyDepartmentStatement (clinic.service.js) — this
-// report and the Revenue Dashboard must show the same department label for
-// the same raw data, otherwise the two never visually reconcile even when
-// the underlying totals actually match.
-function canonicalDept(raw) {
-  const u = (raw || '').trim().toUpperCase();
-  if (!u) return 'Unknown';
-  if (u.includes('EMERGENCY') || u.includes('CHEST PAIN')) return 'EMR & Chest Pain Clinic';
-  if (u.includes('CONSULTANT')) return 'Consultant OPD';
-  if (u.includes('GENERAL OPD')) return 'General OPD';
-  if (u.includes('LAB')) return 'Laboratory';
-  if (u.includes('ULTRA') || u === 'US') return 'Ultrasound';
-  if (u.includes('X-RAY') || u.includes('XRAY') || u.includes('RADIOLOGY') || u.includes('C.T.') || u.includes('MRI')) return 'X-Ray & C.T. Scan/M.R.I';
-  if (u.includes('BLOOD')) return 'Blood Bank';
-  if (u.includes('MISC')) return 'Miscellaneous';
-  if (u.includes('DENTAL')) return 'Dental OPD';
-  if (u.includes('THERAPY')) return 'Therapy';
-  if (u.includes('AMBULANCE')) return 'Ambulance';
-  if (u.includes('ADMISSION')) return 'Admission';
-  if (u.includes('ANTENATAL')) return 'Antenatal';
-  return raw.trim();
-}
-
 const fmtDate = (d) => {
   if (!d) return '—';
   const dt = new Date(d);
@@ -55,18 +33,6 @@ const fmtDateDay = (d) => {
   return `${fmtDate(d)} ${DAYS[dt.getDay()]}`;
 };
 const fmtNum = (n) => Number(n || 0).toFixed(2);
-
-// Shift is purely a function of time-of-day, so it can be derived for EVERY
-// row (old bulk data included) by matching visitTime against configured
-// shifts — not just the rows that happen to have a stored shiftName (only
-// visits created after the Shift feature existed have that).
-function resolveShiftName(visitTime, shifts) {
-  if (!shifts?.length || !visitTime) return null;
-  const t = visitTime.length >= 5 ? visitTime.slice(0, 5) : visitTime;
-  const inRange = (from, to) => (from <= to ? (t >= from && t <= to) : (t >= from || t <= to));
-  const match = shifts.find(s => inRange(s.fromTime, s.toTime));
-  return match?.name || null;
-}
 
 export default function DepartmentPatientsReport() {
   const [params] = useSearchParams();
@@ -117,12 +83,17 @@ export default function DepartmentPatientsReport() {
 
   useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, []);
 
-  // ── Filter by department / sub-department range (lexicographic, same
-  // pattern as the doctor-code range filters elsewhere in these reports) ──
+  // ── Filter by department range / sub-department range ──
+  // Departments go by the filter list's order, matched on the same names the
+  // report groups by (Emergency → EMR & Chest Pain Clinic, Radiology →
+  // X-Ray & C.T. Scan/M.R.I, …) — compared as plain text they never matched
+  // and those departments came back empty (owner, 2026-10-29).
+  let fromRank = fromDept ? deptRank(fromDept) : -Infinity;
+  let toRank = toDept ? deptRank(toDept) : Infinity;
+  if (fromRank > toRank) [fromRank, toRank] = [toRank, fromRank];
   const filtered = rows.filter(r => {
-    const dept = canonicalDept(r.department);
-    if (fromDept && dept.toLowerCase() < fromDept.toLowerCase()) return false;
-    if (toDept && dept.toLowerCase() > toDept.toLowerCase()) return false;
+    const rank = deptRank(r.department);
+    if (rank < fromRank || rank > toRank) return false;
     if (fromSubDept || toSubDept) {
       const sd = (r.subDepartment || '').toLowerCase();
       if (fromSubDept && sd < fromSubDept.toLowerCase()) return false;
@@ -187,7 +158,8 @@ export default function DepartmentPatientsReport() {
   function buildSummaryGroups() {
     const ptMap = new Map();
     for (const r of filtered) {
-      const pt = r.paymentType || 'cash';
+      // "Panel" and "panel" are one payment type — one group, not two.
+      const pt = String(r.paymentType || 'cash').trim().toLowerCase();
       const dept = canonicalDept(r.department);
       if (!ptMap.has(pt)) ptMap.set(pt, new Map());
       const dm = ptMap.get(pt);

@@ -84,7 +84,7 @@
 
 /* ── Print ── */
 @media print {
-  @page { size: A4 landscape; margin: 8mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   .no-print, .menu-bar, nav { display: none !important; }
   .dcr-page, .dcr-body { height: auto; overflow: visible; background: #fff; padding: 0; }
   .dcr-sheet { border: none; padding: 0; }

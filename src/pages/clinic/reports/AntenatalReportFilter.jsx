@@ -14,12 +14,9 @@ export default function AntenatalReportFilter() {
   const navigate = useNavigate();
   const { doctors, fetchDoctors } = useClinicStore(useShallow((s) => ({ doctors: s.doctors, fetchDoctors: s.fetchDoctors })));
 
-  // Registration Date by default — a patient registered today has an EDD
-  // ~9 months out, so defaulting to "ED Date = today" (matching the legacy
-  // dropdown's default) would show nothing for anything just registered.
-  // "ED Date" is still available for finding who's due to deliver in a
-  // given range, just not the default.
-  const [dateField, setDateField] = useState('registrationDate');
+  // ED Date by default (owner, 2026-10-29), same as the legacy dropdown —
+  // Reg. Date is still a pick away.
+  const [dateField, setDateField] = useState('edd');
   const [fromDate, setFromDate] = useState(todayStr());
   const [toDate, setToDate] = useState(todayStr());
   const [doctorId, setDoctorId] = useState('');

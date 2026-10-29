@@ -663,7 +663,7 @@
 }
 
 // "This is a computer-generated document…" — closes all three reports.
-.pnbr-cg-note { margin-top: 24px; text-align: center; font-size: 9px; font-style: italic; color: #444; }
+.pnbr-cg-note { margin-top: 24px; text-align: center; font-size: 12px; font-style: italic; color: #444; }
 
 // Diagnostic Bill (owner, 2026-10-23): plain weight, one size smaller than
 // the other reports, then 1px more (9px vs 11px); only Subtotal / Grand Total stay bold.
@@ -694,3 +694,21 @@
 }
 .pnbr-med-empty { text-align: center; color: #666; padding: 12px 0; }
 .pnbr-med-total { text-align: right; font-weight: 700; font-size: 11px; margin-top: 10px; padding-top: 6px; border-top: 1px solid #333; span { margin-left: 8px; } }
+
+/* ── Dummy Discharge Certificate (Billing footer button) ── */
+.pdc-modal { width: 640px; max-width: calc(100vw - 32px); }
+.pdc-loading { padding: 24px; text-align: center; color: #64748b; }
+.pdc-note { margin: 0 0 10px; font-size: 0.78rem; color: #92400e; }
+.pdc-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; }
+.pdc-field {
+  display: flex; flex-direction: column; gap: 3px; font-size: 0.76rem; color: #334155; font-weight: 600;
+  input, select, textarea {
+    font: inherit; font-weight: 400; font-size: 0.82rem; color: #0f172a;
+    border: 1px solid #cbd5e1; border-radius: 4px; padding: 5px 7px; background: #fff; min-width: 0;
+    width: 100%; box-sizing: border-box;
+  }
+  textarea { resize: vertical; }
+  &--wide { grid-column: 1 / -1; }
+}
+.pdc-inline { display: flex; gap: 6px; > * { flex: 1; min-width: 0; } }
+@media (max-width: 560px) { .pdc-grid { grid-template-columns: 1fr; } }

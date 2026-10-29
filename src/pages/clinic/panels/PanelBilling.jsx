@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { Search, X, Plus, Printer } from 'lucide-react';
@@ -11,6 +11,7 @@ import { printElementInPopup } from '../../../utils/printPopup';
 import { openPrintWindow } from '../../../utils/printRelay';
 import '../AdmissionAdjustment.scss'; // .aa-* lookup-modal classes
 import './PanelBilling.scss';
+import PanelDummyDischargeCertModal from './PanelDummyDischargeCert';
 import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -224,7 +225,7 @@ function billNo(admission) {
 // short legacy label — its real diagnosticRows department is the longer
 // "Ultra Sound, Echo & Color Doppler" name, so translate here rather than
 // filtering/matching on a name that'll never match.
-const DIAG_DEPT_ALIASES = { Ultrasound: 'Ultra Sound, Echo & Color Doppler' };
+const DIAG_DEPT_ALIASES = { Ultrasound: 'Ultra Sound, Echo & Color Doppler', ULTRASOUND: 'Ultra Sound, Echo & Color Doppler' };
 
 // Medicine/Laboratory/Radiology/Ultrasound rows are always-visible totals —
 // their real line items (which medicine, which test) live in
@@ -295,7 +296,11 @@ const REPORT_TYPES = [
 // margin instead (+6mm) and the report's top padding is dropped in print, so
 // every page starts exactly where page 1 always did. Content width is pinned
 // to A4 (210mm − 2×10mm) so the layout is the same on every printer.
-const PRINT_TOP_MARGIN = { covering: '54mm', medicine: '41mm', diagnostic: '41mm' };
+// Medicine / Diagnostic headers 10mm lower (owner, 2026-10-29). The top
+// margin is the letterhead's header, the bottom its footer — 25mm (it used
+// to repeat the top 41mm, leaving ~4cm empty under every page).
+const PRINT_TOP_MARGIN = { covering: '54mm', medicine: '51mm', diagnostic: '51mm' };
+const PRINT_BOTTOM_MARGIN = '25mm';
 const PRINT_A4_CSS = `.pnbr-print-area { display: block !important; position: static !important; width: 190mm !important; }
     .pnbr-cov, .pnbr-diag, .pnbr-med { padding-top: 0 !important; }`;
 const PRINT_TITLES = { covering: 'Billing Covering Page', medicine: 'Pharmacy Bill', diagnostic: 'Diagnostic Bill' };
@@ -304,7 +309,7 @@ function printPanelReport(printHostEl, reportType, targetWindow) {
   printElementInPopup(printHostEl, {
     title: PRINT_TITLES[reportType] || 'Panel Billing',
     page: 'A4 portrait',
-    margin: `${topMargin} 10mm`,
+    margin: `${topMargin} 10mm ${PRINT_BOTTOM_MARGIN}`,
     targetWindow,
     extraCss: PRINT_A4_CSS,
   });
@@ -317,16 +322,16 @@ function printPanelReport(printHostEl, reportType, targetWindow) {
 // margins through CSS named pages (`page: <name>` + `@page <name>`), so
 // every page of each report — continuation pages too — keeps exactly the
 // margin it had when printed on its own.
-export const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
+const SAVE_REPORTS = ['covering', 'medicine', 'diagnostic'];
 const PRINT_WINDOW_FEATURES = 'width=900,height=800';
 function printAllPanelReports(printHostEl, targetWindow) {
   const namedPages = SAVE_REPORTS.map((type) => `
-    @page pnb-${type} { margin: ${PRINT_TOP_MARGIN[type] || '41mm'} 10mm; }
+    @page pnb-${type} { margin: ${PRINT_TOP_MARGIN[type] || '41mm'} 10mm ${PRINT_BOTTOM_MARGIN}; }
     [data-report="${type}"] { page: pnb-${type}; }`).join('');
   printElementInPopup(printHostEl, {
     title: 'Panel Billing Reports',
     page: 'A4 portrait',
-    margin: '41mm 10mm',
+    margin: `41mm 10mm ${PRINT_BOTTOM_MARGIN}`,
     targetWindow,
     extraCss: `${PRINT_A4_CSS}
     ${namedPages}
@@ -467,6 +472,9 @@ export default function PanelBilling() {
 
   // ── Reports dialog ─────────────────────────────────────────────────────────
   const [showReports, setShowReports] = useState(false);
+  // Dummy Discharge Certificate (print-only, see PanelDummyDischargeCert).
+  const [dummyCertNo, setDummyCertNo] = useState(null);
+  const closeDummyCert = useCallback(() => setDummyCertNo(null), []);
   const [reportAdmitNo, setReportAdmitNo] = useState('');
   const [reportType, setReportType] = useState('all');
   const [reportLoading, setReportLoading] = useState(false);
@@ -868,7 +876,7 @@ export default function PanelBilling() {
     // happens from its Print button.
     setReportLoading(true);
     try {
-      const res = reportIsOpd ? await fetchPanelOpdVisitBilling(no) : await fetchPanelAdmissionBilling(no);
+      const res = reportIsOpd ? await fetchPanelOpdVisitBilling(no) : await fetchPanelAdmissionBilling(no, { report: true });
       setShowReports(false);
       setViewer({ bill: res, reports: reportType === 'all' ? SAVE_REPORTS : [reportType] });
     } catch (e) {
@@ -1467,6 +1475,11 @@ export default function PanelBilling() {
             {/* Reports (Billing Covering Page / Diagnostic Bill / Medicine
                 Bill) — Admission and Slip day-bills alike. */}
             <button className="pnb-btn" onClick={openReports}>Reports</button>
+            {data && !isOpd && (
+              <button className="pnb-btn" onClick={() => setDummyCertNo(data.admission.admissionNo)} title="Sirf print ke liye — asal Discharge Certificate se koi taluq nahi">
+                Discharge Certificate
+              </button>
+            )}
             {readOnly ? (
               <span className="pnb-closed-badge" title={isOpd ? 'Yeh bill save (lock) ho chuka hai — ab sirf dekhne/print ke liye hai' : 'Is admission ki file close ho chuki hai — Billing ab sirf dekhne/print ke liye hai'}>{isOpd ? 'Bill Saved' : 'File Closed'}</span>
             ) : (
@@ -1492,6 +1505,13 @@ export default function PanelBilling() {
       )}
 
       {viewer && <PanelReportViewer bill={viewer.bill} reports={viewer.reports} onClose={() => setViewer(null)} />}
+      {dummyCertNo && (
+        <PanelDummyDischargeCertModal
+          admissionNo={dummyCertNo}
+          printedBy={user?.name || user?.username || user?.email || ''}
+          onClose={closeDummyCert}
+        />
+      )}
 
       {popup === 'pharmacy' && data && (
         <PharmacyDetailModal
@@ -2441,7 +2461,7 @@ function ComputerGeneratedNote() {
 
 function BillingCoveringPagePrintTemplate({ data }) {
   if (!data) return null;
-  const { admission, company } = data;
+  const { admission, company, employee } = data;
   const isOpd = admission.sourceType === 'opd';
   const rows = data.rows.filter((r) => Number(r.amount) !== 0);
   const total = data.billingAmount;
@@ -2481,7 +2501,7 @@ function BillingCoveringPagePrintTemplate({ data }) {
                       <tr><td className="l">Date:</td><td className="v">{admission.billDate ? formatBillDate(admission.billDate) : fmtDate(new Date())}</td></tr>
                       <tr><td className="l">{isOpd ? 'Slip No:' : 'Admit No:'}</td><td className="v">{isOpd ? admission.admissionNo : `P-${admission.admissionNo}`}</td></tr>
                       {/* Relation sits level with Patients Name (owner, 2026-10-21); DOD below it. */}
-                      <tr><td className="l">Relation:</td><td className="v">{relationText(admission)}</td></tr>
+                      <tr><td className="l">Relation:</td><td className="v">{employee?.name || relationText(admission)}</td></tr>
                       <tr><td className="l">{isOpd ? 'Billing Date' : 'DOD'}</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
                       <tr><td className="l">Consultant:</td><td className="v">{admission.consultantName || '—'}</td></tr>
                       <tr><td className="l">Entitled For:</td><td className="v">{admission.entitledFor || '—'}</td></tr>

@@ -9,8 +9,7 @@ import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
 import { useShallow } from 'zustand/react/shallow';
 
-const todayStr = () => new Date().toISOString().split('T')[0];
-const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
+import { todayStr, firstOfMonthStr } from './reportDates';
 
 // ── Doctor Lookup Modal — search by name/code, select fills the code field ──
 function DoctorLookupModal({ doctors, onSelect, onClose }) {
@@ -61,6 +60,9 @@ export default function DepartmentDoctorPerformanceFilter({ title = 'Departmenta
   const [lookupTarget, setLookupTarget] = useState(null); // 'from' | 'to' | null
 
   useEffect(() => { if (doctors.length === 0) fetchDoctors().catch(() => {}); }, []);
+  // In code order — the From / To range runs by code (owner, 2026-10-29).
+  const codeKey = (d) => (d.code || '').trim().toUpperCase();
+  const doctorsByCode = [...doctors].sort((a, b) => (codeKey(a) < codeKey(b) ? -1 : codeKey(a) > codeKey(b) ? 1 : 0));
 
   function handleDoctorSelect(doc) {
     if (lookupTarget === 'from') setFromDoctorCode(doc.code);
@@ -81,7 +83,7 @@ export default function DepartmentDoctorPerformanceFilter({ title = 'Departmenta
       <ClinicMenuBar />
 
       {lookupTarget && (
-        <DoctorLookupModal doctors={doctors} onSelect={handleDoctorSelect} onClose={() => setLookupTarget(null)} />
+        <DoctorLookupModal doctors={doctorsByCode} onSelect={handleDoctorSelect} onClose={() => setLookupTarget(null)} />
       )}
 
       <div className="cwf-center">

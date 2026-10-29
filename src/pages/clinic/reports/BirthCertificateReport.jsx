@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
-import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
+import { REPORT_PRINT_FONT_CSS, REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentDoctorPerformanceReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
@@ -32,6 +32,13 @@ const fmtDateTime = (d) => {
 const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '—';
 
 // ── Excel import ────────────────────────────────────────────────────────────
+// Weights saved as floats show as 2.8000000000000003 — at most 2 decimals.
+function fmtWeight(w) {
+  if (w == null || w === '') return '—';
+  const n = Number(w);
+  return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : String(w);
+}
+
 function normHeader(s) { return String(s || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''); }
 
 function parseExcelDate(v) {
@@ -183,15 +190,25 @@ export default function BirthCertificateReport() {
     const content = document.getElementById('bcr-rep-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>Birth Certificate Report</title>
       <style>
+        /* A4 portrait, Arial 8pt, tight rows (owner, 2026-10-29) — long text
+           wraps inside its own cell instead of running into the next one. */
         *{box-sizing:border-box;}
-        body{font-family:Tahoma,sans-serif;font-size:11px;margin:0;padding:12px;}
-        table{width:100%;border-collapse:collapse;font-size:10px;}
-        th{background:#1a3c6e!important;color:#fff!important;padding:4px 6px;text-align:left;
+        body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;line-height:1.2;margin:0;padding:0;}
+        table{width:100%;border-collapse:collapse;table-layout:auto;}
+        thead{display:table-header-group;}
+        tfoot{display:table-row-group;}
+        tr{break-inside:avoid;page-break-inside:avoid;}
+        th{background:#1a3c6e!important;color:#fff!important;padding:2px 4px;text-align:left;vertical-align:top;
            -webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        td{padding:3px 6px;border-bottom:1px solid #ddd;}
-        h1{font-size:13px;margin:0 0 2px;text-transform:uppercase;letter-spacing:.04em;}
-        p{font-size:10px;margin:0;color:#555;}
+        td{padding:2px 4px;border-bottom:1px solid #ddd;vertical-align:top;overflow-wrap:break-word;word-break:break-word;}
+        .td-num,.num{text-align:right;}
+        td:nth-child(1),td:nth-child(5),td:nth-child(6),td:nth-child(7),td:nth-child(8){white-space:nowrap;}
+        h1{margin:0 0 1px;text-transform:uppercase;letter-spacing:.04em;}
+        p{margin:0;color:#555;}
+        .ddp-print-header{margin-bottom:4px;}
+        @page{size:A4 portrait;margin:8mm;}
         ${REPORT_PRINT_FONT_CSS}
+        ${REPORT_PRINT_TIGHT8_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();
@@ -202,7 +219,7 @@ export default function BirthCertificateReport() {
     const aoa = [['Birth Certificate Details'], [`Date: ${fmtDate(fromDate)} To ${fmtDate(toDate)}`], []];
     aoa.push(['Reg #', 'Mother Name', 'Father Name', 'Address', 'Date of Birth', 'Gender', 'Weight (kg)', 'Blood Group']);
     for (const r of rows) {
-      aoa.push([r.admissionNo, r.motherName, r.fatherName, r.address, fmtDateTimeShort(r.birthTime), genderLabel(r.gender), r.weight, r.bloodGroup]);
+      aoa.push([r.admissionNo, r.motherName, r.fatherName, r.address, fmtDateTimeShort(r.birthTime), genderLabel(r.gender), r.weight == null ? '' : Number(fmtWeight(r.weight)), r.bloodGroup]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
@@ -254,7 +271,7 @@ export default function BirthCertificateReport() {
                     <td>{r.address || '—'}</td>
                     <td>{fmtDateTimeShort(r.birthTime)}</td>
                     <td>{genderLabel(r.gender)}</td>
-                    <td className="td-num">{r.weight ?? '—'}</td>
+                    <td className="td-num">{fmtWeight(r.weight)}</td>
                     <td>{r.bloodGroup || '—'}</td>
                   </tr>
                 ))}

@@ -23,4 +23,9 @@ ${root} [class*="badge" i], ${root} [class*="pill" i], ${root} [class*="chip" i]
 // colours (no element has that id).
 export const REPORT_PRINT_BW_CSS = BW('body:not(#rpt-bw)');
 export const REPORT_PRINT_FONT_CSS = `*{font-family:Arial,Helvetica,sans-serif !important;font-size:9pt !important;}${REPORT_PRINT_BW_CSS}`;
+// Compact print (owner, 2026-10-29) — Arial 8pt, tight rows and lines. Goes
+// after REPORT_PRINT_FONT_CSS so it wins over its 9pt.
+export const REPORT_PRINT_TIGHT8_CSS = `*{font-family:Arial,Helvetica,sans-serif !important;font-size:8pt !important;line-height:1.15 !important;}
+th,td{padding:1px 4px !important;}
+h1,p{margin-top:0 !important;margin-bottom:0 !important;}`;
 export { BW as reportPrintBwCss };

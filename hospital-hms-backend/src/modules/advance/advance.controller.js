@@ -57,4 +57,15 @@ async function remove(req, res, next) {
   }
 }
 
-module.exports = { ping, list, create, update, remove };
+// Month + limit a new advance would get (the form shows it before Save).
+async function advanceTarget(req, res, next) {
+  try {
+    const { employeeId, issueDate, excludeId } = req.query;
+    return success(res, await service.getAdvanceTarget({ employeeId, issueDate, excludeId: excludeId ? Number(excludeId) : null }));
+  } catch (err) {
+    if (err?.statusCode) return fail(res, err.statusCode, err.message);
+    next(err);
+  }
+}
+
+module.exports = { ping, list, create, update, remove, advanceTarget };

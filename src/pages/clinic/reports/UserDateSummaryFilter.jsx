@@ -8,9 +8,10 @@ import '../GeneralOPD.scss';
 import './ConsultantWiseFilter.scss';
 import './DepartmentDoctorPerformanceFilter.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { SUPER_ADMIN_USER } from '../../../store/useAuthStore';
+import { todayStr } from './reportDates';
 
 const API_USERS = 'http://localhost:5001/api/users';
-const todayStr = () => new Date().toISOString().split('T')[0];
 
 function UserLookupModal({ onSelect, onClose }) {
   const [q, setQ] = useState('');
@@ -21,7 +22,8 @@ function UserLookupModal({ onSelect, onClose }) {
 
   useEffect(() => {
     inputRef.current?.focus();
-    fetch(API_USERS).then(r => r.json()).then(d => setUsers(Array.isArray(d) ? d : (d.data || []))).catch((err) => toast.error(err?.message || 'Failed to load users'));
+    // The Super Admin login isn't in the users table but makes slips too.
+    fetch(API_USERS).then(r => r.json()).then(d => setUsers([SUPER_ADMIN_USER, ...(Array.isArray(d) ? d : (d.data || []))])).catch((err) => toast.error(err?.message || 'Failed to load users'));
   }, []);
 
   const filtered = q.trim()
@@ -76,7 +78,7 @@ export default function UserDateSummaryFilter() {
 
   const handleOk = () => {
     if (!userId) return;
-    const params = new URLSearchParams({ userId, date, shift });
+    const params = new URLSearchParams({ userId, userName, date, shift });
     navigate(`/clinic/reports/user-date-summary/view?${params}`);
   };
 
@@ -114,7 +116,7 @@ export default function UserDateSummaryFilter() {
               <div className="cwf-field-group">
                 <select className="cwf-input" value={shift} onChange={e => setShift(e.target.value)}>
                   <option value="ALL">ALL</option>
-                  {shifts.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  {shifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
             </div>

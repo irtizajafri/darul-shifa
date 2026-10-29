@@ -49,7 +49,7 @@ export default function UserDateSummaryReport() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ userId, date, shift });
+      const q = new URLSearchParams({ userId, date, shift, userName: params.get('userName') || '' });
       const res = await fetch(`${API}/reports/user-date-summary?${q}`).then(r => r.json());
       if (!res.ok) { toast.error(res.message || 'Failed to load'); setData(null); return; }
       setData(res.data);

@@ -9,6 +9,7 @@ import { buildReprint, REPRINT_POPUP_FEATURES } from '../reports/reprintPrinters
 import { printedByCode } from '../../../utils/printedBy';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { PanelReportViewer } from './PanelBilling';
+import { fetchPanelDummyDischargeCert, printPanelDummyDischargeCert } from './panelDummyDischargeCertPrint';
 import '../reports/ReprintFilter.scss';
 import './PanelReprint.scss';
 
@@ -31,6 +32,8 @@ const DOC_TYPES = [
   { value: 'medicine',    label: 'Pharmacy Bill', panel: true },
   { value: 'covering',    label: 'Front Bill', panel: true },
   { value: 'discharge',   label: 'Discharge Certificate' },
+  // The dummy one printed from Panel Billing (its saved details).
+  { value: 'billingDc',   label: 'Billing Discharge Cert.' },
 ];
 
 export default function PanelReprint() {
@@ -76,10 +79,26 @@ export default function PanelReprint() {
       setBusy(true);
       try {
         await assertPanelFile(no);
-        const bill = await fetchPanelAdmissionBilling(no);
+        const bill = await fetchPanelAdmissionBilling(no, { report: true });
         setViewer({ bill, reports: [docType] });
       } catch (err) {
         toast.error(err.message || `${type.label} load nahi hua`);
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    if (docType === 'billingDc') {
+      const w = openPrintWindow('width=700,height=900');
+      setBusy(true);
+      try {
+        const d = await fetchPanelDummyDischargeCert(no);
+        if (!d.saved) throw new Error('Is file ka Billing wala Discharge Certificate abhi print nahi hua — Panels → Billing se pehle print karein');
+        printPanelDummyDischargeCert(d.saved, d.admissionNo, user?.name || user?.username || user?.email || '', w);
+      } catch (err) {
+        w.close();
+        toast.error(err.message || 'Reprint nahi ho saka');
       } finally {
         setBusy(false);
       }

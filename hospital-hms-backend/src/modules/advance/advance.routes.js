@@ -5,6 +5,7 @@ const router = express.Router();
 
 router.get('/ping', controller.ping);
 router.get('/', controller.list);
+router.get('/advance-target', controller.advanceTarget);
 router.post('/', controller.create);
 router.patch('/:id', controller.update);
 router.delete('/:id', controller.remove);

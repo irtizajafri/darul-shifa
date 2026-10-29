@@ -3,6 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import SearchableSelect from '../../components/ui/SearchableSelect';
+import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import useModalKeys from '../../hooks/useModalKeys';
 import { buildBirthCertificatePrintHtml } from './birthCertificatePrintUtils';
@@ -104,6 +106,8 @@ const EMPTY_BC = {
   birthTime: toDatetimeLocal(),
   weight: '',
   gender: 'baba',
+  // Mode of Delivery (owner, 2026-10-29) — kept in the certificate's
+  // `remarks` column, which used to be the free-text Remarks.
   remarks: '',
 };
 
@@ -116,6 +120,11 @@ export default function BirthCertificate() {
   const [admission, setAdmission] = useState(null);
   const [form, setForm] = useState(EMPTY_BC);
   const [saving, setSaving] = useState(false);
+  // The admission's own surgery (null → pick one from the dropdown).
+  const [admissionSurgery, setAdmissionSurgery] = useState(null);
+  const surgeryTypes = useClinicStore((s) => s.surgeryTypes);
+  const fetchSurgeryTypes = useClinicStore((s) => s.fetchSurgeryTypes);
+  useEffect(() => { fetchSurgeryTypes().catch(() => {}); }, [fetchSurgeryTypes]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -125,6 +134,7 @@ export default function BirthCertificate() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Load failed');
       setAdmission(json.data.admission);
+      setAdmissionSurgery(json.data.surgeryType || null);
       const bc = json.data.birthCertificate;
       const adm = json.data.admission;
       if (bc) {
@@ -149,6 +159,7 @@ export default function BirthCertificate() {
           motherName: `${adm.patientTitle || ''} ${adm.patientName || ''}`.trim(),
           fatherName: adm.relationType === 'W/o' ? (adm.relationName || '') : '',
           address: adm.address || '',
+          remarks: json.data.surgeryType?.name || '',
         });
         if (autoprint) toast.error('Is admission ke liye Birth Certificate abhi tak save nahi hui — pehle save karein');
       }
@@ -174,6 +185,7 @@ export default function BirthCertificate() {
 
   function resetForm() {
     setAdmission(null);
+    setAdmissionSurgery(null);
     setForm(EMPTY_BC);
   }
 
@@ -289,9 +301,30 @@ export default function BirthCertificate() {
               </div>
 
               <div className="bc-form-row">
-                <label className="bc-label">Remarks</label>
-                <input className="bc-input bc-input--wide" value={form.remarks} onChange={e => set('remarks', e.target.value)} />
+                <label className="bc-label">Mode of Delivery</label>
+                <input
+                  className="bc-input bc-input--wide"
+                  value={form.remarks}
+                  onChange={e => set('remarks', e.target.value)}
+                  placeholder={admissionSurgery ? '' : 'Neeche se surgery chunein'}
+                />
               </div>
+              {/* No surgery on the admission — pick it here. */}
+              {!admissionSurgery && (
+                <div className="bc-form-row">
+                  <label className="bc-label">Surgery</label>
+                  <SearchableSelect
+                    options={surgeryTypes}
+                    value={surgeryTypes.find(t => t.name === form.remarks)?.id ?? ''}
+                    onChange={v => set('remarks', surgeryTypes.find(t => String(t.id) === String(v))?.name || '')}
+                    getLabel={t => (t.code ? `${t.code} — ${t.name}` : t.name)}
+                    getKey={t => t.id}
+                    placeholder="— Select Surgery —"
+                    size="sm"
+                    style={{ flex: 1, minWidth: 0, maxWidth: 420 }}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>

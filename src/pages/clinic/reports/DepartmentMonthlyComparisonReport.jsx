@@ -21,14 +21,14 @@ export default function DepartmentMonthlyComparisonReport() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const deptFromCode = params.get('deptFromCode') || '';
-  const deptToCode = params.get('deptToCode') || '';
+  const deptFrom = params.get('deptFrom') || '';
+  const deptTo = params.get('deptTo') || '';
   const months = (params.get('months') || '').split(',').filter(Boolean);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const q = new URLSearchParams({ deptFromCode, deptToCode, months: months.join(',') });
+      const q = new URLSearchParams({ deptFrom, deptTo, months: months.join(',') });
       const res = await fetch(`${API}/reports/department-monthly-comparison?${q}`).then(r => r.json());
       setData(res.data || null);
     } catch { toast.error('Data load failed'); }

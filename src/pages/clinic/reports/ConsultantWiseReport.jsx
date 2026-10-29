@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
-import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
+import { REPORT_PRINT_FONT_CSS, REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './ConsultantWiseReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
@@ -186,6 +186,8 @@ export default function ConsultantWiseReport() {
         th.num{text-align:right;}
         td{padding:3px 6px;border-bottom:1px solid #ddd;}
         .td-num{text-align:right;}
+        /* S.No / Date / Time stay on one line */
+        td:nth-child(-n+3){white-space:nowrap;}
         /* detail view */
         .cwr-con-header{background:#e8eef8!important;font-weight:700;padding:5px 8px;
           margin:10px 0 0;border-left:3px solid #1a3c6e;font-size:11px;
@@ -216,6 +218,7 @@ export default function ConsultantWiseReport() {
         .dws-sign-col{text-align:center;min-width:130px;}
         .dws-sign-line{border-top:1px solid #333;margin-bottom:2px;}
         ${REPORT_PRINT_FONT_CSS}
+        ${REPORT_PRINT_TIGHT8_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();

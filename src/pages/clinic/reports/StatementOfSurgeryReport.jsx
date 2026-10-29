@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import toast from 'react-hot-toast';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
-import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
+import { REPORT_PRINT_FONT_CSS, REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import { numberToWords } from '../receiptUtils';
 import './DepartmentDoctorPerformanceReport.scss';
 import './StatementOfSurgeryReport.scss';
@@ -53,7 +53,7 @@ export default function StatementOfSurgeryReport() {
     const content = document.getElementById('sos-printable')?.innerHTML || '';
     win.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
       <style>
-        @page{size:portrait;margin:10mm;}
+        @page{size:A5 portrait;margin:6mm;}
         *{box-sizing:border-box;}
         body{font-family:Arial,sans-serif;font-size:10px;margin:0;padding:0;}
         .sos-doc-block{page-break-after:always;padding:6px 4px;}
@@ -63,16 +63,17 @@ export default function StatementOfSurgeryReport() {
         th.num{text-align:right;}
         td{padding:2px 5px;}
         .td-num{text-align:right;}
-        .sos-title{text-align:center;font-weight:700;font-size:12px;text-decoration:underline;margin-bottom:10px;}
+        .sos-title{text-align:center;font-weight:700;font-size:12px;text-decoration:underline;margin-bottom:4px;}
         .sos-doc-name{font-weight:700;font-size:11px;border-bottom:3px double #000;padding-bottom:3px;margin-bottom:6px;}
         .sos-period{display:flex;justify-content:space-between;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:2px;}
         .sos-group-row td{font-weight:700;border-top:1px solid #999;padding-top:6px;}
         .sos-footer-row td{font-weight:700;border-top:1px solid #000;padding-top:5px;}
         .sos-words{margin-top:6px;font-size:9.5px;}
-        .sos-sign-row{display:flex;justify-content:space-between;margin-top:40px;text-align:center;}
+        .sos-sign-row{display:flex;justify-content:space-between;margin-top:24px;text-align:center;}
         .sos-sign-block{width:30%;}
         .sos-sign-line{border-top:1px solid #000;padding-top:3px;font-size:9px;}
         ${REPORT_PRINT_FONT_CSS}
+        ${REPORT_PRINT_TIGHT8_CSS}
       </style></head><body>${content}</body></html>`);
     win.document.close();
     win.focus();

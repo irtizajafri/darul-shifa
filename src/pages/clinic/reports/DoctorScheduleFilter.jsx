@@ -8,6 +8,11 @@ import './DoctorScheduleFilter.scss';
 
 const API = 'http://localhost:5001/api/clinic';
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// The From / To ranges run by code, so the lists are in code order and show
+// the code (owner, 2026-10-29) — in name order, first → last left out most
+// departments (Laboratory, Radiology, Ultrasound, …) and some doctors.
+const byCode = (a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
+const codeLabel = (x) => (x.code ? `${x.code} - ${x.name}` : x.name);
 
 export default function DoctorScheduleFilter() {
   const navigate = useNavigate();
@@ -25,14 +30,14 @@ export default function DoctorScheduleFilter() {
   useEffect(() => {
     fetch(`${API}/doctors?minimal=true`)
       .then(r => r.json())
-      .then(j => setDoctors((j.data || []).filter(d => !activeOnly || d.status === 'active')))
+      .then(j => setDoctors((j.data || []).filter(d => !activeOnly || d.status === 'active').sort(byCode)))
       .catch((err) => toast.error(err?.message || 'Failed to load doctors'));
   }, [activeOnly]);
 
   useEffect(() => {
     fetch(`${API}/departments`)
       .then(r => r.json())
-      .then(j => setDepartments(j.data || []))
+      .then(j => setDepartments((j.data || []).slice().sort(byCode)))
       .catch((err) => toast.error(err?.message || 'Failed to load departments'));
   }, []);
 
@@ -85,7 +90,7 @@ export default function DoctorScheduleFilter() {
                 options={doctors}
                 value={doctorFrom}
                 onChange={v => setDoctorFrom(v)}
-                getLabel={d => d.name}
+                getLabel={codeLabel}
                 placeholder="(first)"
               />
               <SearchableSelect
@@ -94,7 +99,7 @@ export default function DoctorScheduleFilter() {
                 options={doctors}
                 value={doctorTo}
                 onChange={v => setDoctorTo(v)}
-                getLabel={d => d.name}
+                getLabel={codeLabel}
                 placeholder="(last)"
               />
             </div>
@@ -107,7 +112,7 @@ export default function DoctorScheduleFilter() {
                 options={departments}
                 value={deptFrom}
                 onChange={v => setDeptFrom(v)}
-                getLabel={d => d.name}
+                getLabel={codeLabel}
                 placeholder="(first)"
               />
               <SearchableSelect
@@ -116,7 +121,7 @@ export default function DoctorScheduleFilter() {
                 options={departments}
                 value={deptTo}
                 onChange={v => setDeptTo(v)}
-                getLabel={d => d.name}
+                getLabel={codeLabel}
                 placeholder="(last)"
               />
             </div>
