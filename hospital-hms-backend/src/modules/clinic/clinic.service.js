@@ -2310,13 +2310,20 @@ async function getPanelAdmissionBilling(admissionNo, { report = false } = {}) {
     statusDischargeDate = log?.changedAt || null;
   }
 
-  const [detail, billHeads, panelHeadOrders, panelCompany, panelEmployee] = await Promise.all([
-    getProvisionalBillDetail(admission.id),
+  // Panel Billing takes NOTHING from the Provisional Bill (owner,
+  // 2026-10-30) — no heads, no Medicine / Lab / Radiology / Ultrasound lines;
+  // every row starts at 0 and is filled here by hand (the Provisional Bill
+  // still feeds Distribution). Only the consultant's name is read, from the
+  // admission itself. `detail` keeps the shape the code below expects.
+  const [consultantDoc, billHeads, panelHeadOrders, panelCompany, panelEmployee] = await Promise.all([
+    admission.consultantId ? prisma.clinicDoctor.findUnique({ where: { id: admission.consultantId }, select: { id: true, name: true } }) : null,
     prisma.clinicBillHead.findMany({ where: { status: 'active' }, orderBy: { id: 'asc' } }),
     prisma.clinicPanelBillHead.findMany({ where: { panelSortOrder: { not: null } }, select: { description: true, panelSortOrder: true } }),
     admission.panelCompanyId ? prisma.clinicPanelCompany.findUnique({ where: { id: admission.panelCompanyId } }) : null,
     admission.panelEmployeeId ? prisma.clinicPanelEmployee.findUnique({ where: { id: admission.panelEmployeeId } }) : null,
   ]);
+
+  const detail = { billItems: [], pharmacyRows: [], diagnosticRows: [], consultant: consultantDoc };
 
   // Panel Billing's fixed row sequence — renumbered to plain 1, 2, 3, ...
   // (see migration 030; was the legacy system's raw Sno x10 scheme, which
@@ -3133,13 +3140,12 @@ async function getPanelOpdVisitBilling(serialNo) {
   }
   if (visit.status !== 'active') throw Object.assign(new Error('Yeh slip cancel ho chuki hai'), { status: 400 });
 
-  const { owner, members, opdBill } = await resolvePanelOpdGroup(visit);
-  // OPD Bill: its heads add into this bill's rows once each, and its Outside
-  // Store medicine bills as live Medicine lines.
-  const [opdBillItems, opdBillOutside] = opdBill ? await Promise.all([
-    prisma.clinicPanelOpdBillItem.findMany({ where: { opdBillId: opdBill.id, sourceOpdVisitId: null, billHeadId: { not: null } }, orderBy: { id: 'asc' } }),
-    prisma.clinicPanelOpdBillPharmacyItem.findMany({ where: { opdBillId: opdBill.id }, orderBy: { id: 'asc' } }),
-  ]) : [[], []];
+  // An OPD Bill only decides which slips bill together (first slip to its
+  // close) — its heads and Outside Store medicine no longer come into Panel
+  // Billing (owner, 2026-10-30, same as the admission side).
+  const { owner, members } = await resolvePanelOpdGroup(visit);
+  const opdBillItems = [];
+  const opdBillOutside = [];
 
   const [billHeads, panelHeadOrders, simplePanelHeads, panelCompany, panelEmployee, panelDependent, invLines] = await Promise.all([
     prisma.clinicBillHead.findMany({ where: { status: 'active' }, orderBy: { id: 'asc' } }),

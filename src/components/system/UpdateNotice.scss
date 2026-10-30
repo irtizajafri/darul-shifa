@@ -1,0 +1,79 @@
+// Big red "System Updated" alert, centred on the screen. No backdrop — the
+// page underneath stays usable so staff can finish and save first.
+.update-notice {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 100000;
+  width: min(560px, calc(100vw - 32px));
+  padding: 28px 28px 24px;
+  border: 3px solid #7f1d1d;
+  border-radius: 12px;
+  background: #dc2626;
+  color: #fff;
+  text-align: center;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  box-shadow: 0 18px 48px rgba(127, 29, 29, 0.55);
+  pointer-events: auto;
+
+  &__title {
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  &__text {
+    margin: 0 0 20px;
+    font-size: 1.05rem;
+    line-height: 1.55;
+  }
+
+  &__actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  &__refresh,
+  &__later {
+    min-height: 44px;
+    padding: 0 24px;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  &__refresh {
+    border: 2px solid #fff;
+    background: #fff;
+    color: #b91c1c;
+    &:hover { background: #fee2e2; }
+    &:disabled { opacity: 0.8; cursor: wait; }
+  }
+
+  &__later {
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    background: transparent;
+    color: #fff;
+    &:hover { background: rgba(255, 255, 255, 0.12); }
+  }
+
+  &__refresh:focus-visible,
+  &__later:focus-visible {
+    outline: 3px solid #fde68a;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .update-notice { animation: update-notice-in 0.25s ease-out; }
+  @keyframes update-notice-in {
+    from { opacity: 0; transform: translate(-50%, -46%); }
+    to { opacity: 1; transform: translate(-50%, -50%); }
+  }
+}

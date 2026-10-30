@@ -12,6 +12,7 @@ import { openPrintWindow } from '../../../utils/printRelay';
 import '../AdmissionAdjustment.scss'; // .aa-* lookup-modal classes
 import './PanelBilling.scss';
 import PanelDummyDischargeCertModal from './PanelDummyDischargeCert';
+import { relationTypeLabel } from '../relationText';
 import { useShallow } from 'zustand/react/shallow';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -2396,10 +2397,16 @@ function ReportsModal({ admitNo, onAdmitNoChange, isOpd, reportType, onReportTyp
 // Rate×Qty only means something for ward/head-item rows — Medicine/
 // Laboratory/Radiology/Ultrasound are blended totals, shown amount-only.
 // "W/o ABBAS ALI" — or just the name for Self (patient is the employee).
-function relationText(admission) {
-  const name = admission.relationName || '';
-  if (!name) return '—';
-  return admission.relationType && admission.relationType !== 'Self' ? `${admission.relationType} ${name}` : name;
+// Covering Page Relation (owner, 2026-10-30): the Admission form's own
+// Relation — "F/o ABC", "W/o XYZ" — with the panel employee's name only when
+// the admission has no relation filled in.
+function relationText(admission, employee) {
+  const name = String(admission.relationName || '').trim();
+  if (name) {
+    const label = relationTypeLabel(admission.relationType, '');
+    return label && label !== 'Self' ? `${label} ${name}` : name;
+  }
+  return employee?.name || '—';
 }
 
 // ── Report Viewer ──────────────────────────────────────────────────────────
@@ -2501,7 +2508,7 @@ function BillingCoveringPagePrintTemplate({ data }) {
                       <tr><td className="l">Date:</td><td className="v">{admission.billDate ? formatBillDate(admission.billDate) : fmtDate(new Date())}</td></tr>
                       <tr><td className="l">{isOpd ? 'Slip No:' : 'Admit No:'}</td><td className="v">{isOpd ? admission.admissionNo : `P-${admission.admissionNo}`}</td></tr>
                       {/* Relation sits level with Patients Name (owner, 2026-10-21); DOD below it. */}
-                      <tr><td className="l">Relation:</td><td className="v">{employee?.name || relationText(admission)}</td></tr>
+                      <tr><td className="l">Relation:</td><td className="v">{relationText(admission, employee)}</td></tr>
                       <tr><td className="l">{isOpd ? 'Billing Date' : 'DOD'}</td><td className="v">{fmtDate(admission.dischargeDate)}</td></tr>
                       <tr><td className="l">Consultant:</td><td className="v">{admission.consultantName || '—'}</td></tr>
                       <tr><td className="l">Entitled For:</td><td className="v">{admission.entitledFor || '—'}</td></tr>
