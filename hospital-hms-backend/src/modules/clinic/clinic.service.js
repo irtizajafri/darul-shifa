@@ -10539,10 +10539,64 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
 
 // ─── Revenue Dashboard (Inquiries) ───────────────────────────────────────────
 
+// One Year / Yearly views (owner, 2026-10-31): built from the Patients List
+// rows themselves — same rows, same Received, same patient count as the
+// One Month calendar and the list — instead of their own SQL totals, which
+// counted Adjust Payment slips as received and skipped cancelled slips,
+// Antenatal and admission payments. Filters work like the One Month view's.
+async function getRevenueDashboardFromPatientList({ period, year, month, department, subDept, consultant, paymentType }) {
+  const byYear = period === 'multi_year';
+  const keyField = byYear ? 'year' : 'month';
+  const paymentTypes = paymentType && paymentType !== 'ALL' ? [paymentType] : [];
+  const range = byYear ? {} : { fromDate: `${year}-01-01`, toDate: `${year + 1}-01-01`, fromTime: '08:00:00', toTime: '07:59:59' };
+  const rows = await getPatientVisits({ ...range, paymentTypes });
+
+  const matches = (value, filter) => !filter || filter === 'ALL' || String(value || '').toLowerCase().includes(String(filter).toLowerCase());
+  const blank = (k) => ({ [keyField]: k, totalPatients: 0, totalAmount: 0, cashPatients: 0, cashAmount: 0, panelPatients: 0, panelAmount: 0, ccPatients: 0, ccAmount: 0 });
+  const buckets = new Map();
+  if (!byYear) for (let m = 1; m <= 12; m++) buckets.set(m, blank(m));
+
+  for (const r of rows) {
+    if (!r.businessDay) continue;
+    if (!matches(r.department, department) || !matches(r.subDepartment, subDept) || !matches(r.doctor, consultant)) continue;
+    const k = Number(byYear ? r.businessDay.slice(0, 4) : r.businessDay.slice(5, 7));
+    if (!buckets.has(k)) buckets.set(k, blank(k));
+    const b = buckets.get(k);
+    // + its Administrative Expense line, same as Patients List's count
+    const n = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
+    const amt = Number(r.received || 0);
+    const pt = String(r.paymentType || '').toLowerCase();
+    b.totalPatients += n;
+    b.totalAmount += amt;
+    if (pt === 'cash')                                   { b.cashPatients += n;  b.cashAmount  += amt; }
+    else if (pt === 'panel')                             { b.panelPatients += n; b.panelAmount += amt; }
+    else if (['c card', 'cc', 'credit card'].includes(pt)) { b.ccPatients += n;    b.ccAmount    += amt; }
+  }
+
+  const data = [...buckets.values()].sort((a, b) => a[keyField] - b[keyField]);
+  const totalPatients = data.reduce((s, d) => s + d.totalPatients, 0);
+  const totalAmount   = data.reduce((s, d) => s + d.totalAmount, 0);
+  const daysWithData  = data.filter((d) => d.totalPatients > 0).length;
+  const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;
+
+  // Revenue Trend = the same buckets (months of this year up to now, or
+  // every year), so the chart reads the same numbers as the grid.
+  const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const now = new Date();
+  const trendData = data
+    .filter((d) => byYear || year < now.getFullYear() || d.month <= now.getMonth() + 1)
+    .map((d) => ({ label: byYear ? String(d.year) : `${MN[d.month - 1]} ${year}`, totalPatients: d.totalPatients, totalAmount: d.totalAmount }));
+
+  return { period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis: 0, lastYearAmount: 0, daysWithData }, trendData };
+}
+
 async function getRevenueDashboard({ period, year, month, department, subDept, consultant, paymentType }) {
   year   = parseInt(year)  || new Date().getFullYear();
   month  = parseInt(month) || (new Date().getMonth() + 1);
   period = period || 'monthly_daily';
+  if (period !== 'monthly_daily') {
+    return getRevenueDashboardFromPatientList({ period, year, month, department, subDept, consultant, paymentType });
+  }
 
   // ── PatientVisit WHERE ────────────────────────────────────────────────────
   // Cancelled slips revenue dashboard mein NAHI aayengi (case-insensitive, dono spellings).
@@ -10772,89 +10826,6 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
       if (!merged[key]) merged[key] = { date: key, totalPatients:0, totalAmount:0, cashPatients:0, cashAmount:0, panelPatients:0, panelAmount:0, ccPatients:0, ccAmount:0 };
     }
     data = Object.values(merged).sort((a,b) => a.date.localeCompare(b.date));
-
-  } else if (period === 'yearly_monthly' || period === 'yearly_daily') {
-    const pvP = [...pvParams, year];
-    const pvYi = pvParams.length + 1;
-    const pvRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(MONTH FROM ${PV_BIZ})::int AS month, ${pvAggCols}
-      FROM "PatientVisit"
-      WHERE ${pvWhere} AND EXTRACT(YEAR FROM ${PV_BIZ}) = $${pvYi}
-      GROUP BY EXTRACT(MONTH FROM ${PV_BIZ}) ORDER BY month
-    `, ...pvP);
-
-    const ovP = [...ovParams, year];
-    const ovYi = ovParams.length + 1;
-    const ovRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(MONTH FROM ${OV_BIZ})::int AS month, ${ovAggCols}
-      FROM "ClinicOpdVisit"
-      WHERE ${ovWhere} AND EXTRACT(YEAR FROM ${OV_BIZ}) = $${ovYi}
-      GROUP BY EXTRACT(MONTH FROM ${OV_BIZ}) ORDER BY month
-    `, ...ovP);
-
-    const admP = [...admParams, year];
-    const admYi = admParams.length + 1;
-    const admRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(MONTH FROM ${ADM_BIZ})::int AS month, ${admAggCols}
-      FROM "ClinicAdmission"
-      WHERE ${admWhere} AND EXTRACT(YEAR FROM ${ADM_BIZ}) = $${admYi}
-      GROUP BY EXTRACT(MONTH FROM ${ADM_BIZ}) ORDER BY month
-    `, ...admP);
-
-    const admPayYP = [...admPayParams, year];
-    const admPayYi = admPayParams.length + 1;
-    const admPayRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(MONTH FROM ${ADM_PAY_BIZ})::int AS month, ${admPayAggCols}
-      FROM "ClinicAdmissionPayment"
-      WHERE ${admPayWhere} AND EXTRACT(YEAR FROM ${ADM_PAY_BIZ}) = $${admPayYi}
-      GROUP BY EXTRACT(MONTH FROM ${ADM_PAY_BIZ}) ORDER BY month
-    `, ...admPayYP);
-
-    const pvMap = {}, ovMap = {}, admMap = {}, admPayMap = {};
-    for (const r of pvRows) pvMap[r.month] = toObj(r, 'month');
-    for (const r of ovRows) ovMap[r.month] = toObj(r, 'month');
-    for (const r of admRows) admMap[r.month] = toObj(r, 'month');
-    for (const r of admPayRows) admPayMap[r.month] = toObj(r, 'month');
-
-    const merged = mergeMap(mergeMap(mergeMap(pvMap, ovMap, 'month'), admMap, 'month'), admPayMap, 'month');
-    for (let m = 1; m <= 12; m++) {
-      if (!merged[m]) merged[m] = { month: m, totalPatients:0, totalAmount:0, cashPatients:0, cashAmount:0, panelPatients:0, panelAmount:0, ccPatients:0, ccAmount:0 };
-    }
-    data = Object.values(merged).sort((a,b) => a.month - b.month);
-
-  } else if (period === 'multi_year') {
-    const pvRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM ${PV_BIZ})::int AS year, ${pvAggCols}
-      FROM "PatientVisit" WHERE ${pvWhere}
-      GROUP BY EXTRACT(YEAR FROM ${PV_BIZ}) ORDER BY year
-    `, ...pvParams);
-
-    const ovRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM ${OV_BIZ})::int AS year, ${ovAggCols}
-      FROM "ClinicOpdVisit" WHERE ${ovWhere}
-      GROUP BY EXTRACT(YEAR FROM ${OV_BIZ}) ORDER BY year
-    `, ...ovParams);
-
-    const admRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM ${ADM_BIZ})::int AS year, ${admAggCols}
-      FROM "ClinicAdmission" WHERE ${admWhere}
-      GROUP BY EXTRACT(YEAR FROM ${ADM_BIZ}) ORDER BY year
-    `, ...admParams);
-
-    const admPayRows = await prisma.$queryRawUnsafe(`
-      SELECT EXTRACT(YEAR FROM ${ADM_PAY_BIZ})::int AS year, ${admPayAggCols}
-      FROM "ClinicAdmissionPayment" WHERE ${admPayWhere}
-      GROUP BY EXTRACT(YEAR FROM ${ADM_PAY_BIZ}) ORDER BY year
-    `, ...admPayParams);
-
-    const pvMap = {}, ovMap = {}, admMap = {}, admPayMap = {};
-    for (const r of pvRows) pvMap[r.year] = toObj(r, 'year');
-    for (const r of ovRows) ovMap[r.year] = toObj(r, 'year');
-    for (const r of admRows) admMap[r.year] = toObj(r, 'year');
-    for (const r of admPayRows) admPayMap[r.year] = toObj(r, 'year');
-
-    const merged = mergeMap(mergeMap(mergeMap(pvMap, ovMap, 'year'), admMap, 'year'), admPayMap, 'year');
-    data = Object.values(merged).sort((a,b) => a.year - b.year);
   }
 
   const totalPatients = data.reduce((s,d) => s + d.totalPatients, 0);

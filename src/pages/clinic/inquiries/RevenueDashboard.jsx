@@ -168,8 +168,8 @@ export default function RevenueDashboard() {
   // multi-test visit's extra test-rows each count as their own patient line)
   // instead of the backend's separate SQL aggregation — the two reports
   // previously disagreed because they counted/business-dayed differently even
-  // when reading the same underlying data. Yearly/multi-year views still use
-  // the original backend aggregation (below).
+  // when reading the same underlying data. Yearly/multi-year views get their
+  // totals from the backend, built from the same Patients List rows.
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {

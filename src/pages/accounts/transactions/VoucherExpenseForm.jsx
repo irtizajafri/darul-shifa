@@ -13,7 +13,16 @@ import './VoucherExpenseForm.scss';
 
 // IPD / Surgery file picker — oldest file at the top, today's at the bottom
 // (owner, 2026-10-26); the search endpoint returns newest first.
-const oldestFirst = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt) || a.id - b.id) : []);
+// Ordered by Admission # (owner, 2026-10-31): 177345, then 177346 … — the
+// same order in the picker, the picked files and the IPD Consultant popup.
+// Rows without a number go to the bottom.
+const byAdmissionNo = (a, b) => {
+  const x = String(a.admissionNo || ''), y = String(b.admissionNo || '');
+  if (!x || !y) return (x ? 0 : 1) - (y ? 0 : 1);
+  return x.localeCompare(y, undefined, { numeric: true });
+};
+const oldestFirst = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => byAdmissionNo(a, b) || new Date(a.createdAt) - new Date(b.createdAt) || a.id - b.id) : []);
+const feesByAdmissionNo = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => byAdmissionNo(a, b) || new Date(a.date) - new Date(b.date)) : []);
 const API = 'http://localhost:5001/api/accounts';
 const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 const UTIL_API = 'http://localhost:5001/api/utilities';
@@ -882,7 +891,7 @@ export default function VoucherExpenseForm() {
     setSelectedAdmissions((prev) =>
       prev.some((a) => a.admissionNo === row.admissionNo)
         ? prev // already picked — ignore duplicate click
-        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName, panel, amount: '' }]
+        : [...prev, { admissionNo: row.admissionNo, patientName: row.patientName, panel, amount: '' }].sort(byAdmissionNo)
     );
     setEntry((e) => ({ ...e, accountName: mainAccs.find((a) => String(a.id) === String(e.mainAccountId))?.name || e.accountName }));
     setAdmissionQuery('');
@@ -977,7 +986,7 @@ export default function VoucherExpenseForm() {
     // Patient names aren't stored on the entry itself — re-editing shows just
     // the admission numbers as chips (still fully removable/re-searchable).
     setSelectedAdmissions(
-      e.admissionNo ? e.admissionNo.split(',').map((s) => s.trim()).filter(Boolean).map((no) => ({ admissionNo: no, patientName: '', amount: e.admissionAmounts?.[no] != null ? String(e.admissionAmounts[no]) : '' })) : []
+      e.admissionNo ? e.admissionNo.split(',').map((s) => s.trim()).filter(Boolean).map((no) => ({ admissionNo: no, patientName: '', amount: e.admissionAmounts?.[no] != null ? String(e.admissionAmounts[no]) : '' })).sort(byAdmissionNo) : []
     );
     setLinkedPayees([]); setLinkedHeadName(''); setLinkedHeadType(''); setPayeeSearch('');
 
@@ -1168,7 +1177,7 @@ export default function VoucherExpenseForm() {
       if (pfDateTo)   q.set('toDate', pfDateTo);
       const r = await fetch(`${API}/linked/pending-consultant-fees?${q}`);
       const j = await r.json();
-      setPendingFeesModal((prev) => ({ ...prev, fees: j?.data || [] }));
+      setPendingFeesModal((prev) => ({ ...prev, fees: feesByAdmissionNo(j?.data) }));
     } catch {
       setPendingFeesModal((prev) => ({ ...prev, fees: [] }));
     } finally {
@@ -1185,7 +1194,7 @@ export default function VoucherExpenseForm() {
       if (pfDateTo)   q.set('toDate', pfDateTo);
       const r = await fetch(`${API}/linked/pending-consultant-fees?${q}`);
       const j = await r.json();
-      setPendingFeesModal((prev) => ({ ...prev, fees: j?.data || [] }));
+      setPendingFeesModal((prev) => ({ ...prev, fees: feesByAdmissionNo(j?.data) }));
       setCheckedFees({});
     } catch {
       setPendingFeesModal((prev) => ({ ...prev, fees: [] }));

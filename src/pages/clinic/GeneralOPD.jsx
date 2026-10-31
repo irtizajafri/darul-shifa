@@ -402,6 +402,10 @@ function DoctorSearchInput({ value, onChange }) {
 export default function GeneralOPD({ departmentName = 'General OPD', layout = 'doctor', showDoctorColumn = true }) {
   const { fetchAvailableDoctors, fetchNextSerialNo, fetchNextMrNo, searchEmployees, createOpdVisit, printOpdVisit, fetchAntenatalByNo, fetchOpdPatientByMrNo, fetchOpdPatientsByPhone, searchAdmissionsForAdjustment, fetchAdmissionForAdjustment, ccConfig, fetchCcConfig } = useClinicStore(useShallow((s) => ({ fetchAvailableDoctors: s.fetchAvailableDoctors, fetchNextSerialNo: s.fetchNextSerialNo, fetchNextMrNo: s.fetchNextMrNo, searchEmployees: s.searchEmployees, createOpdVisit: s.createOpdVisit, printOpdVisit: s.printOpdVisit, fetchAntenatalByNo: s.fetchAntenatalByNo, fetchOpdPatientByMrNo: s.fetchOpdPatientByMrNo, fetchOpdPatientsByPhone: s.fetchOpdPatientsByPhone, searchAdmissionsForAdjustment: s.searchAdmissionsForAdjustment, fetchAdmissionForAdjustment: s.fetchAdmissionForAdjustment, ccConfig: s.ccConfig, fetchCcConfig: s.fetchCcConfig }))); // eslint-disable-line no-unused-vars -- fetchNextSerialNo kept for when Serial No auto-fill is re-enabled
   const { user } = useAuthStore();
+  // Refered By is asked on every department except General OPD and Therapy
+  // (owner, 2026-10-31) — a Therapy slip never carries one.
+  const isTherapy = departmentName === 'Therapy';
+  const askReferredBy = departmentName !== 'General OPD' && !isTherapy;
 
   const [form, setForm] = useState(EMPTY);
   const [leftDoctors, setLeftDoctors] = useState([]);
@@ -700,13 +704,15 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     if (phoneErr) { toast.error(phoneErr); return; }
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
-    if (departmentName !== 'General OPD' && !form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
+    if (askReferredBy && !form.referredBy?.trim()) { toast.error('Refered By (referral doctor) select karo — slip iske bina nahi banegi'); return; }
     if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
     const w = openPrintWindow('width=420,height=680');
     setBusy(true);
     try {
       const created = await createOpdVisit({
         ...form,
+        // a returning patient's old Refered By isn't carried onto a Therapy slip
+        ...(isTherapy ? { referredBy: '' } : {}),
         department: departmentName,
         paymentType: effectivePaymentType,
         totalAmount: grandTotal,
@@ -1045,7 +1051,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
                 Female
               </label>
             </div>
-            {departmentName !== 'General OPD' && (
+            {askReferredBy && (
               <div className="gopd-contact-grp">
                 <span className="gopd-lbl">Refered By</span>
                 <DoctorSearchInput
