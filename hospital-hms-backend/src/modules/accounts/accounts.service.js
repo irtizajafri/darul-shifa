@@ -287,16 +287,28 @@ async function getPendingGrnQueue(entityType) {
       orderBy: [{ billDate: 'desc' }, { receivedDate: 'desc' }],
     });
 
+    // One row per delivery (Parent GRN #, owner 2026-11-02) — a delivery is
+    // paid in one go, so its items come as one line with their total.
+    const deliveries = new Map();
     for (const g of grns) {
+      const key = g.parentCode || g.code;
+      if (!deliveries.has(key)) deliveries.set(key, []);
+      deliveries.get(key).push(g);
+    }
+
+    for (const [parentCode, items] of deliveries) {
+      const g = items[0];
       rows.push({
-        id: `grn-${g.id}-head-${head.id}`,
+        id: `grn-${parentCode}-head-${head.id}`,
         grnId: g.id,
+        grnIds: items.map((x) => x.id),
+        itemCount: items.length,
         headId: head.id,
         headName: head.name,
         supplierName: g.supplier.name,
-        itemName: g.item.name,
-        code: g.code,
-        amount: g.totalAmount,
+        itemName: items.map((x) => x.item.name).join(', '),
+        code: parentCode,
+        amount: items.reduce((s, x) => s + Number(x.totalAmount || 0), 0),
         date: g.billDate || g.receivedDate,
         chain: {
           mainGlId: mainGl.id, mainGlCode: mainGl.code, mainGlName: mainGl.name,
@@ -1891,6 +1903,36 @@ async function assertSurgeryPaidOnce(entries, { excludeVoucherId } = {}) {
   if (hit) throw payErr(`${hit.payee} ko file ${hit.no} ki payment pehle hi ho chuki hai (Voucher ${paidIn.get(hit.key)})`);
 }
 
+// One delivery (Parent GRN #) is paid in one go (owner, 2026-11-02): a
+// payment that takes some of a delivery's items must take all its still-
+// unpaid items of the same book. Items already sitting in a pending draft
+// count as covered. Runs when a payment or draft is made — a saved draft
+// posting later is never stopped by it.
+async function assertWholeDeliveries(grnIds) {
+  if (!grnIds.length) return;
+  const picked = await prisma.inventoryGRN.findMany({
+    where: { id: { in: grnIds } },
+    select: { parentCode: true, paymentMode: true },
+  });
+  const parents = [...new Set(picked.map((g) => g.parentCode).filter(Boolean))];
+  if (!parents.length) return;
+  const [siblings, drafts] = await Promise.all([
+    prisma.inventoryGRN.findMany({
+      where: { parentCode: { in: parents }, isPaid: false },
+      select: { id: true, code: true, parentCode: true, paymentMode: true },
+    }),
+    getPendingDraftReservations(),
+  ]);
+  const covered = new Set([...grnIds, ...drafts.grnIds]);
+  const wanted = new Set(picked.map((g) => `${g.parentCode}|${g.paymentMode}`));
+  const missing = siblings.filter((g) => wanted.has(`${g.parentCode}|${g.paymentMode}`) && !covered.has(g.id));
+  if (missing.length) {
+    const parent = missing[0].parentCode;
+    const codes = missing.filter((g) => g.parentCode === parent).map((g) => g.code).join(', ');
+    throw payErr(`GRN ${parent} ek hi delivery hai — is ke baaqi items (${codes}) bhi isi payment mein shamil karein`);
+  }
+}
+
 async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
   const grnIds = [], oldVisit = [], opdDoc = [], antIds = [], dbi = [], utilIds = [], salary = [], maintIds = [];
   for (const e of entries) {
@@ -1937,6 +1979,7 @@ async function assertEntriesPayable(entries, { ignoreDrafts = false } = {}) {
     const p = paidSalary[0];
     throw payErr(`Employee ${p.empCode} ki ${p.salaryMonth}/${p.salaryYear} salary pehle hi pay ho chuki hai (Voucher ${p.voucherNo})`);
   }
+  await assertWholeDeliveries(grnIds);
 
   if (!ignoreDrafts) {
     const r = await getPendingDraftReservations();

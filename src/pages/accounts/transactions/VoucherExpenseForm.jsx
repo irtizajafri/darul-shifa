@@ -23,6 +23,23 @@ const byAdmissionNo = (a, b) => {
 };
 const oldestFirst = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => byAdmissionNo(a, b) || new Date(a.createdAt) - new Date(b.createdAt) || a.id - b.id) : []);
 const feesByAdmissionNo = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => byAdmissionNo(a, b) || new Date(a.date) - new Date(b.date)) : []);
+
+// One row per delivery (Parent GRN #, owner 2026-11-02): a delivery's items
+// are picked and paid together, as one line with their total.
+function groupGrnDeliveries(rows) {
+  const map = new Map();
+  for (const g of Array.isArray(rows) ? rows : []) {
+    const key = g.parentCode || g.code;
+    if (!map.has(key)) map.set(key, { id: key, code: key, grnIds: [], names: [], totalAmount: 0, receivedDate: g.receivedDate });
+    const d = map.get(key);
+    d.grnIds.push(g.id);
+    d.names.push(g.item?.name || '—');
+    d.totalAmount += Number(g.totalAmount || 0);
+  }
+  return [...map.values()];
+}
+const itemsLabel = (count, names) => `${count > 1 ? `${count} items — ` : ''}${names}`;
+const grnNote = (code, count) => `GRN ${code}${count > 1 ? ` (${count} items)` : ''}`;
 const API = 'http://localhost:5001/api/accounts';
 const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 const UTIL_API = 'http://localhost:5001/api/utilities';
@@ -521,7 +538,17 @@ export default function VoucherExpenseForm() {
   // saved) hasn't actually flipped isPaid on the backend, so it has to be
   // hidden client-side or the same row would offer itself again.
   const stagedGrnIds = new Set(entries.flatMap((e) => Array.isArray(e.grnIds) ? e.grnIds : []));
-  const visibleQueue = pendingQueue.filter((q) => !stagedGrnIds.has(q.grnId));
+  const queueGrnIds = (q) => (Array.isArray(q.grnIds) ? q.grnIds : [q.grnId]);
+  const visibleQueue = pendingQueue.filter((q) => !queueGrnIds(q).some((id) => stagedGrnIds.has(id)));
+
+  // Same narration as the Auto Narration effect below, plus the delivery's
+  // Parent GRN # — the effect keeps a particulars that starts with it.
+  const queueNarration = (item, mainGl, subGl, mainAcc, subAcc) => {
+    const base = subAcc
+      ? `Amount paid to ${mainGl?.name || ''} ${item.supplierName} in account of ${subGl?.name || ''} and ${mainAcc?.name || ''} for ${subAcc.name} ${item.supplierName}`
+      : `Amount paid to ${mainGl?.name || ''} ${item.supplierName} in account of ${subGl?.name || ''} and ${mainAcc?.name || ''} for ${item.supplierName}`;
+    return `${base.trim()} | ${grnNote(item.code, queueGrnIds(item).length)}`;
+  };
 
   // Fills the whole chain the item's head is wired to (Main GL → Sub GL →
   // Main Account → Sub Account) plus payee/amount/GRN in one go. Does its
@@ -565,8 +592,9 @@ export default function VoucherExpenseForm() {
       accountName: subAcc?.name || mainAcc?.name || '',
       payeeName: item.supplierName,
       amount: String(item.amount),
-      grnIds: [item.grnId],
+      grnIds: queueGrnIds(item),
       amountLocked: true,
+      particulars: queueNarration(item, mainGLs.find((g) => String(g.id) === String(chain.mainGlId)), subGlList.find((g) => String(g.id) === String(chain.subGlId)), mainAcc, subAcc),
     }));
   };
 
@@ -596,9 +624,7 @@ export default function VoucherExpenseForm() {
     // Same narration template as the single-entry auto-narration effect
     // above (entry.admissionNo/subAccount branch) — GRN queue items never
     // carry an admissionNo, so only the subAcc/no-subAcc branches apply.
-    const particulars = subAcc
-      ? `Amount paid to ${mainGl?.name || ''} ${item.supplierName} in account of ${subGl?.name || ''} and ${mainAcc?.name || ''} for ${subAcc.name} ${item.supplierName}`
-      : `Amount paid to ${mainGl?.name || ''} ${item.supplierName} in account of ${subGl?.name || ''} and ${mainAcc?.name || ''} for ${item.supplierName}`;
+    const particulars = queueNarration(item, mainGl, subGl, mainAcc, subAcc);
 
     return {
       ...emptyEntry(),
@@ -610,10 +636,10 @@ export default function VoucherExpenseForm() {
       accountName: subAcc?.name || mainAcc?.name || '',
       payeeName: item.supplierName,
       amount: String(item.amount),
-      grnIds: [item.grnId],
+      grnIds: queueGrnIds(item),
       amountLocked: true,
       chequeNo,
-      particulars: particulars.trim(),
+      particulars,
       mainGlName:      mainGl?.name  || '',
       subGlName:       subGl?.name   || '',
       mainAccountName: mainAcc?.name || '',
@@ -709,7 +735,9 @@ export default function VoucherExpenseForm() {
       : subAcc
         ? `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${subAcc.name} ${entry.payeeName}`
         : `Amount paid to ${mainGl.name} ${entry.payeeName} in account of ${subGl.name} and ${mainAcc.name} for ${entry.payeeName}`;
-    setEntry((e) => ({ ...e, particulars: narration.trim() }));
+    // A particulars already built on this same narration (e.g. "… | GRN
+    // 20261102001-grn (10 items)" from the GRN queue) is kept as it is.
+    setEntry((e) => (String(e.particulars || '').startsWith(`${narration.trim()} | `) ? e : { ...e, particulars: narration.trim() }));
   }, [entry.mainGlId, entry.subGlId, entry.mainAccountId, entry.subAccountId, entry.payeeName, entry.admissionNo]);
 
   useEffect(() => {
@@ -1108,7 +1136,7 @@ export default function VoucherExpenseForm() {
         fetch(`${API}/supplier-maintenance?supplierId=${payee.id}&entityType=${entityType}`),
       ]);
       const [j, mj] = await Promise.all([r.json(), mr.json().catch(() => ({}))]);
-      setGrnModal((prev) => ({ ...prev, grns: j?.data || [], maint: Array.isArray(mj?.data) ? mj.data : [] }));
+      setGrnModal((prev) => ({ ...prev, grns: groupGrnDeliveries(j?.data), maint: Array.isArray(mj?.data) ? mj.data : [] }));
     } catch {
       setGrnModal((prev) => ({ ...prev, grns: [], maint: [] }));
     } finally {
@@ -1480,7 +1508,7 @@ export default function VoucherExpenseForm() {
     // Entry's in the list — if any pending GRNs are still uncovered, bring
     // the queue popup back so the next one can be picked straight away.
     const nowStaged = new Set([...stagedGrnIds, ...(entry.grnIds || [])]);
-    if (pendingQueue.some((q) => !nowStaged.has(q.grnId))) setQueueModalOpen(true);
+    if (pendingQueue.some((q) => !queueGrnIds(q).some((id) => nowStaged.has(id)))) setQueueModalOpen(true);
   };
 
   const total = entries.reduce((s, e) => s + Number(e.amount), 0);
@@ -2157,7 +2185,7 @@ export default function VoucherExpenseForm() {
                         )}
                         <td>{new Date(q.date).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                         <td className="ve-grn-modal__code">{q.code}</td>
-                        <td>{q.itemName}</td>
+                        <td>{itemsLabel(queueGrnIds(q).length, q.itemName)}</td>
                         <td>{q.supplierName}</td>
                         <td>{q.headName}</td>
                         <td className="ve-grn-modal__amount">PKR {Number(q.amount).toLocaleString()}</td>
@@ -2204,7 +2232,7 @@ export default function VoucherExpenseForm() {
       {/* ── GRN Modal ── */}
       {grnModal && (
         <div className="ve-sal-modal__backdrop" onClick={() => setGrnModal(null)}>
-          <div className={`ve-grn-modal${grnModal.grns?.length && grnModal.maint?.length ? ' ve-grn-modal--split' : ''}`} onClick={(e) => e.stopPropagation()}>
+          <div className={`ve-grn-modal${(grnModal.grns?.length || grnModal.maint?.length) ? ' ve-grn-modal--split' : ''}`} onClick={(e) => e.stopPropagation()}>
             <div className="ve-sal-modal__header">
               <div>
                 <div className="ve-sal-modal__title">GRN / Maintenance</div>
@@ -2257,7 +2285,7 @@ export default function VoucherExpenseForm() {
                         >
                           <td className="ve-grn-modal__chk"><input type="checkbox" checked={!!checkedGrns[g.id]} onChange={() => {}} /></td>
                           <td className="ve-grn-modal__code">{g.code}</td>
-                          <td>{g.item?.name || '—'}</td>
+                          <td>{itemsLabel(g.names.length, g.names.join(', '))}</td>
                           <td className="ve-grn-modal__date">{new Date(g.receivedDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
                           <td className="ve-grn-modal__amount">PKR {Number(g.totalAmount).toLocaleString()}</td>
                         </tr>
@@ -2322,20 +2350,27 @@ export default function VoucherExpenseForm() {
                       className="ve-sal-modal__verify"
                       disabled={grnCheckedTotal === 0}
                       onClick={() => {
-                        const ids = (grnModal.grns || []).filter((g) => checkedGrns[g.id]).map((g) => g.id);
+                        // Each picked delivery pays all of its items.
+                        const pickedGrns = (grnModal.grns || []).filter((g) => checkedGrns[g.id]);
+                        const ids = pickedGrns.flatMap((g) => g.grnIds);
+                        const grnText = pickedGrns.map((g) => grnNote(g.code, g.grnIds.length)).join(', ');
                         const pickedMaint = (grnModal.maint || []).filter((m) => checkedMaint[m.id]);
                         // Maintenance: its Nature of Repair goes into Particulars.
                         const maintText = pickedMaint
                           .map((m) => `Maintenance ${m.moNumber || `MO-${m.id}`}: ${m.natureOfRepair}${m.item?.name ? ` (${m.item.name})` : ''}`)
                           .join('; ');
-                        setEntry((f) => ({
-                          ...f,
-                          amount: String(Math.round(grnCheckedTotal)),
-                          grnIds: ids,
-                          maintenanceIds: pickedMaint.map((m) => m.id),
-                          particulars: maintText ? (ids.length && f.particulars ? `${f.particulars} | ${maintText}` : maintText) : f.particulars,
-                          amountLocked: true,
-                        }));
+                        setEntry((f) => {
+                          // the narration, without what an earlier Fill Amount added
+                          const base = String(f.particulars || '').split(' | ')[0];
+                          return {
+                            ...f,
+                            amount: String(Math.round(grnCheckedTotal)),
+                            grnIds: ids,
+                            maintenanceIds: pickedMaint.map((m) => m.id),
+                            particulars: ids.length ? [base, grnText, maintText].filter(Boolean).join(' | ') : (maintText || f.particulars),
+                            amountLocked: true,
+                          };
+                        });
                         setGrnModal(null);
                       }}
                     >

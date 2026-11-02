@@ -428,6 +428,9 @@ model InventoryPurchaseOrder {
 model InventoryGRN {
   id               Int                  @id @default(autoincrement())
   code             String               @unique
+  // Parent GRN # — one delivery received in one GRN save; the delivery's
+  // first GRN code. Voucher Expense pays a whole delivery at once (065).
+  parentCode       String?
   poId             Int                  @unique
   purchaseOrder    InventoryPurchaseOrder @relation(fields: [poId], references: [id])
   supplierId       Int
@@ -462,6 +465,7 @@ model InventoryGRN {
   @@index([receivedDate])
   @@index([supplierId])
   @@index([categoryId, subcategoryId])
+  @@index([parentCode])
 }
 
 model EmployeeSalaryPayment {

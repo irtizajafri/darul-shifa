@@ -233,6 +233,9 @@ export default function GoodsReceipt() {
       const results = [];
       for (const line of draftLines) {
         const grn = await createGRN({
+          // One save = one delivery: the first GRN's code is the Parent GRN #
+          // of the rest, so Voucher Expense pays the delivery in one go.
+          parentCode: results[0]?.grn?.code || undefined,
           poId: Number(line.poId),
           receivedQuantity: Number(line.receivedQuantity),
           receivedRate: Number(line.receivedRate),

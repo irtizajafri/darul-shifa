@@ -854,6 +854,22 @@ async function createGRN(payload) {
   if (existingGRN) throw new Error('A GRN already exists for this PO');
 
   const code = String(payload.code || '').trim() || await generateDocCode('inventoryGRN', 'grn');
+  const paymentMode = payload.paymentMode === 'panel' ? 'panel' : 'cash';
+  // Parent GRN # (owner, 2026-11-02): the GRN screen saves a delivery item by
+  // item and passes the first item's code as the parent of the rest, so the
+  // whole delivery is paid in one go; a GRN saved on its own is its own parent.
+  let parentCode = code;
+  if (payload.parentCode) {
+    const parent = await prisma.inventoryGRN.findUnique({
+      where: { code: String(payload.parentCode).trim() },
+      select: { code: true, supplierId: true, paymentMode: true },
+    });
+    if (!parent) throw new Error('Parent GRN not found');
+    if (parent.supplierId !== po.supplierId || parent.paymentMode !== paymentMode) {
+      throw new Error('Parent GRN must have the same supplier and payment mode');
+    }
+    parentCode = parent.code;
+  }
   const poOrderedRate = Number(po.orderedRate ?? po.lastPurchaseRate ?? receivedRate);
   const totalAmount = receivedQuantity * receivedRate;
 
@@ -861,6 +877,7 @@ async function createGRN(payload) {
     const grn = await tx.inventoryGRN.create({
       data: {
         code,
+        parentCode,
         poId: po.id,
         supplierId: po.supplierId,
         itemId: po.itemId,
@@ -876,7 +893,7 @@ async function createGRN(payload) {
         billDate: payload.billDate ? new Date(payload.billDate) : null,
         paymentType: payload.paymentType === 'installment' ? 'installment' : 'cash',
         paymentNote: payload.paymentNote ? String(payload.paymentNote).trim() : null,
-        paymentMode: payload.paymentMode === 'panel' ? 'panel' : 'cash',
+        paymentMode,
         manufacturer: payload.manufacturer ? String(payload.manufacturer).trim() : null,
         model: payload.model ? String(payload.model).trim() : null,
       },

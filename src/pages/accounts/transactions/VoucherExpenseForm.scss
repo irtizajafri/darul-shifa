@@ -641,8 +641,10 @@
     }
   }
 
-  // Both lists present → fixed height, split into two equal halves, each
-  // pane scrolling on its own (its table head stays at the pane's top).
+  // Any list present → fixed height (one list takes it all, two split it
+  // into equal halves), each pane scrolling on its own (its table head stays
+  // at the pane's top). Without it the zero flex-basis panes collapsed to
+  // nothing — a lone GRN list showed no rows (server fix, 2026-11-02).
   &--split { height: 85vh; }
 
   &__split {
