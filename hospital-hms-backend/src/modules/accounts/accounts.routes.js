@@ -71,6 +71,7 @@ router.get('/supplier-maintenance', ctrl.getSupplierMaintenance);
 router.get('/consultant-visits', ctrl.getConsultantVisits);
 router.get('/payee-entries/by-sub-account', ctrl.getPayeeEntriesBySubAccount);
 router.get('/voucher-expense', ctrl.getVoucherExpenses);
+router.get('/voucher-expense/numbers', ctrl.listVoucherExpenseNumbers);
 router.post('/voucher-expense', ctrl.createVoucherExpense);
 router.post('/voucher-expense/:id/entries', ctrl.appendVoucherExpenseEntry);
 router.delete('/voucher-expense/:id/entries/:entryId', ctrl.removeVoucherExpenseEntry);

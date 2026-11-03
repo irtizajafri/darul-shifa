@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, Printer, Search, Pencil } from 'lucide-react';
+import { ArrowLeft, ChevronRight, Printer, Pencil } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './VoucherReprint.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
+import VoucherSearch from '../../../components/accounts/VoucherSearch';
 
 const API = 'http://localhost:5001/api/accounts';
 
@@ -327,17 +328,21 @@ export default function VoucherReprint() {
         <div className="vr-filter-row">
           <div className="vr-filter-label">Voucher #</div>
           <div className="vr-filter-fields">
+            {/* Binoculars: pick a saved Expense voucher into the field (the
+                list has Expense vouchers only, so it's off for Income) */}
             <div className="vr-range-group">
               <span className="vr-range-tag">From</span>
-              <input className="vr-input" placeholder="e.g. VE-20260629-001"
-                value={voucherFrom} onChange={(e) => setVoucherFrom(e.target.value)} />
-              <Search size={14} className="vr-input-icon" />
+              <VoucherSearch entityType={entityType} disabled={!isExpense} onSelect={(v) => setVoucherFrom(v.voucherNo)}>
+                <input className="vr-input" placeholder="e.g. VE-20260629-001"
+                  value={voucherFrom} onChange={(e) => setVoucherFrom(e.target.value)} />
+              </VoucherSearch>
             </div>
             <div className="vr-range-group">
               <span className="vr-range-tag">To</span>
-              <input className="vr-input" placeholder="e.g. VE-20260629-999"
-                value={voucherTo} onChange={(e) => setVoucherTo(e.target.value)} />
-              <Search size={14} className="vr-input-icon" />
+              <VoucherSearch entityType={entityType} disabled={!isExpense} onSelect={(v) => setVoucherTo(v.voucherNo)}>
+                <input className="vr-input" placeholder="e.g. VE-20260629-999"
+                  value={voucherTo} onChange={(e) => setVoucherTo(e.target.value)} />
+              </VoucherSearch>
             </div>
           </div>
         </div>

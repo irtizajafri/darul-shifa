@@ -6,6 +6,7 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../../store/useAuthStore';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { openReportPreview } from './reportPreview';
+import VoucherSearch from '../../../components/accounts/VoucherSearch';
 
 const CLINIC_API = 'http://localhost:5001/api/clinic';
 const ACCOUNTS_API = 'http://localhost:5001/api/accounts';
@@ -233,11 +234,16 @@ export default function ConsultantPaymentHistory() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>From</span>
               <div style={{ flex: 1 }}>
-                <input value={voucherFrom} onChange={(e) => setVoucherFrom(e.target.value)} placeholder="(all)" style={dateInputStyle} />
+                {/* Binoculars: pick a saved voucher into the field */}
+                <VoucherSearch entityType={entityType} onSelect={(v) => setVoucherFrom(v.voucherNo)}>
+                  <input value={voucherFrom} onChange={(e) => setVoucherFrom(e.target.value)} placeholder="(all)" style={dateInputStyle} />
+                </VoucherSearch>
               </div>
               <span style={{ fontSize: '0.75rem', color: '#64748b' }}>To</span>
               <div style={{ flex: 1 }}>
-                <input value={voucherTo} onChange={(e) => setVoucherTo(e.target.value)} placeholder="(all)" style={dateInputStyle} />
+                <VoucherSearch entityType={entityType} onSelect={(v) => setVoucherTo(v.voucherNo)}>
+                  <input value={voucherTo} onChange={(e) => setVoucherTo(e.target.value)} placeholder="(all)" style={dateInputStyle} />
+                </VoucherSearch>
               </div>
             </div>
           </div>

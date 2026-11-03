@@ -8,6 +8,8 @@ import { handleEnterAsTab } from '../../../utils/keyboardNav';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import { openPrintWindow } from '../../../utils/printRelay';
+import VoucherSearch from '../../../components/accounts/VoucherSearch';
+import { fetchExpenseVoucher } from '../../../components/accounts/voucherSearchApi';
 import './VoucherExpenseForm.scss';
 
 
@@ -333,7 +335,14 @@ const emptyEntry = () => ({
   amountLocked: false,
 });
 
+// A voucher opened from the Voucher # search lands on this same route — the
+// key gives it a fresh form instead of keeping the one that was open.
 export default function VoucherExpenseForm() {
+  const { state } = useLocation();
+  return <VoucherExpenseFormInner key={state?.editVoucher?.id ?? 'new'} />;
+}
+
+function VoucherExpenseFormInner() {
   const { entityType } = useParams();
   const { state } = useLocation();
   const [searchParams] = useSearchParams();
@@ -354,7 +363,9 @@ export default function VoucherExpenseForm() {
   // Confirm-creates-voucher + Print flow instead.
   const isClinic = searchParams.get('source') === 'clinic' || skipGrnQueue;
 
-  const mode   = state?.mode   || 'cash';
+  // Picked on the opening screen, and changeable here too (owner,
+  // 2026-11-03) until the voucher has lines.
+  const [mode, setMode] = useState(state?.mode || 'cash');
   const bankId = state?.bankId || null;
   const isCheque = mode === 'cheque';
   const isBank   = mode !== 'cash';
@@ -370,6 +381,9 @@ export default function VoucherExpenseForm() {
   // voucher; Print prints it and starts a fresh one. openVoucher = { id,
   // voucherNo } while a voucher is open on this form.
   const [openVoucher, setOpenVoucher]   = useState(null);
+  // Edit mode: id of the saved line being corrected in the form (see
+  // handleEditEntry / handleAddEntry).
+  const editingLineIdRef = useRef(null);
   const [confirming, setConfirming]     = useState(false);
   const [savedVoucherNo, setSavedVoucherNo] = useState(null);
 
@@ -768,7 +782,58 @@ export default function VoucherExpenseForm() {
     fetch(`${API}/cheque-serials/next?bankAccountId=${selectedBankId}`)
       .then((r) => r.json())
       .then((j) => { if (j?.data?.nextSerial) setEntry((e) => ({ ...e, chequeNo: j.data.nextSerial })); });
-  }, [selectedBankId]);
+  }, [selectedBankId, isBank]);
+
+  // Voucher # search (components/accounts/VoucherSearch): the picked voucher
+  // is loaded in full and opens on this form — same as Voucher Reprint's
+  // Edit. Returning false keeps the search list open.
+  const openFoundVoucher = async (row) => {
+    // Lines not saved yet (an edit in progress) would be lost.
+    if (isEditMode || (entries.length && !openVoucher)) {
+      const ok = await confirmDialog({
+        title: `Voucher ${row.voucherNo} kholein?`,
+        message: 'Is form ki jo tabdeeli abhi save nahi hui woh chali jayegi.',
+        confirmLabel: 'Haan, kholein',
+      });
+      if (!ok) return false;
+    }
+    try {
+      const full = await fetchExpenseVoucher(entityType, row);
+      if (!full) { toast.error(`Voucher ${row.voucherNo} nahi mila`); return false; }
+      navigate(`/accounts/${entityType}/transactions/voucher-expense/form`, { state: { mode: full.mode, bankId: full.bankId, editVoucher: full } });
+      return true;
+    } catch {
+      toast.error('Voucher khul nahi saka — dobara try karein');
+      return false;
+    }
+  };
+
+  // One voucher has one type. A new one can change it only while nothing is
+  // on it; an opened (edit-mode) voucher can always change it (owner,
+  // 2026-11-03) — its lines' numbers follow, and Update saves the new type.
+  const modeLocked = !isEditMode && (Boolean(openVoucher) || entries.length > 0);
+  const handleModeChange = async (next) => {
+    if (modeLocked || next === mode) return;
+    const wasCash = mode === 'cash';
+    setMode(next);
+    setEntry((e) => ({ ...e, chequeNo: '' }));
+    if (!isEditMode || entries.length === 0) return;
+    // The lines carry the old type's numbers — a cash serial isn't a cheque
+    // number, nor the other way round.
+    if (next === 'cash') {
+      try {
+        const j = await fetch(`${API}/cash-serial/next?entityType=${entityType}`).then((r) => r.json());
+        const start = Number(j?.data?.nextSerial) || 1;
+        setEntries((es) => es.map((e, i) => ({ ...e, chequeNo: String(start + i).padStart(2, '0') })));
+        setCashSerial(start + entries.length);
+      } catch {
+        toast.error('Cash serial load nahi hua — dobara try karein');
+      }
+    } else if (wasCash) {
+      setEntries((es) => es.map((e) => ({ ...e, chequeNo: '' })));
+      toast(`Bank Account chunein, aur har line edit kar ke ${next === 'cheque' ? 'Cheque #' : 'Reference #'} likhein`, { icon: 'ℹ️' });
+    }
+  };
 
   const resetSurgeryState = () => {
     setIsSurgeryAcc(false);
@@ -1000,6 +1065,7 @@ export default function VoucherExpenseForm() {
   // corrects it and hits Confirm to re-add, same as adding any other entry.
   const handleEditEntry = async (idx) => {
     const e = entries[idx];
+    if (isEditMode) editingLineIdRef.current = e?.id ?? null;
     // A line already saved by Confirm is taken off the voucher (and its
     // items unpaid) first; the user corrects it and Confirms again.
     if (e?._entryId && !isEditMode) {
@@ -1410,6 +1476,7 @@ export default function VoucherExpenseForm() {
     // non-numbers and 0 are refused here; lines tied to a GRN / salary / fee /
     // utility / maintenance always come from their popup as a plus amount.
     if (entry.amount === '' || entry.amount == null || isNaN(Number(entry.amount)) || Number(entry.amount) === 0) { toast.error('Amount likhein (minus bhi chal sakta hai, 0 nahi)'); return; }
+    if (isBank && !selectedBankId) { toast.error('Bank Account select karein'); return; }
     if (isCheque && !entry.chequeNo.trim()) { toast.error('Enter cheque number'); return; }
 
     const serial = mode === 'cash'
@@ -1439,7 +1506,12 @@ export default function VoucherExpenseForm() {
         if (linkMsg) { toast.error(linkMsg); return; }
         if (!(await confirmUnlinkedSupplier())) return;
       }
-      setEntries((es) => [...es, line]);
+      // A corrected saved line keeps its id (Update then edits it in place,
+      // its paid links intact); anything else goes in as a new line.
+      const { id: _lineId, ...lineFields } = line;
+      const keepId = isEditMode ? editingLineIdRef.current : null;
+      editingLineIdRef.current = null;
+      setEntries((es) => [...es, keepId != null ? { ...lineFields, id: keepId } : lineFields]);
     } else {
       const linkMsg = linkMissingMessage();
       if (linkMsg) { toast.error(linkMsg); return; }
@@ -1584,6 +1656,12 @@ export default function VoucherExpenseForm() {
 
   const handleConfirm = async () => {
     if (entries.length === 0) { toast.error('Add at least one entry'); return; }
+    // An opened voucher may have just been switched to Cheque / Online.
+    if (isBank && !selectedBankId) { toast.error('Bank Account select karein'); return; }
+    if (isCheque && entries.some((e) => !String(e.chequeNo || '').trim())) {
+      toast.error('Har line ka Cheque # likhein — line edit kar ke');
+      return;
+    }
     // Print window opened on the click, before the save (popup blockers).
     const printWin = openPrintWindow('width=1000,height=800');
     setSaving(true);
@@ -1648,19 +1726,18 @@ export default function VoucherExpenseForm() {
       {/* ── Section 1: Voucher Details ── */}
       <div className="ve-form__section">
         <div className="ve-form__section-body">
-          <div className="ve-form__row-3">
-            <div className="ve-form__field">
-              <label>Voucher Type</label>
-              <input value={isBank ? 'BANK' : 'CASH'} readOnly className="ve-form__readonly" />
-            </div>
+          <div className="ve-form__row-2">
             <div className="ve-form__field">
               <label>Voucher Number</label>
-              <input
-                value={isClinic && !isEditMode ? 'Draft — 8 AM par banega' : (openVoucher?.voucherNo || savedVoucherNo || voucherNo || '…')}
-                readOnly
-                title={isClinic && !isEditMode ? 'General Payment draft banti hai; voucher number subah 8 baje post hone par lagta hai' : undefined}
-                className={`ve-form__readonly${(savedVoucherNo || openVoucher) ? ' ve-form__readonly--saved' : ''}`}
-              />
+              {/* Clinic General Payment makes drafts — no voucher search there */}
+              <VoucherSearch entityType={entityType} onSelect={openFoundVoucher} disabled={isClinic}>
+                <input
+                  value={isClinic && !isEditMode ? 'Draft — 8 AM par banega' : (openVoucher?.voucherNo || savedVoucherNo || voucherNo || '…')}
+                  readOnly
+                  title={isClinic && !isEditMode ? 'General Payment draft banti hai; voucher number subah 8 baje post hone par lagta hai' : undefined}
+                  className={`ve-form__readonly${(savedVoucherNo || openVoucher) ? ' ve-form__readonly--saved' : ''}`}
+                />
+              </VoucherSearch>
             </div>
             <div className="ve-form__field">
               <label>Voucher Date</label>
@@ -1905,6 +1982,23 @@ export default function VoucherExpenseForm() {
         {/* Left: payment details */}
         <div className="ve-form__section ve-form__section--grow">
           <div className="ve-form__section-body">
+
+            {/* Voucher Type — the opening screen's choice, changeable here */}
+            <div className="ve-form__row-2">
+              <div className="ve-form__field">
+                <label>Voucher Type</label>
+                <select
+                  value={mode}
+                  onChange={(e) => handleModeChange(e.target.value)}
+                  disabled={modeLocked}
+                  title={modeLocked ? 'Voucher mein entry aa chuki hai — type badalne ke liye naya voucher shuru karein' : undefined}
+                >
+                  <option value="cash">Cash</option>
+                  <option value="cheque">Cheque</option>
+                  <option value="online">Online Transfer</option>
+                </select>
+              </div>
+            </div>
 
             {/* Bank account (online / cheque) or Cash Serial, side by side with Amount */}
             <div className="ve-form__row-2">

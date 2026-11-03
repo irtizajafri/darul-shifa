@@ -1,0 +1,110 @@
+@use '../../styles/variables' as *;
+
+// Voucher # search — see VoucherSearch.jsx.
+.vsrch {
+  position: relative;
+
+  > input { width: 100%; box-sizing: border-box; }
+  // room for the button, over a page's own (even inline) padding
+  &--on > input { padding-right: 2.6rem !important; }
+
+  // Binoculars button inside the wrapped input, on its right.
+  &__btn {
+    position: absolute;
+    top: 50%;
+    right: 0.35rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: $primary;
+    cursor: pointer;
+    &:hover, &.active { background: $primary-light; }
+    &:focus-visible { outline: 2px solid $primary; outline-offset: 1px; }
+  }
+
+  // On a layer of its own (portal to <body>); top / left / width come from
+  // the component.
+  &__panel {
+    position: fixed;
+    z-index: 1000;
+    max-height: 340px;
+    overflow-y: auto;
+    padding-top: 0.4rem;
+    background: #fff;
+    border: 2px solid $primary;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.15);
+  }
+
+  // stays on top while the list scrolls under it
+  &__input {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: block;
+    width: calc(100% - 1rem);
+    margin: 0 0.5rem 0.35rem;
+    padding: 0.55rem 0.85rem;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 7px;
+    font-size: 0.83rem;
+    color: #1e293b;
+    background: #f8fafc;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    &:focus {
+      border-color: $primary;
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+  }
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.5rem 0.9rem;
+    border: none;
+    background: none;
+    text-align: left;
+    font: inherit;
+    font-size: 0.83rem;
+    color: #334155;
+    cursor: pointer;
+    transition: background 0.1s;
+    &:hover, &:focus-visible { background: $primary-light; outline: none; }
+    &:not(:last-child) { border-bottom: 1px solid #f1f5f9; }
+  }
+
+  &__hint { padding: 0.5rem 0.9rem; font-size: 0.83rem; color: #94a3b8; }
+
+  &__code, &__date { flex-shrink: 0; white-space: nowrap; }
+
+  &__code {
+    font-family: monospace;
+    font-size: 0.74rem;
+    color: $primary;
+    background: $primary-light;
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+  }
+
+  &__gl {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    color: #1e293b;
+  }
+
+  &__meta { margin-left: auto; color: #64748b; font-size: 0.75rem; white-space: nowrap; }
+}

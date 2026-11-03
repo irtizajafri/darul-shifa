@@ -2252,6 +2252,25 @@ async function linkGrnPayments(entries, createdEntries) {
   }
 }
 
+// Voucher Expense's Voucher # search (owner, 2026-11-03): every voucher of
+// the book, newest first, with its lines' Main GL names but not the lines
+// themselves — the one picked is then loaded in full (Voucher Reprint's
+// search).
+async function listVoucherExpenseNumbers(entityType) {
+  const rows = await prisma.$queryRaw`
+    SELECT v.id, v."voucherNo", v."voucherType", v."voucherDate", v.mode,
+           COUNT(e.id)::int AS "lineCount", COALESCE(SUM(e.amount), 0) AS total,
+           COALESCE(string_agg(DISTINCT mg.name, ', '), '') AS "mainGl"
+    FROM "AccVoucherExpense" v
+    LEFT JOIN "AccVoucherExpenseEntry" e ON e."voucherId" = v.id
+    LEFT JOIN "AccMainGL" mg ON mg.id = e."mainGlId"
+    WHERE v."entityType" = ${entityType}
+    GROUP BY v.id
+    ORDER BY v."voucherDate" DESC, v."voucherNo" DESC
+  `;
+  return rows.map((r) => ({ ...r, total: Number(r.total) }));
+}
+
 async function getVoucherExpenses(entityType) {
   return prisma.accVoucherExpense.findMany({
     where: { entityType },
@@ -2268,12 +2287,26 @@ async function getVoucherExpenses(entityType) {
 // date-part actually changed; saving mode/bank/entries with the date left
 // alone keeps the existing number, so it isn't reassigned on every edit.
 async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) {
-  const existing = await prisma.accVoucherExpense.findUnique({ where: { id: Number(id) } });
+  const existing = await prisma.accVoucherExpense.findUnique({ where: { id: Number(id) }, include: { entries: true } });
   if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
   if (!Array.isArray(entries) || entries.length === 0) {
     throw Object.assign(new Error('At least one entry is required'), { status: 400 });
   }
   await assertSurgeryPaidOnce(entries, { excludeVoucherId: existing.id });
+
+  // Lines are matched to the saved ones by their id (owner, 2026-11-03). A
+  // kept line is updated in place, so whatever it paid (GRN, salary, fees,
+  // maintenance, utility…) stays linked to it; a dropped line puts its items
+  // back to unpaid, as removing a line does; a new line is checked and marks
+  // its items paid, as Confirm does. Every line used to be deleted and
+  // created again, which lost all those links but the consultant fees'.
+  const savedIds = new Set(existing.entries.map((e) => e.id));
+  const isKept = (e) => e.id != null && savedIds.has(Number(e.id));
+  const kept = entries.filter(isKept);
+  const added = entries.filter((e) => !isKept(e));
+  const keptIds = new Set(kept.map((e) => Number(e.id)));
+  const dropped = existing.entries.filter((e) => !keptIds.has(e.id));
+  if (added.length) await assertEntriesPayable(added);
 
   const voucherType = mode === 'cash' ? 'CASH' : 'BANK';
   const totalAmount = entries.reduce((s, e) => s + Number(e.amount), 0);
@@ -2287,24 +2320,29 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
     ? await generateVoucherNo(existing.entityType, voucherDate)
     : existing.voucherNo;
 
-  // Entries get wholesale deleted/recreated below — any Const Fee rows this
-  // voucher had previously marked isPaid must go back to unpaid first, or
-  // they'd be stuck "paid" forever even if this edit drops them from the form.
-  const oldLinks = await prisma.accVoucherExpenseEntryConsultantFee.findMany({
-    where: { voucherExpenseEntry: { voucherId: Number(id) } },
-    select: { dischargeBillItemId: true },
-  });
-  if (oldLinks.length) {
-    await prisma.clinicDischargeBillItem.updateMany({
-      where: { id: { in: oldLinks.map((l) => l.dischargeBillItemId) } },
-      data: { isPaid: false },
-    });
+  for (const e of dropped) await unmarkEntryPaid(e.id, existing.voucherNo);
+  if (dropped.length) await prisma.accVoucherExpenseEntry.deleteMany({ where: { id: { in: dropped.map((e) => e.id) } } });
+
+  for (const e of kept) {
+    await prisma.accVoucherExpenseEntry.update({ where: { id: Number(e.id) }, data: entryCreateData(e) });
   }
 
-  await prisma.accVoucherExpenseEntry.deleteMany({ where: { voucherId: Number(id) } });
+  // A new number (date changed) carries the kept lines' salary months along.
+  if (voucherNo !== existing.voucherNo) {
+    const salaries = existing.entries
+      .filter((e) => keptIds.has(e.id))
+      .map((e) => e.paidRefs?.salary)
+      .filter((sal) => sal?.empCode);
+    for (const sal of salaries) {
+      await prisma.employeeSalaryPayment.updateMany({
+        where: { empCode: sal.empCode, salaryMonth: sal.month, salaryYear: sal.year, voucherNo: existing.voucherNo },
+        data: { voucherNo },
+      });
+    }
+  }
 
-  const voucher = await prisma.accVoucherExpense.update({
-    where: { id: Number(id) },
+  await prisma.accVoucherExpense.update({
+    where: { id: existing.id },
     data: {
       voucherNo,
       voucherType,
@@ -2312,31 +2350,26 @@ async function updateVoucherExpense(id, { mode, bankId, voucherDate, entries }) 
       mode,
       bankId: bankId ? Number(bankId) : null,
       totalAmount,
-      entries: {
-        create: entries.map((e) => ({
-          mainGlId: Number(e.mainGlId),
-          subGlId: Number(e.subGlId),
-          mainAccountId: Number(e.mainAccountId),
-          subAccountId: e.subAccountId ? Number(e.subAccountId) : null,
-          accountCode: e.accountCode,
-          accountName: e.accountName,
-          payeeName: e.payeeName || null,
-          amount: Number(e.amount),
-          chequeNo: e.chequeNo || null,
-          chequeDate: e.chequeDate ? new Date(e.chequeDate) : null,
-          chequeType: e.chequeType || null,
-          particulars: e.particulars || null,
-          admissionNo: e.admissionNo || null,
-          admissionAmounts: cleanAdmissionAmounts(e.admissionNo, e.admissionAmounts, e.amount) ?? undefined,
-        })),
-      },
     },
-    include: { entries: true },
   });
 
-  await linkConsultantFeeItems(entries, voucher.entries);
+  if (added.length) {
+    const created = [];
+    for (const e of added) {
+      created.push(await prisma.accVoucherExpenseEntry.create({ data: { ...entryCreateData(e), voucherId: existing.id } }));
+    }
+    try {
+      await markEntriesPaid(added, created, voucherNo);
+    } catch (err) {
+      for (const c of created) {
+        await unmarkEntryPaid(c.id, voucherNo).catch(() => {});
+        await prisma.accVoucherExpenseEntry.delete({ where: { id: c.id } }).catch(() => {});
+      }
+      throw err;
+    }
+  }
 
-  return voucher;
+  return prisma.accVoucherExpense.findUnique({ where: { id: existing.id }, include: { entries: { orderBy: { id: 'asc' } } } });
 }
 
 async function deleteVoucherExpense(id) {
@@ -3855,7 +3888,7 @@ module.exports = {
   getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount,
   getChequeSerials, createChequeSerial, deleteChequeSerial, getNextChequeSerial, getNextCashSerial,
   getIncomeCategories, createIncomeCategory, updateIncomeCategory, deleteIncomeCategory,
-  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, updateVoucherExpense, deleteVoucherExpense,
+  getAllPayeeEntries, createVoucherExpense, getVoucherExpenses, listVoucherExpenseNumbers, updateVoucherExpense, deleteVoucherExpense,
   saveDraftExpenseEntry, saveClinicRefundDraft, getDraftExpenses, deleteDraftExpense, moveDraftExpense, flashDraftsToVouchers,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,

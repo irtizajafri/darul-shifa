@@ -6,6 +6,7 @@ import { useAuthStore } from '../../../store/useAuthStore';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { openReportPreview } from './reportPreview';
+import VoucherSearch from '../../../components/accounts/VoucherSearch';
 import './VoucherReprint.scss';
 
 const ACCOUNTS_API  = 'http://localhost:5001/api/accounts';
@@ -374,13 +375,18 @@ export default function VoucherSummary() {
         <div className="vr-filter-row">
           <span className="vr-filter-label">Voucher #</span>
           <div className="vr-filter-fields">
+            {/* Binoculars: pick a saved voucher into the field */}
             <div className="vr-range-group">
               <span className="vr-range-tag">From</span>
-              <input className="vr-input" placeholder="e.g. VE-20260701-001" value={filters.voucherFrom} onChange={upd('voucherFrom')} />
+              <VoucherSearch entityType={entityType} onSelect={(v) => setFilters((f) => ({ ...f, voucherFrom: v.voucherNo }))}>
+                <input className="vr-input" placeholder="e.g. VE-20260701-001" value={filters.voucherFrom} onChange={upd('voucherFrom')} />
+              </VoucherSearch>
             </div>
             <div className="vr-range-group">
               <span className="vr-range-tag">To</span>
-              <input className="vr-input" placeholder="e.g. VE-20260730-999" value={filters.voucherTo} onChange={upd('voucherTo')} />
+              <VoucherSearch entityType={entityType} onSelect={(v) => setFilters((f) => ({ ...f, voucherTo: v.voucherNo }))}>
+                <input className="vr-input" placeholder="e.g. VE-20260730-999" value={filters.voucherTo} onChange={upd('voucherTo')} />
+              </VoucherSearch>
             </div>
           </div>
         </div>
