@@ -219,6 +219,10 @@ export default function Reports() {
     return employees.find((e) => normalizeEmpCode(e.empCode) === target);
   }, [employees, empCode, normalizeEmpCode]);
 
+  // Also refetched when the employee's roster changes (owner, 2026-11-03): a
+  // Reports tab left open kept the history from before a roster was
+  // customized, so every day of the month fell back to the new roster.
+  const rosterKey = `${JSON.stringify(emp?.dutyRoster || [])}|${emp?.dutyType || ''}`;
   useEffect(() => {
     if (!emp?.id) { setEmpRosterHistory([]); return; }
     fetch(`http://localhost:5001/api/employees/${emp.id}/roster-history`)
@@ -230,7 +234,7 @@ export default function Reports() {
         }
       })
       .catch(() => setEmpRosterHistory([]));
-  }, [emp?.id]);
+  }, [emp?.id, rosterKey]);
 
   const filteredEmployees = useMemo(() => {
     const q = String(empSearch || '').trim().toLowerCase();
@@ -1014,14 +1018,15 @@ export default function Reports() {
       
       const scheduledInTime = toRosterDateTime(dateStr, roster?.timeIn || '08:00');
       const scheduledOutTime = toRosterDateTime(dateStr, roster?.timeOut || '16:00');
-      
-      // Calculate scheduled minutes inline
-      let rosterScheduledMinutes = 8 * 60; // default
-      if (scheduledInTime && scheduledOutTime) {
-        const diff = (new Date(scheduledOutTime) - new Date(scheduledInTime)) / 60000;
-        if (diff > 0) rosterScheduledMinutes = Math.round(diff);
+      // Night roster (20:00 → 08:00) ends the next morning, and the day's
+      // duty minutes come from its roster — same as the machine-attendance
+      // rows (owner, 2026-11-03). A manual-only night used to read as an
+      // 8-hour duty ending before it started.
+      if (scheduledInTime && scheduledOutTime && scheduledOutTime < scheduledInTime) {
+        scheduledOutTime.setDate(scheduledOutTime.getDate() + 1);
       }
-      
+      const rosterScheduledMinutes = getRosterScheduledMinutes(dateStr);
+
       const manualRecord = {
         date: new Date(dateStr),
         scheduledIn: scheduledInTime,
@@ -1078,7 +1083,7 @@ export default function Reports() {
         if (st === 'off_not_avail') return { ...r, status: 'present' };
         return r;
       });
-  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag, isAlternativeOnDate, toDayKey]);
+  }, [effectiveAttendance, emp, normalizeEmpCode, overrides, getRosterForDate, getRosterScheduledMinutes, selectedShift, toRosterDateTime, month, year, normalizeWaiveDeductionFlag, isAlternativeOnDate, toDayKey]);
 
   // A past month's payslip must stay locked to whatever was saved when it
   // was generated (savedPayslipRows) — recalculating from live attendance
@@ -2299,6 +2304,42 @@ export default function Reports() {
       const headerTopY = scope === "payslip-detailed" ? 20 : 78;
       const standardDutyMinutes = Math.max(1, Math.round(getStandardDutyMinutes() || (8 * 60)));
       const standardDutyHours = Number((standardDutyMinutes / 60).toFixed(2));
+
+      // Rosters that ran in this month, each with its own dates and hours
+      // (owner, 2026-11-03) — a month can change roster midway.
+      const rosterDayHours = (d) => {
+        if (d?.hours !== undefined && Number(d.hours) > 0) return Number(d.hours);
+        if (!d?.timeIn || !d?.timeOut || d.timeIn === 'OFF' || d.timeOut === 'OFF') return 0;
+        const diff = (new Date(`1970-01-01T${d.timeOut}`) - new Date(`1970-01-01T${d.timeIn}`)) / 60000;
+        return (diff > 0 ? diff : diff + 24 * 60) / 60;
+      };
+      const monthRosters = [];
+      if (empRosterHistory.length > 0) {
+        const firstDay = new Date(`${year}-${month}-01`);
+        const lastDay  = new Date(Number(year), Number(month), 0);
+        const sorted   = [...empRosterHistory].sort((a, b) => new Date(a.effectiveFrom) - new Date(b.effectiveFrom));
+        for (let i = 0; i < sorted.length; i++) {
+          const effFrom  = new Date(sorted[i].effectiveFrom);
+          const nextFrom = i + 1 < sorted.length ? new Date(sorted[i + 1].effectiveFrom) : null;
+          if (nextFrom && nextFrom <= firstDay) continue;
+          if (effFrom > lastDay) continue;
+          const rangeStart = effFrom < firstDay ? firstDay : effFrom;
+          const rangeEnd   = nextFrom && nextFrom <= lastDay
+            ? new Date(nextFrom.getTime() - 86400000)
+            : lastDay;
+          const roster = Array.isArray(sorted[i].dutyRoster) ? sorted[i].dutyRoster : [];
+          const activeDay = roster.find(r => r.timeIn !== 'OFF' && r.timeOut !== 'OFF');
+          if (!activeDay) continue;
+          monthRosters.push({ timeIn: activeDay.timeIn, timeOut: activeDay.timeOut, hours: rosterDayHours(activeDay), from: rangeStart, to: rangeEnd });
+        }
+      }
+      // Each roster's hours with its own per-day rate (an alternative-duty
+      // day is paid double), so PERHOUR matches the rate OT is paid at.
+      const monthDutyParts = monthRosters
+        .map((r) => ({ hours: Number(r.hours.toFixed(2)), rate: getPerDayRateForDate(r.from) }))
+        .filter((p) => p.hours > 0)
+        .filter((p, i, all) => all.findIndex((q) => q.hours === p.hours && q.rate === p.rate) === i);
+      if (!monthDutyParts.length) monthDutyParts.push({ hours: standardDutyHours, rate: getPerDayRateForDate(`${year}-${month}-01`) });
       pdf.setFontSize(8);
       const doj = emp?.appointmentDate ? new Date(emp.appointmentDate).toISOString().split('T')[0].split('-').reverse().join('-') : '-';
       pdf.text(`DOJ: ${doj}`, 40, headerTopY);
@@ -2313,8 +2354,8 @@ export default function Reports() {
       const monthNames = ["", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
       pdf.text(`${monthNames[parseInt(month)]} ${year}`, pageWidth / 2, headerTopY + 28, { align: "center", fontStyle: "bold" });
     pdf.setFontSize(10);
-    pdf.text(`DUTY HOURS: ${standardDutyHours.toFixed(2)}`, pageWidth - 40, headerTopY, { align: "right" });
-    const perHourSal = (effectiveBaseTotalSal / (new Date(year, month, 0).getDate() * standardDutyHours)).toFixed(2);
+    pdf.text(`DUTY HOURS: ${monthDutyParts.map((p) => p.hours.toFixed(2)).join(' / ')}`, pageWidth - 40, headerTopY, { align: "right" });
+    const perHourSal = monthDutyParts.map((p) => (p.rate / p.hours).toFixed(2)).join(' / ');
       pdf.text(`PERHOUR SALARY: ${perHourSal}`, pageWidth - 40, headerTopY + 18, { align: "right" });
       pdf.setFontSize(22); pdf.setTextColor(200);
       pdf.text("ONLY FOR REPORTING", pageWidth / 2, headerTopY + 40, { align: "center" });
@@ -2415,43 +2456,26 @@ export default function Reports() {
       pdf.setFont("helvetica", "normal");
 
       // ─── Roster Section ───────────────────────────────────────────────────
-      if (empRosterHistory.length > 0) {
-        const firstDay = new Date(`${year}-${month}-01`);
-        const lastDay  = new Date(Number(year), Number(month), 0);
-        const sorted   = [...empRosterHistory].sort((a, b) => new Date(a.effectiveFrom) - new Date(b.effectiveFrom));
-
-        const monthRosters = [];
-        for (let i = 0; i < sorted.length; i++) {
-          const effFrom  = new Date(sorted[i].effectiveFrom);
-          const nextFrom = i + 1 < sorted.length ? new Date(sorted[i + 1].effectiveFrom) : null;
-          if (nextFrom && nextFrom <= firstDay) continue;
-          if (effFrom > lastDay) continue;
-          const rangeStart = effFrom < firstDay ? firstDay : effFrom;
-          const rangeEnd   = nextFrom && nextFrom <= lastDay
-            ? new Date(nextFrom.getTime() - 86400000)
-            : lastDay;
-          const roster = Array.isArray(sorted[i].dutyRoster) ? sorted[i].dutyRoster : [];
-          const activeDay = roster.find(r => r.timeIn !== 'OFF' && r.timeOut !== 'OFF');
-          if (!activeDay) continue;
-          monthRosters.push({ timeIn: activeDay.timeIn, timeOut: activeDay.timeOut, hours: activeDay.hours, from: rangeStart, to: rangeEnd });
-        }
-
-        if (monthRosters.length >= 1) {
-          const mnths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          const fmtD  = (d) => `${String(d.getDate()).padStart(2,'0')} ${mnths[d.getMonth()]}`;
-          let rosterY = currentLineY + 16;
-          pdf.setFontSize(9);
-          pdf.setFont("helvetica", "bold");
-          monthRosters.forEach((r, idx) => {
-            const label = monthRosters.length > 1 ? `ROSTER ${idx + 1}: ` : `ROSTER: `;
-            pdf.text(
-              `${label}${r.timeIn} - ${r.timeOut}  |  ${r.hours} hrs  |  ${fmtD(r.from)} - ${fmtD(r.to)}`,
-              allowanceMargin, rosterY
-            );
-            rosterY += 13;
-          });
-          pdf.setFont("helvetica", "normal");
-        }
+      // The table starts below the last line drawn here (allowances may wrap
+      // and a month may have 2-3 rosters) — it used to start at a fixed
+      // spot and the roster lines ran over it.
+      let headerBottomY = currentLineY;
+      if (monthRosters.length >= 1) {
+        const mnths = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const fmtD  = (d) => `${String(d.getDate()).padStart(2,'0')} ${mnths[d.getMonth()]}`;
+        let rosterY = currentLineY + 16;
+        pdf.setFontSize(9);
+        pdf.setFont("helvetica", "bold");
+        monthRosters.forEach((r, idx) => {
+          const label = monthRosters.length > 1 ? `ROSTER ${idx + 1}: ` : `ROSTER: `;
+          pdf.text(
+            `${label}${r.timeIn} - ${r.timeOut}  |  ${Number(r.hours.toFixed(2))} hrs  |  ${fmtD(r.from)} - ${fmtD(r.to)}`,
+            allowanceMargin, rosterY
+          );
+          headerBottomY = rosterY;
+          rosterY += 13;
+        });
+        pdf.setFont("helvetica", "normal");
       }
 
       const isPayslipScope = scope === "payslip" || scope === "payslip-detailed";
@@ -2460,29 +2484,32 @@ export default function Reports() {
         return Number.isFinite(parsed) ? parsed : 0;
       };
 
-      const wrdDays = new Date(year, month, 0).getDate();
-      const perDayAmount = Math.round(effectiveBaseTotalSal / wrdDays).toString();
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const tableRows = detailedAttendanceRows.map((r) => {
         const otAmnt = String(Math.max(0, Math.round(Number(r.otAmt) || 0)));
         const dayName = r.date ? dayNames[new Date(r.date).getDay()] : '';
         const dayNum = r.date ? r.date.split('-')[2] : r.date;
         const dateWithDay = r.date ? `${dayNum} ${dayName}` : r.date;
-        return [dateWithDay, r.timeIn, r.timeOut, r.status, r.late, r.wrkHrs, r.ot, perDayAmount, r.salary, otAmnt, r.ded, r.total];
+        // Each day's own duty hours and per-day rate — a month can run on
+        // 2-3 rosters, and an alternative-duty day is paid double.
+        const perDayAmount = String(Math.round(getPerDayRateForDate(r.date)));
+        return [dateWithDay, r.timeIn, r.timeOut, r.status, r.late, r.dutyHrs, r.wrkHrs, r.ot, perDayAmount, r.salary, otAmnt, r.ded, r.total];
       });
 
       const totals = tableRows.reduce((acc, row) => {
-        acc.wrkHrs += toNumber(row[5]);
-        acc.otHrs += toNumber(row[6]);
-        acc.salary += toNumber(row[8]);
-        acc.otAmt += toNumber(row[9]);
-        acc.ded += toNumber(row[10]);
-        acc.total += toNumber(row[11]);
+        acc.dutyHrs += toNumber(row[5]);
+        acc.wrkHrs += toNumber(row[6]);
+        acc.otHrs += toNumber(row[7]);
+        acc.salary += toNumber(row[9]);
+        acc.otAmt += toNumber(row[10]);
+        acc.ded += toNumber(row[11]);
+        acc.total += toNumber(row[12]);
         return acc;
-      }, { wrkHrs: 0, otHrs: 0, salary: 0, otAmt: 0, ded: 0, total: 0 });
+      }, { dutyHrs: 0, wrkHrs: 0, otHrs: 0, salary: 0, otAmt: 0, ded: 0, total: 0 });
 
       const totalsRow = [
         "TOTAL", "", "", "", "",
+        totals.dutyHrs.toFixed(2),
         totals.wrkHrs.toFixed(2),
         totals.otHrs.toFixed(2),
         "",
@@ -2492,7 +2519,7 @@ export default function Reports() {
         Math.round(totals.total).toString(),
       ];
 
-      const tableStartY = allowanceLineY + 16;
+      const tableStartY = headerBottomY + 16;
       const pageHeight = pdf.internal.pageSize.getHeight();
       const bottomReserved = 172;
       const availableHeight = pageHeight - tableStartY - bottomReserved;
@@ -2502,7 +2529,7 @@ export default function Reports() {
 
       autoTable(pdf, {
         startY: tableStartY,
-        head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
+        head: [["DUTY DT", "TM IN", "TIME OUT", "DUTY STS", "LATE", "DUTY HRS", "WRK HRS", "O.T", "PER DAY", "SALARY", "O.T AMT", "DED", "TOTAL"]],
         body: [...tableRows, totalsRow],
         styles: {
           fontSize: isPayslipScope ? autoFontSize : 9,
