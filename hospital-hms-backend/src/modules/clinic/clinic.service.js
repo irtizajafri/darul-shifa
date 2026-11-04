@@ -3916,7 +3916,7 @@ async function getDischargeCertificate(admissionId) {
 async function saveDischargeCertificate(admissionId, {
   diagnosis, reasonOfDischarge, furtherTreatmentNeeded, medicinePrescribed,
   dischargeMedicine, followUp, medicalOfficer, createdByUserId, createdByName,
-  dischargeDate,
+  dischargeDate, changedAt,
 }) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
@@ -3981,7 +3981,7 @@ async function saveDischargeCertificate(admissionId, {
     // updateAdmissionStatus requires a Reason for every real transition —
     // "Reason of Discharge" (validated above against DISCHARGE_REASONS) IS
     // that reason here, no separate prompt needed.
-    await updateAdmissionStatus(admissionId, { status: 'discharge', reason: reasonOfDischarge, changedBy: createdByName || null });
+    await updateAdmissionStatus(admissionId, { status: 'discharge', reason: reasonOfDischarge, changedBy: createdByName || null, changedAt });
   }
 
   return saved;
@@ -5397,9 +5397,9 @@ async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, c
 // by Cheque #, one line per admission / OPD slip it settled.
 //   basis 'posting' — From/To on the day the cheque was entered (createdAt,
 //                     PKT day), i.e. the day the money came in.
-//   basis 'posted'  — From/To on the bill's own month (Billing Month end,
-//                     e.g. the June file → 30-06), which is the date each
-//                     line shows.
+//   basis 'posted'  — From/To on the cheque's own CHQ DATE, typed when it
+//                     was received (owner, 2026-11-04) — the date each line
+//                     shows. It used to be the Billing Month's last day.
 // Cheque header amount = what the cheque actually brought in (receivedAmount,
 // summed if the same Cheque # was posted in more than one go). The Excel
 // import's synthetic "LEGACY-…" receipts are left out — their entry time is
@@ -5409,33 +5409,18 @@ async function getPanelChequePostingReport({ from, to, basis }) {
   const byPosted = String(basis || 'posting').toLowerCase() === 'posted';
 
   const where = { NOT: { createdByName: 'Legacy Import' } };
-  if (byPosted) {
-    const fy = Number(String(from).slice(0, 4));
-    const ty = Number(String(to).slice(0, 4));
-    where.billingYear = { gte: fy, lte: ty };
-  } else {
-    const start = new Date(`${from}T00:00:00+05:00`);
-    const end = new Date(`${to}T23:59:59.999+05:00`);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw Object.assign(new Error('Date sahi nahi'), { status: 400 });
-    where.createdAt = { gte: start, lte: end };
-  }
+  // CHQ DATE is a plain date, saved at UTC midnight; the entry time is a
+  // real instant, so its day runs in PKT.
+  const start = byPosted ? new Date(`${from}T00:00:00.000Z`) : new Date(`${from}T00:00:00+05:00`);
+  const end = byPosted ? new Date(`${to}T23:59:59.999Z`) : new Date(`${to}T23:59:59.999+05:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) throw Object.assign(new Error('Date sahi nahi'), { status: 400 });
+  where[byPosted ? 'chequeDate' : 'createdAt'] = { gte: start, lte: end };
 
-  const monthEnd = (y, m) => {
-    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
-  };
-
-  let receipts = await prisma.clinicPanelChequeReceipt.findMany({
+  const receipts = await prisma.clinicPanelChequeReceipt.findMany({
     where,
     include: { items: { orderBy: { id: 'asc' } }, opdItems: { orderBy: { id: 'asc' } } },
-    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    orderBy: [byPosted ? { chequeDate: 'asc' } : { createdAt: 'asc' }, { id: 'asc' }],
   });
-  if (byPosted) {
-    receipts = receipts.filter((r) => {
-      const d = monthEnd(r.billingYear, r.billingMonth);
-      return d >= from && d <= to;
-    });
-  }
 
   const admissionIds = [...new Set(receipts.flatMap((r) => r.items.map((i) => i.admissionId)))];
   const opdIds = [...new Set(receipts.flatMap((r) => r.opdItems.map((i) => i.opdVisitId)))];
@@ -5455,7 +5440,7 @@ async function getPanelChequePostingReport({ from, to, basis }) {
     if (!groups.has(key)) groups.set(key, { chequeNo: key, amount: 0, lines: [] });
     const g = groups.get(key);
     g.amount += Number(r.receivedAmount) || 0;
-    const common = { postedDate: monthEnd(r.billingYear, r.billingMonth), chequeNo: r.chequeNo, user: r.createdByName || '', postingAt: r.createdAt };
+    const common = { postedDate: new Date(r.chequeDate).toISOString().slice(0, 10), chequeNo: r.chequeNo, user: r.createdByName || '', postingAt: r.createdAt };
     r.items.forEach((i) => {
       const a = admById.get(i.admissionId);
       g.lines.push({
@@ -8874,6 +8859,132 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
     ? `Panel — balance Rs. ${otherIncomeAmount.toFixed(2)} goes to Other Income`
     : isPanel ? 'Panel — balance cleared — file closed' : 'Balance cleared — file closed';
   return updateAdmissionStatus(admissionId, { status: 'closed', reason, changedBy, changedAt: closedAt });
+}
+
+// ─── Clinic > Transactions > Pending Files ───────────────────────────────────
+// Day Care files (owner, 2026-11-04): a DAY CARE UNIT file worth Rs. 300 closes
+// by itself 12 hours after admission, through the steps staff would take —
+// Room Charges line on the Provisional Bill, Discharge Certificate, then
+// Discharge and Refund. A file that doesn't fit that stays open and is listed
+// with the reason, for staff to close by hand. The ward name is exact, as it
+// is spelled on the server.
+const DAY_CARE_WARD = 'DAY CARE UNIT';
+const DAY_CARE_ROOM_HEAD = 'Room Charges';
+const DAY_CARE_FILE_AMOUNT = 300;
+const DAY_CARE_HOURS = 12;
+const DAY_CARE_CLOSED_BY = 'Auto Close (Day Care)';
+
+function dayCareHoldReason(admission, { balanceInfo, pendingSlips, pendingDiagnosticSlips }, reopened) {
+  const bill = Math.round(balanceInfo.billAmount);
+  const slips = pendingSlips.length + pendingDiagnosticSlips.length;
+  if (admission.patientCategory === 'panel') return 'Panel file hai';
+  // Staff opened it again on purpose — closing it once more would undo that.
+  if (reopened) return 'File dobara kholi gayi hai';
+  if (balanceInfo.amountReceived !== DAY_CARE_FILE_AMOUNT) return `Received Rs. ${balanceInfo.amountReceived} hai, Rs. ${DAY_CARE_FILE_AMOUNT} nahi`;
+  if (slips) return `${slips} slip Provisional Bill mein add honi baaki hai`;
+  if (balanceInfo.discount > 0) return 'Discount laga hua hai';
+  if (bill !== 0 && bill !== DAY_CARE_FILE_AMOUNT) return `Bill Rs. ${bill} hai, Rs. ${DAY_CARE_FILE_AMOUNT} nahi`;
+  return null;
+}
+
+// Every open file in the ward, each with what decides its auto close.
+async function getDayCareFiles() {
+  const [ward, roomHead] = await Promise.all([
+    prisma.clinicRoomCategory.findUnique({ where: { name: DAY_CARE_WARD } }),
+    prisma.clinicBillHead.findFirst({ where: { description: DAY_CARE_ROOM_HEAD } }),
+  ]);
+  if (!ward) return { ward, roomHead, files: [] };
+
+  const admissions = await prisma.clinicAdmission.findMany({
+    where: { roomCategoryId: ward.id, status: { in: ['active', 'discharge'] } },
+    orderBy: { createdAt: 'asc' },
+  });
+  const reopenLogs = await prisma.clinicAdmissionStatusLog.findMany({
+    where: { admissionId: { in: admissions.map((a) => a.id) }, toStatus: 'active' },
+    select: { admissionId: true },
+  });
+  const reopened = new Set(reopenLogs.map((l) => l.admissionId));
+
+  const files = [];
+  for (const admission of admissions) {
+    const detail = await getProvisionalBillDetail(admission.id);
+    const billAmount = Math.round(detail.balanceInfo.billAmount);
+    let hold = dayCareHoldReason(admission, detail, reopened.has(admission.id));
+    if (!hold && !billAmount && !roomHead) hold = `"${DAY_CARE_ROOM_HEAD}" Bill Head nahi mila`;
+    // A discharged file may already carry its own Discharge and Refund rows.
+    if (!hold && admission.status === 'discharge') {
+      const finalBill = Math.round((await getDischargeBillDetail(admission.id)).billAmount);
+      if (finalBill && finalBill !== DAY_CARE_FILE_AMOUNT) hold = `Discharge Bill Rs. ${finalBill} hai, Rs. ${DAY_CARE_FILE_AMOUNT} nahi`;
+    }
+    const closesAt = new Date(admission.createdAt.getTime() + DAY_CARE_HOURS * 3600000);
+    files.push({
+      admission, billAmount, closesAt, hold,
+      received: detail.balanceInfo.amountReceived,
+      due: !hold && closesAt.getTime() <= Date.now(),
+    });
+  }
+  return { ward, roomHead, files };
+}
+
+async function getPendingFiles() {
+  const [{ files }, closed] = await Promise.all([
+    getDayCareFiles(),
+    prisma.clinicAdmissionStatusLog.findMany({ where: { toStatus: 'closed', changedBy: DAY_CARE_CLOSED_BY }, orderBy: { id: 'desc' } }),
+  ]);
+  return {
+    pending: files.map(({ admission: a, ...file }) => ({
+      ...file,
+      id: a.id,
+      admissionNo: a.admissionNo,
+      patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(),
+      status: a.status,
+      admittedAt: a.createdAt,
+    })),
+    closed: closed.map((l) => ({ id: l.id, admissionNo: l.admissionNo, patientName: l.patientName, closedAt: l.changedAt })),
+  };
+}
+
+async function closeDayCareFile({ admission, billAmount, closesAt }, ward, roomHead) {
+  const id = admission.id;
+  if (!billAmount) {
+    // Without this line the bill is 0 and the Rs. 300 shows as a Refund owed.
+    // No Slip # — nothing was issued, and the job must not use up the numbers
+    // reception is working through (see getNextSerialNo).
+    await prisma.clinicProvisionalBillItem.create({
+      data: {
+        admissionId: id, roomCategoryId: ward.id, billHeadId: roomHead.id,
+        qty: 1, rate: DAY_CARE_FILE_AMOUNT, amount: DAY_CARE_FILE_AMOUNT, remarks: DAY_CARE_CLOSED_BY,
+      },
+    });
+  }
+  if (admission.status === 'active') {
+    await saveDischargeCertificate(id, {
+      reasonOfDischarge: 'treated', dischargeDate: closesAt, changedAt: closesAt, createdByName: DAY_CARE_CLOSED_BY,
+    });
+  }
+  // finalizeDischarge only stops on a Balance, so a Refund owed has to stop here.
+  const bill = await getDischargeBillDetail(id);
+  if (Math.round(bill.billAmount) !== DAY_CARE_FILE_AMOUNT || bill.amountReceived !== DAY_CARE_FILE_AMOUNT) {
+    throw new Error(`Discharge Bill Rs. ${bill.billAmount}, Received Rs. ${bill.amountReceived}`);
+  }
+  // The day the 12 hours ended, in PKT — an old file lands on its own day in
+  // Distribution, not on the day this job happened to reach it.
+  const closingDate = new Date(closesAt.getTime() + 5 * 3600000).toISOString().slice(0, 10);
+  await finalizeDischarge(id, { discountAmount: 0, changedBy: DAY_CARE_CLOSED_BY, closingDate });
+}
+
+async function autoCloseDayCareFiles() {
+  const { ward, roomHead, files } = await getDayCareFiles();
+  let closed = 0;
+  for (const file of files.filter((f) => f.due)) {
+    try {
+      await closeDayCareFile(file, ward, roomHead);
+      closed += 1;
+    } catch (err) {
+      console.error(`❌ Day Care Auto-Close failed for ${file.admission.admissionNo}:`, err.message);
+    }
+  }
+  return { closed };
 }
 
 // ─── Panels > Transaction > Distribution OPD ─────────────────────────────────
@@ -13025,13 +13136,261 @@ async function updateOpdVisitFull(id, payload = {}) {
 }
 
 async function getOpdVisitEditLogs(visitId) {
-  return prisma.clinicOpdVisitEditLog.findMany({ where: { visitId: Number(visitId) }, orderBy: { editedAt: 'desc' } });
+  return prisma.clinicOpdVisitEditLog.findMany({ where: { source: 'opd', visitId: Number(visitId) }, orderBy: { editedAt: 'desc' } });
+}
+
+// ── Full Slip Edit: every other receipt (owner, 2026-11-04) ─────────────────
+// Besides OPD slips (above), the search also finds what else the Patients
+// List shows: Excel rows, admission receipts (the advance and Receiving
+// against Admission) and Antenatal. Same rule as OPD slips: a risky situation
+// is a warning, never a block, and every save is logged. A record's date,
+// department, Admission # and Panel/Staff link don't change here.
+const isAdmissionPvRow = (pv) => /^adm/i.test(String(pv.department || ''))
+  || /^admission deposit$/i.test(String(pv.subDepartment || '').trim());
+
+async function searchSlipsForFullEdit(q) {
+  const term = String(q || '').trim();
+  if (!term) return [];
+  const like = { contains: term, mode: 'insensitive' };
+  const num = /^\d+$/.test(term) && Number(term) <= 2147483647 ? Number(term) : null;
+
+  const [opd, pv, admissions, payments, antenatal] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({
+      where: { OR: [{ serialNo: like }, { patientName: like }, { admitNo: like }, ...(num != null ? [{ mrNo: num }] : [])] },
+      select: { id: true, serialNo: true, patientName: true, department: true, receive: true, createdAt: true },
+    }),
+    prisma.patientVisit.findMany({
+      where: { OR: [{ patientName: like }, ...(num != null ? [{ serialNo: num }, { admitNo: num }] : [])] },
+      select: { id: true, serialNo: true, patientName: true, department: true, subDepartment: true, received: true, visitDate: true },
+    }),
+    prisma.clinicAdmission.findMany({
+      where: { OR: [{ serialNo: like }, { admissionNo: like }, { patientName: like }, ...(num != null ? [{ mrNo: num }] : [])] },
+      select: { id: true, serialNo: true, admissionNo: true, patientTitle: true, patientName: true, advancePayment: true, createdAt: true },
+    }),
+    prisma.clinicAdmissionPayment.findMany({
+      where: { OR: [{ serialNo: like }, { admission: { admissionNo: like } }, { admission: { patientName: like } }] },
+      select: { id: true, serialNo: true, amount: true, receivedAt: true, admission: { select: { admissionNo: true, patientTitle: true, patientName: true } } },
+    }),
+    prisma.clinicAntenatal.findMany({
+      where: { OR: [{ serialNo: like }, { mrNo: like }, { antenatalNo: like }, { patientName: like }] },
+      select: { id: true, serialNo: true, patientName: true, amount: true, createdAt: true },
+    }),
+  ]);
+
+  // An admission whose receipt is an Excel row shows as that row, same as
+  // the Patients List — its own advance isn't the receipt then.
+  const admNos = admissions.map((a) => Number(a.admissionNo)).filter((n) => n > 0 && n <= 2147483647);
+  const legacyRows = admNos.length
+    ? await prisma.patientVisit.findMany({
+        where: { admitNo: { in: admNos }, department: { equals: 'admission', mode: 'insensitive' } },
+        select: { admitNo: true },
+      })
+    : [];
+  const legacyAdmitNos = new Set(legacyRows.map((r) => String(r.admitNo)));
+
+  const rows = [
+    ...opd.map((r) => ({ source: 'opd', id: r.id, serialNo: r.serialNo, patientName: r.patientName, department: r.department, receive: Number(r.receive) || 0, createdAt: r.createdAt })),
+    ...pv.map((r) => ({ source: 'pv', id: r.id, serialNo: r.serialNo == null ? '' : String(r.serialNo), patientName: r.patientName, department: [r.department, r.subDepartment].filter(Boolean).join(' · '), receive: Number(r.received) || 0, createdAt: r.visitDate })),
+    ...admissions.filter((a) => !legacyAdmitNos.has(String(Number(a.admissionNo)))).map((a) => ({ source: 'admission', id: a.id, serialNo: a.serialNo || '', patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(), department: `Admission # ${a.admissionNo}`, receive: Number(a.advancePayment) || 0, createdAt: a.createdAt })),
+    ...payments.map((p) => ({ source: 'admission-payment', id: p.id, serialNo: p.serialNo, patientName: `${p.admission?.patientTitle || ''} ${p.admission?.patientName || ''}`.trim(), department: `Admission # ${p.admission?.admissionNo || ''}`, receive: Number(p.amount) || 0, createdAt: p.receivedAt })),
+    ...antenatal.map((a) => ({ source: 'antenatal', id: a.id, serialNo: a.serialNo || '', patientName: a.patientName, department: 'Antenatal', receive: Number(a.amount) || 0, createdAt: a.createdAt })),
+  ];
+  // The exact Slip # first, then newest first.
+  const rank = (r) => (String(r.serialNo) === term ? 0 : 1);
+  return rows.sort((a, b) => rank(a) - rank(b) || new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+async function loadOtherSlip(source, id) {
+  const where = { id: Number(id) };
+  if (source === 'pv') return prisma.patientVisit.findUnique({ where });
+  if (source === 'admission') return prisma.clinicAdmission.findUnique({ where });
+  if (source === 'admission-payment') return prisma.clinicAdmissionPayment.findUnique({ where, include: { admission: true } });
+  if (source === 'antenatal') return prisma.clinicAntenatal.findUnique({ where });
+  throw Object.assign(new Error('Invalid slip type'), { status: 400 });
+}
+
+function otherSlipFields(source, r) {
+  if (source === 'pv') {
+    return {
+      serialNo: r.serialNo == null ? '' : String(r.serialNo), patientName: r.patientName,
+      doctor: r.doctor || '', subDepartment: r.subDepartment || '', paymentType: r.paymentType || '',
+      received: Number(r.received) || 0, balance: Number(r.balance) || 0, discount: Number(r.discount) || 0,
+    };
+  }
+  if (source === 'admission') return { serialNo: r.serialNo || '', patientName: r.patientName, amount: Number(r.advancePayment) || 0 };
+  if (source === 'admission-payment') return { serialNo: r.serialNo, amount: Number(r.amount) || 0, paymentType: r.paymentType };
+  return { serialNo: r.serialNo || '', mrNo: r.mrNo || '', patientName: r.patientName, age: r.age ?? '', phoneNo: r.phoneNo || '', amount: Number(r.amount) || 0 };
+}
+
+function otherSlipMeta(source, r) {
+  if (source === 'pv') return { type: 'Excel (Patients List)', department: r.department || '', date: r.visitDate, time: r.visitTime || '', admissionNo: r.admitNo ?? null, adjustedAt: r.adjustedAt };
+  if (source === 'admission') return { type: 'Admission Advance', department: 'Admission', date: r.createdAt, admissionNo: r.admissionNo, patientCategory: r.patientCategory };
+  if (source === 'admission-payment') return { type: 'Receiving against Admission', department: 'Admission', date: r.receivedAt, admissionNo: r.admission?.admissionNo, patientName: `${r.admission?.patientTitle || ''} ${r.admission?.patientName || ''}`.trim() };
+  return { type: 'Antenatal', department: 'Antenatal', date: r.createdAt, paymentType: r.paymentType };
+}
+
+async function buildOtherSlipWarnings(source, r) {
+  const warnings = [];
+  const biz = source === 'pv'
+    ? patientListBusinessDay({ _source: 'old', visitDate: r.visitDate, visitTime: r.visitTime })
+    : patientListBusinessDay({ visitDate: source === 'admission-payment' ? r.receivedAt : r.createdAt });
+  const closed = await prisma.accVoucherIncome.findFirst({
+    where: { source: 'auto', entityType: 'non-corporate', voucherDate: { gte: new Date(`${biz}T00:00:00.000Z`), lte: new Date(`${biz}T23:59:59.999Z`) } },
+    select: { id: true },
+  });
+  if (closed) warnings.push({ code: 'day-closed', message: `Is slip ka din (${biz}) Day Close ho chuka hai — us din ka auto income voucher purani amount par bana hai, woh khud nahi badlega.` });
+
+  if (source === 'pv') {
+    warnings.push({ code: 'excel-import', message: 'Yeh slip Excel se aayi hai — us din ki file dobara Replace karne par yeh edit mit jayegi.' });
+    if (r.isPaid) warnings.push({ code: 'doctor-paid', message: 'Is line ki doctor fee voucher se pay ho chuki hai — amount badalne se paid voucher waisa hi rahega.' });
+    if (Number(r.refund) > 0) warnings.push({ code: 'refund', message: `Is slip par ${Number(r.refund)} ka refund ho chuka hai — woh waisa hi rahega.` });
+    if (r.serialNo != null) {
+      const lines = await prisma.patientVisit.count({ where: { serialNo: r.serialNo, visitDate: r.visitDate } });
+      if (lines > 1) warnings.push({ code: 'multi-line', message: `Is slip ki ${lines} lines hain — Slip # aur naam sab lines par lagega, baaqi tabdeeli sirf is line par.` });
+    }
+    if (isAdmissionPvRow(r)) {
+      warnings.push({ code: 'admission-bill', message: `Yeh Admission # ${r.admitNo ?? '-'} ki receipt hai — Received badalne se us file ka Provisional Bill aur Discharge ka hisaab badlega.` });
+      const twin = r.serialNo != null
+        ? await prisma.clinicAdmissionPayment.findUnique({ where: { serialNo: String(r.serialNo) }, select: { id: true } })
+        : null;
+      if (twin) warnings.push({ code: 'receipt-pair', message: 'Is receipt ki dobara entry (Receiving against Admission) isi Slip # par bani hai — Slip # badla to Provisional Bill mein raqam do dafa ginegi.' });
+    }
+    return warnings;
+  }
+
+  const admission = source === 'admission' ? r : source === 'admission-payment' ? r.admission : null;
+  if (admission) {
+    warnings.push({ code: 'admission-bill', message: `Amount badalne se Admission # ${admission.admissionNo} ka Provisional Bill aur Discharge ka hisaab badlega.` });
+    if (admission.status !== 'active') warnings.push({ code: 'file-status', message: `Yeh file ${admission.status === 'closed' ? 'Closed' : 'Discharge'} ho chuki hai — us ka bana hua hisaab khud nahi badlega.` });
+  }
+  if (source === 'admission-payment') {
+    const no = Number(r.serialNo);
+    const twin = Number.isInteger(no) && no > 0 && no <= 2147483647
+      ? await prisma.patientVisit.findFirst({ where: { serialNo: no, admitNo: Number(r.admission?.admissionNo) || 0 }, select: { id: true, department: true, subDepartment: true } })
+      : null;
+    if (twin && isAdmissionPvRow(twin)) warnings.push({ code: 'receipt-pair', message: 'Yeh receipt Excel ki isi Slip # wali receipt ki dobara entry hai — Slip # badla to Provisional Bill mein raqam do dafa ginegi.' });
+  }
+  if (source === 'antenatal' && r.isPaid) warnings.push({ code: 'doctor-paid', message: 'Is slip ki doctor fee voucher se pay ho chuki hai — amount badalne se paid voucher waisa hi rahega.' });
+  return warnings;
+}
+
+async function getOtherSlipForFullEdit(source, id) {
+  const r = await loadOtherSlip(source, id);
+  if (!r) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
+  const [warnings, logs] = await Promise.all([
+    buildOtherSlipWarnings(source, r),
+    prisma.clinicOpdVisitEditLog.findMany({ where: { source, visitId: r.id }, orderBy: { editedAt: 'desc' } }),
+  ]);
+  return { source, id: r.id, fields: otherSlipFields(source, r), meta: otherSlipMeta(source, r), warnings, logs };
+}
+
+function slipAmount(value, label, { positive = false } = {}) {
+  const n = Number(value);
+  if (value === '' || value == null || !Number.isFinite(n) || n < 0 || (positive && n === 0)) {
+    throw Object.assign(new Error(`${label} sahi likhein`), { status: 400 });
+  }
+  return n;
+}
+
+async function updateOtherSlip(source, id, payload = {}) {
+  const before = await loadOtherSlip(source, id);
+  if (!before) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
+  const warnings = await buildOtherSlipWarnings(source, before);
+  const serialNo = String(payload.serialNo ?? '').trim();
+  const patientName = String(payload.patientName ?? '').trim();
+  const needName = () => { if (!patientName) throw Object.assign(new Error('Patient name zaroori hai'), { status: 400 }); };
+  let siblings = [];
+
+  if (source === 'pv') {
+    needName();
+    const newNo = serialNo === '' ? null : Number(serialNo);
+    if (serialNo === '' ? before.serialNo != null : !(Number.isInteger(newNo) && newNo > 0 && newNo <= 2147483647)) {
+      throw Object.assign(new Error('Slip # sahi number likhein'), { status: 400 });
+    }
+    if (newNo != null && newNo !== before.serialNo) {
+      await assertSerialNoAvailable(serialNo, { patientName, admissionNo: before.admitNo, source: 'pv', excludePvId: before.id });
+    }
+    const adjustedAt = new Date();
+    // Slip # and name belong to the whole slip, so a change to either goes to
+    // all its Excel lines. Any other edit leaves the other lines untouched.
+    const otherLines = { serialNo: before.serialNo, visitDate: before.visitDate, id: { not: before.id } };
+    if (before.serialNo != null && (newNo !== before.serialNo || patientName !== before.patientName)) {
+      siblings = await prisma.patientVisit.findMany({ where: otherLines });
+    }
+    await prisma.$transaction([
+      ...(siblings.length ? [prisma.patientVisit.updateMany({ where: otherLines, data: { serialNo: newNo, patientName, adjustedAt } })] : []),
+      prisma.patientVisit.update({
+        where: { id: before.id },
+        data: {
+          serialNo: newNo, patientName, adjustedAt,
+          doctor: String(payload.doctor ?? '').trim() || null,
+          subDepartment: String(payload.subDepartment ?? '').trim() || null,
+          paymentType: String(payload.paymentType ?? '').trim() || null,
+          received: slipAmount(payload.received, 'Received'),
+          balance: slipAmount(payload.balance, 'Balance'),
+          discount: slipAmount(payload.discount, 'Discount'),
+        },
+      }),
+    ]);
+  } else if (source === 'admission') {
+    needName();
+    const amount = slipAmount(payload.amount, 'Amount');
+    if (serialNo && serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo, { admissionNo: before.admissionNo, patientName });
+    await prisma.clinicAdmission.update({ where: { id: before.id }, data: { serialNo: serialNo || null, patientName, advancePayment: amount } });
+  } else if (source === 'admission-payment') {
+    if (!serialNo) throw Object.assign(new Error('Slip # zaroori hai'), { status: 400 });
+    const amount = slipAmount(payload.amount, 'Amount', { positive: true });
+    if (serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo, { admissionNo: before.admission?.admissionNo, patientName: before.admission?.patientName });
+    await prisma.clinicAdmissionPayment.update({
+      where: { id: before.id },
+      data: { serialNo, amount, paymentType: payload.paymentType === 'cc' ? 'cc' : 'cash' },
+    });
+  } else {
+    needName();
+    const amount = slipAmount(payload.amount, 'Amount');
+    if (serialNo && serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo, { patientName });
+    await prisma.clinicAntenatal.update({
+      where: { id: before.id },
+      data: {
+        serialNo: serialNo || null, patientName, amount,
+        mrNo: String(payload.mrNo ?? '').trim(),
+        age: payload.age === '' || payload.age == null ? null : Number(payload.age),
+        phoneNo: String(payload.phoneNo ?? '').trim() || null,
+      },
+    });
+  }
+
+  const after = await loadOtherSlip(source, id);
+  const afterFields = otherSlipFields(source, after);
+  const logEntry = {
+    source,
+    serialNo: afterFields.serialNo ? String(afterFields.serialNo) : null,
+    patientName: afterFields.patientName || after.admission?.patientName || null,
+    editedBy: payload.editedBy ? String(payload.editedBy) : null,
+    warnings: warnings.map((w) => w.message),
+  };
+  // One entry per line changed, so each line's History shows its own edit.
+  await prisma.clinicOpdVisitEditLog.createMany({
+    data: [
+      { ...logEntry, visitId: after.id, before: otherSlipFields(source, before), after: afterFields },
+      ...siblings.map((line) => {
+        const lineBefore = otherSlipFields(source, line);
+        return { ...logEntry, visitId: line.id, before: lineBefore, after: { ...lineBefore, serialNo: afterFields.serialNo, patientName: afterFields.patientName } };
+      }),
+    ],
+  });
+  return getOtherSlipForFullEdit(source, id);
 }
 
 module.exports = {
+  getPendingFiles,
+  autoCloseDayCareFiles,
   getGeneralPaymentReport,
   getOpdVisitForFullEdit,
   updateOpdVisitFull,
+  searchSlipsForFullEdit,
+  getOtherSlipForFullEdit,
+  updateOtherSlip,
   getDailyStatementFromPatientList,
   getOpdVisitEditLogs,
   calcFeeSplit,

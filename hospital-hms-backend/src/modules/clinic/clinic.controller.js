@@ -2095,6 +2095,12 @@ async function updateAdmissionStatus(req, res, next) {
   }
 }
 
+async function getPendingFiles(req, res, next) {
+  try {
+    success(res, await service.getPendingFiles());
+  } catch (err) { next(err); }
+}
+
 async function getAdmissionWipeoutReport(req, res, next) {
   try {
     success(res, await service.getAdmissionWipeoutReport());
@@ -2276,6 +2282,18 @@ async function updateOpdVisitFull(req, res, next) {
 async function getOpdVisitEditLogs(req, res, next) {
   try { success(res, await service.getOpdVisitEditLogs(req.params.id)); }
   catch (err) { next(err); }
+}
+async function searchSlipsForFullEdit(req, res, next) {
+  try { success(res, await service.searchSlipsForFullEdit(req.query.q)); }
+  catch (err) { next(err); }
+}
+async function getOtherSlipForFullEdit(req, res, next) {
+  try { success(res, await service.getOtherSlipForFullEdit(req.params.source, req.params.id)); }
+  catch (err) { if (err.status) return fail(res, err.status, err.message); next(err); }
+}
+async function updateOtherSlip(req, res, next) {
+  try { success(res, await service.updateOtherSlip(req.params.source, req.params.id, req.body || {}), 'Slip update ho gayi'); }
+  catch (err) { if (err.status) return fail(res, err.status, err.message); next(err); }
 }
 
 async function updateVisitPersonalInfo(req, res, next) {
@@ -2692,6 +2710,9 @@ module.exports = {
   getOpdVisitForFullEdit,
   updateOpdVisitFull,
   getOpdVisitEditLogs,
+  searchSlipsForFullEdit,
+  getOtherSlipForFullEdit,
+  updateOtherSlip,
   getDepartments,
   createDepartment,
   updateDepartment,
@@ -2924,6 +2945,7 @@ module.exports = {
   getAdmissionForAdjustment,
   updateAdmissionAdjustment,
   updateAdmissionStatus,
+  getPendingFiles,
   getAdmissionWipeoutReport,
   getAdmissionStatusChangeHistory,
   getBedShiftHistory,

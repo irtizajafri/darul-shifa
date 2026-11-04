@@ -1954,6 +1954,9 @@ model ClinicAdmissionWipeoutLog {
 // database/migrations/040_add_opd_visit_edit_log.sql.
 model ClinicOpdVisitEditLog {
   id          Int      @id @default(autoincrement())
+  // Which table visitId points into: 'opd' | 'pv' | 'admission' |
+  // 'admission-payment' | 'antenatal' (migration 066).
+  source      String   @default("opd")
   visitId     Int
   serialNo    String?
   patientName String?
@@ -1964,6 +1967,7 @@ model ClinicOpdVisitEditLog {
   editedAt    DateTime @default(now())
 
   @@index([visitId])
+  @@index([source, visitId])
 }
 
 model ClinicAdmissionStatusLog {

@@ -150,6 +150,7 @@ import GeneralPaymentFilter from '../pages/clinic/reports/GeneralPaymentFilter';
 import GeneralPaymentReport from '../pages/clinic/reports/GeneralPaymentReport';
 import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
+import PendingFiles from '../pages/clinic/PendingFiles';
 import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTypePage';
 import UploadPatientDocument from '../pages/clinic/UploadPatientDocument';
 import SurgeryInformation from '../pages/clinic/SurgeryInformation';
@@ -453,6 +454,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/transactions/appointment"                 element={<PermissionGuard module="clinic" subModule="transactions" tab="appointment"><Appointment /></PermissionGuard>} />
       <Route path="clinic/transactions/admission-adjustment"        element={<PermissionGuard module="clinic" subModule="transactions" tab="admission-adjustment"><AdmissionAdjustment /></PermissionGuard>} />
       <Route path="clinic/transactions/admission-status-change"     element={<PermissionGuard module="clinic" subModule="transactions" tab="admission-status-change"><AdmissionStatusChange /></PermissionGuard>} />
+      <Route path="clinic/transactions/pending-files"               element={<PermissionGuard module="clinic" subModule="transactions" tab="pending-files"><PendingFiles /></PermissionGuard>} />
       <Route path="clinic/transactions/bed-shifting"                element={<PermissionGuard module="clinic" subModule="transactions" tab="bed-shifting"><BedShifting /></PermissionGuard>} />
       <Route path="clinic/transactions/bed-status"                  element={<PermissionGuard module="clinic" subModule="transactions" tab="bed-status"><BedStatus /></PermissionGuard>} />
       <Route path="clinic/transactions/upload-patient-document"     element={<PermissionGuard module="clinic" subModule="transactions" tab="upload-patient-document"><UploadPatientDocument /></PermissionGuard>} />

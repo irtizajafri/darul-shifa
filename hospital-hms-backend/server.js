@@ -5,6 +5,7 @@ const { scheduleDayClose } = require('./src/jobs/dayClose.job');
 const { scheduleWhatsAppPunchNotifier } = require('./src/jobs/whatsappPunchNotifier.job');
 const { initWhatsApp } = require('./src/services/whatsapp.service');
 const { scheduleBedAutoRelease } = require('./src/jobs/bedAutoRelease.job');
+const { scheduleDayCareAutoClose } = require('./src/jobs/dayCareAutoClose.job');
 
 async function backfillOpeningStockMovements() {
   // First delete wrong backfill records that used currentStock directly
@@ -85,4 +86,5 @@ app.listen(PORT, async () => {
   initWhatsApp();
   scheduleWhatsAppPunchNotifier();
   scheduleBedAutoRelease();
+  scheduleDayCareAutoClose();
 });

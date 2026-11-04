@@ -58,6 +58,7 @@ const menuItems = [
       { label: 'Birth Certificate',                     path: '/clinic/transactions/birth-certificate',        perm: { sub: 'transactions', tab: 'birth-certificate' } },
       { label: 'Admission Adjustment',                  path: '/clinic/transactions/admission-adjustment',     perm: { sub: 'transactions', tab: 'admission-adjustment' } },
       { label: 'Admission Status Change',               path: '/clinic/transactions/admission-status-change',  perm: { sub: 'transactions', tab: 'admission-status-change' } },
+      { label: 'Pending Files',                         path: '/clinic/transactions/pending-files',            perm: { sub: 'transactions', tab: 'pending-files' } },
       { label: 'Bed Shifting',                          path: '/clinic/transactions/bed-shifting',             perm: { sub: 'transactions', tab: 'bed-shifting' } },
       { label: 'Bed Status',                            path: '/clinic/transactions/bed-status',               perm: { sub: 'transactions', tab: 'bed-status' } },
       { label: 'Upload Patient Document',               path: '/clinic/transactions/upload-patient-document',  perm: { sub: 'transactions', tab: 'upload-patient-document' } },

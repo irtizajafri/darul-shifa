@@ -9,6 +9,10 @@ import { useAuthStore } from '../../../store/useAuthStore';
 import { buildReceiptHtml } from '../receiptUtils';
 import { buildEmergencyReceiptHtml } from '../emergencyReceiptUtils';
 import { buildConsultantReceiptHtml } from '../consultantReceiptUtils';
+import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
+import usePagedList from '../../../hooks/usePagedList';
+import OtherSlipEdit from './OtherSlipEdit';
+import { api, fmt, fmtDate, fmtDateTime } from './fullSlipEditUtils';
 import './FullSlipEdit.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 
@@ -19,8 +23,12 @@ import { openPrintWindow } from '../../../utils/printRelay';
 // situations (doctor fee paid, day closed, cash handed over, admission/panel
 // bill, cancelled) are shown as warnings, never blocked; totals follow the
 // same rules as the OPD screens and are re-computed by the backend on save.
+// The search also finds Excel Patients List rows, admission receipts and
+// Antenatal, which open in OtherSlipEdit (owner, 2026-11-04).
 
-const API = 'http://localhost:5001/api/clinic';
+const SOURCE_LABELS = {
+  opd: 'OPD', pv: 'Excel', admission: 'Admission', 'admission-payment': 'Admission Payment', antenatal: 'Antenatal',
+};
 
 const PAYMENT_TYPES = [
   { value: 'cash', label: 'Cash' },
@@ -31,15 +39,6 @@ const PAYMENT_TYPES = [
   { value: 'panel', label: 'Panel' },
 ];
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MS', 'BABY', 'BABY OF'];
-const fmt = (n) => Number(n || 0).toLocaleString('en', { maximumFractionDigits: 2 });
-const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
-
-async function api(path, opts) {
-  const res = await fetch(`${API}${path}`, opts);
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json?.ok === false) throw new Error(json?.message || `Request failed (${res.status})`);
-  return json.data;
-}
 
 export default function FullSlipEdit() {
   const { user } = useAuthStore();
@@ -49,6 +48,9 @@ export default function FullSlipEdit() {
   const [q, setQ] = useState('');
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState(null);
+  const page = usePagedList(results?.length || 0, results);
+  // a non-OPD record open in OtherSlipEdit: { source, id }
+  const [other, setOther] = useState(null);
 
   // loaded slip
   const [loading, setLoading] = useState(false);
@@ -76,19 +78,29 @@ export default function FullSlipEdit() {
   async function handleSearch(e) {
     e?.preventDefault();
     const term = q.trim();
-    if (!term) return toast.error('Slip #, MR # ya patient ka naam likhein');
+    if (!term) return toast.error('Slip #, MR #, Admission # ya patient ka naam likhein');
     setSearching(true);
     try {
-      const data = await api(`/opd/adjustment/search?q=${encodeURIComponent(term)}`);
-      // Only slips made in this system — the old imported Patients List
-      // rows (source 'pv') have a different shape and can't be edited here.
-      const list = (Array.isArray(data) ? data : []).filter((r) => r.source === 'opd');
+      const data = await api(`/slip-edit/search?q=${encodeURIComponent(term)}`);
+      const list = Array.isArray(data) ? data : [];
       setResults(list);
-      if (list.length === 1) loadSlip(list[0].id);
+      if (list.length === 1) openSlip(list[0]);
     } catch (err) {
       toast.error(err.message);
     } finally {
       setSearching(false);
+    }
+  }
+
+  function openSlip(row) {
+    setResults(null);
+    if (row.source === 'opd') {
+      setOther(null);
+      loadSlip(row.id);
+    } else {
+      setOriginal(null);
+      setForm(null);
+      setOther({ source: row.source, id: row.id });
     }
   }
 
@@ -264,13 +276,13 @@ export default function FullSlipEdit() {
         <div className="fse-head">
           <div>
             <h1 className="fse-title">Full Slip Edit</h1>
-            <p className="fse-sub">Har department ki slip (General OPD, Emergency, Consultant, Lab, Radiology, Ultrasound, Ambulance…) — sirf Super Admin. Har save ki history rakhi jati hai.</p>
+            <p className="fse-sub">Har department ki slip, Excel ki purani slips, Admission ki receipts aur Antenatal — sirf Super Admin. Har save ki history rakhi jati hai.</p>
           </div>
         </div>
 
         <form className="fse-search" onSubmit={handleSearch}>
           <Search size={16} className="fse-search__icon" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Slip #, MR # ya patient ka naam…" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Slip #, MR #, Admission # ya patient ka naam…" />
           <button type="submit" disabled={searching}>{searching ? 'Searching…' : 'Search'}</button>
         </form>
 
@@ -281,23 +293,27 @@ export default function FullSlipEdit() {
             ) : (
               <div className="table-wrap">
                 <table className="fse-table">
-                  <thead><tr><th>Slip #</th><th>Patient</th><th>Department</th><th>Date</th><th className="r">Received</th><th /></tr></thead>
+                  <thead><tr><th>Slip #</th><th>Type</th><th>Patient</th><th>Department</th><th>Date</th><th className="r">Received</th><th /></tr></thead>
                   <tbody>
-                    {results.map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.serialNo}</td><td>{r.patientName}</td><td>{r.department}</td><td>{fmtDateTime(r.createdAt)}</td>
+                    {results.slice(0, page.limit).map((r) => (
+                      <tr key={`${r.source}-${r.id}`}>
+                        <td>{r.serialNo || '—'}</td><td>{SOURCE_LABELS[r.source]}</td><td>{r.patientName}</td><td>{r.department}</td>
+                        <td>{r.source === 'pv' ? fmtDate(r.createdAt) : fmtDateTime(r.createdAt)}</td>
                         <td className="r">{fmt(r.receive)}</td>
-                        <td className="r"><button type="button" className="fse-btn fse-btn--sm" onClick={() => loadSlip(r.id)}>Edit</button></td>
+                        <td className="r"><button type="button" className="fse-btn fse-btn--sm" onClick={() => openSlip(r)}>Edit</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                <ShowMoreFooter {...page} noun="slips" />
               </div>
             )}
           </div>
         )}
 
         {loading && <p className="fse-empty">Loading…</p>}
+
+        {other && <OtherSlipEdit key={`${other.source}-${other.id}`} source={other.source} id={other.id} editedBy={editedBy} />}
 
         {form && original && !loading && (
           <>

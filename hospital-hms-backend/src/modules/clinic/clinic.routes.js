@@ -140,6 +140,9 @@ router.put('/opd/adjustment/:source/:id/doctor', controller.updateVisitDoctor);
 router.get('/opd/full-edit/:id', controller.getOpdVisitForFullEdit);
 router.put('/opd/full-edit/:id', controller.updateOpdVisitFull);
 router.get('/opd/full-edit/:id/logs', controller.getOpdVisitEditLogs);
+router.get('/slip-edit/search', controller.searchSlipsForFullEdit);
+router.get('/slip-edit/:source/:id', controller.getOtherSlipForFullEdit);
+router.put('/slip-edit/:source/:id', controller.updateOtherSlip);
 
 // Slip Transfer
 router.get('/opd/slip-transfer/search', controller.searchVisitsForSlipTransfer);
@@ -341,6 +344,7 @@ router.put('/admission/status/:id', controller.updateAdmissionStatus);
 // status-change-history below is the general Admit/Discharge/Closed
 // transition log.
 router.get('/admission/status-change-report', controller.getAdmissionWipeoutReport);
+router.get('/pending-files', controller.getPendingFiles);
 router.get('/admission/status-change-history', controller.getAdmissionStatusChangeHistory);
 
 // Bed Shifting

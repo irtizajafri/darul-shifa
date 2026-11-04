@@ -129,6 +129,7 @@ export const PERMISSIONS_MAP = {
           { key: 'birth-certificate',           label: 'Birth Certificate' },
           { key: 'admission-adjustment',        label: 'Admission Adjustment' },
           { key: 'admission-status-change',     label: 'Admission Status Change' },
+          { key: 'pending-files',               label: 'Pending Files' },
           { key: 'bed-shifting',                label: 'Bed Shifting' },
           { key: 'bed-status',                  label: 'Bed Status' },
           { key: 'upload-patient-document',     label: 'Upload Patient Document' },

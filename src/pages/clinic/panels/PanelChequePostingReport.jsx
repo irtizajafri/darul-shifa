@@ -26,7 +26,7 @@ const fmtStamp = (d) => {
 // Posting Report": cheques posted from Panel Cheque Transaction, grouped by
 // Cheque # (header line carries the cheque's amount), one line per
 // admission / OPD slip it settled. Posting Date = the day the cheque was
-// entered; Posted Date = the bill's own month (June file → 30-06).
+// entered; Posted Date = the cheque's own CHQ DATE.
 // Preview step — PanelChequePostingFilter opens this at /view?from&to&basis.
 export default function PanelChequePostingReport() {
   const { fetchPanelChequePostingReport } = useClinicStore(useShallow((s) => ({ fetchPanelChequePostingReport: s.fetchPanelChequePostingReport })));
