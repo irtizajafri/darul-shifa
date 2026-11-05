@@ -126,7 +126,7 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
             <td className="l">{relationParts(admission).label}.</td>
             <td className="v">{(isPanel && !admission.relationName) ? '—' : (relationParts(admission).name || '—')}</td>
             <td className="l">{isOpd ? '' : 'Surgery:'}</td>
-            <td className="v">{isOpd ? '' : (admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission')}</td>
+            <td className="v" colSpan={3}>{isOpd ? '' : (admission.surgery ? (surgeryType?.name || 'Yes') : 'General Admission')}</td>
           </tr>
           {isPanel && (
             <tr>

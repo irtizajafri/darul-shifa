@@ -49,7 +49,7 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #000; b
 const PB_PAGE_CSS = `
 body { width: 124mm; }
 .pb-print-hdr-tbl .v { padding-right: 4px; }
-.pb-print-hdr-tbl td:nth-child(4), .pb-print-hdr-tbl td:nth-child(6) { white-space: nowrap; }
+.pb-print-hdr-tbl td:nth-child(6) { white-space: nowrap; }
 @page { margin: 40mm 12mm 8mm; }
 `;
 const OPD_PAGE_CSS = '@page { size: A5 portrait; margin: 8mm 7mm; }';
