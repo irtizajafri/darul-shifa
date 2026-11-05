@@ -26,7 +26,8 @@ function getFiscalEndYear(d = new Date()) {
 }
 
 const toDateStr = (d) => d.toISOString().slice(0, 10);
-const todayStr  = () => toDateStr(new Date());
+// Today in Pakistan time — toISOString() is UTC, which until 5 AM is still yesterday.
+const todayStr  = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
 const fmtDate = (d) =>
@@ -305,7 +306,7 @@ export default function VoucherSummary() {
     voucherTo:     '',
     supplierId:    '',
     mainAccountId: '',
-    dateFrom:      toDateStr(getFiscalStart()),
+    dateFrom:      todayStr(),
     dateTo:        todayStr(),
   });
   const [suppliers, setSuppliers] = useState([]);
@@ -334,8 +335,11 @@ export default function VoucherSummary() {
       if (filters.voucherTo)     p.set('voucherTo',     filters.voucherTo);
       if (filters.supplierId)    p.set('supplierId',    filters.supplierId);
       if (filters.mainAccountId) p.set('mainAccountId', filters.mainAccountId);
-      if (filters.dateFrom)      p.set('dateFrom',      filters.dateFrom);
-      if (filters.dateTo)        p.set('dateTo',        filters.dateTo);
+      // A Voucher # already says which voucher — the date, today by default,
+      // would hide one made on any other day.
+      const byNumber = filters.voucherFrom || filters.voucherTo;
+      if (!byNumber && filters.dateFrom) p.set('dateFrom', filters.dateFrom);
+      if (!byNumber && filters.dateTo)   p.set('dateTo',   filters.dateTo);
 
       const res  = await fetch(`${ACCOUNTS_API}/voucher-summary?${p}`);
       const json = await res.json();
@@ -378,7 +382,7 @@ export default function VoucherSummary() {
             {/* Binoculars: pick a saved voucher into the field */}
             <div className="vr-range-group">
               <span className="vr-range-tag">From</span>
-              <VoucherSearch entityType={entityType} onSelect={(v) => setFilters((f) => ({ ...f, voucherFrom: v.voucherNo }))}>
+              <VoucherSearch entityType={entityType} onSelect={(v) => setFilters((f) => ({ ...f, voucherFrom: v.voucherNo, voucherTo: v.voucherNo }))}>
                 <input className="vr-input" placeholder="e.g. VE-20260701-001" value={filters.voucherFrom} onChange={upd('voucherFrom')} />
               </VoucherSearch>
             </div>

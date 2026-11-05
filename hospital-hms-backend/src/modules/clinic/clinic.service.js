@@ -5819,7 +5819,7 @@ async function confirmPanelMedicineIssuanceImportBatch(admissions, { companyName
 // (no @relation, same convention as ClinicAdmission.panelCompanyId
 // elsewhere in this file), so companies are fetched separately and mapped
 // by id rather than included.
-async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode }) {
+async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, slipNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode }) {
   const where = {};
   if (scopeMode === 'admission' && admissionNo) {
     where.admissionNo = String(admissionNo).trim();
@@ -5835,7 +5835,9 @@ async function getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType
   const storeName = storeFilter && storeFilter !== 'ALL' && storeFilter !== 'hospital'
     ? (await prisma.clinicPharmacyStore.findUnique({ where: { id: Number(storeFilter) }, select: { name: true } }))?.name
     : null;
-  const [rows, live] = await Promise.all([
+  // OPD rows come in the uploaded rows' shape, so the store filter and the
+  // report below treat them the same.
+  const [rows, live] = scopeMode === 'opd' ? [await loadOpdBillMedicines({ slipNo, fromDate, toDate, panelCompanyId }), []] : await Promise.all([
     prisma.clinicPanelMedicineIssuanceAdmission.findMany({
       where,
       include: { items: { orderBy: { medDate: 'asc' } } },
@@ -6192,6 +6194,56 @@ async function loadLiveAdmissionMedicines({ category, scopeMode, admissionNo, da
     // keep only admissions whose effective discharge date is in range.
     .filter((a) => !(byDate && dateType === 'discharge') || (a.dischargeDate && new Date(a.dischargeDate) >= range.gte && new Date(a.dischargeDate) <= range.lte))
     .filter((a) => a.items.length);
+}
+
+// Panels > Medicine Report, OPD (owner, 2026-11-05): the OPD Bill's Pharmacy tab,
+// one row per bill. A Slip # — any slip of the bill — brings that bill alone;
+// without one, every bill's medicine dated inside the range.
+async function loadOpdBillMedicines({ slipNo, fromDate, toDate, panelCompanyId }) {
+  const slip = String(slipNo || '').trim();
+  const companyId = panelCompanyId && panelCompanyId !== 'ALL' ? Number(panelCompanyId) : null;
+  const range = slip ? null : medicineDateRange(fromDate, toDate);
+
+  let bills;
+  if (slip) {
+    const visit = await prisma.clinicOpdVisit.findFirst({ where: { serialNo: slip } });
+    const bill = await prisma.clinicPanelOpdBill.findFirst({ where: { serialNo: slip } })
+      || (visit ? await findOpdBillForVisit(visit) : null);
+    bills = bill && (!companyId || bill.panelCompanyId === companyId) ? [bill] : [];
+  } else {
+    // A medicine's date can sit outside its bill's open-to-close days.
+    const dated = await prisma.clinicPanelOpdBillPharmacyItem.findMany({ where: { medDate: range }, select: { opdBillId: true }, distinct: ['opdBillId'] });
+    bills = await prisma.clinicPanelOpdBill.findMany({
+      where: {
+        ...(companyId ? { panelCompanyId: companyId } : {}),
+        OR: [
+          { id: { in: dated.map((d) => d.opdBillId) } },
+          { startAt: { lte: range.lte }, OR: [{ closedAt: null }, { closedAt: { gte: range.gte } }] },
+        ],
+      },
+    });
+  }
+
+  const rows = [];
+  for (const bill of bills) {
+    const { admission, pharmacyRows } = await getPanelOpdBillDetail(bill.id);
+    rows.push({
+      id: `opd-${bill.id}`,
+      admissionNo: bill.serialNo,
+      patientName: admission.patientName,
+      panelCompanyId: bill.panelCompanyId,
+      admitDate: bill.startAt,
+      dischargeDate: bill.closedAt,
+      items: pharmacyRows
+        .filter((r) => !range || (new Date(r.date) >= range.gte && new Date(r.date) <= range.lte))
+        .map((r) => ({
+          description: r.medicine, medDate: r.date, rate: r.rate, qty: r.qty, amount: r.amount,
+          store: r.source === 'hospital' ? HOSPITAL_STORE_LABEL : r.storeName,
+        }))
+        .sort((x, y) => new Date(x.medDate) - new Date(y.medDate)),
+    });
+  }
+  return rows;
 }
 
 // Does an uploaded (legacy .xls) item's free-text store label match the

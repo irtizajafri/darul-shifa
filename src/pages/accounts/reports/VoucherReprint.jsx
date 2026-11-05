@@ -12,8 +12,7 @@ const API = 'http://localhost:5001/api/accounts';
 
 // Today in Pakistan time — toISOString() is UTC, which until 5 AM is still
 // yesterday and left today's vouchers out of the default range.
-const todayStr    = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-const firstOfYear = () => `${new Date().getFullYear()}-01-01`;
+const todayStr = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 
 // Voucher Date / Cheque Date are calendar dates saved as UTC midnight —
 // read their Y-M-D as-is (UTC), never through the PC's timezone (which could
@@ -240,7 +239,7 @@ export default function VoucherReprint() {
   const [voucherType, setVoucherType] = useState('expense');
   const [voucherFrom, setVoucherFrom] = useState('');
   const [voucherTo,   setVoucherTo]   = useState('');
-  const [dateFrom,    setDateFrom]    = useState(firstOfYear());
+  const [dateFrom,    setDateFrom]    = useState(todayStr());
   const [dateTo,      setDateTo]      = useState(todayStr());
   const [vouchers,    setVouchers]    = useState(null);
   const [loading,     setLoading]     = useState(false);
@@ -252,13 +251,16 @@ export default function VoucherReprint() {
     setLoading(true);
     setSearched(false);
     try {
+      // A Voucher # already says which voucher — the date, today by default,
+      // would hide one made on any other day.
+      const byNumber = voucherFrom || voucherTo;
       const params = new URLSearchParams({
         type: voucherType,
         entityType,
         ...(voucherFrom && { voucherFrom }),
         ...(voucherTo   && { voucherTo }),
-        ...(dateFrom    && { dateFrom }),
-        ...(dateTo      && { dateTo }),
+        ...(!byNumber && dateFrom && { dateFrom }),
+        ...(!byNumber && dateTo   && { dateTo }),
       });
       const r = await fetch(`${API}/voucher-reprint?${params}`);
       const j = await r.json();
@@ -332,7 +334,7 @@ export default function VoucherReprint() {
                 list has Expense vouchers only, so it's off for Income) */}
             <div className="vr-range-group">
               <span className="vr-range-tag">From</span>
-              <VoucherSearch entityType={entityType} disabled={!isExpense} onSelect={(v) => setVoucherFrom(v.voucherNo)}>
+              <VoucherSearch entityType={entityType} disabled={!isExpense} onSelect={(v) => { setVoucherFrom(v.voucherNo); setVoucherTo(v.voucherNo); }}>
                 <input className="vr-input" placeholder="e.g. VE-20260629-001"
                   value={voucherFrom} onChange={(e) => setVoucherFrom(e.target.value)} />
               </VoucherSearch>

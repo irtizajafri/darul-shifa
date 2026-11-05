@@ -32,14 +32,15 @@ function printMedicineReport(reportEl, targetWindow) {
 // Report" filter (Admission # exact OR a date-range by Admission/Discharge
 // Date, optional Company, Details vs Admit-wise Summary, Medical Store) is
 // now its own screen, MedicineReportFilter, which opens this at
-// /view?scopeMode&admissionNo&dateType&fromDate&toDate&companyId&viewMode&storeFilter.
+// /view?scopeMode&admissionNo&slipNo&dateType&fromDate&toDate&companyId&viewMode&storeFilter.
 export default function MedicineReport() {
   const { pharmacyStores, fetchPharmacyStores, fetchPanelMedicineIssuanceReport } = useClinicStore(useShallow((s) => ({ pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, fetchPanelMedicineIssuanceReport: s.fetchPanelMedicineIssuanceReport })));
   const [params] = useSearchParams();
   const reportRef = useRef(null);
 
-  const scopeMode = params.get('scopeMode') || 'date'; // 'admission' | 'date'
+  const scopeMode = params.get('scopeMode') || 'date'; // 'admission' | 'date' | 'opd'
   const admissionNo = (params.get('admissionNo') || '').trim();
+  const slipNo = (params.get('slipNo') || '').trim();
   const dateType = params.get('dateType') || 'discharge'; // 'admission' | 'discharge'
   const fromDate = params.get('fromDate') || '';
   const toDate = params.get('toDate') || '';
@@ -67,13 +68,24 @@ export default function MedicineReport() {
   ];
   const storeLabel = storeOptions.find((o) => o.id === storeFilter)?.label || 'ALL';
 
+  // OPD rows are OPD Bills: Slip # for Admission #, bill start / close for the dates.
+  const isOpd = scopeMode === 'opd';
+  const byDate = scopeMode === 'date' || (isOpd && !slipNo);
+  const labels = isOpd
+    ? { ref: 'Slip #', start: 'Bill Date', end: 'Closed', noun: 'slips' }
+    : { ref: 'Admission #', start: 'Admit Date', end: 'Dis. Date', noun: 'admissions' };
+  const rangeText = `From : ${fmtDate(fromDate)}  To : ${fmtDate(toDate)}`;
+  const scopeText = scopeMode === 'admission' ? `Admission # : ${admissionNo}`
+    : !isOpd ? rangeText
+      : slipNo ? `OPD Slip # : ${slipNo}` : `OPD  |  ${rangeText}`;
+
   const handleView = useCallback(async () => {
     if (scopeMode === 'admission' && !admissionNo) {
       toast.error('Admission # darj karein');
       setLoading(false);
       return;
     }
-    if (scopeMode === 'date' && (!fromDate || !toDate)) {
+    if (byDate && (!fromDate || !toDate)) {
       toast.error('From/To date select karein');
       setLoading(false);
       return;
@@ -83,9 +95,10 @@ export default function MedicineReport() {
       const res = await fetchPanelMedicineIssuanceReport({
         scopeMode,
         admissionNo: scopeMode === 'admission' ? admissionNo : undefined,
+        slipNo: isOpd ? slipNo : undefined,
         dateType: scopeMode === 'date' ? dateType : undefined,
-        fromDate: scopeMode === 'date' ? fromDate : undefined,
-        toDate: scopeMode === 'date' ? toDate : undefined,
+        fromDate: byDate ? fromDate : undefined,
+        toDate: byDate ? toDate : undefined,
         panelCompanyId: companyId || undefined,
         storeFilter,
         viewMode,
@@ -97,7 +110,7 @@ export default function MedicineReport() {
     } finally {
       setLoading(false);
     }
-  }, [fetchPanelMedicineIssuanceReport, scopeMode, admissionNo, dateType, fromDate, toDate, companyId, storeFilter, viewMode]);
+  }, [fetchPanelMedicineIssuanceReport, scopeMode, isOpd, byDate, admissionNo, slipNo, dateType, fromDate, toDate, companyId, storeFilter, viewMode]);
 
   useEffect(() => { handleView(); }, [handleView]);
 
@@ -144,15 +157,15 @@ export default function MedicineReport() {
     if (!hasRows) { toast.error('Export ke liye koi data nahi'); return; }
     const aoa = [
       ['MEDICINE ISSUANCE REPORT FOR PANEL'],
-      [`${scopeMode === 'admission' ? `Admission # : ${admissionNo}` : `From : ${fmtDate(fromDate)}  To : ${fmtDate(toDate)}`}  |  Medical Store : ${storeLabel}`],
+      [`${scopeText}  |  Medical Store : ${storeLabel}`],
       [],
     ];
     if (data.mode === 'summary') {
-      aoa.push(['Sno', 'Admission #', 'Patient', 'Company', 'Admit Date', 'Dis. Date', 'Items', 'Amount']);
+      aoa.push(['Sno', labels.ref, 'Patient', 'Company', labels.start, labels.end, 'Items', 'Amount']);
       data.rows.forEach((r, idx) => aoa.push([idx + 1, r.admissionNo, r.patientName, r.companyName || '', fmtDate(r.admitDate), fmtDate(r.dischargeDate), r.itemCount, Number(r.total || 0)]));
       aoa.push(['Grand Total', '', '', '', '', '', '', Number(data.grandTotal || 0)]);
     } else {
-      aoa.push(['Day', 'Admission #', 'Patient', 'Company', 'Admit Date', 'Dis. Date', 'Sno', 'Description', 'Med Date', 'Rate', 'Qty', 'Amount', 'Medical Store']);
+      aoa.push(['Day', labels.ref, 'Patient', 'Company', labels.start, labels.end, 'Sno', 'Description', 'Med Date', 'Rate', 'Qty', 'Amount', 'Medical Store']);
       data.days.forEach((day) => {
         day.patients.forEach((p) => {
           p.items.forEach((it) => aoa.push([
@@ -188,9 +201,7 @@ export default function MedicineReport() {
             {shown && (
               <div className="mrp-rpt-meta">
                 <span>
-                  {scopeMode === 'admission'
-                    ? `Admission # : ${admissionNo}`
-                    : `From : ${fmtDate(fromDate)}  To : ${fmtDate(toDate)}`}
+                  {scopeText}
                   {'  |  '}Medical Store : {storeLabel}
                 </span>
                 <span>Produced On : {new Date().toLocaleString('en-GB')}</span>
@@ -210,11 +221,11 @@ export default function MedicineReport() {
                 <thead>
                   <tr>
                     <th className="mrp-l">Sno</th>
-                    <th className="mrp-l">Admission #</th>
+                    <th className="mrp-l">{labels.ref}</th>
                     <th className="mrp-l">Patient</th>
                     <th className="mrp-l">Company</th>
-                    <th className="mrp-l">Admit Date</th>
-                    <th className="mrp-l">Dis. Date</th>
+                    <th className="mrp-l">{labels.start}</th>
+                    <th className="mrp-l">{labels.end}</th>
                     <th className="mrp-r">Items</th>
                     <th className="mrp-r">Amount</th>
                   </tr>
@@ -240,7 +251,7 @@ export default function MedicineReport() {
                   </tr>
                 </tfoot>
               </table>
-              <ShowMoreFooter {...page} noun="admissions" />
+              <ShowMoreFooter {...page} noun={labels.noun} />
             </div>
           ) : (
             <div className="mrp-details">
@@ -255,11 +266,11 @@ export default function MedicineReport() {
                     <div className="mrp-patient-block" key={`${day.date}-${p.admissionNo}`}>
                       <div className="mrp-patient-hdr">
                         <span><b>PATIENT :</b> {p.admissionNo} - {p.patientName}</span>
-                        <span><b>ADMIT DATE :</b> {fmtDate(p.admitDate)}</span>
+                        <span><b>{labels.start.toUpperCase()} :</b> {fmtDate(p.admitDate)}</span>
                       </div>
                       <div className="mrp-patient-hdr">
                         <span><b>COMPANY :</b> {p.companyName || '—'}</span>
-                        <span><b>DIS. DATE :</b> {fmtDate(p.dischargeDate)}</span>
+                        <span><b>{labels.end.toUpperCase()} :</b> {fmtDate(p.dischargeDate)}</span>
                       </div>
 
                       <table className="mrp-rpt-table mrp-rpt-table--items">

@@ -31,7 +31,8 @@ function fmtDate(d) {
   return `${String(dt.getDate()).padStart(2, '0')}-${dt.toLocaleString('en-GB', { month: 'short' })}-${dt.getFullYear()}`;
 }
 function fmt2(n) { return Number(n || 0).toFixed(2); }
-function todayIso() { return new Date().toISOString().slice(0, 10); }
+// Today in Pakistan time — toISOString() is UTC, which until 5 AM is still yesterday.
+function todayIso() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
 
 
 // ── Admission Lookup Modal — active/admitted patients only ────────────────────
@@ -762,9 +763,10 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
         ...pharmRow,
         createdByName: user?.name || user?.username || user?.email || null,
       });
-      // Keep Store selected — the next medicine in this sitting is almost
-      // always from the same outside store, so only the item fields clear.
-      setPharmRow(r => ({ ...emptyPharmRow, storeId: r.storeId }));
+      // Keep Store and Med. Date — the next medicine in this sitting is almost
+      // always from the same outside store and day (a back date stays until
+      // it's changed by hand), so only the item fields clear.
+      setPharmRow(r => ({ ...emptyPharmRow, storeId: r.storeId, medDate: r.medDate }));
       await loadDetail(admissionId);
     } catch (e) {
       toast.error(e.message || 'Medicine add nahi hui');

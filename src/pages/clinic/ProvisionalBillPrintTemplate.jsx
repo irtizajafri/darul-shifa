@@ -96,9 +96,12 @@ export function ProvisionalBillPrintTemplate({ detail, isDuplicate, printedBy })
 
   return (
     <div className="pb-print">
-      <div className="pb-print-logo-box">
-        <img src={RECEIPT_LOGO_DATA_URI} alt="Darul Shifa" className="pb-print-logo" />
-      </div>
+      {/* The Provisional Bill prints without the logo (owner, 2026-11-05). */}
+      {isOpd && (
+        <div className="pb-print-logo-box">
+          <img src={RECEIPT_LOGO_DATA_URI} alt="Darul Shifa" className="pb-print-logo" />
+        </div>
+      )}
 
       <div className="pb-print-title-row">
         <span className="pb-print-title">MEDICAL BILL</span>

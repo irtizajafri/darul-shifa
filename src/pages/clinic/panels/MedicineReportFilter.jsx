@@ -24,12 +24,17 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 // Admission/Discharge Date, today) scope the report, an optional Company
 // narrows it further, Details vs Admit-wise Summary picks the output shape,
 // plus the Medical Store. View opens MedicineReport at /view.
+//
+// OPD (owner, 2026-11-05): the OPD Bill's Pharmacy tab medicine. A Slip # brings
+// that slip alone; left empty, the From/To dates (by medicine date), Company
+// and Medical Store decide.
 export default function MedicineReportFilter() {
   const navigate = useNavigate();
   const { panelCompanies, fetchPanelCompanies, pharmacyStores, fetchPharmacyStores } = useClinicStore(useShallow((s) => ({ panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores })));
 
-  const [scopeMode, setScopeMode] = useState('date'); // 'admission' | 'date'
+  const [scopeMode, setScopeMode] = useState('date'); // 'admission' | 'date' | 'opd'
   const [admissionNo, setAdmissionNo] = useState('');
+  const [slipNo, setSlipNo] = useState('');
   const [dateType, setDateType] = useState('discharge'); // 'admission' | 'discharge'
   const [fromDate, setFromDate] = useState(todayIso());
   const [toDate, setToDate] = useState(todayIso());
@@ -45,6 +50,7 @@ export default function MedicineReportFilter() {
 
   useEffect(() => { fetchPanelCompanies(); fetchPharmacyStores(); }, [fetchPanelCompanies, fetchPharmacyStores]);
 
+  const isOpd = scopeMode === 'opd';
   const selectedCompany = panelCompanies.find((c) => String(c.id) === String(companyId));
   const storeOptions = [
     { id: 'ALL', label: 'ALL' },
@@ -59,12 +65,12 @@ export default function MedicineReportFilter() {
       toast.error('Admission # darj karein');
       return;
     }
-    if (scopeMode === 'date' && (!fromDate || !toDate)) {
+    if ((scopeMode === 'date' || (isOpd && !slipNo.trim())) && (!fromDate || !toDate)) {
       toast.error('From/To date select karein');
       return;
     }
     const q = new URLSearchParams({
-      scopeMode, admissionNo: admissionNo.trim(), dateType, fromDate, toDate,
+      scopeMode, admissionNo: admissionNo.trim(), slipNo: slipNo.trim(), dateType, fromDate, toDate,
       companyId, viewMode, storeFilter,
     });
     navigate(`/clinic/panels/medicine-report/view?${q}`);
@@ -98,6 +104,20 @@ export default function MedicineReportFilter() {
 
             <div className="cwf-row">
               <label className="cwf-lbl" style={RADIO_LBL}>
+                <input type="radio" name="mrp-scope" checked={isOpd} onChange={() => setScopeMode('opd')} />
+                OPD Slip #
+              </label>
+              <input
+                className="cwf-input"
+                value={slipNo}
+                onChange={(e) => setSlipNo(e.target.value)}
+                disabled={!isOpd}
+                placeholder={isOpd ? 'Khali ho to Date se' : ''}
+              />
+            </div>
+
+            <div className="cwf-row">
+              <label className="cwf-lbl" style={RADIO_LBL}>
                 <input type="radio" name="mrp-scope" checked={scopeMode === 'date'} onChange={() => setScopeMode('date')} />
                 Date
               </label>
@@ -115,16 +135,16 @@ export default function MedicineReportFilter() {
                 <span className="cwf-sub-lbl">From</span>
                 <input
                   type="date" className="cwf-input" style={{ width: 150 }} value={fromDate}
-                  onChange={(e) => { setFromDate(e.target.value); setScopeMode('date'); }}
-                  disabled={scopeMode !== 'date'}
+                  onChange={(e) => { setFromDate(e.target.value); if (!isOpd) setScopeMode('date'); }}
+                  disabled={scopeMode !== 'date' && !isOpd}
                 />
               </div>
               <div className="cwf-field-group">
                 <span className="cwf-sub-lbl">To</span>
                 <input
                   type="date" className="cwf-input" style={{ width: 150 }} value={toDate}
-                  onChange={(e) => { setToDate(e.target.value); setScopeMode('date'); }}
-                  disabled={scopeMode !== 'date'}
+                  onChange={(e) => { setToDate(e.target.value); if (!isOpd) setScopeMode('date'); }}
+                  disabled={scopeMode !== 'date' && !isOpd}
                 />
               </div>
             </div>
@@ -168,7 +188,7 @@ export default function MedicineReportFilter() {
               </label>
               <label className="cwf-radio-label">
                 <input type="radio" name="mrp-viewmode" checked={viewMode === 'summary'} onChange={() => setViewMode('summary')} />
-                Admit wise Summary
+                {isOpd ? 'Slip wise Summary' : 'Admit wise Summary'}
               </label>
             </div>
 

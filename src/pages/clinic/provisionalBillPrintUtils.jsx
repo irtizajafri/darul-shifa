@@ -39,8 +39,20 @@ body { font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #000; b
 .pb-print-sig { display: flex; flex-direction: column; align-items: flex-start; margin-top: 20px; gap: 2px; }
 .pb-print-sig-name { border-top: 1px solid #000; padding-top: 2px; min-width: 120px; font-size: 7.5pt; }
 .pb-print-sig-lbl { font-size: 7pt; color: #444; }
-@page { size: A5 portrait; margin: 8mm 7mm; }
 `;
+
+// The Provisional Bill prints on the hospital's A5 letterhead: 40mm blank at the
+// top, 12mm on each side (owner, 2026-11-05). Its A5 width is fixed in mm and
+// @page declares no size on purpose: with one, a printer left on A4 / A3 centres
+// the page on the sheet, 43mm+ below the letterhead. This way it starts at the
+// top whatever the printer is set to. The OPD Bill carries its own logo.
+const PB_PAGE_CSS = `
+body { width: 124mm; }
+.pb-print-hdr-tbl .v { padding-right: 4px; }
+.pb-print-hdr-tbl td:nth-child(4), .pb-print-hdr-tbl td:nth-child(6) { white-space: nowrap; }
+@page { margin: 40mm 12mm 8mm; }
+`;
+const OPD_PAGE_CSS = '@page { size: A5 portrait; margin: 8mm 7mm; }';
 
 export function buildProvisionalBillPrintHtml({ detail, isDuplicate, printedBy }) {
   const body = renderToStaticMarkup(
@@ -51,7 +63,7 @@ export function buildProvisionalBillPrintHtml({ detail, isDuplicate, printedBy }
 <head>
 <meta charset="UTF-8"/>
 <title>Provisional Bill - ${detail?.admission?.admissionNo || ''}</title>
-<style>${PB_PRINT_CSS}</style>
+<style>${PB_PRINT_CSS}${detail?.isOpd ? OPD_PAGE_CSS : PB_PAGE_CSS}</style>
 </head>
 <body>
 ${body}

@@ -1846,8 +1846,8 @@ async function confirmPanelMedicineIssuanceImportBatch(req, res, next) {
 
 async function getPanelMedicineIssuanceReport(req, res, next) {
   try {
-    const { scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode } = req.query;
-    success(res, await service.getPanelMedicineIssuanceReport({ scopeMode, admissionNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode }));
+    const { scopeMode, admissionNo, slipNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode } = req.query;
+    success(res, await service.getPanelMedicineIssuanceReport({ scopeMode, admissionNo, slipNo, dateType, fromDate, toDate, panelCompanyId, storeFilter, viewMode }));
   } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
