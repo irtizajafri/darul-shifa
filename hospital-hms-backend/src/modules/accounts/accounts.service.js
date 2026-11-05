@@ -2440,9 +2440,9 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     opdVisitWhere.visit = { ...opdVisitWhere.visit, createdAt: { ...(opdVisitWhere.visit.createdAt || {}), lte: to } };
   }
 
-  // Antenatal registrations under this doctor (underTreatmentId) — the
-  // registration amount is the doctor's flat Antenatal Rate, paid out as is.
-  // Panel registrations are billed to the panel, so not paid here.
+  // Antenatal registrations under this doctor (underTreatmentId), paid at the
+  // doctor's rate like an OPD visit. Panel registrations are billed to the
+  // panel, so not paid here.
   const antenatalDoctor = await prisma.clinicDoctor.findFirst({ where: { name: { equals: doctorName, mode: 'insensitive' } }, select: { id: true } });
   const antenatalWhere = {
     underTreatmentId: antenatalDoctor?.id ?? -1,
@@ -2466,7 +2466,7 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
       select: {
         id: true, amount: true,
         subDept: { select: { name: true } },
-        visit: { select: { serialNo: true, patientName: true, paymentType: true, createdAt: true, totalAmount: true, discount: true } },
+        visit: { select: { serialNo: true, patientName: true, paymentType: true, createdAt: true, discount: true, doctors: { select: { amount: true } } } },
       },
     }),
     prisma.clinicAntenatal.findMany({
@@ -2502,16 +2502,14 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
   });
 
   const newRows = opdDoctorRows.filter((d) => String(d.visit.paymentType || '').toLowerCase() !== 'panel').map((d) => {
-    // d.amount is the test's gross listed rate — discount applies at the
-    // whole-visit level, not per test (same fix already applied where the
-    // fee actually gets paid, linkConsultantFeeItems) — give this preview
-    // the same proportional post-discount share instead of the gross rate.
+    // d.amount is the test's gross listed rate; the slip's discount comes off
+    // the doctors' fees only, not the admin charge in the slip total. A slip
+    // with several fee rows shares it in rate ratio, as the Patients List does.
     const grossAmount   = Number(d.amount || 0);
-    const visitNet      = Number(d.visit.totalAmount || 0);
+    const feeTotal      = d.visit.doctors.reduce((s, x) => s + Number(x.amount || 0), 0);
     const visitDiscount = Number(d.visit.discount || 0);
-    const visitGross    = visitNet + visitDiscount;
-    const received = visitGross > 0 && visitDiscount > 0
-      ? Math.max(0, grossAmount - (visitDiscount * grossAmount / visitGross))
+    const received = feeTotal > 0
+      ? Math.max(0, grossAmount - (visitDiscount * grossAmount / feeTotal))
       : grossAmount;
     const subDept = d.subDept?.name || '';
     const rate = bySubDept[normDoctorRateName(subDept)] || firstRate;
@@ -2535,6 +2533,13 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
 
   const antRows = antenatalRows.map((a) => {
     const amount = Number(a.amount || 0);
+    // The sub-department isn't named exactly "Antenatal" (e.g. "ANTENATAL REG FEE").
+    const antKey = Object.keys(bySubDept).find((k) => k.includes('antenatal'));
+    const rate = (antKey && bySubDept[antKey]) || firstRate;
+    const hasRate = !!(rate && rate.normalFees);
+    const payableAmount = Math.round(hasRate
+      ? (rate.paymentType === 'percent' ? amount * rate.normalFees / 100 : rate.normalFees)
+      : amount);
     const pkt = new Date(new Date(a.createdAt).getTime() + 5 * 60 * 60 * 1000);
     return {
       id: `ant-${a.id}`,
@@ -2544,7 +2549,8 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
       patientName: a.patientName,
       subDepartment: 'Antenatal',
       paymentType: a.paymentType,
-      received: amount, payableAmount: amount, hasRate: true, ratePercent: null,
+      received: amount, payableAmount, hasRate,
+      ratePercent: hasRate && rate.paymentType === 'percent' ? rate.normalFees : null,
     };
   });
 

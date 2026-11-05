@@ -391,17 +391,19 @@ async function getNextMrNo() {
 // and ClinicAdmission — both draw from the same running number so Admission and
 // OPD slips never collide, even though they live in separate tables.
 async function getNextSerialNo() {
-  const [lastOpd, lastAdm, lastAdmPay, lastPbi, lastAntenatal] = await Promise.all([
+  const [lastOpd, lastAdm, admPayMax, lastPbi, lastAntenatal] = await Promise.all([
     prisma.clinicOpdVisit.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicAdmission.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
-    prisma.clinicAdmissionPayment.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
+    // Highest number, not the last row: a payment linked from an Excel row
+    // keeps its old Slip #, which would otherwise pull the sequence back.
+    prisma.$queryRaw`SELECT MAX("serialNo"::bigint) AS n FROM "ClinicAdmissionPayment" WHERE "serialNo" ~ '^[0-9]{1,15}$'`,
     prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
     prisma.clinicAntenatal.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
   ]);
   const BASE = 2826016;
   const lastOpdNum    = lastOpd    ? parseInt(lastOpd.serialNo, 10)    || 0 : 0;
   const lastAdmNum     = lastAdm    ? parseInt(lastAdm.serialNo, 10)    || 0 : 0;
-  const lastAdmPayNum = lastAdmPay ? parseInt(lastAdmPay.serialNo, 10) || 0 : 0;
+  const lastAdmPayNum = Number(admPayMax[0]?.n) || 0;
   const lastPbiNum    = lastPbi    ? parseInt(lastPbi.serialNo, 10)    || 0 : 0;
   const lastAntenatalNum = lastAntenatal ? parseInt(lastAntenatal.serialNo, 10) || 0 : 0;
   const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, lastPbiNum + 1, lastAntenatalNum + 1, BASE);
@@ -7634,14 +7636,17 @@ async function getProvisionalBillDetail(admissionId) {
     orderBy: { serialNo: 'asc' },
   });
   const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
-  const pvOnlyRows = pvAdmissionRows.filter((pv) => !capSerialNos.has(String(pv.serialNo || '')));
+  const pvOnlyRows = pvAdmissionRows.filter((pv) => !capSerialNos.has(String(pv.serialNo || `LEGACY-${pv.id}`)));
 
   const paymentHistory = [];
   if (pvOnlyRows.length > 0) {
     pvOnlyRows.forEach((pv) => {
       paymentHistory.push({ date: pv.visitDate, slipNo: String(pv.serialNo || '—'), amount: Number(pv.received || 0) });
     });
-  } else if (Number(admission.advancePayment) > 0) {
+  } else if (!pvAdmissionRows.length && Number(admission.advancePayment) > 0) {
+    // Only a file with no Excel rows: once those rows are all linked into
+    // payments, the advance would repeat one of them. A normal file keeps its
+    // advance next to its Receiving against Admission payments.
     paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo || '—', amount: Number(admission.advancePayment) });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo || '—', amount: Number(p.amount) }));
@@ -8654,7 +8659,7 @@ async function getDischargeBillDetail(admissionId) {
     orderBy: { serialNo: 'asc' },
   });
   const capSerialNos = new Set(payments.map((p) => String(p.serialNo)).filter(Boolean));
-  const pvOnlyRows = pvAdmissionRows.filter((pv) => !capSerialNos.has(String(pv.serialNo || '')));
+  const pvOnlyRows = pvAdmissionRows.filter((pv) => !capSerialNos.has(String(pv.serialNo || `LEGACY-${pv.id}`)));
 
   const paymentHistory = [];
   if (pvOnlyRows.length > 0) {
@@ -8664,7 +8669,8 @@ async function getDischargeBillDetail(admissionId) {
       // payment date, confirmed live against actual imported rows.
       paymentHistory.push({ date: pv.visitDate, slipNo: String(pv.serialNo || '—'), amount: Number(pv.received || 0) });
     });
-  } else if (Number(admission.advancePayment) > 0) {
+  } else if (!pvAdmissionRows.length && Number(admission.advancePayment) > 0) {
+    // Same rule as getProvisionalBillDetail.
     paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
@@ -9579,14 +9585,46 @@ function splitLegacyPatientName(rawName) {
   return { title: 'Mr', name: raw, gender: null };
 }
 
+// Copies an admission's Excel deposit rows into ClinicAdmissionPayment, so the
+// Admission Form and Receiving against Admission see them. The row the advance
+// came from is left out: the advance already holds that money, and those two
+// screens add advance and payments together. A row already linked is skipped.
+async function linkExcelDeposits(admission, rows, rowDateTime) {
+  const advance = Number(admission.advancePayment) || 0;
+  let advanceRowFound = advance <= 0;
+  let linked = 0;
+  for (const r of rows) {
+    const amount = Number(r.received) || 0;
+    if (amount <= 0) continue;
+    if (!advanceRowFound && Math.abs(amount - advance) < 1) {
+      advanceRowFound = true;
+      continue;
+    }
+    const serialNo = r.serialNo ? String(r.serialNo) : `LEGACY-${r.id}`;
+    const taken = await prisma.clinicAdmissionPayment.findUnique({ where: { serialNo }, select: { id: true } });
+    if (taken) continue;
+    await prisma.clinicAdmissionPayment.create({
+      data: {
+        serialNo,
+        admissionId: admission.id,
+        amount,
+        paymentType: (r.paymentType || '').toLowerCase() === 'cc' ? 'cc' : 'cash',
+        receivedAt:  rowDateTime(r),
+      },
+    });
+    linked++;
+  }
+  return linked;
+}
+
 // Legacy exports don't have a separate "Admission list" — admission events are
 // rows inside the same Patients List export where department/subDepartment
 // mentions "Admission" and Admit No is filled in (the deposit row). Once those
 // visits are imported (bulkCreatePatientVisits), this turns each into a real,
 // active ClinicAdmission so it shows up wherever admitted patients are looked
 // up (e.g. Provisional Bill's admission search) — bed/room stay unassigned,
-// filled in later via Admission Adjustment. Safe to re-run: existing admission
-// numbers are skipped.
+// filled in later via Admission Adjustment. Safe to re-run: an existing
+// admission isn't created again, only its unlinked deposits are added.
 async function generateAdmissionsFromVisits() {
   const candidateRows = await prisma.patientVisit.findMany({
     where: {
@@ -9605,7 +9643,8 @@ async function generateAdmissionsFromVisits() {
   // Admit No — one per top-up payment during the stay, not just the first one.
   // Keep all of them per Admit No, oldest first; the first becomes the
   // admission's own advance payment, the rest become additional payment slips
-  // (same as manually "Receiving Against Admission") so the total isn't lost.
+  // (same as manually "Receiving Against Admission") so the total isn't lost
+  // (see linkExcelDeposits).
   const byAdmitNo = new Map();
   for (const r of candidateRows) {
     if (!byAdmitNo.has(r.admitNo)) byAdmitNo.set(r.admitNo, []);
@@ -9622,18 +9661,30 @@ async function generateAdmissionsFromVisits() {
   const admitNos = [...byAdmitNo.keys()].map(String);
   const existing = await prisma.clinicAdmission.findMany({
     where: { admissionNo: { in: admitNos } },
-    select: { admissionNo: true },
+    select: { id: true, admissionNo: true, advancePayment: true },
   });
-  const existingSet = new Set(existing.map((a) => a.admissionNo));
+  const existingByNo = new Map(existing.map((a) => [a.admissionNo, a]));
 
   const PAYMENT_TYPE_MAP = { cash: 'private', staff: 'staff', panel: 'panel', cc: 'cc' };
 
+  const rowDateTime = (r) => {
+    if (!r.visitTime) return r.visitDate;
+    const dt = new Date(`${r.visitDate.toISOString().slice(0, 10)}T${r.visitTime}:00`);
+    return isNaN(dt.getTime()) ? r.visitDate : dt;
+  };
+
   let created = 0;
   let skipped = 0;
+  let paymentsLinked = 0;
   for (const [admitNo, allRows] of byAdmitNo) {
     const admissionNo = String(admitNo);
-    if (existingSet.has(admissionNo)) { skipped++; continue; }
-    const [row, ...extraRows] = allRows;
+    const existingAdmission = existingByNo.get(admissionNo);
+    if (existingAdmission) {
+      paymentsLinked += await linkExcelDeposits(existingAdmission, allRows, rowDateTime);
+      skipped++;
+      continue;
+    }
+    const [row] = allRows;
 
     let consultantId = null;
     if (row.doctor) {
@@ -9655,17 +9706,12 @@ async function generateAdmissionsFromVisits() {
       }
     }
 
-    const rowDateTime = (r) => {
-      if (!r.visitTime) return r.visitDate;
-      const dt = new Date(`${r.visitDate.toISOString().slice(0, 10)}T${r.visitTime}:00`);
-      return isNaN(dt.getTime()) ? r.visitDate : dt;
-    };
-
     const { title, name, gender } = splitLegacyPatientName(row.patientName);
 
     const createdAdmission = await prisma.clinicAdmission.create({
       data: {
         admissionNo,
+        serialNo:        await getNextSerialNo(),
         patientTitle:    title,
         patientName:     name,
         ...(gender ? { gender } : {}),
@@ -9677,24 +9723,7 @@ async function generateAdmissionsFromVisits() {
       },
     });
 
-    // Extra "Admission Deposit" rows for this Admit No are later top-up
-    // payments during the stay — record them the same way manually "Receiving
-    // Against Admission" would, so the total isn't silently dropped.
-    for (const extra of extraRows) {
-      const amount = Number(extra.received) || 0;
-      if (amount <= 0) continue;
-      await prisma.clinicAdmissionPayment.create({
-        data: {
-          serialNo:    extra.serialNo ? String(extra.serialNo) : `LEGACY-${extra.id}`,
-          admissionId: createdAdmission.id,
-          amount,
-          paymentType: (extra.paymentType || '').toLowerCase() === 'cc' ? 'cc' : 'cash',
-          receivedAt:  rowDateTime(extra),
-        },
-      });
-    }
-
-    existingSet.add(admissionNo);
+    paymentsLinked += await linkExcelDeposits(createdAdmission, allRows, rowDateTime);
     created++;
   }
 
@@ -9714,7 +9743,7 @@ async function generateAdmissionsFromVisits() {
   // "LEGACY-<PatientVisit id>" serialNo, checked before creating again.
   const diagLinked = await linkDiagnosticVisitsForAdmissions();
 
-  return { created, skipped, diagnosticLinked: diagLinked.linked, diagnosticSkipped: diagLinked.skipped };
+  return { created, skipped, paymentsLinked, diagnosticLinked: diagLinked.linked, diagnosticSkipped: diagLinked.skipped };
 }
 
 const DIAGNOSTIC_IMPORT_DEPTS = ['Laboratory', 'Radiology', 'Ultra Sound, Echo & Color Doppler'];
@@ -9969,6 +9998,41 @@ async function narrowToPreciseWindow(tableName, dateField, rows, fromDate, toDat
   );
   const idSet = new Set(preciseRows.map((r) => r.id));
   return rows.filter((r) => idSet.has(r.id));
+}
+
+// An Excel "Admission Deposit" can also sit in ClinicAdmission or
+// ClinicAdmissionPayment. Reports count that money once, from the PatientVisit
+// row; these two conditions spot the copies. Each reads the outer row by its
+// table name, so use it where that table is unaliased.
+//
+// An admission is a copy when its Excel row is on the admission's own date or
+// holds its advance. Admission # alone isn't enough: it hid real admissions
+// whose Excel row was a separate deposit on another day.
+const ADMISSION_IS_EXCEL_ROW = `EXISTS (
+  SELECT 1 FROM "PatientVisit" pv
+  WHERE pv."admitNo"::text = "ClinicAdmission"."admissionNo"
+    AND pv.department ILIKE 'admission'
+    AND (pv."visitDate"::date = ("ClinicAdmission"."createdAt" + INTERVAL '5 hours')::date
+         OR ABS(COALESCE(pv.received, 0) - COALESCE("ClinicAdmission"."advancePayment", 0)) < 1)
+)`;
+
+// A payment is a copy when it carries the Excel row's Slip # (any department,
+// any hour), or matches its day and amount. An Admission # match alone would
+// drop later top-ups, which are real, separate money.
+const PAYMENT_IS_EXCEL_ROW = `EXISTS (
+  SELECT 1 FROM "ClinicAdmission" a2
+  JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo"
+  WHERE a2.id = "ClinicAdmissionPayment"."admissionId"
+    AND ("ClinicAdmissionPayment"."serialNo" IN (pv."serialNo"::text, 'LEGACY-' || pv.id)
+         OR (pv.department ILIKE 'admission'
+             AND pv."visitDate"::date = "ClinicAdmissionPayment"."receivedAt"::date
+             AND ABS(pv.received - "ClinicAdmissionPayment".amount) < 1))
+)`;
+
+async function idsMatching(tableName, condition, ids) {
+  if (!ids.length) return new Set();
+  const rows = await prisma.$queryRawUnsafe(`SELECT id FROM "${tableName}" WHERE id = ANY($1::int[]) AND ${condition}`, ids);
+  return new Set(rows.map((r) => r.id));
 }
 
 // Hospital business day (08:00 → 07:59 next morning, PKT, named for its
@@ -10237,39 +10301,13 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     // (expandPaymentTypeVariants ka shared cash/private alias).
     admWhere.patientCategory = { in: typeVariants };
   }
-  // Admissions generated from a legacy "Admission Deposit" visit (see
-  // generateAdmissionsFromVisits) are already represented by that PatientVisit
-  // row above — skip them here so the same event doesn't show twice. Exact
-  // department match (not "contains"), same guard as getRevenueDashboard /
-  // getDailyDepartmentStatement's `pv.department ILIKE 'admission'` — a loose
-  // "contains" also matched unrelated subDepartment text and could wrongly
-  // exclude a real new admission.
-  const legacyAdmissionVisits = await prisma.patientVisit.findMany({
-    where: {
-      admitNo: { not: null },
-      department: { equals: 'admission', mode: 'insensitive' },
-    },
-    select: { admitNo: true, visitDate: true, received: true },
-  });
-  const legacyAdmitNoSet = new Set(legacyAdmissionVisits.map((v) => String(v.admitNo)));
-  // Keyed map (not just the Set above) for the admission-payments guard below
-  // — that one needs to tell a genuine duplicate (same admission, same day,
-  // same amount as the legacy row) apart from a later top-up that merely
-  // shares the admission number but is real, separate money.
-  const legacyAdmissionByAdmitNo = new Map();
-  for (const v of legacyAdmissionVisits) {
-    const key = String(v.admitNo);
-    const list = legacyAdmissionByAdmitNo.get(key) || [];
-    list.push({ date: new Date(v.visitDate).toISOString().slice(0, 10), received: Number(v.received) });
-    legacyAdmissionByAdmitNo.set(key, list);
-  }
-
   let admissions = await prisma.clinicAdmission.findMany({
     where: admWhere,
     orderBy: { createdAt: 'asc' },
   });
   admissions = await narrowToPreciseWindow('ClinicAdmission', 'createdAt', admissions, fromDate, toDate, fromT, toT);
-  admissions = admissions.filter((a) => !legacyAdmitNoSet.has(String(a.admissionNo)));
+  const excelAdmissionIds = await idsMatching('ClinicAdmission', ADMISSION_IS_EXCEL_ROW, admissions.map((a) => a.id));
+  admissions = admissions.filter((a) => !excelAdmissionIds.has(a.id));
 
   // Fetch consultant names for admissions
   const consultantIds = [...new Set(admissions.map(a => a.consultantId).filter(Boolean))];
@@ -10327,19 +10365,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     orderBy: { receivedAt: 'asc' },
   });
   admPaymentsRaw = await narrowToPreciseWindow('ClinicAdmissionPayment', 'receivedAt', admPaymentsRaw, fromDate, toDate, fromT, toT);
-  // A payment only double-counts the legacy row's money if it's actually the
-  // SAME transaction — same admission, same calendar day, same amount. Any
-  // admitNo match alone used to exclude every later top-up payment too (any
-  // admission ever touched by the legacy import lost ALL its real payments
-  // from this list — confirmed live: 73 of 82 recorded payments were wrongly
-  // excluded this way, only 51 of those were genuine same-day/same-amount
-  // duplicates of the legacy row).
-  const admPayments = admPaymentsRaw.filter((p) => {
-    const matches = legacyAdmissionByAdmitNo.get(String(p.admission?.admissionNo || '')) || [];
-    const pDate = new Date(p.receivedAt).toISOString().slice(0, 10);
-    const pAmt  = Number(p.amount);
-    return !matches.some((m) => m.date === pDate && Math.abs(m.received - pAmt) < 1);
-  });
+  const excelPaymentIds = await idsMatching('ClinicAdmissionPayment', PAYMENT_IS_EXCEL_ROW, admPaymentsRaw.map((p) => p.id));
+  const admPayments = admPaymentsRaw.filter((p) => !excelPaymentIds.has(p.id));
 
   const mappedAdmPay = admPayments.map((p) => ({
     id:            `admpay_${p.id}`,
@@ -10799,7 +10826,7 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   // as the "Admission" department; paymentType maps onto patientCategory
   // (private=Cash, cc=C Card, etc.).
   const ADM_PAYTYPE_MAP = { cash: 'private', staff: 'staff', panel: 'panel', complementary: 'complementary', 'c card': 'cc' };
-  const admConds  = [`NOT EXISTS (SELECT 1 FROM "PatientVisit" pv WHERE pv."admitNo"::text = "ClinicAdmission"."admissionNo" AND pv.department ILIKE 'admission')`];
+  const admConds  = [`NOT ${ADMISSION_IS_EXCEL_ROW}`];
   const admParams = [];
   if (department && department !== 'ALL') { admParams.push(department);           admConds.push(`'Admission' ILIKE $${admParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { admConds.push('FALSE'); } // admission has no sub-department
@@ -10814,19 +10841,8 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
   // ── ClinicAdmissionPayment WHERE (Receiving against Admission) ───────────
   // Later top-up payments count as revenue on the day they're actually
   // RECEIVED (not the original admission day) — but don't count as an extra
-  // "patient" since it's the same admission, not a new one. Only skip a
-  // payment when it's a genuine duplicate of the legacy row itself — same
-  // admission, same calendar day, same amount. An admitNo-only match (no
-  // date/amount check) wrongly excluded every later top-up payment against
-  // any legacy-era admission too — confirmed live: 73 of 82 recorded
-  // payments were being dropped this way, only 51 were real duplicates.
-  const admPayConds  = [`NOT EXISTS (
-    SELECT 1 FROM "ClinicAdmission" a2
-    JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission'
-    WHERE a2.id = "ClinicAdmissionPayment"."admissionId"
-      AND pv."visitDate"::date = "ClinicAdmissionPayment"."receivedAt"::date
-      AND ABS(pv.received - "ClinicAdmissionPayment".amount) < 1
-  )`];
+  // "patient" since it's the same admission, not a new one.
+  const admPayConds  = [`NOT ${PAYMENT_IS_EXCEL_ROW}`];
   const admPayParams = [];
   if (department && department !== 'ALL') { admPayParams.push(department); admPayConds.push(`'Admission' ILIKE $${admPayParams.length}`); }
   if (subDept    && subDept    !== 'ALL') { admPayConds.push('FALSE'); }
@@ -11120,17 +11136,8 @@ async function getDailyDepartmentStatement(date) {
   // PatientVisit row for the exact same amount). Skip both COUNT and SUM for
   // any admission that already has one, so this modal doesn't count the same
   // patient/amount twice.
-  const ADM_NOT_MIGRATED = `NOT EXISTS (SELECT 1 FROM "PatientVisit" pv WHERE pv."admitNo"::text = "ClinicAdmission"."admissionNo" AND pv.department ILIKE 'admission')`;
-  // Same date+amount precision as getRevenueDashboard/getPatientVisits —
-  // an admitNo-only match wrongly skipped every later top-up payment too,
-  // not just the one row that's a genuine duplicate of the legacy import.
-  const ADM_PAY_NOT_MIGRATED = `NOT EXISTS (
-    SELECT 1 FROM "ClinicAdmission" a2
-    JOIN "PatientVisit" pv ON pv."admitNo"::text = a2."admissionNo" AND pv.department ILIKE 'admission'
-    WHERE a2.id = "ClinicAdmissionPayment"."admissionId"
-      AND pv."visitDate"::date = "ClinicAdmissionPayment"."receivedAt"::date
-      AND ABS(pv.received - "ClinicAdmissionPayment".amount) < 1
-  )`;
+  const ADM_NOT_MIGRATED = `NOT ${ADMISSION_IS_EXCEL_ROW}`;
+  const ADM_PAY_NOT_MIGRATED = `NOT ${PAYMENT_IS_EXCEL_ROW}`;
 
   const [pvRows, ovRows, admRow, admPayRow, antRow] = await Promise.all([
     prisma.$queryRawUnsafe(`
@@ -13235,19 +13242,12 @@ async function searchSlipsForFullEdit(q) {
 
   // An admission whose receipt is an Excel row shows as that row, same as
   // the Patients List — its own advance isn't the receipt then.
-  const admNos = admissions.map((a) => Number(a.admissionNo)).filter((n) => n > 0 && n <= 2147483647);
-  const legacyRows = admNos.length
-    ? await prisma.patientVisit.findMany({
-        where: { admitNo: { in: admNos }, department: { equals: 'admission', mode: 'insensitive' } },
-        select: { admitNo: true },
-      })
-    : [];
-  const legacyAdmitNos = new Set(legacyRows.map((r) => String(r.admitNo)));
+  const excelAdmissionIds = await idsMatching('ClinicAdmission', ADMISSION_IS_EXCEL_ROW, admissions.map((a) => a.id));
 
   const rows = [
     ...opd.map((r) => ({ source: 'opd', id: r.id, serialNo: r.serialNo, patientName: r.patientName, department: r.department, receive: Number(r.receive) || 0, createdAt: r.createdAt })),
     ...pv.map((r) => ({ source: 'pv', id: r.id, serialNo: r.serialNo == null ? '' : String(r.serialNo), patientName: r.patientName, department: [r.department, r.subDepartment].filter(Boolean).join(' · '), receive: Number(r.received) || 0, createdAt: r.visitDate })),
-    ...admissions.filter((a) => !legacyAdmitNos.has(String(Number(a.admissionNo)))).map((a) => ({ source: 'admission', id: a.id, serialNo: a.serialNo || '', patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(), department: `Admission # ${a.admissionNo}`, receive: Number(a.advancePayment) || 0, createdAt: a.createdAt })),
+    ...admissions.filter((a) => !excelAdmissionIds.has(a.id)).map((a) => ({ source: 'admission', id: a.id, serialNo: a.serialNo || '', patientName: `${a.patientTitle || ''} ${a.patientName}`.trim(), department: `Admission # ${a.admissionNo}`, receive: Number(a.advancePayment) || 0, createdAt: a.createdAt })),
     ...payments.map((p) => ({ source: 'admission-payment', id: p.id, serialNo: p.serialNo, patientName: `${p.admission?.patientTitle || ''} ${p.admission?.patientName || ''}`.trim(), department: `Admission # ${p.admission?.admissionNo || ''}`, receive: Number(p.amount) || 0, createdAt: p.receivedAt })),
     ...antenatal.map((a) => ({ source: 'antenatal', id: a.id, serialNo: a.serialNo || '', patientName: a.patientName, department: 'Antenatal', receive: Number(a.amount) || 0, createdAt: a.createdAt })),
   ];
