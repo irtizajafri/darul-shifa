@@ -2092,7 +2092,8 @@ async function getAdmissionForReceiving(admissionNo) {
   return { ...admission, paidSoFar: admPaidSoFar(admission) };
 }
 
-async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate }) {
+async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate }) {
+  const back = resolveBackDate(backDate);
   const amt = Number(amount);
   if (!amt || amt <= 0) throw Object.assign(new Error('Amount 0 se zyada hona chahiye'), { status: 400 });
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
@@ -2137,6 +2138,9 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
       admissionId: Number(admissionId),
       amount: amt,
       paymentType: paymentType === 'cc' ? 'cc' : 'cash',
+      // Every report counts a receipt on receivedAt; createdAt stays the real
+      // moment it was entered.
+      ...(back ? { receivedAt: back } : {}),
     },
   });
   return { payment, receivedBy, admission };

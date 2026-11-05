@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
+import BackDateField, { getBackDate, useBackDateStore } from '../../components/clinic/BackDateField';
 import { useAuthStore } from '../../store/useAuthStore';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
 import { handleSlipKeys } from '../../utils/keyboardNav';
@@ -101,6 +102,7 @@ export default function ReceivingAgainstAdmission() {
   const { user } = useAuthStore();
   const printedBy = user?.name || user?.username || user?.email || '';
   const [searchParams] = useSearchParams();
+  const backDate = useBackDateStore((s) => s.value);
 
   const [serialNo, setSerialNo] = useState('');
   const [showLookup, setShowLookup] = useState(false);
@@ -157,7 +159,7 @@ export default function ReceivingAgainstAdmission() {
     const res = await fetch(`${API}/admission/receiving/${admission.id}/pay`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ serialNo, amount: amt, paymentType, receivedBy: printedBy, confirmNotDuplicate }),
+      body:    JSON.stringify({ serialNo, amount: amt, paymentType, receivedBy: printedBy, confirmNotDuplicate, backDate: getBackDate() }),
     });
     const json = await res.json();
     // Same amount already on this admission in Patients List (Excel) under
@@ -239,6 +241,7 @@ export default function ReceivingAgainstAdmission() {
           <div className="raa-form-row">
             <label className="raa-label raa-label--serial">Serial #</label>
             <input className="raa-input raa-input--serial" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
+            <BackDateField style={{ marginLeft: 'auto' }} />
           </div>
 
           <div className="raa-separator" />
@@ -281,7 +284,7 @@ export default function ReceivingAgainstAdmission() {
 
               <div className="raa-form-row">
                 <label className="raa-label">Receiving Date &amp; Time</label>
-                <span className="raa-value">{receivingDate}</span>
+                <span className="raa-value">{backDate ? fmtDateTime(backDate) : receivingDate}</span>
               </div>
 
               <div className="raa-form-row raa-form-row--amount">

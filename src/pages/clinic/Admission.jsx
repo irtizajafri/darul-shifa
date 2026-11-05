@@ -354,6 +354,13 @@ const EMPTY = {
 // Every field is required except Referred By and Previous Admission.
 // Age/Phone reuse the same rules as the OPD slips (opdValidation.js) for
 // consistent messaging across the app.
+// Panel is picked by hand, with its company, so a looked-up record doesn't undo
+// it: old Excel slips carry no category (they come back as 'private'), and a
+// cash OPD slip can still lead to a panel admission.
+function categoryAfterLookup(current, found) {
+  return current === 'panel' ? 'panel' : found || current;
+}
+
 function validateAdmissionForm(form) {
   const required = [
     ['mrNo', 'MR #'],
@@ -602,7 +609,7 @@ export default function Admission() {
       setForm(f => ({
         ...f,
         patientName:     rec.patientName     || f.patientName,
-        patientCategory: category,
+        patientCategory: categoryAfterLookup(f.patientCategory, category),
         consultantId:    matchedDoctor ? String(matchedDoctor.id) : f.consultantId,
       }));
       toast.success('Patient data loaded from visit record');
@@ -626,7 +633,7 @@ export default function Admission() {
         gender:           rec.gender         || f.gender,
         phoneNo:          rec.phoneNo        || f.phoneNo,
         referredBy:       rec.referredBy     || f.referredBy,
-        patientCategory:  rec.patientCategory || f.patientCategory,
+        patientCategory:  categoryAfterLookup(f.patientCategory, rec.patientCategory),
         employeeId:       rec.employeeId     || f.employeeId,
         panelCompanyId:   rec.panelCompanyId  || f.panelCompanyId,
         panelEmployeeId:  rec.panelEmployeeId || f.panelEmployeeId,
@@ -652,7 +659,7 @@ export default function Admission() {
       gender:           rec.gender        || f.gender,
       phoneNo:          rec.phoneNo       || f.phoneNo,
       referredBy:       rec.referredBy    || f.referredBy,
-      patientCategory:  rec.patientCategory || f.patientCategory,
+      patientCategory:  categoryAfterLookup(f.patientCategory, rec.patientCategory),
       employeeId:       rec.employeeId     || f.employeeId,
       panelCompanyId:   rec.panelCompanyId  || f.panelCompanyId,
       panelEmployeeId:  rec.panelEmployeeId || f.panelEmployeeId,

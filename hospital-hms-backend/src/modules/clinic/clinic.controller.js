@@ -1175,8 +1175,8 @@ async function getAdmissionForReceiving(req, res, next) {
 
 async function addAdmissionPayment(req, res, next) {
   try {
-    const { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate } = req.body;
-    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate: !!confirmNotDuplicate });
+    const { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate } = req.body;
+    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate: !!confirmNotDuplicate, backDate });
     success(res, data, 'Payment receive ho gayi');
   } catch (err) {
     // POSSIBLE_DUPLICATE_RECEIPT — the screen asks, then resends with confirmNotDuplicate
