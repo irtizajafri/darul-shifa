@@ -51,8 +51,27 @@ body { font-family: Arial, sans-serif; font-size: 9pt; color: #000; background: 
 .imb-stamps { display: flex; justify-content: space-between; margin-top: 5mm; padding: 0 2mm; font-size: 9pt; }
 .imb-stamp { display: flex; gap: 6px; }
 .imb-form-code { margin-top: 5mm; font-size: 9pt; }
-@page { size: A5 portrait; margin: 22mm 8mm 8mm; }
 `;
+
+// Same A5 letterhead layout as the Provisional Bill (owner, 2026-11-05): 40mm
+// blank at the top, 12mm on each side, width fixed in mm and no @page size, so
+// a printer left on A4 doesn't centre the bill on the sheet. The page block is
+// shorter than the 162mm left under that margin, or the signatures would spill
+// onto a second page. Its font and sizes are the Provisional Bill's too.
+// Distribution OPD keeps its own page.
+const DR_PAGE_CSS = `
+body { width: 124mm; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; font-size: 8pt; }
+.imb { min-height: 150mm; }
+.imb-title { font-size: 11pt; font-weight: 900; letter-spacing: 0; }
+.imb-dup { font-size: 8pt; font-weight: 900; }
+.imb-hdr .l, .imb-hdr .v, .imb-hdr .room, .imb-box-title, .imb-pay, .imb-items, .imb-items td,
+.imb-words, .imb-total, .imb-total-box, .imb-extra, .imb-sig, .imb-stamps { font-size: 7.5pt; }
+.imb-hdr .l { font-weight: 700; }
+.imb-hdr .b { font-weight: 400; }
+.imb-form-code { font-size: 7pt; }
+@page { margin: 40mm 12mm 8mm; }
+`;
+const OPD_PAGE_CSS = '@page { size: A5 portrait; margin: 22mm 8mm 8mm; }';
 
 export function buildDischargeBillPrintHtml({ detail, isDuplicate }) {
   const body = renderToStaticMarkup(
@@ -63,7 +82,7 @@ export function buildDischargeBillPrintHtml({ detail, isDuplicate }) {
 <head>
 <meta charset="UTF-8"/>
 <title>Itemised Medical Bill - ${detail?.admission?.admissionNo || ''}</title>
-<style>${DR_PRINT_CSS}</style>
+<style>${DR_PRINT_CSS}${detail?.isOpd ? OPD_PAGE_CSS : DR_PAGE_CSS}</style>
 </head>
 <body>
 ${body}
