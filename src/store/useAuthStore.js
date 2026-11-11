@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware';
 // This is the master admin account. Credentials are hardcoded here intentionally.
 // This account is never stored in the database and bypasses all permission checks.
 export const SUPER_ADMIN_EMAIL    = 'ceo@darulshifa.com';
-export const SUPER_ADMIN_PASSWORD = 'qwerty321';
+export const SUPER_ADMIN_PASSWORD = 'yamaha@1234';
 
 export const SUPER_ADMIN_USER = {
   id: 'super-admin',
