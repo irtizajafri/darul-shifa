@@ -164,7 +164,8 @@ export default function Reports() {
           month,
           year,
           rows: liveAttendanceWithOverrides.map(serialize),
-          netSalary: finalSal,
+          // 51214 is the Leave Encashment payslip: no attendance, its amount is the month's encashment total.
+          netSalary: emp?.empCode === '51214' ? Math.round(leaveEncashTotal) : finalSal,
         }),
       });
       if (!res.ok) throw new Error('Save failed');

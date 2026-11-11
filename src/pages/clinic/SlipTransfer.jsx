@@ -232,7 +232,7 @@ export default function SlipTransfer() {
                       <td>{s.department}</td>
                       <td>
                         <span className={`sadj-src-badge sadj-src-badge--${s.source}`}>
-                          {s.source === 'opd' ? 'New System' : 'Patients List'}
+                          {s.source === 'opd' ? 'New System' : s.source === 'cap' ? 'Receiving' : 'Patients List'}
                         </span>
                       </td>
                       <td>{fmtDateTime(s.createdAt)}</td>
@@ -257,7 +257,7 @@ export default function SlipTransfer() {
               <label className="sadj-label sadj-label--serial">Serial #</label>
               <input className="sadj-input sadj-input--serial" value={visit.serialNo} readOnly />
               <span className={`sadj-src-badge sadj-src-badge--${visit.source}`}>
-                {visit.source === 'opd' ? 'New System' : 'Patients List'}
+                {visit.source === 'opd' ? 'New System' : visit.source === 'cap' ? 'Receiving' : 'Patients List'}
               </span>
               <span className="sadj-dept-badge">{(visit.department || '').toUpperCase()}</span>
             </div>

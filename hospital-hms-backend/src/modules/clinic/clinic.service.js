@@ -1799,11 +1799,48 @@ async function updateVisitDoctor(source, id, doctorRowId, doctorId) {
 // (e.g. via the "Admit Patient" checkbox in General/Consultant/Emergency OPD) —
 // search by Slip # (not Admission #), then move it to the right admission.
 
+// Receiving against Admission slips can be moved too. Slip Refund shares the
+// search above and can't refund them, so they're added here only.
 async function searchVisitsForSlipTransfer(q) {
-  return searchVisitsForRefund(q);
+  const term = String(q || '').trim();
+  const capWhere = term
+    ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { admission: { patientName: { contains: term, mode: 'insensitive' } } }] }
+    : {};
+  const [visits, capRows] = await Promise.all([
+    searchVisitsForRefund(term),
+    prisma.clinicAdmissionPayment.findMany({
+      where: capWhere,
+      include: { admission: { select: { patientName: true } } },
+      orderBy: { receivedAt: 'desc' },
+      take: 100,
+    }),
+  ]);
+  const cap = capRows.map((r) => ({
+    source: 'cap', id: r.id, serialNo: r.serialNo || '',
+    patientName: r.admission?.patientName || '',
+    department: 'Receiving Against Admission',
+    receive: Number(r.amount), refund: 0,
+    createdAt: r.receivedAt,
+  }));
+  return [...visits, ...cap].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 150);
 }
 
 async function getVisitForSlipTransfer(source, id) {
+  if (source === 'cap') {
+    const cap = await prisma.clinicAdmissionPayment.findUnique({
+      where: { id: Number(id) },
+      include: { admission: { select: { admissionNo: true, patientName: true } } },
+    });
+    if (!cap) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    return {
+      source: 'cap', id: cap.id,
+      serialNo: cap.serialNo || '',
+      patientName: cap.admission?.patientName || '',
+      department: 'Receiving Against Admission',
+      receive: Number(cap.amount), refund: 0,
+      admitNo: cap.admission?.admissionNo || null,
+    };
+  }
   const visit = await getVisitForRefund(source, id);
   if (source === 'pv') {
     const pv = await prisma.patientVisit.findUnique({ where: { id: Number(id) } });
@@ -1835,6 +1872,39 @@ async function transferSlipAdmission(source, id, admitNo) {
       where: { id: Number(id) },
       data: { admitNo: numNo },
     });
+  }
+
+  if (source === 'cap') {
+    const cap = await prisma.clinicAdmissionPayment.findUnique({
+      where: { id: Number(id) },
+      include: { admission: { select: { admissionNo: true } } },
+    });
+    if (!cap) throw Object.assign(new Error('Slip not found'), { status: 404 });
+    if (!no) throw Object.assign(new Error('Admission # required'), { status: 400 });
+    const newAdm = await prisma.clinicAdmission.findFirst({ where: { admissionNo: no } });
+    if (!newAdm) throw Object.assign(new Error('Admission not found: ' + no), { status: 404 });
+
+    // A payment linked from an Excel row keeps that row's Slip # (or
+    // LEGACY-<row id>), and the row still names the old file. Move the row
+    // too, or bills and reports count the money on both files.
+    const isInt = (n) => Number.isInteger(n) && n > 0 && n <= 2147483647;
+    const oldNo = Number(cap.admission?.admissionNo);
+    const legacyId = /^LEGACY-(\d+)$/.exec(cap.serialNo || '')?.[1];
+    const slipNo = Number(cap.serialNo);
+    const copyWhere = !isInt(oldNo) ? null
+      : legacyId ? { id: Number(legacyId), admitNo: oldNo }
+      : isInt(slipNo) ? { serialNo: slipNo, admitNo: oldNo }
+      : null;
+    const copies = copyWhere ? await prisma.patientVisit.count({ where: copyWhere }) : 0;
+    const newNum = Number(no);
+    if (copies && !isInt(newNum)) {
+      throw Object.assign(new Error('Is slip ki Excel row bhi hai — Admission # numeric hona chahiye'), { status: 400 });
+    }
+    const [updated] = await prisma.$transaction([
+      prisma.clinicAdmissionPayment.update({ where: { id: cap.id }, data: { admissionId: newAdm.id } }),
+      ...(copies ? [prisma.patientVisit.updateMany({ where: copyWhere, data: { admitNo: newNum } })] : []),
+    ]);
+    return updated;
   }
 
   throw Object.assign(new Error('Invalid source'), { status: 400 });
@@ -7643,11 +7713,20 @@ async function getProvisionalBillDetail(admissionId) {
     pvOnlyRows.forEach((pv) => {
       paymentHistory.push({ date: pv.visitDate, slipNo: String(pv.serialNo || '—'), amount: Number(pv.received || 0) });
     });
-  } else if (!pvAdmissionRows.length && Number(admission.advancePayment) > 0) {
-    // Only a file with no Excel rows: once those rows are all linked into
-    // payments, the advance would repeat one of them. A normal file keeps its
-    // advance next to its Receiving against Admission payments.
-    paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo || '—', amount: Number(admission.advancePayment) });
+  }
+  // The advance is listed unless a row already holds it: its own Slip #, the
+  // payment old Generate made at the admission's time, or (old Excel files
+  // have no Slip # on the admission) an Excel row of the same amount that
+  // isn't a Receiving payment's copy.
+  const advAmt  = Number(admission.advancePayment) || 0;
+  const advSlip = String(admission.serialNo || '');
+  const advInCap = (advSlip && capSerialNos.has(advSlip))
+      || payments.some((p) => Number(p.amount) === advAmt
+          && Math.abs(new Date(p.receivedAt) - new Date(admission.createdAt)) < 60000);
+  const advInPv  = pvOnlyRows.some((pv) => String(pv.serialNo) === advSlip
+      || Math.abs(Number(pv.received || 0) - advAmt) < 1);
+  if (advAmt > 0 && !advInCap && !advInPv) {
+      paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo || '—', amount: advAmt });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo || '—', amount: Number(p.amount) }));
   // Raw payment ledger total — patientInfo keeps this as-is (a true record of
@@ -8669,9 +8748,17 @@ async function getDischargeBillDetail(admissionId) {
       // payment date, confirmed live against actual imported rows.
       paymentHistory.push({ date: pv.visitDate, slipNo: String(pv.serialNo || '—'), amount: Number(pv.received || 0) });
     });
-  } else if (!pvAdmissionRows.length && Number(admission.advancePayment) > 0) {
-    // Same rule as getProvisionalBillDetail.
-    paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo, amount: Number(admission.advancePayment) });
+  }
+  // Same rule as getProvisionalBillDetail.
+  const advAmt  = Number(admission.advancePayment) || 0;
+  const advSlip = String(admission.serialNo || '');
+  const advInCap = (advSlip && capSerialNos.has(advSlip))
+      || payments.some((p) => Number(p.amount) === advAmt
+          && Math.abs(new Date(p.receivedAt) - new Date(admission.createdAt)) < 60000);
+  const advInPv  = pvOnlyRows.some((pv) => String(pv.serialNo) === advSlip
+      || Math.abs(Number(pv.received || 0) - advAmt) < 1);
+  if (advAmt > 0 && !advInCap && !advInPv) {
+      paymentHistory.push({ date: admission.createdAt, slipNo: admission.serialNo || '—', amount: advAmt });
   }
   payments.forEach((p) => paymentHistory.push({ date: p.receivedAt, slipNo: p.serialNo, amount: Number(p.amount) }));
   const amountReceived = paymentHistory.reduce((s, p) => s + p.amount, 0);
@@ -10733,65 +10820,115 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
 
 // ─── Revenue Dashboard (Inquiries) ───────────────────────────────────────────
 
-// One Year / Yearly views (owner, 2026-10-31): built from the Patients List
-// rows themselves — same rows, same Received, same patient count as the
-// One Month calendar and the list — instead of their own SQL totals, which
+// Every Revenue Dashboard view (yearly 2026-10-31, One Month 2026-11-11):
+// built from the Patients List rows themselves — same rows, same Received,
+// same patient count as the list — instead of their own SQL totals, which
 // counted Adjust Payment slips as received and skipped cancelled slips,
 // Antenatal and admission payments. Filters work like the One Month view's.
 async function getRevenueDashboardFromPatientList({ period, year, month, department, subDept, consultant, paymentType }) {
+  const byDay  = period === 'monthly_daily';
   const byYear = period === 'multi_year';
-  const keyField = byYear ? 'year' : 'month';
+  const keyField = byDay ? 'date' : byYear ? 'year' : 'month';
   const paymentTypes = paymentType && paymentType !== 'ALL' ? [paymentType] : [];
-  const range = byYear ? {} : { fromDate: `${year}-01-01`, toDate: `${year + 1}-01-01`, fromTime: '08:00:00', toTime: '07:59:59' };
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const firstOf = (y, m) => `${y}-${pad(m)}-01`;
+  const afterMonth = (y, m) => (m === 12 ? firstOf(y + 1, 1) : firstOf(y, m + 1));
+
+  // Trend window for the daily view: the twelve whole months ending with the
+  // current one.
+  const now = new Date();
+  const tf = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  const trendStart = firstOf(tf.getFullYear(), tf.getMonth() + 1);
+  const trendEnd   = afterMonth(now.getFullYear(), now.getMonth() + 1);
+
+  // The daily view needs three slices of the same rows — the month's days, the
+  // trend's twelve months, and the same month a year ago — so span them all in
+  // one read and fold it three ways rather than walking the list three times.
+  let range;
+  if (byYear) range = {};
+  else if (byDay) {
+    range = {
+      fromDate: [trendStart, firstOf(year - 1, month), firstOf(year, month)].sort()[0],
+      toDate:   [trendEnd, afterMonth(year, month)].sort().pop(),
+      fromTime: '08:00:00', toTime: '07:59:59',
+    };
+  } else {
+    range = { fromDate: firstOf(year, 1), toDate: firstOf(year + 1, 1), fromTime: '08:00:00', toTime: '07:59:59' };
+  }
   const rows = await getPatientVisits({ ...range, paymentTypes });
 
   const matches = (value, filter) => !filter || filter === 'ALL' || String(value || '').toLowerCase().includes(String(filter).toLowerCase());
-  const blank = (k) => ({ [keyField]: k, totalPatients: 0, totalAmount: 0, cashPatients: 0, cashAmount: 0, panelPatients: 0, panelAmount: 0, ccPatients: 0, ccAmount: 0 });
-  const buckets = new Map();
-  if (!byYear) for (let m = 1; m <= 12; m++) buckets.set(m, blank(m));
+  const kept = rows.filter((r) => r.businessDay
+    && matches(r.department, department) && matches(r.subDepartment, subDept) && matches(r.doctor, consultant));
 
-  for (const r of rows) {
-    if (!r.businessDay) continue;
-    if (!matches(r.department, department) || !matches(r.subDepartment, subDept) || !matches(r.doctor, consultant)) continue;
-    const k = Number(byYear ? r.businessDay.slice(0, 4) : r.businessDay.slice(5, 7));
-    if (!buckets.has(k)) buckets.set(k, blank(k));
-    const b = buckets.get(k);
-    // + its Administrative Expense line, same as Patients List's count
-    const n = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
-    const amt = Number(r.received || 0);
-    const pt = String(r.paymentType || '').toLowerCase();
-    b.totalPatients += n;
-    b.totalAmount += amt;
-    if (pt === 'cash')                                   { b.cashPatients += n;  b.cashAmount  += amt; }
-    else if (pt === 'panel')                             { b.panelPatients += n; b.panelAmount += amt; }
-    else if (['c card', 'cc', 'credit card'].includes(pt)) { b.ccPatients += n;    b.ccAmount    += amt; }
+  const blank = (field, k) => ({ [field]: k, totalPatients: 0, totalAmount: 0, cashPatients: 0, cashAmount: 0, panelPatients: 0, panelAmount: 0, ccPatients: 0, ccAmount: 0 });
+  const fold = (field, keyOf, seed = []) => {
+    const out = new Map(seed.map((k) => [k, blank(field, k)]));
+    for (const r of kept) {
+      const k = keyOf(r.businessDay);
+      if (k == null) continue;
+      if (!out.has(k)) out.set(k, blank(field, k));
+      const b = out.get(k);
+      // + its Administrative Expense line, same as Patients List's count
+      const n = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
+      const amt = Number(r.received || 0);
+      const pt = String(r.paymentType || '').toLowerCase();
+      b.totalPatients += n;
+      b.totalAmount += amt;
+      if (pt === 'cash')                                     { b.cashPatients  += n; b.cashAmount  += amt; }
+      else if (pt === 'panel')                               { b.panelPatients += n; b.panelAmount += amt; }
+      else if (['c card', 'cc', 'credit card'].includes(pt)) { b.ccPatients    += n; b.ccAmount    += amt; }
+    }
+    return out;
+  };
+
+  let data;
+  if (byDay) {
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const seed = Array.from({ length: daysInMonth }, (_, i) => `${year}-${pad(month)}-${pad(i + 1)}`);
+    const ym = `${year}-${pad(month)}`;
+    data = [...fold('date', (d) => (d.slice(0, 7) === ym ? d : null), seed).values()]
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } else {
+    const seed = byYear ? [] : Array.from({ length: 12 }, (_, i) => i + 1);
+    data = [...fold(keyField, (d) => Number(byYear ? d.slice(0, 4) : d.slice(5, 7)), seed).values()]
+      .sort((a, b) => a[keyField] - b[keyField]);
   }
 
-  const data = [...buckets.values()].sort((a, b) => a[keyField] - b[keyField]);
   const totalPatients = data.reduce((s, d) => s + d.totalPatients, 0);
   const totalAmount   = data.reduce((s, d) => s + d.totalAmount, 0);
   const daysWithData  = data.filter((d) => d.totalPatients > 0).length;
   const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;
 
-  // Revenue Trend = the same buckets (months of this year up to now, or
-  // every year), so the chart reads the same numbers as the grid.
   const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const now = new Date();
-  const trendData = data
-    .filter((d) => byYear || year < now.getFullYear() || d.month <= now.getMonth() + 1)
-    .map((d) => ({ label: byYear ? String(d.year) : `${MN[d.month - 1]} ${year}`, totalPatients: d.totalPatients, totalAmount: d.totalAmount }));
+  let prognosis = 0, lastYearAmount = 0, trendData;
 
-  return { period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis: 0, lastYearAmount: 0, daysWithData }, trendData };
-}
-
-async function getRevenueDashboard({ period, year, month, department, subDept, consultant, paymentType }) {
-  year   = parseInt(year)  || new Date().getFullYear();
-  month  = parseInt(month) || (new Date().getMonth() + 1);
-  period = period || 'monthly_daily';
-  if (period !== 'monthly_daily') {
-    return getRevenueDashboardFromPatientList({ period, year, month, department, subDept, consultant, paymentType });
+  if (byDay) {
+    prognosis = dailyAvg * new Date(year, month, 0).getDate();
+    const ly = `${year - 1}-${pad(month)}`;
+    lastYearAmount = kept.reduce((s, r) => s + (r.businessDay.slice(0, 7) === ly ? Number(r.received || 0) : 0), 0);
+    trendData = [...fold('key', (d) => (d >= trendStart && d < trendEnd ? d.slice(0, 7) : null)).values()]
+      .sort((a, b) => a.key.localeCompare(b.key))
+      .map((b) => ({ label: `${MN[Number(b.key.slice(5, 7)) - 1]} ${b.key.slice(0, 4)}`, totalPatients: b.totalPatients, totalAmount: b.totalAmount }));
+  } else {
+    // Revenue Trend = the same buckets (months of this year up to now, or
+    // every year), so the chart reads the same numbers as the grid.
+    trendData = data
+      .filter((d) => byYear || year < now.getFullYear() || d.month <= now.getMonth() + 1)
+      .map((d) => ({ label: byYear ? String(d.year) : `${MN[d.month - 1]} ${year}`, totalPatients: d.totalPatients, totalAmount: d.totalAmount }));
   }
 
+  return { period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis, lastYearAmount, daysWithData }, trendData };
+}
+
+// Legacy monthly engine — its own SQL over PatientVisit, ClinicOpdVisit,
+// ClinicAdmission and ClinicAdmissionPayment, with rules of its own (cancelled
+// PatientVisit rows dropped, Administrative Expense never counted as a
+// patient), which is why its totals drifted from the Patients List. Kept here
+// unrouted so getRevenueDashboard below can fall back to it by flipping one
+// line; delete once the Patients-List numbers have been signed off.
+async function getRevenueDashboardMonthlyLegacy({ period, year, month, department, subDept, consultant, paymentType }) {
   // ── PatientVisit WHERE ────────────────────────────────────────────────────
   // Cancelled slips revenue dashboard mein NAHI aayengi (case-insensitive, dono spellings).
   const pvConds  = [`LOWER("paymentType") NOT IN ('canceled','cancelled')`];
@@ -11087,6 +11224,18 @@ async function getRevenueDashboard({ period, year, month, department, subDept, c
     .map(r => ({ label: `${MN[r.month-1]} ${r.year}`, totalPatients: r.totalPatients, totalAmount: r.totalAmount }));
 
   return { period, year, month, data, summary: { totalPatients, totalAmount, dailyAvg, prognosis, lastYearAmount, daysWithData }, trendData };
+}
+
+async function getRevenueDashboard({ period, year, month, department, subDept, consultant, paymentType }) {
+  year   = parseInt(year)  || new Date().getFullYear();
+  month  = parseInt(month) || (new Date().getMonth() + 1);
+  period = period || 'monthly_daily';
+  const args = { period, year, month, department, subDept, consultant, paymentType };
+
+  // Every view reads the Patients List, so the dashboard and the list can
+  // never disagree. To put the daily view back on its old SQL, swap the line
+  // below for: if (period === 'monthly_daily') return getRevenueDashboardMonthlyLegacy(args);
+  return getRevenueDashboardFromPatientList(args);
 }
 
 // ─── Inquiries > Daily Department Statement (Revenue Dashboard day double-click) ──
