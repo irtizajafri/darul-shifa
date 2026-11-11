@@ -103,6 +103,16 @@ export const PERMISSIONS_MAP = {
       },
     ],
   },
+  lab: {
+    label: 'Laboratories',
+    dashboardRoute: '/lab-module',
+    subModules: [
+      { key: 'result-entry', label: 'Result Entry' },
+      { key: 'categories',   label: 'Categories' },
+      { key: 'tests',        label: 'Sub Category (Tests)' },
+      { key: 'parameters',   label: 'Parameters' },
+    ],
+  },
   clinic: {
     label: 'Clinic',
     dashboardRoute: '/clinic-module',

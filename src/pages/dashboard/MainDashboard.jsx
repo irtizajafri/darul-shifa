@@ -21,7 +21,7 @@ const ALL_MODULES = [
     active: true,
     path: '/employee-module',
   },
-  { id: 'lab', permModule: null, icon: FlaskConical, title: 'Laboratories', desc: 'Lab tests, results & reporting', active: false },
+  { id: 'lab', permModule: 'lab', icon: FlaskConical, title: 'Laboratories', desc: 'Lab tests, results & reporting', active: true, path: '/lab-module' },
   {
     id: 'canvas',
     permModule: 'accounts',
@@ -72,6 +72,8 @@ export default function MainDashboard() {
         setModule('clinic');
       } else if (m.id === 'accounts') {
         setModule('accounts');
+      } else if (m.id === 'lab') {
+        setModule('lab');
       } else {
         clearModule();
       }

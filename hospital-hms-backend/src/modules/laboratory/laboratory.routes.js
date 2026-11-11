@@ -1,0 +1,26 @@
+const express = require('express');
+const c = require('./laboratory.controller');
+
+const router = express.Router();
+
+router.get('/summary', c.getSummary);
+
+router.get('/categories', c.listCategories);
+router.post('/categories', c.createCategory);
+router.put('/categories/:id', c.updateCategory);
+router.delete('/categories/:id', c.deleteCategory);
+
+router.get('/clinic-tests', c.listClinicTests);
+router.get('/tests', c.listTests);
+router.post('/tests', c.createTest);
+router.put('/tests/:id', c.updateTest);
+router.delete('/tests/:id', c.deleteTest);
+router.get('/tests/:id/parameters', c.getTestParameters);
+router.put('/tests/:id/parameters', c.saveTestParameters);
+
+router.get('/slips', c.listSlips);
+router.get('/slips/:visitId', c.getSlip);
+router.put('/slips/:visitId/results', c.saveSlipResults);
+router.post('/results/print', c.markPrinted);
+
+module.exports = router;

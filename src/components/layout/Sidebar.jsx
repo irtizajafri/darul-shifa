@@ -22,6 +22,9 @@ import {
   Wrench,
   ShieldCheck,
   UserRound,
+  FolderTree,
+  ListChecks,
+  ClipboardPen,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -44,6 +47,15 @@ const inventoryNavItems = [
   { path: '/inventory/fuel',         label: 'Fuel Management',    Icon: BarChart3,      subModule: 'fuel' },
   { path: '/inventory/utilities-bill', label: 'Utilities Bill',   Icon: BarChart3,      subModule: 'utilities-bill' },
   { path: '/inventory/reports',      label: 'Reports',            Icon: BarChart3,      subModule: 'inventory-reports' },
+];
+
+const labNavItems = [
+  { path: '/dashboard',          label: 'Main Dashboard',       Icon: ArrowLeft,      toDashboard: true },
+  { path: '/lab-module',         label: 'Lab Dashboard',        Icon: LayoutDashboard },
+  { path: '/lab/result-entry',   label: 'Result Entry',         Icon: ClipboardPen,   subModule: 'result-entry' },
+  { path: '/lab/categories',     label: 'Categories',           Icon: FolderTree,     subModule: 'categories' },
+  { path: '/lab/tests',          label: 'Sub Category (Tests)', Icon: FlaskConical,   subModule: 'tests' },
+  { path: '/lab/parameters',     label: 'Parameters',           Icon: ListChecks,     subModule: 'parameters' },
 ];
 
 const accountsNavItems = [
@@ -203,6 +215,30 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
     );
   }
 
+  if (activeModule === 'lab') {
+    const visibleLabItems = labNavItems.filter(
+      (item) => item.toDashboard || !item.subModule || user?.isSuperAdmin || hasPermission(user, 'lab', item.subModule)
+    );
+    return (
+      <aside className={sidebarClass}>
+        <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center justify-between">
+          {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Laboratories</p>}
+        </div>
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          {visibleLabItems.map((item) => (
+            <div
+              key={item.path + item.label}
+              className={navClass(item.path)}
+              onClick={() => item.toDashboard ? go('/dashboard', null) : go(item.path, undefined, item.state)}
+            >
+              {navItem(item)}
+            </div>
+          ))}
+        </nav>
+      </aside>
+    );
+  }
+
   if (activeModule === 'clinic') {
     return (
       <aside className={sidebarClass}>
@@ -260,7 +296,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   const mainItems = [
     { path: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, module: null },
     { path: '/employee-module', label: 'Employee Mgmt', Icon: Users, module: 'employee' },
-    { path: '/coming-soon', label: 'Laboratories', Icon: FlaskConical, module: 'lab' },
+    { path: '/lab-module', label: 'Laboratories', Icon: FlaskConical, module: 'lab' },
     { path: '/inventory-module', label: 'Inventory Mgmt', Icon: Package, module: 'inventory' },
     { path: '/clinic-module', label: 'Clinic', Icon: Stethoscope, module: 'clinic' },
     { path: '/accounts-module', label: 'Accounts', Icon: Wallet, module: 'accounts' },

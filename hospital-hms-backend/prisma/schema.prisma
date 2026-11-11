@@ -790,6 +790,7 @@ model ClinicSubDepartment {
   opdVisitDoctors ClinicOpdVisitDoctor[]
   panelRates      ClinicPanelSubDeptRate[]
   empSubDeptRates ClinicPanelEmpSubDeptRate[]
+  labTest         LabTest?
 
   @@unique([departmentId, name])
   @@index([departmentId])
@@ -1055,6 +1056,7 @@ model ClinicOpdVisit {
   panelBillingItems  ClinicPanelOpdBillingItem[]
   panelBillingHeader ClinicPanelOpdBillingHeader?
   balancePayments    ClinicOpdBalancePayment[]
+  labResults         LabResult[]
 
   @@index([createdAt])
 }
@@ -3300,4 +3302,106 @@ model ClinicPanelDummyDischargeCert {
   updatedByName String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// ─── Laboratories (migration 067) ─────────────────────────────────────────────
+
+model LabCategory {
+  id        Int       @id @default(autoincrement())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tests     LabTest[]
+}
+
+// A Clinic LABORATORY sub-department placed in a category.
+model LabTest {
+  id         Int                 @id @default(autoincrement())
+  subDeptId  Int                 @unique
+  subDept    ClinicSubDepartment @relation(fields: [subDeptId], references: [id], onDelete: Cascade)
+  categoryId Int
+  category   LabCategory         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  sampleType String?
+  sortOrder  Int                 @default(0)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  parameters LabParameter[]
+
+  @@index([categoryId])
+}
+
+// A test's report rows in order: a test line (result typed in Result Entry),
+// a heading, or a fixed note.
+model LabParameter {
+  id             Int              @id @default(autoincrement())
+  labTestId      Int
+  labTest        LabTest          @relation(fields: [labTestId], references: [id], onDelete: Cascade)
+  kind           String           @default("param")
+  name           String
+  unit           String?
+  referenceRange String?
+  noteText       String?
+  resultType     String           @default("number")
+  options        String[]         @default([])
+  sortOrder      Int              @default(0)
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  values         LabResultValue[]
+
+  @@index([labTestId])
+}
+
+// One per test line (ClinicOpdVisitDoctor) on a Clinic lab slip.
+model LabResult {
+  id              Int              @id @default(autoincrement())
+  visitId         Int
+  visit           ClinicOpdVisit   @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  visitDoctorId   Int              @unique
+  subDeptId       Int?
+  testName        String
+  remarks         String?
+  status          String           @default("done")
+  enteredByUserId String?
+  enteredByName   String?
+  enteredAt       DateTime         @default(now())
+  updatedByName   String?
+  updatedAt       DateTime         @updatedAt
+  printCount      Int              @default(0)
+  values          LabResultValue[]
+  logs            LabResultLog[]
+
+  @@index([visitId])
+}
+
+model LabResultValue {
+  id             Int           @id @default(autoincrement())
+  resultId       Int
+  result         LabResult     @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  parameterId    Int?
+  parameter      LabParameter? @relation(fields: [parameterId], references: [id], onDelete: SetNull)
+  kind           String        @default("param")
+  parameterName  String
+  unit           String?
+  referenceRange String?
+  noteText       String?
+  value          String?
+  flag           String        @default("")
+  sortOrder      Int           @default(0)
+
+  @@index([resultId])
+}
+
+model LabResultLog {
+  id            Int       @id @default(autoincrement())
+  resultId      Int
+  result        LabResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  changedByName String?
+  changedAt     DateTime  @default(now())
+  before        Json?
+  after         Json?
+
+  @@index([resultId])
 }
