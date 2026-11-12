@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import toast from 'react-hot-toast';
 import { Search, X, Plus, Printer } from 'lucide-react';
@@ -88,6 +88,14 @@ function billingKeyNav(e) {
         const next = row.children[col]?.querySelector('input:not([disabled])');
         if (next) { focusIt(next); return; }
       }
+      return;
+    }
+    // Enter on a Rate box goes straight to the next line's Rate (owner,
+    // 2026-11-12); leaving the box saves this line, as before.
+    if (t.dataset.nav === 'rate') {
+      const rates = [...body.querySelectorAll('input[data-nav="rate"]:not([disabled])')];
+      const nextRate = rates[rates.indexOf(t) + 1];
+      if (nextRate) focusIt(nextRate); else t.blur();
       return;
     }
     const boxes = [...body.querySelectorAll('input:not([disabled]):not([type="checkbox"])')];
@@ -227,25 +235,6 @@ function billNo(admission) {
 // "Ultra Sound, Echo & Color Doppler" name, so translate here rather than
 // filtering/matching on a name that'll never match.
 const DIAG_DEPT_ALIASES = { Ultrasound: 'Ultra Sound, Echo & Color Doppler', ULTRASOUND: 'Ultra Sound, Echo & Color Doppler' };
-
-// Medicine/Laboratory/Radiology/Ultrasound rows are always-visible totals —
-// their real line items (which medicine, which test) live in
-// pharmacyRows/diagnosticRows and used to only surface via the double-click
-// detail modal. Now also shown inline, indented right under the parent row,
-// so they're visible without a click; the modal stays for actually editing/
-// overriding/deleting/adding entries.
-function subItemsFor(row, data) {
-  if (row.kind === 'pharmacy') {
-    return data.pharmacyRows.map((p) => ({ id: p.id, label: p.medicine, rate: p.rate, qty: p.qty, amount: p.amount }));
-  }
-  if (row.kind === 'diagnostic') {
-    const dept = DIAG_DEPT_ALIASES[row.description] || row.description;
-    return data.diagnosticRows
-      .filter((d) => d.department === dept)
-      .map((d) => ({ id: d.id, label: d.particulars || dept, rate: d.rate, qty: d.qty, amount: d.amount }));
-  }
-  return [];
-}
 
 function numToWords(n) {
   if (n === 0) return 'zero';
@@ -762,11 +751,13 @@ export default function PanelBilling() {
     try {
       const bulkAdd = isOpd ? addPanelOpdBillingItemsBulk : addPanelBillingItemsBulk;
       const rows = await bulkAdd(data.admission.id, items);
-      setPopup(null);
       if (items.some((it) => it.mergeInto)) {
         // Grouped adds fold into their head row server-side — reload so the
         // grid shows the recomputed total instead of these raw itemized rows.
+        // The popup stays open (owner, 2026-11-12) and is remounted on the
+        // reloaded data, so the copied lines show in its list.
         await reload();
+        setPopupNonce((n) => n + 1);
       } else {
         setData((d) => ({
           ...d,
@@ -984,8 +975,24 @@ export default function PanelBilling() {
     setEditCell({ itemId: row.id, field, value: raw });
   }
 
-  async function handleSaveCell() {
-    if (!editCell) return;
+  // `opts.advance` (Enter, not a click away): after Qty, open the next row's
+  // Rate — so Rate ⏎ Qty ⏎ walks down the bill (owner, 2026-11-12). A blur
+  // never advances, so clicking elsewhere can't start a chain of edits.
+  // One save at a time: the box is disabled while it saves, which blurs it and
+  // would otherwise start the same save again (without the Enter's advance)
+  // and close the next cell the first save just opened.
+  const savingCellRef = useRef(false);
+  async function handleSaveCell(opts) {
+    if (!editCell || savingCellRef.current) return;
+    savingCellRef.current = true;
+    try {
+      await saveCell(opts?.advance === true);
+    } finally {
+      savingCellRef.current = false;
+    }
+  }
+
+  async function saveCell(advance) {
     const updateItemFn = isOpd ? updatePanelOpdBillingItem : updatePanelBillingItem;
     if (editCell.field === 'remarks') {
       setSavingCell(true);
@@ -1013,11 +1020,12 @@ export default function PanelBilling() {
         rows: d.rows.map((r) => (r.id === updated.id ? { ...r, qty: updated.qty, rate: updated.rate, amount: updated.amount } : r)),
         billingAmount: d.rows.reduce((s, r) => s + Number((r.id === updated.id ? updated.amount : r.amount) || 0), 0),
       }));
-      // Rate ke baad seedha Qty edit mode mein chala jaye — Qty ke baad wapis
-      // Rate pe nahi (sirf ek direction, jaisa maanga gaya tha), warna infinite
-      // loop ka khatra hota.
+      // Rate → this row's Qty; Qty + Enter → the next row's Rate.
+      const nextRow = advance ? data.rows[data.rows.findIndex((r) => r.id === updated.id) + 1] : null;
       if (editedField === 'rate') {
         setEditCell({ itemId: updated.id, field: 'qty', value: String(updated.qty ?? 0) });
+      } else if (nextRow && !readOnly) {
+        setEditCell({ itemId: nextRow.id, field: 'rate', value: String(nextRow.rate ?? 0) });
       } else {
         setEditCell(null);
       }
@@ -1432,11 +1440,12 @@ export default function PanelBilling() {
                 {!data ? (
                   <tr><td colSpan={6} className="pnb-empty">{lookupMode === 'opd' ? 'Slip # lookup karo — Panel OPD visit ka data yahan aayega.' : 'Admission # lookup karo — Panel patient ka Provisional Bill data yahan aayega.'}</td></tr>
                 ) : data.rows.map((r) => {
+                  // Medicine / Lab / Radiology / Ultrasound line items show
+                  // only in the double-click detail popup, not under the row
+                  // (owner, 2026-11-12).
                   const clickable = r.kind === 'pharmacy' || r.kind === 'diagnostic';
-                  const subItems = clickable ? subItemsFor(r, data) : [];
                   return (
-                    <Fragment key={r.id}>
-                      <tr className={clickable ? 'pnb-clickable' : ''} onDoubleClick={() => rowDoubleClick(r)}>
+                      <tr key={r.id} className={clickable ? 'pnb-clickable' : ''} onDoubleClick={() => rowDoubleClick(r)}>
                         <td>{r.description}{clickable && <span className="pnb-hint"> (double-click for detail)</span>}</td>
                         <EditableCell row={r} field="rate" editCell={editCell} savingCell={savingCell}
                           onStart={startEdit} onChange={(v) => setEditCell((s) => ({ ...s, value: v }))}
@@ -1450,20 +1459,6 @@ export default function PanelBilling() {
                           onSave={handleSaveCell} onCancel={() => setEditCell(null)} display={r.remarks || <span className="pnb-hint">add remarks</span>} />
                         <td>{r.kind === 'custom' && !readOnly && <button className="pnb-del" onClick={() => handleDeleteCustom(r)} title="Delete">✕</button>}</td>
                       </tr>
-                      {/* Read-only breakdown — always visible now, no click
-                          needed; double-click the parent row above still
-                          opens the modal for actually editing this data. */}
-                      {subItems.map((si) => (
-                        <tr key={`sub-${r.id}-${si.id}`} className="pnb-subrow">
-                          <td className="pnb-subrow-desc">{si.label}</td>
-                          <td className="r">{fmt(si.rate)}</td>
-                          <td className="r">{si.qty || 0}</td>
-                          <td className="r">{fmt(si.amount)}</td>
-                          <td></td>
-                          <td></td>
-                        </tr>
-                      ))}
-                    </Fragment>
                   );
                 })}
               </tbody>
@@ -1942,7 +1937,7 @@ function EditableCell({ row, field, editCell, savingCell, onStart, onChange, onS
           onFocus={(e) => e.target.select()}
           onBlur={onSave}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') { e.preventDefault(); onSave(); }
+            if (e.key === 'Enter') { e.preventDefault(); onSave({ advance: true }); }
             if (e.key === 'Escape') onCancel();
           }}
         />
@@ -2111,8 +2106,10 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
   }
 
   return (
-    <div className="pnb-modal-overlay" onMouseDown={onClose}>
-      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()} onKeyDown={billingKeyNav}>
+    // Closes only from ✕ / Cancel — a click outside, copying text or a Copy /
+    // Move to Date never closes it (owner, 2026-11-12).
+    <div className="pnb-modal-overlay">
+      <div className="pnb-modal pnb-modal--detail" onKeyDown={billingKeyNav}>
         <div className="pnb-modal-head">
           <span>Pharmacy Bill</span>
           <button onClick={onClose}><X size={16} /></button>
@@ -2159,7 +2156,7 @@ function PharmacyDetailModal({ rows, onClose, onConfirmAdd, onSaveRow, onOverrid
                       onChange={(e) => updateField(r.key, 'qty', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">
-                    <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate}
+                    <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate} data-nav="rate"
                       onChange={(e) => updateField(r.key, 'rate', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly || r.locked} />
                   </td>
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>
@@ -2276,8 +2273,10 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
   }
 
   return (
-    <div className="pnb-modal-overlay" onMouseDown={onClose}>
-      <div className="pnb-modal pnb-modal--detail" onMouseDown={(e) => e.stopPropagation()} onKeyDown={billingKeyNav}>
+    // Closes only from ✕ / Cancel — a click outside, copying text or a Copy /
+    // Move to Date never closes it (owner, 2026-11-12).
+    <div className="pnb-modal-overlay">
+      <div className="pnb-modal pnb-modal--detail" onKeyDown={billingKeyNav}>
         <div className="pnb-modal-head">
           <span>{title}</span>
           <button onClick={onClose}><X size={16} /></button>
@@ -2320,7 +2319,7 @@ function DiagnosticDetailModal({ title, rows, onClose, onConfirmAdd, onSaveRow, 
                       onChange={(e) => updateField(r.key, 'qty', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly} />
                   </td>
                   <td className="r">
-                    <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate}
+                    <input type="number" min="0" step="0.01" className="pnb-mini-input pnb-mini-input--num" value={r.rate} data-nav="rate"
                       onChange={(e) => updateField(r.key, 'rate', e.target.value)} onBlur={() => autoSave(r)} disabled={readOnly} />
                   </td>
                   <td className="r">{fmt((Number(r.qty) || 0) * (Number(r.rate) || 0))}</td>

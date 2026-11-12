@@ -12,6 +12,7 @@ import usePagedList from '../../../hooks/usePagedList';
 import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './MedicineReport.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { buildStoreOptions } from './medicineStoreOptions';
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
   if (!d) return '—';
@@ -59,13 +60,7 @@ export default function MedicineReport() {
   // Only for the Medical Store label in the report header
   useEffect(() => { fetchPharmacyStores(); }, [fetchPharmacyStores]);
 
-  const storeOptions = [
-    { id: 'ALL', label: 'ALL' },
-    // Pharmacy Stores usually already has a "HOSPITAL STORE" — only add our
-    // own In-House option when it doesn't.
-    ...(pharmacyStores.some((s) => /hospital/i.test(s.name)) ? [] : [{ id: 'hospital', label: 'Hospital Store' }]),
-    ...pharmacyStores.map((s) => ({ id: String(s.id), label: s.status === 'inactive' ? `${s.name} (inactive)` : s.name })),
-  ];
+  const storeOptions = buildStoreOptions(pharmacyStores);
   const storeLabel = storeOptions.find((o) => o.id === storeFilter)?.label || 'ALL';
 
   // OPD rows are OPD Bills: Slip # for Admission #, bill start / close for the dates.

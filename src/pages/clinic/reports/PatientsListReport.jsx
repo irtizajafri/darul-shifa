@@ -8,13 +8,15 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import '../../../components/reports/ReportToolbar.scss'; // .rpt-arial9
 import { showSlipClashes } from './slipClashNotice';
+import { showImportedDepartments } from './departmentImportNotice';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import hospitalLogo from '../../../assets/download.png';
 import './PatientsListReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { resolveShiftName } from './reportDates';
+import API_BASE_URL from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // A slip's Administrative Expense (Doctor Parameter toggle+rate) is folded
 // into the visit total, so the backend sends it as `adminExpense` on that
@@ -370,6 +372,7 @@ export default function PatientsListReport() {
         { duration: 6000 },
       );
       showSlipClashes(d.serialClashes);
+      showImportedDepartments(d.importedDepartments);
       // Import ke turant baad refresh ka apna spinner chalta rahi bina
       // "Importing..." khatam hue — ab dono ek hi "busy" state se chalte
       // hain, isliye button states overlap nahi karte.

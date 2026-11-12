@@ -2,8 +2,9 @@ import toast from 'react-hot-toast';
 import { create } from 'zustand';
 import { useAuthStore } from './useAuthStore';
 import { getBackDate } from '../components/clinic/BackDateField';
+import API_BASE_URL from '../config';
 
-const API_URL = 'http://localhost:5001/api/clinic';
+const API_URL = `${API_BASE_URL}/api/clinic`;
 
 function getToken() {
   return useAuthStore.getState().token;
@@ -806,6 +807,10 @@ export const useClinicStore = create((set) => ({
   // ── Panels > Transaction > OPD Bill (Provisional Bill for panel OPD) ──
   searchPanelOpdBills: async (q) => request(`/panel-opd-bill/search?q=${encodeURIComponent(q || '')}`),
   openPanelOpdBill: async (serialNo, createdByName) => request('/panel-opd-bill/open', { method: 'POST', body: JSON.stringify({ serialNo, createdByName }) }),
+  // Patients List (Excel) slip — what converting it into a real panel OPD slip
+  // would do, then doing it. See convertPatientVisitToOpdBill.
+  previewPatientVisitAsOpdSlip: async (patientVisitId) => request(`/panel-opd-bill/from-patient-visit/${patientVisitId}`),
+  convertPatientVisitToOpdBill: async (patientVisitId, payload) => request(`/panel-opd-bill/from-patient-visit/${patientVisitId}`, { method: 'POST', body: JSON.stringify(payload) }),
   fetchPanelOpdBillDetail: async (billId) => request(`/panel-opd-bill/${billId}`),
   addPanelOpdBillItem: async (billId, payload) => request(`/panel-opd-bill/${billId}/items`, { method: 'POST', body: JSON.stringify(payload) }),
   addPanelOpdBillItemFromVisit: async (billId, opdVisitId, amount) => request(`/panel-opd-bill/${billId}/add-from-visit`, { method: 'POST', body: JSON.stringify({ opdVisitId, ...(amount != null ? { amount } : {}) }) }),

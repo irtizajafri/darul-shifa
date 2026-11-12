@@ -1917,6 +1917,8 @@ const opdBillHandler = (fn) => async (req, res, next) => {
 };
 const searchPanelOpdBills = opdBillHandler((req) => service.searchPanelOpdBills(req.query.q));
 const openPanelOpdBill = opdBillHandler((req) => service.openPanelOpdBill(req.body?.serialNo, { createdByName: req.body?.createdByName }));
+const previewPatientVisitAsOpdSlip = opdBillHandler((req) => service.previewPatientVisitAsOpdSlip(req.params.patientVisitId));
+const convertPatientVisitToOpdBill = opdBillHandler((req) => service.convertPatientVisitToOpdBill(req.params.patientVisitId, req.body || {}));
 const getPanelOpdBillDetail = opdBillHandler((req) => service.getPanelOpdBillDetail(req.params.billId));
 const addPanelOpdBillItem = opdBillHandler((req) => service.addPanelOpdBillItem(req.params.billId, req.body || {}));
 const addPanelOpdBillItemFromVisit = opdBillHandler((req) => service.addPanelOpdBillItemFromVisit(req.params.billId, req.body?.opdVisitId, req.body?.amount));
@@ -2216,6 +2218,36 @@ async function cancelOpdVisit(req, res, next) {
   }
 }
 
+// Antenatal registration slips cancel from the same screen (owner,
+// 2026-11-12), with the same zero-amount Pending Draft for Day Close.
+async function getAntenatalForCancel(req, res, next) {
+  try {
+    success(res, await service.getAntenatalForCancel(req.params.id));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
+async function cancelAntenatal(req, res, next) {
+  try {
+    const { reason, note, cancelledBy, voucherDate } = req.body;
+    const data = await service.cancelAntenatal(req.params.id, { reason, note, cancelledBy });
+    const entityType = refundVoucherSvc.entityTypeFromPaymentType(data.paymentType);
+    const result = await refundVoucherSvc.tryCreateRefundDraft({
+      entityType, kind: 'slip', ref: data.serialNo,
+      payeeName: data.patientName, amount: 0,
+      voucherDate, createdByName: cancelledBy, what: 'Slip cancel ho gayi',
+    });
+    if (result.drafted) data.voucherDrafted = true;
+    else if (result.warning) data.voucherWarning = result.warning;
+    success(res, data, 'Slip cancel ho gayi');
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function searchVisitsForRefund(req, res, next) {
   try { success(res, await service.searchVisitsForRefund(req.query.q)); } catch (err) { next(err); }
 }
@@ -2413,7 +2445,15 @@ async function bulkCreatePatientVisits(req, res, next) {
       return fail(res, 400, 'rows array required');
     const result = await service.bulkCreatePatientVisits(rows, replaceDates, mergeDates);
     const dedupNote = result.autoDeduped ? `, ${result.autoDeduped} duplicate(s) auto-removed` : '';
-    success(res, { inserted: result.count, deleted: result.deleted, autoDeduped: result.autoDeduped, serialClashes: result.serialClashes }, `${result.count} records imported${dedupNote}`);
+    success(res, {
+      inserted: result.count,
+      deleted: result.deleted,
+      autoDeduped: result.autoDeduped,
+      serialClashes: result.serialClashes,
+      // Which department spellings this file reused, and which names were new
+      // enough to be added to Parameters > Departments.
+      importedDepartments: result.importedDepartments,
+    }, `${result.count} records imported${dedupNote}`);
   } catch (err) { next(err); }
 }
 
@@ -2820,6 +2860,8 @@ module.exports = {
   searchOpdVisitsForCancel,
   getOpdVisitForCancel,
   cancelOpdVisit,
+  getAntenatalForCancel,
+  cancelAntenatal,
   searchVisitsForRefund,
   getVisitForRefund,
   refundVisit,
@@ -2870,6 +2912,8 @@ module.exports = {
   savePanelDummyDischargeCert,
   searchPanelOpdBills,
   openPanelOpdBill,
+  previewPatientVisitAsOpdSlip,
+  convertPatientVisitToOpdBill,
   getPanelOpdBillDetail,
   addPanelOpdBillItem,
   addPanelOpdBillItemFromVisit,

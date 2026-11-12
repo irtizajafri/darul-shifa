@@ -15,6 +15,7 @@ import './MedicineReport.scss';
 import './MedicineIssuanceTransaction.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import { buildStoreOptions } from './medicineStoreOptions';
 
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
@@ -84,13 +85,7 @@ export default function MedicineIssuanceTransaction() {
   // Only for the Medical Store label in the report header
   useEffect(() => { fetchPharmacyStores(); }, [fetchPharmacyStores]);
 
-  const storeOptions = [
-    { id: 'ALL', label: 'ALL' },
-    // Pharmacy Stores usually already has a "HOSPITAL STORE" — only add our
-    // own In-House option when it doesn't.
-    ...(pharmacyStores.some((s) => /hospital/i.test(s.name)) ? [] : [{ id: 'hospital', label: 'Hospital Store' }]),
-    ...pharmacyStores.map((s) => ({ id: String(s.id), label: s.status === 'inactive' ? `${s.name} (inactive)` : s.name })),
-  ];
+  const storeOptions = buildStoreOptions(pharmacyStores);
   const storeLabel = storeOptions.find((o) => o.id === storeFilter)?.label || 'ALL';
   const appliedFilters = { scopeMode, admissionNo, dateType, fromDate, toDate, storeLabel };
   const scopeText = scopeMode === 'admission'

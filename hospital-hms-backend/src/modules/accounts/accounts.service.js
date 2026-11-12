@@ -2448,6 +2448,7 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     underTreatmentId: antenatalDoctor?.id ?? -1,
     isPaid: false,
     paymentType: { not: 'panel' },
+    status: { not: 'cancelled' },
     amount: { gt: 0 },
     ...(draftRes.antenatalIds.length ? { id: { notIn: draftRes.antenatalIds } } : {}),
   };

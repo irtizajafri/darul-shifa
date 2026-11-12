@@ -113,12 +113,18 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions, category, o
               </thead>
               <tbody>
                 {rows.map(r => (opd ? (
-                  <tr key={r.id} onClick={() => onSelect(r)}>
+                  // A Patients List slip shares its id space with a real one,
+                  // so the source belongs in the key.
+                  <tr key={`${r.source || 'opd'}_${r.id}`} onClick={() => onSelect(r)}>
                     <td>{r.admissionNo}</td>
                     <td>{r.patientName}</td>
                     <td>{r.department}</td>
                     <td>{fmtDateTime(r.createdAt)}</td>
-                    <td>{{ active: 'Open', closed: 'Closed' }[r.status] || '—'}</td>
+                    <td>
+                      {r.source === 'pv'
+                        ? <span className="pb-src-badge" title="Yeh slip Patients List (Excel) se aayi hai — select karne par pehle asli slip banegi">Patients List</span>
+                        : ({ active: 'Open', closed: 'Closed' }[r.status] || '—')}
+                    </td>
                   </tr>
                 ) : (
                   <tr key={r.id} onClick={() => onSelect(r)}>
@@ -134,6 +140,144 @@ function AdmissionLookupModal({ onSelect, onClose, searchAdmissions, category, o
               </tbody>
             </table>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Patients List slip → asli panel OPD slip, phir uska OPD Bill ───────────
+// A panel OPD slip that came in through the Patients List Excel has no doctor
+// rows and no panel company, so it cannot carry a bill as it stands. Everything
+// the file does say is resolved and shown here; the panel company (and the
+// sub-department, where the file's spelling is unclear) is the user's call.
+function ConvertSlipModal({ row, preview, panelCompanies, onCancel, onConfirm }) {
+  const [companyId, setCompanyId] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
+  const [subDeptId, setSubDeptId] = useState(preview?.subDept?.proposed?.id ? String(preview.subDept.proposed.id) : '');
+  const [saving, setSaving] = useState(false);
+
+  const candidates = preview?.employeeCandidates || [];
+  // An employee stands for a company, so picking one fills both.
+  const employeesOfCompany = companyId ? candidates.filter((e) => String(e.companyId) === String(companyId)) : candidates;
+  const subDepts = preview?.subDept?.options || [];
+  const chosen = subDepts.find((s) => String(s.id) === String(subDeptId)) || null;
+
+  async function handleConfirm() {
+    setSaving(true);
+    try {
+      await onConfirm({
+        panelCompanyId: Number(companyId),
+        panelEmployeeId: employeeId ? Number(employeeId) : undefined,
+        subDeptId: Number(subDeptId),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="aa-overlay">
+      <div className="aa-modal pb-convert-modal">
+        <div className="aa-modal-hdr">
+          <span>Slip # {row.admissionNo} — asli slip banayein</span>
+          <button className="aa-modal-close" onClick={onCancel}><X size={14} /></button>
+        </div>
+        <div className="aa-modal-body">
+          {!preview ? (
+            <div className="aa-modal-loading">Loading…</div>
+          ) : !preview.canConvert ? (
+            <div className="pb-convert-blockers">
+              <p>Is slip ka OPD Bill nahi khul sakta:</p>
+              <ul>{preview.blockers.map((b, i) => <li key={i}>{b}</li>)}</ul>
+            </div>
+          ) : (
+            <>
+              <div className="pb-convert-note">
+                Yeh slip Patients List (Excel) se aayi hai. OPD Bill ke liye pehle isko asli panel
+                OPD slip banaya jayega — Patients List se yeh line hat kar naye system mein chali
+                jayegi. Patient ka count aur received (Rs. {Number(preview.received || 0).toFixed(2)})
+                waise hi rahenge; company ka waajib amount balance mein aayega.
+              </div>
+
+              <table className="pb-convert-tbl">
+                <tbody>
+                  <tr><th>Patient</th><td>{preview.patientName}</td></tr>
+                  <tr><th>Slip Date</th><td>{fmtDate(preview.visitDate)}{preview.visitTime ? ` ${preview.visitTime}` : ''}</td></tr>
+                  <tr>
+                    <th>Department</th>
+                    <td>{preview.department?.name}
+                      {preview.fileDepartment !== preview.department?.name && <span className="pb-convert-from"> (file mein: “{preview.fileDepartment}”)</span>}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th>Doctor</th>
+                    <td>{preview.doctor?.name}
+                      {preview.fileDoctor !== preview.doctor?.name && <span className="pb-convert-from"> (file mein: “{preview.fileDoctor}”)</span>}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="pb-convert-field">
+                <label>Sub Department</label>
+                <select value={subDeptId} onChange={(e) => setSubDeptId(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {subDepts.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}{s.rate ? ` — Rs. ${s.rate}` : ' — rate nahi'}</option>
+                  ))}
+                </select>
+                <span className="pb-convert-from">
+                  file mein: “{preview.fileSubDepartment || '—'}”
+                  {preview.subDept?.proposedBy === 'doctor-rate' && ' — doctor ke rate se chuna gaya'}
+                  {preview.subDept?.proposedBy === 'name' && ' — naam se mila'}
+                </span>
+              </div>
+
+              <div className="pb-convert-field">
+                <label>Panel Company</label>
+                <select value={companyId} onChange={(e) => { setCompanyId(e.target.value); setEmployeeId(''); }}>
+                  <option value="">— Select —</option>
+                  {panelCompanies.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}
+                </select>
+              </div>
+
+              <div className="pb-convert-field">
+                <label>Panel Employee</label>
+                <select value={employeeId} onChange={(e) => {
+                  setEmployeeId(e.target.value);
+                  const emp = candidates.find((x) => String(x.id) === e.target.value);
+                  if (emp?.companyId) setCompanyId(String(emp.companyId));
+                }}>
+                  <option value="">— Koi nahi (sirf company + patient name) —</option>
+                  {employeesOfCompany.map((e) => (
+                    <option key={e.id} value={e.id}>{e.empCode ? `${e.empCode} — ` : ''}{e.name}{e.company ? ` (${e.company.name})` : ''}</option>
+                  ))}
+                </select>
+                <span className="pb-convert-from">
+                  {candidates.length
+                    ? `patient ke naam se ${candidates.length} milte-julte employee — sahi wala chunein, warna company + naam se bill banega`
+                    : 'patient ke naam se koi employee nahi mila'}
+                </span>
+              </div>
+
+              {chosen && !chosen.rate && (
+                <div className="pb-convert-warn">
+                  {preview.doctor?.name} ka {chosen.name} ka rate set nahi hai — Consultant Rates mein daalna parega.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="pb-convert-actions">
+          <button className="cwf-btn" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button
+            className="cwf-btn cwf-btn--ok"
+            onClick={handleConfirm}
+            disabled={saving || !preview?.canConvert || !companyId || !subDeptId || !chosen?.rate}
+          >
+            {saving ? 'Ban rahi hai…' : 'Slip banayein aur OPD Bill kholein'}
+          </button>
         </div>
       </div>
     </div>
@@ -461,9 +605,10 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
     setPharmacyBillExcluded,
     setDiagnosticBillExcluded,
     searchPanelOpdBills, openPanelOpdBill, fetchPanelOpdBillDetail,
+    previewPatientVisitAsOpdSlip, convertPatientVisitToOpdBill, panelCompanies, fetchPanelCompanies,
     addPanelOpdBillItem, addPanelOpdBillItemFromVisit, updatePanelOpdBillItem, deletePanelOpdBillItem,
     addPanelOpdBillPharmacyItem, deletePanelOpdBillPharmacyItem, setPanelOpdBillExcluded, closePanelOpdBill,
-  } = useClinicStore(useShallow((s) => ({ searchPanelOpdBills: s.searchPanelOpdBills, openPanelOpdBill: s.openPanelOpdBill, fetchPanelOpdBillDetail: s.fetchPanelOpdBillDetail, addPanelOpdBillItem: s.addPanelOpdBillItem, addPanelOpdBillItemFromVisit: s.addPanelOpdBillItemFromVisit, updatePanelOpdBillItem: s.updatePanelOpdBillItem, deletePanelOpdBillItem: s.deletePanelOpdBillItem, addPanelOpdBillPharmacyItem: s.addPanelOpdBillPharmacyItem, deletePanelOpdBillPharmacyItem: s.deletePanelOpdBillPharmacyItem, setPanelOpdBillExcluded: s.setPanelOpdBillExcluded, closePanelOpdBill: s.closePanelOpdBill, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchAvailableBeds: s.fetchAvailableBeds, shiftAdmissionBed: s.shiftAdmissionBed, correctAdmissionWard: s.correctAdmissionWard, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, dischargeTypes: s.dischargeTypes, fetchDischargeTypes: s.fetchDischargeTypes, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, searchActiveAdmissionsForProvisionalBill: s.searchActiveAdmissionsForProvisionalBill, fetchProvisionalBillDetail: s.fetchProvisionalBillDetail, addProvisionalBillItem: s.addProvisionalBillItem, addProvisionalBillItemFromVisit: s.addProvisionalBillItemFromVisit, updateProvisionalBillItem: s.updateProvisionalBillItem, deleteProvisionalBillItem: s.deleteProvisionalBillItem, updateProvisionalBillHeader: s.updateProvisionalBillHeader, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, createPharmacyStore: s.createPharmacyStore, addProvisionalPharmacyItem: s.addProvisionalPharmacyItem, deleteProvisionalPharmacyItem: s.deleteProvisionalPharmacyItem, setPharmacyBillExcluded: s.setPharmacyBillExcluded, setDiagnosticBillExcluded: s.setDiagnosticBillExcluded })));
+  } = useClinicStore(useShallow((s) => ({ searchPanelOpdBills: s.searchPanelOpdBills, openPanelOpdBill: s.openPanelOpdBill, previewPatientVisitAsOpdSlip: s.previewPatientVisitAsOpdSlip, convertPatientVisitToOpdBill: s.convertPatientVisitToOpdBill, panelCompanies: s.panelCompanies, fetchPanelCompanies: s.fetchPanelCompanies, fetchPanelOpdBillDetail: s.fetchPanelOpdBillDetail, addPanelOpdBillItem: s.addPanelOpdBillItem, addPanelOpdBillItemFromVisit: s.addPanelOpdBillItemFromVisit, updatePanelOpdBillItem: s.updatePanelOpdBillItem, deletePanelOpdBillItem: s.deletePanelOpdBillItem, addPanelOpdBillPharmacyItem: s.addPanelOpdBillPharmacyItem, deletePanelOpdBillPharmacyItem: s.deletePanelOpdBillPharmacyItem, setPanelOpdBillExcluded: s.setPanelOpdBillExcluded, closePanelOpdBill: s.closePanelOpdBill, roomCategories: s.roomCategories, fetchRoomCategories: s.fetchRoomCategories, fetchAvailableBeds: s.fetchAvailableBeds, shiftAdmissionBed: s.shiftAdmissionBed, correctAdmissionWard: s.correctAdmissionWard, billHeads: s.billHeads, fetchBillHeads: s.fetchBillHeads, surgeryTypes: s.surgeryTypes, fetchSurgeryTypes: s.fetchSurgeryTypes, dischargeTypes: s.dischargeTypes, fetchDischargeTypes: s.fetchDischargeTypes, searchAdmissionsForProvisionalBill: s.searchAdmissionsForProvisionalBill, searchActiveAdmissionsForProvisionalBill: s.searchActiveAdmissionsForProvisionalBill, fetchProvisionalBillDetail: s.fetchProvisionalBillDetail, addProvisionalBillItem: s.addProvisionalBillItem, addProvisionalBillItemFromVisit: s.addProvisionalBillItemFromVisit, updateProvisionalBillItem: s.updateProvisionalBillItem, deleteProvisionalBillItem: s.deleteProvisionalBillItem, updateProvisionalBillHeader: s.updateProvisionalBillHeader, pharmacyStores: s.pharmacyStores, fetchPharmacyStores: s.fetchPharmacyStores, createPharmacyStore: s.createPharmacyStore, addProvisionalPharmacyItem: s.addProvisionalPharmacyItem, deleteProvisionalPharmacyItem: s.deleteProvisionalPharmacyItem, setPharmacyBillExcluded: s.setPharmacyBillExcluded, setDiagnosticBillExcluded: s.setDiagnosticBillExcluded })));
 
   // Same calls on an admission's Provisional Bill or an OPD Bill.
   const api = opd ? {
@@ -493,6 +638,9 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showLookup, setShowLookup] = useState(true);
+  // Patients List slip being converted, and what the server worked out about it.
+  const [convertRow, setConvertRow] = useState(null);
+  const [convertPreview, setConvertPreview] = useState(null);
   const [showPatientInfo, setShowPatientInfo] = useState(false);
   const [showBalanceInfo, setShowBalanceInfo] = useState(false);
   const [tab, setTab] = useState('Provisional Bill');
@@ -600,6 +748,22 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
     setEditingItemId(null);
     setPharmRow(emptyPharmRow);
     let id = rowSel.id;
+    if (opd && rowSel.source === 'pv') {
+      // Came in through the Patients List Excel: it has to become a real slip
+      // before it can carry a bill, and that needs the user's confirmation.
+      setConvertRow(rowSel);
+      setConvertPreview(null);
+      setShowLookup(false);
+      fetchPanelCompanies();
+      previewPatientVisitAsOpdSlip(rowSel.id)
+        .then(setConvertPreview)
+        .catch((e) => {
+          toast.error(e.message || 'Slip ki tafseel nahi mili');
+          setConvertRow(null);
+          setShowLookup(true);
+        });
+      return;
+    }
     if (opd) {
       // Slip → its OPD Bill (a General / Consultant slip opens a new one).
       try {
@@ -868,6 +1032,26 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
           searchAdmissions={opd ? searchPanelOpdBills : searchActiveAdmissionsForProvisionalBill}
           category={panel ? 'panel' : 'cash'}
           opd={opd}
+        />
+      )}
+      {convertRow && (
+        <ConvertSlipModal
+          row={convertRow}
+          preview={convertPreview}
+          panelCompanies={panelCompanies}
+          onCancel={() => { setConvertRow(null); setConvertPreview(null); setShowLookup(true); }}
+          onConfirm={async (payload) => {
+            try {
+              const res = await convertPatientVisitToOpdBill(convertRow.id, { ...payload, createdByName: printedBy });
+              setConvertRow(null);
+              setConvertPreview(null);
+              toast.success(`Slip # ${res.serialNo} ab asli panel OPD slip hai — OPD Bill khul gaya`);
+              const d = await loadDetail(res.id, true);
+              if (!d) setShowLookup(true);
+            } catch (e) {
+              toast.error(e.message || 'Slip nahi ban saki');
+            }
+          }}
         />
       )}
       {showPatientInfo && detail && <PatientInfoModal detail={detail} onClose={() => setShowPatientInfo(false)} />}

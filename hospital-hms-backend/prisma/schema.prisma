@@ -775,6 +775,24 @@ model ClinicDepartment {
 
   subDepartments ClinicSubDepartment[]
   billHeads      ClinicBillHead[]
+  aliases        ClinicDepartmentAlias[]
+}
+
+// Misspellings of a department that no rule can derive — "CONSULATNT OPD" for
+// "CONSULTANT OPD". The Patients List Excel import writes its department cell
+// as free text, so the same department arrives under many spellings; casing,
+// punctuation and spacing are handled by the normalised key in
+// resolveDepartmentName, and the leftover typos live here.
+model ClinicDepartmentAlias {
+  id           Int              @id @default(autoincrement())
+  alias        String
+  departmentId Int
+  department   ClinicDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  note         String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([departmentId])
 }
 
 model ClinicSubDepartment {
@@ -2246,6 +2264,12 @@ model ClinicAntenatal {
   panelEmployeeId  Int?
   panelDependentId Int?
   isPaid           Boolean   @default(false) // migration 057 — doctor paid via Voucher Expense
+  // migration 070 — cancelled from Clinic → Cancel Slip, like an OPD slip
+  status           String    @default("active")
+  cancelReason     String?
+  cancelNote       String?
+  cancelledAt      DateTime?
+  cancelledBy      String?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }

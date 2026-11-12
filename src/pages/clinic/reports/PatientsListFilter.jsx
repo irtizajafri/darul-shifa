@@ -5,10 +5,12 @@ import toast from 'react-hot-toast';
 import { Upload } from 'lucide-react';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { showSlipClashes } from './slipClashNotice';
+import { showImportedDepartments } from './departmentImportNotice';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import './PatientsListFilter.scss';
+import API_BASE_URL from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const todayStr    = () => new Date().toISOString().split('T')[0];
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate()+1); return d.toISOString().split('T')[0]; };
@@ -223,6 +225,7 @@ export default function PatientsListFilter() {
         { duration: 6000 },
       );
       showSlipClashes(d.serialClashes);
+      showImportedDepartments(d.importedDepartments);
     } catch (err) {
       toast.error(err.message || 'Upload failed');
     } finally {

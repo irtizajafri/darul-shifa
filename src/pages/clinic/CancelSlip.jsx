@@ -30,6 +30,10 @@ function fmtDateTime(d) {
 
 function fmt2(n) { return Number(n || 0).toFixed(2); }
 
+// Antenatal registrations come from their own table (row.source), with their
+// own cancel endpoint; every other row is an OPD slip.
+const cancelUrl = (row) => `${API}/opd/cancel/${row.source === 'antenatal' ? 'antenatal/' : ''}${row.id}`;
+
 export default function CancelSlip() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -89,7 +93,7 @@ export default function CancelSlip() {
   async function handleSelect(row) {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/opd/cancel/${row.id}`);
+      const res  = await fetch(cancelUrl(row));
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || 'Slip load nahi hui');
       setVisit(json.data);
@@ -123,7 +127,7 @@ export default function CancelSlip() {
 
     setSaving(true);
     try {
-      const res = await fetch(`${API}/opd/cancel/${visit.id}`, {
+      const res = await fetch(cancelUrl(visit), {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -197,7 +201,7 @@ export default function CancelSlip() {
                 </thead>
                 <tbody>
                   {results.map(s => (
-                    <tr key={s.id} onClick={() => handleSelect(s)} className={s.status === 'cancelled' ? 'cnsl-row-cancelled' : ''}>
+                    <tr key={`${s.source || 'opd'}-${s.id}`} onClick={() => handleSelect(s)} className={s.status === 'cancelled' ? 'cnsl-row-cancelled' : ''}>
                       <td>{s.serialNo}</td>
                       <td>{s.patientName}</td>
                       <td>{s.department}</td>

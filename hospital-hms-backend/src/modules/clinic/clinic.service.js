@@ -1,5 +1,59 @@
 const prisma = require('../../config/db');
 
+// ─── Department name resolution ───────────────────────────────────────────────
+// A department reaches us spelled many ways. The new system writes the value a
+// dropdown gave it, so ClinicOpdVisit holds 11 clean names; the Patients List
+// Excel import writes its department cell as free text, so PatientVisit holds
+// 207, among them "CONSULTANT OPD", "consultant opd", "CONSULATNT OPD" and
+// "CONSULTANT OPO" — one department, four spellings. Matching a department by
+// its raw name therefore misses rows, which is how 661 panel OPD slips stayed
+// invisible to the OPD Bill lookup (owner, 2026-11-12).
+//
+// Two layers make them agree: this key drops case, punctuation and spacing and
+// reads "and" as "&", which covers 44 of those spellings on its own, and
+// ClinicDepartmentAlias carries the real typos no rule can derive.
+
+function departmentKey(name) {
+  return String(name || '').toUpperCase().replace(/\bAND\b/g, '&').replace(/[^A-Z0-9&]+/g, '');
+}
+
+// Built once per process; every write below drops it.
+let departmentKeyMap = null;
+
+function clearDepartmentCache() {
+  departmentKeyMap = null;
+}
+
+async function departmentsByKey() {
+  if (departmentKeyMap) return departmentKeyMap;
+  const [depts, aliases] = await Promise.all([
+    // id order so that where two departments share a key — the import once
+    // added "ULTRA SOUND , ECHO AND COLOR DOPPLER" beside the original
+    // "Ultra Sound, Echo & Color Doppler" — the older row wins.
+    prisma.clinicDepartment.findMany({ select: { id: true, name: true }, orderBy: { id: 'asc' } }),
+    prisma.clinicDepartmentAlias.findMany({ select: { alias: true, departmentId: true } }),
+  ]);
+  const map = new Map();
+  depts.forEach((d) => { const k = departmentKey(d.name); if (!map.has(k)) map.set(k, d); });
+  // An alias never overrides a real department's own name.
+  const byId = new Map(depts.map((d) => [d.id, d]));
+  aliases.forEach((a) => {
+    const k = departmentKey(a.alias);
+    if (!map.has(k) && byId.has(a.departmentId)) map.set(k, byId.get(a.departmentId));
+  });
+  departmentKeyMap = map;
+  return map;
+}
+
+// Raw department text -> the ClinicDepartment it means ({ id, name }), or null
+// when it means nothing we know. The old system sometimes dropped a
+// sub-department or a test name into its department column ("Peads OPD",
+// "CHEST  X RAY"); those are not departments and resolve to null by design.
+async function resolveDepartment(name) {
+  if (!String(name || '').trim()) return null;
+  return (await departmentsByKey()).get(departmentKey(name)) || null;
+}
+
 // ─── Department ───────────────────────────────────────────────────────────────
 
 async function getAllDepartments() {
@@ -7,20 +61,33 @@ async function getAllDepartments() {
 }
 
 async function createDepartment({ name }) {
+  // Stop a second spelling of a department that already exists — the list
+  // carried "Ultra Sound, Echo & Color Doppler" twice for weeks that way, and
+  // every report that matched on the name then had to pick one.
+  const clash = await resolveDepartment(name);
+  if (clash) {
+    throw Object.assign(new Error(`Yeh department pehle se mojood hai: "${clash.name}"`), { status: 400 });
+  }
   const count = await prisma.clinicDepartment.count();
   const code = String(count + 1).padStart(2, '0');
-  return prisma.clinicDepartment.create({ data: { code, name: name.trim() } });
+  const dept = await prisma.clinicDepartment.create({ data: { code, name: name.trim() } });
+  clearDepartmentCache();
+  return dept;
 }
 
 async function updateDepartment(id, { name }) {
-  return prisma.clinicDepartment.update({
+  const dept = await prisma.clinicDepartment.update({
     where: { id: Number(id) },
     data: { name: name.trim() },
   });
+  clearDepartmentCache();
+  return dept;
 }
 
 async function deleteDepartment(id) {
-  return prisma.clinicDepartment.delete({ where: { id: Number(id) } });
+  const dept = await prisma.clinicDepartment.delete({ where: { id: Number(id) } });
+  clearDepartmentCache();
+  return dept;
 }
 
 // ─── Sub Department ───────────────────────────────────────────────────────────
@@ -391,8 +458,11 @@ async function getNextMrNo() {
 // and ClinicAdmission — both draw from the same running number so Admission and
 // OPD slips never collide, even though they live in separate tables.
 async function getNextSerialNo() {
-  const [lastOpd, lastAdm, admPayMax, lastPbi, lastAntenatal] = await Promise.all([
-    prisma.clinicOpdVisit.findFirst({ orderBy: { id: 'desc' }, select: { serialNo: true } }),
+  const [opdMax, lastAdm, admPayMax, lastPbi, lastAntenatal] = await Promise.all([
+    // Highest number, not the last row: a Patients List slip converted into an
+    // OPD slip (convertPatientVisitToOpdBill), a "LEGACY-…" diagnostic slip or a
+    // hand-typed Slip # can be the newest row with a lower number.
+    prisma.$queryRaw`SELECT MAX("serialNo"::bigint) AS n FROM "ClinicOpdVisit" WHERE "serialNo" ~ '^[0-9]{1,15}$'`,
     prisma.clinicAdmission.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
     // Highest number, not the last row: a payment linked from an Excel row
     // keeps its old Slip #, which would otherwise pull the sequence back.
@@ -401,7 +471,7 @@ async function getNextSerialNo() {
     prisma.clinicAntenatal.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
   ]);
   const BASE = 2826016;
-  const lastOpdNum    = lastOpd    ? parseInt(lastOpd.serialNo, 10)    || 0 : 0;
+  const lastOpdNum    = Number(opdMax[0]?.n) || 0;
   const lastAdmNum     = lastAdm    ? parseInt(lastAdm.serialNo, 10)    || 0 : 0;
   const lastAdmPayNum = Number(admPayMax[0]?.n) || 0;
   const lastPbiNum    = lastPbi    ? parseInt(lastPbi.serialNo, 10)    || 0 : 0;
@@ -1360,7 +1430,7 @@ async function getAntenatalList() {
 
 async function getAntenatalByNo(antenatalNo) {
   const antenatal = await prisma.clinicAntenatal.findFirst({
-    where: { antenatalNo: { equals: antenatalNo, mode: 'insensitive' } },
+    where: { antenatalNo: { equals: antenatalNo, mode: 'insensitive' }, status: { not: 'cancelled' } },
     orderBy: { id: 'desc' },
   });
   return attachPanelNames(antenatal);
@@ -1381,6 +1451,7 @@ async function getAntenatalReport({ fromDate, toDate, dateField, doctorId }) {
     };
   }
   if (doctorId) where.underTreatmentId = Number(doctorId);
+  where.status = { not: 'cancelled' };
 
   const rows = await prisma.clinicAntenatal.findMany({ where, orderBy: { id: 'asc' } });
 
@@ -1467,14 +1538,30 @@ async function getTodayOpdVisitsForCancel() {
 
   // Cancelled slips bhi list mein rehti hain (status ke saath dikhti hain) —
   // sirf revenue dashboard side amount exclude hota hai, list se nahi hatai jati.
-  return prisma.clinicOpdVisit.findMany({
-    where: { createdAt: { gte: start, lte: end } },
-    select: {
-      id: true, serialNo: true, patientName: true, department: true,
-      totalAmount: true, paymentType: true, createdAt: true, status: true,
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const [opd, antenatal] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({
+      where: { createdAt: { gte: start, lte: end } },
+      select: {
+        id: true, serialNo: true, patientName: true, department: true,
+        totalAmount: true, paymentType: true, createdAt: true, status: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.clinicAntenatal.findMany({ where: { createdAt: { gte: start, lte: end } }, orderBy: { createdAt: 'desc' } }),
+  ]);
+  return mergeCancelRows(opd, antenatal);
+}
+
+// Antenatal registrations are their own table but cancel from the same
+// screen (owner, 2026-11-12); each row says which table it's from.
+const antenatalCancelRow = (a) => ({
+  source: 'antenatal', id: a.id, serialNo: a.serialNo || a.antenatalNo, patientName: a.patientName, department: 'Antenatal',
+  totalAmount: Number(a.amount) || 0, paymentType: a.paymentType, createdAt: a.createdAt, status: a.status,
+});
+function mergeCancelRows(opd, antenatal, limit = null) {
+  const rows = [...opd.map((v) => ({ source: 'opd', ...v })), ...antenatal.map(antenatalCancelRow)]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return limit ? rows.slice(0, limit) : rows;
 }
 
 // Superadmin-only "All Slips" search — same idea as Slip Refund/Slip
@@ -1484,18 +1571,22 @@ async function getTodayOpdVisitsForCancel() {
 // through getTodayOpdVisitsForCancel above, which stays today-only.
 async function searchOpdVisitsForCancel(q) {
   const term = String(q || '').trim();
-  const where = term
-    ? { OR: [{ serialNo: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } }] }
-    : {};
-  return prisma.clinicOpdVisit.findMany({
-    where,
-    select: {
-      id: true, serialNo: true, patientName: true, department: true,
-      totalAmount: true, paymentType: true, createdAt: true, status: true,
-    },
-    orderBy: { createdAt: 'desc' },
-    take: 150,
-  });
+  const like = { contains: term, mode: 'insensitive' };
+  const where = term ? { OR: [{ serialNo: like }, { patientName: like }] } : {};
+  const antWhere = term ? { OR: [{ serialNo: like }, { antenatalNo: like }, { patientName: like }] } : {};
+  const [opd, antenatal] = await Promise.all([
+    prisma.clinicOpdVisit.findMany({
+      where,
+      select: {
+        id: true, serialNo: true, patientName: true, department: true,
+        totalAmount: true, paymentType: true, createdAt: true, status: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 150,
+    }),
+    prisma.clinicAntenatal.findMany({ where: antWhere, orderBy: { createdAt: 'desc' }, take: 150 }),
+  ]);
+  return mergeCancelRows(opd, antenatal, 150);
 }
 
 async function getOpdVisitForCancel(id) {
@@ -1530,6 +1621,41 @@ async function cancelOpdVisit(id, { reason, note, cancelledBy }) {
       cancelledBy: cancelledBy || null,
     },
   });
+}
+
+// An Antenatal registration in the Cancel Slip screen's shape: its one line
+// is the registration fee under the doctor it's registered with.
+async function getAntenatalForCancel(id) {
+  const a = await prisma.clinicAntenatal.findUnique({ where: { id: Number(id) } });
+  if (!a) throw Object.assign(new Error('Slip not found'), { status: 404 });
+  const doctor = a.underTreatmentId
+    ? await prisma.clinicDoctor.findUnique({ where: { id: a.underTreatmentId }, select: { code: true, name: true } })
+    : null;
+  return {
+    source: 'antenatal', id: a.id, serialNo: a.serialNo || a.antenatalNo, antenatalNo: a.antenatalNo,
+    patientType: '', patientName: a.patientName, age: a.age, gender: 'female', phoneNo: a.phoneNo,
+    referredBy: null, department: 'Antenatal', totalAmount: Number(a.amount) || 0, paymentType: a.paymentType,
+    createdAt: a.createdAt, status: a.status, cancelReason: a.cancelReason, cancelNote: a.cancelNote,
+    cancelledAt: a.cancelledAt, cancelledBy: a.cancelledBy,
+    doctors: [{
+      id: 0,
+      subDept: { code: a.antenatalNo || '', name: 'Antenatal Registration' },
+      amount: Number(a.amount) || 0,
+      doctor: { code: doctor?.code || '', name: doctor?.name || '' },
+    }],
+  };
+}
+
+async function cancelAntenatal(id, { reason, note, cancelledBy }) {
+  if (!reason) throw Object.assign(new Error('Cancel reason zaroori hai'), { status: 400 });
+  const a = await prisma.clinicAntenatal.findUnique({ where: { id: Number(id) } });
+  if (!a) throw Object.assign(new Error('Slip not found'), { status: 404 });
+  if (a.status === 'cancelled') throw Object.assign(new Error('Ye slip pehle se cancelled hai'), { status: 400 });
+  const updated = await prisma.clinicAntenatal.update({
+    where: { id: a.id },
+    data: { status: 'cancelled', cancelReason: reason, cancelNote: note || null, cancelledAt: new Date(), cancelledBy: cancelledBy || null },
+  });
+  return { ...updated, serialNo: updated.serialNo || updated.antenatalNo };
 }
 
 // Transactions > Slip Refund: full list (no date restriction, unlike Cancel Slip),
@@ -6136,6 +6262,14 @@ async function confirmPanelMedicineIssuanceTxnImportBatch(admissions, { companyN
 const HOSPITAL_STORE_LABEL = 'HOSPITAL STORE'; // same spelling as Pharmacy Stores + legacy uploads
 const MED_ISSUANCE_STATUS_LABEL = { active: 'ADMIT', discharge: 'DISCHARGE', closed: 'CLOSE', wipeout: 'WIPEOUT' };
 
+// Only the Pharmacy Stores entry actually called "HOSPITAL STORE" stands for
+// the In-House (Sales Invoice) medicine. Match the name exactly — a loose
+// /hospital/i test also caught "AL SHIFA HOSPITAL PHARMACY" and pulled the
+// In-House lines into that store's report (owner, 2026-11-12).
+function isHospitalStoreName(name) {
+  return String(name || '').trim().toUpperCase() === HOSPITAL_STORE_LABEL;
+}
+
 function medicineDateRange(fromDate, toDate) {
   return { gte: new Date(`${fromDate}T00:00:00`), lte: new Date(`${toDate}T23:59:59.999`) };
 }
@@ -6186,8 +6320,9 @@ async function loadLiveAdmissionMedicines({ category, scopeMode, admissionNo, da
   const ids = admissions.map((a) => a.id);
   const nos = admissions.map((a) => a.admissionNo);
   const medRange = byDate && dateType === 'medicine' ? range : undefined;
-  // A Pharmacy Stores entry named like "HOSPITAL STORE" also stands for the
-  // In-House (Sales Invoice) medicine, so picking it brings both.
+  // The Pharmacy Stores entry named "HOSPITAL STORE" also stands for the
+  // In-House (Sales Invoice) medicine, so picking it brings both. Any other
+  // store brings only its own lines, even when "hospital" appears in its name.
   let wantHospital = true;
   let wantOutside = true;
   let outsideStoreId = null;
@@ -6196,7 +6331,7 @@ async function loadLiveAdmissionMedicines({ category, scopeMode, admissionNo, da
   } else if (storeFilter && storeFilter !== 'ALL') {
     outsideStoreId = Number(storeFilter);
     const store = await prisma.clinicPharmacyStore.findUnique({ where: { id: outsideStoreId }, select: { name: true } });
-    wantHospital = /hospital/i.test(store?.name || '');
+    wantHospital = isHospitalStoreName(store?.name);
   }
 
   const [logs, pharmItems, salesItems] = await Promise.all([
@@ -6326,8 +6461,8 @@ async function loadOpdBillMedicines({ slipNo, fromDate, toDate, panelCompanyId }
 // chosen store filter?
 function uploadedStoreMatches(label, storeFilter, storeName) {
   if (!storeFilter || storeFilter === 'ALL') return true;
+  if (storeFilter === 'hospital') return isHospitalStoreName(label);
   const l = String(label || '').toLowerCase();
-  if (storeFilter === 'hospital') return l.includes('hospital');
   return !!storeName && l.includes(storeName.toLowerCase());
 }
 
@@ -6561,7 +6696,7 @@ async function getPanelOpdAdmitReport({ fromDate, toDate, panelCompanyId }) {
     status: 'active',
     createdAt: { gte: start, lt: end },
   };
-  const antWhere = { paymentType: { equals: 'panel', mode: 'insensitive' }, createdAt: { gte: start, lt: end } };
+  const antWhere = { paymentType: { equals: 'panel', mode: 'insensitive' }, status: { not: 'cancelled' }, createdAt: { gte: start, lt: end } };
   if (companyId) { visitWhere.panelCompanyId = companyId; antWhere.panelCompanyId = companyId; }
 
   const [visits, antenatals] = await Promise.all([
@@ -7998,7 +8133,9 @@ async function assertOpdBillOpen(billId) {
 }
 
 // Lookup: panel General / Consultant OPD slips, newest first, each with its
-// OPD Bill's state when it opened one.
+// OPD Bill's state when it opened one. Slips that came in through the Patients
+// List Excel are listed alongside (source 'pv'); picking one converts it into a
+// real slip first — see convertPatientVisitToOpdBill.
 async function searchPanelOpdBills(q) {
   const term = String(q || '').trim();
   const rows = await prisma.clinicOpdVisit.findMany({
@@ -8016,10 +8153,11 @@ async function searchPanelOpdBills(q) {
     ? await prisma.clinicPanelOpdBill.findMany({ where: { opdVisitId: { in: rows.map((v) => v.id) } }, select: { opdVisitId: true, closedAt: true } })
     : [];
   const billByVisit = new Map(bills.map((b) => [b.opdVisitId, b]));
-  return rows.map((v) => {
+  const live = rows.map((v) => {
     const b = billByVisit.get(v.id);
     return {
       id: v.id,
+      source: 'opd',
       admissionNo: v.serialNo, // same key as the admission lookups — the modal reuses its row shape
       patientName: v.patientName,
       department: v.department,
@@ -8027,6 +8165,44 @@ async function searchPanelOpdBills(q) {
       status: b ? (b.closedAt ? 'closed' : 'active') : null,
     };
   });
+
+  // PatientVisit's department is the Excel's free text, so the department can't
+  // be filtered in the query the way it is above — resolveDepartment decides
+  // per row instead, which is what lets "CONSULATNT OPD" through.
+  const pvRows = await prisma.patientVisit.findMany({
+    where: {
+      paymentType: { equals: 'panel', mode: 'insensitive' },
+      admitNo: null,
+      // serialNo is a 32-bit int: a longer number (a phone #) must not reach it.
+      ...(term ? { OR: [
+        ...(Number.isInteger(Number(term)) && Number(term) > 0 && Number(term) <= 2147483647 ? [{ serialNo: Number(term) }] : []),
+        { patientName: { contains: term, mode: 'insensitive' } },
+      ] } : {}),
+    },
+    orderBy: { id: 'desc' },
+    take: 300,
+  });
+  const primaryKeys = OPD_BILL_PRIMARY_DEPTS.map((d) => departmentKey(d));
+  const legacy = [];
+  for (const r of pvRows) {
+    const dept = await resolveDepartment(r.department);
+    if (!dept || !primaryKeys.includes(departmentKey(dept.name))) continue;
+    legacy.push({
+      id: r.id,
+      source: 'pv',
+      admissionNo: r.serialNo == null ? '' : String(r.serialNo),
+      patientName: r.patientName,
+      department: dept.name,
+      // The Excel's date + typed time (PKT); the date alone reads as 05:00 AM.
+      createdAt: /^\d{1,2}:\d{2}/.test(r.visitTime || '')
+        ? new Date(`${r.visitDate.toISOString().slice(0, 10)}T${r.visitTime.slice(0, 5).padStart(5, '0')}:00+05:00`)
+        : r.visitDate,
+      status: null,
+    });
+    if (legacy.length >= 100) break;
+  }
+
+  return [...live, ...legacy];
 }
 
 // Slip # → its OPD Bill, opening a new one from a General / Consultant slip.
@@ -8062,6 +8238,210 @@ async function openPanelOpdBill(serialNo, { createdByName } = {}) {
     },
   });
   return { id: bill.id };
+}
+
+// ── Patients List slip -> a real panel OPD slip, so it can carry an OPD Bill ──
+// A panel OPD slip that came in through the Patients List Excel sits in
+// PatientVisit: a flat row of text, no doctor/sub-department rows and no panel
+// company, while the whole OPD Bill is built on ClinicOpdVisit and its doctor
+// lines. Rather than teach every bill function a second row shape, the slip is
+// promoted into a real one first — the same move generateAdmissionsFromVisits
+// already makes for admissions, and for the same reason: the legacy row goes
+// away in the same transaction, because Patients List and the Revenue
+// Dashboard read both tables and would otherwise count the patient twice
+// (owner, 2026-11-12, for slips 2878401 / 2879573).
+//
+// Nothing here guesses. The preview below says what it could work out and what
+// it could not; the panel company / employee and, where the name is unclear,
+// the sub-department come back from the user's confirmation.
+
+// The Excel's sub-department, matched inside the resolved department. Its
+// spelling is as loose as the department's — "Peads OPD" for "PEDS OPD",
+// "Skin Treatment OPD" for "SKIN OPD" — so a doctor priced for exactly one
+// sub-department of that department is the stronger signal and wins.
+async function proposeOpdSubDept({ departmentId, subDepartmentText, doctorId }) {
+  const subDepts = await prisma.clinicSubDepartment.findMany({
+    where: { departmentId },
+    select: { id: true, code: true, name: true },
+    orderBy: { name: 'asc' },
+  });
+  const rates = doctorId
+    ? await prisma.clinicDoctorSubDept.findMany({
+        where: { doctorId, subDeptId: { in: subDepts.map((s) => s.id) } },
+        select: { subDeptId: true, normalCharges: true },
+      })
+    : [];
+  const rateBySubDept = new Map(rates.map((r) => [r.subDeptId, r.normalCharges]));
+
+  const wanted = departmentKey(subDepartmentText);
+  const byName = wanted ? subDepts.find((s) => departmentKey(s.name) === wanted) : null;
+  const priced = rates.length === 1 ? subDepts.find((s) => s.id === rates[0].subDeptId) : null;
+
+  const proposed = byName || priced || null;
+  return {
+    options: subDepts.map((s) => ({ ...s, rate: rateBySubDept.get(s.id) ?? null })),
+    proposed: proposed ? { ...proposed, rate: rateBySubDept.get(proposed.id) ?? null } : null,
+    // So the screen can say why, and the user can disagree.
+    proposedBy: byName ? 'name' : priced ? 'doctor-rate' : null,
+  };
+}
+
+// What converting this Patients List slip would do, decided but not done.
+async function previewPatientVisitAsOpdSlip(patientVisitId) {
+  const row = await prisma.patientVisit.findUnique({ where: { id: Number(patientVisitId) } });
+  if (!row) throw Object.assign(new Error('Patients List mein yeh slip nahi mili'), { status: 404 });
+
+  const blockers = [];
+  if (String(row.paymentType || '').toLowerCase() !== 'panel') blockers.push('Yeh slip panel ki nahi hai');
+  if (row.admitNo) blockers.push(`Yeh slip Admission # ${row.admitNo} se judi hai — Panel Provisional Bill se dekhein`);
+
+  const serial = row.serialNo == null ? '' : String(row.serialNo);
+  if (!serial) blockers.push('Is slip ka koi Slip # nahi');
+  const serialTaken = serial ? await prisma.clinicOpdVisit.findFirst({ where: { serialNo: serial }, select: { id: true } }) : null;
+  if (serialTaken) blockers.push(`Slip # ${serial} naye system mein pehle se mojood hai`);
+
+  const dept = await resolveDepartment(row.department);
+  if (!dept) blockers.push(`Department "${row.department || '—'}" departments ki list mein nahi hai`);
+  else if (!OPD_BILL_PRIMARY_DEPTS.some((d) => departmentKey(d) === departmentKey(dept.name))) {
+    blockers.push(`OPD Bill sirf ${OPD_BILL_PRIMARY_DEPTS.join(' / ')} ki slip se khulta hai — yeh ${dept.name} ki hai`);
+  }
+
+  // Doctor: exact name first, then the same fuzzy compare the admission
+  // promotion uses.
+  let doctor = row.doctor
+    ? await prisma.clinicDoctor.findFirst({ where: { name: { equals: String(row.doctor).trim(), mode: 'insensitive' } }, select: { id: true, name: true } })
+    : null;
+  if (!doctor && row.doctor) {
+    const all = await prisma.clinicDoctor.findMany({ select: { id: true, name: true } });
+    const target = normalizeForFuzzyMatch(row.doctor);
+    doctor = all.find((d) => normalizeForFuzzyMatch(d.name) === target) || null;
+  }
+  if (!doctor) blockers.push(`Doctor "${row.doctor || '—'}" doctors ki list mein nahi mila`);
+
+  const subDept = dept && doctor
+    ? await proposeOpdSubDept({ departmentId: dept.id, subDepartmentText: row.subDepartment, doctorId: doctor.id })
+    : { options: [], proposed: null, proposedBy: null };
+
+  // Panel company / employee — PatientVisit carries neither, only the word
+  // "Panel", so these are candidates for the user to choose from, never a pick.
+  const name = String(row.patientName || '').replace(/^(mr|mrs|ms|miss|master|baby|dr|b\/o)\.?\s+/i, '').trim();
+  const words = name.split(/\s+/).filter((w) => w.length > 2);
+  const employees = words.length
+    ? await prisma.clinicPanelEmployee.findMany({
+        where: { OR: words.map((w) => ({ name: { contains: w, mode: 'insensitive' } })) },
+        select: { id: true, name: true, empCode: true, companyId: true, status: true },
+        take: 25,
+      })
+    : [];
+  const companyIds = [...new Set(employees.map((e) => e.companyId).filter(Boolean))];
+  const companies = companyIds.length
+    ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true, code: true } })
+    : [];
+  const companyById = new Map(companies.map((c) => [c.id, c]));
+
+  return {
+    patientVisitId: row.id,
+    serialNo: serial,
+    patientName: row.patientName,
+    visitDate: row.visitDate,
+    visitTime: row.visitTime,
+    received: Number(row.received || 0),
+    fileDepartment: row.department,
+    fileSubDepartment: row.subDepartment,
+    fileDoctor: row.doctor,
+    department: dept,
+    doctor,
+    subDept,
+    employeeCandidates: employees.map((e) => ({ ...e, company: companyById.get(e.companyId) || null })),
+    blockers,
+    canConvert: blockers.length === 0,
+  };
+}
+
+// Do it: the legacy row becomes a real panel OPD slip and its OPD Bill opens.
+async function convertPatientVisitToOpdBill(patientVisitId, { panelCompanyId, panelEmployeeId, panelDependentId, subDeptId, createdByName } = {}) {
+  const preview = await previewPatientVisitAsOpdSlip(patientVisitId);
+  if (!preview.canConvert) {
+    throw Object.assign(new Error(preview.blockers.join('; ')), { status: 400 });
+  }
+  if (!panelCompanyId) {
+    throw Object.assign(new Error('Panel company select karein'), { status: 400 });
+  }
+
+  const chosenId = Number(subDeptId) || preview.subDept.proposed?.id;
+  if (!chosenId) {
+    throw Object.assign(new Error('Sub Department select karein'), { status: 400 });
+  }
+  const chosen = preview.subDept.options.find((s) => s.id === chosenId);
+  if (!chosen) {
+    throw Object.assign(new Error('Yeh Sub Department is department ka nahi hai'), { status: 400 });
+  }
+  // The slip's own "received" is 0 on a panel slip — the company settles later
+  // — so the real price comes from the doctor's rate, exactly as the admission
+  // promotion does. Without a rate there is nothing to bill.
+  const rate = Number(chosen.rate || 0);
+  if (!rate) {
+    throw Object.assign(new Error(`${preview.doctor.name} ka ${chosen.name} ka rate set nahi hai — Consultant Rates mein daalein`), { status: 400 });
+  }
+
+  const row = await prisma.patientVisit.findUnique({ where: { id: Number(patientVisitId) } });
+  const at = row.visitTime
+    ? new Date(`${row.visitDate.toISOString().slice(0, 10)}T${row.visitTime}:00`)
+    : row.visitDate;
+
+  // Store the department the way the new system spells it, not the way the
+  // departments list does ("Consultant OPD", not "CONSULTANT OPD"): the slip
+  // has to keep matching OPD_BILL_PRIMARY_DEPTS, which openPanelOpdBill and
+  // opdBillMemberWhere compare exactly.
+  const departmentName = OPD_BILL_PRIMARY_DEPTS.find((d) => departmentKey(d) === departmentKey(preview.department.name))
+    || preview.department.name;
+
+  // openPanelOpdBill refuses a slip that already has a later bill for the same
+  // patient. Ask now, with the panel identity the user just chose, so a refusal
+  // can't land after the slip has already been converted.
+  const identity = {
+    panelCompanyId: Number(panelCompanyId),
+    panelEmployeeId: panelEmployeeId ? Number(panelEmployeeId) : null,
+    panelDependentId: panelDependentId ? Number(panelDependentId) : null,
+    patientName: row.patientName,
+  };
+  const at0 = row.visitTime
+    ? new Date(`${row.visitDate.toISOString().slice(0, 10)}T${row.visitTime}:00`)
+    : row.visitDate;
+  const later = await prisma.clinicPanelOpdBill.findFirst({
+    where: { ...panelPatientWhere(identity), startAt: { gt: isNaN(at0?.getTime()) ? row.visitDate : at0 } },
+    select: { serialNo: true },
+  });
+  if (later) {
+    throw Object.assign(new Error(`Is patient ka is slip ke baad wala OPD Bill (Slip # ${later.serialNo}) pehle se bana hua hai`), { status: 400 });
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    const visit = await tx.clinicOpdVisit.create({
+      data: {
+        serialNo: preview.serialNo,
+        patientName: String(row.patientName || '').trim(),
+        paymentType: 'panel',
+        department: departmentName,
+        panelCompanyId: Number(panelCompanyId),
+        panelEmployeeId: panelEmployeeId ? Number(panelEmployeeId) : null,
+        panelDependentId: panelDependentId ? Number(panelDependentId) : null,
+        // Panel: nothing collected at the counter, the whole amount is the
+        // company's to settle — same as every slip the new system makes.
+        totalAmount: rate,
+        receive: 0,
+        discount: Number(row.discount) || 0,
+        adjustPayment: false,
+        createdAt: isNaN(at?.getTime()) ? row.visitDate : at,
+        doctors: { create: [{ doctorId: preview.doctor.id, subDeptId: chosen.id, amount: rate, quantity: 1 }] },
+      },
+    });
+    await tx.patientVisit.delete({ where: { id: row.id } });
+    return visit;
+  });
+
+  const bill = await openPanelOpdBill(preview.serialNo, { createdByName });
+  return { id: bill.id, opdVisitId: created.id, serialNo: preview.serialNo, amount: rate };
 }
 
 // Same response shape as getProvisionalBillDetail (the page renders both),
@@ -9468,10 +9848,13 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
 
   if (uniqueDoctorNames.length > 0) {
     const existing = await prisma.clinicDoctor.findMany({ select: { name: true } });
-    const existingNames = new Set(existing.map(d => d.name.toLowerCase()));
+    // Punctuation and spacing dropped, same idea as departmentKey — a lowercase
+    // compare alone let "DR, TAIMOOR" in beside "DR. TAIMOOR".
+    const doctorKey = (n) => String(n || '').toUpperCase().replace(/[^A-Z0-9]+/g, '');
+    const existingNames = new Set(existing.map(d => doctorKey(d.name)));
 
     for (const name of uniqueDoctorNames) {
-      if (existingNames.has(name.toLowerCase())) continue;
+      if (existingNames.has(doctorKey(name))) continue;
 
       const initials = name.split(/\s+/).filter(Boolean)
         .map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DR';
@@ -9482,33 +9865,43 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
       }
 
       await prisma.clinicDoctor.create({ data: { code, name, consultantDays: [] } });
-      existingNames.add(name.toLowerCase());
+      existingNames.add(doctorKey(name));
     }
   }
 
-  // Auto-create new departments in ClinicDepartment from imported department names
+  // Auto-create new departments in ClinicDepartment from imported department
+  // names. Matching through resolveDepartment, not on the raw name, so a file
+  // spelling a known department differently reuses it instead of adding a
+  // second row — a plain lowercase compare is what let "ULTRA SOUND , ECHO AND
+  // COLOR DOPPLER" land beside "Ultra Sound, Echo & Color Doppler". Names that
+  // resolve to nothing are still added, as before; a sub-department or test
+  // name in the department column therefore still arrives as a department, and
+  // only the owner can say which of those belong in the list.
   const uniqueDeptNames = [...new Set(
     data.map(r => r.department).filter(Boolean).map(n => n.trim())
   )];
+  const importedDepartments = { created: [], reused: [] };
 
-  if (uniqueDeptNames.length > 0) {
-    const existingDepts = await prisma.clinicDepartment.findMany({ select: { name: true } });
-    const existingDeptNames = new Set(existingDepts.map(d => d.name.toLowerCase()));
-
-    for (const name of uniqueDeptNames) {
-      if (existingDeptNames.has(name.toLowerCase())) continue;
-
-      const words = name.split(/\s+/).filter(Boolean);
-      const initials = words.map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DEPT';
-      let code = initials;
-      let i = 1;
-      while (await prisma.clinicDepartment.findFirst({ where: { code } })) {
-        code = `${initials}${i++}`;
+  for (const name of uniqueDeptNames) {
+    const known = await resolveDepartment(name);
+    if (known) {
+      if (departmentKey(known.name) !== departmentKey(name) || known.name !== name) {
+        importedDepartments.reused.push({ fileName: name, department: known.name });
       }
-
-      await prisma.clinicDepartment.create({ data: { code, name } });
-      existingDeptNames.add(name.toLowerCase());
+      continue;
     }
+
+    const words = name.split(/\s+/).filter(Boolean);
+    const initials = words.map(w => w[0].toUpperCase()).join('').substring(0, 6) || 'DEPT';
+    let code = initials;
+    let i = 1;
+    while (await prisma.clinicDepartment.findFirst({ where: { code } })) {
+      code = `${initials}${i++}`;
+    }
+
+    await prisma.clinicDepartment.create({ data: { code, name } });
+    clearDepartmentCache(); // so the next spelling in this same file resolves to it
+    importedDepartments.created.push(name);
   }
 
   // Cross-source duplicates (this same visit already exists as a new-system
@@ -9528,7 +9921,7 @@ async function bulkCreatePatientVisits(rows, replaceDates, mergeDates) {
 
   const serialClashes = await findUploadSerialClashes(data);
 
-  return { count: result.count, deleted: deletedCount, autoDeduped, serialClashes };
+  return { count: result.count, deleted: deletedCount, autoDeduped, serialClashes, importedDepartments };
 }
 
 // Patients List upload — Excel lines whose Slip # is already used in the new
@@ -10489,6 +10882,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
   });
   antenatalVisits = await narrowToPreciseWindow('ClinicAntenatal', 'createdAt', antenatalVisits, fromDate, toDate, fromT, toT);
   const mappedAnt = antenatalVisits.map((v) => ({
+    // A cancelled registration stays in the list at 0, like a cancelled OPD slip.
+    cancelled:     v.status === 'cancelled',
     id:            `ant_${v.id}`,
     serialNo:      v.serialNo,
     admitNo:       null,
@@ -10500,7 +10895,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     subDepartment: null,
     doctor:        null,
     paymentType:   v.paymentType,
-    received:      Number(v.amount) || 0,
+    received:      v.status === 'cancelled' ? 0 : (Number(v.amount) || 0),
     balance:       0,
     discount:      0,
     _source:       'antenatal',
@@ -11325,7 +11720,8 @@ async function getDailyDepartmentStatement(date) {
     prisma.$queryRawUnsafe(`
       SELECT
         COUNT(*)::int AS count,
-        COALESCE(SUM(amount),0) AS amount
+        COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 0 ELSE amount END),0) AS amount,
+        COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancel
       FROM "ClinicAntenatal"
       WHERE ${ANT_BIZ} = $1::date
     `, date),
@@ -11349,7 +11745,7 @@ async function getDailyDepartmentStatement(date) {
   const admPay = admPayRow[0];
   if (admPay && Number(admPay.amount) > 0) bump('Admission', 0, admPay.amount, 0, 0);
   const ant = antRow[0];
-  if (ant && Number(ant.count) > 0) bump('Antenatal', ant.count, ant.amount, 0, 0);
+  if (ant && Number(ant.count) > 0) bump('Antenatal', ant.count, ant.amount, 0, ant.cancel);
 
   const rows = [...map.values()].sort((a, b) => a.department.localeCompare(b.department));
   const total = rows.reduce((s, r) => ({
@@ -11390,12 +11786,18 @@ async function getDailyStatementFromPatientList(date, paymentType) {
 }
 
 async function getBalanceSlips() {
-  // Sirf admitted patients ki slips (jin par General OPD form mein "Admit Patient"
-  // checkbox tick tha) — walk-in OPD balance is feature ka scope nahi hai.
+  // Every slip with money still owed, admitted or walk-in, any department
+  // (owner, 2026-11-12). Left out: cancelled slips; panel slips (the company
+  // pays the balance, not the patient); Adjust Payment slips (their amount is
+  // charged in the admission's bill, so taking it here would charge twice).
+  // Status is saved as 'cancelled' — the old 'CANCELED' check never matched.
   const rows = await prisma.$queryRaw`
     SELECT id, "serialNo", "patientType", "patientName", "totalAmount", receive, "createdAt", department
     FROM "ClinicOpdVisit"
-    WHERE "totalAmount" > receive AND "totalAmount" > 0 AND status != 'CANCELED' AND "admitPatient" = true
+    WHERE "totalAmount" > receive AND "totalAmount" > 0
+      AND LOWER(COALESCE(status, '')) NOT IN ('canceled', 'cancelled')
+      AND LOWER(COALESCE("paymentType", '')) <> 'panel'
+      AND NOT ("admitPatient" AND "adjustPayment")
     ORDER BY "createdAt" DESC
   `;
   return rows.map(r => ({
@@ -12498,9 +12900,23 @@ async function getCancelRefundHistory({ type = 'all', dateFrom, dateTo, search }
   const rows = [];
 
   if (type === 'all' || type === 'cancelled') {
-    const cancelled = await prisma.clinicOpdVisit.findMany({
-      where: { status: 'cancelled' },
-      select: { id: true, serialNo: true, patientName: true, department: true, receive: true, cancelReason: true, cancelNote: true, cancelledAt: true, cancelledBy: true },
+    const [cancelled, cancelledAnt] = await Promise.all([
+      prisma.clinicOpdVisit.findMany({
+        where: { status: 'cancelled' },
+        select: { id: true, serialNo: true, patientName: true, department: true, receive: true, cancelReason: true, cancelNote: true, cancelledAt: true, cancelledBy: true },
+      }),
+      prisma.clinicAntenatal.findMany({ where: { status: 'cancelled' } }),
+    ]);
+    cancelledAnt.forEach((a) => {
+      const slip = a.serialNo || a.antenatalNo;
+      if (!inRange(a.cancelledAt)) return;
+      if (!matches(a.patientName, slip)) return;
+      rows.push({
+        source: 'antenatal', id: a.id, slipNo: slip, patientName: a.patientName, department: 'Antenatal',
+        type: 'Cancelled', amount: Number(a.amount) || 0,
+        reason: a.cancelReason || '', note: a.cancelNote || '',
+        doneBy: a.cancelledBy || '', doneAt: a.cancelledAt,
+      });
     });
     cancelled.forEach((v) => {
       if (!inRange(v.cancelledAt)) return;
@@ -13599,6 +14015,9 @@ module.exports = {
   getDailyStatementFromPatientList,
   getOpdVisitEditLogs,
   calcFeeSplit,
+  departmentKey,
+  resolveDepartment,
+  clearDepartmentCache,
   getAllDepartments,
   createDepartment,
   updateDepartment,
@@ -13681,6 +14100,8 @@ module.exports = {
   searchOpdVisitsForCancel,
   getOpdVisitForCancel,
   cancelOpdVisit,
+  getAntenatalForCancel,
+  cancelAntenatal,
   searchVisitsForRefund,
   getVisitForRefund,
   refundVisit,
@@ -13757,6 +14178,8 @@ module.exports = {
   getPanelOpdAdmitReport,
   searchPanelOpdBills,
   openPanelOpdBill,
+  previewPatientVisitAsOpdSlip,
+  convertPatientVisitToOpdBill,
   getPanelOpdBillDetail,
   getPanelAdmissionBillingForReport,
   getPanelDummyDischargeCert,
@@ -14331,7 +14754,7 @@ async function getBillComparisonLive({ mode, from, to, panelCompanyId, billed })
     bizEnd.setUTCDate(bizEnd.getUTCDate() + 1);
     const where = { paymentType: { equals: 'panel', mode: 'insensitive' }, status: 'active', createdAt: { gte: bizStart, lt: bizEnd } };
     if (companyId) where.panelCompanyId = companyId;
-    const antWhere = { paymentType: { equals: 'panel', mode: 'insensitive' }, createdAt: { gte: bizStart, lt: bizEnd } };
+    const antWhere = { paymentType: { equals: 'panel', mode: 'insensitive' }, status: { not: 'cancelled' }, createdAt: { gte: bizStart, lt: bizEnd } };
     if (companyId) antWhere.panelCompanyId = companyId;
     const [visits, antenatals] = await Promise.all([
       prisma.clinicOpdVisit.findMany({

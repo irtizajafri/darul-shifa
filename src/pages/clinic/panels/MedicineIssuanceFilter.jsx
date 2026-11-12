@@ -8,6 +8,7 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import MedicineIssuanceImportModal from './MedicineIssuanceImportModal';
 import '../reports/ConsultantWiseFilter.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { buildStoreOptions } from './medicineStoreOptions';
 
 // Radio + caption in the dark-red label column (wider than .cwf-lbl's 80px).
 const RADIO_LBL = { width: 120, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4, cursor: 'pointer' };
@@ -37,13 +38,7 @@ export default function MedicineIssuanceFilter() {
 
   useEffect(() => { fetchPharmacyStores(); }, [fetchPharmacyStores]);
 
-  const storeOptions = [
-    { id: 'ALL', label: 'ALL' },
-    // Pharmacy Stores usually already has a "HOSPITAL STORE" — only add our
-    // own In-House option when it doesn't.
-    ...(pharmacyStores.some((s) => /hospital/i.test(s.name)) ? [] : [{ id: 'hospital', label: 'Hospital Store' }]),
-    ...pharmacyStores.map((s) => ({ id: String(s.id), label: s.status === 'inactive' ? `${s.name} (inactive)` : s.name })),
-  ];
+  const storeOptions = buildStoreOptions(pharmacyStores);
 
   function handleView() {
     if (scopeMode === 'admission' && !admissionNo.trim()) {

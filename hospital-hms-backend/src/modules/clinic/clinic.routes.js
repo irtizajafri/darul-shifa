@@ -126,6 +126,8 @@ router.post('/opd/:id/print', controller.printOpdVisit);
 router.get('/opd/reprint/:serialNo', controller.reprintOpdVisitBySerial);
 router.get('/opd/cancel/today-list', controller.getTodayOpdVisitsForCancel);
 router.get('/opd/cancel/search', controller.searchOpdVisitsForCancel);
+router.get('/opd/cancel/antenatal/:id', controller.getAntenatalForCancel);
+router.post('/opd/cancel/antenatal/:id', controller.cancelAntenatal);
 router.get('/opd/cancel/:id', controller.getOpdVisitForCancel);
 router.post('/opd/cancel/:id', controller.cancelOpdVisit);
 router.get('/opd/refund/search', controller.searchVisitsForRefund);
@@ -270,6 +272,9 @@ router.get('/panel-admit-report/report', controller.getPanelAdmitReport);
 // Panels > Transaction > OPD Bill
 router.get('/panel-opd-bill/search', controller.searchPanelOpdBills);
 router.post('/panel-opd-bill/open', controller.openPanelOpdBill);
+// Patients List (Excel) slip -> a real panel OPD slip, then its bill.
+router.get('/panel-opd-bill/from-patient-visit/:patientVisitId', controller.previewPatientVisitAsOpdSlip);
+router.post('/panel-opd-bill/from-patient-visit/:patientVisitId', controller.convertPatientVisitToOpdBill);
 router.get('/panel-opd-bill/:billId', controller.getPanelOpdBillDetail);
 router.post('/panel-opd-bill/:billId/items', controller.addPanelOpdBillItem);
 router.post('/panel-opd-bill/:billId/add-from-visit', controller.addPanelOpdBillItemFromVisit);

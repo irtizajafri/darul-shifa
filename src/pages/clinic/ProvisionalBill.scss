@@ -779,3 +779,43 @@ $border: #bbb;
   font-weight: 500;
   white-space: normal;
 }
+
+// ── Patients List slip → real panel OPD slip (ConvertSlipModal) ──────────────
+.pb-src-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; background: #fef3c7; color: #92400e; font-size: 0.7rem; font-weight: 700; white-space: nowrap; }
+
+.pb-convert-modal {
+  width: 560px; max-width: 94vw;
+
+  .aa-modal-body { padding: 12px 14px; }
+}
+
+.pb-convert-note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 8px 10px; font-size: 0.78rem; line-height: 1.5; color: #78350f; margin-bottom: 10px; }
+
+.pb-convert-blockers {
+  font-size: 0.8rem; color: #991b1b;
+
+  ul { margin: 6px 0 0; padding-left: 18px; }
+  li { margin-bottom: 3px; }
+}
+
+.pb-convert-tbl {
+  width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 0.8rem;
+
+  th { text-align: right; width: 110px; padding: 3px 8px 3px 0; color: #475569; font-weight: 600; white-space: nowrap; vertical-align: top; }
+  td { padding: 3px 0; color: #0f172a; }
+}
+
+// What the Excel file actually said, where it differs from what we matched.
+.pb-convert-from { color: #64748b; font-size: 0.72rem; font-weight: 400; }
+
+.pb-convert-field {
+  display: grid; grid-template-columns: 110px 1fr; gap: 3px 8px; align-items: center; margin-bottom: 8px;
+
+  label { text-align: right; font-size: 0.8rem; font-weight: 600; color: #475569; }
+  select { height: 26px; border: 1px solid #cbd5e1; border-radius: 3px; padding: 0 5px; font-size: 0.8rem; background: #fff; }
+  .pb-convert-from { grid-column: 2; }
+}
+
+.pb-convert-warn { background: #fef2f2; border: 1px solid #fecaca; border-radius: 4px; padding: 7px 9px; font-size: 0.78rem; color: #991b1b; margin-top: 8px; }
+
+.pb-convert-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid #e2e8f0; }
