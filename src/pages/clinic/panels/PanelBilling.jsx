@@ -717,12 +717,16 @@ export default function PanelBilling() {
     }
   }
 
-  // Add from inside a head's detail popup (Admission) — same row the top bar
-  // used to create (folds into that head via mergeInto), then the popup is
-  // remounted on the reloaded data so the new line shows in its list.
+  // Add from inside a head's detail popup — same row the top bar used to
+  // create (folds into that head via mergeInto), then the popup is remounted
+  // on the reloaded data so the new line shows in its list. A Slip # bill adds
+  // to its own slip's items, like the top bar (2026-11-12: it used to call the
+  // Admission endpoint, which put the line on whichever admission had the
+  // slip's id).
   async function handleAddFromPopup(typeKey, { description, qty, rate, dosage, date }) {
     const mergeInto = CUSTOM_TYPES.find((t) => t.key === typeKey)?.mergeInto;
-    await addPanelBillingItem(data.admission.id, { description, qty, rate, mergeInto, dosage, date });
+    const addFn = isOpd ? addPanelOpdBillingItem : addPanelBillingItem;
+    await addFn(data.admission.id, { description, qty, rate, mergeInto, dosage, date });
     await reload();
     setPopupNonce((n) => n + 1);
     toast.success(`${description} add ho gaya`);

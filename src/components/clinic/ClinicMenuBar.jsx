@@ -76,6 +76,7 @@ const menuItems = [
           { label: 'Panel Employees', path: '/clinic/panels/employees', perm: { sub: 'panels', tab: 'employees' } },
           { label: 'Bill Head',       path: '/clinic/panels/bill-heads', perm: { sub: 'panels', tab: 'bill-heads' } },
           { label: 'Update Rates',    path: '/clinic/panels/update-rates', perm: { sub: 'panels', tab: 'update-rates' } },
+          { label: 'Lab Parameters',  path: '/clinic/panels/lab-parameters', perm: { sub: 'panels', tab: 'lab-parameters' } },
         ],
       },
       {
@@ -86,6 +87,7 @@ const menuItems = [
           { label: 'Distribution',     path: '/clinic/panels/distribution',     perm: { sub: 'panels', tab: 'distribution' } },
           { label: 'Distribution OPD', path: '/clinic/panels/distribution-opd', perm: { sub: 'panels', tab: 'distribution-opd' } },
           { label: 'Billing',          path: '/clinic/panels/billing',          perm: { sub: 'panels', tab: 'billing' } },
+          { label: 'Lab Billing',      path: '/clinic/panels/lab-billing',      perm: { sub: 'panels', tab: 'lab-billing' } },
         ],
       },
       {

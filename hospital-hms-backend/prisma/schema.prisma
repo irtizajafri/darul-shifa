@@ -3429,3 +3429,92 @@ model LabResultLog {
 
   @@index([resultId])
 }
+
+// ─── Lab Billing (Panels), migration 071 ────────────────────────────────────
+// Lab reports for panel patients, fully apart from the Laboratories module:
+// own test setup, own results. No relations to Clinic or Billing models (plain
+// ids), so nothing there changes.
+
+model PanelLabTest {
+  id         Int                 @id @default(autoincrement())
+  subDeptId  Int                 @unique // ClinicSubDepartment.id (LABORATORY), no FK
+  sampleType String?
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+  parameters PanelLabParameter[]
+}
+
+model PanelLabParameter {
+  id             Int                   @id @default(autoincrement())
+  testId         Int
+  test           PanelLabTest          @relation(fields: [testId], references: [id], onDelete: Cascade)
+  kind           String                @default("param") // param | heading | note
+  name           String
+  unit           String?
+  referenceRange String?
+  noteText       String?
+  resultType     String                @default("number") // number | text | select
+  options        String[]              @default([])
+  sortOrder      Int                   @default(0)
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  values         PanelLabResultValue[]
+
+  @@index([testId])
+}
+
+model PanelLabResult {
+  id              Int                   @id @default(autoincrement())
+  lineKey         String                @unique // adm-item:<id> | opd-item:<id> | slip-line:<visitDoctorId>
+  entryKey        String // adm-<admissionId>-<YYYYMMDD> | opd-<opdVisitId>-<YYYYMMDD> | slip-<visitId>
+  sourceType      String
+  sourceId        Int
+  visitId         Int?
+  subDeptId       Int?
+  testName        String
+  sampleDate      DateTime?
+  remarks         String?
+  status          String                @default("done")
+  enteredByUserId String?
+  enteredByName   String?
+  enteredAt       DateTime              @default(now())
+  updatedByName   String?
+  updatedAt       DateTime              @updatedAt
+  printCount      Int                   @default(0)
+  values          PanelLabResultValue[]
+  logs            PanelLabResultLog[]
+
+  @@index([entryKey])
+  @@index([visitId])
+}
+
+model PanelLabResultValue {
+  id             Int                @id @default(autoincrement())
+  resultId       Int
+  result         PanelLabResult     @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  parameterId    Int?
+  parameter      PanelLabParameter? @relation(fields: [parameterId], references: [id], onDelete: SetNull)
+  kind           String             @default("param")
+  parameterName  String
+  unit           String?
+  referenceRange String?
+  noteText       String?
+  value          String?
+  flag           String             @default("")
+  sortOrder      Int                @default(0)
+
+  @@index([resultId])
+}
+
+model PanelLabResultLog {
+  id            Int            @id @default(autoincrement())
+  resultId      Int
+  result        PanelLabResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  changedByName String?
+  changedAt     DateTime       @default(now())
+  before        Json?
+  after         Json?
+
+  @@index([resultId])
+}

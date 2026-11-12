@@ -77,6 +77,8 @@ import OpdAdmitReportFilter from '../pages/clinic/panels/OpdAdmitReportFilter';
 import DoctorWiseStatementFilter from '../pages/clinic/panels/DoctorWiseStatementFilter';
 import PanelBillingDetailReport from '../pages/clinic/panels/PanelBillingDetailReport';
 import PanelBilling from '../pages/clinic/panels/PanelBilling';
+import PanelLabBilling from '../pages/clinic/panels/lab-billing/PanelLabBilling';
+import PanelLabParameters from '../pages/clinic/panels/lab-billing/PanelLabParameters';
 import PanelChequeReceived from '../pages/clinic/panels/PanelChequeReceived';
 import PanelChequesReport from '../pages/clinic/panels/PanelChequesReport';
 import PanelChequePostingReport from '../pages/clinic/panels/PanelChequePostingReport';
@@ -376,6 +378,8 @@ export default function ProtectedRoutes() {
       <Route path="clinic/panels/distribution" element={<PermissionGuard module="clinic" subModule="panels" tab="distribution"><DischargeRefund panel /></PermissionGuard>} />
       <Route path="clinic/panels/provisional-bill"  element={<PermissionGuard module="clinic" subModule="panels" tab="provisional-bill"><ProvisionalBill panel /></PermissionGuard>} />
       <Route path="clinic/panels/billing"           element={<PermissionGuard module="clinic" subModule="panels" tab="billing"><PanelBilling /></PermissionGuard>} />
+      <Route path="clinic/panels/lab-billing"       element={<PermissionGuard module="clinic" subModule="panels" tab="lab-billing"><PanelLabBilling /></PermissionGuard>} />
+      <Route path="clinic/panels/lab-parameters"    element={<PermissionGuard module="clinic" subModule="panels" tab="lab-parameters"><PanelLabParameters /></PermissionGuard>} />
       <Route path="clinic/reports/medicine-issuance" element={<PermissionGuard module="clinic" subModule="reports" tab="medicine-issuance"><MedicineIssuanceFilter /></PermissionGuard>} />
       <Route path="clinic/reports/medicine-issuance/view"     element={<PermissionGuard module="clinic" subModule="reports"><MedicineIssuanceTransaction /></PermissionGuard>} />
       <Route path="clinic/panels/medicine-issuance-txn" element={<Navigate to="/clinic/reports/medicine-issuance" replace />} />

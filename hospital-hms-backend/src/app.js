@@ -18,6 +18,7 @@ const payslipSnapshotRoutes = require('./modules/payslip-snapshot/payslip-snapsh
 const fuelRoutes = require('./modules/fuel/fuel.routes');
 const utilitiesRoutes = require('./modules/utilities/utilities.routes');
 const labRoutes = require('./modules/laboratory/laboratory.routes');
+const panelLabRoutes = require('./modules/panel-lab/panel-lab.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -47,6 +48,7 @@ app.use('/api/payslip-snapshot', payslipSnapshotRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/utilities', utilitiesRoutes);
 app.use('/api/lab', labRoutes);
+app.use('/api/panel-lab', panelLabRoutes);
 
 app.use(errorHandler);
 

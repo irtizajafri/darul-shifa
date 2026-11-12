@@ -177,6 +177,8 @@ export const PERMISSIONS_MAP = {
           { key: 'distribution',     label: 'Distribution (Panel Discharge and Refund)' },
           { key: 'distribution-opd', label: 'Distribution OPD (OPD Bill Discharge and Refund)' },
           { key: 'billing',          label: 'Billing' },
+          { key: 'lab-billing',      label: 'Lab Billing' },
+          { key: 'lab-parameters',   label: 'Lab Parameters' },
           { key: 'cheque-received',  label: 'Panel Cheque Transaction' },
           { key: 'bill-comparison',  label: 'Bill Comparison Report' },
           { key: 'billing-detail',   label: 'Billing Detail Report' },
