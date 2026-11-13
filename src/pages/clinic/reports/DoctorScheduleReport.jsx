@@ -43,9 +43,16 @@ export default function DoctorScheduleReport() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); /* eslint-disable-next-line */ }, []);
+  // Reload when the filter changes, even if this page is already open.
+  const query = params.toString();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchData(); }, [query]);
 
-  const reportTitle = 'Doctor Schedule Report';
+  // A day picked in the filter shows only that day's column (owner,
+  // 2026-11-13): Monday's report lists Monday's doctors, not their other days.
+  const shownDays = DAYS.includes(day) ? [day] : DAYS;
+  const DAY_NAMES = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+  const reportTitle = DAYS.includes(day) ? `Doctor Schedule Report — ${DAY_NAMES[day]}` : 'Doctor Schedule Report';
 
   const handlePrint = () => {
     const win = openPrintWindow();
@@ -78,9 +85,9 @@ export default function DoctorScheduleReport() {
     const aoa = [[reportTitle], []];
     data.doctors.forEach((doc) => {
       aoa.push([`${doc.code} - ${doc.name}`, doc.speciality || '', doc.staffCategory || '']);
-      aoa.push(['Department', 'Sub-Department', ...DAYS, 'From', 'To', 'On Call']);
+      aoa.push(['Department', 'Sub-Department', ...shownDays, 'From', 'To', 'On Call']);
       doc.schedules.forEach((s) => {
-        aoa.push([s.department, s.subDept, ...DAYS.map(d => (s.days.includes(d) ? 'Y' : '')), s.fromTime || '', s.toTime || '', s.onCall ? 'Y' : '']);
+        aoa.push([s.department, s.subDept, ...shownDays.map(d => (s.days.includes(d) ? 'Y' : '')), s.fromTime || '', s.toTime || '', s.onCall ? 'Y' : '']);
       });
       aoa.push([]);
     });
@@ -117,7 +124,7 @@ export default function DoctorScheduleReport() {
                   <tr>
                     <th>Department</th>
                     <th>Sub-Department</th>
-                    {DAYS.map(d => <th key={d} className="day">{d}</th>)}
+                    {shownDays.map(d => <th key={d} className="day">{d}</th>)}
                     <th>Time</th>
                     <th>On Call</th>
                   </tr>
@@ -127,7 +134,7 @@ export default function DoctorScheduleReport() {
                     <tr key={i}>
                       <td>{s.department}</td>
                       <td>{s.subDept}</td>
-                      {DAYS.map(d => (
+                      {shownDays.map(d => (
                         <td key={d} className="day">{s.days.includes(d) ? <span className="dsr-tick">✓</span> : ''}</td>
                       ))}
                       <td>{s.fromTime || s.toTime ? `${fmtTime(s.fromTime)} – ${fmtTime(s.toTime)}` : ''}</td>

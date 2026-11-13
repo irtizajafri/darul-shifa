@@ -9,6 +9,7 @@ import { buildReceiptHtml } from './receiptUtils';
 import { buildThermalReceiptHtml } from './thermalReceiptUtils';
 import { buildCrfPrintDocument, buildEcgPrintDocument, buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
 import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidation';
+import { withSlipRate, repriceLine } from './slipCharges';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
@@ -443,7 +444,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     const item = miscModalItem;
     const rate = item.priceEditable ? Number(price) || 0 : (item.normalCharges || 0);
     const qty = item.quantityEditable ? Number(quantity) || 1 : 1;
-    setRightDoctors(prev => [...prev, { ...item, normalCharges: rate * qty, quantity: qty }]);
+    setRightDoctors(prev => [...prev, { ...item, normalCharges: rate * qty, quantity: qty, ...(item.priceEditable ? { typedPrice: rate } : {}) }]);
     setMiscModalItem(null);
   }
 
@@ -464,6 +465,8 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
   useEffect(() => {
     loadDoctors(form.onCall);
     setCheckedLeft([]);
+    // On Call slip → Odd Charges; lines already picked take the new rate too.
+    setRightDoctors(prev => prev.map(l => repriceLine(l, form.onCall)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.onCall]);
 
@@ -472,7 +475,7 @@ export default function GeneralOPD({ departmentName = 'General OPD', layout = 'd
     setLeftSearch('');
     try {
       const rows = await fetchAvailableDoctors({ day: todayDay(), time: currentTime(), onCall, departmentName });
-      setLeftDoctors(rows || []);
+      setLeftDoctors((rows || []).map(r => withSlipRate(r, onCall)));
     } catch { setLeftDoctors([]); }
     finally { setLoadingDoctors(false); }
   }

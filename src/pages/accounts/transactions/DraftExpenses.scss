@@ -346,3 +346,37 @@
 @media (max-width: 480px) {
   .drafts__summary { grid-template-columns: 1fr; }
 }
+
+// ── Pending Income Vouchers (PendingIncomeDrafts.jsx, 2026-11-13) ──────────────
+.drafts__income {
+  margin-bottom: 22px;
+  padding-bottom: 18px;
+  border-bottom: 2px dashed #e2e8f0;
+}
+.drafts__income-empty {
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.drafts__income-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #e2e8f0;
+}
+.drafts__income-spacer { flex: 1; }
+.drafts__input {
+  width: 100%;
+  min-width: 120px;
+  padding: 5px 8px;
+  font-size: 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  &:focus { outline: 2px solid #93c5fd; border-color: #3b82f6; }
+}
+.drafts__input--amt { text-align: right; max-width: 150px; margin-left: auto; display: block; }

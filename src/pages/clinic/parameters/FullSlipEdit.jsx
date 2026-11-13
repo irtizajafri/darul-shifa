@@ -13,6 +13,7 @@ import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import usePagedList from '../../../hooks/usePagedList';
 import OtherSlipEdit from './OtherSlipEdit';
 import { api, fmt, fmtDate, fmtDateTime } from './fullSlipEditUtils';
+import { slipRate } from '../slipCharges';
 import './FullSlipEdit.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 
@@ -152,7 +153,8 @@ export default function FullSlipEdit() {
       key: `n${Date.now()}`, id: null, doctorId: item.doctorId, subDeptId: item.subDeptId,
       doctorName: item.doctor?.name, subDeptName: item.subDept?.name,
       adminEnabled: item.doctor?.administrativeExpenseEnabled, adminRate: item.doctor?.administrativeExpenseRate,
-      amount: String(item.normalCharges ?? 0), quantity: 1, isPaid: false,
+      // An On Call slip's new line takes Odd Charges, like at slip creation.
+      amount: String(slipRate(item, original?.onCall)), quantity: 1, isPaid: false,
     }]);
     setAddPick('');
   }
@@ -419,7 +421,7 @@ export default function FullSlipEdit() {
                   value={addPick}
                   onChange={(v) => addRow(v)}
                   getKey={(c) => c.id}
-                  getLabel={(c) => `${c.subDept?.name || ''} — ${c.doctor?.name || ''} (${fmt(c.normalCharges)})`}
+                  getLabel={(c) => `${c.subDept?.name || ''} — ${c.doctor?.name || ''} (${fmt(slipRate(c, original?.onCall))})`}
                   placeholder={`${original.department} ka test / doctor add karein…`}
                   emptyText="Koi test nahi mila"
                 />

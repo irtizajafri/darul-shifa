@@ -12,11 +12,12 @@ function businessDayToClose() {
 async function runDayClose() {
   const date = businessDayToClose();
 
-  // ── Income: Auto-book clinic revenue ─────────────────────────────────────
+  // ── Income: clinic revenue → a PENDING voucher in Pending Drafts ──────────
+  // (owner, 2026-11-13: not posted here; checked/edited, then "Post Now")
   try {
     const voucher = await accountsSvc.generateAutoIncomeVoucherForDate(date, 'non-corporate');
     if (voucher) {
-      console.log(`✅ Day close: auto Income Voucher ${voucher.voucherNo} booked for ${date} (₹${voucher.totalAmount})`);
+      console.log(`✅ Day close: Income Voucher ${voucher.voucherNo} for ${date} (₹${voucher.totalAmount}) — ${voucher.status === 'pending' ? 'pending in Pending Drafts' : voucher.status}`);
     } else {
       console.log(`ℹ️  Day close [income]: nothing to book for ${date}`);
     }

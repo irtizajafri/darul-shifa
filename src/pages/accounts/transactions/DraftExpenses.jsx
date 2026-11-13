@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, Trash2, RefreshCw, Clock, FileText, Zap, ArrowRightLeft } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import PendingIncomeDrafts from './PendingIncomeDrafts';
 import './DraftExpenses.scss';
 
 const API = 'http://localhost:5001/api/accounts';
@@ -150,6 +151,9 @@ export default function DraftExpenses() {
         <ChevronRight size={13} className="drafts__bc-sep" />
         <span className="drafts__bc-active">Pending Drafts</span>
       </div>
+
+      {/* ── Pending Income Vouchers (Day Close; posted by hand) ── */}
+      <PendingIncomeDrafts entityType={entityType} />
 
       {/* ── Header ── */}
       <div className="drafts__header">

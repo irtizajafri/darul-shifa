@@ -98,6 +98,11 @@ router.get('/voucher-income', ctrl.getVoucherIncomes);
 router.post('/voucher-income', ctrl.createVoucherIncome);
 router.put('/voucher-income/:id', ctrl.updateVoucherIncome);
 
+// Pending Income Drafts (Day Close's voucher, posted by hand)
+router.get('/income-drafts', ctrl.getIncomeDrafts);
+router.put('/income-drafts/:id', ctrl.updateIncomeDraft);
+router.post('/income-drafts/:id/post', ctrl.postIncomeDraft);
+
 router.post('/payee-head-accounts', ctrl.addHeadAccount);
 router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccount);
 router.get('/expense-drafts', ctrl.getDraftExpenses);

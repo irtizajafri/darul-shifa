@@ -353,6 +353,8 @@ export default function ProtectedRoutes() {
       <Route path="clinic/parameters/symptoms" element={<PermissionGuard module="clinic" subModule="symptoms"><ClinicSymptomPage /></PermissionGuard>} />
       <Route path="clinic/parameters/diseases" element={<PermissionGuard module="clinic" subModule="diseases"><ClinicDiseasePage /></PermissionGuard>} />
       <Route path="clinic/parameters/room-category" element={<PermissionGuard module="clinic" subModule="room-category"><ClinicRoomCategoryPage /></PermissionGuard>} />
+      <Route path="clinic/inquiries/bed" element={<PermissionGuard module="clinic" subModule="bed"><ClinicBedPage /></PermissionGuard>} />
+      {/* Old address (Bed was under Parameters until 2026-11-13), kept for tabs already open. */}
       <Route path="clinic/parameters/bed" element={<PermissionGuard module="clinic" subModule="bed"><ClinicBedPage /></PermissionGuard>} />
       <Route path="clinic/parameters/bill-heads" element={<PermissionGuard module="clinic" subModule="bill-heads"><ClinicBillHeadListPage /></PermissionGuard>} />
       <Route path="clinic/parameters/death-certificate" element={<PermissionGuard module="clinic" subModule="death-certificate"><DeathCertificatePage /></PermissionGuard>} />

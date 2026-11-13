@@ -18,7 +18,6 @@ const menuItems = [
       { label: 'Staff Category',       path: '/clinic/parameters/staff-category',   perm: { sub: 'staff-category' } },
       { label: 'Doctors / Consultant', path: '/clinic/parameters/doctors',          perm: { sub: 'doctors' } },
       { label: 'Room Category',        path: '/clinic/parameters/room-category',    perm: { sub: 'room-category' } },
-      { label: 'Bed',                  path: '/clinic/parameters/bed',              perm: { sub: 'bed' } },
       { label: 'Bill Heads',           path: '/clinic/parameters/bill-heads',       perm: { sub: 'bill-heads' } },
       { label: 'Surgery Type',         path: '/clinic/parameters/surgery-types',    perm: { sub: 'surgery-types' } },
       { label: 'Symptoms',             path: '/clinic/parameters/symptoms',         perm: { sub: 'symptoms' } },
@@ -111,6 +110,8 @@ const menuItems = [
     items: [
       { label: 'Revenue Dashboard', path: '/clinic/inquiries/revenue-dashboard', perm: { sub: 'inquiries', tab: 'revenue-dashboard' } },
       { label: 'Patient Documents', path: '/clinic/inquiries/patient-documents', perm: { sub: 'inquiries', tab: 'patient-documents' } },
+      // Moved here from Parameters (owner, 2026-11-13); same page, same "Bed" permission.
+      { label: 'Bed',               path: '/clinic/inquiries/bed',               perm: { sub: 'bed' } },
     ],
   },
   {

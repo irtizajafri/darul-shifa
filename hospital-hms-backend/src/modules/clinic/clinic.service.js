@@ -13067,6 +13067,10 @@ async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromC
     return true;
   };
 
+  // A row with no days of its own uses the doctor's days, the same rule the
+  // slip screens use to list who is sitting today (getAvailableDoctors).
+  const daysOf = (sd, d) => (sd.consultantDays?.length ? sd.consultantDays : (d.consultantDays || []));
+
   const result = doctors
     .map((d) => {
       const schedules = d.subDepts
@@ -13074,11 +13078,11 @@ async function getDoctorScheduleReport({ doctorFromCode, doctorToCode, deptFromC
         // Day filter — only schedule rows that actually run on the selected
         // day; a doctor with no such row drops out entirely below (same
         // !schedules.length guard already used for the dept-range filter).
-        .filter((sd) => !day || (sd.consultantDays || []).includes(day))
+        .filter((sd) => !day || daysOf(sd, d).includes(day))
         .map((sd) => ({
           department: sd.subDept?.department?.name || 'Unspecified',
           subDept: sd.subDept?.name || 'Unspecified',
-          days: sd.consultantDays || [],
+          days: daysOf(sd, d),
           fromTime: sd.fromTime || null,
           toTime: sd.toTime || null,
           onCall: sd.onCall,
@@ -13551,7 +13555,7 @@ async function buildFullEditWarnings(visit) {
   const [dayRow] = await prisma.$queryRawUnsafe(
     `SELECT to_char(("createdAt" - INTERVAL '3 hours')::date, 'YYYY-MM-DD') AS biz,
             EXISTS (SELECT 1 FROM "AccVoucherIncome" vi
-                    WHERE vi.source = 'auto' AND vi."entityType" = 'non-corporate'
+                    WHERE vi.source = 'auto' AND vi."entityType" = 'non-corporate' AND vi.status = 'posted'
                       AND vi."voucherDate"::date = ("ClinicOpdVisit"."createdAt" - INTERVAL '3 hours')::date) AS closed,
             EXISTS (SELECT 1 FROM "ClinicHandover" h
                     WHERE h."fromUserId" = "ClinicOpdVisit"."createdByUserId"
@@ -13856,7 +13860,8 @@ async function buildOtherSlipWarnings(source, r) {
     ? patientListBusinessDay({ _source: 'old', visitDate: r.visitDate, visitTime: r.visitTime })
     : patientListBusinessDay({ visitDate: source === 'admission-payment' ? r.receivedAt : r.createdAt });
   const closed = await prisma.accVoucherIncome.findFirst({
-    where: { source: 'auto', entityType: 'non-corporate', voucherDate: { gte: new Date(`${biz}T00:00:00.000Z`), lte: new Date(`${biz}T23:59:59.999Z`) } },
+    // Closed = its Day Close income voucher is posted (a pending one can still be edited).
+    where: { source: 'auto', entityType: 'non-corporate', status: 'posted', voucherDate: { gte: new Date(`${biz}T00:00:00.000Z`), lte: new Date(`${biz}T23:59:59.999Z`) } },
     select: { id: true },
   });
   if (closed) warnings.push({ code: 'day-closed', message: `Is slip ka din (${biz}) Day Close ho chuka hai — us din ka auto income voucher purani amount par bana hai, woh khud nahi badlega.` });

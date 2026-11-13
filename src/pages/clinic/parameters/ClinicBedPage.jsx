@@ -151,7 +151,7 @@ export default function ClinicBedPage() {
         <PageHeader
           breadcrumbs={[
             { label: 'Clinic', link: '/clinic-module' },
-            { label: 'Parameters' },
+            { label: 'Inquiries' },
             { label: 'Bed' },
           ]}
           title="Bed Management"

@@ -2757,10 +2757,16 @@ model AccVoucherIncome {
   entityType  String
   totalAmount Decimal                 @db.Decimal(12, 2) @default(0)
   source      String                  @default("manual")
+  // 'pending' = Day Close's voucher waiting in Pending Drafts (editable, not
+  // counted anywhere); 'posted' = booked. Migration 073.
+  status       String                 @default("posted")
+  postedAt     DateTime?
+  postedByName String?
   createdAt   DateTime                @default(now())
   entries     AccVoucherIncomeEntry[]
 
   @@unique([voucherNo, entityType])
+  @@index([status])
 }
 
 model AccVoucherIncomeEntry {

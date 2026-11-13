@@ -19,7 +19,7 @@ const ITEMS = [
     key: 'expense-drafts',
     label: 'Pending Drafts',
     icon: FileText,
-    desc: 'View today\'s pending expense drafts — auto-post at 8:00 AM by Main GL',
+    desc: 'Day Close income voucher (check, edit, Post Now) and pending expense drafts (auto-post at 8:00 AM by Main GL)',
   },
   {
     key: 'cheque-printing',

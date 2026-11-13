@@ -2974,7 +2974,8 @@ async function getSupplierPaymentHistory({
 
 async function getVoucherIncomes(entityType) {
   return prisma.accVoucherIncome.findMany({
-    where: { entityType },
+    // A pending Day Close voucher lives in Pending Drafts until posted.
+    where: { entityType, status: 'posted' },
     include: { entries: true },
     orderBy: { createdAt: 'desc' },
   });
@@ -2988,6 +2989,9 @@ async function getVoucherIncomes(entityType) {
 async function updateVoucherIncome(id, { mode, bankId, voucherDate, entries }) {
   const existing = await prisma.accVoucherIncome.findUnique({ where: { id: Number(id) } });
   if (!existing) throw Object.assign(new Error('Voucher not found'), { status: 404 });
+  if (existing.status === 'pending') {
+    throw Object.assign(new Error('This voucher is still pending — edit and post it from Pending Drafts'), { status: 403 });
+  }
   if (existing.source === 'auto') {
     throw Object.assign(new Error('Auto-generated (Day Close) vouchers cannot be edited'), { status: 403 });
   }
@@ -3088,7 +3092,7 @@ async function getVouchersForReprint({ type, entityType, voucherFrom, voucherTo,
     }));
   }
 
-  return prisma.accVoucherIncome.findMany({ where, include: { entries: true }, orderBy: { voucherNo: 'desc' } });
+  return prisma.accVoucherIncome.findMany({ where: { ...where, status: 'posted' }, include: { entries: true }, orderBy: { voucherNo: 'desc' } });
 }
 
 async function getNextVoucherNo(type, entityType, voucherDate) {
@@ -3235,7 +3239,7 @@ async function getIncomeSummaryMatrix({ entityType, categoryFrom, categoryTo, da
     if (dateFrom) where.voucherDate.gte = new Date(dateFrom);
     if (dateTo) where.voucherDate.lte = new Date(dateTo + 'T23:59:59');
   }
-  const vouchers = await prisma.accVoucherIncome.findMany({ where, include: { entries: true } });
+  const vouchers = await prisma.accVoucherIncome.findMany({ where: { ...where, status: 'posted' }, include: { entries: true } });
 
   // Seed every calendar day in [dateFrom, dateTo] up front so days with zero
   // income still print a row (matches the legacy layout's blank/0.00 rows).
@@ -3584,7 +3588,9 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
 
   const [expenses, incomes] = await Promise.all([
     prisma.accVoucherExpense.findMany({ where, select: { voucherDate: true, totalAmount: true } }),
-    prisma.accVoucherIncome.findMany({ where, select: { voucherDate: true, totalAmount: true, source: true } }),
+    // Posted only: a pending Day Close voucher leaves its day open, so the
+    // live Clinic merge below still covers it.
+    prisma.accVoucherIncome.findMany({ where: { ...where, status: 'posted' }, select: { voucherDate: true, totalAmount: true, source: true } }),
   ]);
 
   // Dates that already have an auto day-close voucher — the real voucher above
@@ -3708,7 +3714,7 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
     lastYearWhere.voucherDate = { gte: lyFrom, lte: lyTo };
     const [lyExp, lyInc] = await Promise.all([
       prisma.accVoucherExpense.findMany({ where: lastYearWhere, select: { totalAmount: true } }),
-      prisma.accVoucherIncome.findMany({ where: lastYearWhere, select: { totalAmount: true } }),
+      prisma.accVoucherIncome.findMany({ where: { ...lastYearWhere, status: 'posted' }, select: { totalAmount: true } }),
     ]);
     lastYearAmount = [...lyExp, ...lyInc].reduce((s, v) => s + (Number(v.totalAmount) || 0), 0);
 
@@ -3750,7 +3756,7 @@ async function getAccountsInquiryDashboard({ entityType, period, year, month }) 
 // in the modal) — return null so it isn't shown/counted twice.
 async function getClinicRevenueForDate(date) {
   const autoVoucher = await prisma.accVoucherIncome.findFirst({
-    where: { entityType: 'non-corporate', source: 'auto', voucherDate: new Date(date) },
+    where: { entityType: 'non-corporate', source: 'auto', status: 'posted', voucherDate: new Date(date) },
     select: { id: true },
   });
   if (autoVoucher) return null;
@@ -3806,7 +3812,7 @@ async function getDailyIncomeExpenseDiff(date, entityType) {
   const where = { entityType, voucherDate: new Date(date) };
   const [expenses, incomes] = await Promise.all([
     prisma.accVoucherExpense.findMany({ where, select: { totalAmount: true } }),
-    prisma.accVoucherIncome.findMany({ where, select: { totalAmount: true, source: true } }),
+    prisma.accVoucherIncome.findMany({ where: { ...where, status: 'posted' }, select: { totalAmount: true, source: true } }),
   ]);
   const expenseAmount = expenses.reduce((s, v) => s + (Number(v.totalAmount) || 0), 0);
   let incomeAmount = incomes.reduce((s, v) => s + (Number(v.totalAmount) || 0), 0);
@@ -3842,6 +3848,69 @@ async function ensureClinicIncomeCategories(entityType, departmentNames) {
   return byName;
 }
 
+// ─── Pending Income Drafts (owner, 2026-11-13) ───────────────────────────────
+// Day Close's income voucher waits here: its lines can be changed, then it is
+// posted only by hand ("Post Now"). Until then it isn't counted anywhere.
+
+async function getPendingIncomeDrafts(entityType) {
+  return prisma.accVoucherIncome.findMany({
+    where: { entityType, status: 'pending' },
+    include: { entries: { orderBy: { id: 'asc' } } },
+    orderBy: [{ voucherDate: 'asc' }, { id: 'asc' }],
+  });
+}
+
+async function loadPendingIncome(id) {
+  const v = await prisma.accVoucherIncome.findUnique({ where: { id: Number(id) } });
+  if (!v) throw Object.assign(new Error('Voucher not found'), { status: 404 });
+  if (v.status !== 'pending') throw Object.assign(new Error('This voucher is already posted'), { status: 409 });
+  return v;
+}
+
+// Replaces the lines: [{ incomeCategoryId, amount, particulars }].
+async function updatePendingIncomeDraft(id, { entries } = {}) {
+  const v = await loadPendingIncome(id);
+  const list = (Array.isArray(entries) ? entries : []).map((e, i) => {
+    const amount = Number(e.amount);
+    if (!Number.isFinite(amount) || amount < 0) throw Object.assign(new Error(`Line ${i + 1}: enter a valid amount`), { status: 400 });
+    if (!e.incomeCategoryId) throw Object.assign(new Error(`Line ${i + 1}: select an income category`), { status: 400 });
+    return { incomeCategoryId: Number(e.incomeCategoryId), amount, particulars: String(e.particulars ?? '').trim() || null };
+  });
+  if (!list.length) throw Object.assign(new Error('At least one line is required'), { status: 400 });
+  const cats = await prisma.accIncomeCategory.findMany({
+    where: { id: { in: [...new Set(list.map((e) => e.incomeCategoryId))] }, entityType: v.entityType },
+    select: { id: true, name: true },
+  });
+  const nameById = new Map(cats.map((c) => [c.id, c.name]));
+  const missing = list.find((e) => !nameById.has(e.incomeCategoryId));
+  if (missing) throw Object.assign(new Error('Income category not found'), { status: 400 });
+  const totalAmount = list.reduce((s, e) => s + e.amount, 0);
+
+  await prisma.$transaction(async (tx) => {
+    // Still pending at save time (not posted from another PC meanwhile).
+    const r = await tx.accVoucherIncome.updateMany({ where: { id: v.id, status: 'pending' }, data: { totalAmount } });
+    if (!r.count) throw Object.assign(new Error('This voucher is already posted'), { status: 409 });
+    await tx.accVoucherIncomeEntry.deleteMany({ where: { voucherId: v.id } });
+    await tx.accVoucherIncomeEntry.createMany({
+      data: list.map((e) => ({
+        voucherId: v.id, incomeCategoryId: e.incomeCategoryId, incomeCategoryName: nameById.get(e.incomeCategoryId),
+        amount: e.amount, particulars: e.particulars,
+      })),
+    });
+  });
+  return prisma.accVoucherIncome.findUnique({ where: { id: v.id }, include: { entries: { orderBy: { id: 'asc' } } } });
+}
+
+async function postPendingIncomeDraft(id, { userName } = {}) {
+  const v = await loadPendingIncome(id);
+  const r = await prisma.accVoucherIncome.updateMany({
+    where: { id: v.id, status: 'pending' },
+    data: { status: 'posted', postedAt: new Date(), postedByName: String(userName || '').trim() || null },
+  });
+  if (!r.count) throw Object.assign(new Error('This voucher is already posted'), { status: 409 });
+  return prisma.accVoucherIncome.findUnique({ where: { id: v.id }, include: { entries: true } });
+}
+
 async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporate') {
   const existing = await prisma.accVoucherIncome.findFirst({
     where: { entityType, source: 'auto', voucherDate: new Date(date) },
@@ -3866,6 +3935,9 @@ async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporat
       entityType,
       totalAmount: amount,
       source: 'auto',
+      // Owner, 2026-11-13: Day Close no longer posts it — it waits in
+      // Pending Drafts to be checked/edited and posted with "Post Now".
+      status: 'pending',
       entries: {
         create: rows.map((r) => ({
           incomeCategoryId:   categories.get(r.department)?.id || null,
@@ -3911,6 +3983,7 @@ module.exports = {
   getPanelChequeRevenueForDate,
   getDailyIncomeExpenseDiff,
   generateAutoIncomeVoucherForDate,
+  getPendingIncomeDrafts, updatePendingIncomeDraft, postPendingIncomeDraft,
 };
 
 async function getVoucherSummary({ entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo }) {

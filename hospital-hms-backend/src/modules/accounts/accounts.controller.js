@@ -225,6 +225,17 @@ async function flashDraftsNow(req, res, next) {
   } catch (e) { next(e); }
 }
 
+// Pending Income Drafts — Day Close's income voucher, edited and posted by hand.
+async function getIncomeDrafts(req, res, next) { try { success(res, await svc.getPendingIncomeDrafts(et(req))); } catch (e) { next(e); } }
+async function updateIncomeDraft(req, res, next) {
+  try { success(res, await svc.updatePendingIncomeDraft(req.params.id, req.body || {}), 'Draft saved'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+async function postIncomeDraft(req, res, next) {
+  try { success(res, await svc.postPendingIncomeDraft(req.params.id, req.body || {}), 'Voucher posted'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+
 async function createVoucherIncome(req, res, next) { try { success(res, await svc.createVoucherIncome(req.body), 'Voucher saved'); } catch (e) { next(e); } }
 async function getVoucherIncomes(req, res, next) { try { success(res, await svc.getVoucherIncomes(et(req))); } catch (e) { next(e); } }
 async function updateVoucherIncome(req, res, next) {
@@ -356,6 +367,7 @@ module.exports = {
   getAllPayeeEntries, createVoucherExpense, appendVoucherExpenseEntry, removeVoucherExpenseEntry, getVoucherExpenses, listVoucherExpenseNumbers, updateVoucherExpense, deleteVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
+  getIncomeDrafts, updateIncomeDraft, postIncomeDraft,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, moveDraftExpense, flashDraftsNow,

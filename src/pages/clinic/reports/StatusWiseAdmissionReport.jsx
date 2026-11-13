@@ -65,6 +65,13 @@ export default function StatusWiseAdmissionReport() {
 
   const billAmountOf = (r) => (r.status === 'Active' ? r.provisionalBillAmount : (r.finalBillAmount || r.provisionalBillAmount));
 
+  // How many admission files the report holds — shown on the Grand Total line
+  // (owner, 2026-11-13).
+  const fileCount = !data ? 0 : groupMode === 'group'
+    ? (data.groups || []).reduce((s, g) => s + g.rows.length, 0)
+    : (data.rows || []).length;
+  const filesLabel = `${fileCount} File${fileCount === 1 ? '' : 's'}`;
+
   const handlePrint = () => {
     const win = openPrintWindow();
     const content = document.getElementById('swa-printable')?.innerHTML || '';
@@ -110,6 +117,12 @@ export default function StatusWiseAdmissionReport() {
       });
     } else {
       (data.rows || []).forEach((r) => aoa.push(rowToAoa(r)));
+    }
+    if (data.grandTotal) {
+      const t = data.grandTotal;
+      aoa.push(cashOnly
+        ? ['GRAND TOTAL', filesLabel, '', '', '', t.advance, t.provisionalBillAmount, t.finalBillAmount, t.discount]
+        : ['GRAND TOTAL', filesLabel, '', '', '', t.advance, t.provisionalBillAmount + t.finalBillAmount, t.discount]);
     }
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
@@ -212,7 +225,7 @@ export default function StatusWiseAdmissionReport() {
               {data.grandTotal && (
                 <tfoot>
                   <tr className="swa-grand-row">
-                    <td colSpan={5}>GRAND TOTAL</td>
+                    <td colSpan={5}>GRAND TOTAL ({filesLabel})</td>
                     <td className="td-num">{fmt2(data.grandTotal.advance)}</td>
                     {cashOnly ? (
                       <>
