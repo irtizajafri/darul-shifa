@@ -75,7 +75,7 @@ function billLine(i) {
 
 export function DischargeBillPrintTemplate({ detail, isDuplicate }) {
   if (!detail) return null;
-  const { admission, roomCategory, bed, billItems, paymentHistory, amountReceived, billAmount, discountAmount, otherIncomeAmount, balance, refund, dischargeDate, billLog = {} } = detail;
+  const { admission, roomCategory, bed, billItems, paymentHistory, amountReceived, billAmount, discountAmount, otherIncomeAmount, cashPendingAmount = 0, balance, refund, dischargeDate, billLog = {} } = detail;
   const rel = relationParts(admission);
   const total = Math.round(Number(billAmount) || 0);
   const net = Math.max(0, total - Math.round(Number(discountAmount) || 0));
@@ -83,6 +83,7 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate }) {
     discountAmount > 0 && ['Discount', -discountAmount],
     discountAmount > 0 && ['Net Amount', net],
     otherIncomeAmount > 0 && ['Goes to Other Income', -otherIncomeAmount],
+    cashPendingAmount > 0 && ['Cash Pending (to be received)', -cashPendingAmount],
     refund > 0 && ['Refund', refund],
     balance > 0 && ['Balance', balance],
   ].filter(Boolean);

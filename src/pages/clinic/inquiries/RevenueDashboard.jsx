@@ -182,13 +182,22 @@ export default function RevenueDashboard() {
         // CC its spellings…) — the same filter the day popup and the
         // Department wise Patients report use, so all three agree.
         const params = new URLSearchParams({ fromDate, toDate, fromTime: '08:00:00', toTime: '07:59:59' });
-        if (payType !== 'ALL') params.set('paymentTypes', payType);
+        // Panel: amount = Received + Bal. (the company pays the balance);
+        // Discount: every row with a discount, amount = Dis. — the same rule
+        // as the server's revenueRowRule (owner, 2026-11-17).
+        const isDiscount = payType === 'Discount';
+        const isPanel = payType === 'Panel';
+        if (payType !== 'ALL' && !isDiscount) params.set('paymentTypes', payType);
+        const amountOf = (r) => (isDiscount ? Number(r.discount || 0)
+          : isPanel ? Number(r.received || 0) + Number(r.balance || 0)
+          : Number(r.received || 0));
 
         const res  = await fetch(`${API}/patient-visits?${params}`);
         const json = await res.json();
         const rows = Array.isArray(json.data) ? json.data : [];
 
         const filtered = rows.filter(r => {
+          if (isDiscount && !(Number(r.discount || 0) > 0)) return false;
           if (dept !== 'ALL' && !(r.department || '').toLowerCase().includes(dept.toLowerCase())) return false;
           if (subDept !== 'ALL' && !(r.subDepartment || '').toLowerCase().includes(subDept.toLowerCase())) return false;
           if (consultant !== 'ALL' && !(r.doctor || '').toLowerCase().includes(consultant.toLowerCase())) return false;
@@ -223,7 +232,7 @@ export default function RevenueDashboard() {
           const day = bizDay(r);
           if (!dayMap[day]) dayMap[day] = { date: day, slips: 0, totalAmount:0, cashSlips: 0, cashAmount:0, panelSlips: 0, panelAmount:0, ccSlips: 0, ccAmount:0 };
           const d   = dayMap[day];
-          const amt = Number(r.received || 0);
+          const amt = amountOf(r);
           const pt  = (r.paymentType || '').toLowerCase();
           // + its Administrative Expense line, same as Patients List's count
           const n   = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
@@ -242,7 +251,7 @@ export default function RevenueDashboard() {
         }));
 
         const totalPatients = filtered.reduce((n, r) => n + 1 + (Number(r.adminExpense) > 0 ? 1 : 0), 0);
-        const totalAmount   = filtered.reduce((s, r) => s + Number(r.received || 0), 0);
+        const totalAmount   = filtered.reduce((s, r) => s + amountOf(r), 0);
         const daysWithData  = data.filter(d => d.totalAmount > 0).length;
         const dailyAvg      = daysWithData > 0 ? totalAmount / daysWithData : 0;
         const now2          = new Date();

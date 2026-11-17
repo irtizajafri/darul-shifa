@@ -103,6 +103,23 @@ export const PERMISSIONS_MAP = {
       },
     ],
   },
+  // 7th module (owner, 2026-11-17): GD / GIN like Inventory's, separate from it.
+  pharmacy: {
+    label: 'Al Shifa Hospital Pharmacy',
+    dashboardRoute: '/pharmacy-module',
+    subModules: [
+      { key: 'gd',      label: 'Goods Demand (GD)' },
+      { key: 'gin',     label: 'Goods Issuance (GIN)' },
+      {
+        key: 'reports',
+        label: 'Pharmacy Reports',
+        tabs: [
+          { key: 'gd-report',  label: 'GD Report' },
+          { key: 'gin-report', label: 'GIN Report' },
+        ],
+      },
+    ],
+  },
   lab: {
     label: 'Laboratories',
     dashboardRoute: '/lab-module',
@@ -134,6 +151,10 @@ export const PERMISSIONS_MAP = {
           { key: 'slip-transfer',               label: 'Slip Transfer' },
           { key: 'receiving-against-admission', label: 'Receiving against Admission' },
           { key: 'discount-refund-admission',   label: 'Discount & Refund Against Admission' },
+          { key: 'cash-pending',                label: 'Cash Pending Transaction' },
+          { key: 'credit-pending',              label: 'Credit Pending Transaction' },
+          // Authority, not a screen: may tick "Goes to Cash Pending" on Discharge and Refund.
+          { key: 'discharge-cash-pending',      label: 'Allow "Goes to Cash Pending" (Discharge and Refund)' },
           { key: 'appointment',                 label: 'Appointment' },
           { key: 'ot-register',                 label: 'OT Register' },
           { key: 'birth-certificate',           label: 'Birth Certificate' },
@@ -199,6 +220,7 @@ export const PERMISSIONS_MAP = {
         tabs: [
           { key: 'revenue-dashboard', label: 'Revenue Dashboard' },
           { key: 'patient-documents', label: 'Patient Documents' },
+          { key: 'patient-search',    label: 'Patient Search' },
         ],
       },
 

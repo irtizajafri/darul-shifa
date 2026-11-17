@@ -1,0 +1,105 @@
+// Presented / Unpresented Cheques — on top of DraftExpenses.scss (.drafts__*).
+
+.cheques {
+  .nowrap { white-space: nowrap; }
+  .muted { color: #64748b; }
+
+  &__toolbar {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  &__find {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #475569;
+  }
+  &__find-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    color: #94a3b8;
+    input { border: 0; outline: 0; padding: 7px 0; font-size: 0.85rem; width: 160px; color: #0f172a; background: transparent; }
+    &:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
+  }
+  &__show {
+    display: inline-flex;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    overflow: hidden;
+    button {
+      padding: 7px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #fff;
+      color: #475569;
+      border: 0;
+      border-right: 1px solid #e2e8f0;
+      cursor: pointer;
+      &:last-child { border-right: 0; }
+      &.is-on { background: #1e3a8a; color: #fff; }
+      &:focus-visible { outline: 2px solid #3b82f6; outline-offset: -2px; }
+    }
+  }
+  &__count { margin-left: auto; font-size: 0.8rem; color: #64748b; }
+
+  // Unpresented rows by cheque date; presented rows plain.
+  &__table {
+    td input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; }
+    td input[type="checkbox"]:disabled { cursor: not-allowed; }
+    tr.is-current td { color: #b91c1c; }
+    tr.is-last td { color: #1d4ed8; }
+    tr.is-older td { color: #7e22ce; }
+    tr.is-presented td { color: #0f172a; }
+  }
+  &__bank {
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #166534;
+    background: #dcfce7;
+    border-radius: 999px;
+  }
+
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.82rem;
+  }
+  &__legend { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+  &__key {
+    font-weight: 700;
+    &.is-current { color: #b91c1c; }
+    &.is-last { color: #1d4ed8; }
+    &.is-older { color: #7e22ce; }
+  }
+  &__total b { color: #1e3a8a; font-variant-numeric: tabular-nums; }
+
+  &__dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    p { margin: 0; font-size: 0.85rem; color: #334155; }
+    label { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; color: #7f1d1d; }
+    input[type="date"] { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.85rem; }
+  }
+  &__dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+}

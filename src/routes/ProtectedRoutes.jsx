@@ -6,6 +6,10 @@ import EmployeeModuleDashboard from '../pages/dashboard/EmployeeModuleDashboard'
 import InventoryModuleDashboard from '../pages/dashboard/InventoryModuleDashboard';
 import ClinicModuleDashboard from '../pages/dashboard/ClinicModuleDashboard';
 import LabModuleDashboard from '../pages/dashboard/LabModuleDashboard';
+import PharmacyModuleDashboard from '../pages/dashboard/PharmacyModuleDashboard';
+import PharmacyGD from '../pages/pharmacy/PharmacyGD';
+import PharmacyGIN from '../pages/pharmacy/PharmacyGIN';
+import PharmacyReports from '../pages/pharmacy/PharmacyReports';
 import LabCategories from '../pages/lab/LabCategories';
 import LabTests from '../pages/lab/LabTests';
 import LabParameters from '../pages/lab/LabParameters';
@@ -30,6 +34,7 @@ import DraftExpenses from '../pages/accounts/transactions/DraftExpenses';
 import BankDeposit from '../pages/accounts/transactions/BankDeposit';
 import BankDepositAdj from '../pages/accounts/transactions/BankDepositAdj';
 import BankStatementUpload from '../pages/accounts/transactions/BankStatementUpload';
+import ChequePresentation from '../pages/accounts/transactions/ChequePresentation';
 import AccountsReports from '../pages/accounts/reports/AccountsReports';
 import AccountsInquiryDashboard from '../pages/accounts/inquiries/AccountsInquiryDashboard';
 import VoucherReprint from '../pages/accounts/reports/VoucherReprint';
@@ -42,6 +47,7 @@ import SupplierPaymentHistory from '../pages/accounts/reports/SupplierPaymentHis
 import UnpresentedChequeList from '../pages/accounts/reports/UnpresentedChequeList';
 import ChequeWiseVoucherSummary from '../pages/accounts/reports/ChequeWiseVoucherSummary';
 import AccountsReportView from '../pages/accounts/reports/AccountsReportView';
+import CashFlowStatement from '../pages/accounts/reports/CashFlowStatement';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import ConsultantOPD from '../pages/clinic/ConsultantOPD';
 import EmergencyOPD from '../pages/clinic/EmergencyOPD';
@@ -123,6 +129,8 @@ import CancelSlip from '../pages/clinic/CancelSlip';
 import SlipRefund from '../pages/clinic/SlipRefund';
 import SlipAdjustment from '../pages/clinic/SlipAdjustment';
 import ReceivingAgainstAdmission from '../pages/clinic/ReceivingAgainstAdmission';
+import CashPendingTransaction from '../pages/clinic/CashPendingTransaction';
+import CreditPendingTransaction from '../pages/clinic/CreditPendingTransaction';
 import DiscountRefundAdmission from '../pages/clinic/DiscountRefundAdmission';
 import Appointment from '../pages/clinic/Appointment';
 import OtRegister from '../pages/clinic/OtRegister';
@@ -162,6 +170,8 @@ import ClinicDocumentTypePage from '../pages/clinic/parameters/ClinicDocumentTyp
 import UploadPatientDocument from '../pages/clinic/UploadPatientDocument';
 import SurgeryInformation from '../pages/clinic/SurgeryInformation';
 import PatientDocumentsReport from '../pages/clinic/inquiries/PatientDocumentsReport';
+import PatientSearchFilter from '../pages/clinic/inquiries/PatientSearchFilter';
+import PatientSearchReport from '../pages/clinic/inquiries/PatientSearchReport';
 import ClinicDischargeTypePage from '../pages/clinic/parameters/ClinicDischargeTypePage';
 import ClinicShiftPage from '../pages/clinic/parameters/ClinicShiftPage';
 import ClinicCreditCardConfigPage from '../pages/clinic/parameters/ClinicCreditCardConfigPage';
@@ -269,6 +279,7 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/transactions/bank-deposit" element={<BankDeposit />} />
         <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<BankDepositAdj />} />
         <Route path="accounts/:entityType/transactions/bank-statement" element={<BankStatementUpload />} />
+        <Route path="accounts/:entityType/transactions/cheque-presentation" element={<ChequePresentation />} />
 
         <Route path="accounts/:entityType/inquiry" element={<AccountsInquiryDashboard />} />
 
@@ -282,6 +293,7 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/reports/supplier-payment-history" element={<SupplierPaymentHistory />} />
         <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<UnpresentedChequeList />} />
         <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<ChequeWiseVoucherSummary />} />
+        <Route path="accounts/:entityType/reports/cash-flow-statement" element={<CashFlowStatement />} />
         <Route path="accounts/:entityType/reports/:reportKey/view" element={<AccountsReportView />} />
         <Route path="accounts/:entityType/reports/*" element={<ComingSoon />} />
       </Route>
@@ -309,6 +321,7 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts"><BankDeposit /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts"><BankDepositAdj /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/bank-statement" element={<PermissionGuard module="accounts"><BankStatementUpload /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts"><ChequePresentation /></PermissionGuard>} />
       <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts"><AccountsInquiryDashboard /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
@@ -320,11 +333,16 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/reports/supplier-payment-history" element={<PermissionGuard module="accounts"><SupplierPaymentHistory /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts"><UnpresentedChequeList /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts"><ChequeWiseVoucherSummary /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/cash-flow-statement" element={<PermissionGuard module="accounts"><CashFlowStatement /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts"><AccountsReportView /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts"><ComingSoon /></PermissionGuard>} />
 
       {/* Laboratories */}
       <Route path="lab-module" element={<PermissionGuard module="lab"><LabModuleDashboard /></PermissionGuard>} />
+      <Route path="pharmacy-module" element={<PermissionGuard module="pharmacy"><PharmacyModuleDashboard /></PermissionGuard>} />
+      <Route path="pharmacy/gd" element={<PermissionGuard module="pharmacy" subModule="gd"><PharmacyGD /></PermissionGuard>} />
+      <Route path="pharmacy/gin" element={<PermissionGuard module="pharmacy" subModule="gin"><PharmacyGIN /></PermissionGuard>} />
+      <Route path="pharmacy/reports" element={<PermissionGuard module="pharmacy" subModule="reports"><PharmacyReports /></PermissionGuard>} />
       <Route path="lab/result-entry" element={<PermissionGuard module="lab" subModule="result-entry"><LabResultEntry /></PermissionGuard>} />
       <Route path="lab/categories" element={<PermissionGuard module="lab" subModule="categories"><LabCategories /></PermissionGuard>} />
       <Route path="lab/tests" element={<PermissionGuard module="lab" subModule="tests"><LabTests /></PermissionGuard>} />
@@ -456,6 +474,8 @@ export default function ProtectedRoutes() {
       {/* ── Clinic Inquiries ── */}
       <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic" subModule="inquiries" tab="revenue-dashboard"><RevenueDashboard /></PermissionGuard>} />
       <Route path="clinic/inquiries/patient-documents" element={<PermissionGuard module="clinic" subModule="inquiries" tab="patient-documents"><PatientDocumentsReport /></PermissionGuard>} />
+      <Route path="clinic/inquiries/patient-search" element={<PermissionGuard module="clinic" subModule="inquiries" tab="patient-search"><PatientSearchFilter /></PermissionGuard>} />
+      <Route path="clinic/inquiries/patient-search/view" element={<PermissionGuard module="clinic" subModule="inquiries" tab="patient-search"><PatientSearchReport /></PermissionGuard>} />
 
       {/* ── Clinic Transactions ── */}
       <Route path="clinic/transactions/receive-balance-slip"        element={<PermissionGuard module="clinic" subModule="transactions" tab="receive-balance-slip"><ReceiveBalanceSlip /></PermissionGuard>} />
@@ -464,6 +484,8 @@ export default function ProtectedRoutes() {
       <Route path="clinic/transactions/slip-adjustment"             element={<PermissionGuard module="clinic" subModule="transactions" tab="slip-adjustment"><SlipAdjustment /></PermissionGuard>} />
       <Route path="clinic/transactions/slip-transfer"               element={<PermissionGuard module="clinic" subModule="transactions" tab="slip-transfer"><SlipTransfer /></PermissionGuard>} />
       <Route path="clinic/transactions/receiving-against-admission" element={<PermissionGuard module="clinic" subModule="transactions" tab="receiving-against-admission"><ReceivingAgainstAdmission /></PermissionGuard>} />
+      <Route path="clinic/transactions/cash-pending" element={<PermissionGuard module="clinic" subModule="transactions" tab="cash-pending"><CashPendingTransaction /></PermissionGuard>} />
+      <Route path="clinic/transactions/credit-pending" element={<PermissionGuard module="clinic" subModule="transactions" tab="credit-pending"><CreditPendingTransaction /></PermissionGuard>} />
       <Route path="clinic/transactions/discount-refund-admission"   element={<PermissionGuard module="clinic" subModule="transactions" tab="discount-refund-admission"><DiscountRefundAdmission /></PermissionGuard>} />
       <Route path="clinic/transactions/ot-register"                 element={<PermissionGuard module="clinic" subModule="transactions" tab="ot-register"><OtRegister /></PermissionGuard>} />
       <Route path="clinic/transactions/handover"                    element={<PermissionGuard module="clinic" subModule="transactions" tab="handover"><Handover /></PermissionGuard>} />

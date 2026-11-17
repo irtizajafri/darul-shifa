@@ -3392,6 +3392,8 @@ async function computeChequeMatchGroups(entityType) {
   const entries = await prisma.accVoucherExpenseEntry.findMany({
     where: {
       matchedStatementLineId: null,
+      // Ticked presented on Transactions → Presented / Unpresented Cheques.
+      presentedDate: null,
       chequeNo: { not: null },
       chequeDate: { not: null },
       voucher: { entityType, mode: 'cheque' },
@@ -3473,6 +3475,74 @@ async function getUnpresentedChequeList({ entityType }) {
   };
 }
 
+// ─── Presented / Unpresented Cheques (Transactions, owner 2026-11-17) ─────────
+// Every cheque of the book (cheque-mode Voucher Expense lines), newest cheque
+// date first. Presented = ticked here with a Present Date, or matched to a
+// Bank Statement line (that one can't be unticked here). Cash and Panel
+// books stay apart (entityType).
+async function getChequePresentation({ entityType, q } = {}) {
+  const term = String(q || '').trim();
+  const entries = await prisma.accVoucherExpenseEntry.findMany({
+    where: {
+      voucher: { entityType: entityType || 'non-corporate', mode: 'cheque' },
+      chequeNo: term ? { contains: term, mode: 'insensitive' } : { not: null },
+    },
+    include: {
+      voucher: { select: { voucherNo: true, voucherDate: true } },
+      matchedStatementLine: { select: { date: true } },
+    },
+    orderBy: [{ chequeDate: 'desc' }, { id: 'desc' }],
+  });
+  const rows = entries.map((e) => {
+    const bank = e.matchedStatementLine?.date || null;
+    return {
+      id: e.id,
+      voucherNo: e.voucher.voucherNo,
+      voucherDate: e.voucher.voucherDate,
+      chequeNo: e.chequeNo,
+      chequeDate: e.chequeDate,
+      payeeName: e.payeeName || e.accountName || '',
+      amount: Number(e.amount) || 0,
+      presented: !!(bank || e.presentedDate),
+      clearDate: e.presentedDate || bank,
+      clearedBy: e.presentedDate ? 'manual' : bank ? 'bank' : null,
+      presentedByName: e.presentedByName || null,
+    };
+  });
+  const open = rows.filter((r) => !r.presented);
+  return { rows, unpresentedCount: open.length, unpresentedAmount: open.reduce((s, r) => s + r.amount, 0) };
+}
+
+async function loadChequeEntry(id) {
+  const e = await prisma.accVoucherExpenseEntry.findUnique({
+    where: { id: Number(id) },
+    include: { voucher: { select: { mode: true } } },
+  });
+  if (!e || e.voucher?.mode !== 'cheque' || !e.chequeNo) throw Object.assign(new Error('Cheque not found'), { status: 404 });
+  return e;
+}
+
+async function markChequePresented(id, { date, userName } = {}) {
+  const e = await loadChequeEntry(id);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) throw Object.assign(new Error('Select the Present Date'), { status: 400 });
+  if (e.matchedStatementLineId) throw Object.assign(new Error('This cheque is already presented (matched to the Bank Statement)'), { status: 409 });
+  return prisma.accVoucherExpenseEntry.update({
+    where: { id: e.id },
+    data: { presentedDate: new Date(`${date}T00:00:00Z`), presentedByName: String(userName || '').trim() || null, presentedAt: new Date() },
+    select: { id: true, presentedDate: true },
+  });
+}
+
+async function unmarkChequePresented(id) {
+  const e = await loadChequeEntry(id);
+  if (e.matchedStatementLineId) throw Object.assign(new Error('Presented by the Bank Statement match — it can\'t be unticked here'), { status: 409 });
+  return prisma.accVoucherExpenseEntry.update({
+    where: { id: e.id },
+    data: { presentedDate: null, presentedByName: null, presentedAt: null },
+    select: { id: true, presentedDate: true },
+  });
+}
+
 async function confirmChequeMatch({ voucherExpenseEntryId, statementLineId }) {
   if (!voucherExpenseEntryId || !statementLineId) {
     throw Object.assign(new Error('voucherExpenseEntryId and statementLineId are required'), { status: 400 });
@@ -3525,7 +3595,7 @@ async function getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo
   for (const v of vouchers) {
     const bankLabel = v.mode === 'cash' ? 'CASH' : v.mode === 'online' ? 'ONLINE' : (bankById.get(v.bankId)?.bankName || '');
     for (const e of v.entries) {
-      if (v.mode === 'cheque' && e.matchedStatementLineId) continue; // already presented — drops off
+      if (v.mode === 'cheque' && (e.matchedStatementLineId || e.presentedDate)) continue; // already presented — drops off
       // chequeNo doubles as a plain running serial for Cash entries too (see
       // VoucherExpenseForm's cashSerial) — only a real Cheque # for
       // mode:'cheque', so only show it there.
@@ -3952,6 +4022,7 @@ async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporat
 }
 
 module.exports = {
+  getChequePresentation, markChequePresented, unmarkChequePresented,
   appendVoucherExpenseEntry, removeVoucherExpenseEntry, assertEntriesPayable, getPendingDraftReservations,
   getAllocationUsage,
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,

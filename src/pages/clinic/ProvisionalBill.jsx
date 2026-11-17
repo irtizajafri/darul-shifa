@@ -4,6 +4,8 @@ import { Search, DoorOpen, Printer, X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
+import { API_BASE_URL } from '../../config';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import DischargeCertificateButton from '../../components/clinic/DischargeCertificateButton';
 import SearchableSelect from '../../components/ui/SearchableSelect';
@@ -691,6 +693,37 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
     const def = pharmacyStores.find(s => s.status === 'active' && s.name.toLowerCase().includes('saboor'));
     if (def) setPharmRow(r => (r.storeId ? r : { ...r, storeId: def.id }));
   }, [pharmacyStores, pharmRow.storeId]);
+
+  // "Goes to Cash Pending" (cash files, authorised users only).
+  const canCashPending = !panel && !opd && (user?.isSuperAdmin || hasPermission(user, 'clinic', 'transactions', 'discharge-cash-pending'));
+  const [markingPending, setMarkingPending] = useState(false);
+  async function toggleCashPending(marked) {
+    if (!detail) return;
+    if (marked) {
+      const ok = await confirmDialog({
+        title: 'Goes to Cash Pending?',
+        message: `Admission # ${detail.admission.admissionNo}: the patient will pay the balance later. The Discharge Certificate can be made with a balance, and on Discharge and Refund the file closes into Cash Pending Transaction.`,
+        confirmLabel: 'Yes, Cash Pending',
+      });
+      if (!ok) return;
+    }
+    setMarkingPending(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/clinic/provisional-bill/${detail.admission.id}/cash-pending`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ marked, changedBy: user?.name || user?.username || user?.email || '' }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j?.ok === false) throw new Error(j?.message || 'Not saved');
+      setDetail((d) => (d ? { ...d, admission: { ...d.admission, ...j.data } } : d));
+      toast.success(marked ? 'Marked Goes to Cash Pending' : 'Cash Pending removed');
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setMarkingPending(false);
+    }
+  }
 
   const loadDetail = useCallback(async (id, isFreshSelect) => {
     setLoading(true);
@@ -1618,6 +1651,27 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
                 never blocks the certificate — everyone else still needs
                 Balance cleared to 0 first. Only offered while still admitted
                 — an already-discharged/closed file has nothing to discharge. */}
+            {/* Cash file (owner, 2026-11-17): "Goes to Cash Pending" — the
+                patient pays the balance later. Lets the Discharge Certificate
+                be made with a balance; Discharge and Refund opens ticked and
+                the file then goes to Cash Pending Transaction. */}
+            {!opd && !panel && detail.admission.patientCategory !== 'panel'
+              && ['active', 'discharge'].includes(detail.admission.status)
+              && (canCashPending || detail.admission.cashPendingMarked) && (
+              <div className="pb-cash-pending">
+                <label title="Balance to be received later on Clinic → Transactions → Cash Pending Transaction">
+                  <input type="checkbox" checked={!!detail.admission.cashPendingMarked} disabled={!canCashPending || markingPending} onChange={(e) => toggleCashPending(e.target.checked)} />
+                  Goes to Cash Pending
+                </label>
+                {detail.admission.cashPendingMarked && (
+                  <span className="pb-cash-pending__note">
+                    {detail.balanceInfo.balance > 0 ? <>Rs. <b>{fmt2(detail.balanceInfo.balance)}</b> to be received later</> : 'No balance now'}
+                    {detail.admission.cashPendingMarkedBy ? ` · marked by ${detail.admission.cashPendingMarkedBy}` : ''}
+                  </span>
+                )}
+              </div>
+            )}
+
             {opd ? (
               detail.admission.status === 'active' && (
                 <div className="dc-trigger-row">
@@ -1627,7 +1681,7 @@ export default function ProvisionalBill({ panel = false, opd = false }) {
             ) : (
               <DischargeCertificateButton
                 admissionId={detail.admission.id}
-                visible={detail.admission.status === 'active' && (detail.balanceInfo.balance === 0 || detail.admission.patientCategory === 'panel')}
+                visible={detail.admission.status === 'active' && (detail.balanceInfo.balance === 0 || detail.admission.patientCategory === 'panel' || !!detail.admission.cashPendingMarked)}
                 onDischarged={() => loadDetail(admissionId)}
               />
             )}

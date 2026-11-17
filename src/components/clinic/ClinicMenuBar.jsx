@@ -51,6 +51,8 @@ const menuItems = [
       { label: 'Slip Transfer',                         path: '/clinic/transactions/slip-transfer',            perm: { sub: 'transactions', tab: 'slip-transfer' } },
       { label: 'Receiving against Admission',           path: '/clinic/transactions/receiving-against-admission', perm: { sub: 'transactions', tab: 'receiving-against-admission' } },
       { label: 'Discount & Refund Against Admission',   path: '/clinic/transactions/discount-refund-admission', perm: { sub: 'transactions', tab: 'discount-refund-admission' } },
+      { label: 'Cash Pending Transaction',              path: '/clinic/transactions/cash-pending',             perm: { sub: 'transactions', tab: 'cash-pending' } },
+      { label: 'Credit Pending Transaction',            path: '/clinic/transactions/credit-pending',           perm: { sub: 'transactions', tab: 'credit-pending' } },
       { label: 'Appointment',                           path: '/clinic/transactions/appointment',              perm: { sub: 'transactions', tab: 'appointment' } },
       { label: 'OT Register',                           path: '/clinic/transactions/ot-register',              perm: { sub: 'transactions', tab: 'ot-register' } },
       { label: 'Death Certificate',                      path: '/clinic/parameters/death-certificate',          perm: { sub: 'death-certificate' } },
@@ -110,6 +112,7 @@ const menuItems = [
     items: [
       { label: 'Revenue Dashboard', path: '/clinic/inquiries/revenue-dashboard', perm: { sub: 'inquiries', tab: 'revenue-dashboard' } },
       { label: 'Patient Documents', path: '/clinic/inquiries/patient-documents', perm: { sub: 'inquiries', tab: 'patient-documents' } },
+      { label: 'Patient Search',    path: '/clinic/inquiries/patient-search',    perm: { sub: 'inquiries', tab: 'patient-search' } },
       // Moved here from Parameters (owner, 2026-11-13); same page, same "Bed" permission.
       { label: 'Bed',               path: '/clinic/inquiries/bed',               perm: { sub: 'bed' } },
     ],

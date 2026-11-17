@@ -1,0 +1,113 @@
+// Cash Flow Statement — a wide day-by-day sheet, styled after the hospital's
+// Excel: navy revenue block, alternating blue / orange Main GL groups.
+
+.cfs {
+  padding: 1.25rem 1.5rem;
+  background: #f0f4f8;
+  min-height: 100%;
+  font-family: Arial, Helvetica, sans-serif;
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px 18px;
+    margin-bottom: 14px;
+  }
+  &__back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #475569;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    cursor: pointer;
+    &:hover { background: #f8fafc; }
+  }
+  &__heading {
+    display: flex;
+    flex-direction: column;
+    h1 { margin: 0; font-size: 1.1rem; font-weight: 800; color: #1e3a5f; }
+    span { font-size: 0.78rem; color: #64748b; }
+  }
+  &__controls {
+    margin-left: auto;
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+    label { display: flex; flex-direction: column; gap: 3px; font-size: 0.72rem; font-weight: 700; color: #475569; }
+    select { padding: 6px 8px; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+  }
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #1e3a5f;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    &--primary { color: #fff; background: #1e3a5f; border-color: #1e3a5f; }
+  }
+  &__empty, &__note { font-size: 0.85rem; color: #64748b; }
+  &__note { margin: 8px 0 0; }
+
+  &__sheet {
+    background: #fff;
+    border: 1px solid #dbe3ec;
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .cfs-title { margin: 0; font-size: 1rem; font-weight: 800; color: #0f172a; }
+  .cfs-sub { margin: 2px 0 10px; font-size: 0.75rem; color: #64748b; }
+  &__scroll { overflow: auto; max-height: calc(100vh - 230px); }
+
+  &__table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.74rem;
+    font-variant-numeric: tabular-nums;
+    th, td { border-right: 1px solid #d5dde6; border-bottom: 1px solid #e3e9ef; padding: 3px 6px; }
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      font-size: 0.7rem;
+      font-weight: 700;
+      line-height: 1.15;
+      text-align: center;
+      color: #fff;
+      background: #1e3a5f;
+      min-width: 74px;
+    }
+    thead tr:nth-child(2) th { top: 37px; }
+    td.n { text-align: right; white-space: nowrap; }
+    td.d { white-space: nowrap; }
+    td:first-child, th:first-child { position: sticky; left: 0; z-index: 1; background: #f8fafc; color: #0f172a; text-align: left; }
+    th:first-child { z-index: 3; background: #1e3a5f; color: #fff; }
+    tbody tr:hover td { background: #f1f5f9; }
+    td.cfs-rev { background: #fffbeb; }
+    td.cfs-paid { background: #f0fdf4; }
+    td.cfs-dep { background: #f8fafc; }
+    td.cfs-strong { font-weight: 700; }
+    td.cfs-center { text-align: center; }
+    .cfs-h-strong { background: #0f2942; }
+    .cfs-h-gl--a { background: #2f5d8c; }
+    .cfs-h-gl--b { background: #b4561b; }
+    .cfs-h-mode { font-weight: 600; min-width: 70px; }
+    .cfs-h-paid { background: #1f5133; }
+    .cfs-h-dep { background: #334155; }
+    tfoot td { font-weight: 800; background: #e8eef5; border-top: 2px solid #1e3a5f; }
+    tfoot .cfs-gtotal td { font-weight: 700; background: #f1f5f9; border-top: 1px solid #cbd5e1; }
+  }
+}

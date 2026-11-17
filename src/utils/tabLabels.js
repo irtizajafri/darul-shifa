@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Users, Package, Stethoscope, Wallet, ShieldCheck, FileText, FlaskConical,
+  LayoutDashboard, Users, Package, Stethoscope, Wallet, ShieldCheck, FileText, FlaskConical, Pill,
 } from 'lucide-react';
 import { PERMISSIONS_MAP } from './permissions';
 
@@ -36,6 +36,10 @@ const PATH_OVERRIDES = {
   '/clinic-module': 'Clinic Dashboard',
   '/accounts-module': 'Accounts Dashboard',
   '/lab-module': 'Lab Dashboard',
+  '/pharmacy-module': 'Pharmacy Dashboard',
+  '/pharmacy/gd': 'Pharmacy GD',
+  '/pharmacy/gin': 'Pharmacy GIN',
+  '/pharmacy/reports': 'Pharmacy Reports',
   '/admin/users': 'User Management',
   '/employees': 'Employee Database',
   '/employees/add': 'Add Employee',
@@ -49,6 +53,7 @@ const PATH_OVERRIDES = {
 const MODULE_ICONS = [
   { prefix: '/clinic',   Icon: Stethoscope },
   { prefix: '/lab',      Icon: FlaskConical },
+  { prefix: '/pharmacy', Icon: Pill },
   { prefix: '/inventory', Icon: Package },
   { prefix: '/accounts', Icon: Wallet },
   { prefix: '/employee', Icon: Users },

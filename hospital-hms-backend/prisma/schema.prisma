@@ -1074,6 +1074,7 @@ model ClinicOpdVisit {
   panelBillingItems  ClinicPanelOpdBillingItem[]
   panelBillingHeader ClinicPanelOpdBillingHeader?
   balancePayments    ClinicOpdBalancePayment[]
+  ccSettlements      ClinicCcSettlement[]
   labResults         LabResult[]
 
   @@index([createdAt])
@@ -1203,6 +1204,15 @@ model ClinicAdmission {
   // Panel file closed via "Goes to Other Income" on Discharge and Refund —
   // the balance written off (positive; shown as minus). Migration 052.
   dischargeOtherIncome Float?
+  // Cash file closed via "Goes to Cash Pending" (migration 076): the balance
+  // left to receive at close; later receipts are payments tagged
+  // againstCashPending.
+  dischargeCashPending   Float?
+  dischargeCashPendingBy String?
+  // Marked "Goes to Cash Pending" on the Provisional Bill (before discharge).
+  cashPendingMarked      Boolean  @default(false)
+  cashPendingMarkedBy    String?
+  cashPendingMarkedAt    DateTime?
   // Panel Company/Employee selected via the same Panel picker OPD slips use
   // (patientCategory 'panel') — plain soft-linked ids, no @relation, matching
   // ClinicOpdVisit's identical fields (never enforced as an FK there either).
@@ -2014,6 +2024,8 @@ model ClinicAdmissionPayment {
   paymentType String          @default("cash")
   receivedAt  DateTime        @default(now())
   printCount  Int             @default(0)
+  // Received on Cash Pending Transaction against the file's pending balance (076).
+  againstCashPending Boolean  @default(false)
   createdAt   DateTime        @default(now())
 
   @@index([admissionId])
@@ -2685,6 +2697,11 @@ model AccVoucherExpenseEntry {
   // = still un-presented. See matchBankStatementCheques.
   matchedStatementLineId Int?
   matchedStatementLine   AccBankStatementLine? @relation(fields: [matchedStatementLineId], references: [id])
+  // Marked presented by hand on Transactions → Presented / Unpresented
+  // Cheques (migration 074). Presented = this date set OR a statement match.
+  presentedDate   DateTime? @db.Date
+  presentedByName String?
+  presentedAt     DateTime?
 
   consultantFeeItems AccVoucherExpenseEntryConsultantFee[]
   opdDoctorFeeItems  AccVoucherExpenseEntryOpdDoctorFee[]
@@ -3523,4 +3540,103 @@ model PanelLabResultLog {
   after         Json?
 
   @@index([resultId])
+}
+
+// ─── Al Shifa Hospital Pharmacy (7th module), migration 075 ─────────────────
+// GD / GIN like Inventory's, fully apart from it: no stock, no suppliers or
+// categories. Medicine / department / employee ids are plain numbers with the
+// names copied in.
+
+model PharmacyGD {
+  id              Int              @id @default(autoincrement())
+  code            String           @unique
+  requestDate     DateTime         @db.Date
+  departmentId    Int
+  departmentName  String
+  admissionNumber String?
+  opdSlipNo       String?
+  patientName     String?
+  comment         String?
+  status          String           @default("open") // open | partial | closed
+  createdByName   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  items           PharmacyGDItem[]
+  gins            PharmacyGIN[]
+
+  @@index([requestDate])
+}
+
+model PharmacyGDItem {
+  id                Int               @id @default(autoincrement())
+  gdId              Int
+  gd                PharmacyGD        @relation(fields: [gdId], references: [id], onDelete: Cascade)
+  medicineId        Int?
+  medicineCode      String?
+  medicineName      String
+  packSize          String?
+  quantityRequested Float
+  quantityIssued    Float             @default(0)
+  status            String            @default("pending") // pending | partial | issued
+  sortOrder         Int               @default(0)
+  ginItems          PharmacyGINItem[]
+
+  @@index([gdId])
+}
+
+model PharmacyGIN {
+  id              Int               @id @default(autoincrement())
+  code            String            @unique
+  gdId            Int
+  gd              PharmacyGD        @relation(fields: [gdId], references: [id], onDelete: Restrict)
+  issueDate       DateTime          @db.Date
+  issuedToId      Int?
+  issuedToName    String?
+  departmentId    Int
+  departmentName  String
+  admissionNumber String?
+  opdSlipNo       String?
+  patientName     String?
+  totalAmount     Decimal           @default(0) @db.Decimal(14, 2)
+  createdByName   String?
+  createdAt       DateTime          @default(now())
+  items           PharmacyGINItem[]
+
+  @@index([gdId])
+  @@index([issueDate])
+}
+
+model PharmacyGINItem {
+  id           Int            @id @default(autoincrement())
+  ginId        Int
+  gin          PharmacyGIN    @relation(fields: [ginId], references: [id], onDelete: Cascade)
+  gdItemId     Int
+  gdItem       PharmacyGDItem @relation(fields: [gdItemId], references: [id], onDelete: Restrict)
+  medicineId   Int?
+  medicineCode String?
+  medicineName String
+  packSize     String?
+  quantity     Float
+  rate         Decimal        @default(0) @db.Decimal(12, 2)
+  amount       Decimal        @default(0) @db.Decimal(14, 2)
+
+  @@index([ginId])
+  @@index([gdItemId])
+}
+
+// Credit Pending Transaction (migration 076): the bank's payment for a CC
+// (credit card) OPD slip, with its charges. Tracking only.
+model ClinicCcSettlement {
+  id             Int            @id @default(autoincrement())
+  visitId        Int
+  visit          ClinicOpdVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  receivedDate   DateTime       @db.Date
+  receivedAmount Decimal        @db.Decimal(12, 2)
+  bankCharges    Decimal        @default(0) @db.Decimal(12, 2)
+  remarks        String?
+  createdByName  String?
+  createdAt      DateTime       @default(now())
+
+  @@index([visitId])
+  @@index([receivedDate])
 }

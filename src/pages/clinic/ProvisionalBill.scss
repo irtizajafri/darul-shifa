@@ -533,6 +533,21 @@ $border: #bbb;
   &--discount span { color: $amber; }
 }
 
+.pb-cash-pending {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  max-width: 1100px;
+  margin: 6px auto 0;
+  width: 100%;
+  padding: 6px 4px;
+  font-size: 12.5px;
+  label { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: #92400e; cursor: pointer; }
+  input:disabled + * { cursor: not-allowed; }
+  &__note { color: #555; b { color: #b45309; } }
+}
+
 .pb-close-btn {
   margin-left: auto;
   background: #eee;

@@ -19,7 +19,7 @@ const REPORTS = [
   { key: 'un-presented-cheque-list',     label: 'Un-Presented Cheque List',     icon: AlertCircle,   desc: 'Cheques issued but not yet presented to the bank' },
   { key: 'slip-refund-statement',        label: 'Slip Refund Statement',        icon: ReceiptText,   desc: 'Statement of all slip refunds in a period' },
   { key: 'consultant-payment-history',   label: 'Consultant Payment History',   icon: UserCheck,     desc: 'Payment history for consultants / doctors' },
-  { key: 'cash-flow-statement',          label: 'Cash Flow Statement',          icon: Workflow,      desc: 'Inflow and outflow of cash across all accounts' },
+  { key: 'cash-flow-statement',          label: 'Cash Flow Statement',          icon: Workflow,      desc: 'Day-wise revenue (Patients List) and payments by Main GL — Cash / Online / Cheque' },
   { key: 'bank-reconciliation-statement',label: 'Bank Reconciliation Statement',icon: Landmark,      desc: 'Reconcile bank balances with book balances' },
   { key: 'cash-in-hand-statement',       label: 'Cash In Hand Statement',       icon: HandCoins,     desc: 'Summary of cash on hand across petty cash and accounts' },
   { key: 'bank-balance-statement',       label: 'Bank Balance Statement',       icon: Building2,     desc: 'Balance position of all linked bank accounts' },

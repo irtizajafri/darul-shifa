@@ -2290,7 +2290,7 @@ async function getAdmissionForReceiving(admissionNo) {
   return { ...admission, paidSoFar: admPaidSoFar(admission) };
 }
 
-async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate }) {
+async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate, againstCashPending = false }) {
   const back = resolveBackDate(backDate);
   const amt = Number(amount);
   if (!amt || amt <= 0) throw Object.assign(new Error('Amount 0 se zyada hona chahiye'), { status: 400 });
@@ -2339,6 +2339,8 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
       // Every report counts a receipt on receivedAt; createdAt stays the real
       // moment it was entered.
       ...(back ? { receivedAt: back } : {}),
+      // Received on Cash Pending Transaction (pendingTx.service.js).
+      ...(againstCashPending ? { againstCashPending: true } : {}),
     },
   });
   return { payment, receivedBy, admission };
@@ -9154,6 +9156,13 @@ async function getDischargeBillDetail(admissionId) {
   const netAmount = Math.max(0, billAmount - discountAmount);
   // Panel file closed via "Goes to Other Income" (see finalizeDischarge).
   const otherIncomeAmount = Number(admission.dischargeOtherIncome) || 0;
+  // Cash file closed via "Goes to Cash Pending": what's still to receive —
+  // the pending amount at close less receipts taken against it since.
+  let cashPendingAmount = 0;
+  if (Number(admission.dischargeCashPending) > 0) {
+    const got = await prisma.clinicAdmissionPayment.aggregate({ where: { admissionId: admission.id, againstCashPending: true }, _sum: { amount: true } });
+    cashPendingAmount = Math.max(0, Math.round((Number(admission.dischargeCashPending) - (Number(got._sum.amount) || 0)) * 100) / 100);
+  }
 
   // Itemised Medical Bill print header/footer (owner, 2026-10-26): Dis Date,
   // Closed On, and Created By / Last updated By = whoever closed the file
@@ -9189,7 +9198,8 @@ async function getDischargeBillDetail(admissionId) {
     billAmount,
     discountAmount,
     otherIncomeAmount,
-    balance: Math.max(0, netAmount - netAmountReceived - otherIncomeAmount),
+    cashPendingAmount,
+    balance: Math.max(0, netAmount - netAmountReceived - otherIncomeAmount - cashPendingAmount),
     refund: Math.max(0, netAmountReceived - netAmount),
   };
 }
@@ -9333,7 +9343,7 @@ function resolveClosingDate(closingDate) {
   return d;
 }
 
-async function finalizeDischarge(admissionId, { discountAmount, otherIncome, changedBy, closingDate }) {
+async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cashPending, changedBy, closingDate }) {
   const closedAt = resolveClosingDate(closingDate);
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
@@ -9357,13 +9367,25 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
   if (otherIncome && !isPanel) {
     throw Object.assign(new Error('Other Income sirf Panel file ke liye hai'), { status: 400 });
   }
+  if (cashPending && isPanel) {
+    throw Object.assign(new Error('Cash Pending is for cash files — a panel file uses "Goes to Other Income"'), { status: 400 });
+  }
   const detail = await getDischargeBillDetail(admissionId);
   // Bill Amount is rounded on screen (DischargeRefund) — the check uses the
   // same rounded figure, else a .40 fraction blocks a Balance shown as 0.
   const netAmount = Math.max(0, Math.round(detail.billAmount) - (Number(discountAmount) || 0));
   const outstanding = Math.max(0, netAmount - detail.amountReceived);
   const otherIncomeAmount = isPanel && otherIncome ? outstanding : 0;
-  const balance = outstanding - otherIncomeAmount;
+  // Cash file (owner, 2026-11-17): the balance stays to be received later on
+  // Cash Pending Transaction. Kept as the total pending incl. any receipts
+  // already taken against it (a re-closed file), so pending − those = what's left.
+  const cashPendingNow = !isPanel && cashPending ? outstanding : 0;
+  let cashPendingTotal = 0;
+  if (cashPendingNow > 0) {
+    const got = await prisma.clinicAdmissionPayment.aggregate({ where: { admissionId: Number(admissionId), againstCashPending: true }, _sum: { amount: true } });
+    cashPendingTotal = Math.round((cashPendingNow + (Number(got._sum.amount) || 0)) * 100) / 100;
+  }
+  const balance = outstanding - otherIncomeAmount - cashPendingNow;
   if (balance > 0) {
     throw Object.assign(
       new Error(isPanel
@@ -9378,6 +9400,9 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
     data: {
       dischargeDiscount: discountAmount != null ? Number(discountAmount) : null,
       dischargeOtherIncome: otherIncomeAmount || null,
+      ...(cashPendingNow > 0
+        ? { dischargeCashPending: cashPendingTotal, dischargeCashPendingBy: changedBy || null, cashPendingMarked: true }
+        : !isPanel ? { dischargeCashPending: null, dischargeCashPendingBy: null, cashPendingMarked: false } : {}),
     },
   });
 
@@ -9386,6 +9411,7 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cha
   // true reason this ever happens, per category.
   const reason = otherIncomeAmount
     ? `Panel — balance Rs. ${otherIncomeAmount.toFixed(2)} goes to Other Income`
+    : cashPendingNow > 0 ? `Cash — balance Rs. ${cashPendingNow.toFixed(2)} goes to Cash Pending (to receive later)`
     : isPanel ? 'Panel — balance cleared — file closed' : 'Balance cleared — file closed';
   return updateAdmissionStatus(admissionId, { status: 'closed', reason, changedBy, changedAt: closedAt });
 }
@@ -11213,6 +11239,23 @@ async function getConsultantStatement({ consultantId, fromDate, toDate, fromTime
   return { consultant, visits: result, shiftName: pickedShift?.name || 'ALL' };
 }
 
+// Revenue Dashboard payment-type radio → which Patients List rows and which
+// of their amounts (owner, 2026-11-17):
+//   Panel    — panel slips / admissions; amount = the list's Received + Bal.
+//              (a panel patient pays nothing at the counter, the company pays
+//              the balance later — Received alone was always 0)
+//   Discount — every row with a discount (any payment type); amount = Dis.
+//              (it used to look for a "Discount" payment type, which doesn't
+//              exist, so it showed nothing)
+//   others   — that payment type's rows; amount = Received (as before)
+function revenueRowRule(paymentType) {
+  const t = String(paymentType || '').trim().toLowerCase();
+  if (!t || t === 'all') return { paymentTypes: [], keep: () => true, amountOf: (r) => Number(r.received) || 0 };
+  if (t === 'discount') return { paymentTypes: [], keep: (r) => (Number(r.discount) || 0) > 0, amountOf: (r) => Number(r.discount) || 0 };
+  if (t === 'panel') return { paymentTypes: [paymentType], keep: () => true, amountOf: (r) => (Number(r.received) || 0) + (Number(r.balance) || 0) };
+  return { paymentTypes: [paymentType], keep: () => true, amountOf: (r) => Number(r.received) || 0 };
+}
+
 // ─── Revenue Dashboard (Inquiries) ───────────────────────────────────────────
 
 // Every Revenue Dashboard view (yearly 2026-10-31, One Month 2026-11-11):
@@ -11224,7 +11267,8 @@ async function getRevenueDashboardFromPatientList({ period, year, month, departm
   const byDay  = period === 'monthly_daily';
   const byYear = period === 'multi_year';
   const keyField = byDay ? 'date' : byYear ? 'year' : 'month';
-  const paymentTypes = paymentType && paymentType !== 'ALL' ? [paymentType] : [];
+  const rule = revenueRowRule(paymentType);
+  const { paymentTypes } = rule;
 
   const pad = (n) => String(n).padStart(2, '0');
   const firstOf = (y, m) => `${y}-${pad(m)}-01`;
@@ -11254,7 +11298,7 @@ async function getRevenueDashboardFromPatientList({ period, year, month, departm
   const rows = await getPatientVisits({ ...range, paymentTypes });
 
   const matches = (value, filter) => !filter || filter === 'ALL' || String(value || '').toLowerCase().includes(String(filter).toLowerCase());
-  const kept = rows.filter((r) => r.businessDay
+  const kept = rows.filter((r) => r.businessDay && rule.keep(r)
     && matches(r.department, department) && matches(r.subDepartment, subDept) && matches(r.doctor, consultant));
 
   const blank = (field, k) => ({ [field]: k, totalPatients: 0, totalAmount: 0, cashPatients: 0, cashAmount: 0, panelPatients: 0, panelAmount: 0, ccPatients: 0, ccAmount: 0 });
@@ -11267,7 +11311,7 @@ async function getRevenueDashboardFromPatientList({ period, year, month, departm
       const b = out.get(k);
       // + its Administrative Expense line, same as Patients List's count
       const n = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
-      const amt = Number(r.received || 0);
+      const amt = rule.amountOf(r);
       const pt = String(r.paymentType || '').toLowerCase();
       b.totalPatients += n;
       b.totalAmount += amt;
@@ -11302,7 +11346,7 @@ async function getRevenueDashboardFromPatientList({ period, year, month, departm
   if (byDay) {
     prognosis = dailyAvg * new Date(year, month, 0).getDate();
     const ly = `${year - 1}-${pad(month)}`;
-    lastYearAmount = kept.reduce((s, r) => s + (r.businessDay.slice(0, 7) === ly ? Number(r.received || 0) : 0), 0);
+    lastYearAmount = kept.reduce((s, r) => s + (r.businessDay.slice(0, 7) === ly ? rule.amountOf(r) : 0), 0);
     trendData = [...fold('key', (d) => (d >= trendStart && d < trendEnd ? d.slice(0, 7) : null)).values()]
       .sort((a, b) => a.key.localeCompare(b.key))
       .map((b) => ({ label: `${MN[Number(b.key.slice(5, 7)) - 1]} ${b.key.slice(0, 4)}`, totalPatients: b.totalPatients, totalAmount: b.totalAmount }));
@@ -11765,8 +11809,9 @@ async function getDailyStatementFromPatientList(date, paymentType) {
   if (!date) throw Object.assign(new Error('Date is required'), { status: 400 });
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + 1);
-  const paymentTypes = paymentType && paymentType !== 'ALL' ? [paymentType] : [];
-  const rows = await getPatientVisits({ fromDate: date, toDate: next.toISOString().slice(0, 10), fromTime: '08:00:00', toTime: '07:59:59', paymentTypes });
+  const rule = revenueRowRule(paymentType);
+  const rows = (await getPatientVisits({ fromDate: date, toDate: next.toISOString().slice(0, 10), fromTime: '08:00:00', toTime: '07:59:59', paymentTypes: rule.paymentTypes }))
+    .filter(rule.keep);
   const map = new Map();
   for (const r of rows) {
     const key = r._source === 'antenatal' ? 'Antenatal' : canonicalRevenueDept(r.department || (r._source === 'admission' || r._source === 'admission-payment' ? 'Admission' : ''));
@@ -11774,7 +11819,7 @@ async function getDailyStatementFromPatientList(date, paymentType) {
     const e = map.get(key);
     // + its Administrative Expense line — Patients List counts that line too
     e.count += 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
-    e.amount += Number(r.received) || 0;
+    e.amount += rule.amountOf(r);
     e.discount += Number(r.discount) || 0;
     if (r.cancelled) e.cancel += 1;
   }

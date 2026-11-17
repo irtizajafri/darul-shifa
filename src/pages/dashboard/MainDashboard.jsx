@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stethoscope, Package, FlaskConical, Wallet, Workflow } from 'lucide-react';
+import { Stethoscope, Package, FlaskConical, Wallet, Workflow, Pill } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
@@ -43,6 +43,7 @@ const ALL_MODULES = [
   },
   { id: 'clinic', permModule: 'clinic', icon: Stethoscope, title: 'Clinic', desc: 'Patient visits, OPD & records', active: true, path: '/clinic-module' },
   { id: 'accounts', permModule: 'accounts', icon: Wallet, title: 'Accounts', desc: 'Finance, billing & ledgers', active: true, path: '/accounts-module' },
+  { id: 'pharmacy', permModule: 'pharmacy', icon: Pill, title: 'Al Shifa Hospital Pharmacy', desc: 'Goods Demand & Goods Issuance of medicines', active: true, path: '/pharmacy-module' },
 ];
 
 export default function MainDashboard() {
@@ -74,6 +75,8 @@ export default function MainDashboard() {
         setModule('accounts');
       } else if (m.id === 'lab') {
         setModule('lab');
+      } else if (m.id === 'pharmacy') {
+        setModule('pharmacy');
       } else {
         clearModule();
       }

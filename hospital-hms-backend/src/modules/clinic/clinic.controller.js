@@ -1,5 +1,7 @@
 const service = require('./clinic.service');
 const refundVoucherSvc = require('./refundVoucher.service');
+const patientSearchSvc = require('./patientSearch.service');
+const pendingTxSvc = require('./pendingTx.service');
 const { success, fail } = require('../../utils/response');
 
 // ─── Department ───────────────────────────────────────────────────────────────
@@ -644,8 +646,8 @@ async function deleteDischargeBillItem(req, res, next) {
 
 async function finalizeDischarge(req, res, next) {
   try {
-    const { discountAmount, otherIncome, changedBy, closingDate } = req.body;
-    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, otherIncome: !!otherIncome, changedBy, closingDate });
+    const { discountAmount, otherIncome, cashPending, changedBy, closingDate } = req.body;
+    const data = await service.finalizeDischarge(req.params.admissionId, { discountAmount, otherIncome: !!otherIncome, cashPending: !!cashPending, changedBy, closingDate });
     success(res, data, 'File closed');
   } catch (err) {
     if (err.status === 404) return fail(res, 404, err.message);
@@ -2557,6 +2559,32 @@ async function getStatementOfSurgery(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// Transactions → Cash Pending / Credit Pending
+const pendingWrap = (fn) => async (req, res, next) => {
+  try { success(res, await fn(req)); } catch (err) {
+    if (err.status === 409 && err.code) return res.status(409).json({ ok: false, message: err.message, code: err.code, twinSerialNo: err.twinSerialNo });
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+};
+const listCashPending = pendingWrap((req) => pendingTxSvc.listCashPending(req.query));
+const receiveCashPending = pendingWrap((req) => pendingTxSvc.receiveCashPending(req.params.admissionId, req.body || {}));
+const setCashPendingMark = pendingWrap((req) => pendingTxSvc.setCashPendingMark(req.params.admissionId, req.body || {}));
+const listCreditPending = pendingWrap((req) => pendingTxSvc.listCreditPending(req.query));
+const settleCreditPending = pendingWrap((req) => pendingTxSvc.settleCreditPending(req.body || {}));
+const undoCreditSettlement = pendingWrap((req) => pendingTxSvc.undoCreditSettlement(req.params.id));
+
+// Inquiries → Patient Search
+async function searchPatients(req, res, next) {
+  try {
+    const { name, fromDate, toDate, phone, sex, departmentId, subDeptId, patientType } = req.query;
+    success(res, await patientSearchSvc.searchPatients({ name, fromDate, toDate, phone, sex, departmentId, subDeptId, patientType }));
+  } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+
 async function getStatusWiseAdmission(req, res, next) {
   try {
     const {
@@ -3018,6 +3046,8 @@ module.exports = {
   getWardWiseBillReport,
   getStatementOfSurgery,
   getStatusWiseAdmission,
+  searchPatients,
+  listCashPending, receiveCashPending, setCashPendingMark, listCreditPending, settleCreditPending, undoCreditSettlement,
   getAdmissionDistribution,
   getWardWisePaymentDistribution,
   getDepartmentMonthlyComparison,

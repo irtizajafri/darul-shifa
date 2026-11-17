@@ -125,6 +125,11 @@ router.get('/bank-statement', ctrl.getBankStatementLines);
 router.post('/bank-statement/bulk-import', ctrl.bulkImportBankStatement);
 
 router.get('/un-presented-cheques', ctrl.getUnpresentedChequeList);
+router.get('/cash-flow-statement', ctrl.getCashFlowStatement);
+// Transactions → Presented / Unpresented Cheques
+router.get('/cheques', ctrl.getChequePresentation);
+router.post('/cheques/:id/present', ctrl.presentCheque);
+router.post('/cheques/:id/unpresent', ctrl.unpresentCheque);
 router.post('/un-presented-cheques/confirm-match', ctrl.confirmChequeMatch);
 router.get('/cheque-wise-voucher-summary', ctrl.getChequeWiseVoucherSummary);
 

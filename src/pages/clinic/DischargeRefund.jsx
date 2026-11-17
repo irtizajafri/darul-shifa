@@ -4,6 +4,7 @@ import { Search, DoorOpen, Printer, X, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useClinicStore } from '../../store/useClinicStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { buildDischargeBillPrintHtml } from './dischargeBillPrintUtils';
@@ -275,6 +276,10 @@ export default function DischargeRefund({ panel = false, opd = false }) {
   // Panel file only — "Goes to Other Income" writes the remaining balance
   // off (shown as minus) so Balance reaches 0 and the file can close.
   const [otherIncome, setOtherIncome] = useState(false);
+  // Cash file only (owner, 2026-11-17) — "Goes to Cash Pending" leaves the
+  // balance to be received later on Cash Pending Transaction; only for users
+  // given that authority.
+  const [cashPending, setCashPending] = useState(false);
   const [saving, setSaving] = useState(false);
   const [askCloseDate, setAskCloseDate] = useState(false);
 
@@ -312,6 +317,9 @@ export default function DischargeRefund({ panel = false, opd = false }) {
       setAdmissionId(d.admission.id);
       setDiscount(String(d.discountAmount || 0));
       setOtherIncome((d.otherIncomeAmount || 0) > 0);
+      // Ticked when the file already went to Cash Pending, or was marked on the
+      // Provisional Bill before discharge.
+      setCashPending((d.cashPendingAmount || 0) > 0 || (!opd && !!d.admission?.cashPendingMarked));
       return d;
     } catch (e) {
       toast.error(e.message || 'Discharge bill load nahi hui');
@@ -367,7 +375,7 @@ export default function DischargeRefund({ panel = false, opd = false }) {
       updatedBy: closingDate ? printedBy : (log.updatedBy || printedBy),
       updatedAt: closingDate ? now : (log.updatedAt || now),
     };
-    const liveDetail = detail ? { ...detail, billLog, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, balance: liveBalance, refund: liveRefund } : detail;
+    const liveDetail = detail ? { ...detail, billLog, discountAmount: Number(discount) || 0, otherIncomeAmount: liveOtherIncome, cashPendingAmount: liveCashPending, balance: liveBalance, refund: liveRefund } : detail;
     w.document.write(buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: dup }));
     w.document.close();
   }
@@ -470,7 +478,9 @@ export default function DischargeRefund({ panel = false, opd = false }) {
     if (liveBalance > 0) {
       toast.error(isPanel
         ? `Balance Rs. ${fmt2(liveBalance)} baaki hai — "Goes to Other Income" tick karein`
-        : `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo`);
+        : canCashPending
+          ? `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo, ya "Goes to Cash Pending" tick karein`
+          : `Balance Amount Rs. ${fmt2(liveBalance)} baaki hai — pehle clear karo`);
       return;
     }
     setAskCloseDate(true);
@@ -484,7 +494,7 @@ export default function DischargeRefund({ panel = false, opd = false }) {
     // opens on the click, before the request, so the browser doesn't block it.
     const printWin = openPrintWindow('width=900,height=1000');
     try {
-      await api.finalize(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, changedBy: printedBy, closingDate });
+      await api.finalize(admissionId, { discountAmount: Number(discount) || 0, otherIncome: isPanel && otherIncome, ...(opd ? {} : { cashPending: !isPanel && cashPending }), changedBy: printedBy, closingDate });
       toast.success(`File close ho gayi — Closing Date ${closingDate.split('-').reverse().join('-')}`);
       printDischargeBillPopup(false, printWin, closingDate);
       resetToLookup();
@@ -500,7 +510,9 @@ export default function DischargeRefund({ panel = false, opd = false }) {
   const netAmount = detail ? Math.max(0, Math.round(detail.billAmount) - (Number(discount) || 0)) : 0;
   const outstanding = detail ? Math.max(0, netAmount - detail.amountReceived) : 0;
   const liveOtherIncome = isPanel && otherIncome ? outstanding : 0;
-  const liveBalance = outstanding - liveOtherIncome;
+  const canCashPending = !opd && !isPanel && (user?.isSuperAdmin || hasPermission(user, 'clinic', 'transactions', 'discharge-cash-pending'));
+  const liveCashPending = !opd && !isPanel && cashPending ? outstanding : 0;
+  const liveBalance = outstanding - liveOtherIncome - liveCashPending;
   const liveRefund = detail ? Math.max(0, detail.amountReceived - netAmount) : 0;
 
   return (
@@ -579,6 +591,13 @@ export default function DischargeRefund({ panel = false, opd = false }) {
                     <input type="checkbox" checked={otherIncome} onChange={e => setOtherIncome(e.target.checked)} />
                     Goes to Other Income
                     {otherIncome && <b>-{fmt2(liveOtherIncome)}</b>}
+                  </label>
+                )}
+                {!opd && !isPanel && (canCashPending || cashPending) && (
+                  <label className="dr-other-income" title="Balance received later on Clinic → Transactions → Cash Pending Transaction">
+                    <input type="checkbox" checked={cashPending} disabled={!canCashPending} onChange={e => setCashPending(e.target.checked)} />
+                    Goes to Cash Pending
+                    {cashPending && <b>-{fmt2(liveCashPending)}</b>}
                   </label>
                 )}
                 <span>Amount Received <b>{fmt2(detail.amountReceived)}</b></span>

@@ -1,4 +1,5 @@
 const svc = require('./accounts.service');
+const cashFlowSvc = require('./cashFlow.service');
 const { success, fail } = require('../../utils/response');
 
 const et = (req) => req.query.entityType || 'non-corporate';
@@ -225,6 +226,23 @@ async function flashDraftsNow(req, res, next) {
   } catch (e) { next(e); }
 }
 
+// Reports → Cash Flow Statement
+async function getCashFlowStatement(req, res, next) {
+  try { success(res, await cashFlowSvc.getCashFlowStatement({ entityType: et(req), year: req.query.year, month: req.query.month })); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+
+// Transactions → Presented / Unpresented Cheques
+async function getChequePresentation(req, res, next) { try { success(res, await svc.getChequePresentation({ entityType: et(req), q: req.query.q })); } catch (e) { next(e); } }
+async function presentCheque(req, res, next) {
+  try { success(res, await svc.markChequePresented(req.params.id, req.body || {}), 'Cheque presented'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+async function unpresentCheque(req, res, next) {
+  try { success(res, await svc.unmarkChequePresented(req.params.id), 'Cheque unpresented'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
+
 // Pending Income Drafts — Day Close's income voucher, edited and posted by hand.
 async function getIncomeDrafts(req, res, next) { try { success(res, await svc.getPendingIncomeDrafts(et(req))); } catch (e) { next(e); } }
 async function updateIncomeDraft(req, res, next) {
@@ -368,6 +386,8 @@ module.exports = {
   getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getIncomeDrafts, updateIncomeDraft, postIncomeDraft,
+  getChequePresentation, presentCheque, unpresentCheque,
+  getCashFlowStatement,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, moveDraftExpense, flashDraftsNow,

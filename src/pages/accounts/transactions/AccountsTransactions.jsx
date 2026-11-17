@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal, FileText } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal, FileText, CheckSquare } from 'lucide-react';
 import './AccountsTransactions.scss';
 
 const ITEMS = [
@@ -20,6 +20,12 @@ const ITEMS = [
     label: 'Pending Drafts',
     icon: FileText,
     desc: 'Day Close income voucher (check, edit, Post Now) and pending expense drafts (auto-post at 8:00 AM by Main GL)',
+  },
+  {
+    key: 'cheque-presentation',
+    label: 'Presented / Unpresented Cheques',
+    icon: CheckSquare,
+    desc: 'Mark Voucher Expense cheques presented with their Present Date',
   },
   {
     key: 'cheque-printing',
