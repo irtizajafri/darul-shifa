@@ -7,12 +7,12 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { canBackDate } from '../../utils/permissions';
 import { openPrintWindow } from '../../utils/printRelay';
 import PatientPickerModal from './PatientPickerModal';
-import { pharmacyApi, getJson, CLINIC_API, pktToday, daysBefore, fmtDate, fmtQty, patientRef, STATUS_LABEL } from './pharmacyApi';
+import { pharmacyApi, getJson, DEPARTMENTS_API, activeDepartments, pktToday, daysBefore, fmtDate, fmtQty, patientRef, STATUS_LABEL } from './pharmacyApi';
 import { printGD } from './pharmacyPrint';
 import './Pharmacy.scss';
 
 // Al Shifa Hospital Pharmacy → Goods Demand (GD), like Inventory's GD:
-// Department, Request Date, medicines from Clinic's Medicine List with the
+// Department (Inventory's Master Setup list), Request Date, medicines from Clinic's Medicine List with the
 // quantity, and optionally the patient (Admission # or Panel Slip #).
 // No stock here — the pharmacy keeps none.
 
@@ -38,7 +38,7 @@ export default function PharmacyGD() {
   const medBox = useRef(null);
 
   useEffect(() => {
-    getJson(`${CLINIC_API}/departments`).then((d) => setDepartments(d || [])).catch((e) => toast.error(e.message));
+    getJson(DEPARTMENTS_API).then((d) => setDepartments(activeDepartments(d))).catch((e) => toast.error(e.message));
   }, []);
 
   const loadList = useCallback(async (f) => {

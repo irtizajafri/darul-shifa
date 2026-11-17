@@ -9,7 +9,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 import { openPrintWindow } from '../../utils/printRelay';
 import {
-  PHARMACY_NAME, pharmacyApi, getJson, CLINIC_API, EMPLOYEES_API, pktToday, daysBefore, fmtDate, fmtQty, fmtAmt, employeeName, patientRef, STATUS_LABEL,
+  PHARMACY_NAME, pharmacyApi, getJson, DEPARTMENTS_API, activeDepartments, EMPLOYEES_API, pktToday, daysBefore, fmtDate, fmtQty, fmtAmt, employeeName, patientRef, STATUS_LABEL,
 } from './pharmacyApi';
 import './Pharmacy.scss';
 
@@ -39,7 +39,7 @@ export default function PharmacyReports() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    getJson(`${CLINIC_API}/departments`).then((d) => setDepartments(d || [])).catch(() => {});
+    getJson(DEPARTMENTS_API).then((d) => setDepartments(activeDepartments(d))).catch(() => {});
     getJson(EMPLOYEES_API).then((d) => setEmployees(d || [])).catch(() => {});
   }, []);
 

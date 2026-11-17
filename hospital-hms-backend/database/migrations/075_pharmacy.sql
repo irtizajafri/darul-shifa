@@ -2,7 +2,8 @@
 -- (GD) and Goods Issuance (GIN) like Inventory's, kept fully apart from
 -- Inventory: no stock, no suppliers or categories, nothing shared with the
 -- Inventory tables. Medicines are picked from Clinic's Medicine List
--- (ClinicMedicine); the department from Clinic's departments; Issued To from
+-- (ClinicMedicine); the department from Inventory's Master Setup departments
+-- (InventoryDepartment, the list only); Issued To from
 -- HR employees; the patient is an Admission # or a Panel Slip # (optional).
 -- Nothing goes to patient bills (owner: later). Ids of those lists are plain
 -- numbers with a name copied in, so a later edit there never changes a saved
@@ -12,7 +13,7 @@ CREATE TABLE IF NOT EXISTS "PharmacyGD" (
   "id"              SERIAL PRIMARY KEY,
   "code"            TEXT NOT NULL,            -- YYYYMMDD + 3-digit daily no. + "-gd"
   "requestDate"     DATE NOT NULL,
-  "departmentId"    INTEGER NOT NULL,         -- ClinicDepartment.id
+  "departmentId"    INTEGER NOT NULL,         -- InventoryDepartment.id
   "departmentName"  TEXT NOT NULL,
   "admissionNumber" TEXT,
   "opdSlipNo"       TEXT,

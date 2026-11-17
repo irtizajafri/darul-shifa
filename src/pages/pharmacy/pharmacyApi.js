@@ -5,6 +5,9 @@ export const PHARMACY_NAME = 'AL SHIFA HOSPITAL PHARMACY';
 const API = `${API_BASE_URL}/api/pharmacy`;
 export const CLINIC_API = `${API_BASE_URL}/api/clinic`;
 export const EMPLOYEES_API = `${API_BASE_URL}/api/employees`;
+// GD departments = Inventory → Master Setup → Departments (owner, 2026-11-17).
+export const DEPARTMENTS_API = `${API_BASE_URL}/api/inventory/departments`;
+export const activeDepartments = (list) => (list || []).filter((d) => String(d.status || 'active') === 'active').sort((a, b) => a.name.localeCompare(b.name));
 
 export async function pharmacyApi(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${API}${path}`, {

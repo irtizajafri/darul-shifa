@@ -15,7 +15,8 @@ import './Pharmacy.scss';
 // Al Shifa Hospital Pharmacy → Goods Issuance (GIN), like Inventory's GIN:
 // pick a GD that isn't fully issued, Issue Date and Issued To, then the
 // quantity of each medicine (up to what's still left on the GD). No stock
-// check — the pharmacy keeps none. Rate = Medicine List retail price now.
+// check — the pharmacy keeps none. Rate starts at the Medicine List retail
+// price and can be changed per line at issue (owner, 2026-11-17).
 
 export default function PharmacyGIN() {
   const { user } = useAuthStore();
@@ -26,6 +27,7 @@ export default function PharmacyGIN() {
   const [gdId, setGdId] = useState('');
   const [gd, setGd] = useState(null);
   const [qty, setQty] = useState({});
+  const [rate, setRate] = useState({});
   const [issueDate, setIssueDate] = useState(pktToday());
   const [issuedToId, setIssuedToId] = useState('');
   const [saving, setSaving] = useState(false);
@@ -59,27 +61,32 @@ export default function PharmacyGIN() {
     setGdId(id || '');
     setGd(null);
     setQty({});
+    setRate({});
     if (!id) return;
     try {
       const g = await pharmacyApi(`/gd/${id}`);
       setGd(g);
       // Each line starts at what's still left to issue.
       setQty(Object.fromEntries(g.items.map((it) => [it.id, String(Math.max(0, it.quantityRequested - it.quantityIssued))])));
+      setRate(Object.fromEntries(g.items.map((it) => [it.id, String(it.currentRate ?? 0)])));
     } catch (e) {
       toast.error(e.message);
     }
   };
 
   const left = (it) => Math.max(0, it.quantityRequested - it.quantityIssued);
-  const total = gd ? gd.items.reduce((s, it) => s + (Number(qty[it.id]) || 0) * (it.currentRate || 0), 0) : 0;
+  const rateOf = (it) => (rate[it.id] === undefined ? Number(it.currentRate || 0) : Number(rate[it.id]) || 0);
+  const total = gd ? gd.items.reduce((s, it) => s + (Number(qty[it.id]) || 0) * rateOf(it), 0) : 0;
 
-  const reset = () => { setGdId(''); setGd(null); setQty({}); setIssuedToId(''); setIssueDate(pktToday()); };
+  const reset = () => { setGdId(''); setGd(null); setQty({}); setRate({}); setIssuedToId(''); setIssueDate(pktToday()); };
 
   const save = async (andPrint) => {
     if (!gd) { toast.error('Select the GD'); return; }
     if (!issuedToId) { toast.error('Select Issued To'); return; }
-    const items = gd.items.map((it) => ({ gdItemId: it.id, quantity: Number(qty[it.id]) || 0 })).filter((l) => l.quantity > 0);
+    const items = gd.items.map((it) => ({ gdItemId: it.id, quantity: Number(qty[it.id]) || 0, rate: rate[it.id] ?? it.currentRate })).filter((l) => l.quantity > 0);
     if (!items.length) { toast.error('Enter the quantity to issue'); return; }
+    const badRate = items.find((l) => l.rate === '' || !(Number(l.rate) >= 0));
+    if (badRate) { toast.error(`${gd.items.find((it) => it.id === badRate.gdItemId)?.medicineName}: enter a valid rate`); return; }
     const over = gd.items.find((it) => (Number(qty[it.id]) || 0) > left(it) + 1e-9);
     if (over) { toast.error(`${over.medicineName}: only ${fmtQty(left(over))} left on this GD`); return; }
     const win = andPrint ? openPrintWindow() : null;
@@ -153,7 +160,7 @@ export default function PharmacyGIN() {
         <div className="table-wrap ph-lines">
           <table className="ph-table">
             <thead>
-              <tr><th style={{ width: 40 }}>#</th><th>Medicine</th><th style={{ width: 80 }}>Pack</th><th className="r" style={{ width: 95 }}>Demanded</th><th className="r" style={{ width: 95 }}>Issued</th><th className="r" style={{ width: 95 }}>Left</th><th style={{ width: 120 }}>Issue Qty</th><th className="r" style={{ width: 90 }}>Rate</th><th className="r" style={{ width: 110 }}>Amount</th></tr>
+              <tr><th style={{ width: 40 }}>#</th><th>Medicine</th><th style={{ width: 80 }}>Pack</th><th className="r" style={{ width: 95 }}>Demanded</th><th className="r" style={{ width: 95 }}>Issued</th><th className="r" style={{ width: 95 }}>Left</th><th style={{ width: 120 }}>Issue Qty</th><th style={{ width: 120 }}>Rate</th><th className="r" style={{ width: 110 }}>Amount</th></tr>
             </thead>
             <tbody>
               {!gd && <tr><td colSpan={9} className="ph-empty">Select a GD to issue its medicines.</td></tr>}
@@ -172,8 +179,12 @@ export default function PharmacyGIN() {
                       <input className="ph-input ph-input--qty" inputMode="decimal" value={qty[it.id] ?? ''} disabled={done}
                         onChange={(e) => setQty((x) => ({ ...x, [it.id]: e.target.value }))} aria-label={`${it.medicineName} issue quantity`} />
                     </td>
-                    <td className="r">{fmtAmt(it.currentRate)}</td>
-                    <td className="r">{fmtAmt(q * (it.currentRate || 0))}</td>
+                    <td>
+                      <input className="ph-input ph-input--qty" inputMode="decimal" value={rate[it.id] ?? ''} disabled={done}
+                        onChange={(e) => setRate((x) => ({ ...x, [it.id]: e.target.value }))} aria-label={`${it.medicineName} rate`}
+                        title={`Medicine List price: ${fmtAmt(it.currentRate)}`} />
+                    </td>
+                    <td className="r">{fmtAmt(q * rateOf(it))}</td>
                   </tr>
                 );
               })}

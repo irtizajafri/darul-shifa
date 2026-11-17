@@ -3544,7 +3544,8 @@ model PanelLabResultLog {
 
 // ─── Al Shifa Hospital Pharmacy (7th module), migration 075 ─────────────────
 // GD / GIN like Inventory's, fully apart from it: no stock, no suppliers or
-// categories. Medicine / department / employee ids are plain numbers with the
+// categories. Medicine (ClinicMedicine) / department (InventoryDepartment —
+// Inventory's Master Setup list) / employee ids are plain numbers with the
 // names copied in.
 
 model PharmacyGD {

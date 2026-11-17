@@ -4,9 +4,10 @@ const prisma = require('../../config/db');
 // Goods Demand (GD) → Goods Issuance (GIN), the same flow as Inventory's, but
 // kept fully apart from Inventory: no stock is kept or checked, no suppliers
 // or categories. A GIN can't issue more than its GD asked for.
-//   Medicines   — Clinic's Medicine List (ClinicMedicine); retail price at
-//                 issue becomes the GIN rate.
-//   Department  — Clinic's departments (required, as in Inventory).
+//   Medicines   — Clinic's Medicine List (ClinicMedicine); its retail price
+//                 is the GIN's default rate, editable at issue.
+//   Department  — Inventory → Master Setup → Departments (required, as in
+//                 Inventory's GD; owner 2026-11-17). Only the list is read.
 //   Patient     — an Admission # or a Panel Slip # (optional, not both),
 //                 checked the way Inventory checks them.
 //   Issued To   — an HR employee.
@@ -97,8 +98,9 @@ const GD_INCLUDE = {
 async function createGD({ requestDate, departmentId, admissionNumber, opdSlipNo, patientName, comment, items, createdByName } = {}) {
   const day = isIsoDate(requestDate) ? requestDate : pktToday();
   if (day > pktToday()) throw fail(400, 'Request Date can\'t be in the future');
-  const dept = departmentId ? await prisma.clinicDepartment.findUnique({ where: { id: Number(departmentId) }, select: { id: true, name: true } }) : null;
+  const dept = departmentId ? await prisma.inventoryDepartment.findUnique({ where: { id: Number(departmentId) }, select: { id: true, name: true, status: true } }) : null;
   if (!dept) throw fail(400, 'Select the Department');
+  if (dept.status !== 'active') throw fail(400, `Department ${dept.name} is inactive`);
   const patient = await assertPatient({ admissionNumber, opdSlipNo });
 
   const lines = (Array.isArray(items) ? items : []).map((it, i) => ({ medicineId: Number(it.medicineId), quantity: Number(it.quantity), i }));
@@ -213,7 +215,7 @@ async function createGIN({ gdId, issueDate, issuedToId, items, createdByName } =
 
   const itemById = new Map(gd.items.map((it) => [it.id, it]));
   const lines = (Array.isArray(items) ? items : [])
-    .map((l) => ({ gdItemId: Number(l.gdItemId), quantity: Number(l.quantity) }))
+    .map((l) => ({ gdItemId: Number(l.gdItemId), quantity: Number(l.quantity), rate: l.rate === '' || l.rate == null ? null : Number(l.rate) }))
     .filter((l) => l.quantity > 0);
   if (!lines.length) throw fail(400, 'Enter the quantity to issue for at least one medicine');
   for (const l of lines) {
@@ -221,6 +223,7 @@ async function createGIN({ gdId, issueDate, issuedToId, items, createdByName } =
     if (!it) throw fail(400, 'A line is not on this GD');
     const left = it.quantityRequested - it.quantityIssued;
     if (l.quantity > left + QTY_EPS) throw fail(400, `${it.medicineName}: only ${round2(left)} left to issue on this GD`);
+    if (l.rate !== null && !(Number.isFinite(l.rate) && l.rate >= 0)) throw fail(400, `${it.medicineName}: enter a valid rate`);
   }
   const meds = await prisma.clinicMedicine.findMany({
     where: { id: { in: [...new Set(lines.map((l) => itemById.get(l.gdItemId).medicineId).filter(Boolean))] } },
@@ -232,7 +235,8 @@ async function createGIN({ gdId, issueDate, issuedToId, items, createdByName } =
     const code = await nextCode(tx, 'pharmacyGIN', 'gin', day);
     const ginLines = lines.map((l) => {
       const it = itemById.get(l.gdItemId);
-      const rate = round2(priceOf.get(it.medicineId) || 0);
+      // The rate typed at issue (owner, 2026-11-17), else the list price.
+      const rate = round2(l.rate !== null ? l.rate : (priceOf.get(it.medicineId) || 0));
       return {
         gdItemId: it.id, medicineId: it.medicineId, medicineCode: it.medicineCode, medicineName: it.medicineName, packSize: it.packSize,
         quantity: l.quantity, rate, amount: round2(rate * l.quantity),
