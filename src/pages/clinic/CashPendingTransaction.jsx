@@ -13,9 +13,11 @@ import './PendingTx.scss';
 
 // Clinic → Transactions → Cash Pending Transaction (owner, 2026-11-17), like
 // Panel Cheque Transaction for cash patients: files closed on Discharge and
-// Refund with "Goes to Cash Pending". When the patient comes back, the money
-// is received here — an ordinary admission receipt (same Slip #, back date
-// and print as Receiving against Admission), counted on the day it's received.
+// Refund with "Goes to Cash Pending". Figures are the Provisional Bill's, live
+// (owner, 2026-11-18): Bill Amount, Discount, Received, Balance — Balance is
+// what's owed. When the patient comes back, the money is received here — an
+// ordinary admission receipt (same Slip #, back date and print as Receiving
+// against Admission), counted on the day it's received.
 
 const API = `${API_BASE_URL}/api/clinic`;
 const fmt2 = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -52,7 +54,7 @@ export default function CashPendingTransaction() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
-  const openReceive = (r) => { setReceiving(r); setAmount(String(r.remaining)); setSerialNo(''); };
+  const openReceive = (r) => { setReceiving(r); setAmount(String(r.balance)); setSerialNo(''); };
 
   const submit = async (confirmNotDuplicate = false) => {
     const res = await fetch(`${API}/transactions/cash-pending/${receiving.admissionId}/receive`, {
@@ -73,7 +75,7 @@ export default function CashPendingTransaction() {
   const save = async (andPrint) => {
     const amt = Number(amount);
     if (!(amt > 0)) { toast.error('Enter the amount received'); return; }
-    if (amt > receiving.remaining + 0.005) { toast.error(`Only Rs. ${fmt2(receiving.remaining)} is pending on this file`); return; }
+    if (amt > receiving.balance + 0.005) { toast.error(`Only Rs. ${fmt2(receiving.balance)} is pending on this file`); return; }
     const w = andPrint ? openPrintWindow('width=420,height=680') : null;
     setSaving(true);
     try {
@@ -103,7 +105,7 @@ export default function CashPendingTransaction() {
         <div className="ptx-head">
           <div>
             <h1><HandCoins size={20} /> Cash Pending Transaction</h1>
-            <p>Cash files closed on Discharge and Refund with &quot;Goes to Cash Pending&quot; — receive the balance when the patient pays.</p>
+            <p>Cash files closed with &quot;Goes to Cash Pending&quot; — figures from the Provisional Bill. Receive the balance when the patient pays.</p>
           </div>
           <div className="ptx-kpis">
             <div><span>Files pending</span><b>{data.openCount}</b></div>
@@ -127,11 +129,11 @@ export default function CashPendingTransaction() {
         <div className="ptx-card table-wrap">
           <table className="ptx-table">
             <thead>
-              <tr><th>Admission #</th><th>Patient</th><th>Phone</th><th>Closed On</th><th>Allowed By</th><th className="r">Pending</th><th className="r">Received</th><th className="r">Remaining</th><th /></tr>
+              <tr><th>Admission #</th><th>Patient</th><th>Phone</th><th>Closed On</th><th>Allowed By</th><th className="r">Bill Amount</th><th className="r">Discount</th><th className="r">Received</th><th className="r">Balance</th><th /></tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={9} className="ptx-empty">Loading…</td></tr>}
-              {!loading && !data.rows.length && <tr><td colSpan={9} className="ptx-empty">{show === 'pending' ? 'No cash pending file.' : 'Nothing to show.'}</td></tr>}
+              {loading && <tr><td colSpan={10} className="ptx-empty">Loading…</td></tr>}
+              {!loading && !data.rows.length && <tr><td colSpan={10} className="ptx-empty">{show === 'pending' ? 'No cash pending file.' : 'Nothing to show.'}</td></tr>}
               {!loading && data.rows.map((r) => (
                 <Fragment key={r.admissionId}>
                   <tr className="ptx-click" onClick={() => setOpenRow(openRow === r.admissionId ? null : r.admissionId)}>
@@ -140,17 +142,19 @@ export default function CashPendingTransaction() {
                     <td className="muted">{r.phoneNo}</td>
                     <td className="nowrap">{fmtDT(r.closedAt)}</td>
                     <td className="muted">{r.approvedBy || ''}</td>
-                    <td className="r">{fmt2(r.pending)}</td>
+                    <td className="r">{fmt2(r.billAmount)}</td>
+                    <td className="r">{r.discount ? fmt2(r.discount) : ''}</td>
                     <td className="r">{fmt2(r.received)}</td>
-                    <td className="r"><b className={r.remaining > 0 ? 'ptx-due' : 'ptx-clear'}>{fmt2(r.remaining)}</b></td>
+                    <td className="r"><b className={r.balance > 0 ? 'ptx-due' : 'ptx-clear'}>{fmt2(r.balance)}</b></td>
                     <td className="r">
-                      {r.remaining > 0 && (
+                      {r.balance > 0 && (
                         <button type="button" className="ptx-btn ptx-btn--primary ptx-btn--sm" onClick={(e) => { e.stopPropagation(); openReceive(r); }}>Receive</button>
                       )}
                     </td>
                   </tr>
                   {openRow === r.admissionId && (
-                    <tr className="ptx-sub"><td colSpan={9}>
+                    <tr className="ptx-sub"><td colSpan={10}>
+                      <p className="muted">Balance at close: Rs. {fmt2(r.pendingAtClose)}{r.approvedBy ? ` · allowed by ${r.approvedBy}` : ''}. Figures above are the Provisional Bill&apos;s, live.</p>
                       {r.receipts.length ? (
                         <table className="ptx-table ptx-table--inner">
                           <thead><tr><th>Slip #</th><th>Received On</th><th className="r">Amount</th></tr></thead>
@@ -176,9 +180,10 @@ export default function CashPendingTransaction() {
             <div className="ptx-modal__body">
               <div className="ptx-facts">
                 <span>Patient <b>{receiving.patientName}</b></span>
-                <span>Pending <b>{fmt2(receiving.pending)}</b></span>
+                <span>Bill Amount <b>{fmt2(receiving.billAmount)}</b></span>
+                {receiving.discount > 0 && <span>Discount <b>{fmt2(receiving.discount)}</b></span>}
                 <span>Received <b>{fmt2(receiving.received)}</b></span>
-                <span>Remaining <b className="ptx-due">{fmt2(receiving.remaining)}</b></span>
+                <span>Balance <b className="ptx-due">{fmt2(receiving.balance)}</b></span>
               </div>
               <label className="ptx-field"><span>Amount Received</span>
                 <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />

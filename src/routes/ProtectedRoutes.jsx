@@ -48,6 +48,10 @@ import UnpresentedChequeList from '../pages/accounts/reports/UnpresentedChequeLi
 import ChequeWiseVoucherSummary from '../pages/accounts/reports/ChequeWiseVoucherSummary';
 import AccountsReportView from '../pages/accounts/reports/AccountsReportView';
 import CashFlowStatement from '../pages/accounts/reports/CashFlowStatement';
+import BankBook from '../pages/accounts/bankRecon/BankBook';
+import BankReconciliation from '../pages/accounts/bankRecon/BankReconciliation';
+import BankReconciliationStatement from '../pages/accounts/bankRecon/BankReconciliationStatement';
+import BankBalanceStatement from '../pages/accounts/bankRecon/BankBalanceStatement';
 import GeneralOPD from '../pages/clinic/GeneralOPD';
 import ConsultantOPD from '../pages/clinic/ConsultantOPD';
 import EmergencyOPD from '../pages/clinic/EmergencyOPD';
@@ -163,6 +167,10 @@ import DoctorScheduleFilter from '../pages/clinic/reports/DoctorScheduleFilter';
 import DoctorScheduleReport from '../pages/clinic/reports/DoctorScheduleReport';
 import GeneralPaymentFilter from '../pages/clinic/reports/GeneralPaymentFilter';
 import GeneralPaymentReport from '../pages/clinic/reports/GeneralPaymentReport';
+import CashPendingReportFilter from '../pages/clinic/reports/CashPendingReportFilter';
+import CashPendingReport from '../pages/clinic/reports/CashPendingReport';
+import CreditPendingReportFilter from '../pages/clinic/reports/CreditPendingReportFilter';
+import CreditPendingReport from '../pages/clinic/reports/CreditPendingReport';
 import BedShifting from '../pages/clinic/BedShifting';
 import BedStatus from '../pages/clinic/BedStatus';
 import PendingFiles from '../pages/clinic/PendingFiles';
@@ -240,7 +248,7 @@ export default function ProtectedRoutes() {
       <Route path="inventory/master-setup" element={<PermissionGuard module="inventory" subModule="master-setup"><MasterSetup /></PermissionGuard>} />
       <Route path="inventory/po" element={<PermissionGuard module="inventory" subModule="po"><PurchaseOrder /></PermissionGuard>} />
       <Route path="inventory/grn" element={<PermissionGuard module="inventory" subModule="grn"><GoodsReceipt /></PermissionGuard>} />
-      <Route path="inventory/gin" element={<PermissionGuard module="inventory" subModules={['gd', 'gin']}><GoodsIssue /></PermissionGuard>} />
+      <Route path="inventory/gin" element={<PermissionGuard module="inventory" subModules={['gd', 'gin', 'pharmacy']}><GoodsIssue /></PermissionGuard>} />
       <Route path="inventory/sales-invoice" element={<PermissionGuard module="inventory" subModule="sales-invoice"><SalesInvoice /></PermissionGuard>} />
       <Route path="inventory/gdn" element={<PermissionGuard module="inventory" subModule="gdn"><GoodsDiscard /></PermissionGuard>} />
       <Route path="inventory/mrn" element={<PermissionGuard module="inventory" subModule="mrn"><GoodsReturn /></PermissionGuard>} />
@@ -280,6 +288,8 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<BankDepositAdj />} />
         <Route path="accounts/:entityType/transactions/bank-statement" element={<BankStatementUpload />} />
         <Route path="accounts/:entityType/transactions/cheque-presentation" element={<ChequePresentation />} />
+        <Route path="accounts/:entityType/transactions/bank-book" element={<BankBook />} />
+        <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<BankReconciliation />} />
 
         <Route path="accounts/:entityType/inquiry" element={<AccountsInquiryDashboard />} />
 
@@ -294,6 +304,8 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<UnpresentedChequeList />} />
         <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<ChequeWiseVoucherSummary />} />
         <Route path="accounts/:entityType/reports/cash-flow-statement" element={<CashFlowStatement />} />
+        <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<BankReconciliationStatement />} />
+        <Route path="accounts/:entityType/reports/bank-balance-statement" element={<BankBalanceStatement />} />
         <Route path="accounts/:entityType/reports/:reportKey/view" element={<AccountsReportView />} />
         <Route path="accounts/:entityType/reports/*" element={<ComingSoon />} />
       </Route>
@@ -322,6 +334,8 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts"><BankDepositAdj /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/bank-statement" element={<PermissionGuard module="accounts"><BankStatementUpload /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts"><ChequePresentation /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-book" element={<PermissionGuard module="accounts"><BankBook /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<PermissionGuard module="accounts"><BankReconciliation /></PermissionGuard>} />
       <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts"><AccountsInquiryDashboard /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
@@ -334,14 +348,17 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts"><UnpresentedChequeList /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts"><ChequeWiseVoucherSummary /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/cash-flow-statement" element={<PermissionGuard module="accounts"><CashFlowStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<PermissionGuard module="accounts"><BankReconciliationStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/bank-balance-statement" element={<PermissionGuard module="accounts"><BankBalanceStatement /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts"><AccountsReportView /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts"><ComingSoon /></PermissionGuard>} />
 
       {/* Laboratories */}
       <Route path="lab-module" element={<PermissionGuard module="lab"><LabModuleDashboard /></PermissionGuard>} />
       <Route path="pharmacy-module" element={<PermissionGuard module="pharmacy"><PharmacyModuleDashboard /></PermissionGuard>} />
-      <Route path="pharmacy/gd" element={<PermissionGuard module="pharmacy" subModule="gd"><PharmacyGD /></PermissionGuard>} />
-      <Route path="pharmacy/gin" element={<PermissionGuard module="pharmacy" subModule="gin"><PharmacyGIN /></PermissionGuard>} />
+      {/* Also opened from the card on Inventory → GIN, with Inventory's own permission for it. */}
+      <Route path="pharmacy/gd" element={<PermissionGuard anyOf={[{ module: 'pharmacy', subModule: 'gd' }, { module: 'inventory', subModule: 'pharmacy', tab: 'gd' }]}><PharmacyGD /></PermissionGuard>} />
+      <Route path="pharmacy/gin" element={<PermissionGuard anyOf={[{ module: 'pharmacy', subModule: 'gin' }, { module: 'inventory', subModule: 'pharmacy', tab: 'gin' }]}><PharmacyGIN /></PermissionGuard>} />
       <Route path="pharmacy/reports" element={<PermissionGuard module="pharmacy" subModule="reports"><PharmacyReports /></PermissionGuard>} />
       <Route path="lab/result-entry" element={<PermissionGuard module="lab" subModule="result-entry"><LabResultEntry /></PermissionGuard>} />
       <Route path="lab/categories" element={<PermissionGuard module="lab" subModule="categories"><LabCategories /></PermissionGuard>} />
@@ -470,6 +487,10 @@ export default function ProtectedRoutes() {
       <Route path="clinic/reports/doctor-schedule/view"            element={<PermissionGuard module="clinic" subModule="reports"><DoctorScheduleReport /></PermissionGuard>} />
       <Route path="clinic/reports/general-payment"                 element={<PermissionGuard module="clinic" subModule="reports" tab="general-payment"><GeneralPaymentFilter /></PermissionGuard>} />
       <Route path="clinic/reports/general-payment/view"            element={<PermissionGuard module="clinic" subModule="reports"><GeneralPaymentReport /></PermissionGuard>} />
+      <Route path="clinic/reports/cash-pending"                    element={<PermissionGuard module="clinic" subModule="reports" tab="cash-pending-report"><CashPendingReportFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/cash-pending/view"               element={<PermissionGuard module="clinic" subModule="reports" tab="cash-pending-report"><CashPendingReport /></PermissionGuard>} />
+      <Route path="clinic/reports/credit-pending"                  element={<PermissionGuard module="clinic" subModule="reports" tab="credit-pending-report"><CreditPendingReportFilter /></PermissionGuard>} />
+      <Route path="clinic/reports/credit-pending/view"             element={<PermissionGuard module="clinic" subModule="reports" tab="credit-pending-report"><CreditPendingReport /></PermissionGuard>} />
 
       {/* ── Clinic Inquiries ── */}
       <Route path="clinic/inquiries/revenue-dashboard" element={<PermissionGuard module="clinic" subModule="inquiries" tab="revenue-dashboard"><RevenueDashboard /></PermissionGuard>} />

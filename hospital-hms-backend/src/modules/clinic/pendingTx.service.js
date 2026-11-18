@@ -4,11 +4,12 @@ const clinicSvc = require('./clinic.service');
 // Clinic → Transactions → Cash Pending / Credit Pending (owner, 2026-11-17).
 //
 // Cash Pending: a cash file closed on Discharge and Refund with "Goes to Cash
-// Pending" keeps its unpaid balance (ClinicAdmission.dischargeCashPending).
-// The patient pays it later here; each receipt is an ordinary admission
-// payment (addAdmissionPayment), tagged againstCashPending, so it counts on
-// the day it's received everywhere receipts count (Patients List, Daily
-// Statement, Revenue Dashboard, Cash Flow).
+// Pending". What it owes is its Provisional Bill's Balance (owner,
+// 2026-11-18) — the screen shows the Provisional Bill's Bill Amount /
+// Discount / Received / Balance, live. The patient pays it later here; each
+// receipt is an ordinary admission payment (addAdmissionPayment), tagged
+// againstCashPending, so it counts on the day it's received everywhere
+// receipts count and lowers the Provisional Bill's Balance.
 //
 // Credit Pending: CC (credit card) OPD slips wait for the bank. When the bank
 // pays, its amount and charges are recorded per slip (ClinicCcSettlement).
@@ -49,9 +50,10 @@ async function listCashPending({ q, show } = {}) {
       })
     : [];
   const closedAt = new Map(logs.map((l) => [l.admissionId, l.changedAt]));
-  const rows = admissions.map((a) => {
-    const pending = round2(a.dischargeCashPending);
-    const received = round2(a.payments.reduce((s, p) => s + Number(p.amount), 0));
+  // Each file's Provisional Bill figures, live.
+  const bills = await Promise.all(admissions.map((a) => clinicSvc.getProvisionalBillDetail(a.id).then((d) => d.balanceInfo).catch(() => null)));
+  const rows = admissions.map((a, i) => {
+    const b = bills[i] || {};
     return {
       admissionId: a.id,
       admissionNo: a.admissionNo,
@@ -60,17 +62,19 @@ async function listCashPending({ q, show } = {}) {
       status: a.status,
       closedAt: closedAt.get(a.id) || null,
       approvedBy: a.dischargeCashPendingBy || null,
-      pending,
-      received,
-      remaining: round2(Math.max(0, pending - received)),
+      pendingAtClose: round2(a.dischargeCashPending),
+      billAmount: round2(b.billAmount),
+      discount: round2(b.discount),
+      received: round2(b.amountReceived),
+      balance: round2(Math.max(0, Number(b.balance) || 0)),
       receipts: a.payments.map((p) => ({ id: p.id, serialNo: p.serialNo, amount: Number(p.amount), receivedAt: p.receivedAt })),
     };
   });
-  const shown = show === 'all' ? rows : show === 'cleared' ? rows.filter((r) => r.remaining <= 0) : rows.filter((r) => r.remaining > 0);
+  const shown = show === 'all' ? rows : show === 'cleared' ? rows.filter((r) => r.balance <= 0) : rows.filter((r) => r.balance > 0);
   return {
     rows: shown,
-    totalRemaining: round2(rows.reduce((s, r) => s + r.remaining, 0)),
-    openCount: rows.filter((r) => r.remaining > 0).length,
+    totalRemaining: round2(rows.reduce((s, r) => s + r.balance, 0)),
+    openCount: rows.filter((r) => r.balance > 0).length,
   };
 }
 
@@ -78,8 +82,10 @@ async function receiveCashPending(admissionId, { amount, serialNo, receivedBy, c
   const id = Number(admissionId);
   const a = await prisma.clinicAdmission.findUnique({ where: { id }, select: { id: true, dischargeCashPending: true } });
   if (!a || !(Number(a.dischargeCashPending) > 0)) throw fail(404, 'This file has no cash pending');
-  const got = await prisma.clinicAdmissionPayment.aggregate({ where: { admissionId: id, againstCashPending: true }, _sum: { amount: true } });
-  const remaining = round2(Number(a.dischargeCashPending) - (Number(got._sum.amount) || 0));
+  // What's owed = the Provisional Bill's Balance now.
+  const prov = await clinicSvc.getProvisionalBillDetail(id);
+  const remaining = round2(Math.max(0, Number(prov.balanceInfo?.balance) || 0));
+  if (!(remaining > 0)) throw fail(400, 'Nothing is pending on this file — its Provisional Bill balance is 0');
   const amt = Number(amount);
   if (!(amt > 0)) throw fail(400, 'Enter the amount received');
   if (amt > remaining + 0.005) throw fail(400, `Only Rs. ${remaining.toLocaleString()} is pending on this file`);
@@ -109,7 +115,9 @@ async function setCashPendingMark(admissionId, { marked, changedBy } = {}) {
 
 const CC_TYPES = ['cc', 'c card', 'credit card'];
 
-async function listCreditPending({ from, to, q, show } = {}) {
+// `dateAndTerm`: the report applies the slip dates and the search together
+// (the screen's search looks across all dates).
+async function listCreditPending({ from, to, q, show, dateAndTerm = false, take = 2000 } = {}) {
   const term = String(q || '').trim();
   const where = { status: 'active', OR: CC_TYPES.map((t) => ({ paymentType: { equals: t, mode: 'insensitive' } })) };
   if (term) {
@@ -117,7 +125,8 @@ async function listCreditPending({ from, to, q, show } = {}) {
       { serialNo: { contains: term, mode: 'insensitive' } },
       { patientName: { contains: term, mode: 'insensitive' } },
     ] }];
-  } else if (isIsoDate(from) || isIsoDate(to)) {
+  }
+  if ((!term || dateAndTerm) && (isIsoDate(from) || isIsoDate(to))) {
     // Business days (08:00 → 07:59 PKT).
     const f = isIsoDate(from) ? from : to;
     const t = isIsoDate(to) ? to : f;
@@ -128,10 +137,10 @@ async function listCreditPending({ from, to, q, show } = {}) {
     select: {
       id: true, serialNo: true, patientType: true, patientName: true, department: true, totalAmount: true, createdAt: true,
       balancePayments: { select: { amount: true } },
-      ccSettlements: { orderBy: { id: 'asc' }, select: { id: true, receivedDate: true, receivedAmount: true, bankCharges: true, remarks: true, createdByName: true } },
+      ccSettlements: { orderBy: { id: 'asc' }, select: { id: true, receivedDate: true, receivedAmount: true, bankCharges: true, bankAccountId: true, remarks: true, createdByName: true } },
     },
     orderBy: { createdAt: 'desc' },
-    take: 2000,
+    take,
   });
   const rows = visits.map((v) => {
     const amount = round2(v.totalAmount);
@@ -153,7 +162,7 @@ async function listCreditPending({ from, to, q, show } = {}) {
 
 // The bank paid for one or more slips: the amount it credited, the rest of
 // those slips' pending is its charges, shared in proportion to each slip.
-async function settleCreditPending({ visitIds, receivedDate, receivedAmount, remarks, createdByName } = {}) {
+async function settleCreditPending({ visitIds, receivedDate, receivedAmount, remarks, createdByName, bankAccountId } = {}) {
   const ids = [...new Set((Array.isArray(visitIds) ? visitIds : []).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
   if (!ids.length) throw fail(400, 'Tick the slips the bank has paid');
   const day = isIsoDate(receivedDate) ? receivedDate : null;
@@ -170,6 +179,9 @@ async function settleCreditPending({ visitIds, receivedDate, receivedAmount, rem
   if (!(got > 0)) throw fail(400, 'Enter the amount the bank paid');
   if (got > total + 0.005) throw fail(400, `The bank amount is more than these slips' pending total (Rs. ${total.toLocaleString()})`);
   const charges = round2(total - got);
+  // Optional (Bank Reconciliation, 077): the bank account the money came into.
+  const bankId = bankAccountId ? Number(bankAccountId) : null;
+  if (bankId && !(await prisma.accBankAccount.findUnique({ where: { id: bankId }, select: { id: true } }))) throw fail(400, 'Bank Account not found');
 
   // Split received / charges by each slip's pending; the last slip takes the
   // rounding so the parts add up exactly.
@@ -187,6 +199,7 @@ async function settleCreditPending({ visitIds, receivedDate, receivedAmount, rem
   await prisma.$transaction(parts.map((p) => prisma.clinicCcSettlement.create({
     data: {
       visitId: p.r.visitId, receivedDate: new Date(`${day}T00:00:00Z`), receivedAmount: p.received, bankCharges: p.charges,
+      bankAccountId: bankId,
       remarks: String(remarks || '').trim() || null, createdByName: String(createdByName || '').trim() || null,
     },
   })));
@@ -196,8 +209,62 @@ async function settleCreditPending({ visitIds, receivedDate, receivedAmount, rem
 async function undoCreditSettlement(id) {
   const s = await prisma.clinicCcSettlement.findUnique({ where: { id: Number(id) } });
   if (!s) throw fail(404, 'Not found');
-  await prisma.clinicCcSettlement.delete({ where: { id: s.id } });
+  // A bank-statement match on it goes too (the statement line is unmatched).
+  await prisma.$transaction([
+    prisma.accBankReconLink.deleteMany({ where: { bookType: 'cc', bookId: s.id } }),
+    prisma.clinicCcSettlement.delete({ where: { id: s.id } }),
+  ]);
   return { id: s.id };
 }
 
-module.exports = { listCashPending, receiveCashPending, setCashPendingMark, listCreditPending, settleCreditPending, undoCreditSettlement };
+// ─── Reports (Clinic → Reports, owner 2026-11-18) ───────────────────────────
+// Same figures as the two Transactions screens, as printable reports.
+
+const PKT_DATE = (d) => (d ? PKT_DAY.format(new Date(d)) : null);
+const inDates = (day, from, to) => (!isIsoDate(from) || (day && day >= from)) && (!isIsoDate(to) || (day && day <= to));
+const sumBy = (rows, k) => round2(rows.reduce((s, r) => s + (Number(r[k]) || 0), 0));
+
+// Cash Pending files; From / To = the day the file was closed (blank = all).
+async function cashPendingReport({ from, to, show = 'pending', q } = {}) {
+  const { rows: all } = await listCashPending({ q, show: 'all' });
+  const rows = all
+    .filter((r) => inDates(PKT_DATE(r.closedAt), from, to))
+    .filter((r) => (show === 'all' ? true : show === 'cleared' ? r.balance <= 0 : r.balance > 0))
+    .sort((a, b) => (new Date(a.closedAt || 0) - new Date(b.closedAt || 0)) || String(a.admissionNo).localeCompare(String(b.admissionNo)));
+  rows.forEach((r) => { r.receivedAgainstPending = round2(r.receipts.reduce((s, p) => s + p.amount, 0)); });
+  return {
+    filters: { from: isIsoDate(from) ? from : null, to: isIsoDate(to) ? to : null, show, q: String(q || '').trim() || null },
+    rows,
+    totals: {
+      files: rows.length,
+      billAmount: sumBy(rows, 'billAmount'), discount: sumBy(rows, 'discount'), received: sumBy(rows, 'received'),
+      balance: sumBy(rows, 'balance'), pendingAtClose: sumBy(rows, 'pendingAtClose'), receivedAgainstPending: sumBy(rows, 'receivedAgainstPending'),
+    },
+  };
+}
+
+// CC slips; From / To = the slip's business day (blank = all).
+async function creditPendingReport({ from, to, show = 'pending', q } = {}) {
+  const { rows: all } = await listCreditPending({ from, to, q, show: 'all', dateAndTerm: true, take: 20000 });
+  const rows = all
+    .filter((r) => (show === 'all' ? true : show === 'settled' ? r.pending <= 0 : r.pending > 0))
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const bankIds = [...new Set(rows.flatMap((r) => r.settlements.map((x) => x.bankAccountId)).filter(Boolean))];
+  const banks = bankIds.length ? await prisma.accBankAccount.findMany({ where: { id: { in: bankIds } }, select: { id: true, bankName: true } }) : [];
+  const bankName = new Map(banks.map((b) => [b.id, b.bankName]));
+  rows.forEach((r) => r.settlements.forEach((x) => { x.bankName = x.bankAccountId ? bankName.get(x.bankAccountId) || null : null; }));
+  return {
+    filters: { from: isIsoDate(from) ? from : null, to: isIsoDate(to) ? to : null, show, q: String(q || '').trim() || null },
+    rows,
+    totals: {
+      slips: rows.length,
+      amount: sumBy(rows, 'amount'), balancePaid: sumBy(rows, 'balancePaid'), received: sumBy(rows, 'received'),
+      bankCharges: sumBy(rows, 'bankCharges'), pending: sumBy(rows, 'pending'),
+    },
+  };
+}
+
+module.exports = {
+  listCashPending, receiveCashPending, setCashPendingMark, listCreditPending, settleCreditPending, undoCreditSettlement,
+  cashPendingReport, creditPendingReport,
+};

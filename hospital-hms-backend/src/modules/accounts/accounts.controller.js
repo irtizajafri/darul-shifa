@@ -1,5 +1,6 @@
 const svc = require('./accounts.service');
 const cashFlowSvc = require('./cashFlow.service');
+const reconSvc = require('./bankRecon.service');
 const { success, fail } = require('../../utils/response');
 
 const et = (req) => req.query.entityType || 'non-corporate';
@@ -67,7 +68,7 @@ async function getInventoryHeadForMainAccount(req, res, next) { try { success(re
 
 async function getBankAccounts(req, res, next) { try { success(res, await svc.getBankAccounts(et(req))); } catch (e) { next(e); } }
 async function createBankAccount(req, res, next) { try { success(res, await svc.createBankAccount(req.body), 'created'); } catch (e) { next(e); } }
-async function updateBankAccount(req, res, next) { try { success(res, await svc.updateBankAccount(req.params.id, req.body), 'updated'); } catch (e) { next(e); } }
+async function updateBankAccount(req, res, next) { try { success(res, await svc.updateBankAccount(req.params.id, req.body), 'updated'); } catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); } }
 async function deleteBankAccount(req, res, next) { try { await svc.deleteBankAccount(req.params.id); success(res, null, 'deleted'); } catch (e) { next(e); } }
 
 async function getChequeSerials(req, res, next) { try { success(res, await svc.getChequeSerials(et(req), req.query.bankAccountId)); } catch (e) { next(e); } }
@@ -249,6 +250,10 @@ async function updateIncomeDraft(req, res, next) {
   try { success(res, await svc.updatePendingIncomeDraft(req.params.id, req.body || {}), 'Draft saved'); }
   catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
 }
+async function refreshIncomeDraft(req, res, next) {
+  try { success(res, await svc.refreshPendingIncomeDraft(req.params.id), 'Refreshed from Clinic'); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
 async function postIncomeDraft(req, res, next) {
   try { success(res, await svc.postPendingIncomeDraft(req.params.id, req.body || {}), 'Voucher posted'); }
   catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
@@ -367,6 +372,23 @@ async function getDailyIncomeExpenseDiff(req, res, next) {
   }
 }
 
+// ─── Bank Reconciliation (Bank Book, matching, BRS, sign-off) ───────────────
+const reconFail = (res, next, e) => (e.status ? fail(res, e.status, e.message) : next(e));
+const rq = (fn) => async (req, res, next) => { try { success(res, await fn(req)); } catch (e) { reconFail(res, next, e); } };
+const getBankBook = rq((req) => reconSvc.getBankBook(req.query));
+const getBankBalances = rq((req) => reconSvc.getBankBalances({ entityType: et(req), asOf: req.query.asOf }));
+const getStatementBatches = rq((req) => reconSvc.listBatches(req.query));
+const deleteStatementBatch = rq((req) => reconSvc.deleteBatch(req.query));
+const getReconItems = rq((req) => reconSvc.getReconItems(req.query));
+const reconAutoMatch = rq((req) => reconSvc.autoMatch(req.body || {}));
+const reconMatch = rq((req) => reconSvc.manualMatch(req.body || {}));
+const reconUnmatch = rq((req) => reconSvc.unmatchLine(req.body || {}));
+const reconAddToBooks = rq((req) => reconSvc.addToBooks(req.body || {}, svc));
+const reconExpenseAccounts = rq((req) => reconSvc.listExpenseAccounts(et(req)));
+const getReconStatement = rq((req) => reconSvc.getStatement(req.query));
+const reconSignOff = rq((req) => reconSvc.signOff(req.body || {}));
+const reconReopen = rq((req) => reconSvc.reopenSignOff(req.params.id, req.body || {}));
+
 module.exports = {
   getAllocationUsage,
   getMainGLs, createMainGL, updateMainGL, deleteMainGL,
@@ -385,8 +407,11 @@ module.exports = {
   getAllPayeeEntries, createVoucherExpense, appendVoucherExpenseEntry, removeVoucherExpenseEntry, getVoucherExpenses, listVoucherExpenseNumbers, updateVoucherExpense, deleteVoucherExpense,
   getPayeeEntriesBySubAccount, getSupplierGRNs, getSupplierMaintenance, getConsultantVisits,
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
-  getIncomeDrafts, updateIncomeDraft, postIncomeDraft,
+  getIncomeDrafts, updateIncomeDraft, postIncomeDraft, refreshIncomeDraft,
   getChequePresentation, presentCheque, unpresentCheque,
+  getBankBook, getBankBalances, getStatementBatches, deleteStatementBatch, getReconItems,
+  reconAutoMatch, reconMatch, reconUnmatch, reconAddToBooks, reconExpenseAccounts,
+  getReconStatement, reconSignOff, reconReopen,
   getCashFlowStatement,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,

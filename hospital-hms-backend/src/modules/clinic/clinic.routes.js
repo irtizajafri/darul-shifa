@@ -416,6 +416,8 @@ router.post('/transactions/credit-pending/settle', controller.settleCreditPendin
 router.delete('/transactions/credit-pending/settlement/:id', controller.undoCreditSettlement);
 router.get('/reports/admission-distribution', controller.getAdmissionDistribution);
 router.get('/reports/ward-wise-payment-distribution', controller.getWardWisePaymentDistribution);
+router.get('/reports/cash-pending', controller.cashPendingReport);
+router.get('/reports/credit-pending', controller.creditPendingReport);
 router.get('/reports/department-monthly-comparison', controller.getDepartmentMonthlyComparison);
 router.get('/reports/cancel-refund-history', controller.getCancelRefundHistory);
 router.get('/reports/doctor-schedule', controller.getDoctorScheduleReport);

@@ -2415,11 +2415,17 @@ model AccBankAccount {
   bankName      String
   accountNumber String
   entityType    String            @default("non-corporate")
+  // Bank Book (migration 077): balance at the start of openingDate.
+  openingBalance Decimal          @default(0) @db.Decimal(15, 2)
+  openingDate    DateTime?        @db.Date
+  isActive       Boolean          @default(true)
   createdAt     DateTime          @default(now())
   chequeSerials AccChequeSerial[]
   deposits      AccBankDeposit[]
   depositAdjs   AccBankDepositAdj[]
   statementLines AccBankStatementLine[]
+  reconLinks     AccBankReconLink[]
+  reconSignoffs  AccBankReconSignoff[]
 }
 
 model AccBankDeposit {
@@ -2474,9 +2480,48 @@ model AccBankStatementLine {
   createdAt     DateTime       @default(now())
 
   matchedCheques AccVoucherExpenseEntry[]
+  reconLinks     AccBankReconLink[]
 
   @@index([bankAccountId, date])
   @@index([uploadBatchId])
+}
+
+// Bank Reconciliation (migration 077): a statement line matched to book items
+// that put money into the bank. Money out keeps
+// AccVoucherExpenseEntry.matchedStatementLineId.
+model AccBankReconLink {
+  id              Int                  @id @default(autoincrement())
+  bankAccountId   Int
+  bankAccount     AccBankAccount       @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  statementLineId Int
+  statementLine   AccBankStatementLine @relation(fields: [statementLineId], references: [id], onDelete: Cascade)
+  bookType        String // deposit | income | panel-cheque | cc
+  bookId          Int
+  amount          Decimal              @default(0) @db.Decimal(15, 2)
+  method          String               @default("manual") // auto | manual
+  matchedByName   String?
+  matchedAt       DateTime             @default(now())
+
+  @@unique([bookType, bookId], map: "AccBankReconLink_book_key")
+  @@index([statementLineId])
+}
+
+// "Reconciled as of date by X" — matching on or before asOfDate is locked
+// until reopened (reopenedAt set).
+model AccBankReconSignoff {
+  id               Int            @id @default(autoincrement())
+  bankAccountId    Int
+  bankAccount      AccBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  asOfDate         DateTime       @db.Date
+  statementBalance Decimal        @db.Decimal(15, 2)
+  bookBalance      Decimal        @db.Decimal(15, 2)
+  difference       Decimal        @db.Decimal(15, 2)
+  signedByName     String?
+  signedAt         DateTime       @default(now())
+  reopenedByName   String?
+  reopenedAt       DateTime?
+
+  @@index([bankAccountId, asOfDate], map: "AccBankReconSignoff_bank_idx")
 }
 
 model AccChequeSerial {
@@ -2779,6 +2824,10 @@ model AccVoucherIncome {
   status       String                 @default("posted")
   postedAt     DateTime?
   postedByName String?
+  // Edited by hand in Pending Drafts (migration 078) — until then a pending
+  // Day Close voucher follows the Clinic figures.
+  editedAt     DateTime?
+  editedByName String?
   createdAt   DateTime                @default(now())
   entries     AccVoucherIncomeEntry[]
 
@@ -2905,6 +2954,9 @@ model ClinicPanelChequeReceipt {
   totalAmount     Float    @default(0)
   receivedAmount  Float    @default(0)
   deduction       Float    @default(0)
+  // Which bank the cheque went into, and when (Bank Reconciliation, 077).
+  bankAccountId   Int?
+  depositDate     DateTime? @db.Date
   createdByUserId String?
   createdByName   String?
   createdAt       DateTime @default(now())
@@ -3634,6 +3686,8 @@ model ClinicCcSettlement {
   receivedDate   DateTime       @db.Date
   receivedAmount Decimal        @db.Decimal(12, 2)
   bankCharges    Decimal        @default(0) @db.Decimal(12, 2)
+  // Bank the money came into (Bank Reconciliation, 077).
+  bankAccountId  Int?
   remarks        String?
   createdByName  String?
   createdAt      DateTime       @default(now())

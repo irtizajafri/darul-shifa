@@ -1,0 +1,48 @@
+// Cash Pending / Credit Pending reports — filter window (extends
+// ConsultantWiseFilter.scss's .cwf-* chrome) and the result sheet (extends the
+// shared .ddp-* report shell), shown as an A4 portrait page in Arial 9pt the
+// way it prints.
+
+.pdf-window { width: 620px; max-width: 100%; }
+.pdf-window .cwf-lbl { width: 90px; white-space: nowrap; }
+// A fieldset is as wide as its content by default — keep it inside the window.
+.pdf-criteria { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pdf-window .cwf-row { flex-wrap: wrap; row-gap: 6px; }
+.pdf-window .cwf-input[type='date'] { width: 150px; }
+.pdf-wide { flex: 1; min-width: 0; width: auto; }
+.pdf-to { font-size: 0.75rem; color: #333; }
+.pdf-radios { border: 1px solid #8a8a8a; padding: 4px 10px; }
+.pdf-check { display: inline-flex; align-items: center; gap: 5px; font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
+.pdf-dates input:disabled { opacity: 0.5; }
+
+.pdr-a4 {
+  width: 210mm;
+  max-width: 100%;
+  padding: 8mm;
+  margin: 0 auto;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9pt;
+  * { font-family: Arial, Helvetica, sans-serif; }
+  .ddp-print-header { text-align: center; margin-bottom: 3mm; }
+  .ddp-print-header h1 { font-size: 11pt; text-transform: uppercase; margin: 0; }
+}
+.pdr-criteria { font-size: 9pt; color: #475569; margin: 1mm 0 0; }
+.pdr-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.pdr-table th, .pdr-table td {
+  font-size: 9pt;
+  line-height: 1.25;
+  padding: 2px 3px;
+  white-space: normal;
+  overflow-wrap: break-word;
+  vertical-align: top;
+  text-align: left;
+}
+.pdr-table th { border-bottom: 1px solid #000; font-weight: 700; }
+.pdr-table tbody td { font-weight: 400; border-bottom: 1px solid #d4d4d4; }
+.pdr-table th.num, .pdr-table .td-num { text-align: right; }
+.pdr-table td.pdr-nowrap { white-space: nowrap; }
+.pdr-table tr.pdr-sub td { border-bottom: 1px solid #d4d4d4; padding-top: 0; color: #334155; font-size: 8.5pt; }
+.pdr-table tr.pdr-has-sub td { border-bottom: none; }
+.pdr-total-row td { font-weight: 700; border-top: 1px solid #000; padding-top: 3px; }
+.pdr-summary { margin: 3mm 0 0; font-size: 9pt; }
+.pdr-muted { color: #64748b; }

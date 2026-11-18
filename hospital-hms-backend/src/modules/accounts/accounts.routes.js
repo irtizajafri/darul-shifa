@@ -102,6 +102,7 @@ router.put('/voucher-income/:id', ctrl.updateVoucherIncome);
 router.get('/income-drafts', ctrl.getIncomeDrafts);
 router.put('/income-drafts/:id', ctrl.updateIncomeDraft);
 router.post('/income-drafts/:id/post', ctrl.postIncomeDraft);
+router.post('/income-drafts/:id/refresh', ctrl.refreshIncomeDraft);
 
 router.post('/payee-head-accounts', ctrl.addHeadAccount);
 router.delete('/payee-head-accounts/:headId/:subAccountId', ctrl.removeHeadAccount);
@@ -123,6 +124,21 @@ router.post('/bank-deposit-adjs', ctrl.createBankDepositAdj);
 
 router.get('/bank-statement', ctrl.getBankStatementLines);
 router.post('/bank-statement/bulk-import', ctrl.bulkImportBankStatement);
+router.get('/bank-statement/batches', ctrl.getStatementBatches);
+router.delete('/bank-statement/batches', ctrl.deleteStatementBatch);
+
+// Bank Reconciliation
+router.get('/bank-book', ctrl.getBankBook);
+router.get('/bank-balances', ctrl.getBankBalances);
+router.get('/bank-recon', ctrl.getReconItems);
+router.get('/bank-recon/expense-accounts', ctrl.reconExpenseAccounts);
+router.post('/bank-recon/auto-match', ctrl.reconAutoMatch);
+router.post('/bank-recon/match', ctrl.reconMatch);
+router.post('/bank-recon/unmatch', ctrl.reconUnmatch);
+router.post('/bank-recon/add-to-books', ctrl.reconAddToBooks);
+router.get('/bank-recon/statement', ctrl.getReconStatement);
+router.post('/bank-recon/signoff', ctrl.reconSignOff);
+router.post('/bank-recon/signoff/:id/reopen', ctrl.reconReopen);
 
 router.get('/un-presented-cheques', ctrl.getUnpresentedChequeList);
 router.get('/cash-flow-statement', ctrl.getCashFlowStatement);

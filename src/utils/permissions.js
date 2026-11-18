@@ -72,6 +72,17 @@ export const PERMISSIONS_MAP = {
           { key: 'edit', label: 'Edit GIN' },
         ],
       },
+      // Card on Inventory → GIN that opens Al Shifa Hospital Pharmacy's GD /
+      // GIN directly (owner, 2026-11-18) — its own authorization, apart from
+      // the Pharmacy module's.
+      {
+        key: 'pharmacy',
+        label: 'Al Shifa Hospital Pharmacy (card on GIN)',
+        tabs: [
+          { key: 'gd',  label: 'Pharmacy GD' },
+          { key: 'gin', label: 'Pharmacy GIN' },
+        ],
+      },
       { key: 'sales-invoice', label: 'Sales Invoice' },
       { key: 'gdn',           label: 'Goods Discard (GDN)' },
       { key: 'mrn',           label: 'Goods Return (MRN)' },
@@ -258,6 +269,8 @@ export const PERMISSIONS_MAP = {
           { key: 'cancel-refund-history',              label: 'Cancel & Refund Slip History' },
           { key: 'doctor-schedule',                    label: 'Doctor Schedule Report' },
           { key: 'general-payment',                    label: 'General Payment Date Wise' },
+          { key: 'cash-pending-report',                label: 'Cash Pending Report' },
+          { key: 'credit-pending-report',              label: 'Credit Pending Report' },
         ],
       },
 

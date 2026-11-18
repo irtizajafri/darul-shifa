@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useSearchParams, useLocation } from 'react-router-dom';
+import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import useModalKeys from '../../hooks/useModalKeys';
 import useFocusTrap from '../../hooks/useFocusTrap';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import SearchableSelect from '../../components/ui/SearchableSelect';
-import { ChevronDown, ChevronUp, ClipboardList, Download, Eye, EyeOff, FileText, PackageCheck, Pencil, Plus, Printer, Search, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, ClipboardList, Download, Eye, EyeOff, FileText, PackageCheck, Pencil, Pill, Plus, Printer, Search, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import { exportRowsToExcel, exportRowsToPdf } from '../../utils/exportInventoryReports';
@@ -105,6 +105,10 @@ export default function GoodsIssue() {
   const canGD     = hasPermission(user, 'inventory', 'gd');
   const canGIN    = hasPermission(user, 'inventory', 'gin');
   const canEditGIN = hasPermission(user, 'inventory', 'gin', 'edit');
+  // Card that opens Al Shifa Hospital Pharmacy's GD / GIN (owner, 2026-11-18).
+  const canPharmacyGD  = hasPermission(user, 'inventory', 'pharmacy', 'gd');
+  const canPharmacyGIN = hasPermission(user, 'inventory', 'pharmacy', 'gin');
+  const navigate = useNavigate();
   const allowBackDating = canBackDate(user);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -749,6 +753,32 @@ export default function GoodsIssue() {
             </div>
             <Plus className="w-5 h-5 text-slate-400 ml-auto" />
           </button>
+          )}
+
+          {(canPharmacyGD || canPharmacyGIN) && (
+          <div className="flex flex-wrap items-center gap-4 p-5 rounded-xl border-2 border-slate-200 bg-white sm:col-span-2">
+            <div className="w-12 h-12 rounded-lg bg-teal-100 flex items-center justify-center flex-shrink-0">
+              <Pill className="w-6 h-6 text-teal-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-slate-800 text-base">Al Shifa Hospital Pharmacy</p>
+              <p className="text-slate-500 text-sm">Medicines — Goods Demand and Goods Issuance</p>
+            </div>
+            <div className="flex flex-wrap gap-2 ml-auto">
+              {canPharmacyGD && (
+                <button type="button" onClick={() => navigate('/pharmacy/gd?from=inventory')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-teal-300 bg-teal-50 text-teal-800 text-sm font-semibold hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400">
+                  <ClipboardList className="w-4 h-4" /> Pharmacy GD
+                </button>
+              )}
+              {canPharmacyGIN && (
+                <button type="button" onClick={() => navigate('/pharmacy/gin?from=inventory')}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border border-teal-300 bg-teal-50 text-teal-800 text-sm font-semibold hover:bg-teal-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400">
+                  <PackageCheck className="w-4 h-4" /> Pharmacy GIN
+                </button>
+              )}
+            </div>
+          </div>
           )}
         </div>
 

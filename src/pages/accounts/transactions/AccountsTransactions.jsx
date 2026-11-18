@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal, FileText, CheckSquare } from 'lucide-react';
+import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal, FileText, CheckSquare, BookOpen, GitCompareArrows } from 'lucide-react';
 import './AccountsTransactions.scss';
 
 const ITEMS = [
@@ -44,6 +44,18 @@ const ITEMS = [
     label: 'Upload Bank Statement',
     icon: Upload,
     desc: 'Import bank statement file to reconcile transactions',
+  },
+  {
+    key: 'bank-book',
+    label: 'Bank Book',
+    icon: BookOpen,
+    desc: 'One bank account\'s money in and out with the running balance',
+  },
+  {
+    key: 'bank-reconciliation',
+    label: 'Bank Reconciliation',
+    icon: GitCompareArrows,
+    desc: 'Match the uploaded bank statement with deposits, vouchers and cheques',
   },
   {
     key: 'deposit-adjustment',

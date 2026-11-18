@@ -41,7 +41,7 @@ const inventoryNavItems = [
   { path: '/inventory/master-setup', label: 'Master Setup',       Icon: Settings,       subModule: 'master-setup' },
   { path: '/inventory/po',           label: 'Purchase Orders',    Icon: ShoppingCart,   subModule: 'po',               state: { openCreate: true } },
   { path: '/inventory/grn',          label: 'Receiving (GRN)',    Icon: Truck,          subModule: 'grn',              state: { openCreate: true } },
-  { path: '/inventory/gin',          label: 'Issuance (GIN)',     Icon: ArrowUpRight,   subModule: 'gin',  altSubModule: 'gd' },
+  { path: '/inventory/gin',          label: 'Issuance (GIN)',     Icon: ArrowUpRight,   subModule: 'gin',  altSubModule: ['gd', 'pharmacy'] },
   { path: '/inventory/sales-invoice', label: 'Sales Invoice',     Icon: FileText,       subModule: 'sales-invoice' },
   { path: '/inventory/gdn',          label: 'Discard (GDN)',      Icon: ArrowDownRight, subModule: 'gdn' },
   { path: '/inventory/mrn',          label: 'Material Return (MRN)', Icon: ArrowUpRight, subModule: 'mrn' },
@@ -204,7 +204,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
         !item.subModule ||
         user?.isSuperAdmin ||
         hasPermission(user, 'inventory', item.subModule) ||
-        (item.altSubModule && hasPermission(user, 'inventory', item.altSubModule))
+        [].concat(item.altSubModule || []).some((alt) => hasPermission(user, 'inventory', alt))
     );
     return (
       <aside className={sidebarClass}>

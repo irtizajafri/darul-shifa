@@ -1994,11 +1994,11 @@ async function receivePanelCheque(req, res, next) {
   try {
     const {
       panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds,
-      createdByUserId, createdByName,
+      createdByUserId, createdByName, bankAccountId, depositDate,
     } = req.body;
     const data = await service.receivePanelCheque({
       panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds,
-      createdByUserId, createdByName,
+      createdByUserId, createdByName, bankAccountId, depositDate,
     });
     success(res, data, 'Cheque receive ho gaya');
   } catch (err) {
@@ -2571,6 +2571,8 @@ const listCashPending = pendingWrap((req) => pendingTxSvc.listCashPending(req.qu
 const receiveCashPending = pendingWrap((req) => pendingTxSvc.receiveCashPending(req.params.admissionId, req.body || {}));
 const setCashPendingMark = pendingWrap((req) => pendingTxSvc.setCashPendingMark(req.params.admissionId, req.body || {}));
 const listCreditPending = pendingWrap((req) => pendingTxSvc.listCreditPending(req.query));
+const cashPendingReport = pendingWrap((req) => pendingTxSvc.cashPendingReport(req.query));
+const creditPendingReport = pendingWrap((req) => pendingTxSvc.creditPendingReport(req.query));
 const settleCreditPending = pendingWrap((req) => pendingTxSvc.settleCreditPending(req.body || {}));
 const undoCreditSettlement = pendingWrap((req) => pendingTxSvc.undoCreditSettlement(req.params.id));
 
@@ -3048,6 +3050,7 @@ module.exports = {
   getStatusWiseAdmission,
   searchPatients,
   listCashPending, receiveCashPending, setCashPendingMark, listCreditPending, settleCreditPending, undoCreditSettlement,
+  cashPendingReport, creditPendingReport,
   getAdmissionDistribution,
   getWardWisePaymentDistribution,
   getDepartmentMonthlyComparison,

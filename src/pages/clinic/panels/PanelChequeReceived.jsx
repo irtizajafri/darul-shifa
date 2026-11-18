@@ -5,6 +5,7 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import { useAuthStore } from '../../../store/useAuthStore';
 import useModalKeys from '../../../hooks/useModalKeys';
+import { useAllBanks } from '../../accounts/bankRecon/bankReconUtils';
 import './PanelChequeReceived.scss';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -240,6 +241,10 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
   const [chequeNo, setChequeNo] = useState('');
   const [chequeDate, setChequeDate] = useState(todayIso());
   const [amuont, setAmuont] = useState('');
+  // Optional (Bank Reconciliation): which bank the cheque went into, and when.
+  const banks = useAllBanks();
+  const [bankAccountId, setBankAccountId] = useState('');
+  const [depositDate, setDepositDate] = useState('');
   const [saving, setSaving] = useState(false);
 
   useModalKeys({ active: true, onEsc: onClose });
@@ -293,6 +298,8 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
         opdVisitIds: checkedRows.filter((r) => r.opdVisitId != null).map((r) => r.opdVisitId),
         createdByUserId: user?.id != null ? String(user.id) : null,
         createdByName: user?.name || user?.username || user?.email || null,
+        bankAccountId: bankAccountId ? Number(bankAccountId) : null,
+        depositDate: bankAccountId && depositDate ? depositDate : null,
       });
       toast.success('Cheque receive ho gaya');
       onSaved();
@@ -351,6 +358,19 @@ function ChequeReceiveModal({ target, onClose, onSaved }) {
               <label>Amuont :</label>
               <input type="number" min="0" value={amuont} onChange={(e) => setAmuont(e.target.value)} />
             </div>
+            <div className="pcr-modal-fg">
+              <label>Deposited In (Bank) :</label>
+              <select value={bankAccountId} onChange={(e) => setBankAccountId(e.target.value)}>
+                <option value="">— Not yet / not set —</option>
+                {banks.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+              </select>
+            </div>
+            {bankAccountId && (
+              <div className="pcr-modal-fg">
+                <label>Deposit Date :</label>
+                <input type="date" value={depositDate} onChange={(e) => setDepositDate(e.target.value)} />
+              </div>
+            )}
           </div>
           <div className="pcr-modal-summary">
             <div><span>Total Amount :</span><b>{fmt(totalAmount)}</b></div>

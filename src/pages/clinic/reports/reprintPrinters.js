@@ -177,9 +177,11 @@ async function final(no, printedBy) {
   const netAmount = Math.max(0, detail.billAmount - discount);
   const outstanding = Math.max(0, netAmount - detail.amountReceived);
   const liveOtherIncome = isPanel && otherIncome ? outstanding : 0;
-  // Cash file closed with "Goes to Cash Pending": what's still to receive.
-  const liveCashPending = !isPanel && (detail.cashPendingAmount || 0) > 0 ? Math.min(outstanding, detail.cashPendingAmount) : 0;
-  const liveBalance = outstanding - liveOtherIncome - liveCashPending;
+  // Cash file closed with "Goes to Cash Pending": what's still to receive is
+  // the Provisional Bill's Balance; this bill then shows no balance itself.
+  const closedPending = !isPanel && (Number(detail.admission?.dischargeCashPending) || 0) > 0;
+  const liveCashPending = closedPending ? (detail.cashPendingAmount || 0) : 0;
+  const liveBalance = closedPending ? 0 : outstanding - liveOtherIncome;
   const liveRefund = Math.max(0, detail.amountReceived - netAmount);
   const liveDetail = { ...detail, discountAmount: discount, otherIncomeAmount: liveOtherIncome, cashPendingAmount: liveCashPending, balance: liveBalance, refund: liveRefund };
   return { html: buildDischargeBillPrintHtml({ detail: liveDetail, isDuplicate: true, printedBy }) };

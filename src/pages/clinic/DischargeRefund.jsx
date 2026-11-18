@@ -472,6 +472,10 @@ export default function DischargeRefund({ panel = false, opd = false }) {
   }
 
   function handleCloseFileClick() {
+    if (!opd && !isPanel && cashPending && !(liveCashPending > 0)) {
+      toast.error('Provisional Bill ka balance 0 hai — Cash Pending mein kuch nahi jayega. "Goes to Cash Pending" untick karein.');
+      return;
+    }
     // Balance must be fully cleared before the file can be closed (backend
     // also re-checks this — this is just so staff get an immediate, specific
     // message instead of clicking a plain-disabled button).
@@ -511,8 +515,10 @@ export default function DischargeRefund({ panel = false, opd = false }) {
   const outstanding = detail ? Math.max(0, netAmount - detail.amountReceived) : 0;
   const liveOtherIncome = isPanel && otherIncome ? outstanding : 0;
   const canCashPending = !opd && !isPanel && (user?.isSuperAdmin || hasPermission(user, 'clinic', 'transactions', 'discharge-cash-pending'));
-  const liveCashPending = !opd && !isPanel && cashPending ? outstanding : 0;
-  const liveBalance = outstanding - liveOtherIncome - liveCashPending;
+  // Cash Pending owes the Provisional Bill's Balance (owner, 2026-11-18); the
+  // file closes into it, so this bill shows no balance of its own then.
+  const liveCashPending = !opd && !isPanel && cashPending ? Math.max(0, Number(detail?.provisionalBalance ?? outstanding) || 0) : 0;
+  const liveBalance = !opd && !isPanel && cashPending ? 0 : outstanding - liveOtherIncome;
   const liveRefund = detail ? Math.max(0, detail.amountReceived - netAmount) : 0;
 
   return (

@@ -712,3 +712,83 @@
 }
 .pdc-inline { display: flex; gap: 6px; > * { flex: 1; min-width: 0; } }
 @media (max-width: 560px) { .pdc-grid { grid-template-columns: 1fr; } }
+
+// ── Panel Billing | Provisional Bill (view only) tabs (owner, 2026-11-18) ──
+.pnb-views {
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 2px solid #1e3a5f;
+}
+.pnb-view-tab {
+  padding: 6px 16px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  &:hover { background: #f1f5f9; }
+  &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  &--active { color: #fff; background: #1e3a5f; border-color: #1e3a5f; }
+}
+.pnb-view-note { font-weight: 400; font-size: 0.72rem; opacity: 0.85; }
+
+.pnb-pv { padding: 4px 0 8px; }
+.pnb-pv-msg { padding: 14px; font-size: 0.82rem; color: #64748b; }
+.pnb-pv-msg--err { color: #b91c1c; }
+.pnb-pv-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  color: #334155;
+}
+.pnb-pv-badge {
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+}
+.pnb-pv-refresh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1e3a5f;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  cursor: pointer;
+  &:disabled { opacity: 0.6; cursor: default; }
+}
+.pnb-pv-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 110px;
+    padding: 6px 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+  }
+  label { font-size: 0.66rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+  span { font-size: 0.9rem; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+  .pnb-pv-em { background: #eff6ff; border-color: #bfdbfe; }
+}

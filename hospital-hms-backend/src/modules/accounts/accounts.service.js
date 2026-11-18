@@ -1280,15 +1280,27 @@ async function getBankAccounts(entityType) {
   return prisma.accBankAccount.findMany({ where: { entityType }, orderBy: { id: 'asc' } });
 }
 
-async function createBankAccount({ bankName, accountNumber, entityType }) {
-  return prisma.accBankAccount.create({ data: { bankName: bankName.trim(), accountNumber: accountNumber.trim(), entityType } });
+async function createBankAccount({ bankName, accountNumber, entityType, openingBalance, openingDate }) {
+  const bank = await prisma.accBankAccount.create({ data: { bankName: bankName.trim(), accountNumber: accountNumber.trim(), entityType } });
+  if ((openingBalance === undefined || openingBalance === '') && !openingDate) return bank;
+  return updateBankAccount(bank.id, { bankName, accountNumber, openingBalance, openingDate });
 }
 
-async function updateBankAccount(id, { bankName, accountNumber }) {
-  return prisma.accBankAccount.update({
-    where: { id: Number(id) },
-    data: { bankName: bankName.trim(), accountNumber: accountNumber.trim() },
-  });
+// Opening balance / date / active (Bank Reconciliation, 077) are optional —
+// an edit that sends only the name and number leaves them as they are.
+async function updateBankAccount(id, { bankName, accountNumber, openingBalance, openingDate, isActive }) {
+  const data = { bankName: bankName.trim(), accountNumber: accountNumber.trim() };
+  if (openingBalance !== undefined) {
+    const ob = Number(String(openingBalance).replace(/,/g, '') || 0);
+    if (!Number.isFinite(ob)) throw Object.assign(new Error('Opening balance is not a number'), { status: 400 });
+    data.openingBalance = Math.round(ob * 100) / 100;
+  }
+  if (openingDate !== undefined) {
+    if (openingDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(openingDate))) throw Object.assign(new Error('Opening date is not valid'), { status: 400 });
+    data.openingDate = openingDate ? new Date(`${openingDate}T00:00:00Z`) : null;
+  }
+  if (isActive !== undefined) data.isActive = !!isActive;
+  return prisma.accBankAccount.update({ where: { id: Number(id) }, data });
 }
 
 async function deleteBankAccount(id) {
@@ -1645,10 +1657,13 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
   });
   if (!drafts.length) return [];
 
-  // Group by businessDate + mainGlId
+  // Group by businessDate + mainGlId, and by mode + bank so a cheque or
+  // online draft posts as that (it used to be forced to cash — Bank
+  // Reconciliation, 2026-11-18). All-cash drafts group exactly as before.
   const groups = {};
   for (const d of drafts) {
-    const key = `${d.businessDate}|${d.mainGlId}`;
+    const dMode = d.mode === 'cheque' || d.mode === 'online' ? d.mode : 'cash';
+    const key = `${d.businessDate}|${d.mainGlId}|${dMode}|${dMode === 'cash' ? '' : d.bankId || ''}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push(d);
   }
@@ -1663,10 +1678,12 @@ async function flashDraftsToVouchers(date, entityType = 'non-corporate') {
     const entries = groupDrafts.filter((e) => !e.clinicRefundKind);
     const refundLines = mergeClinicRefundDrafts(groupDrafts.filter((e) => e.clinicRefundKind));
     const voucherNo   = await generateVoucherNo(entityType, groupDate);
+    const gMode = groupDrafts[0].mode === 'cheque' || groupDrafts[0].mode === 'online' ? groupDrafts[0].mode : 'cash';
     const voucher = await prisma.accVoucherExpense.create({
       data: {
-        voucherNo, voucherType: 'CASH', voucherDate: new Date(groupDate),
-        mode: 'cash', entityType, totalAmount, source: 'draft-auto',
+        voucherNo, voucherType: gMode === 'cash' ? 'CASH' : 'BANK', voucherDate: new Date(groupDate),
+        mode: gMode, bankId: gMode === 'cash' ? null : groupDrafts[0].bankId || null,
+        entityType, totalAmount, source: 'draft-auto',
         entries: {
           create: entries.map((e) => ({
             mainGlId:     e.mainGlId,     subGlId:      e.subGlId,
@@ -3353,31 +3370,91 @@ async function getBankDeposits(entityType) {
 // based, good enough — not a real UUID lib dependency) so a bad upload can
 // be identified/removed as one unit without guessing which rows came from it.
 
+// Statement amounts may come as "1,234.00", "(500)", "-", "12,000 Cr".
+function statementAmount(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const t = String(v).trim();
+  if (!t || t === '-') return null;
+  const neg = /^\(.*\)$/.test(t) || /\bdr\b/i.test(t);
+  const n = Number(t.replace(/[^0-9.-]/g, ''));
+  if (!Number.isFinite(n)) return null;
+  return neg ? -Math.abs(n) : n;
+}
+// "YYYY-MM-DD" is taken as that calendar day (stored at 00:00 UTC, the same
+// way voucher dates are); anything else goes through Date.
+function statementDate(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(`${s}T00:00:00Z`);
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+// Calendar day (PKT) of a stored statement date.
+const statementDay = (d) => new Date(new Date(d).getTime() + 5 * 3600 * 1000).toISOString().slice(0, 10);
+const statementKey = (day, debit, credit, instrumentNo, particulars) => [
+  day, Number(debit || 0).toFixed(2), Number(credit || 0).toFixed(2),
+  String(instrumentNo || '').trim().toUpperCase(),
+  String(particulars || '').replace(/\s+/g, ' ').trim().toUpperCase(),
+].join('|');
+
+// The same file (or an overlapping period) uploaded again is not added twice:
+// a line already on this bank with the same date, debit, credit, instrument
+// no. and particulars is skipped. Repeats inside one file are kept (two
+// identical bank charges on one day are real) — only as many as the bank
+// already has are skipped.
 async function bulkImportBankStatement({ bankAccountId, entityType, rows }) {
   if (!bankAccountId) throw Object.assign(new Error('Bank Account required'), { status: 400 });
   if (!Array.isArray(rows) || !rows.length) {
     throw Object.assign(new Error('No rows to import'), { status: 400 });
   }
   const uploadBatchId = `bsu-${Date.now()}`;
-  const data = rows
-    .filter((r) => r.date)
-    .map((r) => ({
-      bankAccountId: Number(bankAccountId),
-      entityType,
-      date: new Date(r.date),
-      valueDate: r.valueDate ? new Date(r.valueDate) : null,
-      instrumentNo: r.instrumentNo || null,
-      particulars: r.particulars || null,
-      debit: Number(r.debit) || 0,
-      credit: Number(r.credit) || 0,
-      balance: r.balance !== undefined && r.balance !== null && r.balance !== '' ? Number(r.balance) : null,
-      uploadBatchId,
-    }));
-  if (!data.length) throw Object.assign(new Error('No valid rows (missing Date) to import'), { status: 400 });
+  const parsed = rows
+    .map((r) => ({ r, date: statementDate(r.date) }))
+    .filter((x) => x.date)
+    .map(({ r, date }) => {
+      const debit = Math.abs(statementAmount(r.debit) || 0);
+      const credit = Math.abs(statementAmount(r.credit) || 0);
+      const balance = statementAmount(r.balance);
+      return {
+        bankAccountId: Number(bankAccountId),
+        entityType,
+        date,
+        valueDate: statementDate(r.valueDate),
+        instrumentNo: String(r.instrumentNo || '').trim() || null,
+        particulars: String(r.particulars || '').trim() || null,
+        debit,
+        credit,
+        balance: balance === null ? null : balance,
+        uploadBatchId,
+      };
+    })
+    .filter((x) => x.debit > 0 || x.credit > 0);
+  if (!parsed.length) throw Object.assign(new Error('No valid rows (a Date and a Debit or Credit amount) to import'), { status: 400 });
 
-  await prisma.accBankStatementLine.createMany({ data });
-  const { autoMatched } = await matchBankStatementCheques(entityType);
-  return { imported: data.length, uploadBatchId, autoMatched };
+  const existing = await prisma.accBankStatementLine.findMany({
+    where: { bankAccountId: Number(bankAccountId) },
+    select: { date: true, debit: true, credit: true, instrumentNo: true, particulars: true },
+  });
+  const have = new Map();
+  for (const l of existing) {
+    const k = statementKey(statementDay(l.date), l.debit, l.credit, l.instrumentNo, l.particulars);
+    have.set(k, (have.get(k) || 0) + 1);
+  }
+  const data = [];
+  let skipped = 0;
+  for (const x of parsed) {
+    const k = statementKey(statementDay(x.date), x.debit, x.credit, x.instrumentNo, x.particulars);
+    if ((have.get(k) || 0) > 0) { have.set(k, have.get(k) - 1); skipped += 1; continue; }
+    data.push(x);
+  }
+  if (data.length) await prisma.accBankStatementLine.createMany({ data });
+  const last = [...parsed].reverse().find((x) => x.balance !== null);
+  const { autoMatched } = data.length ? await matchBankStatementCheques(entityType) : { autoMatched: 0 };
+  return {
+    imported: data.length, skipped, uploadBatchId: data.length ? uploadBatchId : null, autoMatched,
+    closingBalance: last ? last.balance : null, closingDate: last ? statementDay(last.date) : null,
+  };
 }
 
 // ─── Un-Presented Cheque List ───────────────────────────────────────────────
@@ -3398,7 +3475,7 @@ async function computeChequeMatchGroups(entityType) {
       chequeDate: { not: null },
       voucher: { entityType, mode: 'cheque' },
     },
-    include: { voucher: { select: { voucherNo: true, voucherDate: true } } },
+    include: { voucher: { select: { voucherNo: true, voucherDate: true, bankId: true } } },
     orderBy: { chequeDate: 'asc' },
   });
 
@@ -3432,6 +3509,9 @@ async function computeChequeMatchGroups(entityType) {
     const ls = linesByKey.get(k) || [];
     if (!ls.length) continue; // no statement line yet — plain un-presented, nothing to review
     if (es.length === 1 && ls.length === 1) {
+      // Not across banks: a cheque of one bank never clears on another's
+      // statement (Bank Reconciliation, 2026-11-18).
+      if (es[0].voucher.bankId && es[0].voucher.bankId !== ls[0].bankAccountId) continue;
       autoMatchable.push({ entry: es[0], line: ls[0] });
     } else {
       ambiguous.push({ key: k, entries: es, lines: ls });
@@ -3453,20 +3533,41 @@ async function getUnpresentedChequeList({ entityType }) {
   await matchBankStatementCheques(entityType);
   const { entries, ambiguous } = await computeChequeMatchGroups(entityType);
 
+  // Description = the Main Account name, as on Cheque Wise Voucher Summary
+  // (owner, 2026-11-18), in place of the payee.
+  const mainIds = [...new Set(entries.map((e) => e.mainAccountId).filter(Boolean))];
+  const mains = mainIds.length ? await prisma.accMainAccount.findMany({ where: { id: { in: mainIds } }, select: { id: true, name: true } }) : [];
+  const mainName = new Map(mains.map((a) => [a.id, a.name]));
+  const perEntry = entries.map((e) => ({
+    id: e.id,
+    voucherNo: e.voucher.voucherNo,
+    voucherDate: e.voucher.voucherDate,
+    chequeNo: e.chequeNo,
+    chequeDate: e.chequeDate,
+    payeeName: e.payeeName,
+    description: mainName.get(e.mainAccountId) || e.accountName || '',
+    amount: Number(e.amount),
+  }));
+
   return {
-    unpresented: entries.map((e) => ({
-      id: e.id,
-      voucherNo: e.voucher.voucherNo,
-      voucherDate: e.voucher.voucherDate,
-      chequeNo: e.chequeNo,
-      chequeDate: e.chequeDate,
-      payeeName: e.payeeName,
-      amount: Number(e.amount),
-    })),
+    // One row per cheque (its account lines added up).
+    unpresented: oneRowPerCheque(perEntry, {
+      keyOf: (r) => (String(r.chequeNo || '').trim() ? `${r.voucherNo}|${String(r.chequeNo).trim()}` : null),
+      merge: (g) => ({
+        ...g[0],
+        entryIds: g.map((r) => r.id),
+        chequeDate: earliest(g.map((r) => r.chequeDate)),
+        payeeName: joinDistinct(g.map((r) => r.payeeName)),
+        description: joinDistinct(g.map((r) => r.description)),
+        amount: Math.round(g.reduce((s, r) => s + r.amount, 0) * 100) / 100,
+        lines: g.length,
+      }),
+    }),
     needsReview: ambiguous.map((g) => ({
       key: g.key,
       candidateEntries: g.entries.map((e) => ({
-        id: e.id, voucherNo: e.voucher.voucherNo, chequeNo: e.chequeNo, chequeDate: e.chequeDate, payeeName: e.payeeName, amount: Number(e.amount),
+        id: e.id, voucherNo: e.voucher.voucherNo, chequeNo: e.chequeNo, chequeDate: e.chequeDate, payeeName: e.payeeName,
+        description: mainName.get(e.mainAccountId) || e.accountName || '', amount: Number(e.amount),
       })),
       candidateLines: g.lines.map((l) => ({
         id: l.id, date: l.date, instrumentNo: l.instrumentNo, particulars: l.particulars, debit: Number(l.debit),
@@ -3560,6 +3661,25 @@ async function confirmChequeMatch({ voucherExpenseEntryId, statementLineId }) {
 // Un-Presented ones (matchedStatementLineId still null) — once a cheque
 // clears it drops off this list, same definition as Un-Presented Cheque
 // List, just folded into this wider report alongside Cash/Online.
+// One cheque = one row (owner, 2026-11-18): a cheque voucher with several
+// account lines (e.g. Cheque 170169 for Mesionery Work ×2 and Religious)
+// shows once — the amounts added up, the account codes / descriptions
+// joined, and the earliest cheque date. Rows without a cheque # stay as
+// they are. Keyed by voucher + cheque # as typed, so another cheque in the
+// same voucher stays its own row.
+const joinDistinct = (list) => [...new Set(list.map((x) => String(x || '').trim()).filter(Boolean))].join(', ');
+function oneRowPerCheque(rows, { keyOf, merge }) {
+  const out = [];
+  const byKey = new Map();
+  for (const r of rows) {
+    const k = keyOf(r);
+    if (!k) { out.push(r); continue; }
+    if (!byKey.has(k)) { const g = [r]; byKey.set(k, g); out.push(g); } else byKey.get(k).push(r);
+  }
+  return out.map((x) => (Array.isArray(x) ? (x.length === 1 ? x[0] : merge(x)) : x));
+}
+const earliest = (dates) => dates.filter(Boolean).sort((a, b) => new Date(a) - new Date(b))[0] || null;
+
 async function getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo }) {
   const modeList = Array.isArray(modes) && modes.length ? modes : ['cash', 'online', 'cheque'];
 
@@ -3614,8 +3734,19 @@ async function getChequeWiseVoucherSummary({ entityType, modes, dateFrom, dateTo
     }
   }
 
-  const grandTotal = rows.reduce((s, r) => s + r.amount, 0);
-  return { rows, grandTotal };
+  const merged = oneRowPerCheque(rows, {
+    keyOf: (r) => (r.mode === 'cheque' && String(r.chequeNo || '').trim() ? `${r.voucherNo}|${String(r.chequeNo).trim()}` : null),
+    merge: (g) => ({
+      ...g[0],
+      chequeDate: earliest(g.map((r) => r.chequeDate)),
+      accountCode: joinDistinct(g.map((r) => r.accountCode)),
+      description: joinDistinct(g.map((r) => r.description)),
+      amount: Math.round(g.reduce((s, r) => s + r.amount, 0) * 100) / 100,
+      lines: g.length,
+    }),
+  });
+  const grandTotal = merged.reduce((s, r) => s + r.amount, 0);
+  return { rows: merged, grandTotal };
 }
 
 async function getBankStatementLines({ bankAccountId, entityType, dateFrom, dateTo }) {
@@ -3922,12 +4053,76 @@ async function ensureClinicIncomeCategories(entityType, departmentNames) {
 // Day Close's income voucher waits here: its lines can be changed, then it is
 // posted only by hand ("Post Now"). Until then it isn't counted anywhere.
 
+// Owner, 2026-11-18: a slip edited after 8:00 AM (the day still open while
+// its voucher is pending) must reach the voucher. So a pending Day Close
+// voucher that nobody has edited by hand is re-read from the Clinic figures
+// whenever Pending Drafts loads and again on Post Now. One edited by hand
+// (editedAt) is left as it is; `clinicNow` tells the screen whether the
+// Clinic figures differ, and "Refresh from Clinic" brings them in.
+const dayIsoOf = (d) => new Date(d).toISOString().slice(0, 10);
+const linesKey = (entries, withText) => entries
+  .map((e) => `${e.incomeCategoryName || ''}|${(Number(e.amount) || 0).toFixed(2)}${withText ? `|${e.particulars || ''}` : ''}`)
+  .sort().join('\n');
+
+async function replacePendingIncomeLines(v, clinic, { onlyIfUnedited, editedAt = null, editedByName = null } = {}) {
+  return prisma.$transaction(async (tx) => {
+    const r = await tx.accVoucherIncome.updateMany({
+      where: { id: v.id, status: 'pending', ...(onlyIfUnedited ? { editedAt: null } : {}) },
+      data: { totalAmount: clinic.total, editedAt, editedByName },
+    });
+    if (!r.count) return false;
+    await tx.accVoucherIncomeEntry.deleteMany({ where: { voucherId: v.id } });
+    await tx.accVoucherIncomeEntry.createMany({ data: clinic.entries.map((e) => ({ voucherId: v.id, ...e })) });
+    return true;
+  });
+}
+
+// Brings an unedited pending Day Close voucher up to the Clinic figures.
+// Returns the Clinic figures (null for a voucher that isn't Day Close's).
+async function syncPendingIncomeFromClinic(v) {
+  if (v.source !== 'auto') return null;
+  const clinic = await clinicIncomeLines(dayIsoOf(v.voucherDate), v.entityType);
+  if (!v.editedAt && clinic.total > 0 && linesKey(clinic.entries, true) !== linesKey(v.entries, true)) {
+    await replacePendingIncomeLines(v, clinic, { onlyIfUnedited: true });
+  }
+  return clinic;
+}
+
 async function getPendingIncomeDrafts(entityType) {
-  return prisma.accVoucherIncome.findMany({
+  const load = () => prisma.accVoucherIncome.findMany({
     where: { entityType, status: 'pending' },
     include: { entries: { orderBy: { id: 'asc' } } },
     orderBy: [{ voucherDate: 'asc' }, { id: 'asc' }],
   });
+  const before = await load();
+  const clinicById = new Map();
+  for (const v of before) {
+    try { clinicById.set(v.id, await syncPendingIncomeFromClinic(v)); } catch { /* show it as saved */ }
+  }
+  const list = await load();
+  return list.map((v) => {
+    const clinic = clinicById.get(v.id);
+    return {
+      ...v,
+      clinicNow: clinic ? {
+        total: clinic.total,
+        // Clinic figures differ from the voucher (only possible once edited by hand).
+        changed: linesKey(clinic.entries, false) !== linesKey(v.entries, false),
+      } : null,
+    };
+  });
+}
+
+// "Refresh from Clinic": the voucher's lines become the Clinic figures again
+// and it follows them from now on (the hand edit is dropped).
+async function refreshPendingIncomeDraft(id) {
+  const v = await loadPendingIncome(id);
+  if (v.source !== 'auto') throw Object.assign(new Error('Only the Day Close voucher can be refreshed from the Clinic'), { status: 400 });
+  const clinic = await clinicIncomeLines(dayIsoOf(v.voucherDate), v.entityType);
+  if (!(clinic.total > 0)) throw Object.assign(new Error('The Clinic shows no income for this day now'), { status: 400 });
+  const ok = await replacePendingIncomeLines(v, clinic, { onlyIfUnedited: false });
+  if (!ok) throw Object.assign(new Error('This voucher is already posted'), { status: 409 });
+  return prisma.accVoucherIncome.findUnique({ where: { id: v.id }, include: { entries: { orderBy: { id: 'asc' } } } });
 }
 
 async function loadPendingIncome(id) {
@@ -3938,7 +4133,7 @@ async function loadPendingIncome(id) {
 }
 
 // Replaces the lines: [{ incomeCategoryId, amount, particulars }].
-async function updatePendingIncomeDraft(id, { entries } = {}) {
+async function updatePendingIncomeDraft(id, { entries, userName } = {}) {
   const v = await loadPendingIncome(id);
   const list = (Array.isArray(entries) ? entries : []).map((e, i) => {
     const amount = Number(e.amount);
@@ -3958,7 +4153,11 @@ async function updatePendingIncomeDraft(id, { entries } = {}) {
 
   await prisma.$transaction(async (tx) => {
     // Still pending at save time (not posted from another PC meanwhile).
-    const r = await tx.accVoucherIncome.updateMany({ where: { id: v.id, status: 'pending' }, data: { totalAmount } });
+    const r = await tx.accVoucherIncome.updateMany({
+      where: { id: v.id, status: 'pending' },
+      // Edited by hand: from now on it no longer follows the Clinic figures.
+      data: { totalAmount, editedAt: new Date(), editedByName: String(userName || '').trim() || null },
+    });
     if (!r.count) throw Object.assign(new Error('This voucher is already posted'), { status: 409 });
     await tx.accVoucherIncomeEntry.deleteMany({ where: { voucherId: v.id } });
     await tx.accVoucherIncomeEntry.createMany({
@@ -3973,12 +4172,33 @@ async function updatePendingIncomeDraft(id, { entries } = {}) {
 
 async function postPendingIncomeDraft(id, { userName } = {}) {
   const v = await loadPendingIncome(id);
+  // Not edited by hand: post the Clinic figures as they are now.
+  if (!v.editedAt && v.source === 'auto') {
+    const withLines = await prisma.accVoucherIncome.findUnique({ where: { id: v.id }, include: { entries: true } });
+    await syncPendingIncomeFromClinic(withLines);
+  }
   const r = await prisma.accVoucherIncome.updateMany({
     where: { id: v.id, status: 'pending' },
     data: { status: 'posted', postedAt: new Date(), postedByName: String(userName || '').trim() || null },
   });
   if (!r.count) throw Object.assign(new Error('This voucher is already posted'), { status: 409 });
   return prisma.accVoucherIncome.findUnique({ where: { id: v.id }, include: { entries: true } });
+}
+
+// The day's Clinic income as voucher lines — one per department.
+async function clinicIncomeLines(date, entityType) {
+  const stmt = await clinicSvc.getDailyDepartmentStatement(date);
+  const rows = stmt.rows.filter((r) => Number(r.amount) > 0);
+  const categories = await ensureClinicIncomeCategories(entityType, rows.map((r) => r.department));
+  return {
+    total: Number(stmt.total.amount) || 0,
+    entries: rows.map((r) => ({
+      incomeCategoryId:   categories.get(r.department)?.id || null,
+      incomeCategoryName: r.department,
+      amount:             Number(r.amount) || 0,
+      particulars:        `Auto day-close — ${r.count} patient(s)`,
+    })),
+  };
 }
 
 async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporate') {
@@ -3988,12 +4208,10 @@ async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporat
   });
   if (existing) return existing;
 
-  const stmt = await clinicSvc.getDailyDepartmentStatement(date);
-  const amount = Number(stmt.total.amount) || 0;
+  const clinic = await clinicIncomeLines(date, entityType);
+  const amount = clinic.total;
   if (amount <= 0) return null;
 
-  const rows = stmt.rows.filter((r) => Number(r.amount) > 0);
-  const categories = await ensureClinicIncomeCategories(entityType, rows.map((r) => r.department));
   const voucherNo = await generateIncomeVoucherNo(entityType, date);
 
   return prisma.accVoucherIncome.create({
@@ -4008,14 +4226,7 @@ async function generateAutoIncomeVoucherForDate(date, entityType = 'non-corporat
       // Owner, 2026-11-13: Day Close no longer posts it — it waits in
       // Pending Drafts to be checked/edited and posted with "Post Now".
       status: 'pending',
-      entries: {
-        create: rows.map((r) => ({
-          incomeCategoryId:   categories.get(r.department)?.id || null,
-          incomeCategoryName: r.department,
-          amount:             r.amount,
-          particulars:        `Auto day-close — ${r.count} patient(s)`,
-        })),
-      },
+      entries: { create: clinic.entries },
     },
     include: { entries: true },
   });
@@ -4054,7 +4265,7 @@ module.exports = {
   getPanelChequeRevenueForDate,
   getDailyIncomeExpenseDiff,
   generateAutoIncomeVoucherForDate,
-  getPendingIncomeDrafts, updatePendingIncomeDraft, postPendingIncomeDraft,
+  getPendingIncomeDrafts, updatePendingIncomeDraft, postPendingIncomeDraft, refreshPendingIncomeDraft,
 };
 
 async function getVoucherSummary({ entityType, voucherFrom, voucherTo, supplierId, mainAccountId, dateFrom, dateTo }) {

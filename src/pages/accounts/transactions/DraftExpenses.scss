@@ -380,3 +380,20 @@
   &:focus { outline: 2px solid #93c5fd; border-color: #3b82f6; }
 }
 .drafts__input--amt { text-align: right; max-width: 150px; margin-left: auto; display: block; }
+
+// Pending income voucher: follows the Clinic / edited by hand (2026-11-18).
+.drafts__income-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 0 0 8px;
+  padding: 7px 12px;
+  font-size: 0.78rem;
+  color: #1e3a5f;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  span { flex: 1 1 280px; }
+  &--warn { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
+}

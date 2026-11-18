@@ -12,6 +12,7 @@ import { openPrintWindow } from '../../../utils/printRelay';
 import '../AdmissionAdjustment.scss'; // .aa-* lookup-modal classes
 import './PanelBilling.scss';
 import PanelDummyDischargeCertModal from './PanelDummyDischargeCert';
+import PanelProvisionalView from './PanelProvisionalView';
 import { relationTypeLabel } from '../relationText';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -436,6 +437,9 @@ export default function PanelBilling() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [popup, setPopup] = useState(null); // 'pharmacy' | 'diagnostic' | null
+  // 'billing' = the Panel Billing grid; 'provisional' = the file's Provisional
+  // Bill, view only (owner, 2026-11-18).
+  const [view, setView] = useState('billing');
   const [diagnosticDept, setDiagnosticDept] = useState(null); // which of Laboratory/Radiology/Ultra Sound… was double-clicked
   const [showLookup, setShowLookup] = useState(false);
   const [copying, setCopying] = useState(false);
@@ -1359,8 +1363,21 @@ export default function PanelBilling() {
             </div>
           </div>
 
+          {data && !isOpd && (
+            <div className="pnb-views" role="tablist" aria-label="Billing view">
+              <button type="button" role="tab" aria-selected={view === 'billing'} className={`pnb-view-tab${view === 'billing' ? ' pnb-view-tab--active' : ''}`} onClick={() => setView('billing')}>Panel Billing</button>
+              <button type="button" role="tab" aria-selected={view === 'provisional'} className={`pnb-view-tab${view === 'provisional' ? ' pnb-view-tab--active' : ''}`} onClick={() => setView('provisional')}>Provisional Bill <span className="pnb-view-note">(view only)</span></button>
+            </div>
+          )}
+
+          {data && !isOpd && view === 'provisional' && (
+            <div className="pnb-tab-body">
+              <PanelProvisionalView admissionId={data.admission.id} />
+            </div>
+          )}
+
           {/* ── Manual add: Medicine / Laboratory / Ultrasound / Radiology ── */}
-          {data && !readOnly && (
+          {data && !readOnly && !(view === 'provisional' && !isOpd) && (
             <div className="pnb-add-row">
               <div className="pnb-fg pnb-fg--type">
                 <label>Type</label>
@@ -1434,6 +1451,7 @@ export default function PanelBilling() {
           )}
 
           {/* ── Grid ── */}
+          {!(data && !isOpd && view === 'provisional') && (
           <div className="pnb-tab-body">
             <div className="table-wrap">
             <table className="pnb-table">
@@ -1469,6 +1487,7 @@ export default function PanelBilling() {
             </table>
             </div>
           </div>
+          )}
 
           {/* ── Footer ── */}
           <div className="pnb-footer">

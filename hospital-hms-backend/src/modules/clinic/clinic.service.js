@@ -5510,7 +5510,7 @@ async function getUnpaidPanelAdmissions({ panelCompanyId, month, year }) {
 // Every covered admission/visit then permanently drops out of
 // getUnpaidPanelAdmissions. `opdVisitIds` is optional — omitting it behaves
 // exactly as before this was added (admissions-only).
-async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds, createdByUserId, createdByName }) {
+async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, chequeNo, chequeDate, receivedAmount, admissionIds, opdVisitIds, createdByUserId, createdByName, bankAccountId, depositDate }) {
   const compId = Number(panelCompanyId);
   const m = Number(billingMonth);
   const y = Number(billingYear);
@@ -5525,6 +5525,10 @@ async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, c
   if (!Number.isFinite(received) || received < 0) throw Object.assign(new Error('Amount valid number honi chahiye'), { status: 400 });
   const chequeDt = new Date(chequeDate);
   if (Number.isNaN(chequeDt.getTime())) throw Object.assign(new Error('Cheque Date invalid hai'), { status: 400 });
+  // Optional (Bank Reconciliation, 077): the bank it went into and when.
+  const bankId = bankAccountId ? Number(bankAccountId) : null;
+  if (bankId && !(await prisma.accBankAccount.findUnique({ where: { id: bankId }, select: { id: true } }))) throw Object.assign(new Error('Bank Account not found'), { status: 400 });
+  if (depositDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(depositDate))) throw Object.assign(new Error('Deposit Date is not valid'), { status: 400 });
 
   const admissions = ids.length
     ? await prisma.clinicAdmission.findMany({
@@ -5575,6 +5579,8 @@ async function receivePanelCheque({ panelCompanyId, billingMonth, billingYear, c
       totalAmount,
       receivedAmount: received,
       deduction,
+      bankAccountId: bankId,
+      depositDate: bankId && depositDate ? new Date(`${depositDate}T00:00:00Z`) : null,
       createdByUserId: createdByUserId != null ? String(createdByUserId) : null,
       createdByName: createdByName || null,
       items: {
@@ -9004,6 +9010,12 @@ async function importProvisionalDataIntoDischargeBill(admissionId) {
   }
 }
 
+// The Provisional Bill's Balance for an admission (what Cash Pending owes).
+async function provisionalBalanceOf(admissionId) {
+  const prov = await getProvisionalBillDetail(admissionId);
+  return Math.max(0, Math.round((Number(prov.balanceInfo?.balance) || 0) * 100) / 100);
+}
+
 async function getDischargeBillDetail(admissionId) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
@@ -9158,10 +9170,15 @@ async function getDischargeBillDetail(admissionId) {
   const otherIncomeAmount = Number(admission.dischargeOtherIncome) || 0;
   // Cash file closed via "Goes to Cash Pending": what's still to receive —
   // the pending amount at close less receipts taken against it since.
+  // Owner, 2026-11-18: what's owed is the Provisional Bill's Balance (the
+  // figure staff see on the Provisional Bill), not this Final Bill's.
+  // provisionalBalance is sent for any cash file (the "Goes to Cash Pending"
+  // box shows it); cashPendingAmount only once the file closed that way.
+  let provisionalBalance = null;
   let cashPendingAmount = 0;
-  if (Number(admission.dischargeCashPending) > 0) {
-    const got = await prisma.clinicAdmissionPayment.aggregate({ where: { admissionId: admission.id, againstCashPending: true }, _sum: { amount: true } });
-    cashPendingAmount = Math.max(0, Math.round((Number(admission.dischargeCashPending) - (Number(got._sum.amount) || 0)) * 100) / 100);
+  if (admission.patientCategory !== 'panel') {
+    provisionalBalance = await provisionalBalanceOf(admission.id);
+    if (Number(admission.dischargeCashPending) > 0) cashPendingAmount = provisionalBalance;
   }
 
   // Itemised Medical Bill print header/footer (owner, 2026-10-26): Dis Date,
@@ -9199,7 +9216,9 @@ async function getDischargeBillDetail(admissionId) {
     discountAmount,
     otherIncomeAmount,
     cashPendingAmount,
-    balance: Math.max(0, netAmount - netAmountReceived - otherIncomeAmount - cashPendingAmount),
+    provisionalBalance,
+    // A file closed into Cash Pending owes on the Provisional Bill, not here.
+    balance: Number(admission.dischargeCashPending) > 0 ? 0 : Math.max(0, netAmount - netAmountReceived - otherIncomeAmount),
     refund: Math.max(0, netAmountReceived - netAmount),
   };
 }
@@ -9379,13 +9398,15 @@ async function finalizeDischarge(admissionId, { discountAmount, otherIncome, cas
   // Cash file (owner, 2026-11-17): the balance stays to be received later on
   // Cash Pending Transaction. Kept as the total pending incl. any receipts
   // already taken against it (a re-closed file), so pending − those = what's left.
-  const cashPendingNow = !isPanel && cashPending ? outstanding : 0;
-  let cashPendingTotal = 0;
-  if (cashPendingNow > 0) {
-    const got = await prisma.clinicAdmissionPayment.aggregate({ where: { admissionId: Number(admissionId), againstCashPending: true }, _sum: { amount: true } });
-    cashPendingTotal = Math.round((cashPendingNow + (Number(got._sum.amount) || 0)) * 100) / 100;
+  // Owner, 2026-11-18: the amount owed is the Provisional Bill's Balance, and
+  // the file closes into Cash Pending with it (this Final Bill's own balance
+  // doesn't block it).
+  const cashPendingNow = !isPanel && cashPending ? await provisionalBalanceOf(admissionId) : 0;
+  if (!isPanel && cashPending && !(cashPendingNow > 0)) {
+    throw Object.assign(new Error('The Provisional Bill has no balance — nothing goes to Cash Pending. Untick "Goes to Cash Pending".'), { status: 400 });
   }
-  const balance = outstanding - otherIncomeAmount - cashPendingNow;
+  const cashPendingTotal = cashPendingNow;
+  const balance = cashPendingNow > 0 ? 0 : outstanding - otherIncomeAmount;
   if (balance > 0) {
     throw Object.assign(
       new Error(isPanel
@@ -12699,97 +12720,136 @@ function emptyDistribution(reportStyle) {
 
 // ─── Ward Wise Payment Distribution ───────────────────────────────────────────
 // One "Statement" section per selected Ward, each admission's bill peeled
-// down to TAFD ("Total Amount For Doctor") — confirmed against the legacy
-// printout: NetAmt = DepBilAmt - Discount - OtherWards; TAFD = NetAmt -
-// DaAmt(advance) - PharmAmt - ConsRmoAmt - Procedure. Known gaps, called out
-// here rather than silently guessed:
-//   - OtherWards (charges from a mid-stay shift to a *different* ward) is
-//     always 0 — every sample row in the reference screenshot was 0 too, so
-//     there's nothing to verify a real computation against yet.
-//   - Pharm Amt is exact (ClinicDischargeBillItem.source === 'pharmacy',
-//     see importProvisionalDataIntoDischargeBill). Cons/Rmo Amt and
-//     Procedure are keyword-matched against the Bill Head's own description
-//     (no dedicated flag exists on ClinicBillHead for either) — adjust the
-//     keyword lists below if a real head doesn't get picked up.
-//   - Include Emergency has no signal to filter on (no emergency-origin
-//     field anywhere on ClinicAdmission) — accepted as a no-op for now.
-const CONS_RMO_KEYWORDS = ['consultant', 'rmo', 'r.m.o'];
-const PROCEDURE_KEYWORDS = ['operation theater', 'surgeon fee', 'procedure'];
+// down to TAFD ("Total Amount For Doctor"). Re-done 2026-11-18 against the
+// legacy NICU/PICU statement the owner compared it with (Oct 2026) — every
+// figure now comes from the Provisional Bill, as the legacy one did:
+//   Dep. Bil Amt = the Provisional Bill amount (all wards, before discount).
+//   Discount     = what the final bill took off: Dep. Bil Amt − Final Bill
+//                  (Discharge and Refund) total; with no final bill yet, the
+//                  Provisional Bill's own discount.
+//   OtherWards   = Provisional lines charged while in another ward
+//                  (the line's ward ≠ this statement's ward).
+//   Net Amt      = Dep. Bil Amt − Discount − OtherWards.
+//   Dia Amt      = Dialysis heads in this ward (legacy column; no such head yet).
+//   Pharm Amt    = Oxygen and medicine heads in this ward + the pharmacy
+//                  rows when they count on the bill. ("Dubble Oxygen" is not
+//                  pharmacy — the legacy sheet left it in Net.)
+//   Cons/Rmo Amt = consultant visit / on-call / fee and RMO heads in this ward.
+//   Procedure    = procedure / O.T. / surgeon fee heads in this ward.
+//   TAFD         = Net − Dia − Pharm − Cons/Rmo − Procedure.
+// The advance is no longer taken off (it isn't part of the doctor's amount).
+// A file belongs to its admission ward; a closed file whose ward was cleared
+// goes by the ward most of its charges were in.
+const WWP_CONS_KEYWORDS = ['consultant', 'cons.', 'rmo', 'r.m.o', 'follow-up', 'emergency visit'];
+const WWP_PROCEDURE_KEYWORDS = ['operation theater', 'surgeon fee', 'procedure'];
+const WWP_DIALYSIS_KEYWORDS = ['dialysis', 'dialyses'];
+const wwpDesc = (h) => String(h?.description || '').trim().toLowerCase();
+const wwpIsPharm = (h) => !!h && (String(h.headCode || '').trim().toUpperCase() === 'OXY' || wwpDesc(h) === 'oxygen'
+  || /medicine|medical store/.test(wwpDesc(h)));
+const wwpHas = (h, words) => !!h && words.some((k) => wwpDesc(h).includes(k));
 
 async function getWardWisePaymentDistribution({
   admissionFrom, admissionTo, dateFrom, dateTo, wardIds,
   salary, sharePercent, otherAdd, otherLess,
 }) {
   if (!wardIds || !wardIds.length) return { wards: [], summary: null };
+  const wardIdNums = wardIds.map(Number).filter(Boolean);
 
   const dateFromDt = dateFrom ? new Date(`${dateFrom}T00:00:00`) : null;
   const dateToDt   = dateTo   ? new Date(`${dateTo}T23:59:59`)   : null;
 
-  const [rooms, billHeads] = await Promise.all([
-    prisma.clinicRoomCategory.findMany({ where: { id: { in: wardIds.map(Number) } } }),
-    prisma.clinicBillHead.findMany(),
-  ]);
-  const headById = new Map(billHeads.map((h) => [h.id, h]));
-  const isConsRmoHead = (id) => {
-    const desc = (headById.get(id)?.description || '').toLowerCase();
-    return CONS_RMO_KEYWORDS.some((k) => desc.includes(k));
+  const rooms = await prisma.clinicRoomCategory.findMany({ where: { id: { in: wardIdNums } } });
+
+  const admissionWhere = {
+    status: { in: ['discharge', 'closed'] },
+    OR: [{ roomCategoryId: { in: wardIdNums } }, { roomCategoryId: null }],
   };
-  const isProcedureHead = (id) => {
-    const desc = (headById.get(id)?.description || '').toLowerCase();
-    return PROCEDURE_KEYWORDS.some((k) => desc.includes(k));
+  if (admissionFrom || admissionTo) {
+    admissionWhere.admissionNo = {};
+    if (admissionFrom) admissionWhere.admissionNo.gte = admissionFrom;
+    if (admissionTo) admissionWhere.admissionNo.lte = admissionTo;
+  }
+  const admissions = (await prisma.clinicAdmission.findMany({
+    where: admissionWhere,
+    include: { dischargeCertificate: { select: { dischargeDate: true } } },
+    orderBy: { admissionNo: 'asc' },
+  })).filter((a) => {
+    const d = a.dischargeCertificate?.dischargeDate || a.updatedAt;
+    if (!d) return false;
+    if (dateFromDt && new Date(d) < dateFromDt) return false;
+    if (dateToDt && new Date(d) > dateToDt) return false;
+    return true;
+  });
+
+  // Ward of a file whose admission ward was cleared: where most of its
+  // Provisional charges were.
+  const noWardIds = admissions.filter((a) => !a.roomCategoryId).map((a) => a.id);
+  const homeWardOf = new Map(admissions.filter((a) => a.roomCategoryId).map((a) => [a.id, a.roomCategoryId]));
+  if (noWardIds.length) {
+    const lines = await prisma.clinicProvisionalBillItem.findMany({
+      where: { admissionId: { in: noWardIds }, roomCategoryId: { not: null } },
+      select: { admissionId: true, roomCategoryId: true, amount: true },
+    });
+    const sums = new Map();
+    lines.forEach((l) => {
+      const m = sums.get(l.admissionId) || new Map();
+      m.set(l.roomCategoryId, (m.get(l.roomCategoryId) || 0) + (Number(l.amount) || 0));
+      sums.set(l.admissionId, m);
+    });
+    sums.forEach((m, admId) => {
+      const [ward] = [...m.entries()].sort((x, y) => y[1] - x[1])[0];
+      homeWardOf.set(admId, ward);
+    });
+  }
+  const scoped = admissions.filter((a) => wardIdNums.includes(homeWardOf.get(a.id)));
+
+  // Final Bill (Discharge and Refund) totals.
+  const finalRows = scoped.length ? await prisma.clinicDischargeBillItem.groupBy({
+    by: ['admissionId'], where: { admissionId: { in: scoped.map((a) => a.id) }, excluded: false }, _sum: { amount: true }, _count: { _all: true },
+  }) : [];
+  const finalOf = new Map(finalRows.map((r) => [r.admissionId, Number(r._sum.amount) || 0]));
+
+  // Provisional Bill of each file, a few at a time.
+  const detailOf = new Map();
+  for (let i = 0; i < scoped.length; i += 6) {
+    const chunk = scoped.slice(i, i + 6);
+    const got = await Promise.all(chunk.map((a) => getProvisionalBillDetail(a.id).catch(() => null)));
+    chunk.forEach((a, k) => detailOf.set(a.id, got[k]));
+  }
+
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const rowOf = (a) => {
+    const ward = homeWardOf.get(a.id);
+    const d = detailOf.get(a.id);
+    const lines = d?.billItems || [];
+    const gross = Number(d?.balanceInfo?.billAmount) || 0;
+    const hasFinal = finalOf.has(a.id);
+    const finalAmt = finalOf.get(a.id) || 0;
+    const depBilAmt = hasFinal ? Math.max(gross, finalAmt) : gross;
+    const discount = hasFinal ? depBilAmt - finalAmt : (Number(d?.balanceInfo?.discount) || 0);
+    const inWard = (l) => !l.roomCategoryId || l.roomCategoryId === ward;
+    const sumOf = (pred) => lines.filter((l) => inWard(l) && pred(l.billHead)).reduce((s, l) => s + (Number(l.amount) || 0), 0);
+    const otherWards = lines.filter((l) => !inWard(l)).reduce((s, l) => s + (Number(l.amount) || 0), 0);
+    const netAmt = depBilAmt - discount - otherWards;
+    const diaAmt = sumOf((h) => wwpHas(h, WWP_DIALYSIS_KEYWORDS));
+    const pharmAmt = sumOf(wwpIsPharm) + (d && !d.pharmacyBillExcluded ? Number(d.pharmacyAmount) || 0 : 0);
+    const consRmoAmt = sumOf((h) => !wwpIsPharm(h) && wwpHas(h, WWP_CONS_KEYWORDS));
+    const procedureAmt = sumOf((h) => !wwpIsPharm(h) && !wwpHas(h, WWP_CONS_KEYWORDS) && wwpHas(h, WWP_PROCEDURE_KEYWORDS));
+    const tafd = netAmt - diaAmt - pharmAmt - consRmoAmt - procedureAmt;
+    return {
+      admissionNo: a.admissionNo, patientName: a.patientName,
+      depBilAmt: round2(depBilAmt), discount: round2(discount), otherWards: round2(otherWards), netAmt: round2(netAmt),
+      diaAmt: round2(diaAmt), pharmAmt: round2(pharmAmt), consRmoAmt: round2(consRmoAmt), procedureAmt: round2(procedureAmt), tafd: round2(tafd),
+    };
   };
 
   const wardsOut = [];
   const grand = emptyPaymentTotal();
-
   for (const room of rooms) {
-    const admissionWhere = { roomCategoryId: room.id, status: { in: ['discharge', 'closed'] } };
-    if (admissionFrom || admissionTo) {
-      admissionWhere.admissionNo = {};
-      if (admissionFrom) admissionWhere.admissionNo.gte = admissionFrom;
-      if (admissionTo) admissionWhere.admissionNo.lte = admissionTo;
-    }
-    const admissions = await prisma.clinicAdmission.findMany({
-      where: admissionWhere,
-      include: { dischargeCertificate: { select: { dischargeDate: true } } },
-      orderBy: { admissionNo: 'asc' },
-    });
-    const scoped = admissions.filter((a) => {
-      const d = a.dischargeCertificate?.dischargeDate || a.updatedAt;
-      if (!d) return false;
-      if (dateFromDt && new Date(d) < dateFromDt) return false;
-      if (dateToDt && new Date(d) > dateToDt) return false;
-      return true;
-    });
-    if (!scoped.length) continue;
-
-    const items = await prisma.clinicDischargeBillItem.findMany({ where: { admissionId: { in: scoped.map((a) => a.id) }, excluded: false } });
-    const itemsByAdm = new Map();
-    items.forEach((it) => {
-      if (!itemsByAdm.has(it.admissionId)) itemsByAdm.set(it.admissionId, []);
-      itemsByAdm.get(it.admissionId).push(it);
-    });
-
-    const rows = scoped.map((a) => {
-      const rowItems = itemsByAdm.get(a.id) || [];
-      const depBilAmt = rowItems.reduce((s, it) => s + (Number(it.amount) || 0), 0);
-      const discount = Number(a.dischargeDiscount) || 0;
-      const otherWards = 0; // see header note — no verified computation yet
-      const netAmt = depBilAmt - discount - otherWards;
-      const daAmt = Number(a.advancePayment) || 0;
-      const pharmAmt = rowItems.filter((it) => it.source === 'pharmacy').reduce((s, it) => s + (Number(it.amount) || 0), 0);
-      const consRmoAmt = rowItems.filter((it) => isConsRmoHead(it.billHeadId)).reduce((s, it) => s + (Number(it.amount) || 0), 0);
-      const procedureAmt = rowItems.filter((it) => isProcedureHead(it.billHeadId)).reduce((s, it) => s + (Number(it.amount) || 0), 0);
-      const tafd = netAmt - daAmt - pharmAmt - consRmoAmt - procedureAmt;
-      return {
-        admissionNo: a.admissionNo, patientName: a.patientName,
-        depBilAmt, discount, otherWards, netAmt, daAmt, pharmAmt, consRmoAmt, procedureAmt, tafd,
-      };
-    });
-
+    const rows = scoped.filter((a) => homeWardOf.get(a.id) === room.id).map(rowOf);
+    if (!rows.length) continue;
     const wardTotal = sumPaymentRows(rows);
     Object.keys(grand).forEach((k) => { grand[k] += wardTotal[k]; });
-
     wardsOut.push({ id: room.id, code: room.code, name: room.name, rows, total: wardTotal });
   }
 
@@ -12810,7 +12870,7 @@ async function getWardWisePaymentDistribution({
 }
 
 function emptyPaymentTotal() {
-  return { depBilAmt: 0, discount: 0, otherWards: 0, netAmt: 0, daAmt: 0, pharmAmt: 0, consRmoAmt: 0, procedureAmt: 0, tafd: 0 };
+  return { depBilAmt: 0, discount: 0, otherWards: 0, netAmt: 0, diaAmt: 0, pharmAmt: 0, consRmoAmt: 0, procedureAmt: 0, tafd: 0 };
 }
 function sumPaymentRows(rows) {
   return rows.reduce((acc, r) => {

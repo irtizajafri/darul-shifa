@@ -147,6 +147,8 @@ const menuItems = [
       { label: 'Cancel & Refund Slip History',      path: '/clinic/reports/cancel-refund-history',           perm: { sub: 'reports', tab: 'cancel-refund-history' } },
       { label: 'Doctor Schedule Report',            path: '/clinic/reports/doctor-schedule',                 perm: { sub: 'reports', tab: 'doctor-schedule' } },
       { label: 'General Payment Date Wise',         path: '/clinic/reports/general-payment',                 perm: { sub: 'reports', tab: 'general-payment' } },
+      { label: 'Cash Pending Report',               path: '/clinic/reports/cash-pending',                    perm: { sub: 'reports', tab: 'cash-pending-report' } },
+      { label: 'Credit Pending Report',             path: '/clinic/reports/credit-pending',                  perm: { sub: 'reports', tab: 'credit-pending-report' } },
     ],
   },
   {

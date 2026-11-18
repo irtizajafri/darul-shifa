@@ -58,6 +58,8 @@ const transactionsItems = [
   { key: 'expense-drafts',      label: 'Pending Drafts',      icon: FileText },
   { key: 'bank-deposit',        label: 'Bank Deposit',        icon: Landmark },
   { key: 'bank-statement',      label: 'Bank Statement',      icon: Upload },
+  { key: 'bank-book',           label: 'Bank Book',           icon: BookOpen },
+  { key: 'bank-reconciliation', label: 'Bank Reconciliation', icon: Landmark },
   { key: 'deposit-adjustment',  label: 'Deposit Adjustment',  icon: SlidersHorizontal },
 ];
 

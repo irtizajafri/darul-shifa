@@ -1,15 +1,18 @@
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { PackageCheck, Printer, Save, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/shared/PageHeader';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import { useAuthStore } from '../../store/useAuthStore';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { canBackDate } from '../../utils/permissions';
 import { openPrintWindow } from '../../utils/printRelay';
 import {
   pharmacyApi, getJson, EMPLOYEES_API, pktToday, daysBefore, fmtDate, fmtQty, fmtAmt, employeeName, patientRef,
 } from './pharmacyApi';
 import { printGIN } from './pharmacyPrint';
+import usePharmacyKeys from './usePharmacyKeys';
 import './Pharmacy.scss';
 
 // Al Shifa Hospital Pharmacy → Goods Issuance (GIN), like Inventory's GIN:
@@ -17,9 +20,15 @@ import './Pharmacy.scss';
 // quantity of each medicine (up to what's still left on the GD). No stock
 // check — the pharmacy keeps none. Rate starts at the Medicine List retail
 // price and can be changed per line at issue (owner, 2026-11-17).
+// Keyboard (same as Inventory's GIN, owner 2026-11-18): Ctrl+S Save, Ctrl+P
+// Save & Print, Ctrl+N New, Esc Clear; Enter in Issue Qty → its Rate → the
+// next line's Issue Qty.
 
 export default function PharmacyGIN() {
   const { user } = useAuthStore();
+  // Opened from the card on Inventory → GIN: the way back goes there.
+  const [searchParams] = useSearchParams();
+  const fromInventory = searchParams.get('from') === 'inventory';
   const userName = user?.name || user?.username || user?.email || '';
   const backDate = canBackDate(user);
   const [openGDs, setOpenGDs] = useState([]);
@@ -35,6 +44,7 @@ export default function PharmacyGIN() {
   const [list, setList] = useState([]);
   const [listLoading, setListLoading] = useState(false);
   const [openRow, setOpenRow] = useState(null);
+  const formCard = useRef(null);
 
   const loadOpen = useCallback(() => pharmacyApi('/gd?status=pending').then(setOpenGDs).catch((e) => toast.error(e.message)), []);
   const loadList = useCallback(async (f) => {
@@ -106,23 +116,41 @@ export default function PharmacyGIN() {
     }
   };
 
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); if (!saving) save(false); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+  const hasData = () => !!gdId || !!issuedToId;
+  const focusFirst = () => setTimeout(() => formCard.current?.querySelector('[role="combobox"]')?.focus(), 0);
+  // New / Clear: asks first when something has been entered.
+  const startNew = async () => {
+    if (saving) return;
+    if (hasData() && !(await confirmDialog({ title: 'Clear this GIN?', message: 'The GD, Issued To and quantities entered here will be cleared.', confirmLabel: 'Clear', danger: true }))) return;
+    reset();
+    focusFirst();
+  };
+  usePharmacyKeys({
+    onSave: () => { if (!saving && gd) save(false); },
+    onPrint: () => { if (!saving && gd) save(true); },
+    onNew: startNew,
+    onEsc: () => { if (hasData()) startNew(); },
   });
+  // Enter: Issue Qty → Rate → next line's Issue Qty (skips issued lines).
+  const nextCell = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const cells = [...(formCard.current?.querySelectorAll('input[data-gin-cell]:not(:disabled)') || [])];
+    const next = cells[cells.indexOf(e.currentTarget) + 1];
+    if (next) { next.focus(); next.select(); }
+  };
 
   return (
     <div className="ph-page">
       <PageHeader
-        breadcrumbs={[{ label: 'Al Shifa Hospital Pharmacy', link: '/pharmacy-module' }, { label: 'Goods Issuance (GIN)' }]}
+        breadcrumbs={fromInventory
+          ? [{ label: 'Inventory', link: '/inventory-module' }, { label: 'Goods Issuance (GIN)', link: '/inventory/gin' }, { label: 'Pharmacy — Goods Issuance (GIN)' }]
+          : [{ label: 'Al Shifa Hospital Pharmacy', link: '/pharmacy-module' }, { label: 'Goods Issuance (GIN)' }]}
         title="Goods Issuance (GIN)"
         subtitle="Issue the medicines of a GD — to its department or patient"
       />
 
-      <section className="ph-card">
+      <section className="ph-card" ref={formCard}>
         <h2 className="ph-card__title"><PackageCheck size={16} /> Create Goods Issuance (GIN)</h2>
         <div className="ph-grid ph-grid--3">
           <label className="ph-field">
@@ -176,12 +204,12 @@ export default function PharmacyGIN() {
                     <td className="r">{fmtQty(it.quantityIssued)}</td>
                     <td className="r">{fmtQty(left(it))}</td>
                     <td>
-                      <input className="ph-input ph-input--qty" inputMode="decimal" value={qty[it.id] ?? ''} disabled={done}
-                        onChange={(e) => setQty((x) => ({ ...x, [it.id]: e.target.value }))} aria-label={`${it.medicineName} issue quantity`} />
+                      <input className="ph-input ph-input--qty" inputMode="decimal" value={qty[it.id] ?? ''} disabled={done} data-gin-cell
+                        onChange={(e) => setQty((x) => ({ ...x, [it.id]: e.target.value }))} onKeyDown={nextCell} aria-label={`${it.medicineName} issue quantity`} />
                     </td>
                     <td>
-                      <input className="ph-input ph-input--qty" inputMode="decimal" value={rate[it.id] ?? ''} disabled={done}
-                        onChange={(e) => setRate((x) => ({ ...x, [it.id]: e.target.value }))} aria-label={`${it.medicineName} rate`}
+                      <input className="ph-input ph-input--qty" inputMode="decimal" value={rate[it.id] ?? ''} disabled={done} data-gin-cell
+                        onChange={(e) => setRate((x) => ({ ...x, [it.id]: e.target.value }))} onKeyDown={nextCell} aria-label={`${it.medicineName} rate`}
                         title={`Medicine List price: ${fmtAmt(it.currentRate)}`} />
                     </td>
                     <td className="r">{fmtAmt(q * rateOf(it))}</td>
@@ -196,9 +224,10 @@ export default function PharmacyGIN() {
         </div>
 
         <div className="ph-actions">
-          <button type="button" className="ph-btn" onClick={reset} disabled={saving}><X size={14} /> Clear</button>
-          <button type="button" className="ph-btn" onClick={() => save(false)} disabled={saving || !gd}><Save size={14} /> Save GIN</button>
-          <button type="button" className="ph-btn ph-btn--primary" onClick={() => save(true)} disabled={saving || !gd}><Printer size={14} /> Save &amp; Print</button>
+          <span className="ph-keys" aria-hidden="true"><kbd>Ctrl</kbd>+<kbd>S</kbd> Save · <kbd>Ctrl</kbd>+<kbd>P</kbd> Save &amp; Print · <kbd>Ctrl</kbd>+<kbd>N</kbd> New · <kbd>Esc</kbd> Clear</span>
+          <button type="button" className="ph-btn" onClick={reset} disabled={saving} title="Clear (Esc)"><X size={14} /> Clear</button>
+          <button type="button" className="ph-btn" onClick={() => save(false)} disabled={saving || !gd} title="Save (Ctrl+S)"><Save size={14} /> Save GIN</button>
+          <button type="button" className="ph-btn ph-btn--primary" onClick={() => save(true)} disabled={saving || !gd} title="Save & Print (Ctrl+P)"><Printer size={14} /> Save &amp; Print</button>
         </div>
       </section>
 

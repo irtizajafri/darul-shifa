@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pencil, Plus, Save, Trash2, X, Zap, TrendingUp } from 'lucide-react';
+import { Pencil, Plus, RefreshCw, Save, Trash2, X, Zap, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../../../config';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -9,11 +9,16 @@ import { useAuthStore } from '../../../store/useAuthStore';
 // the day's Clinic income voucher but no longer posts it. It waits here to be
 // checked and edited, and is posted only with "Post Now". Until then it isn't
 // counted in any report or the Inquiry dashboard (the day stays open).
+// Owner, 2026-11-18: until someone edits it here it follows the Clinic
+// figures (a slip edited after 8:00 AM comes in, also on Post Now). Once
+// edited by hand it stays as edited; "Refresh from Clinic" brings the Clinic
+// figures back when they've changed.
 
 const API = `${API_BASE_URL}/api/accounts`;
 
 const fmtAmt = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const fmtDateTime = (d) => new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 async function call(path, { method = 'GET', body } = {}) {
   const res = await fetch(`${API}${path}`, {
@@ -75,11 +80,30 @@ export default function PendingIncomeDrafts({ entityType }) {
     try {
       const saved = await call(`/income-drafts/${editing.id}`, {
         method: 'PUT',
-        body: { entries: editing.rows.map((r) => ({ incomeCategoryId: r.incomeCategoryId, particulars: r.particulars, amount: r.amount })) },
+        body: { userName, entries: editing.rows.map((r) => ({ incomeCategoryId: r.incomeCategoryId, particulars: r.particulars, amount: r.amount })) },
       });
-      setVouchers((vs) => vs.map((x) => (x.id === saved.id ? saved : x)));
       setEditing(null);
-      toast.success(`${saved.voucherNo} saved`);
+      toast.success(`${saved.voucherNo} saved — it now stays as you edited it`);
+      load();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const refresh = async (v) => {
+    const ok = await confirmDialog({
+      title: `Refresh ${v.voucherNo} from the Clinic?`,
+      message: `The lines become the Clinic figures as they are now (PKR ${fmtAmt(v.clinicNow?.total)}). The changes made here by hand are replaced, and the voucher follows the Clinic again until it is edited.`,
+      confirmLabel: 'Refresh from Clinic',
+    });
+    if (!ok) return;
+    setBusy(v.id);
+    try {
+      const d = await call(`/income-drafts/${v.id}/refresh`, { method: 'POST' });
+      toast.success(`${d.voucherNo} now PKR ${fmtAmt(d.totalAmount)} from the Clinic`);
+      await load();
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -88,17 +112,19 @@ export default function PendingIncomeDrafts({ entityType }) {
   };
 
   const post = async (v) => {
+    const stale = v.editedAt && v.clinicNow?.changed;
     const ok = await confirmDialog({
       title: `Post ${v.voucherNo}?`,
-      message: `Income voucher for ${fmtDate(v.voucherDate)} — PKR ${fmtAmt(v.totalAmount)}. After posting it counts in reports and can't be edited here.`,
+      message: `Income voucher for ${fmtDate(v.voucherDate)} — PKR ${fmtAmt(v.totalAmount)}.${stale ? `\n\nThe Clinic figures have changed since this voucher was edited (Clinic now PKR ${fmtAmt(v.clinicNow.total)}). It will be posted as edited.` : ''} After posting it counts in reports and can't be edited here.`,
       confirmLabel: 'Post Now',
+      danger: !!stale,
     });
     if (!ok) return;
     setBusy(v.id);
     try {
-      await call(`/income-drafts/${v.id}/post`, { method: 'POST', body: { userName } });
+      const d = await call(`/income-drafts/${v.id}/post`, { method: 'POST', body: { userName } });
       setVouchers((vs) => vs.filter((x) => x.id !== v.id));
-      toast.success(`${v.voucherNo} posted`);
+      toast.success(`${v.voucherNo} posted — PKR ${fmtAmt(d?.totalAmount ?? v.totalAmount)}`);
     } catch (e) {
       toast.error(e.message);
       load();
@@ -118,7 +144,7 @@ export default function PendingIncomeDrafts({ entityType }) {
         <div className="drafts__header-left">
           <h2 className="drafts__title"><TrendingUp size={18} /> Pending Income Vouchers</h2>
           <p className="drafts__sub">
-            Made by the 8:00 AM Day Close from the day&apos;s Clinic income. Not posted automatically: check or edit, then press &quot;Post Now&quot;. Until posted it isn&apos;t counted in reports.
+            Made by the 8:00 AM Day Close from the day&apos;s Clinic income, and kept up to date with the Clinic until you edit it here. Not posted automatically: check or edit, then press &quot;Post Now&quot;. Until posted it isn&apos;t counted in reports.
           </p>
         </div>
       </div>
@@ -154,6 +180,24 @@ export default function PendingIncomeDrafts({ entityType }) {
                     )}
                   </div>
                 </div>
+
+                {!isEditing && v.source === 'auto' && (
+                  v.editedAt ? (
+                    <div className={`drafts__income-note${v.clinicNow?.changed ? ' drafts__income-note--warn' : ''}`}>
+                      <span>
+                        Edited by hand{v.editedByName ? ` by ${v.editedByName}` : ''} on {fmtDateTime(v.editedAt)} — kept as edited.
+                        {v.clinicNow?.changed && <> The Clinic figures have changed since: <b>Clinic now PKR {fmtAmt(v.clinicNow.total)}</b>, voucher PKR {fmtAmt(v.totalAmount)}.</>}
+                      </span>
+                      <button type="button" className="drafts__move" onClick={() => refresh(v)} disabled={!!editing || busy === v.id}>
+                        <RefreshCw size={12} /> Refresh from Clinic
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="drafts__income-note">
+                      <span>Follows the Clinic figures — a slip edited before posting is included (also when you press Post Now).</span>
+                    </div>
+                  )
+                )}
 
                 <div className="drafts__table-wrap">
                   <table className="drafts__table">

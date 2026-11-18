@@ -5,6 +5,7 @@ import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useAuthStore } from '../../store/useAuthStore';
 import { API_BASE_URL } from '../../config';
+import { useAllBanks } from '../accounts/bankRecon/bankReconUtils';
 import './PendingTx.scss';
 
 // Clinic → Transactions → Credit Pending Transaction (owner, 2026-11-17): CC
@@ -30,8 +31,9 @@ export default function CreditPendingTransaction() {
   const [picked, setPicked] = useState([]);
   const [openRow, setOpenRow] = useState(null);
   const [settling, setSettling] = useState(false);
-  const [form, setForm] = useState({ receivedDate: pktToday(), receivedAmount: '', remarks: '' });
+  const [form, setForm] = useState({ receivedDate: pktToday(), receivedAmount: '', remarks: '', bankAccountId: '' });
   const [saving, setSaving] = useState(false);
+  const banks = useAllBanks();
 
   const load = useCallback(async (s = show, term = q) => {
     setLoading(true);
@@ -61,7 +63,7 @@ export default function CreditPendingTransaction() {
 
   const openSettle = () => {
     if (!pickedRows.length) { toast.error('Tick the slips the bank has paid'); return; }
-    setForm({ receivedDate: pktToday(), receivedAmount: String(Math.round(pickedTotal * 100) / 100), remarks: '' });
+    setForm((f) => ({ receivedDate: pktToday(), receivedAmount: String(Math.round(pickedTotal * 100) / 100), remarks: '', bankAccountId: f.bankAccountId || '' }));
     setSettling(true);
   };
 
@@ -74,7 +76,7 @@ export default function CreditPendingTransaction() {
       const res = await fetch(`${API}/transactions/credit-pending/settle`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitIds: picked, receivedDate: form.receivedDate, receivedAmount: got, remarks: form.remarks, createdByName: userName }),
+        body: JSON.stringify({ visitIds: picked, receivedDate: form.receivedDate, receivedAmount: got, remarks: form.remarks, createdByName: userName, bankAccountId: form.bankAccountId ? Number(form.bankAccountId) : null }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || j?.ok === false) throw new Error(j?.message || 'Not saved');
@@ -202,6 +204,12 @@ export default function CreditPendingTransaction() {
                 <input inputMode="decimal" value={form.receivedAmount} onChange={(e) => setForm((f) => ({ ...f, receivedAmount: e.target.value }))} autoFocus />
               </label>
               <div className="ptx-facts"><span>Bank Charges <b>{fmt2(charges)}</b></span></div>
+              <label className="ptx-field"><span>Credited To (Bank Account)</span>
+                <select value={form.bankAccountId} onChange={(e) => setForm((f) => ({ ...f, bankAccountId: e.target.value }))}>
+                  <option value="">— Not set —</option>
+                  {banks.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+                </select>
+              </label>
               <label className="ptx-field"><span>Remarks</span>
                 <input value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} placeholder="e.g. bank, batch #" />
               </label>

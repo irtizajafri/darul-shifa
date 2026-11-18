@@ -60,7 +60,7 @@
   max-height: 300px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
   li { display: flex; flex-direction: column; padding: 6px 12px; cursor: pointer; font-size: 0.84rem;
     span { font-size: 0.74rem; color: #64748b; }
-    &:hover { background: #f0fdfa; } }
+    &:hover, &.is-hi { background: #ccfbf1; } }
 }
 
 .ph-lines { margin: 14px 0; }
@@ -136,4 +136,24 @@
   span { font-size: 0.8rem; color: #64748b; }
   &:hover { border-color: #5eead4; box-shadow: 0 6px 18px rgba(15, 118, 110, 0.12); }
   &:focus-visible { outline: 2px solid #14b8a6; outline-offset: 2px; }
+}
+
+// Keyboard shortcut hint beside the Save buttons (2026-11-18).
+.ph-keys {
+  margin-right: auto;
+  font-size: 0.72rem;
+  color: #64748b;
+  kbd {
+    display: inline-block;
+    padding: 0 4px;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #334155;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+  }
+  @media (max-width: 640px) { display: none; }
 }

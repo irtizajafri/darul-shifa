@@ -106,7 +106,7 @@ export default function UnpresentedChequeList() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.4rem' }}>
                   {g.candidateEntries.map((e) => (
                     <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 5, padding: '0.4rem 0.7rem' }}>
-                      <span style={{ fontSize: '0.8rem' }}>{e.voucherNo} · Cheque #{e.chequeNo} · {e.payeeName || '—'}</span>
+                      <span style={{ fontSize: '0.8rem' }}>{e.voucherNo} · Cheque #{e.chequeNo} · {e.description || e.payeeName || '—'}</span>
                       {g.candidateLines.map((line) => (
                         <button
                           key={line.id}
@@ -135,7 +135,7 @@ export default function UnpresentedChequeList() {
               <th style={th}>Voucher Date</th>
               <th style={th}>Cheque #</th>
               <th style={th}>Cheque Date</th>
-              <th style={th}>Payee</th>
+              <th style={th}>Description</th>
               <th style={{ ...th, textAlign: 'right' }}>Amount</th>
             </tr>
           </thead>
@@ -152,7 +152,7 @@ export default function UnpresentedChequeList() {
                 <td style={td}>{fmtDate(e.voucherDate)}</td>
                 <td style={td}>{e.chequeNo}</td>
                 <td style={td}>{e.chequeDate ? fmtDate(e.chequeDate) : '—'}</td>
-                <td style={td}>{e.payeeName || '—'}</td>
+                <td style={td}>{e.description || e.payeeName || '—'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>{fmt2(e.amount)}</td>
               </tr>
             ))}
