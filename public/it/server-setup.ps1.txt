@@ -1,15 +1,17 @@
-# Darul Shifa HMS - SERVER PC setup (2026-11-20)
+# Darul Shifa HMS - SERVER PC setup (Windows 7, 10 and 11)
 #
 # Run once on the SERVER (192.168.1.100), PowerShell "As Administrator":
-#   & ([scriptblock]::Create((irm http://localhost:5173/it/server-setup.ps1.txt)))
+#   & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://localhost:5173/it/server-setup.ps1.txt')))
 #
 # The server keeps its internet (attendance cloud, WhatsApp, GitHub updates).
 # This only:
 #   1. Lets the hospital network reach the HMS website (5173) and API (5001).
-#   2. Closes the database port 5433 to the network (the server itself still
-#      uses it - Windows Firewall never blocks the PC's own connections).
+#   2. Closes the database port 5433 to the network. The server itself still
+#      uses it - checked below; if the server loses the database the block
+#      is taken off again by itself.
 #   3. Stops the server from sleeping, so the 8:00 AM Day Close and the bed /
 #      day-care jobs always run.
+# It does NOT switch the firewall on or change what is already allowed.
 # Undo: server-unlock.ps1.txt.
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -17,19 +19,68 @@ if (-not $isAdmin) {
   Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
   return
 }
-$ErrorActionPreference = 'Stop'
-$Group = 'Darul Shifa HMS Server'
+$Rule = 'DarulShifaHMS'
 Write-Host '== Darul Shifa HMS: server setup ==' -ForegroundColor Cyan
 
-Get-NetFirewallRule -Group $Group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-New-NetFirewallRule -Group $Group -DisplayName 'HMS website + API from the hospital network' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5173, 5001 -RemoteAddress LocalSubnet | Out-Null
-New-NetFirewallRule -Group $Group -DisplayName 'PostgreSQL 5433 - closed to the network' -Direction Inbound -Action Block -Protocol TCP -LocalPort 5433 | Out-Null
-Write-Host '[1/2] Firewall: 5173 + 5001 network ke liye khule, database 5433 network se band.' -ForegroundColor Green
+function Test-Port([string]$HostName, [int]$Port) {
+  $c = New-Object Net.Sockets.TcpClient
+  try {
+    $ar = $c.BeginConnect($HostName, $Port, $null, $null)
+    if (-not $ar.AsyncWaitHandle.WaitOne(3000, $false)) { return $false }
+    $c.EndConnect($ar)
+    return $true
+  } catch {
+    return $false
+  } finally {
+    $c.Close()
+  }
+}
 
-powercfg /change standby-timeout-ac 0 | Out-Null
-powercfg /change hibernate-timeout-ac 0 | Out-Null
-powercfg /hibernate off | Out-Null
+# Every address this server can reach its own database on, before the change.
+$addrs = @('127.0.0.1')
+foreach ($a in [Net.Dns]::GetHostAddresses([Net.Dns]::GetHostName())) {
+  if ($a.AddressFamily -eq 'InterNetwork') { $addrs += $a.ToString() }
+}
+$dbBefore = @()
+foreach ($a in $addrs) { if (Test-Port $a 5433) { $dbBefore += $a } }
+
+# 1. Firewall rules
+foreach ($n in @("$Rule-ServerIn", "$Rule-DbBlock")) {
+  & netsh.exe advfirewall firewall delete rule "name=$n" | Out-Null
+}
+& netsh.exe advfirewall firewall add rule "name=$Rule-ServerIn" dir=in action=allow protocol=TCP 'localport=5173,5001' remoteip=localsubnet | Out-Null
+$okIn = ($LASTEXITCODE -eq 0)
+& netsh.exe advfirewall firewall add rule "name=$Rule-DbBlock" dir=in action=block protocol=TCP localport=5433 | Out-Null
+$okDb = ($LASTEXITCODE -eq 0)
+if (-not ($okIn -and $okDb)) {
+  Write-Host 'Firewall rule nahi ban saka. Is window ki photo bhejein.' -ForegroundColor Red
+  return
+}
+
+# The server must still reach its own database.
+$lost = @()
+foreach ($a in $dbBefore) { if (-not (Test-Port $a 5433)) { $lost += $a } }
+if ($lost.Count -gt 0) {
+  & netsh.exe advfirewall firewall delete rule "name=$Rule-DbBlock" | Out-Null
+  Write-Host ('Database block hata diya - server khud database tak nahi pahunch raha tha (' + ($lost -join ', ') + '). Photo bhejein.') -ForegroundColor Red
+} else {
+  Write-Host '[1/2] Firewall: 5173 + 5001 network ke liye khule, database 5433 network se band.' -ForegroundColor Green
+}
+
+$state = (& netsh.exe advfirewall show allprofiles state | Out-String)
+if ($state -match 'OFF') {
+  Write-Host '      Note: is server ka Windows Firewall kisi profile me OFF hai - jab tak OFF hai, 5433 ka block lagu nahi hota.' -ForegroundColor Yellow
+}
+
+# 2. No sleep / hibernate
+powercfg -change -standby-timeout-ac 0 | Out-Null
+powercfg -change -hibernate-timeout-ac 0 | Out-Null
+powercfg -h off | Out-Null
 Write-Host '[2/2] Server ab sleep / hibernate nahi hoga.' -ForegroundColor Green
 
+$api = Test-Port '127.0.0.1' 5001
+$apiText = 'NAHI chal raha - backend check karein'
+if ($api) { $apiText = 'OK' }
 Write-Host ''
+Write-Host ('HMS API (5001) : ' + $apiText)
 Write-Host 'Baqi kaam (checklist): PostgreSQL ka password badlein aur .env me DATABASE_URL update karein.' -ForegroundColor Yellow

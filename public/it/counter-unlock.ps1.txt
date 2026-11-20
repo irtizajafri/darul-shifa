@@ -1,36 +1,44 @@
-# Darul Shifa HMS - counter PC UNLOCK (undo counter-lock.ps1.txt)
+# Darul Shifa HMS - counter PC UNLOCK (undo counter-lock.ps1.txt; Windows 7, 10 and 11)
 #
 # PowerShell "As Administrator":
-#   & ([scriptblock]::Create((irm http://192.168.1.100:5173/it/counter-unlock.ps1.txt)))
+#   & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://192.168.1.100:5173/it/counter-unlock.ps1.txt')))
 # Opens internet again, allows USB storage, removes the Chrome/Edge rules.
 # Restart the PC after running.
+#
+# If the PC can no longer reach the server, type these two lines instead
+# (admin PowerShell or admin Command Prompt) - they open the internet again:
+#   netsh advfirewall set allprofiles firewallpolicy "blockinbound,allowoutbound"
+#   reg add HKLM\SYSTEM\CurrentControlSet\Services\USBSTOR /v Start /t REG_DWORD /d 3 /f
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
   Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
   return
 }
-$Group = 'Darul Shifa HMS'
+$Rule = 'DarulShifaHMS'
 Write-Host '== Darul Shifa HMS: counter PC unlock ==' -ForegroundColor Cyan
 
 # 1. Firewall back to Windows default (outbound allowed)
-Get-NetFirewallRule -Group $Group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-Set-NetFirewallProfile -Profile Domain, Private, Public -DefaultOutboundAction Allow
+& netsh.exe advfirewall set allprofiles firewallpolicy 'blockinbound,allowoutbound' | Out-Null
+foreach ($n in @("$Rule-Server", "$Rule-NTP", "$Rule-Printer")) {
+  & netsh.exe advfirewall firewall delete rule "name=$n" | Out-Null
+}
 Write-Host '[1/3] Firewall: internet khul gaya.' -ForegroundColor Green
 
 # 2. USB storage allowed
 Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\RemovableStorageDevices' -Name 'Deny_All' -ErrorAction SilentlyContinue
-Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\USBSTOR' -Name 'Start' -Value 3
+$usb = 'HKLM:\SYSTEM\CurrentControlSet\Services\USBSTOR'
+if (Test-Path $usb) { Set-ItemProperty -Path $usb -Name 'Start' -Value 3 }
 Write-Host '[2/3] USB storage khul gaya (restart ke baad).' -ForegroundColor Green
 
 # 3. Browser policies removed (only the ones counter-lock set)
-foreach ($root in 'HKLM:\SOFTWARE\Policies\Google\Chrome', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge') {
+foreach ($root in @('HKLM:\SOFTWARE\Policies\Google\Chrome', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge')) {
   if (Test-Path $root) {
-    foreach ($name in 'DeveloperToolsAvailability', 'HomepageLocation', 'HomepageIsNewTabPage', 'RestoreOnStartup') {
+    foreach ($name in @('DeveloperToolsAvailability', 'HomepageLocation', 'HomepageIsNewTabPage', 'RestoreOnStartup')) {
       Remove-ItemProperty -Path $root -Name $name -ErrorAction SilentlyContinue
     }
-    foreach ($sub in 'RestoreOnStartupURLs', 'PopupsAllowedForUrls', 'ExtensionInstallBlocklist') {
-      Remove-Item -Path "$root\$sub" -Recurse -ErrorAction SilentlyContinue
+    foreach ($sub in @('RestoreOnStartupURLs', 'PopupsAllowedForUrls', 'ExtensionInstallBlocklist')) {
+      if (Test-Path "$root\$sub") { Remove-Item -Path "$root\$sub" -Recurse -ErrorAction SilentlyContinue }
     }
   }
 }

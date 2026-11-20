@@ -27,14 +27,15 @@
 <body>
 <main>
   <h1>HMS PC Lockdown</h1>
-  <p class="sub">Darul Shifa HMS — counter PCs pe internet, USB storage aur software band karna. Sab kaam yahin se, internet ke baghair.</p>
+  <p class="sub">Darul Shifa HMS — counter PCs pe internet, USB storage aur software band karna. Sab kaam yahin se, internet ke baghair. Windows 7, 10 aur 11 sab pe chalta hai.</p>
+  <p class="note"><b>Paste kaise karein:</b> Copy dabayein, phir PowerShell ki neeli window me <b>right-click</b> karein (Windows 7 me Ctrl+V nahi chalta) aur <b class="k">Enter</b> dabayein.</p>
 
   <section>
     <h2>Pehle ek dafa: server PC (192.168.1.100)</h2>
     <ol>
       <li>Server pe HMS ka naya version deploy ho chuka ho (login wala update).</li>
       <li>Server pe <b class="k">Start</b> → "PowerShell" likhein → right-click → <b class="k">Run as administrator</b>, phir yeh chalayein:
-        <div class="cmd"><code id="c-server">&amp; ([scriptblock]::Create((irm http://localhost:5173/it/server-setup.ps1.txt)))</code><button type="button" data-copy="c-server">Copy</button></div>
+        <div class="cmd"><code id="c-server">&amp; ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://localhost:5173/it/server-setup.ps1.txt')))</code><button type="button" data-copy="c-server">Copy</button></div>
         Is se network ke liye website (5173) aur API (5001) khule rahenge, database (5433) network se band ho jayega, aur server sleep nahi hoga. Server ka internet chalta rahega.</li>
       <li><b>Database password badlein</b> (abhi <b class="k">1234</b> hai): pgAdmin / psql me <code>ALTER USER postgres WITH PASSWORD 'naya-mazboot-password';</code> phir <code>hospital-hms-backend\.env</code> me <code>DATABASE_URL</code> me wahi password likhein aur backend restart karein.</li>
       <li>Super Admin ka password badalna ho to <code>.env</code> me <code>SUPER_ADMIN_PASSWORD=...</code> likh ke backend restart karein.</li>
@@ -80,7 +81,7 @@
     <p>Counter PC (admin PowerShell), phir restart:</p>
     <div class="cmd"><code id="c-unlock"></code><button type="button" data-copy="c-unlock">Copy</button></div>
     <p>Server:</p>
-    <div class="cmd"><code id="c-sunlock">&amp; ([scriptblock]::Create((irm http://localhost:5173/it/server-unlock.ps1.txt)))</code><button type="button" data-copy="c-sunlock">Copy</button></div>
+    <div class="cmd"><code id="c-sunlock">&amp; ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://localhost:5173/it/server-unlock.ps1.txt')))</code><button type="button" data-copy="c-sunlock">Copy</button></div>
     <p class="note">Dev PC (Mac) pe kuch nahi chalana — yeh sab sirf Windows counter PCs ke liye hai.</p>
   </section>
 </main>
@@ -88,9 +89,11 @@
   // Commands use the address this page was opened from (the server's).
   var base = location.protocol + '//' + location.host;
   document.getElementById('hms-url').textContent = base;
-  document.getElementById('c-lock').textContent = '& ([scriptblock]::Create((irm ' + base + '/it/counter-lock.ps1.txt)))';
-  document.getElementById('c-lock-p').textContent = '& ([scriptblock]::Create((irm ' + base + '/it/counter-lock.ps1.txt))) -Printers 192.168.1.50';
-  document.getElementById('c-unlock').textContent = '& ([scriptblock]::Create((irm ' + base + '/it/counter-unlock.ps1.txt)))';
+  // Works on PowerShell 2.0 (Windows 7) too - irm needs 3.0.
+  function cmd(file) { return "& ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('" + base + "/it/" + file + "')))"; }
+  document.getElementById('c-lock').textContent = cmd('counter-lock.ps1.txt');
+  document.getElementById('c-lock-p').textContent = cmd('counter-lock.ps1.txt') + ' -Printers 192.168.1.50';
+  document.getElementById('c-unlock').textContent = cmd('counter-unlock.ps1.txt');
   // Copy: navigator.clipboard needs https, so fall back to a hidden textarea.
   document.addEventListener('click', function (e) {
     var id = e.target.getAttribute && e.target.getAttribute('data-copy');
