@@ -4,8 +4,9 @@ import { X } from 'lucide-react';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { printPanelDummyDischargeCert, fetchPanelDummyDischargeCert } from './panelDummyDischargeCertPrint';
 import useModalKeys from '../../../hooks/useModalKeys';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const RELATIONS = ['S/o', 'D/o', 'W/o', 'H/o', 'F/o', 'M/o', 'Self'];
 
 // Panels > Billing > Discharge Certificate (owner, 2026-10-29): a dummy,

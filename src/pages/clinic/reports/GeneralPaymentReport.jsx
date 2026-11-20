@@ -7,8 +7,9 @@ import { printElementInPopup } from '../../../utils/printPopup';
 import { openPrintWindow } from '../../../utils/printRelay';
 import './DepartmentDoctorPerformanceReport.scss';
 import './GeneralPaymentReport.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

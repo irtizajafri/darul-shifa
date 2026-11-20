@@ -19,6 +19,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatDate, getTotalSalary } from "../../utils/helpers";
 import "./Reports.scss";
+import { API_BASE_URL } from '../../config';
 
 const reportTypes = [
   { id: "payslip", label: "Payslip", icon: FileText },
@@ -28,7 +29,7 @@ const reportTypes = [
   { id: "cr", label: "Employee CR", icon: User },
 ];
 
-const ATTENDANCE_API_URL = 'http://localhost:5001/api/attendance';
+const ATTENDANCE_API_URL = `${API_BASE_URL}/api/attendance`;
 
 function downloadFile({ filename, content, mimeType }) {
   const blob = new Blob([content], { type: mimeType });
@@ -100,7 +101,7 @@ export default function Reports() {
     setSyncMsg(null);
     const lastDay = new Date(Number(year), Number(month), 0).getDate();
     try {
-      const res = await fetch('http://localhost:5001/api/attendance/sync-punches', {
+      const res = await fetch(`${API_BASE_URL}/api/attendance/sync-punches`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -156,7 +157,7 @@ export default function Reports() {
         scheduledIn:  safeIso(row.scheduledIn),
         scheduledOut: safeIso(row.scheduledOut),
       });
-      const res = await fetch('http://localhost:5001/api/payslip-snapshot/save', {
+      const res = await fetch(`${API_BASE_URL}/api/payslip-snapshot/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -226,7 +227,7 @@ export default function Reports() {
   const rosterKey = `${JSON.stringify(emp?.dutyRoster || [])}|${emp?.dutyType || ''}`;
   useEffect(() => {
     if (!emp?.id) { setEmpRosterHistory([]); return; }
-    fetch(`http://localhost:5001/api/employees/${emp.id}/roster-history`)
+    fetch(`${API_BASE_URL}/api/employees/${emp.id}/roster-history`)
       .then(r => r.json())
       .then(json => {
         setEmpRosterHistory(Array.isArray(json.data) ? json.data : []);
@@ -446,7 +447,7 @@ export default function Reports() {
       setLoadedForEmpCode(null);
 
       try {
-        const res = await fetch('http://localhost:5001/api/attendance/test-pairing', {
+        const res = await fetch(`${API_BASE_URL}/api/attendance/test-pairing`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
@@ -461,7 +462,7 @@ export default function Reports() {
 
         if (emp?.dutyRoster?.some(r => r.shift1 && r.shift2)) {
           try {
-            const hrRes = await fetch(`http://localhost:5001/api/attendance/manual-times?empCode=${emp.empCode}&month=${month}&year=${year}`, {
+            const hrRes = await fetch(`${API_BASE_URL}/api/attendance/manual-times?empCode=${emp.empCode}&month=${month}&year=${year}`, {
               signal: controller.signal,
             });
             if (hrRes.ok) {
@@ -692,7 +693,7 @@ export default function Reports() {
 
       try {
         const endDate = new Date(Number(year), Number(month), 0).getDate();
-        const res = await fetch('http://localhost:5001/api/attendance/test-raw-punches', {
+        const res = await fetch(`${API_BASE_URL}/api/attendance/test-raw-punches`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
@@ -790,7 +791,7 @@ export default function Reports() {
     const fetchSaved = async () => {
       try {
         const res = await fetch(
-          `http://localhost:5001/api/payslip-snapshot?empCode=${emp.empCode}&month=${month}&year=${year}`,
+          `${API_BASE_URL}/api/payslip-snapshot?empCode=${emp.empCode}&month=${month}&year=${year}`,
           { signal: controller.signal }
         );
         const json = await res.json();
@@ -824,7 +825,7 @@ export default function Reports() {
   useEffect(() => {
     if (!emp?.id || !month || !year) { setLwpRateByDate({}); return; }
     const monthKey = `${year}-${String(month).padStart(2, '0')}`;
-    fetch(`http://localhost:5001/api/leave-encashment/records?employeeId=${emp.id}&month=${monthKey}`)
+    fetch(`${API_BASE_URL}/api/leave-encashment/records?employeeId=${emp.id}&month=${monthKey}`)
       .then(r => r.json())
       .then(json => {
         if (!json.ok) return;
@@ -1916,7 +1917,7 @@ export default function Reports() {
     const is51214Payslip = activeReport === 'payslip' && selectedEmpCode === '51214';
     if (!isRegister && !is51214Payslip) return;
     const monthKey = `${year}-${month}`;
-    fetch(`http://localhost:5001/api/leave-encashment/monthly-total?month=${monthKey}`)
+    fetch(`${API_BASE_URL}/api/leave-encashment/monthly-total?month=${monthKey}`)
       .then(r => r.json())
       .then(json => {
         if (json.ok) {

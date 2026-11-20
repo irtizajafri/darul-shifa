@@ -2764,13 +2764,14 @@ async function getBalanceSlips(req, res, next) {
 
 async function receiveBalancePayment(req, res, next) {
   try {
-    const { amount } = req.body;
+    const { amount, paymentType } = req.body;
     if (!amount || Number(amount) <= 0) return fail(res, 400, 'Valid amount required');
-    const data = await service.receiveBalancePayment(req.params.id, Number(amount));
+    const data = await service.receiveBalancePayment(req.params.id, Number(amount), paymentType);
     success(res, data, 'Balance received successfully');
   } catch (err) {
     if (err.message === 'Visit not found') return fail(res, 404, err.message);
     if (err.message === 'Invalid amount') return fail(res, 400, err.message);
+    if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }

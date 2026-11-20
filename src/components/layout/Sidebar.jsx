@@ -21,6 +21,7 @@ import {
   FileText,
   Wrench,
   ShieldCheck,
+  MonitorSmartphone,
   UserRound,
   FolderTree,
   ListChecks,
@@ -364,6 +365,15 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           >
             <ShieldCheck className="w-5 h-5 shrink-0" />
             {!collapsed && <span>User Management</span>}
+          </div>
+        )}
+        {user?.isSuperAdmin && (
+          <div
+            className={navClass('/admin/devices')}
+            onClick={() => go('/admin/devices', null)}
+          >
+            <MonitorSmartphone className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>Connected PCs</span>}
           </div>
         )}
       </nav>

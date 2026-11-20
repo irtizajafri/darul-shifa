@@ -18,6 +18,7 @@ import './Antenatal.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
 import BackDateField from '../../components/clinic/BackDateField';
+import { API_BASE_URL } from '../../config';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
@@ -280,7 +281,7 @@ function PanelModal({ onSelect, onClose }) {
   );
 }
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const PAYMENT_TYPE_MAP = {
   'cash':    'private',
@@ -751,7 +752,8 @@ export default function Admission() {
     const slipBarcodeDataUrl = canvas.toDataURL('image/png');
 
     return buildAdmissionPaymentReceiptHtml({
-      payment: { serialNo: serial, amount: advAmt, paymentType: 'cash', receivedAt: created.createdAt || new Date() },
+      // The advance is paid the patient category's way (CC / JazzCash), not always cash.
+      payment: { serialNo: serial, amount: advAmt, paymentType: ['cc', 'jazzcash'].includes(form.patientCategory) ? form.patientCategory : 'cash', receivedAt: created.createdAt || new Date() },
       admission: {
         admissionNo: created.admissionNo || form.admissionNo,
         patientTitle: created.patientTitle || form.patientTitle,

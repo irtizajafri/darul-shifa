@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { API_BASE_URL } from '../../config';
 
-const API_URL = "http://localhost:5001/api/attendance/external";
+const API_URL = `${API_BASE_URL}/api/attendance/external`;
 
 export default function TempAttendanceApi() {
   const [dates, setDates] = useState("2026/03/01");

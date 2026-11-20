@@ -28,6 +28,7 @@ export function invoiceLabel(paymentType) {
     case 'cc':
     case 'panel':     return 'CREDIT INVOICE';
     case 'jazzcash':  return 'JAZZCASH';
+    case 'online':    return 'ONLINE';
     case 'complementary': return 'COMPLEMENTARY';
     default:          return 'CASH INVOICE';
   }

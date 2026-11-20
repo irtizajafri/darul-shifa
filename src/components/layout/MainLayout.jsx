@@ -5,6 +5,7 @@ import TabsContainer from './TabsContainer';
 import MinimizedReportsDock from './MinimizedReportsDock';
 import CommandPalette from '../shared/CommandPalette';
 import { ConfirmDialogHost } from '../ui/ConfirmDialog';
+import { startDeviceHeartbeat } from '../../utils/apiAuth';
 
 // Browsers change a focused <input type="number">'s value when the mouse
 // wheel scrolls over it. On money/quantity fields that silently alters an
@@ -29,6 +30,8 @@ export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed] = useState(false); // collapsed rail is not wired up yet
   useNumberInputWheelGuard();
+  // Connected PCs: this PC shows online while the app is open.
+  useEffect(() => { startDeviceHeartbeat(); }, []);
 
   return (
     <div className="min-h-screen flex bg-[var(--background)]">

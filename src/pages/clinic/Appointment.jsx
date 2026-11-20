@@ -4,8 +4,9 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import useModalKeys from '../../hooks/useModalKeys';
 import './Appointment.scss';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 function fmtDateTime(d) {
   if (!d) return '';

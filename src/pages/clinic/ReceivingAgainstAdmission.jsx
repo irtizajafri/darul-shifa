@@ -11,8 +11,10 @@ import { handleSlipKeys } from '../../utils/keyboardNav';
 import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import './ReceivingAgainstAdmission.scss';
 import { openPrintWindow } from '../../utils/printRelay';
+import { RECEIVING_MODES } from './receivingModes';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -297,14 +299,19 @@ export default function ReceivingAgainstAdmission() {
                   value={amount}
                   onChange={e => setAmount(e.target.value)}
                 />
-                <label className={`raa-radio-btn ${paymentType === 'cash' ? 'raa-radio-btn--active' : ''}`}>
-                  <input type="radio" name="paymentType" checked={paymentType === 'cash'} onChange={() => setPaymentType('cash')} />
-                  Cash
-                </label>
-                <label className={`raa-radio-btn ${paymentType === 'cc' ? 'raa-radio-btn--active' : ''}`}>
-                  <input type="radio" name="paymentType" checked={paymentType === 'cc'} onChange={() => setPaymentType('cc')} />
-                  Credit Card
-                </label>
+              </div>
+
+              {/* Mode of payment (owner, 2026-11-20): Cash, Credit Card, JazzCash. */}
+              <div className="raa-form-row">
+                <label className="raa-label">Mode of Payment</label>
+                <div className="raa-modes" role="radiogroup" aria-label="Mode of payment">
+                  {RECEIVING_MODES.map((m) => (
+                    <label key={m.value} className={`raa-radio-btn ${paymentType === m.value ? 'raa-radio-btn--active' : ''}`}>
+                      <input type="radio" name="paymentType" checked={paymentType === m.value} onChange={() => setPaymentType(m.value)} />
+                      {m.label}
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="raa-paid-box">

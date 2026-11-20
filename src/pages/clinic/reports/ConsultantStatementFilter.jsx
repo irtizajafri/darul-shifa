@@ -5,8 +5,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantStatementFilter.scss';
 import { todayStr, tomorrowStr } from './reportDates';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const STATEMENT_CATEGORIES = ['consultant', 'contractor'];
 
 

@@ -4,8 +4,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import { useClinicStore } from '../../../store/useClinicStore';
 import './PatientDocumentsReport.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../../config';
 
-const FILES_BASE = 'http://localhost:5001/uploads/';
+const FILES_BASE = `${API_BASE_URL}/uploads/`;
 
 function fmtDateTime(d) {
   if (!d) return '—';

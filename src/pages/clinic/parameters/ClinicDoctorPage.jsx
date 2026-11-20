@@ -12,8 +12,9 @@ import { useClinicStore } from '../../../store/useClinicStore';
 import './ClinicParameterPage.scss';
 import './ClinicDoctorPage.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // Parse Excel in "Sr# | Test Name | Rate (Rs.)" format
 // Row 0 may be a department title (e.g. "ULTRA SOUND") or directly headers

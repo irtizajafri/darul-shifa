@@ -5,8 +5,9 @@ import toast from 'react-hot-toast';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import './DischargeCertificateReport.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const REASON_LABELS = {
   treated: 'Patient Treated',

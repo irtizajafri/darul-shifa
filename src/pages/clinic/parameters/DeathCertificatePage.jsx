@@ -7,8 +7,9 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { buildDeathCertificatePrintHtml } from '../deathCertificatePrintUtils';
 import './DeathCertificatePage.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const RELATION_TYPES = ['S/o', 'D/o', 'W/o'];
 

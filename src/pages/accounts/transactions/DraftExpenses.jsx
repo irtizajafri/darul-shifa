@@ -5,8 +5,9 @@ import toast from 'react-hot-toast';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import PendingIncomeDrafts from './PendingIncomeDrafts';
 import './DraftExpenses.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 const fmtAmt = (n) =>
   Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

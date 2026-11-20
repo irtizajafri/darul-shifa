@@ -272,3 +272,19 @@ $bg:      #dde3ea;
 .rbs-td-r     { text-align: right; }
 .rbs-td-red   { color: $red; font-weight: 700; }
 .rbs-td-empty { text-align: center; color: #999; padding: 20px !important; }
+
+// Mode of payment (2026-11-20).
+.rbs-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.rbs-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  font-size: 12px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 20px;
+  cursor: pointer;
+  &--on { color: #1d4ed8; background: #eff6ff; border-color: #1d4ed8; }
+}

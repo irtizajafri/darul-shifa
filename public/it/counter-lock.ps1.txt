@@ -1,0 +1,82 @@
+# Darul Shifa HMS - counter PC lock (2026-11-20)
+#
+# Run once on each counter PC, in PowerShell opened "As Administrator":
+#   & ([scriptblock]::Create((irm http://192.168.1.100:5173/it/counter-lock.ps1.txt)))
+# With a network printer / print-sharing PC, run it like this instead:
+#   & ([scriptblock]::Create((irm http://192.168.1.100:5173/it/counter-lock.ps1.txt))) -Printers 192.168.1.50
+#
+# What it does:
+#   1. Firewall: this PC can reach ONLY the HMS server (ports 5173 + 5001),
+#      the printers given, and time sync. Internet is closed.
+#   2. USB storage (sticks, hard drives, phones, CD) blocked. Keyboard, mouse,
+#      USB printer and barcode scanner keep working.
+#   3. Chrome and Edge: Developer Tools off, extensions blocked, HMS opens
+#      as the home page, HMS print pop-ups allowed.
+# Undo: counter-unlock.ps1.txt. Restart the PC after running.
+
+param(
+  [string]$Server = '192.168.1.100',
+  [int[]]$Ports = @(5173, 5001),
+  [string[]]$Printers = @()
+)
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
+  return
+}
+$ErrorActionPreference = 'Stop'
+$HmsUrl = "http://$($Server):5173"
+$Group = 'Darul Shifa HMS'
+Write-Host "== Darul Shifa HMS: counter PC lock (server $Server) ==" -ForegroundColor Cyan
+
+# Make sure the server answers BEFORE closing anything.
+$test = Test-NetConnection -ComputerName $Server -Port 5001 -WarningAction SilentlyContinue
+if (-not $test.TcpTestSucceeded) {
+  Write-Host "Server $Server port 5001 se jawab nahi aa raha. Pehle network/server check karein - kuch band nahi kiya." -ForegroundColor Red
+  return
+}
+
+# 1. Firewall
+Get-NetFirewallRule -Group $Group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+New-NetFirewallRule -Group $Group -DisplayName 'HMS server (website + API)' -Direction Outbound -Action Allow -Protocol TCP -RemoteAddress $Server -RemotePort $Ports | Out-Null
+New-NetFirewallRule -Group $Group -DisplayName 'Time sync (NTP)' -Direction Outbound -Action Allow -Protocol UDP -RemotePort 123 | Out-Null
+foreach ($p in $Printers) {
+  New-NetFirewallRule -Group $Group -DisplayName "Printer $p" -Direction Outbound -Action Allow -RemoteAddress $p | Out-Null
+}
+Set-NetFirewallProfile -Profile Domain, Private, Public -Enabled True -DefaultInboundAction Block -DefaultOutboundAction Block
+Write-Host '[1/3] Firewall: sirf HMS server (aur printers) khule, internet band.' -ForegroundColor Green
+
+# 2. USB storage
+$rs = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\RemovableStorageDevices'
+New-Item -Path $rs -Force | Out-Null
+New-ItemProperty -Path $rs -Name 'Deny_All' -Value 1 -PropertyType DWord -Force | Out-Null
+Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\USBSTOR' -Name 'Start' -Value 4
+Write-Host '[2/3] USB storage band (restart ke baad poori tarah).' -ForegroundColor Green
+
+# 3. Browser policies (Chrome + Edge)
+function Set-BrowserPolicy([string]$root) {
+  New-Item -Path $root -Force | Out-Null
+  New-ItemProperty -Path $root -Name 'DeveloperToolsAvailability' -Value 2 -PropertyType DWord -Force | Out-Null
+  New-ItemProperty -Path $root -Name 'HomepageLocation' -Value $HmsUrl -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $root -Name 'HomepageIsNewTabPage' -Value 0 -PropertyType DWord -Force | Out-Null
+  New-ItemProperty -Path $root -Name 'RestoreOnStartup' -Value 4 -PropertyType DWord -Force | Out-Null
+  foreach ($sub in 'RestoreOnStartupURLs', 'PopupsAllowedForUrls') {
+    New-Item -Path "$root\$sub" -Force | Out-Null
+    New-ItemProperty -Path "$root\$sub" -Name '1' -Value $HmsUrl -PropertyType String -Force | Out-Null
+  }
+  New-Item -Path "$root\ExtensionInstallBlocklist" -Force | Out-Null
+  New-ItemProperty -Path "$root\ExtensionInstallBlocklist" -Name '1' -Value '*' -PropertyType String -Force | Out-Null
+}
+Set-BrowserPolicy 'HKLM:\SOFTWARE\Policies\Google\Chrome'
+Set-BrowserPolicy 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
+Write-Host '[3/3] Chrome/Edge: Developer Tools band, extensions band, home page HMS.' -ForegroundColor Green
+
+# Check
+$hms = (Test-NetConnection -ComputerName $Server -Port 5001 -WarningAction SilentlyContinue).TcpTestSucceeded
+$web = (Test-NetConnection -ComputerName 'www.google.com' -Port 443 -WarningAction SilentlyContinue).TcpTestSucceeded
+Write-Host ''
+Write-Host "HMS server tak raasta : $(if ($hms) { 'OK' } else { 'NAHI - counter-unlock chalayein' })"
+Write-Host "Internet (google)     : $(if ($web) { 'ABHI KHULA HAI - check karein' } else { 'band (theek)' })"
+Write-Host ''
+Write-Host 'Ab PC RESTART karein. Phir staff ko Standard user login dein (checklist dekhein).' -ForegroundColor Yellow

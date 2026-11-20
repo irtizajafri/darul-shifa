@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 // ─── Static Super Admin ──────────────────────────────────────────────────────
-// This is the master admin account. Credentials are hardcoded here intentionally.
-// This account is never stored in the database and bypasses all permission checks.
+// The master admin account — never stored in the database, bypasses all
+// permission checks. Its password is checked on the server now (owner,
+// 2026-11-20: it used to sit here, readable by anyone in the browser); the
+// server's login returns this account with a token like any other user.
 export const SUPER_ADMIN_EMAIL    = 'ceo@darulshifa.com';
-export const SUPER_ADMIN_PASSWORD = 'yamaha@1234';
 
 export const SUPER_ADMIN_USER = {
   id: 'super-admin',

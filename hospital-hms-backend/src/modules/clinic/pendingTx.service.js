@@ -78,7 +78,7 @@ async function listCashPending({ q, show } = {}) {
   };
 }
 
-async function receiveCashPending(admissionId, { amount, serialNo, receivedBy, confirmNotDuplicate, backDate } = {}) {
+async function receiveCashPending(admissionId, { amount, serialNo, receivedBy, confirmNotDuplicate, backDate, paymentType } = {}) {
   const id = Number(admissionId);
   const a = await prisma.clinicAdmission.findUnique({ where: { id }, select: { id: true, dischargeCashPending: true } });
   if (!a || !(Number(a.dischargeCashPending) > 0)) throw fail(404, 'This file has no cash pending');
@@ -91,7 +91,7 @@ async function receiveCashPending(admissionId, { amount, serialNo, receivedBy, c
   if (amt > remaining + 0.005) throw fail(400, `Only Rs. ${remaining.toLocaleString()} is pending on this file`);
   // Same receipt path as Receiving against Admission (Slip #, back date,
   // the Patients List duplicate check), tagged against the pending balance.
-  return clinicSvc.addAdmissionPayment(id, { serialNo, amount: amt, paymentType: 'cash', receivedBy, confirmNotDuplicate, backDate, againstCashPending: true });
+  return clinicSvc.addAdmissionPayment(id, { serialNo, amount: amt, paymentType: paymentType || 'cash', receivedBy, confirmNotDuplicate, backDate, againstCashPending: true });
 }
 
 // Provisional Bill: mark (or unmark) a cash file "Goes to Cash Pending"

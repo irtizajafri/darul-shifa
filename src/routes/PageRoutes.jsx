@@ -41,6 +41,7 @@ import InventoryReports from '../pages/inventory/InventoryReports';
 import Maintenance from '../pages/inventory/Maintenance';
 import AssetShifting from '../pages/inventory/AssetShifting';
 import UserManagement from '../pages/admin/UserManagement';
+import ConnectedDevices from '../pages/admin/ConnectedDevices';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
 function SuperAdminRoute({ children }) {
@@ -56,6 +57,9 @@ export default function PageRoutes() {
       <Route path="dashboard" element={<MainDashboard />} />
 
       <Route path="admin/users" element={<SuperAdminRoute><UserManagement /></SuperAdminRoute>} />
+
+
+      <Route path="admin/devices" element={<SuperAdminRoute><ConnectedDevices /></SuperAdminRoute>} />
 
       <Route path="employee-module" element={<PermissionGuard module="employee"><EmployeeModuleDashboard /></PermissionGuard>} />
       <Route path="employees" element={<PermissionGuard module="employee" subModule="employee-database"><EmployeeList /></PermissionGuard>} />

@@ -5,8 +5,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './AdmissionDistributionFilter.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const firstOfMonthStr = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };

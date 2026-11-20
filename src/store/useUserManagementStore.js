@@ -1,6 +1,7 @@
 import { create } from 'zustand';
+import { API_BASE_URL } from '../config';
 
-const BASE_URL = 'http://localhost:5001/api/users';
+const BASE_URL = `${API_BASE_URL}/api/users`;
 
 // Safely parse a fetch response as JSON.
 // If the server returns HTML (e.g. 404/500 error page) this gives a clear message

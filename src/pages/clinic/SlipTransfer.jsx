@@ -9,8 +9,9 @@ import './SlipAdjustment.scss';
 import './AdmissionAdjustment.scss';
 import './SlipTransfer.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 function fmtDateTime(d) {
   if (!d) return '';

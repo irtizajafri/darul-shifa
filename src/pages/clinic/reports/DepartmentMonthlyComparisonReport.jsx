@@ -6,8 +6,9 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import './DepartmentMonthlyComparisonReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthLabel = (ym) => {

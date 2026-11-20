@@ -10,8 +10,9 @@ import './DepartmentDoctorPerformanceFilter.scss';
 import { useShallow } from 'zustand/react/shallow';
 import { SUPER_ADMIN_USER } from '../../../store/useAuthStore';
 import { todayStr } from './reportDates';
+import { API_BASE_URL } from '../../../config';
 
-const API_USERS = 'http://localhost:5001/api/users';
+const API_USERS = `${API_BASE_URL}/api/users`;
 
 function UserLookupModal({ onSelect, onClose }) {
   const [q, setQ] = useState('');

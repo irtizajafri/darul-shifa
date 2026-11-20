@@ -3,8 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });

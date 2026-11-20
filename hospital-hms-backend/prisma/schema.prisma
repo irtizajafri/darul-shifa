@@ -1090,6 +1090,9 @@ model ClinicOpdBalancePayment {
   visitId    Int
   visit      ClinicOpdVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
   amount     Decimal        @db.Decimal(10, 2)
+  // Mode the balance was received in (migration 079): cash / cc / jazzcash.
+  // Null on older rows — they go by the slip's payment type.
+  paymentType String?
   receivedAt DateTime       @default(now())
   createdAt  DateTime       @default(now())
 
@@ -3694,4 +3697,29 @@ model ClinicCcSettlement {
 
   @@index([visitId])
   @@index([receivedDate])
+}
+
+// ─── Connected PCs (migration 080) ───────────────────────────────────────────
+// Every PC that uses the HMS, by IP; the Super Admin can allow / block one.
+model HmsDevice {
+  id            Int       @id @default(autoincrement())
+  ip            String    @unique(map: "HmsDevice_ip_key")
+  name          String?
+  status        String    @default("allowed") // allowed | blocked | pending
+  protected     Boolean   @default(false)
+  macAddress    String?
+  lastUserName  String?
+  lastUserEmail String?
+  userAgent     String?
+  requestCount  Int       @default(0)
+  firstSeenAt   DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  changedByName String?
+  changedAt     DateTime?
+}
+
+model HmsSetting {
+  key       String   @id
+  value     String?
+  updatedAt DateTime @default(now())
 }

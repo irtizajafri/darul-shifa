@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
+import { API_BASE_URL } from '../config';
 
 const TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
 const PING_INTERVAL_MS = 60 * 1000; // ping server every 1 minute
@@ -33,7 +34,7 @@ export function useInactivityLogout() {
 
       if (now - lastPingRef.current >= PING_INTERVAL_MS) {
         lastPingRef.current = now;
-        fetch(`http://localhost:5001/api/users/${user.id}/activity`, { method: 'PATCH' }).catch(() => {});
+        fetch(`${API_BASE_URL}/api/users/${user.id}/activity`, { method: 'PATCH' }).catch(() => {});
       }
     }, CHECK_INTERVAL_MS);
 

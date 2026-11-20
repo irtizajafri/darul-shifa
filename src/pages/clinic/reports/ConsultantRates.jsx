@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ConsultantRates.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 export default function ConsultantRates() {
   const [consultants, setConsultants] = useState([]);

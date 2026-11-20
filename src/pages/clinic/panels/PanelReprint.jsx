@@ -12,8 +12,9 @@ import { PanelReportViewer } from './PanelBilling';
 import { fetchPanelDummyDischargeCert, printPanelDummyDischargeCert } from './panelDummyDischargeCertPrint';
 import '../reports/ReprintFilter.scss';
 import './PanelReprint.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const monthAgoStr = () => { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().split('T')[0]; };

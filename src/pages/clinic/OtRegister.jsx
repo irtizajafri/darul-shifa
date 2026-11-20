@@ -8,8 +8,9 @@ import { useClinicStore } from '../../store/useClinicStore';
 import useModalKeys from '../../hooks/useModalKeys';
 import './OtRegister.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const BLOOD_TYPES = ['Whole Blood', 'Plasma', 'FFP', 'C/S', 'Platlets'];
 
@@ -37,6 +38,9 @@ function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''
 const ROLE_KEYWORDS = {
   anaesthesiologist: ['anaesth', 'anesth'],
   surgeon: ['surgeon'],
+  // Surgeon 2 also lists the RMOs (owner, 2026-11-20) — same "rmo" match as
+  // Admission's "Arrived under RMO".
+  surgeonOrRmo: ['surgeon', 'rmo'],
   tech: ['tech'],
 };
 function doctorsForRole(doctors, role) {
@@ -341,7 +345,7 @@ export default function OtRegister() {
                 onOnCallChange={v => set('surgeon1OnCall', v)}
               />
               <DoctorField
-                label="Surgeon 2" role="surgeon" doctors={doctors}
+                label="Surgeon 2" role="surgeonOrRmo" doctors={doctors}
                 doctorId={form.surgeon2Id} onCall={form.surgeon2OnCall}
                 onPick={id => set('surgeon2Id', id)}
                 onOnCallChange={v => set('surgeon2OnCall', v)}

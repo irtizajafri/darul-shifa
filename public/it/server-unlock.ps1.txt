@@ -1,0 +1,10 @@
+# Darul Shifa HMS - SERVER undo (removes what server-setup.ps1.txt added)
+#   & ([scriptblock]::Create((irm http://localhost:5173/it/server-unlock.ps1.txt)))
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
+  return
+}
+Get-NetFirewallRule -Group 'Darul Shifa HMS Server' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+Write-Host 'Server ke HMS firewall rules hata diye (sleep settings waisi hi hain).' -ForegroundColor Green

@@ -7,8 +7,9 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { guardAllocationChange } from './allocationGuard';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './accParam.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 const glLabel = (g) => `${g.code} — ${g.name}`;
 
 export default function MainAccount() {

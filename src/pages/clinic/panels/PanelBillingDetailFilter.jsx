@@ -7,8 +7,9 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import { importBillingExcel, isExcelFile } from './panelBillingDetailImport';
 import '../reports/ConsultantWiseFilter.scss';
 import './PanelBillingDetailReport.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const monthStartIso = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`; };

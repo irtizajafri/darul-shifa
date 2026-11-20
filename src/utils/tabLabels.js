@@ -41,6 +41,7 @@ const PATH_OVERRIDES = {
   '/pharmacy/gin': 'Pharmacy GIN',
   '/pharmacy/reports': 'Pharmacy Reports',
   '/admin/users': 'User Management',
+  '/admin/devices': 'Connected PCs',
   '/employees': 'Employee Database',
   '/employees/add': 'Add Employee',
   '/coming-soon': 'Coming Soon',

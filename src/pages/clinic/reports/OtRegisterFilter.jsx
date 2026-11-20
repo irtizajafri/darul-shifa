@@ -18,7 +18,8 @@ const PATIENT_TYPES = [
 // to them in Doctor parameters — matched by keyword (same logic as the OT
 // Register entry screen) so spelling variants ("Anaesthetic" etc.) still work.
 function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''); }
-const ROLE_KEYWORDS = { anaesthesiologist: ['anaesth', 'anesth'], surgeon: ['surgeon'], tech: ['tech'] };
+// Surgeon filter also lists RMOs — an RMO can be Surgeon 2 (owner, 2026-11-20).
+const ROLE_KEYWORDS = { anaesthesiologist: ['anaesth', 'anesth'], surgeon: ['surgeon'], surgeonOrRmo: ['surgeon', 'rmo'], tech: ['tech'] };
 function doctorsForRole(doctors, role) {
   return doctors.filter(d => ROLE_KEYWORDS[role].some(k => normCat(d.staffCategory?.name).includes(k)));
 }
@@ -98,7 +99,7 @@ export default function OtRegisterFilter() {
   useEffect(() => { fetchDoctors(); fetchSurgeryTypes(); }, [fetchDoctors, fetchSurgeryTypes]);
 
   const anaesthesiologistRows = doctorsForRole(doctors, 'anaesthesiologist').map(d => ({ id: d.id, label: `${d.code} — ${d.name}` }));
-  const surgeonRows           = doctorsForRole(doctors, 'surgeon').map(d => ({ id: d.id, label: `${d.code} — ${d.name}` }));
+  const surgeonRows           = doctorsForRole(doctors, 'surgeonOrRmo').map(d => ({ id: d.id, label: `${d.code} — ${d.name}` }));
   const techRows              = doctorsForRole(doctors, 'tech').map(d => ({ id: d.id, label: `${d.code} — ${d.name}` }));
   const surgeryTypeRows       = surgeryTypes.map(s => ({ id: s.id, label: s.code ? `${s.code} — ${s.name}` : s.name }));
 

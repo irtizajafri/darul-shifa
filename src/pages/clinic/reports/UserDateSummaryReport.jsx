@@ -7,8 +7,9 @@ import { REPORT_PRINT_FONT_CSS } from '../../../components/reports/reportFont';
 import { useAuthStore } from '../../../store/useAuthStore';
 import './DepartmentPatientsReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 

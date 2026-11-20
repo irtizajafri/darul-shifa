@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../../config';
 
 export default function TestAttendance() {
   const [loading, setLoading] = useState(false);
@@ -10,7 +11,7 @@ export default function TestAttendance() {
   const [employeeId, setEmployeeId] = useState('');
 
   useEffect(() => {
-    fetch('http://localhost:5001/api/employees')
+    fetch(`${API_BASE_URL}/api/employees`)
       .then(res => res.json())
       .then(json => {
         if (json.data) setEmployees(json.data);
@@ -21,7 +22,7 @@ export default function TestAttendance() {
   const handleTestPairing = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5001/api/attendance/test-raw-punches', {
+      const res = await fetch(`${API_BASE_URL}/api/attendance/test-raw-punches`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ startDate, endDate, employeeId })

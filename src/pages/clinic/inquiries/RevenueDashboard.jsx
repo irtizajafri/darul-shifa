@@ -11,8 +11,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './RevenueDashboard.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const MN  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MNF = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -38,6 +39,40 @@ const PAY_TYPES = [
 
 const fmtN = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 const fmtA = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Payment modes (owner, 2026-11-20): every slip / receipt lands in exactly
+// one, so the badges add up to the Total — JazzCash used to be counted in the
+// Total and in no badge. Other = Online, Complementary, Staff, anything else.
+const MODES = [
+  { key: 'panel',    label: 'Panel',    short: 'P' },
+  { key: 'cash',     label: 'Cash',     short: 'C' },
+  { key: 'cc',       label: 'CC',       short: 'CC' },
+  { key: 'jazzcash', label: 'JazzCash', short: 'JC' },
+  { key: 'other',    label: 'Other (Online / Compl. / Staff)', short: 'O' },
+];
+const modeOf = (pt) => {
+  const t = String(pt || '').toLowerCase();
+  if (t === 'cash' || t === 'private') return 'cash';
+  if (t === 'panel') return 'panel';
+  if (['c card', 'cc', 'credit card'].includes(t)) return 'cc';
+  if (t === 'jazzcash' || t === 'jazz cash') return 'jazzcash';
+  return 'other';
+};
+const MODE_FIELDS = ['totalPatients', 'totalAmount', ...MODES.flatMap((m) => [`${m.key}Patients`, `${m.key}Amount`])];
+const zeroModes = () => Object.fromEntries(MODE_FIELDS.map((f) => [f, 0]));
+const addModes = (acc, c) => { MODE_FIELDS.forEach((f) => { acc[f] += Number(c?.[f]) || 0; }); return acc; };
+// One badge per mode with patients; hover shows its amount.
+const modeBadges = (c, withShort = false) => MODES
+  .filter((m) => (c?.[`${m.key}Patients`] || 0) > 0)
+  .map((m) => (
+    <span key={m.key} className={`rd-badge rd-badge--${m.key}`} title={`${m.label}: ${fmtN(c[`${m.key}Patients`])} · Rs ${fmtN(c[`${m.key}Amount`])}`}>
+      {c[`${m.key}Patients`]}{withShort ? m.short : ''}
+    </span>
+  ));
+const modeBreakdown = (c) => MODES
+  .filter((m) => (c?.[`${m.key}Patients`] || 0) > 0 || (c?.[`${m.key}Amount`] || 0) !== 0)
+  .map((m) => `${m.label}: ${fmtN(c[`${m.key}Patients`])} · Rs ${fmtN(c[`${m.key}Amount`])}`)
+  .join('\n');
 
 const todayStr = (() => {
   const t = new Date();
@@ -230,25 +265,19 @@ export default function RevenueDashboard() {
         for (const r of filtered) {
           if (!r.visitDate) continue;
           const day = bizDay(r);
-          if (!dayMap[day]) dayMap[day] = { date: day, slips: 0, totalAmount:0, cashSlips: 0, cashAmount:0, panelSlips: 0, panelAmount:0, ccSlips: 0, ccAmount:0 };
+          if (!dayMap[day]) dayMap[day] = { date: day, ...zeroModes() };
           const d   = dayMap[day];
           const amt = amountOf(r);
-          const pt  = (r.paymentType || '').toLowerCase();
+          const m   = modeOf(r.paymentType);
           // + its Administrative Expense line, same as Patients List's count
           const n   = 1 + (Number(r.adminExpense) > 0 ? 1 : 0);
-          d.slips += n;
+          d.totalPatients += n;
           d.totalAmount += amt;
-          if (pt === 'cash')                                   { d.cashSlips += n;  d.cashAmount  += amt; }
-          else if (pt === 'panel')                             { d.panelSlips += n; d.panelAmount += amt; }
-          else if (['c card','cc','credit card'].includes(pt)) { d.ccSlips += n;    d.ccAmount    += amt; }
+          d[`${m}Patients`] += n;
+          d[`${m}Amount`] += amt;
         }
 
-        const data = Object.values(dayMap).map(d => ({
-          date: d.date, totalPatients: d.slips, totalAmount: d.totalAmount,
-          cashPatients: d.cashSlips, cashAmount: d.cashAmount,
-          panelPatients: d.panelSlips, panelAmount: d.panelAmount,
-          ccPatients: d.ccSlips, ccAmount: d.ccAmount,
-        }));
+        const data = Object.values(dayMap);
 
         const totalPatients = filtered.reduce((n, r) => n + 1 + (Number(r.adminExpense) > 0 ? 1 : 0), 0);
         const totalAmount   = filtered.reduce((s, r) => s + amountOf(r), 0);
@@ -337,7 +366,7 @@ export default function RevenueDashboard() {
     for (let i = 0; i < firstDay; i++) cells.push(null);
     for (let d = 1; d <= daysInMonth; d++) {
       const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      const dd = rawData.find(x => x.date === ds) || { totalPatients:0, totalAmount:0, cashPatients:0, panelPatients:0 };
+      const dd = rawData.find(x => x.date === ds) || zeroModes();
       cells.push({ day: d, dateStr: ds, ...dd });
     }
     while (cells.length % 7 !== 0) cells.push(null);
@@ -346,35 +375,16 @@ export default function RevenueDashboard() {
     const weeks = [];
     for (let i = 0; i < cells.length; i += 7) {
       const week = cells.slice(i, i + 7);
-      const wTotal = week.reduce((acc, c) => {
-        if (!c) return acc;
-        return {
-          totalPatients: acc.totalPatients + (c.totalPatients || 0),
-          totalAmount:   acc.totalAmount   + (c.totalAmount   || 0),
-          panelPatients: acc.panelPatients + (c.panelPatients || 0),
-          cashPatients:  acc.cashPatients  + (c.cashPatients  || 0),
-        };
-      }, { totalPatients: 0, totalAmount: 0, panelPatients: 0, cashPatients: 0 });
+      const wTotal = week.reduce((acc, c) => (c ? addModes(acc, c) : acc), zeroModes());
       weeks.push({ days: week, total: wTotal });
     }
 
     // Column totals: for each day-of-week (0=Sun … 6=Sat)
-    const colTotals = Array.from({ length: 7 }, () => ({ totalPatients:0, totalAmount:0, panelPatients:0, cashPatients:0 }));
+    const colTotals = Array.from({ length: 7 }, () => zeroModes());
     for (const { days } of weeks) {
-      days.forEach((cell, di) => {
-        if (!cell) return;
-        colTotals[di].totalPatients += cell.totalPatients || 0;
-        colTotals[di].totalAmount   += cell.totalAmount   || 0;
-        colTotals[di].panelPatients += cell.panelPatients || 0;
-        colTotals[di].cashPatients  += cell.cashPatients  || 0;
-      });
+      days.forEach((cell, di) => { if (cell) addModes(colTotals[di], cell); });
     }
-    const grandColTotal = colTotals.reduce((acc, c) => ({
-      totalPatients: acc.totalPatients + c.totalPatients,
-      totalAmount:   acc.totalAmount   + c.totalAmount,
-      panelPatients: acc.panelPatients + c.panelPatients,
-      cashPatients:  acc.cashPatients  + c.cashPatients,
-    }), { totalPatients:0, totalAmount:0, panelPatients:0, cashPatients:0 });
+    const grandColTotal = colTotals.reduce((acc, c) => addModes(acc, c), zeroModes());
 
     const cellClass = (cell) => {
       if (!cell) return 'rd-cell rd-cell--blank';
@@ -405,7 +415,7 @@ export default function RevenueDashboard() {
                   key={di}
                   className={`${cellClass(cell)}${cell ? ' rd-cell--clickable' : ''}`}
                   onDoubleClick={() => cell && setStatementDate(cell.dateStr)}
-                  title={cell ? 'Double-click for department-wise statement' : undefined}
+                  title={cell ? `${cell.totalPatients > 0 ? `${modeBreakdown(cell)}\n\n` : ''}Double-click for department-wise statement` : undefined}
                 >
                   {cell && (
                     <>
@@ -415,8 +425,7 @@ export default function RevenueDashboard() {
                           <div className="rd-cell-total">{cell.totalPatients}</div>
                           <div className="rd-cell-amt">{fmtN(cell.totalAmount)}</div>
                           <div className="rd-cell-badges">
-                            {cell.panelPatients > 0 && <span className="rd-badge rd-badge--panel">{cell.panelPatients}</span>}
-                            {cell.cashPatients  > 0 && <span className="rd-badge rd-badge--cash">{cell.cashPatients}</span>}
+                            {modeBadges(cell)}
                           </div>
                         </>
                       )}
@@ -432,8 +441,7 @@ export default function RevenueDashboard() {
                     <div className="rd-cell-total">{week.total.totalPatients}</div>
                     <div className="rd-cell-amt">{fmtN(week.total.totalAmount)}</div>
                     <div className="rd-cell-badges">
-                      {week.total.panelPatients > 0 && <span className="rd-badge rd-badge--panel">{week.total.panelPatients}</span>}
-                      {week.total.cashPatients  > 0 && <span className="rd-badge rd-badge--cash">{week.total.cashPatients}</span>}
+                      {modeBadges(week.total)}
                     </div>
                   </>
                 )}
@@ -448,8 +456,7 @@ export default function RevenueDashboard() {
                 <div className="rd-cell-total">{ct.totalPatients}</div>
                 <div className="rd-cell-amt">{fmtN(ct.totalAmount)}</div>
                 <div className="rd-cell-badges">
-                  {ct.panelPatients > 0 && <span className="rd-badge rd-badge--panel">{ct.panelPatients}</span>}
-                  {ct.cashPatients  > 0 && <span className="rd-badge rd-badge--cash">{ct.cashPatients}</span>}
+                  {modeBadges(ct)}
                 </div>
               </div>
             ))}
@@ -465,8 +472,7 @@ export default function RevenueDashboard() {
           <span className="rd-leg rd-leg--today">Today</span>
           <span className="rd-leg rd-leg--max">Highest</span>
           <span className="rd-leg rd-leg--min">Lowest</span>
-          <span className="rd-leg rd-leg--panel">Panel</span>
-          <span className="rd-leg rd-leg--cash">Cash</span>
+          {MODES.map((m) => <span key={m.key} className={`rd-leg rd-leg--${m.key}`}>{m.label}</span>)}
         </div>
       </div>
     );
@@ -494,8 +500,7 @@ export default function RevenueDashboard() {
                 <div className="rd-mc-bar" style={{ width: `${maxAmt > 0 ? (d.totalAmount/maxAmt)*100 : 0}%` }}/>
               </div>
               <div className="rd-mc-sub">
-                {d.panelPatients > 0 && <span className="rd-badge rd-badge--panel">{d.panelPatients}P</span>}
-                {d.cashPatients  > 0 && <span className="rd-badge rd-badge--cash">{d.cashPatients}C</span>}
+                {modeBadges(d, true)}
               </div>
             </div>
           ))}

@@ -11,6 +11,7 @@ import { openPrintWindow } from '../../../utils/printRelay';
 import VoucherSearch from '../../../components/accounts/VoucherSearch';
 import { fetchExpenseVoucher } from '../../../components/accounts/voucherSearchApi';
 import './VoucherExpenseForm.scss';
+import { API_BASE_URL } from '../../../config';
 
 
 // IPD / Surgery file picker — oldest file at the top, today's at the bottom
@@ -42,10 +43,10 @@ function groupGrnDeliveries(rows) {
 }
 const itemsLabel = (count, names) => `${count > 1 ? `${count} items — ` : ''}${names}`;
 const grnNote = (code, count) => `GRN ${code}${count > 1 ? ` (${count} items)` : ''}`;
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 const codeNameLabel = (x) => `${x.code} — ${x.name}`;
-const UTIL_API = 'http://localhost:5001/api/utilities';
-const CLINIC_API = 'http://localhost:5001/api/clinic';
+const UTIL_API = `${API_BASE_URL}/api/utilities`;
+const CLINIC_API = `${API_BASE_URL}/api/clinic`;
 
 // Calendar date (YYYY-MM-DD) in Pakistan time (Asia/Karachi), whatever the
 // PC's own timezone setting is. toISOString() is UTC, which in Pakistan
@@ -1176,7 +1177,7 @@ function VoucherExpenseFormInner() {
     setModalLoading(true);
     try {
       const r = await fetch(
-        `http://localhost:5001/api/payslip-snapshot?empCode=${encodeURIComponent(payee.code)}&month=${month}&year=${year}`
+        `${API_BASE_URL}/api/payslip-snapshot?empCode=${encodeURIComponent(payee.code)}&month=${month}&year=${year}`
       );
       const j = await r.json();
       setSalaryModal((prev) => ({ ...prev, rows: j?.data?.rows || null, netSalary: j?.data?.netSalary ?? null, savedAt: j?.data?.savedAt || null }));

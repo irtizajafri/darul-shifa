@@ -4,8 +4,9 @@ import { ArrowLeft, CheckSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { openReportPreview } from './reportPreview';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => `${todayStr().slice(0, 8)}01`;

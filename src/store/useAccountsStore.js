@@ -1,6 +1,7 @@
 import { create } from 'zustand';
+import { API_BASE_URL } from '../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 async function req(path, options = {}) {
   const res = await fetch(`${API}${path}`, {

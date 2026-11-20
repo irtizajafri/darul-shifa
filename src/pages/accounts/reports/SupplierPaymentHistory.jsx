@@ -7,9 +7,10 @@ import { useAuthStore } from '../../../store/useAuthStore';
 import { openPrintWindow } from '../../../utils/printRelay';
 import { openReportPreview } from './reportPreview';
 import VoucherSearch from '../../../components/accounts/VoucherSearch';
+import { API_BASE_URL } from '../../../config';
 
-const INVENTORY_API = 'http://localhost:5001/api/inventory';
-const ACCOUNTS_API = 'http://localhost:5001/api/accounts';
+const INVENTORY_API = `${API_BASE_URL}/api/inventory`;
+const ACCOUNTS_API = `${API_BASE_URL}/api/accounts`;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const firstOfMonth = () => `${todayStr().slice(0, 8)}01`;

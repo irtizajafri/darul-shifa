@@ -20,6 +20,7 @@ import PageLoader from '../../components/ui/PageLoader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import './EmployeeModuleDashboard.scss';
+import { API_BASE_URL } from '../../config';
 
 const subModules = [
   { title: 'Employee Database', icon: Users,     desc: 'Add, edit & manage all employee records',          path: '/employees',        subModule: 'employee-database' },
@@ -57,12 +58,12 @@ export default function EmployeeModuleDashboard() {
 
       try {
         const [todayRes, monthRes] = await Promise.all([
-          fetch('http://localhost:5001/api/attendance/external', {
+          fetch(`${API_BASE_URL}/api/attendance/external`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ Dates: apiToday, DatesTo: apiToday })
           }),
-          fetch('http://localhost:5001/api/attendance/external', {
+          fetch(`${API_BASE_URL}/api/attendance/external`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ Dates: monthStart, DatesTo: monthEnd })

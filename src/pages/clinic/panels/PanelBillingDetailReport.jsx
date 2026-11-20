@@ -7,8 +7,9 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import { importBillingExcel, isExcelFile } from './panelBillingDetailImport';
 import './PanelBillingDetailReport.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // `@page` is a document-level rule — other pages (Admission, Death Certificate
 // Report) each declare their own `@page` with different size/margin, and since

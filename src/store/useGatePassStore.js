@@ -1,6 +1,7 @@
 import { create } from 'zustand';
+import { API_BASE_URL } from '../config';
 
-const API_URL = 'http://localhost:5001/api/gatepass';
+const API_URL = `${API_BASE_URL}/api/gatepass`;
 
 export const useGatePassStore = create((set) => ({
   gatepasses: [],

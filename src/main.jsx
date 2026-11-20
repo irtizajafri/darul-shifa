@@ -2,6 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles/global.scss';
 import App from './App.jsx';
+import { installApiAuth } from './utils/apiAuth';
+
+// Login token on every API call (see utils/apiAuth.js) — before any screen loads.
+installApiAuth();
 
 // "ResizeObserver loop completed with undelivered notifications" — browser
 // ki apni benign/informational warning hai (spec authors khud kehte hain

@@ -209,6 +209,7 @@ import AssetShifting from '../pages/inventory/AssetShifting';
 import FuelManagement from '../pages/fuel/FuelManagement';
 import UtilitiesBillDashboard from '../pages/utilities/UtilitiesBillDashboard';
 import UserManagement from '../pages/admin/UserManagement';
+import ConnectedDevices from '../pages/admin/ConnectedDevices';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
 function SuperAdminRoute({ children }) {
@@ -230,6 +231,7 @@ export default function ProtectedRoutes() {
       <Route path="dashboard" element={<MainDashboard />} />
 
       <Route path="admin/users" element={<SuperAdminRoute><UserManagement /></SuperAdminRoute>} />
+      <Route path="admin/devices" element={<SuperAdminRoute><ConnectedDevices /></SuperAdminRoute>} />
 
       <Route path="employee-module" element={<PermissionGuard module="employee"><EmployeeModuleDashboard /></PermissionGuard>} />
       <Route path="employees" element={<PermissionGuard module="employee" subModule="employee-database"><EmployeeList /></PermissionGuard>} />

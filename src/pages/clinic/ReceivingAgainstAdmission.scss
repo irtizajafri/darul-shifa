@@ -317,3 +317,6 @@ $bg:      #dde3ea;
 
 .raa-td-r     { text-align: right; }
 .raa-td-empty { text-align: center; color: #999; padding: 20px !important; }
+
+// Mode of payment choices (Cash / JazzCash / Online / Credit Card), 2026-11-20.
+.raa-modes { display: flex; flex-wrap: wrap; gap: 6px; }

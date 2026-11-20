@@ -1,6 +1,7 @@
 import { RECEIPT_LOGO_DATA_URI } from './receiptLogo';
 import { numberToWords } from './receiptUtils';
 import { BETA_WATERMARK_HTML } from './betaWatermark';
+import { receivingModeLabel } from './receivingModes';
 
 // ── Receiving against Admission — payment receipt ────────────────────────────
 export function buildAdmissionPaymentReceiptHtml({ payment, admission, printedBy, barcodeDataUrl, isDuplicate }) {
@@ -82,7 +83,7 @@ ${BETA_WATERMARK_HTML}
 
   <div class="amount-row">
     <span>Payment Type</span>
-    <span>${payment.paymentType === 'cc' ? 'Credit Card' : 'Cash'}</span>
+    <span>${receivingModeLabel(payment.paymentType)}</span>
   </div>
   <div class="amount-row grand">
     <span>Amount Received</span>

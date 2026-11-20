@@ -2290,10 +2290,24 @@ async function getAdmissionForReceiving(admissionNo) {
   return { ...admission, paidSoFar: admPaidSoFar(admission) };
 }
 
+// Mode of payment for money received against an admission (Receiving
+// against Admission, Cash Pending) or a slip's balance (Receive Balance) —
+// owner, 2026-11-20: Cash, Credit Card and JazzCash only (no Online). Stored
+// lower-case as the OPD slips are; blank = cash.
+const RECEIVING_MODES = ['cash', 'cc', 'jazzcash'];
+function receivingMode(paymentType) {
+  const t = String(paymentType ?? '').trim().toLowerCase();
+  if (!t) return 'cash';
+  const m = t === 'credit card' || t === 'c card' ? 'cc' : t === 'jazz cash' ? 'jazzcash' : t;
+  if (!RECEIVING_MODES.includes(m)) throw Object.assign(new Error('Mode of payment Cash, Credit Card ya JazzCash hona chahiye'), { status: 400 });
+  return m;
+}
+
 async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate, againstCashPending = false }) {
   const back = resolveBackDate(backDate);
   const amt = Number(amount);
   if (!amt || amt <= 0) throw Object.assign(new Error('Amount 0 se zyada hona chahiye'), { status: 400 });
+  const mode = receivingMode(paymentType);
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
@@ -2335,7 +2349,7 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
       serialNo: no,
       admissionId: Number(admissionId),
       amount: amt,
-      paymentType: paymentType === 'cc' ? 'cc' : 'cash',
+      paymentType: mode,
       // Every report counts a receipt on receivedAt; createdAt stays the real
       // moment it was entered.
       ...(back ? { receivedAt: back } : {}),
@@ -10135,7 +10149,8 @@ async function linkExcelDeposits(admission, rows, rowDateTime) {
         serialNo,
         admissionId: admission.id,
         amount,
-        paymentType: (r.paymentType || '').toLowerCase() === 'cc' ? 'cc' : 'cash',
+        // Same modes as Receiving against Admission (Cash / Credit Card / JazzCash).
+        paymentType: ['cc', 'c card', 'credit card'].includes((r.paymentType || '').toLowerCase()) ? 'cc' : /^jazz/i.test(r.paymentType || '') ? 'jazzcash' : 'cash',
         receivedAt:  rowDateTime(r),
       },
     });
@@ -10877,14 +10892,10 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     admPayWhere.receivedAt = bufferedTimestampWindow(fromDate, toDate, fromT, toT);
   }
   if (typeVariants) {
-    // ReceivingAgainstAdmission ka form sirf Cash/Credit Card offer karta hai
-    // — koi doosra paymentType is table me ban hi nahi sakta, is liye yahan
-    // sirf inhi 2 ko dekhna hai (Staff/Panel/Complem./JazzCash select hone
-    // par is source se kabhi kuch nahi aayega, jo sahi hai).
-    const wantsCash = typeVariants.includes('cash');
-    const wantsCc   = typeVariants.includes('cc') || typeVariants.some((t) => t.toLowerCase() === 'c card' || t.toLowerCase() === 'credit card');
-    const allowed = [...(wantsCash ? ['cash'] : []), ...(wantsCc ? ['cc'] : [])];
-    admPayWhere.paymentType = { in: allowed.length ? allowed : ['__none__'] };
+    // Receipts are stored lower-case — cash / cc / jazzcash (owner,
+    // 2026-11-20: Receiving against Admission takes these three) — and the
+    // variants always carry the lower-case form, so they match directly.
+    admPayWhere.paymentType = { in: typeVariants };
   }
   let admPaymentsRaw = await prisma.clinicAdmissionPayment.findMany({
     where: admPayWhere,
@@ -10963,8 +10974,11 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     orderBy: { receivedAt: 'asc' },
   });
   opdBalPaymentsRaw = await narrowToPreciseWindow('ClinicOpdBalancePayment', 'receivedAt', opdBalPaymentsRaw, fromDate, toDate, fromT, toT);
+  // A balance received from 2026-11-20 on carries its own mode; older ones
+  // go by the slip's payment type, as before.
+  const balPayType = (p) => p.paymentType || p.visit?.paymentType || null;
   const opdBalPayments = typeVariants
-    ? opdBalPaymentsRaw.filter((p) => typeVariants.includes(String(p.visit?.paymentType || '').toLowerCase()))
+    ? opdBalPaymentsRaw.filter((p) => typeVariants.includes(String(balPayType(p) || '').toLowerCase()))
     : opdBalPaymentsRaw;
   const mappedOpdBalPay = opdBalPayments.map((p) => ({
     id:            `opdbalpay_${p.id}`,
@@ -10977,7 +10991,7 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     department:    p.visit?.department || null,
     subDepartment: null,
     doctor:        null,
-    paymentType:   p.visit?.paymentType || null,
+    paymentType:   balPayType(p),
     received:      Number(p.amount) || 0,
     balance:       0,
     discount:      0,
@@ -11322,7 +11336,13 @@ async function getRevenueDashboardFromPatientList({ period, year, month, departm
   const kept = rows.filter((r) => r.businessDay && rule.keep(r)
     && matches(r.department, department) && matches(r.subDepartment, subDept) && matches(r.doctor, consultant));
 
-  const blank = (field, k) => ({ [field]: k, totalPatients: 0, totalAmount: 0, cashPatients: 0, cashAmount: 0, panelPatients: 0, panelAmount: 0, ccPatients: 0, ccAmount: 0 });
+  // Every row lands in exactly one mode, so Cash + Panel + CC + JazzCash +
+  // Other = Total (owner, 2026-11-20 — JazzCash used to be in the Total and
+  // in no mode). Other = Online, Complementary, Staff and anything else.
+  const blank = (field, k) => ({
+    [field]: k, totalPatients: 0, totalAmount: 0, cashPatients: 0, cashAmount: 0, panelPatients: 0, panelAmount: 0, ccPatients: 0, ccAmount: 0,
+    jazzcashPatients: 0, jazzcashAmount: 0, otherPatients: 0, otherAmount: 0,
+  });
   const fold = (field, keyOf, seed = []) => {
     const out = new Map(seed.map((k) => [k, blank(field, k)]));
     for (const r of kept) {
@@ -11336,9 +11356,11 @@ async function getRevenueDashboardFromPatientList({ period, year, month, departm
       const pt = String(r.paymentType || '').toLowerCase();
       b.totalPatients += n;
       b.totalAmount += amt;
-      if (pt === 'cash')                                     { b.cashPatients  += n; b.cashAmount  += amt; }
+      if (pt === 'cash' || pt === 'private')                 { b.cashPatients  += n; b.cashAmount  += amt; }
       else if (pt === 'panel')                               { b.panelPatients += n; b.panelAmount += amt; }
       else if (['c card', 'cc', 'credit card'].includes(pt)) { b.ccPatients    += n; b.ccAmount    += amt; }
+      else if (pt === 'jazzcash' || pt === 'jazz cash')      { b.jazzcashPatients += n; b.jazzcashAmount += amt; }
+      else                                                   { b.otherPatients += n; b.otherAmount += amt; }
     }
     return out;
   };
@@ -11446,7 +11468,7 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
   if (consultant && consultant !== 'ALL') { admPayParams.push(consultant); admPayConds.push(`EXISTS (SELECT 1 FROM "ClinicAdmission" a JOIN "ClinicDoctor" d ON d.id = a."consultantId" WHERE a.id = "ClinicAdmissionPayment"."admissionId" AND d.name ILIKE $${admPayParams.length})`); }
   if (paymentType && paymentType !== 'ALL') {
     const ptl = paymentType.toLowerCase();
-    const mapped = ptl === 'cash' ? 'cash' : (ptl === 'c card' || ptl === 'cc' ? 'cc' : null);
+    const mapped = ptl === 'cash' ? 'cash' : (ptl === 'c card' || ptl === 'cc' ? 'cc' : (ptl === 'jazzcash' || ptl === 'online' ? ptl : null));
     if (mapped) { admPayParams.push(mapped); admPayConds.push(`"paymentType" = $${admPayParams.length}`); }
     else { admPayConds.push('FALSE'); }
   }
@@ -11475,17 +11497,26 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
   const OV_AMT = `(CASE WHEN LOWER(COALESCE(status,'')) IN ('canceled','cancelled') THEN 0 ELSE receive END)`;
 
   // ── Helper: aggregate row → object ───────────────────────────────────────
-  const toObj = (r, keyField) => ({
-    [keyField]:    r[keyField],
-    totalPatients: Number(r.totalPatients),
-    totalAmount:   Number(r.totalAmount),
-    cashPatients:  Number(r.cashPatients),
-    cashAmount:    Number(r.cashAmount),
-    panelPatients: Number(r.panelPatients),
-    panelAmount:   Number(r.panelAmount),
-    ccPatients:    Number(r.ccPatients),
-    ccAmount:      Number(r.ccAmount),
-  });
+  // Same five modes as the live dashboard (2026-11-20): Other is whatever
+  // isn't Cash / Panel / CC / JazzCash, so the modes add up to the Total.
+  const toObj = (r, keyField) => {
+    const o = {
+      [keyField]:    r[keyField],
+      totalPatients: Number(r.totalPatients),
+      totalAmount:   Number(r.totalAmount),
+      cashPatients:  Number(r.cashPatients),
+      cashAmount:    Number(r.cashAmount),
+      panelPatients: Number(r.panelPatients),
+      panelAmount:   Number(r.panelAmount),
+      ccPatients:    Number(r.ccPatients),
+      ccAmount:      Number(r.ccAmount),
+      jazzcashPatients: Number(r.jazzcashPatients || 0),
+      jazzcashAmount:   Number(r.jazzcashAmount || 0),
+    };
+    o.otherPatients = o.totalPatients - o.cashPatients - o.panelPatients - o.ccPatients - o.jazzcashPatients;
+    o.otherAmount = o.totalAmount - o.cashAmount - o.panelAmount - o.ccAmount - o.jazzcashAmount;
+    return o;
+  };
 
   // ── Helper: merge two maps by key ─────────────────────────────────────────
   const mergeMap = (pvMap, ovMap, keyField) => {
@@ -11503,6 +11534,10 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
         panelAmount:   (a.panelAmount  ||0) + (b.panelAmount  ||0),
         ccPatients:    (a.ccPatients   ||0) + (b.ccPatients   ||0),
         ccAmount:      (a.ccAmount     ||0) + (b.ccAmount     ||0),
+        jazzcashPatients: (a.jazzcashPatients||0) + (b.jazzcashPatients||0),
+        jazzcashAmount:   (a.jazzcashAmount  ||0) + (b.jazzcashAmount  ||0),
+        otherPatients: (a.otherPatients||0) + (b.otherPatients||0),
+        otherAmount:   (a.otherAmount  ||0) + (b.otherAmount  ||0),
       };
     }
     return out;
@@ -11518,7 +11553,9 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
     COUNT(*) FILTER (WHERE "paymentType" = 'Panel')::int AS "panelPatients",
     COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'Panel'),0) AS "panelAmount",
     COUNT(*) FILTER (WHERE "paymentType" = 'C Card')::int AS "ccPatients",
-    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount"`;
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" = 'C Card'),0) AS "ccAmount",
+    COUNT(*) FILTER (WHERE "paymentType" ILIKE 'jazz%')::int AS "jazzcashPatients",
+    COALESCE(SUM(received) FILTER (WHERE "paymentType" ILIKE 'jazz%'),0) AS "jazzcashAmount"`;
 
   const ovAggCols = `
     COUNT(*)::int AS "totalPatients",
@@ -11528,7 +11565,9 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
     COUNT(*) FILTER (WHERE LOWER("paymentType") = 'panel')::int AS "panelPatients",
     COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") = 'panel'),0) AS "panelAmount",
     COUNT(*) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card'))::int AS "ccPatients",
-    COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card')),0) AS "ccAmount"`;
+    COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") IN ('c card','cc','credit card')),0) AS "ccAmount",
+    COUNT(*) FILTER (WHERE LOWER("paymentType") = 'jazzcash')::int AS "jazzcashPatients",
+    COALESCE(SUM(${OV_AMT}) FILTER (WHERE LOWER("paymentType") = 'jazzcash'),0) AS "jazzcashAmount"`;
 
   const admAggCols = `
     COUNT(*)::int AS "totalPatients",
@@ -11538,7 +11577,9 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
     COUNT(*) FILTER (WHERE "patientCategory" = 'panel')::int AS "panelPatients",
     COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'panel'),0) AS "panelAmount",
     COUNT(*) FILTER (WHERE "patientCategory" = 'cc')::int AS "ccPatients",
-    COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'cc'),0) AS "ccAmount"`;
+    COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'cc'),0) AS "ccAmount",
+    COUNT(*) FILTER (WHERE "patientCategory" = 'jazzcash')::int AS "jazzcashPatients",
+    COALESCE(SUM("advancePayment") FILTER (WHERE "patientCategory" = 'jazzcash'),0) AS "jazzcashAmount"`;
 
   // Receiving-against-Admission payments: amount only, never counted as a patient.
   const admPayAggCols = `
@@ -11549,7 +11590,9 @@ async function getRevenueDashboardMonthlyLegacy({ period, year, month, departmen
     0::int AS "panelPatients",
     0::numeric AS "panelAmount",
     0::int AS "ccPatients",
-    COALESCE(SUM(amount) FILTER (WHERE "paymentType" = 'cc'),0) AS "ccAmount"`;
+    COALESCE(SUM(amount) FILTER (WHERE "paymentType" = 'cc'),0) AS "ccAmount",
+    0::int AS "jazzcashPatients",
+    COALESCE(SUM(amount) FILTER (WHERE "paymentType" = 'jazzcash'),0) AS "jazzcashAmount"`;
 
   let data = [];
 
@@ -13261,7 +13304,8 @@ async function getUserDateSummary({ userId, date, shift, userName }) {
   return { userName: user.name, shiftUsed: usedShift, groups, grandTotal };
 }
 
-async function receiveBalancePayment(id, amount) {
+async function receiveBalancePayment(id, amount, paymentType) {
+  const mode = receivingMode(paymentType);
   const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
   if (!visit) throw new Error('Visit not found');
   const balance = visit.totalAmount - visit.receive;
@@ -13278,7 +13322,7 @@ async function receiveBalancePayment(id, amount) {
       select: { id: true, serialNo: true, patientName: true, totalAmount: true, receive: true },
     }),
     prisma.clinicOpdBalancePayment.create({
-      data: { visitId: Number(id), amount },
+      data: { visitId: Number(id), amount, paymentType: mode },
     }),
   ]);
   return updated;
@@ -14074,7 +14118,7 @@ async function updateOtherSlip(source, id, payload = {}) {
     if (serialNo !== before.serialNo) await assertSerialNoAvailable(serialNo, { admissionNo: before.admission?.admissionNo, patientName: before.admission?.patientName });
     await prisma.clinicAdmissionPayment.update({
       where: { id: before.id },
-      data: { serialNo, amount, paymentType: payload.paymentType === 'cc' ? 'cc' : 'cash' },
+      data: { serialNo, amount, paymentType: receivingMode(payload.paymentType) },
     });
   } else {
     needName();

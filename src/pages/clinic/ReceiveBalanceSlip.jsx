@@ -3,9 +3,11 @@ import { Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import useModalKeys from '../../hooks/useModalKeys';
+import { RECEIVING_MODES } from './receivingModes';
 import './ReceiveBalanceSlip.scss';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 function fmtDateTime(d) {
   if (!d) return '';
@@ -106,6 +108,7 @@ export default function ReceiveBalanceSlip() {
   const [showLookup,  setShowLookup]  = useState(false);
   const [slip,        setSlip]        = useState(null);
   const [receiveAmt,  setReceiveAmt]  = useState('');
+  const [payMode,     setPayMode]     = useState('cash'); // mode of payment (owner, 2026-11-20)
   const [receiveDate, setReceiveDate] = useState('');
   const [saving,      setSaving]      = useState(false);
 
@@ -139,7 +142,7 @@ export default function ReceiveBalanceSlip() {
       const res  = await fetch(`${API}/opd/${slip.id}/receive-balance`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ amount: amt }),
+        body:    JSON.stringify({ amount: amt, paymentType: payMode }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed');
@@ -147,6 +150,7 @@ export default function ReceiveBalanceSlip() {
       // reset
       setSlip(null);
       setReceiveAmt('');
+      setPayMode('cash');
       setReceiveDate(fmtDateTime(new Date()));
       // Serial No auto-fill temporarily disabled — see note above.
       // const sRes = await fetch(`${API}/opd/next-serial`).then(r => r.json());
@@ -230,6 +234,17 @@ export default function ReceiveBalanceSlip() {
                 />
                 <label className="rbs-label rbs-label--date">Receive Date</label>
                 <span className="rbs-date-val">{receiveDate}</span>
+              </div>
+
+              <div className="rbs-form-row">
+                <label className="rbs-label">Mode of Payment</label>
+                <div className="rbs-modes" role="radiogroup" aria-label="Mode of payment">
+                  {RECEIVING_MODES.map((m) => (
+                    <label key={m.value} className={`rbs-mode${payMode === m.value ? ' rbs-mode--on' : ''}`}>
+                      <input type="radio" name="rbs-mode" checked={payMode === m.value} onChange={() => setPayMode(m.value)} /> {m.label}
+                    </label>
+                  ))}
+                </div>
               </div>
             </>
           )}

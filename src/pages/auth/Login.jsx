@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, Link } from 'react-router-dom';
 import { Building2 } from 'lucide-react';
-import { useAuthStore, SUPER_ADMIN_EMAIL, SUPER_ADMIN_PASSWORD, SUPER_ADMIN_USER } from '../../store/useAuthStore';
+import { useAuthStore } from '../../store/useAuthStore';
 import { broadcastLogin } from '../../hooks/useTabSessionGuard';
 import { useModuleStore } from '../../store/useModuleStore';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import toast from 'react-hot-toast';
 import './Login.scss';
+import { API_BASE_URL } from '../../config';
 
 export default function Login() {
   const [loading, setLoading] = useState(false);
@@ -25,23 +26,10 @@ export default function Login() {
   const onSubmit = async (data) => {
     setLoading(true);
     try {
-      // ── Super Admin check (static, no API call) ──────────────────
-      if (
-        data.email.trim().toLowerCase() === SUPER_ADMIN_EMAIL &&
-        data.password === SUPER_ADMIN_PASSWORD
-      ) {
-        login(SUPER_ADMIN_USER, null);
-        broadcastLogin(SUPER_ADMIN_USER.id);
-        clearModule();
-        toast.success(`Welcome, ${SUPER_ADMIN_USER.name}!`);
-        navigate('/dashboard');
-        return;
-      }
-
-      // ── Sub-user login via backend API ───────────────────────────
+      // Every login — Super Admin too — is checked by the server (2026-11-20).
       let res, json;
       try {
-        res = await fetch('http://localhost:5001/api/auth/login', {
+        res = await fetch(`${API_BASE_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: data.email.trim().toLowerCase(), password: data.password }),

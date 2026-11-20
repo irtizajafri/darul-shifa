@@ -5,8 +5,9 @@ import toast from 'react-hot-toast';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import { genderForPatientType } from './opdValidation';
 import './SlipAdjustment.scss';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 

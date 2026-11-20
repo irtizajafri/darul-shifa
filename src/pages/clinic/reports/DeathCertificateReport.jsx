@@ -7,8 +7,9 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { REPORT_PRINT_FONT_CSS, REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import './DeathCertificateReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // window.print() on the MAIN app window used to go white/blank on print —
 // same root cause already fixed for Discharge/Death/Birth Certificate prints

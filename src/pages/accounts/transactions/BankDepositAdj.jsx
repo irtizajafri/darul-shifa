@@ -4,8 +4,9 @@ import { ArrowLeft, ChevronRight, SlidersHorizontal, Search } from 'lucide-react
 import toast from 'react-hot-toast';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import './BankDepositAdj.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const toDateInput = (iso) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
 const fmtA = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

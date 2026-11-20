@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import './LeaveEncashment.scss';
+import { API_BASE_URL } from '../../config';
 
 function downloadFile({ filename, content, mimeType }) {
   const blob = new Blob([content], { type: mimeType });
@@ -35,7 +36,7 @@ function toCSV(rows = []) {
   return [headers.map(escape).join(','), ...rows.map((r) => headers.map((h) => escape(r[h])).join(','))].join('\n');
 }
 
-const API = 'http://localhost:5001/api/leave-encashment';
+const API = `${API_BASE_URL}/api/leave-encashment`;
 
 function daysInMonth(monthKey) {
   const [year, month] = String(monthKey).split('-').map(Number);

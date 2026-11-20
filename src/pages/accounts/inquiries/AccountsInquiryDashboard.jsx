@@ -7,8 +7,9 @@ import {
 import { RefreshCw, ChevronLeft, ChevronRight, BarChart2, TrendingUp, Activity, ArrowLeft } from 'lucide-react';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './AccountsInquiryDashboard.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 const MN  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MNF = ['January','February','March','April','May','June','July','August','September','October','November','December'];

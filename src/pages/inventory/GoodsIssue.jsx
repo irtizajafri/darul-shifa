@@ -16,8 +16,9 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission, canBackDate } from '../../utils/permissions';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { formatDate } from '../../utils/helpers';
+import { API_BASE_URL } from '../../config';
 
-const CLINIC_API = 'http://localhost:5001/api/clinic';
+const CLINIC_API = `${API_BASE_URL}/api/clinic`;
 
 // ── Admission Lookup Modal — pick an admitted patient to fill Admission Number ─
 // mode 'slip' — same picker for the GD's "Panel Slip": active panel OPD slips

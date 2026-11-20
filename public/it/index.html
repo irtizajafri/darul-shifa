@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HMS PC Lockdown</title>
+<style>
+  :root { --ink:#13233a; --muted:#5b6b80; --line:#d9e1ea; --soft:#f3f6f9; --accent:#1e5a8a; --ok:#1f7a45; --warn:#9a5b00; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#eef2f6; color:var(--ink); font:15px/1.55 "Segoe UI", Arial, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 22px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
+  h2 { font-size: 17px; margin: 0 0 10px; color: var(--accent); }
+  ol, ul { margin: 6px 0 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .cmd { display:flex; gap:8px; align-items:stretch; margin:8px 0; }
+  .cmd code { flex:1; display:block; padding:9px 11px; background:#0f1c2b; color:#e6edf5; border-radius:6px; font:13px Consolas, "Courier New", monospace; overflow-x:auto; white-space:nowrap; }
+  .cmd button { padding:0 14px; border:1px solid var(--accent); background:#fff; color:var(--accent); border-radius:6px; font-weight:600; cursor:pointer; }
+  .cmd button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .note { background:var(--soft); border-left:3px solid var(--warn); padding:8px 12px; border-radius:4px; margin:10px 0 0; }
+  .ok { color: var(--ok); font-weight: 600; }
+  b.k { background:var(--soft); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HMS PC Lockdown</h1>
+  <p class="sub">Darul Shifa HMS — counter PCs pe internet, USB storage aur software band karna. Sab kaam yahin se, internet ke baghair.</p>
+
+  <section>
+    <h2>Pehle ek dafa: server PC (192.168.1.100)</h2>
+    <ol>
+      <li>Server pe HMS ka naya version deploy ho chuka ho (login wala update).</li>
+      <li>Server pe <b class="k">Start</b> → "PowerShell" likhein → right-click → <b class="k">Run as administrator</b>, phir yeh chalayein:
+        <div class="cmd"><code id="c-server">&amp; ([scriptblock]::Create((irm http://localhost:5173/it/server-setup.ps1.txt)))</code><button type="button" data-copy="c-server">Copy</button></div>
+        Is se network ke liye website (5173) aur API (5001) khule rahenge, database (5433) network se band ho jayega, aur server sleep nahi hoga. Server ka internet chalta rahega.</li>
+      <li><b>Database password badlein</b> (abhi <b class="k">1234</b> hai): pgAdmin / psql me <code>ALTER USER postgres WITH PASSWORD 'naya-mazboot-password';</code> phir <code>hospital-hms-backend\.env</code> me <code>DATABASE_URL</code> me wahi password likhein aur backend restart karein.</li>
+      <li>Super Admin ka password badalna ho to <code>.env</code> me <code>SUPER_ADMIN_PASSWORD=...</code> likh ke backend restart karein.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Har counter PC pe (ek ek karke)</h2>
+    <ol>
+      <li>PC pe <b>Administrator</b> wale login se jayein.</li>
+      <li>Browser me <b class="k" id="hms-url">http://192.168.1.100:5173</b> kholein — HMS khule aur login ho jaye. (Na khule to ruk jayein, pehle network theek karein.)</li>
+      <li><b class="k">Start</b> → "PowerShell" → right-click → <b class="k">Run as administrator</b>, phir:
+        <div class="cmd"><code id="c-lock"></code><button type="button" data-copy="c-lock">Copy</button></div>
+        Network printer ya printer-sharing wala PC ho to us ka IP saath dein:
+        <div class="cmd"><code id="c-lock-p"></code><button type="button" data-copy="c-lock-p">Copy</button></div>
+      </li>
+      <li>Aakhir me <span class="ok">"HMS server tak raasta: OK"</span> aur <span class="ok">"Internet: band"</span> aana chahiye. Phir PC <b>restart</b> karein.</li>
+      <li><b>Staff ka login Standard user ho</b> (Administrator nahi). Isi admin PowerShell me:
+        <div class="cmd"><code id="c-admins">net localgroup Administrators</code><button type="button" data-copy="c-admins">Copy</button></div>
+        List me staff wala naam ho to hatayein (NAAM ki jagah asal naam):
+        <div class="cmd"><code id="c-remove">net localgroup Administrators NAAM /delete</code><button type="button" data-copy="c-remove">Copy</button></div>
+        Naya staff login banana ho (yeh khud Standard hota hai):
+        <div class="cmd"><code id="c-add">net user staff PASSWORD /add</code><button type="button" data-copy="c-add">Copy</button></div>
+        <p class="note">Administrator ka password sirf aap ke paas rahe. Apna admin login kabhi Administrators group se na hatayein.</p>
+      </li>
+      <li><b>BIOS</b>: PC on hote waqt <b class="k">F2</b> / <b class="k">Del</b> / <b class="k">F10</b> (PC ke hisaab se) → BIOS password lagayein aur "Boot from USB" band karein.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Check karein (restart ke baad, staff login se)</h2>
+    <ul>
+      <li>HMS khule, login ho, slip save ho aur thermal printer pe print ho.</li>
+      <li>Barcode scanner chale, report ka Excel download ho.</li>
+      <li>Google / koi website <b>na</b> khule.</li>
+      <li>USB stick lagayein — <b>na</b> khule. Keyboard, mouse, printer chalte rahein.</li>
+      <li>Koi software install karne pe admin password maange.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Wapas kholna ho (undo)</h2>
+    <p>Counter PC (admin PowerShell), phir restart:</p>
+    <div class="cmd"><code id="c-unlock"></code><button type="button" data-copy="c-unlock">Copy</button></div>
+    <p>Server:</p>
+    <div class="cmd"><code id="c-sunlock">&amp; ([scriptblock]::Create((irm http://localhost:5173/it/server-unlock.ps1.txt)))</code><button type="button" data-copy="c-sunlock">Copy</button></div>
+    <p class="note">Dev PC (Mac) pe kuch nahi chalana — yeh sab sirf Windows counter PCs ke liye hai.</p>
+  </section>
+</main>
+<script>
+  // Commands use the address this page was opened from (the server's).
+  var base = location.protocol + '//' + location.host;
+  document.getElementById('hms-url').textContent = base;
+  document.getElementById('c-lock').textContent = '& ([scriptblock]::Create((irm ' + base + '/it/counter-lock.ps1.txt)))';
+  document.getElementById('c-lock-p').textContent = '& ([scriptblock]::Create((irm ' + base + '/it/counter-lock.ps1.txt))) -Printers 192.168.1.50';
+  document.getElementById('c-unlock').textContent = '& ([scriptblock]::Create((irm ' + base + '/it/counter-unlock.ps1.txt)))';
+  // Copy: navigator.clipboard needs https, so fall back to a hidden textarea.
+  document.addEventListener('click', function (e) {
+    var id = e.target.getAttribute && e.target.getAttribute('data-copy');
+    if (!id) return;
+    var text = document.getElementById(id).textContent;
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); e.target.textContent = 'Copied'; } catch (err) { e.target.textContent = 'Select karein'; }
+    document.body.removeChild(ta);
+    setTimeout(function () { e.target.textContent = 'Copy'; }, 1500);
+  });
+</script>
+</body>
+</html>

@@ -8,8 +8,9 @@ import { useClinicStore } from '../../store/useClinicStore';
 import { useInventoryStore } from '../../store/useInventoryStore';
 import './SurgeryInformation.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // ── Staff category keyword matching (same pattern as OtRegister) ─────────────
 // Surgeon shares the "Consultant" column — this hospital's Surgeon-category

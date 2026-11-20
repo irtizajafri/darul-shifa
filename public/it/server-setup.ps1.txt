@@ -1,0 +1,35 @@
+# Darul Shifa HMS - SERVER PC setup (2026-11-20)
+#
+# Run once on the SERVER (192.168.1.100), PowerShell "As Administrator":
+#   & ([scriptblock]::Create((irm http://localhost:5173/it/server-setup.ps1.txt)))
+#
+# The server keeps its internet (attendance cloud, WhatsApp, GitHub updates).
+# This only:
+#   1. Lets the hospital network reach the HMS website (5173) and API (5001).
+#   2. Closes the database port 5433 to the network (the server itself still
+#      uses it - Windows Firewall never blocks the PC's own connections).
+#   3. Stops the server from sleeping, so the 8:00 AM Day Close and the bed /
+#      day-care jobs always run.
+# Undo: server-unlock.ps1.txt.
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
+  return
+}
+$ErrorActionPreference = 'Stop'
+$Group = 'Darul Shifa HMS Server'
+Write-Host '== Darul Shifa HMS: server setup ==' -ForegroundColor Cyan
+
+Get-NetFirewallRule -Group $Group -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+New-NetFirewallRule -Group $Group -DisplayName 'HMS website + API from the hospital network' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5173, 5001 -RemoteAddress LocalSubnet | Out-Null
+New-NetFirewallRule -Group $Group -DisplayName 'PostgreSQL 5433 - closed to the network' -Direction Inbound -Action Block -Protocol TCP -LocalPort 5433 | Out-Null
+Write-Host '[1/2] Firewall: 5173 + 5001 network ke liye khule, database 5433 network se band.' -ForegroundColor Green
+
+powercfg /change standby-timeout-ac 0 | Out-Null
+powercfg /change hibernate-timeout-ac 0 | Out-Null
+powercfg /hibernate off | Out-Null
+Write-Host '[2/2] Server ab sleep / hibernate nahi hoga.' -ForegroundColor Green
+
+Write-Host ''
+Write-Host 'Baqi kaam (checklist): PostgreSQL ka password badlein aur .env me DATABASE_URL update karein.' -ForegroundColor Yellow

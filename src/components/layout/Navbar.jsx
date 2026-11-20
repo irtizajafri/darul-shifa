@@ -6,8 +6,9 @@ import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { requiresHandover } from '../../utils/permissions';
 import TabBar from './TabBar';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 function ChangePasswordModal({ user, onClose }) {
   const { logout } = useAuthStore();
@@ -24,7 +25,7 @@ function ChangePasswordModal({ user, onClose }) {
     if (form.next.length < 6) { toast.error('New password must be at least 6 characters'); return; }
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5001/api/auth/change-password', {
+      const res = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id, currentPassword: form.current, newPassword: form.next }),

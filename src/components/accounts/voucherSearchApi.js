@@ -1,4 +1,5 @@
-const API = 'http://localhost:5001/api/accounts';
+import { API_BASE_URL } from '../../config';
+const API = `${API_BASE_URL}/api/accounts`;
 
 // Every Expense voucher of a book (Cash / Corporate), newest first, with its
 // lines' Main GL, line count and total — not the lines themselves.

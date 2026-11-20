@@ -12,8 +12,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import './ReprintFilter.scss';
 import { printedByCode } from '../../../utils/printedBy';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const todayStr = () => new Date().toISOString().split('T')[0];
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; };

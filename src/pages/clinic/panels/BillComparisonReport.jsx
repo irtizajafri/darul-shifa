@@ -8,8 +8,9 @@ import './BillComparisonReport.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 import usePagedList from '../../../hooks/usePagedList';
 import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-') : '');

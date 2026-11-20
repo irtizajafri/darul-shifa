@@ -18,8 +18,9 @@ import { buildBirthCertificatePrintHtml } from '../birthCertificatePrintUtils';
 import { buildDeathCertificatePrintHtml } from '../deathCertificatePrintUtils';
 import { buildDischargeBillPrintHtml } from '../dischargeBillPrintUtils';
 import { buildAntenatalReceiptHtml, buildAntenatalCardHtml } from '../antenatalReceiptUtils';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // Popup size each screen used for its own print window.
 export const REPRINT_POPUP_FEATURES = {

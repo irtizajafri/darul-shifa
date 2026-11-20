@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
+import { API_BASE_URL } from '../../config';
 
-const CLINIC_API = 'http://localhost:5001/api/clinic';
+const CLINIC_API = `${API_BASE_URL}/api/clinic`;
 
 function fmtAdmDate(d) {
   if (!d) return '—';

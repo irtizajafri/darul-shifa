@@ -5,8 +5,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './StatusWiseAdmissionFilter.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // Local date — toISOString() gave yesterday's date before 05:00 PKT. The
 // report reads dates as business days (08:00 → 07:59), so To = today

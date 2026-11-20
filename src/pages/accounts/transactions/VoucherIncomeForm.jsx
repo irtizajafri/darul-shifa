@@ -6,8 +6,9 @@ import toast from 'react-hot-toast';
 import { handleEnterAsTab } from '../../../utils/keyboardNav';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './VoucherExpenseForm.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 

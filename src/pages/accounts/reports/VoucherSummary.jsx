@@ -8,9 +8,10 @@ import { openPrintWindow } from '../../../utils/printRelay';
 import { openReportPreview } from './reportPreview';
 import VoucherSearch from '../../../components/accounts/VoucherSearch';
 import './VoucherReprint.scss';
+import { API_BASE_URL } from '../../../config';
 
-const ACCOUNTS_API  = 'http://localhost:5001/api/accounts';
-const INVENTORY_API = 'http://localhost:5001/api/inventory';
+const ACCOUNTS_API  = `${API_BASE_URL}/api/accounts`;
+const INVENTORY_API = `${API_BASE_URL}/api/inventory`;
 
 // ── Fiscal year helpers ────────────────────────────────────────────────────────
 function getFiscalStart(d = new Date()) {

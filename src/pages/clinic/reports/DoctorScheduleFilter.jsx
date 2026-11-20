@@ -5,8 +5,9 @@ import ClinicMenuBar from '../../../components/clinic/ClinicMenuBar';
 import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ConsultantWiseFilter.scss';
 import './DoctorScheduleFilter.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // The From / To ranges run by code, so the lists are in code order and show
 // the code (owner, 2026-10-29) — in name order, first → last left out most

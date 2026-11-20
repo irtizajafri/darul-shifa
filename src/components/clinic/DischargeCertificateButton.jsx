@@ -9,8 +9,9 @@ import { openPrintWindow } from '../../utils/printRelay';
 import { printedByCode } from '../../utils/printedBy';
 import { useShallow } from 'zustand/react/shallow';
 import useModalKeys from '../../hooks/useModalKeys';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // `<input type="date">`'s own value format — used both to default the field
 // to today and to preload an already-saved certificate's date into it.

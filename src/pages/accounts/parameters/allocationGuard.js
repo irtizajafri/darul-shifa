@@ -1,7 +1,8 @@
 import toast from 'react-hot-toast';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 // Account Allocation rename / delete rules (see getAllocationUsage on the
 // server): refused outright when a voucher line or pending draft sits on it

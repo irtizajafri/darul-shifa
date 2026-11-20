@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { API_BASE_URL } from '../config';
 
 export const useAttendanceStore = create((set) => ({
   attendanceRecords: [],
@@ -8,7 +9,7 @@ export const useAttendanceStore = create((set) => ({
   fetchAttendance: async () => {
     set({ loading: true });
     try {
-      const res = await fetch('http://localhost:5001/api/attendance');
+      const res = await fetch(`${API_BASE_URL}/api/attendance`);
       const data = await res.json();
       const records = data?.data || data?.records || [];
       if (data?.ok === false) {

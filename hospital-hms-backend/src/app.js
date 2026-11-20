@@ -21,10 +21,13 @@ const labRoutes = require('./modules/laboratory/laboratory.routes');
 const panelLabRoutes = require('./modules/panel-lab/panel-lab.routes');
 const pharmacyRoutes = require('./modules/pharmacy/pharmacy.routes');
 const { errorHandler } = require('./middleware/error.middleware');
+const { authMiddleware } = require('./middleware/auth.middleware');
+const { deviceGuard } = require('./modules/devices/devices.service');
+const devicesRoutes = require('./modules/devices/devices.routes');
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ exposedHeaders: ['x-new-token'] }));
 app.use(compression()); // gzip large JSON responses (reports/lists can be several MB)
 app.use(express.json({ limit: '10mb' })); // Increased limit to accept base64 photos
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -33,6 +36,10 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true });
 });
 
+// Which PC is calling, and is it allowed (Connected PCs — devices.service.js),
+// then the login token on every /api call except the login (auth.middleware.js).
+app.use('/api', deviceGuard);
+app.use('/api', authMiddleware);
 app.use('/api/auth', authRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/attendance', attendanceRoutes);
@@ -51,6 +58,7 @@ app.use('/api/utilities', utilitiesRoutes);
 app.use('/api/lab', labRoutes);
 app.use('/api/panel-lab', panelLabRoutes);
 app.use('/api/pharmacy', pharmacyRoutes);
+app.use('/api/devices', devicesRoutes);
 
 app.use(errorHandler);
 

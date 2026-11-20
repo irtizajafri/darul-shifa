@@ -7,8 +7,9 @@ import './VoucherReprint.scss';
 import { openPrintWindow } from '../../../utils/printRelay';
 import ReportToolbar from '../../../components/reports/ReportToolbar';
 import VoucherSearch from '../../../components/accounts/VoucherSearch';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
+const API = `${API_BASE_URL}/api/accounts`;
 
 // Today in Pakistan time — toISOString() is UTC, which until 5 AM is still
 // yesterday and left today's vouchers out of the default range.

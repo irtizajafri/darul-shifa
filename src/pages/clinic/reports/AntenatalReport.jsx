@@ -6,8 +6,9 @@ import ReportToolbar from '../../../components/reports/ReportToolbar';
 import { printElementInPopup } from '../../../utils/printPopup';
 import { REPORT_PRINT_TIGHT8_CSS } from '../../../components/reports/reportFont';
 import './AntenatalReport.scss';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // Prints from a popup window, never window.print() on the main window (which
 // can freeze the whole app behind a modal print dialog on Windows) — see

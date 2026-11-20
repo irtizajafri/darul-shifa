@@ -15,6 +15,7 @@ import toast from 'react-hot-toast';
 import { formatDate } from '../../utils/helpers';
 import { openPrintWindow } from '../../utils/printRelay';
 import './AdvanceLoan.scss';
+import { API_BASE_URL } from '../../config';
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ export default function AdvanceLoan() {
   useEffect(() => {
     if (!isAdvance || editingRecord?.id || !selectedEmployeeId || !issueDate) { setAdvanceTarget(null); return; }
     let alive = true;
-    fetch(`http://localhost:5001/api/advance/advance-target?employeeId=${selectedEmployeeId}&issueDate=${issueDate}`)
+    fetch(`${API_BASE_URL}/api/advance/advance-target?employeeId=${selectedEmployeeId}&issueDate=${issueDate}`)
       .then((r) => r.json())
       .then((j) => { if (alive) setAdvanceTarget(j?.data || null); })
       .catch(() => { if (alive) setAdvanceTarget(null); });

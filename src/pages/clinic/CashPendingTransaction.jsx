@@ -9,6 +9,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { openPrintWindow } from '../../utils/printRelay';
 import { API_BASE_URL } from '../../config';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
+import { RECEIVING_MODES } from './receivingModes';
 import './PendingTx.scss';
 
 // Clinic → Transactions → Cash Pending Transaction (owner, 2026-11-17), like
@@ -34,6 +35,7 @@ export default function CashPendingTransaction() {
   const [receiving, setReceiving] = useState(null); // row
   const [amount, setAmount] = useState('');
   const [serialNo, setSerialNo] = useState('');
+  const [payMode, setPayMode] = useState('cash'); // mode of payment (owner, 2026-11-20)
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async (s = show, term = q) => {
@@ -54,13 +56,13 @@ export default function CashPendingTransaction() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
-  const openReceive = (r) => { setReceiving(r); setAmount(String(r.balance)); setSerialNo(''); };
+  const openReceive = (r) => { setReceiving(r); setAmount(String(r.balance)); setSerialNo(''); setPayMode('cash'); };
 
   const submit = async (confirmNotDuplicate = false) => {
     const res = await fetch(`${API}/transactions/cash-pending/${receiving.admissionId}/receive`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount: Number(amount), serialNo, receivedBy: printedBy, confirmNotDuplicate, backDate: getBackDate() }),
+      body: JSON.stringify({ amount: Number(amount), serialNo, paymentType: payMode, receivedBy: printedBy, confirmNotDuplicate, backDate: getBackDate() }),
     });
     const j = await res.json().catch(() => ({}));
     if (res.status === 409 && j.code === 'POSSIBLE_DUPLICATE_RECEIPT') {
@@ -187,6 +189,11 @@ export default function CashPendingTransaction() {
               </div>
               <label className="ptx-field"><span>Amount Received</span>
                 <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
+              </label>
+              <label className="ptx-field"><span>Mode of Payment</span>
+                <select value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+                  {RECEIVING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
               </label>
               <label className="ptx-field"><span>Slip # (blank = next number)</span>
                 <input value={serialNo} onChange={(e) => setSerialNo(e.target.value)} />

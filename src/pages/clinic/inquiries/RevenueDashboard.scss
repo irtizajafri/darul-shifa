@@ -303,12 +303,17 @@ $ora:   #e65100;
   line-height: 1.4;
   &--panel { background: #e8f5e9; color: $green; border: 1px solid #a5d6a7; }
   &--cash  { background: #fff3e0; color: $ora;   border: 1px solid #ffcc80; }
+  // CC / JazzCash / Other badges (2026-11-20) so every mode shows.
+  &--cc       { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+  &--jazzcash { background: #fce4ec; color: #ad1457; border: 1px solid #f48fb1; }
+  &--other    { background: #eceff1; color: #455a64; border: 1px solid #b0bec5; }
 }
 
 // ─── Legend ───────────────────────────────────────────────────────────────────
 .rd-cal-legend {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 6px 2px;
   font-size: 10px;
 }
@@ -330,6 +335,9 @@ $ora:   #e65100;
   &--min::before    { background: #eeeeee; border-color: #bdbdbd; }
   &--panel::before  { background: #e8f5e9; border-color: #a5d6a7; }
   &--cash::before   { background: #fff3e0; border-color: #ffcc80; }
+  &--cc::before       { background: #e3f2fd; border-color: #90caf9; }
+  &--jazzcash::before { background: #fce4ec; border-color: #f48fb1; }
+  &--other::before    { background: #eceff1; border-color: #b0bec5; }
 }
 
 // ─── Yearly Monthly ───────────────────────────────────────────────────────────

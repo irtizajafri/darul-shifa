@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 
 // Billing Detail Report's "Upload Excel" — moved out of
 // PanelBillingDetailReport.jsx so both the filter screen and the preview can

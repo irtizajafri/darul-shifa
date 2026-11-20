@@ -1,9 +1,10 @@
 import { buildDischargeCertificatePrintHtml } from '../dischargeCertificatePrintUtils';
 import { openPrintWindow } from '../../../utils/printRelay';
+import { API_BASE_URL } from '../../../config';
 
 // Panels > Billing > Discharge Certificate (dummy, print-only) — the print
 // and the saved details, shared by Billing and Reprint Panel Bill/Form.
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const STATUS_LABEL = { active: 'Admit', discharge: 'Discharge', closed: 'Closed' };
 
 // Typed details → the panel Discharge Certificate print.

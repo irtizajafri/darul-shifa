@@ -18,7 +18,7 @@ const FIELDS = {
     SLIP, NAME,
     { key: 'doctor', label: 'Doctor', kind: 'doctor' },
     { key: 'subDepartment', label: 'Sub Department' },
-    { key: 'paymentType', label: 'Payment Type', kind: 'select', options: ['Cash', 'Panel', 'C Card', 'CANCELED'] },
+    { key: 'paymentType', label: 'Payment Type', kind: 'select', options: ['Cash', 'Panel', 'C Card', 'Compl..', 'CANCELED'] },
     { key: 'received', label: 'Received', kind: 'amount' },
     { key: 'balance', label: 'Balance', kind: 'amount' },
     { key: 'discount', label: 'Discount', kind: 'amount' },
@@ -27,7 +27,7 @@ const FIELDS = {
   'admission-payment': [
     SLIP,
     { key: 'amount', label: 'Amount', kind: 'amount' },
-    { key: 'paymentType', label: 'Payment Type', kind: 'select', options: ['cash', 'cc'], labels: { cash: 'Cash', cc: 'Credit Card' } },
+    { key: 'paymentType', label: 'Payment Type', kind: 'select', options: ['cash', 'cc', 'jazzcash'], labels: { cash: 'Cash', cc: 'Credit Card', jazzcash: 'JazzCash' } },
   ],
   antenatal: [
     SLIP,

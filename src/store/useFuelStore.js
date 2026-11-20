@@ -1,6 +1,7 @@
 import { create } from 'zustand';
+import { API_BASE_URL } from '../config';
 
-const API_URL = 'http://localhost:5001/api/fuel';
+const API_URL = `${API_BASE_URL}/api/fuel`;
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_URL}${path}`, {

@@ -16,9 +16,10 @@ import toast from 'react-hot-toast';
 import { useEmployeeStore } from '../../store/useEmployeeStore';
 import { BadgeCheck, Building2, Camera, CalendarClock, User } from 'lucide-react';
 import './AddEmployee.scss';
+import { API_BASE_URL } from '../../config';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const EMPLOYEE_META_API = 'http://localhost:5001/api/employees';
+const EMPLOYEE_META_API = `${API_BASE_URL}/api/employees`;
 
 const normalizeText = (value) => String(value || '').trim();
 

@@ -21,10 +21,11 @@ import autoTable from 'jspdf-autotable';
 import logo from '../../assets/logo.jpg';
 import { format } from 'date-fns';
 import './AttendanceList.scss';
+import { API_BASE_URL } from '../../config';
 
 const employeeLabel = (e) => `${e.empCode} - ${e.firstName} ${e.lastName}`;
 
-const ATTENDANCE_API_URL = 'http://localhost:5001/api/attendance';
+const ATTENDANCE_API_URL = `${API_BASE_URL}/api/attendance`;
 
 const STATUS_OPTIONS = [
   { value: 'present', label: 'Present' },
@@ -263,7 +264,7 @@ export default function AttendanceList() {
       const nextEndDate = new Date(yyyyNum, mmNum, 1);
       const endDateStr = `${nextEndDate.getFullYear()}/${String(nextEndDate.getMonth() + 1).padStart(2,'0')}/01`;
 
-      const res = await fetch('http://localhost:5001/api/attendance/external', {
+      const res = await fetch(`${API_BASE_URL}/api/attendance/external`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ Dates: startDate, DatesTo: endDateStr })
@@ -605,7 +606,7 @@ export default function AttendanceList() {
     const apiDateTo = toApiDate(endDateObj.toISOString().split('T')[0]);
 
     try {
-      const res = await fetch('http://localhost:5001/api/attendance/external', {
+      const res = await fetch(`${API_BASE_URL}/api/attendance/external`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ Dates: apiDateFrom, DatesTo: apiDateTo })
@@ -756,7 +757,7 @@ export default function AttendanceList() {
       date,
       hasLeaveWithPay: leaveWithPayDates.has(date),
     }));
-    fetch('http://localhost:5001/api/leave-encashment/sync-attendance', {
+    fetch(`${API_BASE_URL}/api/leave-encashment/sync-attendance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ empCode: emp.empCode, rows: syncRows }),

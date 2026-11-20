@@ -15,8 +15,9 @@ import { buildRefundSlipPrintHtml } from './refundSlipPrintUtils';
 import './DiscountRefundAdmission.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../config';
 
-const API = 'http://localhost:5001/api/clinic';
+const API = `${API_BASE_URL}/api/clinic`;
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 function fmtDateTime(d) {

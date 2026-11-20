@@ -10,9 +10,10 @@ import { confirmDialog } from '../../../components/ui/ConfirmDialog';
 import useModalKeys from '../../../hooks/useModalKeys';
 import './ListAttachments.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { API_BASE_URL } from '../../../config';
 
-const API = 'http://localhost:5001/api/accounts';
-const UTIL_API = 'http://localhost:5001/api/utilities';
+const API = `${API_BASE_URL}/api/accounts`;
+const UTIL_API = `${API_BASE_URL}/api/utilities`;
 const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 
 // HR employee names can carry stray spaces / an empty last name. Ticks are

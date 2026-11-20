@@ -439,6 +439,10 @@ export default function FullSlipEdit() {
               <div className="fse-grid">
                 <label>Payment Type
                   <select value={form.paymentType} onChange={setF('paymentType')} disabled={isPanel && original.paymentType === 'panel'}>
+                    {/* A value outside the list (13 old LEGACY slips say "canceled") still shows, not a blank box. */}
+                    {form.paymentType && !PAYMENT_TYPES.some((p) => p.value === form.paymentType) && (
+                      <option value={form.paymentType}>{form.paymentType === 'canceled' ? 'Canceled (old slip)' : form.paymentType}</option>
+                    )}
                     {PAYMENT_TYPES.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                   </select>
                 </label>
