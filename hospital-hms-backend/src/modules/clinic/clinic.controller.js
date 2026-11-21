@@ -1,5 +1,6 @@
 const service = require('./clinic.service');
 const refundVoucherSvc = require('./refundVoucher.service');
+const reprintSearchSvc = require('./reprintSearch.service');
 const patientSearchSvc = require('./patientSearch.service');
 const pendingTxSvc = require('./pendingTx.service');
 const { success, fail } = require('../../utils/response');
@@ -2309,8 +2310,13 @@ async function getOpdVisitForFullEdit(req, res, next) {
   try { success(res, await service.getOpdVisitForFullEdit(req.params.id)); }
   catch (err) { if (err.status) return fail(res, err.status, err.message); next(err); }
 }
+// Reports → Reprint: the list to pick a slip / admission / antenatal from.
+async function searchForReprint(req, res, next) {
+  try { success(res, await reprintSearchSvc.searchForReprint(req.query || {})); }
+  catch (err) { next(err); }
+}
 async function updateOpdVisitFull(req, res, next) {
-  try { success(res, await service.updateOpdVisitFull(req.params.id, req.body || {}), 'Slip update ho gayi'); }
+  try { success(res, await service.updateOpdVisitFull(req.params.id, req.body || {}, { isSuperAdmin: Boolean(req.user?.isSuperAdmin) }), 'Slip update ho gayi'); }
   catch (err) { if (err.status) return fail(res, err.status, err.message); next(err); }
 }
 async function getOpdVisitEditLogs(req, res, next) {
@@ -2777,6 +2783,7 @@ async function receiveBalancePayment(req, res, next) {
 }
 
 module.exports = {
+  searchForReprint,
   getGeneralPaymentReport,
   getOpdVisitForFullEdit,
   updateOpdVisitFull,

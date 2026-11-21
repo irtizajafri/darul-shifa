@@ -13808,7 +13808,7 @@ function fullEditSnapshot(v) {
     referredBy: v.referredBy, visitType: v.visitType, admitPatient: v.admitPatient, admitNo: v.admitNo,
     adjustPayment: v.adjustPayment, paymentType: v.paymentType, totalAmount: v.totalAmount,
     discount: v.discount, receive: v.receive, refund: v.refund, ccPercentage: v.ccPercentage,
-    ccMinAmount: v.ccMinAmount, ccCharge: v.ccCharge,
+    ccMinAmount: v.ccMinAmount, ccCharge: v.ccCharge, createdAt: v.createdAt,
     doctors: (v.doctors || []).map((d) => ({
       id: d.id, doctorId: d.doctorId, doctor: d.doctor?.name, subDeptId: d.subDeptId, subDept: d.subDept?.name,
       amount: d.amount, quantity: d.quantity, isPaid: d.isPaid,
@@ -13816,9 +13816,27 @@ function fullEditSnapshot(v) {
   };
 }
 
-async function updateOpdVisitFull(id, payload = {}) {
+// "YYYY-MM-DDTHH:mm" in PKT for a stored time.
+const pktMinuteOf = (d) => new Date(new Date(d).getTime() + 5 * 3600 * 1000).toISOString().slice(0, 16);
+
+async function updateOpdVisitFull(id, payload = {}, { isSuperAdmin = false } = {}) {
   const before = await loadVisitForFullEdit(id);
   if (!before) throw Object.assign(new Error('Slip nahi mili'), { status: 404 });
+
+  // Slip date & time (owner, 2026-11-21) — Super Admin only, typed in PKT
+  // ("YYYY-MM-DDTHH:mm"). Not in the future. Its test lines move with it (a
+  // doctor's day count reads their own time).
+  let createdAt = null;
+  if (payload.createdAt) {
+    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/.exec(String(payload.createdAt));
+    const at = m ? new Date(`${m[1]}T${m[2]}:${m[3]}:00+05:00`) : null;
+    if (!at || Number.isNaN(at.getTime())) throw Object.assign(new Error('Slip ki date / time sahi nahi'), { status: 400 });
+    if (`${m[1]}T${m[2]}:${m[3]}` !== pktMinuteOf(before.createdAt)) {
+      if (!isSuperAdmin) throw Object.assign(new Error('Slip ki date / time sirf Super Admin badal sakta hai'), { status: 403 });
+      if (at.getTime() > Date.now() + 60 * 1000) throw Object.assign(new Error('Aage ki date / time nahi di ja sakti'), { status: 400 });
+      createdAt = at;
+    }
+  }
 
   const patientName = String(payload.patientName || '').trim();
   const serialNo = String(payload.serialNo || '').trim();
@@ -13893,8 +13911,10 @@ async function updateOpdVisitFull(id, payload = {}) {
         ccMinAmount: totals.ccMinAmount,
         ccCharge: totals.ccCharge,
         adjustedAt: new Date(),
+        ...(createdAt ? { createdAt } : {}),
       },
     });
+    if (createdAt) await tx.clinicOpdVisitDoctor.updateMany({ where: { visitId: before.id }, data: { createdAt } });
     // A Consultant appointment remembers its slip by number — keep it in step.
     if (serialNo !== before.serialNo) {
       await tx.clinicAppointment.updateMany({ where: { opdVisitId: before.id }, data: { slipNo: serialNo } });

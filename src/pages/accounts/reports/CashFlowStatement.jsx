@@ -11,8 +11,9 @@ import './CashFlowStatement.scss';
 // Accounts → Reports → Cash Flow Statement (owner, 2026-11-17), laid out like
 // the hospital's Excel sheet: one row per day — Revenue from the Patients
 // List (Cash, JazzCash, Bank Online, CC), then this book's Voucher Expense by
-// Main GL split Cash / Online / Cheque, the day's paid totals and the cash
-// deposited to the bank for that day.
+// Main GL split Cash / Online / Cheque, the day's paid totals, then Cash
+// Deposited to Bank = Revenue Cash − Total Paid Cash (owner, 2026-11-21) and
+// the Deposit Date of that day's Bank Deposit.
 
 const API = `${API_BASE_URL}/api/accounts`;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -159,7 +160,7 @@ export default function CashFlowStatement() {
       {!loading && data && (
         <div className="cfs__sheet" id="cfs-printable">
           <p className="cfs-title">{title}</p>
-          <p className="cfs-sub">{book} · Revenue from the Patients List (business day 8:00 AM – 7:59 AM) · Payments from posted Voucher Expense</p>
+          <p className="cfs-sub">{book} · Revenue from the Patients List (business day 8:00 AM – 7:59 AM) · Payments from posted Voucher Expense · Cash Deposited to Bank = Revenue Cash − Total Paid Cash</p>
           <div className="cfs__scroll">
             <table className="cfs__table">
               <thead>

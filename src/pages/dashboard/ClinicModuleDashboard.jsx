@@ -18,7 +18,8 @@ import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { hasPermission } from '../../utils/permissions';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
-import hospitalLogo from '../../assets/download.png';
+// Darul Shifa 35-years logo (owner, 2026-11-21).
+import hospitalLogo from '../../assets/logo.svg';
 import './ClinicModuleDashboard.scss';
 
 // subModule + optional tab mirrors AppRoutes guards exactly
@@ -95,7 +96,7 @@ export default function ClinicModuleDashboard() {
     <div className="clinic-module-dashboard">
       <ClinicMenuBar />
       <div className="clinic-header">
-        <img src={hospitalLogo} alt="Darul Shifa Clinic" className="clinic-header-logo" />
+        <img src={hospitalLogo} alt="Darul Shifa General Hospital" className="clinic-header-logo" />
       </div>
 
       <div className="clinic-sections-grid">

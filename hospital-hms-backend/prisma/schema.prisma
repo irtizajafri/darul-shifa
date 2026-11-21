@@ -3723,3 +3723,17 @@ model HmsSetting {
   value     String?
   updatedAt DateTime @default(now())
 }
+
+// Income & Expense Summary — figures typed by hand per book per month
+// (migration 081, owner 2026-11-21).
+model AccMonthSummaryInput {
+  id            Int      @id @default(autoincrement())
+  entityType    String
+  month         String
+  key           String
+  amount        Decimal  @default(0) @db.Decimal(15, 2)
+  updatedByName String?
+  updatedAt     DateTime @default(now())
+
+  @@unique([entityType, month, key])
+}

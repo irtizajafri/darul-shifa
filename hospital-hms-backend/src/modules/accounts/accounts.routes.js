@@ -130,6 +130,10 @@ router.delete('/bank-statement/batches', ctrl.deleteStatementBatch);
 // Bank Reconciliation
 router.get('/bank-book', ctrl.getBankBook);
 router.get('/bank-balances', ctrl.getBankBalances);
+router.get('/bank-month-statement', ctrl.getBankMonthStatement);
+router.get('/income-expense-summary', ctrl.getIncomeExpenseSummary);
+router.put('/income-expense-summary/inputs', ctrl.saveIncomeExpenseInputs);
+router.get('/refund-statement', ctrl.getRefundStatement);
 router.get('/bank-recon', ctrl.getReconItems);
 router.get('/bank-recon/expense-accounts', ctrl.reconExpenseAccounts);
 router.post('/bank-recon/auto-match', ctrl.reconAutoMatch);
@@ -142,6 +146,7 @@ router.post('/bank-recon/signoff/:id/reopen', ctrl.reconReopen);
 
 router.get('/un-presented-cheques', ctrl.getUnpresentedChequeList);
 router.get('/cash-flow-statement', ctrl.getCashFlowStatement);
+router.get('/cash-in-hand-statement', ctrl.getCashInHandStatement);
 // Transactions → Presented / Unpresented Cheques
 router.get('/cheques', ctrl.getChequePresentation);
 router.post('/cheques/:id/present', ctrl.presentCheque);

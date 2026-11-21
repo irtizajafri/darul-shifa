@@ -123,6 +123,7 @@ router.get('/opd/employee-search', controller.searchEmployees);
 router.get('/opd', controller.getOpdVisits);
 router.post('/opd', controller.createOpdVisit);
 router.post('/opd/:id/print', controller.printOpdVisit);
+router.get('/reprint/search', controller.searchForReprint);
 router.get('/opd/reprint/:serialNo', controller.reprintOpdVisitBySerial);
 router.get('/opd/cancel/today-list', controller.getTodayOpdVisitsForCancel);
 router.get('/opd/cancel/search', controller.searchOpdVisitsForCancel);

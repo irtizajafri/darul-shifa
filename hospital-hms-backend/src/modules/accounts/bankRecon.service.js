@@ -48,7 +48,7 @@ async function bookDebits(bank) {
       id: true, amount: true, chequeNo: true, chequeDate: true, payeeName: true, accountName: true, particulars: true,
       presentedDate: true, matchedStatementLineId: true,
       matchedStatementLine: { select: { id: true, date: true } },
-      voucher: { select: { voucherNo: true, voucherDate: true, mode: true } },
+      voucher: { select: { voucherNo: true, voucherDate: true, mode: true, entityType: true } },
     },
   });
   return rows.map((e) => {
@@ -62,6 +62,8 @@ async function bookDebits(bank) {
       ref: isCheque ? (e.chequeNo || '') : e.voucher.voucherNo,
       voucherNo: e.voucher.voucherNo,
       description: e.payeeName || e.accountName || e.particulars || '',
+      accountName: e.accountName || '',
+      book: e.voucher.entityType,
       chequeNo: e.chequeNo || null,
       lineId: e.matchedStatementLineId || null,
       // Cleared by a statement match, or ticked presented by hand.
@@ -76,7 +78,7 @@ async function bookDebits(bank) {
 async function bookCredits(bank) {
   const [deposits, incomes, cheques, ccs, links] = await Promise.all([
     prisma.accBankDeposit.findMany({ where: { bankAccountId: bank.id }, select: { id: true, depositOf: true, depositDate: true, depositSlipNo: true, amount: true } }),
-    prisma.accVoucherIncome.findMany({ where: { bankId: bank.id, mode: 'bank', status: 'posted' }, select: { id: true, voucherNo: true, voucherDate: true, totalAmount: true, entries: { select: { particulars: true, incomeCategoryName: true } } } }),
+    prisma.accVoucherIncome.findMany({ where: { bankId: bank.id, mode: 'bank', status: 'posted' }, select: { id: true, voucherNo: true, voucherDate: true, totalAmount: true, entityType: true, entries: { select: { particulars: true, incomeCategoryName: true } } } }),
     prisma.clinicPanelChequeReceipt.findMany({ where: { bankAccountId: bank.id }, select: { id: true, chequeNo: true, chequeDate: true, depositDate: true, receivedAmount: true, panelCompanyId: true } }),
     prisma.clinicCcSettlement.findMany({ where: { bankAccountId: bank.id }, select: { id: true, receivedDate: true, receivedAmount: true, visit: { select: { serialNo: true } } } }),
     prisma.accBankReconLink.findMany({ where: { bankAccountId: bank.id }, select: { bookType: true, bookId: true, statementLineId: true, statementLine: { select: { date: true } } } }),
@@ -90,8 +92,8 @@ async function bookCredits(bank) {
     return { ...item, lineId: l?.statementLineId || null, clearedDate: l ? dayOf(l.statementLine.date) : null, clearedBy: l ? 'statement' : null };
   };
   return [
-    ...deposits.map((d) => withLink({ key: `deposit-${d.id}`, type: 'deposit', id: d.id, side: 'in', date: dayOf(d.depositDate), amount: round2(d.amount), ref: d.depositSlipNo || '', description: `Bank Deposit (of ${dayOf(d.depositOf)})` })),
-    ...incomes.map((v) => withLink({ key: `income-${v.id}`, type: 'income', id: v.id, side: 'in', date: dayOf(v.voucherDate), amount: round2(v.totalAmount), ref: v.voucherNo, voucherNo: v.voucherNo, description: v.entries.map((e) => e.particulars || e.incomeCategoryName).filter(Boolean).join(', ') || 'Voucher Income (bank)' })),
+    ...deposits.map((d) => withLink({ key: `deposit-${d.id}`, type: 'deposit', id: d.id, side: 'in', date: dayOf(d.depositDate), amount: round2(d.amount), ref: d.depositSlipNo || '', depositOf: dayOf(d.depositOf), description: `Bank Deposit (of ${dayOf(d.depositOf)})` })),
+    ...incomes.map((v) => withLink({ key: `income-${v.id}`, type: 'income', id: v.id, side: 'in', date: dayOf(v.voucherDate), amount: round2(v.totalAmount), ref: v.voucherNo, voucherNo: v.voucherNo, book: v.entityType, description: v.entries.map((e) => e.particulars || e.incomeCategoryName).filter(Boolean).join(', ') || 'Voucher Income (bank)' })),
     ...cheques.map((c) => withLink({ key: `panel-cheque-${c.id}`, type: 'panel-cheque', id: c.id, side: 'in', date: dayOf(c.depositDate || c.chequeDate), amount: round2(c.receivedAmount), ref: c.chequeNo, description: `Panel cheque — ${coName.get(c.panelCompanyId) || ''}`.trim() })),
     ...ccs.map((s) => withLink({ key: `cc-${s.id}`, type: 'cc', id: s.id, side: 'in', date: dayOf(s.receivedDate), amount: round2(s.receivedAmount), ref: s.visit?.serialNo ? `Slip # ${s.visit.serialNo}` : '', description: 'CC settlement' })),
   ];
@@ -192,6 +194,167 @@ async function getBankBalances({ entityType, asOf } = {}) {
     });
   }
   return { asOf: day, rows, totalBook: round2(rows.reduce((s, r) => s + r.bookBalance, 0)) };
+}
+
+// ─── Bank Balance Statement — one bank, one month (owner, 2026-11-21) ────────
+// Laid out like the hospital's Excel: the opening balance, then every entry on
+// the day the bank booked it — Dr (money out), Cr (money in) and the running
+// balance — each amount in a colour category. From the books (Voucher
+// Expense / Income, Bank Deposit, panel cheques, CC settlements) plus the
+// uploaded statement's lines no book entry is matched to (Unknown).
+//   Day: a cheque counts when it clears (statement match or ticked
+//   presented); one not cleared by the month's end is listed under
+//   Un-presented instead. Everything else counts on the matched statement
+//   line's day, else its own day.
+//   Category, for statement month M: cheques / online payments by their own
+//   month — M, M−1, older (Old Chqs); Bank Deposits by their "Deposit Of"
+//   day the same way; Panel (Corporate) entries, CC settlements, bank-mode
+//   Voucher Income (Online Deposit), bank charges (Bank) and Unknown have
+//   their own. A cheque written for several account lines is one row.
+const MON = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+// Book account names / statement particulars that are the bank's own charges.
+const BANK_CHARGE_ACCOUNT = /bank\s*(charge|commission)|excise|\bfed\b|withholding|\bw\.?h\.?t\b|sms\s*(alert|charge)/i;
+const BANK_CHARGE_LINE = /charge|commission|excise|\bfed\b|withholding|\bw\.?h\.?\s*tax\b|\bwht\b|sms\s*alert/i;
+
+function bankStatementCategories(ym) {
+  const m = Number(ym.slice(5, 7));
+  const cur = MON[m - 1];
+  const prev = MON[(m + 10) % 12];
+  // Order as on the Excel sheet.
+  return [
+    { key: 'unkDep', label: 'UNKNOWN DEPOSIT', side: 'in' },
+    { key: 'unkChq', label: 'UNKNOWN CHQ', side: 'out' },
+    { key: 'online', label: 'ONLINE DEPOSIT', side: 'in' },
+    { key: 'depPrev', label: `${prev} DEPOSIT`, side: 'in' },
+    { key: 'chqPrev', label: `${prev} CHQ`, side: 'out' },
+    { key: 'depOld', label: 'OLD DEPOSIT', side: 'in' },
+    { key: 'chqOld', label: 'OLD CHQS', side: 'out' },
+    { key: 'depCur', label: `${cur} DEPOSIT`, side: 'in' },
+    { key: 'chqCur', label: `${cur} CHQ`, side: 'out' },
+    { key: 'corpDep', label: 'CORPORATE DEPOSIT', side: 'in' },
+    { key: 'corpChq', label: 'CORPORATE CHQ', side: 'out' },
+    { key: 'cc', label: 'CREDIT CARD', side: 'in' },
+    { key: 'bank', label: 'BANK', side: 'out' },
+  ];
+}
+
+async function getBankMonthStatement({ bankAccountId, year, month } = {}) {
+  const bank = await loadBank(bankAccountId);
+  const y = Number(year);
+  const mo = Number(month);
+  if (!Number.isInteger(y) || y < 2000 || y > 2100 || !Number.isInteger(mo) || mo < 1 || mo > 12) throw fail(400, 'Select the month and year');
+  const ym = `${y}-${String(mo).padStart(2, '0')}`;
+  const prevYm = mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`;
+  const first = `${ym}-01`;
+  const last = `${ym}-${String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2, '0')}`;
+  const open = bank.openingDate ? dayOf(bank.openingDate) : null;
+  const { items, lines } = await loadBook(bank);
+
+  const age = (day) => {
+    const k = String(day || '').slice(0, 7);
+    if (!k || k >= ym) return 'Cur';
+    return k === prevYm ? 'Prev' : 'Old';
+  };
+  const categoryOf = (i) => {
+    if (i.type === 'expense') {
+      if (BANK_CHARGE_ACCOUNT.test(i.accountName || '')) return 'bank';
+      if (i.book === 'corporate') return 'corpChq';
+      return `chq${age(i.date)}`;
+    }
+    if (i.type === 'deposit') return `dep${age(i.depositOf || i.date)}`;
+    if (i.type === 'panel-cheque') return 'corpDep';
+    if (i.type === 'cc') return 'cc';
+    if (i.type === 'income') return i.book === 'corporate' ? 'corpDep' : 'online';
+    return i.side === 'in' ? 'unkDep' : 'unkChq';
+  };
+  // The day the bank booked it; null = a cheque not cleared yet.
+  const bankDay = (i) => (i.side === 'out' && i.mode === 'cheque' ? i.clearedDate || null : i.clearedDate || i.date);
+
+  // One row per cheque (its account lines added up); everything else as is.
+  const merged = [];
+  const byCheque = new Map();
+  for (const i of items) {
+    const k = i.type === 'expense' && i.mode === 'cheque' && i.chequeNo ? `${i.voucherNo}|${String(i.chequeNo).trim()}` : null;
+    if (!k) { merged.push({ ...i }); continue; }
+    const g = byCheque.get(k);
+    if (!g) { const row = { ...i, descriptions: [i.description] }; byCheque.set(k, row); merged.push(row); continue; }
+    g.amount = round2(g.amount + i.amount);
+    if (i.description && !g.descriptions.includes(i.description)) g.descriptions.push(i.description);
+    if (i.clearedDate && (!g.clearedDate || i.clearedDate > g.clearedDate)) g.clearedDate = i.clearedDate;
+    if (!i.clearedDate) g.someUncleared = true;
+  }
+  merged.forEach((r) => {
+    if (r.descriptions) r.description = r.descriptions.join(', ');
+    // Every line of a cheque has to be cleared for the cheque to count.
+    if (r.someUncleared) r.clearedDate = null;
+  });
+
+  const unknown = lines
+    .filter((l) => !l.matched && (!open || l.date >= open))
+    .map((l) => ({
+      key: `line-${l.id}`, type: 'statement', side: l.debit > 0 ? 'out' : 'in', date: l.date,
+      amount: l.debit > 0 ? l.debit : l.credit, ref: l.instrumentNo || '', description: l.particulars || '',
+      clearedDate: l.date,
+      category: l.debit > 0 ? (BANK_CHARGE_LINE.test(l.particulars || '') ? 'bank' : 'unkChq') : 'unkDep',
+    }));
+
+  // The Excel's wording for the bank's own entries.
+  const short = (iso) => (iso ? `${iso.slice(8, 10)}-${MON[Number(iso.slice(5, 7)) - 1].charAt(0)}${MON[Number(iso.slice(5, 7)) - 1].slice(1).toLowerCase()}-${iso.slice(0, 4)}` : '');
+  const describe = (i) => {
+    if (i.type === 'deposit') return `Cash Deposit (cash of ${short(i.depositOf)})`;
+    if (i.type === 'cc') return `CC — Income${i.ref ? ` (${i.ref})` : ''}`;
+    return i.description;
+  };
+  const entries = [
+    ...merged.map((i) => ({ ...i, description: describe(i), day: bankDay(i), category: categoryOf(i) })),
+    ...unknown.map((l) => ({ ...l, day: l.date })),
+  ];
+  const signed = (e) => (e.side === 'in' ? e.amount : -e.amount);
+  const opening = round2(Number(bank.openingBalance || 0) + entries.filter((e) => e.day && e.day < first).reduce((s, e) => s + signed(e), 0));
+
+  const cats = bankStatementCategories(ym);
+  const totals = Object.fromEntries(cats.map((c) => [c.key, 0]));
+  let running = opening;
+  const rows = entries
+    .filter((e) => e.day && e.day >= first && e.day <= last)
+    .sort((a, b) => (a.day === b.day ? a.key.localeCompare(b.key) : a.day < b.day ? -1 : 1))
+    .map((e) => {
+      running = round2(running + signed(e));
+      totals[e.category] = round2((totals[e.category] || 0) + e.amount);
+      return {
+        key: e.key, date: e.day, description: e.description || '',
+        ref: e.type === 'expense' ? (e.chequeNo || e.voucherNo || '') : e.ref || '',
+        voucherNo: e.voucherNo || null, type: e.type, category: e.category,
+        dr: e.side === 'out' ? e.amount : 0, cr: e.side === 'in' ? e.amount : 0, balance: running,
+        ownDate: e.type === 'deposit' ? e.depositOf : e.date,
+      };
+    });
+
+  const unpresented = merged
+    .filter((i) => i.type === 'expense' && i.mode === 'cheque' && i.date <= last && (!i.clearedDate || i.clearedDate > last))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+    .map((i) => ({ key: i.key, voucherNo: i.voucherNo, chequeNo: i.chequeNo, chequeDate: i.date, description: i.description, amount: i.amount, category: categoryOf(i) }));
+
+  const totalDr = round2(rows.reduce((s, r) => s + r.dr, 0));
+  const totalCr = round2(rows.reduce((s, r) => s + r.cr, 0));
+  return {
+    bank: { id: bank.id, bankName: bank.bankName, accountNumber: bank.accountNumber, entityType: bank.entityType, openingDate: open },
+    year: y, month: mo, from: first, to: last,
+    categories: cats.map((c) => ({ ...c, total: totals[c.key] || 0 })),
+    opening, rows, totalDr, totalCr, closing: round2(opening + totalCr - totalDr),
+    unpresented, unpresentedTotal: round2(unpresented.reduce((s, u) => s + u.amount, 0)),
+  };
+}
+
+// Uploaded statement lines no book entry is matched to (from the bank's
+// opening date on), bank charges marked — for the Income & Expense Summary.
+async function unmatchedStatementLines(bankAccountId) {
+  const bank = await loadBank(bankAccountId);
+  const open = bank.openingDate ? dayOf(bank.openingDate) : null;
+  const { lines } = await loadBook(bank);
+  return lines
+    .filter((l) => !l.matched && (!open || l.date >= open))
+    .map((l) => ({ ...l, isCharge: l.debit > 0 && BANK_CHARGE_LINE.test(l.particulars || '') }));
 }
 
 // ─── Statement upload batches ────────────────────────────────────────────────
@@ -435,7 +598,7 @@ async function listExpenseAccounts(entityType) {
 }
 
 module.exports = {
-  saveBankOpening, getBankBook, getBankBalances, listBatches, deleteBatch,
+  saveBankOpening, getBankBook, getBankBalances, getBankMonthStatement, unmatchedStatementLines, listBatches, deleteBatch,
   autoMatch, manualMatch, unmatchLine, addToBooks, getReconItems,
   getStatement, signOff, reopenSignOff, listExpenseAccounts, dayOf, lockDateOf,
 };

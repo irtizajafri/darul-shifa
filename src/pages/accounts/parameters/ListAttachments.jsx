@@ -22,6 +22,8 @@ const codeNameLabel = (x) => `${x.code} — ${x.name}`;
 const cleanName = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const nameKey = (s) => cleanName(s).replace(/\s+(null|undefined)$/i, '').toLowerCase();
 const empName = (emp) => emp.fullName || cleanName(`${emp.firstName ?? ''} ${emp.lastName ?? ''}`);
+// Heads whose Sub Account link carries a tick list, and where that list comes from.
+const LIST_SOURCE = { vendor: 'suppliers', employee: 'employees', 'employee-manual': 'employees', doctor: 'doctors' };
 
 // Matches a "Utility provider" payee entry's free-text name to the Utilities
 // Bill module's utility bucket, so we know which actual-bill date to show.
@@ -235,6 +237,43 @@ export default function ListAttachments() {
       await fetchPayeeHeads(entityType);
     } catch (err) { toast.error(err.message); }
     finally { setSavingDoctors(false); }
+  };
+
+  // ── Edit an attached list (owner, 2026-11-21) ─────────────────────────────
+  // Double-click (or the pencil) on a linked Sub Account opens its tick list
+  // again — fetched fresh, so an employee / supplier / doctor added since
+  // shows up — instead of removing the link and adding it again. Names saved
+  // earlier that are no longer in the list (e.g. an employee who left) stay in
+  // the modal, ticked, so a save keeps them unless they're unticked.
+  const openLinkList = async (head, la) => {
+    const source = LIST_SOURCE[head.sourceType];
+    if (!source) return;
+    try {
+      const [entries, list] = await Promise.all([
+        fetch(`${API}/payee-entries?headId=${head.id}&subAccountId=${la.subAccountId}`).then((r) => r.json()),
+        fetch(`${API}/linked/${source}`).then((r) => r.json()),
+      ]);
+      const saved = (Array.isArray(entries?.data) ? entries.data : []).map((en) => cleanName(en.name)).filter(Boolean);
+      const all = Array.isArray(list?.data) ? list.data : [];
+      const labelOf = source === 'employees' ? empName : (x) => x.name;
+      const known = new Set(all.map((x) => nameKey(labelOf(x))));
+      const missing = new Map();
+      saved.forEach((n) => { if (!known.has(nameKey(n)) && !missing.has(nameKey(n))) missing.set(nameKey(n), n); });
+      const extras = [...missing.values()].map((n) => (source === 'employees'
+        ? { id: `saved-${n}`, fullName: n, missing: true }
+        : { id: `saved-${n}`, name: n, missing: true }));
+      const modal = {
+        headId: head.id,
+        subAccountId: la.subAccountId,
+        headName: `${head.name} · ${la.subAccount.code} — ${la.subAccount.name}`,
+        checked: new Set(saved.map(nameKey)),
+      };
+      if (source === 'employees') setEmployeeModal({ ...modal, allEmployees: [...all, ...extras] });
+      else if (source === 'suppliers') setSupplierModal({ ...modal, allSuppliers: [...all, ...extras] });
+      else setDoctorModal({ ...modal, allDoctors: [...all, ...extras] });
+    } catch {
+      toast.error('List load nahi hui');
+    }
   };
 
   // ── Link account cascade ──────────────────────────────────────────────────
@@ -589,19 +628,39 @@ export default function ListAttachments() {
     if (links.length === 0) return <span className="list-attach__no-link">No account linked</span>;
     return (
       <div className="list-attach__linked-list">
-        {links.map((la) => (
-          <div key={la.id} className="list-attach__linked-tag">
-            <CheckCircle2 size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
-            <span>{la.subAccount.code} — {la.subAccount.name}</span>
-            <button
-              className="list-attach__tag-remove"
-              title="Remove link"
-              onClick={() => handleRemoveLink(head.id, la.subAccountId)}
+        {links.map((la) => {
+          const editable = Boolean(LIST_SOURCE[head.sourceType]);
+          return (
+            <div
+              key={la.id}
+              className={`list-attach__linked-tag${editable ? ' is-editable' : ''}`}
+              onDoubleClick={editable ? () => openLinkList(head, la) : undefined}
+              title={editable ? 'Double-click: list edit karein — naya naam tick karein, purana hatayein' : undefined}
             >
-              <X size={10} />
-            </button>
-          </div>
-        ))}
+              <CheckCircle2 size={11} style={{ color: '#22c55e', flexShrink: 0 }} />
+              <span>{la.subAccount.code} — {la.subAccount.name}</span>
+              {editable && (
+                <button
+                  className="list-attach__tag-edit"
+                  title="List edit karein"
+                  aria-label={`Edit list for ${la.subAccount.name}`}
+                  onClick={() => openLinkList(head, la)}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                >
+                  <Pencil size={9} />
+                </button>
+              )}
+              <button
+                className="list-attach__tag-remove"
+                title="Remove link"
+                onClick={() => handleRemoveLink(head.id, la.subAccountId)}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                <X size={10} />
+              </button>
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -1085,7 +1144,7 @@ export default function ListAttachments() {
                       setSupplierModal((m) => ({ ...m, checked: next }));
                     }}
                   />
-                  <span className="list-attach__supplier-modal__name">{s.name}{s.code ? <span style={{ color: '#94a3b8', marginLeft: 6 }}>({s.code})</span> : null}</span>
+                  <span className="list-attach__supplier-modal__name">{s.name}{s.code ? <span style={{ color: '#94a3b8', marginLeft: 6 }}>({s.code})</span> : null}{s.missing ? <span className="list-attach__missing">ab supplier list me nahi</span> : null}</span>
                 </label>
               ))}
             </div>
@@ -1148,7 +1207,7 @@ export default function ListAttachments() {
                       }}
                     />
                     <span className="list-attach__supplier-modal__name">
-                      {fullName}{emp.empCode ? <span style={{ color: '#94a3b8', marginLeft: 6 }}>({emp.empCode})</span> : null}
+                      {fullName}{emp.empCode ? <span style={{ color: '#94a3b8', marginLeft: 6 }}>({emp.empCode})</span> : null}{emp.missing ? <span className="list-attach__missing">ab HR list me nahi</span> : null}
                     </span>
                   </label>
                 );
@@ -1206,7 +1265,7 @@ export default function ListAttachments() {
                       setDoctorModal((m) => ({ ...m, checked: next }));
                     }}
                   />
-                  <span className="list-attach__supplier-modal__name">{d.code ? `${d.code} — ` : ''}{d.name}</span>
+                  <span className="list-attach__supplier-modal__name">{d.code ? `${d.code} — ` : ''}{d.name}{d.missing ? <span className="list-attach__missing">ab doctor list me nahi</span> : null}</span>
                 </label>
               ))}
             </div>

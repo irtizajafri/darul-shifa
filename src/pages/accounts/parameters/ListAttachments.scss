@@ -251,6 +251,36 @@
     white-space: nowrap;
   }
 
+  // A link whose tick list can be edited (double-click / pencil), owner 2026-11-21.
+  &__linked-tag.is-editable {
+    cursor: pointer;
+    user-select: none;
+    &:hover { background: #dcfce7; border-color: #4ade80; }
+  }
+  &__tag-edit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: rgba(37, 99, 235, 0.12);
+    color: #1d4ed8;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    &:hover { background: rgba(37, 99, 235, 0.22); }
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  }
+  &__missing {
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #92400e;
+    background: #fef3c7;
+    border-radius: 999px;
+  }
+
   &__tag-remove {
     display: flex;
     align-items: center;

@@ -1,0 +1,80 @@
+// Income & Expense Summary (owner, 2026-11-21) — the Accounts navy with the
+// sheet's peach section headers; Receipts | Payments and Closing |
+// Reconciliation side by side, stacked on narrow screens.
+.ies {
+  --ies-navy: #1e3a5f;
+  --ies-ink: #0f172a;
+  --ies-muted: #64748b;
+  --ies-line: #d5dde6;
+  --ies-head: #fbe3d4;
+  --ies-neg: #b91c1c;
+  --ies-warn: #b45309;
+  padding: 1.25rem 1.5rem;
+  background: #f0f4f8;
+  min-height: 100%;
+  color: var(--ies-ink);
+  font-family: Arial, Helvetica, sans-serif;
+  @media (max-width: 640px) { padding: 1rem; }
+
+  &__bar { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  &__back {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    font-size: 0.8rem; font-weight: 700; color: var(--ies-navy);
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;
+    &:hover { background: #f8fafc; }
+  }
+  &__heading {
+    flex: 1; min-width: 180px;
+    h1 { margin: 0; font-size: 1.1rem; font-weight: 800; color: var(--ies-navy); }
+    span { font-size: 0.78rem; color: var(--ies-muted); }
+  }
+  &__controls {
+    display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px;
+    label { display: flex; flex-direction: column; gap: 3px; font-size: 0.7rem; font-weight: 700; color: var(--ies-muted); }
+    select { padding: 6px 8px; font-size: 0.85rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+  }
+  &__btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; min-height: 34px;
+    font-size: 0.8rem; font-weight: 700; color: var(--ies-navy);
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;
+    &:hover:not(:disabled) { background: #f8fafc; }
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    &--primary { color: #fff; background: var(--ies-navy); border-color: var(--ies-navy); }
+    &--save:not(:disabled) { color: #fff; background: #15803d; border-color: #15803d; }
+  }
+  &__empty { font-size: 0.85rem; color: var(--ies-muted); }
+  &__sheet {
+    background: #fff; border: 1px solid var(--ies-line); border-radius: 8px; padding: 14px;
+    h1 { margin: 0; font-size: 1rem; font-weight: 800; }
+  }
+  .ies-sub { margin: 2px 0 10px; font-size: 0.78rem; color: var(--ies-muted); }
+  .ies-hint { margin: 0 0 10px; padding: 7px 10px; font-size: 0.8rem; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; }
+  .ies-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; align-items: start;
+    @media (max-width: 900px) { grid-template-columns: 1fr; }
+  }
+  .ies-table {
+    width: 100%; border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums;
+    th, td { padding: 4px 8px; border: 1px solid var(--ies-line); }
+    th { background: var(--ies-head); color: var(--ies-ink); font-size: 0.72rem; letter-spacing: 0.06em; text-align: center; }
+    td:nth-child(2), td:nth-child(3) { width: 9.5rem; }
+    .n { text-align: right; white-space: nowrap; }
+    .is-neg { color: var(--ies-neg); }
+    tr.is-strong td { font-weight: 700; color: #1d4ed8; }
+    tr.is-head td { font-weight: 800; background: #f8fafc; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    tr.is-total td { font-weight: 700; background: #f1f5f9; }
+    tr.is-grand td { font-weight: 800; background: #e8eef5; border-top: 2px solid var(--ies-navy); }
+    tr.is-diff td { font-weight: 700; color: #166534; }
+    tr.is-diff.is-off td { color: var(--ies-warn); background: #fffbeb; }
+  }
+  .ies-muted { color: var(--ies-muted); font-size: 0.76rem; }
+  .ies-note { margin: 2px 0 0; font-size: 0.7rem; font-weight: 400; color: var(--ies-muted); }
+  .ies-input {
+    width: 100%; max-width: 9rem; padding: 3px 6px; text-align: right; font: inherit; font-variant-numeric: tabular-nums;
+    border: 1px solid #94a3b8; border-radius: 4px; background: #fff;
+    &:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
+  }
+  .ies-printval { display: none; }
+  .ies-sign { display: none; }
+}

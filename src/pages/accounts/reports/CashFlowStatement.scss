@@ -107,6 +107,10 @@
     .cfs-h-mode { font-weight: 600; min-width: 70px; }
     .cfs-h-paid { background: #1f5133; }
     .cfs-h-dep { background: #334155; }
+    // Cash In Hand Statement (shares this sheet)
+    .cfs-h-hand { background: #7c2d12; min-width: 96px; }
+    td.cfs-hand { background: #fff7ed; }
+    td.cfs-neg { color: #b91c1c; }
     tfoot td { font-weight: 800; background: #e8eef5; border-top: 2px solid #1e3a5f; }
     tfoot .cfs-gtotal td { font-weight: 700; background: #f1f5f9; border-top: 1px solid #cbd5e1; }
   }

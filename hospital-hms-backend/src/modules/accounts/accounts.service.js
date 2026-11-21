@@ -2535,12 +2535,16 @@ async function getConsultantVisits(doctorName, dateFrom, dateTo) {
     const payableAmount = Math.round(hasRate
       ? (rate.paymentType === 'percent' ? received * rate.normalFees / 100 : rate.normalFees)
       : received);
+    // PKT clock read off the shifted time with getUTC*, sent as a plain day
+    // ("2026-11-19") like the legacy rows — a UTC-tagged Date got +5h again
+    // in the browser, so slips after 7 PM showed the next day (server fix,
+    // 2026-11-21).
     const pkt = new Date(new Date(d.visit.createdAt).getTime() + 5 * 60 * 60 * 1000);
     return {
       id: `opd-${d.id}`,
       serialNo: d.visit.serialNo,
-      visitDate: pkt,
-      visitTime: `${String(pkt.getHours()).padStart(2, '0')}:${String(pkt.getMinutes()).padStart(2, '0')}`,
+      visitDate: pkt.toISOString().slice(0, 10),
+      visitTime: `${String(pkt.getUTCHours()).padStart(2, '0')}:${String(pkt.getUTCMinutes()).padStart(2, '0')}`,
       patientName: d.visit.patientName,
       subDepartment: subDept,
       paymentType: d.visit.paymentType,
@@ -3550,12 +3554,17 @@ async function getUnpresentedChequeList({ entityType }) {
   }));
 
   return {
-    // One row per cheque (its account lines added up).
+    // One row per cheque number (owner, 2026-11-21): the same cheque # shows
+    // once even when it sits in more than one voucher — amounts added up,
+    // the voucher numbers listed together. Cheque # as typed (spaces and
+    // letter case ignored).
     unpresented: oneRowPerCheque(perEntry, {
-      keyOf: (r) => (String(r.chequeNo || '').trim() ? `${r.voucherNo}|${String(r.chequeNo).trim()}` : null),
+      keyOf: (r) => String(r.chequeNo || '').trim().toUpperCase() || null,
       merge: (g) => ({
         ...g[0],
         entryIds: g.map((r) => r.id),
+        voucherNo: joinDistinct(g.map((r) => r.voucherNo)),
+        voucherDate: earliest(g.map((r) => r.voucherDate)),
         chequeDate: earliest(g.map((r) => r.chequeDate)),
         payeeName: joinDistinct(g.map((r) => r.payeeName)),
         description: joinDistinct(g.map((r) => r.description)),

@@ -324,3 +324,49 @@
     border-top: 1px solid #e2e8f0;
   }
 }
+
+// Bank Balance Statement (owner, 2026-11-21) — the category totals on top,
+// each in its Excel colour (set inline from the page).
+.brc {
+  .bbs-cats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 6px;
+    margin: 0 0 12px;
+  }
+  .bbs-cat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 9px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+    span { font-size: 0.66rem; font-weight: 800; letter-spacing: 0.03em; }
+    b { font-size: 0.92rem; text-align: right; }
+  }
+  .brc__table tr.bbs-opening td { background: #fbbf24; color: #1f2937; }
+  .bbs-h2 { margin: 16px 0 6px; font-size: 0.88rem; font-weight: 800; color: var(--brc-navy); span { font-weight: 400; font-size: 0.74rem; } }
+  .bbs-note { margin: 10px 0 0; font-size: 0.74rem; color: var(--brc-muted); }
+}
+
+// Slip & Admission Refund Statement (owner, 2026-11-21) — the filter row.
+.brc {
+  .rfs-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px;
+    margin: 0 0 10px;
+    label { display: flex; flex-direction: column; gap: 3px; font-size: 0.7rem; font-weight: 700; color: var(--brc-muted); }
+    select { padding: 6px 8px; font-size: 0.82rem; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+  }
+  .rfs-search { flex: 1; min-width: 220px; max-width: 420px; }
+  .rfs-search__box {
+    display: flex; align-items: center; gap: 6px; padding: 5px 9px;
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: var(--brc-muted);
+    input { flex: 1; min-width: 0; border: 0; outline: none; font-size: 0.82rem; background: transparent; }
+    &:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
+  }
+  .rfs-sub { margin: 0 0 8px; font-size: 0.76rem; color: var(--brc-muted); }
+}

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useModuleStore } from '../../store/useModuleStore';
 import PageLoader from '../../components/ui/PageLoader';
-import hospitalLogo from '../../assets/download.png';
+// Darul Shifa 35-years logo (owner, 2026-11-21).
+import hospitalLogo from '../../assets/logo.svg';
 import {
   Settings,
   FileText,
@@ -75,7 +76,7 @@ export default function AccountsModuleDashboard() {
     return (
       <div className="accounts-module-dashboard">
         <div className="dashboard-header">
-          <img src={hospitalLogo} alt="Darul Shifa Accounts" className="dashboard-header-logo" />
+          <img src={hospitalLogo} alt="Darul Shifa General Hospital" className="dashboard-header-logo" />
         </div>
 
         <div className="section-header">
@@ -117,7 +118,7 @@ export default function AccountsModuleDashboard() {
   return (
     <div className="accounts-module-dashboard">
       <div className="dashboard-header">
-        <img src={hospitalLogo} alt="Darul Shifa Accounts" className="dashboard-header-logo" />
+        <img src={hospitalLogo} alt="Darul Shifa General Hospital" className="dashboard-header-logo" />
       </div>
 
       <div className="accounts-type-grid">

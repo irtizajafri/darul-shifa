@@ -1,6 +1,8 @@
 const svc = require('./accounts.service');
 const cashFlowSvc = require('./cashFlow.service');
 const reconSvc = require('./bankRecon.service');
+const incomeExpenseSvc = require('./incomeExpense.service');
+const refundStatementSvc = require('./refundStatement.service');
 const { success, fail } = require('../../utils/response');
 
 const et = (req) => req.query.entityType || 'non-corporate';
@@ -232,6 +234,11 @@ async function getCashFlowStatement(req, res, next) {
   try { success(res, await cashFlowSvc.getCashFlowStatement({ entityType: et(req), year: req.query.year, month: req.query.month })); }
   catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
 }
+// Reports → Cash In Hand Statement
+async function getCashInHandStatement(req, res, next) {
+  try { success(res, await cashFlowSvc.getCashInHandStatement({ entityType: et(req), year: req.query.year, month: req.query.month })); }
+  catch (e) { if (e.status) return fail(res, e.status, e.message); next(e); }
+}
 
 // Transactions → Presented / Unpresented Cheques
 async function getChequePresentation(req, res, next) { try { success(res, await svc.getChequePresentation({ entityType: et(req), q: req.query.q })); } catch (e) { next(e); } }
@@ -377,6 +384,12 @@ const reconFail = (res, next, e) => (e.status ? fail(res, e.status, e.message) :
 const rq = (fn) => async (req, res, next) => { try { success(res, await fn(req)); } catch (e) { reconFail(res, next, e); } };
 const getBankBook = rq((req) => reconSvc.getBankBook(req.query));
 const getBankBalances = rq((req) => reconSvc.getBankBalances({ entityType: et(req), asOf: req.query.asOf }));
+const getBankMonthStatement = rq((req) => reconSvc.getBankMonthStatement(req.query));
+// Reports → Income & Expense Summary (and its typed figures)
+const getIncomeExpenseSummary = rq((req) => incomeExpenseSvc.getIncomeExpenseSummary({ entityType: et(req), year: req.query.year, month: req.query.month }));
+const saveIncomeExpenseInputs = rq((req) => incomeExpenseSvc.saveIncomeExpenseInputs({ ...(req.body || {}), userName: req.user?.name || req.user?.email || null }));
+// Reports → Slip & Admission Refund Statement
+const getRefundStatement = rq((req) => refundStatementSvc.getRefundStatement({ entityType: et(req), from: req.query.from, to: req.query.to }));
 const getStatementBatches = rq((req) => reconSvc.listBatches(req.query));
 const deleteStatementBatch = rq((req) => reconSvc.deleteBatch(req.query));
 const getReconItems = rq((req) => reconSvc.getReconItems(req.query));
@@ -409,10 +422,10 @@ module.exports = {
   createVoucherIncome, getVoucherIncomes, updateVoucherIncome,
   getIncomeDrafts, updateIncomeDraft, postIncomeDraft, refreshIncomeDraft,
   getChequePresentation, presentCheque, unpresentCheque,
-  getBankBook, getBankBalances, getStatementBatches, deleteStatementBatch, getReconItems,
+  getBankBook, getBankBalances, getBankMonthStatement, getIncomeExpenseSummary, saveIncomeExpenseInputs, getRefundStatement, getStatementBatches, deleteStatementBatch, getReconItems,
   reconAutoMatch, reconMatch, reconUnmatch, reconAddToBooks, reconExpenseAccounts,
   getReconStatement, reconSignOff, reconReopen,
-  getCashFlowStatement,
+  getCashFlowStatement, getCashInHandStatement,
   getNextVoucherNo,
   getVouchersForReprint, getVoucherSummary, getVoucherSummaryMatrix, getIncomeSummaryMatrix, bulkImportIncomeSummary, getDistinctPayeeNames, getGLBalanceReport, getConsultantPaymentHistory, getSupplierPaymentHistory,
   saveDraftExpenseEntry, getDraftExpenses, deleteDraftExpense, moveDraftExpense, flashDraftsNow,

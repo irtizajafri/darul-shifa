@@ -77,7 +77,7 @@ const reportsItems = [
   { key: 'date-wise-supplier-summary',    label: 'Date Wise Supplier Summary',    icon: CalendarDays },
   { key: 'supplier-payment-history',      label: 'Supplier Payment History',      icon: History },
   { key: 'un-presented-cheque-list',      label: 'Un-Presented Cheque List',      icon: AlertCircle },
-  { key: 'slip-refund-statement',         label: 'Slip Refund Statement',         icon: ReceiptText },
+  { key: 'slip-refund-statement',         label: 'Slip & Admission Refund Statement', icon: ReceiptText },
   { key: 'consultant-payment-history',    label: 'Consultant Payment History',    icon: UserCheck },
   { key: 'cash-flow-statement',           label: 'Cash Flow Statement',           icon: Workflow },
   { key: 'bank-reconciliation-statement', label: 'Bank Reconciliation Statement', icon: Landmark },

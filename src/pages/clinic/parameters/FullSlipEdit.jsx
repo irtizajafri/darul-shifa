@@ -40,10 +40,15 @@ const PAYMENT_TYPES = [
   { value: 'panel', label: 'Panel' },
 ];
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MS', 'BABY', 'BABY OF'];
+// A stored time as the "YYYY-MM-DDTHH:mm" a datetime-local box shows, in PKT.
+const toPktInput = (d) => (d ? new Date(new Date(d).getTime() + 5 * 3600 * 1000).toISOString().slice(0, 16) : '');
+const fmtPktInput = (v) => (v ? `${v.slice(8, 10)}-${v.slice(5, 7)}-${v.slice(0, 4)} ${v.slice(11, 16)}` : '');
 
 export default function FullSlipEdit() {
   const { user } = useAuthStore();
   const editedBy = user?.name || user?.username || user?.email || 'Super Admin';
+  // Slip date & time is changed by the Super Admin only (owner, 2026-11-21); the server checks it too.
+  const isSuperAdmin = Boolean(user?.isSuperAdmin);
 
   // search
   const [q, setQ] = useState('');
@@ -119,6 +124,7 @@ export default function FullSlipEdit() {
         gender: v.gender || 'male', phoneNo: v.phoneNo || '', referredBy: v.referredBy || '',
         visitType: v.visitType || 'opd', admitNo: v.admitNo || '', adjustPayment: Boolean(v.adjustPayment),
         paymentType: v.paymentType || 'cash',
+        slipDateTime: toPktInput(v.createdAt),
       });
       setRows(v.doctors.map((d) => ({
         key: `r${d.id}`, id: d.id, doctorId: d.doctorId, subDeptId: d.subDeptId,
@@ -200,10 +206,15 @@ export default function FullSlipEdit() {
     const bad = rows.find((r) => !(Number(r.amount) >= 0) || r.amount === '');
     if (bad) return toast.error(`${bad.subDeptName}: amount sahi likhein`);
 
+    if (dateChanged && !form.slipDateTime) return toast.error('Slip ki date / time likhein');
     const changeLine = `Total ${fmt(original.totalAmount)} → ${fmt(totals.total)},  Received ${fmt(original.receive)} → ${fmt(receive)}`;
+    const dateLines = dateChanged
+      ? [`Date / Time: ${fmtPktInput(toPktInput(original.createdAt))} → ${fmtPktInput(form.slipDateTime)}`,
+        'Slip naye din ki reports me chali jayegi. Jis din ka income voucher pehle post ho chuka hai, woh khud nahi badlega.']
+      : [];
     const ok = await confirmDialog({
       title: warnings.length ? 'Warnings ke saath save karein?' : 'Slip save karein?',
-      message: [...warnings.map((w) => `• ${w.message}`), '', changeLine].join('\n').trim(),
+      message: [...warnings.map((w) => `• ${w.message}`), '', changeLine, ...dateLines].join('\n').trim(),
       confirmLabel: 'Save',
       danger: warnings.length > 0,
     });
@@ -221,6 +232,7 @@ export default function FullSlipEdit() {
           ccPercentage: totals.pct,
           ccMinAmount: totals.min,
           baseAmount: amountOnly ? Number(baseAmount) || 0 : undefined,
+          createdAt: isSuperAdmin && dateChanged ? form.slipDateTime : undefined,
           editedBy,
           doctors: rows.map((r) => ({ id: r.id, doctorId: r.doctorId, subDeptId: r.subDeptId, amount: Number(r.amount) || 0, quantity: r.quantity })),
         }),
@@ -270,6 +282,7 @@ export default function FullSlipEdit() {
   useEffect(() => { setShowLogs(false); }, [original?.id]);
 
   const isPanel = form?.paymentType === 'panel';
+  const dateChanged = Boolean(form && original) && form.slipDateTime !== toPktInput(original.createdAt);
 
   return (
     <div className="fse-page">
@@ -337,6 +350,12 @@ export default function FullSlipEdit() {
               <h2 className="fse-h2">Patient</h2>
               <div className="fse-grid">
                 <label>Slip #<input value={form.serialNo} onChange={setF('serialNo')} /></label>
+                {isSuperAdmin && (
+                  <label>Slip Date &amp; Time
+                    <input type="datetime-local" value={form.slipDateTime} max={toPktInput(new Date())} onChange={setF('slipDateTime')} />
+                    {dateChanged && <span className="fse-date-was">pehle {fmtPktInput(toPktInput(original.createdAt))}</span>}
+                  </label>
+                )}
                 <label>MR #<input value={form.mrNo} onChange={setF('mrNo')} inputMode="numeric" /></label>
                 <label>Title
                   <select value={form.patientType} onChange={setF('patientType')}>
@@ -488,7 +507,7 @@ export default function FullSlipEdit() {
                 {logs.length === 0 ? <p className="fse-empty">Is slip ki koi edit history nahi.</p> : (
                   <div className="table-wrap">
                     <table className="fse-table">
-                      <thead><tr><th>Kab</th><th>Kis ne</th><th className="r">Total</th><th className="r">Received</th><th>Tests</th></tr></thead>
+                      <thead><tr><th>Kab</th><th>Kis ne</th><th className="r">Total</th><th className="r">Received</th><th>Slip Date</th><th>Tests</th></tr></thead>
                       <tbody>
                         {logs.map((l) => (
                           <tr key={l.id}>
@@ -496,6 +515,7 @@ export default function FullSlipEdit() {
                             <td>{l.editedBy || '-'}</td>
                             <td className="r">{fmt(l.before?.totalAmount)} → {fmt(l.after?.totalAmount)}</td>
                             <td className="r">{fmt(l.before?.receive)} → {fmt(l.after?.receive)}</td>
+                            <td>{l.before?.createdAt && l.after?.createdAt && l.before.createdAt !== l.after.createdAt ? `${fmtDateTime(l.before.createdAt)} → ${fmtDateTime(l.after.createdAt)}` : ''}</td>
                             <td>{(l.after?.doctors || []).map((d) => d.subDept).join(', ')}</td>
                           </tr>
                         ))}

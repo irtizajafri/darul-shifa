@@ -17,13 +17,13 @@ const REPORTS = [
   { key: 'date-wise-supplier-summary',   label: 'Date Wise Supplier Summary',   icon: CalendarDays,  desc: 'Supplier payments grouped by date' },
   { key: 'supplier-payment-history',     label: 'Supplier Payment History',     icon: History,       desc: 'Full payment history per supplier' },
   { key: 'un-presented-cheque-list',     label: 'Un-Presented Cheque List',     icon: AlertCircle,   desc: 'Cheques issued but not yet presented to the bank' },
-  { key: 'slip-refund-statement',        label: 'Slip Refund Statement',        icon: ReceiptText,   desc: 'Statement of all slip refunds in a period' },
+  { key: 'slip-refund-statement',        label: 'Slip & Admission Refund Statement', icon: ReceiptText, desc: 'Every slip and admission refund with its voucher # — date, type and voucher filters' },
   { key: 'consultant-payment-history',   label: 'Consultant Payment History',   icon: UserCheck,     desc: 'Payment history for consultants / doctors' },
   { key: 'cash-flow-statement',          label: 'Cash Flow Statement',          icon: Workflow,      desc: 'Day-wise revenue (Patients List) and payments by Main GL — Cash / Online / Cheque' },
   { key: 'bank-reconciliation-statement',label: 'Bank Reconciliation Statement',icon: Landmark,      desc: 'Reconcile bank balances with book balances' },
-  { key: 'cash-in-hand-statement',       label: 'Cash In Hand Statement',       icon: HandCoins,     desc: 'Summary of cash on hand across petty cash and accounts' },
-  { key: 'bank-balance-statement',       label: 'Bank Balance Statement',       icon: Building2,     desc: 'Balance position of all linked bank accounts' },
-  { key: 'income-expense-summary',       label: 'Income & Expense Summary',     icon: BarChart3,     desc: 'Side-by-side comparison of income and expenses' },
+  { key: 'cash-in-hand-statement',       label: 'Cash In Hand Statement',       icon: HandCoins,     desc: 'Day-wise cash still in hand — Revenue Cash − Paid Cash, less what Bank Deposit shows' },
+  { key: 'bank-balance-statement',       label: 'Bank Balance Statement',       icon: Building2,     desc: 'One bank, one month — every deposit / cheque with Dr, Cr and balance, in colour categories' },
+  { key: 'income-expense-summary',       label: 'Income & Expense Summary',     icon: BarChart3,     desc: 'Month: Receipts (income heads) and Payments (Main GL), Closing and Reconciliation' },
   { key: 'balance-sheet',               label: 'Balance Sheet',                icon: Scale,         desc: 'Assets, liabilities and equity at a point in time' },
 ];
 

@@ -11,8 +11,10 @@ const clinicSvc = require('../clinic/clinic.service');
 //   Payments — this book's posted Voucher Expense, one group per Main GL,
 //     split by Cash / Online / Cheque.
 //   Then Total Paid Cash / Online / Cheque, Total Payments, and Cash
-//   Deposited to Bank (Bank Deposit by its "Deposit Of" day) with the
-//   deposit date(s).
+//   Deposited to Bank = Revenue Cash − Total Paid Cash of the day (owner,
+//   2026-11-21), with the Deposit Date(s) of that day's Bank Deposit (by
+//   its "Deposit Of" day). The amount actually entered on Bank Deposit is
+//   still sent as deposit.banked.
 // Read-only.
 
 const MODES = ['cash', 'online', 'cheque'];
@@ -111,6 +113,7 @@ async function getCashFlowStatement({ entityType, year, month } = {}) {
     expense: {}, groupTotal: {},
     paid: { cash: 0, online: 0, cheque: 0, total: 0 },
     deposit: 0,
+    banked: 0,
   };
   const out = days.map((d) => {
     const r = rowOf.get(d);
@@ -134,12 +137,19 @@ async function getCashFlowStatement({ entityType, year, month } = {}) {
     paid.total = round2(paid.cash + paid.online + paid.cheque);
     Object.keys(total.revenue).forEach((k) => { total.revenue[k] += rev[k]; });
     Object.keys(total.paid).forEach((k) => { total.paid[k] += paid[k]; });
-    total.deposit += r.deposit.amount;
-    return { date: d, revenue: rev, expense: r.expense, paid, deposit: { amount: round2(r.deposit.amount), dates: r.deposit.dates.sort() } };
+    // The cash left to go to the bank: the day's cash in less the cash paid out.
+    const toBank = round2(rev.cash - paid.cash);
+    total.deposit += toBank;
+    total.banked += r.deposit.amount;
+    return {
+      date: d, revenue: rev, expense: r.expense, paid,
+      deposit: { amount: toBank, banked: round2(r.deposit.amount), dates: r.deposit.dates.sort() },
+    };
   });
   Object.keys(total.revenue).forEach((k) => { total.revenue[k] = round2(total.revenue[k]); });
   Object.keys(total.paid).forEach((k) => { total.paid[k] = round2(total.paid[k]); });
   total.deposit = round2(total.deposit);
+  total.banked = round2(total.banked);
   for (const g of groups) {
     const t = total.expense[g.id] || { cash: 0, online: 0, cheque: 0 };
     MODES.forEach((md) => { t[md] = round2(t[md]); });
@@ -150,4 +160,37 @@ async function getCashFlowStatement({ entityType, year, month } = {}) {
   return { entityType: book, year: y, month: m, groups, days: out, total };
 }
 
-module.exports = { getCashFlowStatement };
+// Accounts → Reports → Cash In Hand Statement (owner, 2026-11-21). Built on
+// the Cash Flow Statement so the two always agree. One row per day:
+//   Cash Deposited to Bank = Revenue Cash − Total Paid Cash (the cash that
+//     should go to the bank),
+//   Deposited = what Bank Deposit shows for that day (its "Deposit Of" day),
+//     with the Deposit Date(s),
+//   Cash In Hand = the two's difference — that day's cash not banked yet,
+//   Total Cash In Hand = the days added up through the month.
+// Minus stays minus (more cash paid out or banked than came in). Last
+// month's leftover cash isn't carried in. Read-only.
+async function getCashInHandStatement({ entityType, year, month } = {}) {
+  const cf = await getCashFlowStatement({ entityType, year, month });
+  const total = { revenueCash: 0, paidCash: 0, toBank: 0, deposited: 0, inHand: 0 };
+  let running = 0;
+  const days = cf.days.map((d) => {
+    const toBank = d.deposit.amount;
+    const deposited = d.deposit.banked;
+    const inHand = round2(toBank - deposited);
+    running = round2(running + inHand);
+    total.revenueCash += d.revenue.cash;
+    total.paidCash += d.paid.cash;
+    total.toBank += toBank;
+    total.deposited += deposited;
+    return {
+      date: d.date, revenueCash: d.revenue.cash, paidCash: d.paid.cash,
+      toBank, deposited, depositDates: d.deposit.dates, inHand, totalInHand: running,
+    };
+  });
+  Object.keys(total).forEach((k) => { total[k] = round2(total[k]); });
+  total.inHand = round2(total.toBank - total.deposited);
+  return { entityType: cf.entityType, year: cf.year, month: cf.month, days, total };
+}
+
+module.exports = { getCashFlowStatement, getCashInHandStatement };

@@ -8,11 +8,10 @@
     margin-bottom: 2rem;
     padding: 0.5rem 0;
 
+    // The SVG logo is wide (856×130) and runs edge to edge — sized by width.
     .dashboard-header-logo {
-      height: 140px;
-      width: auto;
-      max-width: 100%;
-      object-fit: contain;
+      width: min(620px, 100%);
+      height: auto;
       display: block;
     }
   }

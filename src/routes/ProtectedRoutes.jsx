@@ -48,6 +48,9 @@ import UnpresentedChequeList from '../pages/accounts/reports/UnpresentedChequeLi
 import ChequeWiseVoucherSummary from '../pages/accounts/reports/ChequeWiseVoucherSummary';
 import AccountsReportView from '../pages/accounts/reports/AccountsReportView';
 import CashFlowStatement from '../pages/accounts/reports/CashFlowStatement';
+import CashInHandStatement from '../pages/accounts/reports/CashInHandStatement';
+import IncomeExpenseSummary from '../pages/accounts/reports/IncomeExpenseSummary';
+import RefundStatement from '../pages/accounts/reports/RefundStatement';
 import BankBook from '../pages/accounts/bankRecon/BankBook';
 import BankReconciliation from '../pages/accounts/bankRecon/BankReconciliation';
 import BankReconciliationStatement from '../pages/accounts/bankRecon/BankReconciliationStatement';
@@ -306,6 +309,9 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<UnpresentedChequeList />} />
         <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<ChequeWiseVoucherSummary />} />
         <Route path="accounts/:entityType/reports/cash-flow-statement" element={<CashFlowStatement />} />
+        <Route path="accounts/:entityType/reports/cash-in-hand-statement" element={<CashInHandStatement />} />
+        <Route path="accounts/:entityType/reports/income-expense-summary" element={<IncomeExpenseSummary />} />
+        <Route path="accounts/:entityType/reports/slip-refund-statement" element={<RefundStatement />} />
         <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<BankReconciliationStatement />} />
         <Route path="accounts/:entityType/reports/bank-balance-statement" element={<BankBalanceStatement />} />
         <Route path="accounts/:entityType/reports/:reportKey/view" element={<AccountsReportView />} />
@@ -350,6 +356,9 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts"><UnpresentedChequeList /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts"><ChequeWiseVoucherSummary /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/cash-flow-statement" element={<PermissionGuard module="accounts"><CashFlowStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/cash-in-hand-statement" element={<PermissionGuard module="accounts"><CashInHandStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/income-expense-summary" element={<PermissionGuard module="accounts"><IncomeExpenseSummary /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/slip-refund-statement" element={<PermissionGuard module="accounts"><RefundStatement /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<PermissionGuard module="accounts"><BankReconciliationStatement /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/bank-balance-statement" element={<PermissionGuard module="accounts"><BankBalanceStatement /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts"><AccountsReportView /></PermissionGuard>} />
