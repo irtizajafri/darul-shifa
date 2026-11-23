@@ -190,6 +190,8 @@ async function getCashInHandStatement({ entityType, year, month } = {}) {
   });
   Object.keys(total).forEach((k) => { total[k] = round2(total[k]); });
   total.inHand = round2(total.toBank - total.deposited);
+  // The month's CC slips (Cash Flow's CC-Income), for the Income & Expense Summary.
+  total.ccSlips = round2(cf.total.revenue.cc);
   return { entityType: cf.entityType, year: cf.year, month: cf.month, days, total };
 }
 

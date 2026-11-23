@@ -20,7 +20,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const pktToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const money = (n) => (n === null || n === undefined ? '' : Number(n).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const moneyOrBlank = (n) => (Number(n) ? money(n) : '');
-const TYPED = ['openingBalance', 'extraDeposit', 'chequeWriteOff', 'outDatedCheques', 'receivableBF', 'pettyCash'];
+const TYPED = ['openingBalance', 'extraDeposit', 'chequeWriteOff', 'outDatedCheques', 'receivableBF', 'pettyCash', 'jazzCash'];
 const toForm = (inputs) => Object.fromEntries(TYPED.map((k) => [k, inputs?.[k] === null || inputs?.[k] === undefined ? '' : String(inputs[k])]));
 
 async function call(url, opts) {
@@ -130,11 +130,18 @@ export default function IncomeExpenseSummary() {
     aoa.push(['Other Deposits total', '', data.otherDeposits.total], [], ['PAYMENTS', '', '']);
     data.payments.lines.forEach((l) => aoa.push([l.name, l.amount, '']));
     data.payments.bankLines.forEach((l) => aoa.push([l.name, l.amount, '']));
-    aoa.push(['Total Payments', '', data.payments.total], [], ['CLOSING', '', '']);
+    aoa.push(['Total Payments', '', data.payments.total]);
+    const cb = data.closingBalances;
+    aoa.push(['Un-presented Cheques', -cb.unpresented, ''], ['Closing Balances', '', ''], ['Petty Cash', cb.pettyCash, '']);
+    cb.banks.forEach((b) => aoa.push([`Cash at Bank (closing) — ${b.name}`, b.closing, '']));
+    aoa.push(['Cash at JazzCash', cb.jazzCash, ''], ['Cash in Hand', n(cb.cashInHand), ''], ['Cash in Hand Last Month', n(cb.cashInHandLastMonth), ''], ['Closing Balances total', '', cb.total], ['TOTAL', '', data.totals.payments]);
+    aoa.push([], ['Receipts TOTAL', '', data.totals.receipts], ['Payments TOTAL', '', data.totals.payments], ['Farq', '', data.totals.difference]);
+    if (data.creditCard) aoa.push(['Credit Card Slip Amount (info)', data.creditCard.slips, ''], ['Received Amount (info)', data.creditCard.received, '']);
+    aoa.push([], ['CLOSING', '', '']);
     const c = data.closing;
     aoa.push(['Opening Balance', c.opening, ''], ['Receipts', c.receipts, ''], ['Other Deposits', c.otherDeposits, ''], ['Payments', -c.payments, ''], ['Out Dated Cheques', -c.outDatedCheques, ''], ['A/c Receivable B/F', -c.receivableBF, ''], ['Closing', '', c.amount], [], ['RECONCILIATION', '', '']);
     const r = data.reconciliation;
-    aoa.push(['Cash in Hand (this month)', n(r.cashInHand), ''], ['Cash in Hand (last month)', n(r.cashInHandLastMonth), ''], ['Petty Cash', r.pettyCash, ''], ['A/c Receivable B/F', r.receivableBF, '']);
+    aoa.push(['Cash in Hand (this month)', n(r.cashInHand), ''], ['Cash in Hand (last month)', n(r.cashInHandLastMonth), ''], ['Petty Cash', r.pettyCash, ''], ['Cash at JazzCash', r.jazzCash, ''], ['A/c Receivable B/F', r.receivableBF, '']);
     r.banks.forEach((b) => aoa.push([`Cash at Bank — ${b.name}`, b.closing, '']));
     aoa.push(['Un-presented Cheques', -r.unpresented, ''], ['Total', '', r.total], ['Difference from Closing', '', r.difference]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -224,6 +231,15 @@ export default function IncomeExpenseSummary() {
                   </tr>
                 ))}
                 <tr className="is-total"><td>Other Deposits</td><td /><td className="n">{money(data.otherDeposits.total)}</td></tr>
+                {data.creditCard && (
+                  <>
+                    <tr className="is-head"><td colSpan={3}>Credit Card <span className="ies-note-inline">(sirf jaankari — total me nahi)</span></td></tr>
+                    <tr className="is-info"><td>Credit Card Slip Amount <div className="ies-note">is mahine bani CC slips</div></td><td className="n">{money(data.creditCard.slips)}</td><td /></tr>
+                    <tr className="is-info"><td>Received Amount <div className="ies-note">bank se aaya (CC settlements)</div></td><td className="n">{money(data.creditCard.received)}</td><td /></tr>
+                    <tr className="is-info"><td>Farq <div className="ies-note">abhi bank ke paas / pichle mahine ki slips ka aaya</div></td><td className={`n${neg(data.creditCard.difference)}`}>{money(data.creditCard.difference)}</td><td /></tr>
+                  </>
+                )}
+                <tr className="is-grand"><td>TOTAL</td><td /><td className={`n${neg(data.totals.receipts)}`}>{money(data.totals.receipts)}</td></tr>
               </tbody>
             </table>
 
@@ -235,8 +251,27 @@ export default function IncomeExpenseSummary() {
                 <tr className="is-head"><td colSpan={3}>Bank (not in books)</td></tr>
                 {data.payments.bankLines.map((l) => <tr key={l.key}><td>{l.name}</td><td className="n">{moneyOrBlank(l.amount)}</td><td /></tr>)}
                 <tr className="is-total"><td>Total Payments</td><td /><td className="n">{money(data.payments.total)}</td></tr>
+                <tr>
+                  <td>Un-presented Cheques <div className="ies-note">{data.closingBalances.unpresentedCheques} cheque(s), mahine ke aakhir tak clear nahi hue — minus</div></td>
+                  <td className="n">{money(-data.closingBalances.unpresented)}</td><td />
+                </tr>
+                <tr className="is-head"><td colSpan={3}>Closing Balances</td></tr>
+                <tr><td>Petty Cash</td><td className="n">{typed('pettyCash', 'Petty Cash')}</td><td /></tr>
+                {data.closingBalances.banks.map((b) => (
+                  <tr key={b.id}><td>Cash at Bank (closing) — {b.name}</td><td className={`n${neg(b.closing)}`}>{money(b.closing)}</td><td /></tr>
+                ))}
+                <tr><td>Cash at JazzCash</td><td className="n">{typed('jazzCash', 'Cash at JazzCash')}</td><td /></tr>
+                <tr><td>Cash in Hand</td><td className="n">{data.closingBalances.cashInHand === null ? '—' : money(data.closingBalances.cashInHand)}</td><td /></tr>
+                <tr><td>Cash in Hand Last Month</td><td className="n">{data.closingBalances.cashInHandLastMonth === null ? '—' : money(data.closingBalances.cashInHandLastMonth)}</td><td /></tr>
+                <tr className="is-balance"><td>Closing Balances</td><td /><td className={`n${neg(data.closingBalances.total)}`}>{money(data.closingBalances.total)}</td></tr>
+                <tr className="is-grand"><td>TOTAL</td><td /><td className={`n${neg(data.totals.payments)}`}>{money(data.totals.payments)}</td></tr>
               </tbody>
             </table>
+          </div>
+
+          <div className={`ies-diffbar${Math.abs(data.totals.difference) > 0.005 ? ' is-off' : ''}`}>
+            <span>Receipts TOTAL {money(data.totals.receipts)} − Payments TOTAL {money(data.totals.payments)}</span>
+            <b>Farq: {money(data.totals.difference)}</b>
           </div>
 
           <div className="ies-grid">
@@ -260,7 +295,8 @@ export default function IncomeExpenseSummary() {
               <tbody>
                 <tr><td>Cash in Hand (this month)</td><td className="n">{data.reconciliation.cashInHand === null ? '—' : money(data.reconciliation.cashInHand)}</td><td /></tr>
                 <tr><td>Cash in Hand (last month)</td><td className="n">{data.reconciliation.cashInHandLastMonth === null ? '—' : money(data.reconciliation.cashInHandLastMonth)}</td><td /></tr>
-                <tr><td>Petty Cash</td><td className="n">{typed('pettyCash', 'Petty Cash')}</td><td /></tr>
+                <tr><td>Petty Cash</td><td className="n">{moneyOrBlank(data.reconciliation.pettyCash)}</td><td /></tr>
+                <tr><td>Cash at JazzCash</td><td className="n">{moneyOrBlank(data.reconciliation.jazzCash)}</td><td /></tr>
                 <tr><td>A/c Receivable B/F</td><td className="n">{moneyOrBlank(data.reconciliation.receivableBF)}</td><td /></tr>
                 {data.reconciliation.banks.map((b) => (
                   <tr key={b.id}><td>Cash at Bank (closing) — {b.name}</td><td className={`n${neg(b.closing)}`}>{money(b.closing)}</td><td /></tr>

@@ -15,15 +15,23 @@ const cashFlow = require('./cashFlow.service');
 //     Bank Charges and Not Make Voucher.
 //   Closing = Opening + Receipts + Other deposits − (Payments + Out Dated
 //     Cheques + A/c Receivable B/F), as on the sheet.
-//   Reconciliation — Cash in Hand (this month and last, Cash GL only),
-//     Petty Cash and A/c Receivable B/F (typed), each bank's closing on the
-//     Bank Balance Statement, less its un-presented cheques; the difference
-//     from Closing is shown.
+//   Below Payments, as on the sheet (owner, 2026-11-23): Un-presented
+//     Cheques at the month's end (the Un-Presented Cheque List's rule as it
+//     stood on the last day), then the closing balances — Petty Cash and
+//     Cash at JazzCash (typed), each other bank's closing on the Bank Balance
+//     Statement, Cash in Hand this month and last (Cash In Hand Statement).
+//     TOTAL each side: Opening + Receipts + Other deposits | Payments −
+//     Un-presented + closing balances, and their difference. Credit Card
+//     Slip Amount / Received Amount are shown for information only.
+//   Reconciliation — the same balances (+ A/c Receivable B/F) less the
+//     un-presented cheques; the difference from Closing is shown.
 // Opening: typed once (AccMonthSummaryInput, migration 081); after that each
 // month opens with the month before's closing unless one is typed for it.
 // Read-only apart from saving the typed figures.
 
-const KEYS = ['openingBalance', 'extraDeposit', 'chequeWriteOff', 'outDatedCheques', 'receivableBF', 'pettyCash'];
+const KEYS = ['openingBalance', 'extraDeposit', 'chequeWriteOff', 'outDatedCheques', 'receivableBF', 'pettyCash', 'jazzCash'];
+// JazzCash's balance is typed (owner, 2026-11-23) — a JazzCash bank account isn't counted again.
+const isJazzCash = (bank) => /jazz/i.test(String(bank?.bankName || ''));
 const MAX_CHAIN = 36; // months a carried opening looks back for the typed one
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -135,7 +143,8 @@ function sections(f = EMPTY, inp = {}, names = {}) {
     { key: 'notPosted', name: 'Not Posted Income (pending vouchers)', amount: round2(f.notPosted) },
     { key: 'cc', name: 'Credit Card (CC settlements)', amount: round2(f.cc) },
     { key: 'panel', name: 'Panel Cheques Deposited', amount: round2(f.panel) },
-    { key: 'bankIn', name: 'Other Bank Deposits (not in books)', amount: round2(f.bankIn) },
+    // Bank statement credits matched to no Bank Deposit / CC / panel cheque / income entry.
+    { key: 'bankIn', name: 'Others Bank Deposit (bank statement, not matched)', amount: round2(f.bankIn) },
     { key: 'extraDeposit', name: 'Extra Deposit', amount: round2(inp.extraDeposit), typed: true },
     { key: 'chequeWriteOff', name: 'Cheq W/O', amount: round2(inp.chequeWriteOff), typed: true },
   ];
@@ -156,6 +165,32 @@ function sections(f = EMPTY, inp = {}, names = {}) {
     receipts, otherDeposits, payments, bankPayments, receiptsTotal, otherTotal, paymentsTotal, outDated, receivable,
     net: round2(receiptsTotal + otherTotal - paymentsTotal - outDated - receivable),
   };
+}
+
+// Un-presented at the month's end — the Un-Presented Cheque List's rule
+// (this book's cheque vouchers with a cheque # and date, not matched to the
+// bank statement and not ticked presented) as it stood on the last day, so
+// an old month's figure doesn't change later.
+async function unpresentedAt(book, last) {
+  const rows = await prisma.accVoucherExpenseEntry.findMany({
+    where: {
+      chequeNo: { not: null },
+      chequeDate: { not: null, lte: new Date(Date.parse(`${last}T23:59:59Z`) + 864e5) },
+      voucher: { entityType: book, mode: 'cheque' },
+    },
+    select: { amount: true, chequeNo: true, chequeDate: true, presentedDate: true, matchedStatementLine: { select: { date: true } } },
+  });
+  let total = 0;
+  const cheques = new Set();
+  for (const e of rows) {
+    if (recon.dayOf(e.chequeDate) > last) continue;
+    const cleared = (e.matchedStatementLine && recon.dayOf(e.matchedStatementLine.date) <= last)
+      || (e.presentedDate && recon.dayOf(e.presentedDate) <= last);
+    if (cleared) continue;
+    total += Number(e.amount) || 0;
+    cheques.add(String(e.chequeNo).trim().toUpperCase());
+  }
+  return { total: round2(total), count: cheques.size };
 }
 
 async function getIncomeExpenseSummary({ entityType, year, month } = {}) {
@@ -194,20 +229,29 @@ async function getIncomeExpenseSummary({ entityType, year, month } = {}) {
   const m = Number(ym.slice(5, 7));
   const prev = addMonths(ym, -1);
   const cashBook = book === 'non-corporate';
-  const [cihNow, cihPrev, bankStmts] = await Promise.all([
+  const statementBanks = banks.filter((b) => !isJazzCash(b));
+  const [cihNow, cihPrev, bankStmts, unp] = await Promise.all([
     cashBook ? cashFlow.getCashInHandStatement({ entityType: book, year: y, month: m }) : null,
     cashBook ? cashFlow.getCashInHandStatement({ entityType: book, year: Number(prev.slice(0, 4)), month: Number(prev.slice(5, 7)) }) : null,
-    Promise.all(banks.map((b) => recon.getBankMonthStatement({ bankAccountId: b.id, year: y, month: m }))),
+    Promise.all(statementBanks.map((b) => recon.getBankMonthStatement({ bankAccountId: b.id, year: y, month: m }))),
+    unpresentedAt(book, lastDayOf(ym)),
   ]);
   const bankRows = bankStmts
-    .map((st, i) => ({ id: banks[i].id, name: `${banks[i].bankName} — ${banks[i].accountNumber}`, active: banks[i].isActive, closing: st.closing, unpresented: st.unpresentedTotal }))
-    .filter((b) => b.active || b.closing || b.unpresented);
+    .map((st, i) => ({ id: statementBanks[i].id, name: `${statementBanks[i].bankName} — ${statementBanks[i].accountNumber}`, active: statementBanks[i].isActive, closing: st.closing }))
+    .filter((b) => b.active || b.closing);
   const cashInHand = cihNow ? round2(cihNow.total.inHand) : null;
   const cashInHandLastMonth = cihPrev ? round2(cihPrev.total.inHand) : null;
   const pettyCash = round2(inp.pettyCash);
-  const unpresented = round2(bankRows.reduce((t, b) => t + b.unpresented, 0));
+  const jazzCash = round2(inp.jazzCash);
+  const unpresented = unp.total;
   const banksTotal = round2(bankRows.reduce((t, b) => t + b.closing, 0));
-  const reconTotal = round2((cashInHand || 0) + (cashInHandLastMonth || 0) + pettyCash + s.receivable + banksTotal - unpresented);
+  const balancesTotal = round2(pettyCash + banksTotal + jazzCash + (cashInHand || 0) + (cashInHandLastMonth || 0));
+  const reconTotal = round2(balancesTotal + s.receivable - unpresented);
+  // TOTAL on each side, as on the sheet.
+  const receiptsSide = round2(opening + s.receiptsTotal + s.otherTotal);
+  const paymentsSide = round2(s.paymentsTotal - unpresented + balancesTotal);
+  const ccReceived = s.otherDeposits.find((l) => l.key === 'cc')?.amount || 0;
+  const ccSlips = cihNow ? round2(cihNow.total.ccSlips) : null;
 
   return {
     entityType: book, year: y, month: m,
@@ -219,8 +263,14 @@ async function getIncomeExpenseSummary({ entityType, year, month } = {}) {
       opening, receipts: s.receiptsTotal, otherDeposits: s.otherTotal, payments: s.paymentsTotal,
       outDatedCheques: s.outDated, receivableBF: s.receivable, amount: closing,
     },
+    closingBalances: {
+      unpresented, unpresentedCheques: unp.count,
+      pettyCash, banks: bankRows, jazzCash, cashInHand, cashInHandLastMonth, total: balancesTotal,
+    },
+    totals: { receipts: receiptsSide, payments: paymentsSide, difference: round2(receiptsSide - paymentsSide) },
+    creditCard: ccSlips === null ? null : { slips: ccSlips, received: ccReceived, difference: round2(ccSlips - ccReceived) },
     reconciliation: {
-      cashInHand, cashInHandLastMonth, pettyCash, receivableBF: s.receivable,
+      cashInHand, cashInHandLastMonth, pettyCash, jazzCash, receivableBF: s.receivable,
       banks: bankRows, banksTotal, unpresented, total: reconTotal, difference: round2(closing - reconTotal),
     },
     inputs: Object.fromEntries(KEYS.map((k) => [k, inp[k] === undefined ? null : inp[k]])),

@@ -22,7 +22,7 @@ function authMiddleware(req, res, next) {
   if (req.method === 'OPTIONS' || OPEN_PATHS.has(req.path)) return next();
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ ok: false, message: 'Login required — please log in again' });
+    return res.status(401).json({ ok: false, message: 'Login zaroori hai — dobara login karein' });
   }
   const token = authHeader.split(' ')[1];
   try {
@@ -35,7 +35,7 @@ function authMiddleware(req, res, next) {
     }
     next();
   } catch (err) {
-    return res.status(401).json({ ok: false, message: 'Session expired — please log in again' });
+    return res.status(401).json({ ok: false, message: 'Session khatam ho gaya — dobara login karein' });
   }
 }
 

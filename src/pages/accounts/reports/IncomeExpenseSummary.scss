@@ -66,9 +66,19 @@
     tr.is-total td { font-weight: 700; background: #f1f5f9; }
     tr.is-grand td { font-weight: 800; background: #e8eef5; border-top: 2px solid var(--ies-navy); }
     tr.is-diff td { font-weight: 700; color: #166534; }
+    // Closing Balances subtotal (the sheet's green cell) and information rows.
+    tr.is-balance td { font-weight: 800; background: #dcfce7; color: #14532d; }
+    tr.is-info td { color: var(--ies-muted); background: #fbfdff; }
     tr.is-diff.is-off td { color: var(--ies-warn); background: #fffbeb; }
   }
   .ies-muted { color: var(--ies-muted); font-size: 0.76rem; }
+  .ies-note-inline { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ies-muted); }
+  .ies-diffbar {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    margin: -2px 0 12px; padding: 7px 12px; font-size: 0.82rem; font-variant-numeric: tabular-nums;
+    color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px;
+    &.is-off { color: #92400e; background: #fffbeb; border-color: #fde68a; }
+  }
   .ies-note { margin: 2px 0 0; font-size: 0.7rem; font-weight: 400; color: var(--ies-muted); }
   .ies-input {
     width: 100%; max-width: 9rem; padding: 3px 6px; text-align: right; font: inherit; font-variant-numeric: tabular-nums;
