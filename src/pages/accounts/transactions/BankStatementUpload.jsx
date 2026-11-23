@@ -165,7 +165,11 @@ export default function BankStatementUpload() {
       if (!res.ok || json?.ok === false) throw new Error(json?.message || 'Failed');
       const d = json.data;
       setLastResult({ ...d, file: file.name, rows: rows.length });
-      if (d.imported) toast.success(`${d.imported} line(s) imported${d.skipped ? ` · ${d.skipped} already there, skipped` : ''}`);
+      // Matched on upload: Instrument No = cheque # / deposit slip # first, then amount + cheque date.
+      if (d.imported) {
+        toast.success(`${d.imported} line(s) imported${d.skipped ? ` · ${d.skipped} already there, skipped` : ''}`
+          + `${d.autoMatched ? ` · ${d.autoMatched} matched${d.matchedByInstrument ? ` (${d.matchedByInstrument} by Instrument No)` : ''}` : ''}`, { duration: 6000 });
+      }
       else toast(`All ${d.skipped} line(s) were already uploaded — nothing added`, { icon: 'ℹ️' });
       await fetchLines(bankAccountId);
     } catch (err) {

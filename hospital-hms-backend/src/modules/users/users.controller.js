@@ -24,6 +24,8 @@ async function update(req, res, next) {
   try {
     const { id } = req.params;
     const user = await service.update(id, req.body);
+    // New permissions take effect on the next request (Accounts book check).
+    require('../../middleware/accountsBook.middleware').forgetPermissions(id);
     return success(res, user, 'User updated successfully');
   } catch (err) {
     if (err?.status) return fail(res, err.status, err.message);

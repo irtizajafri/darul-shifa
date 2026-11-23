@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Stethoscope, Package, FlaskConical, Wallet, Workflow, Pill } from 'lucide-react';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
-import { hasPermission } from '../../utils/permissions';
+import { hasPermission, hasAccounts } from '../../utils/permissions';
 import PageLoader from '../../components/ui/PageLoader';
 import Card from '../../components/ui/Card';
 import Badge from '../../components/ui/Badge';
@@ -55,7 +55,10 @@ export default function MainDashboard() {
   // Sirf wahi modules dikho jis ki permission hai
   const modules = user?.isSuperAdmin
     ? ALL_MODULES
-    : ALL_MODULES.filter((m) => !m.permModule || hasPermission(user, m.permModule, m.permSubModule));
+    // Accounts / Canvas: either book counts (Cash GL or Corporate).
+    : ALL_MODULES.filter((m) => !m.permModule || (m.permModule === 'accounts'
+      ? hasAccounts(user, null, m.permSubModule ?? null)
+      : hasPermission(user, m.permModule, m.permSubModule)));
 
   useEffect(() => {
     clearModule();

@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { Settings2, BookOpen, AlignLeft, Layers, Users, Landmark, FileDigit, Tag, ArrowLeft, Copy } from 'lucide-react';
 import { useAccountsStore } from '../../../store/useAccountsStore';
 import { confirmDialog } from '../../../components/ui/ConfirmDialog';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { hasAccounts } from '../../../utils/permissions';
 import './AccountsParameters.scss';
 
 const ITEMS = [
@@ -19,6 +21,9 @@ const ITEMS = [
 
 export default function AccountsParameters() {
   const { entityType } = useParams();
+  const user = useAuthStore((st) => st.user);
+  // Only the parameters this book's permission allows (owner, 2026-11-23).
+  const items = ITEMS.filter((item) => user?.isSuperAdmin || hasAccounts(user, entityType, 'parameters', item.key));
   const navigate = useNavigate();
   const { copyChartToCorporate } = useAccountsStore();
 
@@ -79,7 +84,7 @@ export default function AccountsParameters() {
       )}
 
       <div className="acc-parameters__grid">
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <div
             key={item.key}
             className="acc-parameters__card"

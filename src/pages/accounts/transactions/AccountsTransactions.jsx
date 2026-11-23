@@ -1,6 +1,8 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, TrendingUp, TrendingDown, Printer, Landmark, Upload, SlidersHorizontal, FileText, CheckSquare, BookOpen, GitCompareArrows } from 'lucide-react';
 import './AccountsTransactions.scss';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { hasAccounts, accountsPermissionFor } from '../../../utils/permissions';
 
 const ITEMS = [
   {
@@ -67,6 +69,13 @@ const ITEMS = [
 
 export default function AccountsTransactions() {
   const { entityType } = useParams();
+  const user = useAuthStore((st) => st.user);
+  // Only the screens this book's permission allows (owner, 2026-11-23).
+  const items = ITEMS.filter((item) => {
+    if (user?.isSuperAdmin) return true;
+    const { subModule, tab } = accountsPermissionFor(`transactions/${item.key}`);
+    return hasAccounts(user, entityType, subModule, tab);
+  });
   const navigate = useNavigate();
 
   const label = entityType === 'corporate' ? 'Corporate' : 'Cash GL';
@@ -84,7 +93,7 @@ export default function AccountsTransactions() {
       </div>
 
       <div className="acc-transactions__grid">
-        {ITEMS.map((item) => (
+        {items.map((item) => (
           <div
             key={item.key}
             className="acc-transactions__card"

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useModuleStore } from '../../store/useModuleStore';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasAccounts } from '../../utils/permissions';
 import PageLoader from '../../components/ui/PageLoader';
 // Darul Shifa 35-years logo (owner, 2026-11-21).
 import hospitalLogo from '../../assets/logo.svg';
@@ -62,6 +64,9 @@ export default function AccountsModuleDashboard() {
   const [selected, setSelected] = useState(null);
   const { setModule } = useModuleStore();
   const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  // Each book shows only with its own permission (owner, 2026-11-23).
+  const visibleTypes = accountTypes.filter((a) => user?.isSuperAdmin || hasAccounts(user, a.key));
 
   useEffect(() => {
     setModule('accounts');
@@ -122,7 +127,7 @@ export default function AccountsModuleDashboard() {
       </div>
 
       <div className="accounts-type-grid">
-        {accountTypes.map((a) => (
+        {visibleTypes.map((a) => (
           <div
             key={a.key}
             className="accounts-type-card"

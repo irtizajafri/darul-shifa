@@ -22,6 +22,7 @@ const panelLabRoutes = require('./modules/panel-lab/panel-lab.routes');
 const pharmacyRoutes = require('./modules/pharmacy/pharmacy.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 const { authMiddleware } = require('./middleware/auth.middleware');
+const { accountsBookGuard } = require('./middleware/accountsBook.middleware');
 const { deviceGuard } = require('./modules/devices/devices.service');
 const devicesRoutes = require('./modules/devices/devices.routes');
 
@@ -51,7 +52,8 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/clinic', clinicRoutes);
 app.use('/api/leave-encashment', leaveEncashmentRoutes);
-app.use('/api/accounts', accountsRoutes);
+// Cash GL / Corporate each need their own permission (owner, 2026-11-23).
+app.use('/api/accounts', accountsBookGuard, accountsRoutes);
 app.use('/api/payslip-snapshot', payslipSnapshotRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/utilities', utilitiesRoutes);

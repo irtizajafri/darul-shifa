@@ -550,6 +550,8 @@ async function assertSerialNoAvailable(serialNo, ctx = {}) {
 // next morning PKT); the next day needs a new primary. Patient = Panel
 // Employee + Dependent (none = SELF), or, when no employee was picked,
 // Company + Patient Name. Emergency and Ambulance slips are never blocked.
+// A back-dated slip (Super Admin) is checked against ITS business day, not
+// today's (owner, 2026-11-23).
 const PANEL_PRIMARY_DEPARTMENTS = ['General OPD', 'Consultant OPD'];
 const PANEL_PRIMARY_EXEMPT_DEPARTMENTS = ['Emergency', 'Ambulance'];
 
@@ -560,12 +562,12 @@ function currentBusinessDayWindow(now = new Date()) {
   return { start, end: new Date(start.getTime() + 24 * 3600 * 1000) };
 }
 
-async function assertPanelPrimarySlip({ paymentType, department, panelCompanyId, panelEmployeeId, panelDependentId, patientName }) {
+async function assertPanelPrimarySlip({ paymentType, department, panelCompanyId, panelEmployeeId, panelDependentId, patientName, at = null }) {
   if (String(paymentType || '').toLowerCase() !== 'panel') return;
   const dept = department || 'General OPD';
   if (PANEL_PRIMARY_DEPARTMENTS.includes(dept) || PANEL_PRIMARY_EXEMPT_DEPARTMENTS.includes(dept)) return;
 
-  const { start, end } = currentBusinessDayWindow();
+  const { start, end } = currentBusinessDayWindow(at || new Date());
   const patientMatch = {};
   if (panelEmployeeId) {
     patientMatch.panelEmployeeId = Number(panelEmployeeId);
@@ -590,8 +592,10 @@ async function assertPanelPrimarySlip({ paymentType, department, panelCompanyId,
   // 2026-10-27).
   const openOpdBill = primary ? null : await prisma.clinicPanelOpdBill.findFirst({ where: { ...patientMatch, closedAt: null }, select: { id: true } });
   if (!primary && !openOpdBill) {
+    // The business day is named for its 08:00 start (start = 03:00 UTC that day).
+    const dayName = at ? `${start.toISOString().slice(8, 10)}-${start.toISOString().slice(5, 7)}-${start.toISOString().slice(0, 4)} ki` : 'aaj';
     throw Object.assign(new Error(
-      `Is panel patient (${patientName?.trim() || '—'}) ki aaj General OPD ya Consultant OPD slip nahi bani — pehle woh banayein, phir ${dept} slip banegi`
+      `Is panel patient (${patientName?.trim() || '—'}) ki ${dayName} General OPD ya Consultant OPD slip nahi bani — pehle woh banayein, phir ${dept} slip banegi`
     ), { status: 400 });
   }
 }
@@ -658,8 +662,8 @@ async function createOpdVisit({
   // and Reprint's lookup then never matched it.
   const serialNo = typeof serialNoRaw === 'string' ? serialNoRaw.trim() : serialNoRaw;
   await assertSerialNoAvailable(serialNo, { patientName });
-  await assertPanelPrimarySlip({ paymentType, department, panelCompanyId, panelEmployeeId, panelDependentId, patientName });
   const back = resolveBackDate(backDate);
+  await assertPanelPrimarySlip({ paymentType, department, panelCompanyId, panelEmployeeId, panelDependentId, patientName, at: back });
   const now = back || new Date();
   const shift = await resolveShiftForTime(now);
   return prisma.clinicOpdVisit.create({

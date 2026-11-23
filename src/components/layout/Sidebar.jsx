@@ -34,7 +34,7 @@ import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useTabStore } from '../../store/useTabStore';
-import { hasPermission } from '../../utils/permissions';
+import { hasPermission, hasAccounts } from '../../utils/permissions';
 
 const inventoryNavItems = [
   { path: '/dashboard',              label: 'Main Dashboard',     Icon: ArrowLeft,      toDashboard: true },
@@ -73,10 +73,11 @@ const labNavItems = [
 const accountsNavItems = [
   { path: '/dashboard', label: 'Main Dashboard', Icon: ArrowLeft, toDashboard: true },
   { path: '/accounts-module', label: 'Accounts Dashboard', Icon: LayoutDashboard },
-  { path: '/accounts/corporate/parameters', label: 'Corporate — Parameters', Icon: Settings },
-  { path: '/accounts/non-corporate/parameters', label: 'Cash GL — Parameters', Icon: Settings },
-  { path: '/accounts/corporate/reports', label: 'Corporate — Reports', Icon: BarChart3 },
-  { path: '/accounts/non-corporate/reports', label: 'Cash GL — Reports', Icon: BarChart3 },
+  // Each book's links show only with that book's permission (owner, 2026-11-23).
+  { path: '/accounts/corporate/parameters', label: 'Corporate — Parameters', Icon: Settings, book: 'corporate', sub: 'parameters' },
+  { path: '/accounts/non-corporate/parameters', label: 'Cash GL — Parameters', Icon: Settings, book: 'non-corporate', sub: 'parameters' },
+  { path: '/accounts/corporate/reports', label: 'Corporate — Reports', Icon: BarChart3, book: 'corporate', sub: 'reports' },
+  { path: '/accounts/non-corporate/reports', label: 'Cash GL — Reports', Icon: BarChart3, book: 'non-corporate', sub: 'reports' },
 ];
 
 const clinicNavItems = [
@@ -184,7 +185,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           {!collapsed && <p className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Accounts Module</p>}
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {accountsNavItems.map((item) => (
+          {accountsNavItems.filter((item) => !item.book || user?.isSuperAdmin || hasAccounts(user, item.book, item.sub)).map((item) => (
             <div
               key={item.path + item.label}
               className={navClass(item.path)}
@@ -346,7 +347,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
       </div>
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {mainItems
-          .filter((item) => !item.module || user?.isSuperAdmin || hasPermission(user, item.module))
+          .filter((item) => !item.module || user?.isSuperAdmin || (item.module === 'accounts' ? hasAccounts(user) : hasPermission(user, item.module)))
           .map((item) => (
           <div
             key={item.path + item.label}

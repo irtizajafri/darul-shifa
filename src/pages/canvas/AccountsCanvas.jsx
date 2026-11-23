@@ -20,6 +20,8 @@ import {
   ReceiptText, UserCheck, Workflow, HandCoins, Scale, FileSpreadsheet,
 } from 'lucide-react';
 import ExcelWorkspace from './ExcelWorkspace';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasAccounts } from '../../utils/permissions';
 import './AccountsCanvas.scss';
 
 // Accounts module ki HAR screen yahan wire hai — sirf Parameters/Transactions/
@@ -171,13 +173,14 @@ const ROW_HEIGHT = 66;
 
 // Poora Accounts tree ek data-structure ki tarah — root -> entity type ->
 // submodule -> individual screen.
-function buildTree() {
+// Only the books this user may open (owner, 2026-11-23).
+function buildTree(types = accountTypes) {
   return {
     key: 'root',
     label: 'Accounts',
     icon: Wallet,
     variant: 'root',
-    children: accountTypes.map((type) => ({
+    children: types.map((type) => ({
       key: type.key,
       label: type.title,
       icon: type.icon,
@@ -212,7 +215,7 @@ function buildTree() {
 // Sirf wahi hissa build hota hai jo abhi "expanded" hai — root akela shuru
 // hota hai; jab tak koi node expand na ho, uske bachche bilkul nahi bante
 // (na node, na row-space). Yehi progressive drill-down ka core hai.
-function buildGraph(expandedIds, activePath) {
+function buildGraph(expandedIds, activePath, types) {
   const nodes = [];
   const edges = [];
   let leafRow = 0;
@@ -251,7 +254,7 @@ function buildGraph(expandedIds, activePath) {
     return y;
   }
 
-  visit(buildTree(), 0, null, 'root');
+  visit(buildTree(types), 0, null, 'root');
   return { nodes, edges };
 }
 
@@ -278,7 +281,9 @@ function AccountsCanvasInner() {
     ? location.pathname.slice('/canvas/'.length)
     : null;
 
-  const { nodes: treeNodes, edges } = useMemo(() => buildGraph(expandedIds, activePath), [expandedIds, activePath]);
+  const user = useAuthStore((s) => s.user);
+  const allowedTypes = useMemo(() => accountTypes.filter((t) => user?.isSuperAdmin || hasAccounts(user, t.key, 'canvas')), [user]);
+  const { nodes: treeNodes, edges } = useMemo(() => buildGraph(expandedIds, activePath, allowedTypes), [expandedIds, activePath, allowedTypes]);
 
   // Jaanboojh ke `windows` is function ki dependency NAHI hai — agar hoti,
   // tw har windows-change pe closeWindow ka naya reference banta, jo aage

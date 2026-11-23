@@ -394,32 +394,77 @@ async function deleteBatch({ bankAccountId, batch } = {}) {
 
 const normNo = (s) => String(s || '').replace(/\D/g, '').replace(/^0+/, '');
 
-async function autoMatch({ bankAccountId, userName } = {}) {
-  const bank = await loadBank(bankAccountId);
+// Exact matches by the statement's Instrument No (owner, 2026-11-23):
+//   a bank DEBIT to a cheque by its cheque # — a cheque written for several
+//     account lines is one debit: its lines (same voucher, same cheque #) go
+//     together against their total;
+//   a bank CREDIT to a Bank Deposit by its Deposit Slip No — deposits on the
+//     same slip go together against their total.
+// The amount has to agree too, and exactly one statement line may fit.
+// Number match ignores signs, letters and leading zeros (DS-0045 = 45).
+function instrumentPairs(freeItems, freeLines) {
+  const pairs = [];
+  const usedLines = new Set();
+  const groupsOf = (list, keyOf) => {
+    const m = new Map();
+    list.forEach((i) => { const k = keyOf(i); if (k) m.set(k, [...(m.get(k) || []), i]); });
+    return [...m.values()];
+  };
+  const pick = (groups, side, refOf) => {
+    for (const group of groups) {
+      const no = normNo(refOf(group[0]));
+      if (!no) continue;
+      const total = round2(group.reduce((sum, i) => sum + i.amount, 0));
+      const c = freeLines.filter((l) => !usedLines.has(l.id) && (side === 'out' ? l.debit : l.credit) === total && normNo(l.instrumentNo) === no);
+      if (c.length !== 1) continue;
+      group.forEach((it) => pairs.push([it, c[0]]));
+      usedLines.add(c[0].id);
+    }
+  };
+  pick(groupsOf(freeItems.filter((i) => i.type === 'expense' && i.chequeNo), (i) => `${i.voucherNo}|${String(i.chequeNo).trim()}`), 'out', (i) => i.chequeNo);
+  pick(groupsOf(freeItems.filter((i) => i.type === 'deposit' && normNo(i.ref)), (i) => normNo(i.ref)), 'in', (i) => i.ref);
+  return pairs;
+}
+
+// What a match is saved as: a cheque on its Voucher Expense line, anything
+// else as a recon link.
+function savePairs(bank, pairs, method, userName) {
+  return prisma.$transaction(pairs.map(([it, line]) => (it.type === 'expense'
+    ? prisma.accVoucherExpenseEntry.update({ where: { id: it.id }, data: { matchedStatementLineId: line.id } })
+    : prisma.accBankReconLink.create({ data: { bankAccountId: bank.id, statementLineId: line.id, bookType: it.type, bookId: it.id, amount: it.amount, method, matchedByName: userName || null } }))));
+}
+
+// Book entries / statement lines still open for matching (not matched, not
+// ticked presented by hand, after the sign-off date).
+async function freeForMatching(bank) {
   const lock = await lockDateOf(bank.id);
   const open = (d) => !lock || d > lock;
   const { items, lines } = await loadBook(bank);
-  const freeItems = items.filter((i) => !i.lineId && !(i.type === 'expense' && i.clearedBy === 'manual') && open(i.date));
-  const freeLines = lines.filter((l) => !l.matched && open(l.date));
-  const pairs = [];
+  return {
+    freeItems: items.filter((i) => !i.lineId && !(i.type === 'expense' && i.clearedBy === 'manual') && open(i.date)),
+    freeLines: lines.filter((l) => !l.matched && open(l.date)),
+  };
+}
+
+// Statement upload: only the exact Instrument No matches (cheque # / deposit slip #).
+async function matchByInstrument({ bankAccountId, userName } = {}) {
+  const bank = await loadBank(bankAccountId);
+  const { freeItems, freeLines } = await freeForMatching(bank);
+  const pairs = instrumentPairs(freeItems, freeLines);
+  if (pairs.length) await savePairs(bank, pairs, 'auto', userName);
+  return { matched: new Set(pairs.map(([, l]) => l.id)).size };
+}
+
+async function autoMatch({ bankAccountId, userName } = {}) {
+  const bank = await loadBank(bankAccountId);
+  const { freeItems, freeLines } = await freeForMatching(bank);
   const usedItems = new Set();
   const usedLines = new Set();
   const take = (item, line) => { pairs.push([item, line]); usedItems.add(item.key); usedLines.add(line.id); };
 
-  // 1. Cheques by cheque no. = instrument no. and amount. A cheque written for
-  // several account lines is one debit at the bank: its lines (same voucher,
-  // same cheque #) are matched together against their total.
-  const chequeGroups = new Map();
-  freeItems.filter((i) => i.type === 'expense' && i.chequeNo).forEach((i) => {
-    const k = `${i.voucherNo}|${String(i.chequeNo).trim()}`;
-    chequeGroups.set(k, [...(chequeGroups.get(k) || []), i]);
-  });
-  for (const group of chequeGroups.values()) {
-    const total = round2(group.reduce((sum, i) => sum + i.amount, 0));
-    const c = freeLines.filter((l) => !usedLines.has(l.id) && l.debit === total && normNo(l.instrumentNo) && normNo(l.instrumentNo) === normNo(group[0].chequeNo));
-    if (c.length === 1) group.forEach((it) => { pairs.push([it, c[0]]); usedItems.add(it.key); });
-    if (c.length === 1) usedLines.add(c[0].id);
-  }
+  // 1. Exact by Instrument No: cheque # and deposit slip # (see instrumentPairs).
+  const pairs = instrumentPairs(freeItems, freeLines);
+  pairs.forEach(([it, line]) => { usedItems.add(it.key); usedLines.add(line.id); });
   // 2. By amount within a few days, only where both sides have one candidate.
   const window = (it) => (it.side === 'out' ? (it.mode === 'cheque' ? [0, 7] : [-1, 3]) : [-1, 5]);
   const candidates = (it) => freeLines.filter((l) => {
@@ -438,9 +483,7 @@ async function autoMatch({ bankAccountId, userName } = {}) {
     if (rivals.length === 1) take(it, line);
   }
 
-  await prisma.$transaction(pairs.map(([it, line]) => (it.type === 'expense'
-    ? prisma.accVoucherExpenseEntry.update({ where: { id: it.id }, data: { matchedStatementLineId: line.id } })
-    : prisma.accBankReconLink.create({ data: { bankAccountId: bank.id, statementLineId: line.id, bookType: it.type, bookId: it.id, amount: it.amount, method: 'auto', matchedByName: userName || null } }))));
+  await savePairs(bank, pairs, 'auto', userName);
   const linesUsed = new Set(pairs.map(([, l]) => l.id)).size;
   return { matched: linesUsed, unmatchedItems: freeItems.length - pairs.length, unmatchedLines: freeLines.length - linesUsed };
 }
@@ -599,6 +642,6 @@ async function listExpenseAccounts(entityType) {
 
 module.exports = {
   saveBankOpening, getBankBook, getBankBalances, getBankMonthStatement, unmatchedStatementLines, listBatches, deleteBatch,
-  autoMatch, manualMatch, unmatchLine, addToBooks, getReconItems,
+  autoMatch, matchByInstrument, manualMatch, unmatchLine, addToBooks, getReconItems,
   getStatement, signOff, reopenSignOff, listExpenseAccounts, dayOf, lockDateOf,
 };

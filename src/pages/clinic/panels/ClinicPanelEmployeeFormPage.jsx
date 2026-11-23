@@ -8,7 +8,11 @@ import SearchableSelect from '../../../components/ui/SearchableSelect';
 import './ClinicPanelEmployeeFormPage.scss';
 import { useShallow } from 'zustand/react/shallow';
 
-const TITLES = ['MR', 'MRS', 'MISS', 'DR', 'PROF'];
+// Same titles as the OPD slips (owner, 2026-11-23), plus DR / PROF kept for
+// employees already saved with them.
+const TITLES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT', 'DR', 'PROF'];
+// A saved title outside the list (e.g. an imported "Mr") still shows as itself.
+const titleOptions = (current) => (current && !TITLES.includes(current) ? [current, ...TITLES] : TITLES);
 const RELATIONS = ['Spouse', 'Son', 'Daughter', 'Father', 'Mother', 'Brother', 'Sister', 'Other'];
 
 function buildSubDeptRows(subDepts, existing = []) {
@@ -327,7 +331,7 @@ export default function ClinicPanelEmployeeFormPage() {
             </div>
             <div className="pe-field pe-field--title">
               <select className="pe-input" value={title} onChange={(e) => setTitle(e.target.value)}>
-                {TITLES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {titleOptions(title).map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div className="pe-field pe-field--name">
@@ -571,7 +575,7 @@ export default function ClinicPanelEmployeeFormPage() {
               </div>
               <div className="pe-field pe-field--title">
                 <select className="pe-input" value={depTitle} onChange={(e) => setDepTitle(e.target.value)}>
-                  {TITLES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {titleOptions(depTitle).map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
               <div className="pe-field pe-field--name">

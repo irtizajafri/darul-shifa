@@ -3454,9 +3454,14 @@ async function bulkImportBankStatement({ bankAccountId, entityType, rows }) {
   }
   if (data.length) await prisma.accBankStatementLine.createMany({ data });
   const last = [...parsed].reverse().find((x) => x.balance !== null);
-  const { autoMatched } = data.length ? await matchBankStatementCheques(entityType) : { autoMatched: 0 };
+  // First the exact Instrument No matches — cheque # / deposit slip # (owner,
+  // 2026-11-23) — then the older amount + cheque date rule on what's left.
+  // Required here, not at the top: bankRecon is a separate module.
+  const byInstrument = data.length ? await require('./bankRecon.service').matchByInstrument({ bankAccountId }) : { matched: 0 };
+  const { autoMatched: byAmount } = data.length ? await matchBankStatementCheques(entityType) : { autoMatched: 0 };
+  const autoMatched = byInstrument.matched + byAmount;
   return {
-    imported: data.length, skipped, uploadBatchId: data.length ? uploadBatchId : null, autoMatched,
+    imported: data.length, skipped, uploadBatchId: data.length ? uploadBatchId : null, autoMatched, matchedByInstrument: byInstrument.matched,
     closingBalance: last ? last.balance : null, closingDate: last ? statementDay(last.date) : null,
   };
 }

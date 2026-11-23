@@ -3,6 +3,40 @@
 //  sub-modules, and tab-level permissions in the HMS.
 // ============================================================
 
+// Accounts' sub-modules and tabs — the same for both books (Cash GL =
+// 'accounts', Corporate = 'accounts-corporate').
+const ACCOUNTS_SUBMODULES = [
+  { key: 'canvas', label: 'Module Canvas' },
+  {
+    key: 'parameters',
+    label: 'Parameters',
+    tabs: [
+      { key: 'main-gl',          label: 'Main GL' },
+      { key: 'sub-gl',           label: 'Sub GL' },
+      { key: 'main-account',     label: 'Main Account' },
+      { key: 'sub-account',      label: 'Sub Account' },
+      { key: 'list-attachments', label: 'List Attachments' },
+      { key: 'bank-accounts',    label: 'Bank Accounts' },
+      { key: 'cheque-serial',    label: 'Cheque Serial' },
+      { key: 'income-category',  label: 'Account Category for Income' },
+    ],
+  },
+  {
+    key: 'transactions',
+    label: 'Transactions',
+    tabs: [
+      { key: 'voucher-income',     label: 'Voucher Entry — Income' },
+      { key: 'voucher-expense',    label: 'Voucher Entry — Expense' },
+      { key: 'cheque-printing',    label: 'Cheque Printing' },
+      { key: 'bank-deposit',       label: 'Bank Deposit' },
+      { key: 'bank-statement',     label: 'Upload Bank Statement' },
+      { key: 'deposit-adjustment', label: 'Bank Deposit Adjustment' },
+    ],
+  },
+  { key: 'inquiry', label: 'Inquiry' },
+  { key: 'reports', label: 'Reports' },
+];
+
 export const PERMISSIONS_MAP = {
   employee: {
     label: 'Employee Management',
@@ -293,40 +327,17 @@ export const PERMISSIONS_MAP = {
       { key: 'pharmacy-stores', label: 'Pharmacy Stores' },
     ],
   },
+  // Accounts — two books with their own permissions (owner, 2026-11-23): a
+  // user may hold Cash GL, Corporate, or both, each with its own tabs.
   accounts: {
-    label: 'Accounts',
+    label: 'Accounts — Cash GL',
     dashboardRoute: '/accounts-module',
-    subModules: [
-      { key: 'canvas', label: 'Module Canvas' },
-      {
-        key: 'parameters',
-        label: 'Parameters',
-        tabs: [
-          { key: 'main-gl',          label: 'Main GL' },
-          { key: 'sub-gl',           label: 'Sub GL' },
-          { key: 'main-account',     label: 'Main Account' },
-          { key: 'sub-account',      label: 'Sub Account' },
-          { key: 'list-attachments', label: 'List Attachments' },
-          { key: 'bank-accounts',    label: 'Bank Accounts' },
-          { key: 'cheque-serial',    label: 'Cheque Serial' },
-          { key: 'income-category',  label: 'Account Category for Income' },
-        ],
-      },
-      {
-        key: 'transactions',
-        label: 'Transactions',
-        tabs: [
-          { key: 'voucher-income',     label: 'Voucher Entry — Income' },
-          { key: 'voucher-expense',    label: 'Voucher Entry — Expense' },
-          { key: 'cheque-printing',    label: 'Cheque Printing' },
-          { key: 'bank-deposit',       label: 'Bank Deposit' },
-          { key: 'bank-statement',     label: 'Upload Bank Statement' },
-          { key: 'deposit-adjustment', label: 'Bank Deposit Adjustment' },
-        ],
-      },
-      { key: 'inquiry', label: 'Inquiry' },
-      { key: 'reports', label: 'Reports' },
-    ],
+    subModules: ACCOUNTS_SUBMODULES,
+  },
+  'accounts-corporate': {
+    label: 'Accounts — Corporate',
+    dashboardRoute: '/accounts-module',
+    subModules: ACCOUNTS_SUBMODULES,
   },
 };
 
@@ -428,4 +439,33 @@ export function requiresHandover(user) {
   if (!user) return false;
   if (user.isSuperAdmin) return false;
   return user.permissions?.requiresHandover === true;
+}
+
+// ── Accounts books (owner, 2026-11-23) ───────────────────────────────────────
+export const ACCOUNTS_MODULES = ['accounts', 'accounts-corporate'];
+/** The permission module of an Accounts book ('corporate' | 'non-corporate'). */
+export const accountsModuleOf = (entityType) => (entityType === 'corporate' ? 'accounts-corporate' : 'accounts');
+
+/** Accounts access for one book when entityType is given, else for either book. */
+export function hasAccounts(user, entityType = null, subModule = null, tab = null) {
+  if (entityType) return hasPermission(user, accountsModuleOf(entityType), subModule, tab);
+  return ACCOUNTS_MODULES.some((m) => hasPermission(user, m, subModule, tab));
+}
+
+// Which permission an Accounts page needs, from its path after
+// /accounts/:entityType/ (e.g. 'transactions/voucher-expense/form'). Screens
+// with no tab of their own follow the nearest one.
+const ACCOUNTS_TAB_ALIASES = {
+  'expense-drafts': 'voucher-expense',
+  'cheque-presentation': 'cheque-printing',
+  'bank-book': 'bank-statement',
+  'bank-reconciliation': 'bank-statement',
+};
+export function accountsPermissionFor(rest) {
+  const [section, page] = String(rest || '').split('/');
+  if (section === 'parameters') return { subModule: 'parameters', tab: page || null };
+  if (section === 'transactions') return { subModule: 'transactions', tab: page ? (ACCOUNTS_TAB_ALIASES[page] || page) : null };
+  if (section === 'inquiry') return { subModule: 'inquiry', tab: null };
+  if (section === 'reports') return { subModule: 'reports', tab: null };
+  return { subModule: null, tab: null };
 }

@@ -273,96 +273,96 @@ export default function ProtectedRoutes() {
           bilkul normal route ki tarah hi kaam karte hain (useParams,
           useNavigate sab real hain). */}
       <Route path="canvas" element={<PermissionGuard module="accounts" subModule="canvas"><AccountsCanvas /></PermissionGuard>}>
-        <Route path="accounts/:entityType/parameters" element={<AccountsParameters />} />
-        <Route path="accounts/:entityType/parameters/main-gl" element={<MainGL />} />
-        <Route path="accounts/:entityType/parameters/sub-gl" element={<SubGL />} />
-        <Route path="accounts/:entityType/parameters/main-account" element={<MainAccount />} />
-        <Route path="accounts/:entityType/parameters/sub-account" element={<SubAccount />} />
-        <Route path="accounts/:entityType/parameters/list-attachments" element={<ListAttachments />} />
-        <Route path="accounts/:entityType/parameters/bank-accounts" element={<BankAccounts />} />
-        <Route path="accounts/:entityType/parameters/cheque-serial" element={<ChequeSerial />} />
-        <Route path="accounts/:entityType/parameters/income-category" element={<IncomeCategory />} />
+        <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts" subModule="parameters"><AccountsParameters /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/main-gl" element={<PermissionGuard module="accounts" subModule="parameters" tab="main-gl"><MainGL /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/sub-gl" element={<PermissionGuard module="accounts" subModule="parameters" tab="sub-gl"><SubGL /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/main-account" element={<PermissionGuard module="accounts" subModule="parameters" tab="main-account"><MainAccount /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/sub-account" element={<PermissionGuard module="accounts" subModule="parameters" tab="sub-account"><SubAccount /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/list-attachments" element={<PermissionGuard module="accounts" subModule="parameters" tab="list-attachments"><ListAttachments /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/bank-accounts" element={<PermissionGuard module="accounts" subModule="parameters" tab="bank-accounts"><BankAccounts /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/cheque-serial" element={<PermissionGuard module="accounts" subModule="parameters" tab="cheque-serial"><ChequeSerial /></PermissionGuard>} />
+        <Route path="accounts/:entityType/parameters/income-category" element={<PermissionGuard module="accounts" subModule="parameters" tab="income-category"><IncomeCategory /></PermissionGuard>} />
 
-        <Route path="accounts/:entityType/transactions" element={<AccountsTransactions />} />
-        <Route path="accounts/:entityType/transactions/voucher-expense" element={<VoucherExpense />} />
-        <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<VoucherExpenseForm />} />
-        <Route path="accounts/:entityType/transactions/expense-drafts" element={<DraftExpenses />} />
-        <Route path="accounts/:entityType/transactions/voucher-income" element={<VoucherIncome />} />
-        <Route path="accounts/:entityType/transactions/voucher-income/form" element={<VoucherIncomeForm />} />
-        <Route path="accounts/:entityType/transactions/bank-deposit" element={<BankDeposit />} />
-        <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<BankDepositAdj />} />
-        <Route path="accounts/:entityType/transactions/bank-statement" element={<BankStatementUpload />} />
-        <Route path="accounts/:entityType/transactions/cheque-presentation" element={<ChequePresentation />} />
-        <Route path="accounts/:entityType/transactions/bank-book" element={<BankBook />} />
-        <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<BankReconciliation />} />
+        <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts" subModule="transactions"><AccountsTransactions /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-expense"><VoucherExpense /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/voucher-expense/form" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-expense"><VoucherExpenseForm /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/expense-drafts" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-expense"><DraftExpenses /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/voucher-income" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-income"><VoucherIncome /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-income"><VoucherIncomeForm /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-deposit"><BankDeposit /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts" subModule="transactions" tab="deposit-adjustment"><BankDepositAdj /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/bank-statement" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankStatementUpload /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts" subModule="transactions" tab="cheque-printing"><ChequePresentation /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/bank-book" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankBook /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankReconciliation /></PermissionGuard>} />
 
-        <Route path="accounts/:entityType/inquiry" element={<AccountsInquiryDashboard />} />
+        <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts" subModule="inquiry"><AccountsInquiryDashboard /></PermissionGuard>} />
 
-        <Route path="accounts/:entityType/reports" element={<AccountsReports />} />
-        <Route path="accounts/:entityType/reports/voucher-reprint" element={<VoucherReprint />} />
-        <Route path="accounts/:entityType/reports/voucher-summary" element={<VoucherSummary />} />
-        <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<VoucherSummaryMatrix />} />
-        <Route path="accounts/:entityType/reports/income-summary-matrix" element={<IncomeSummaryMatrix />} />
-        <Route path="accounts/:entityType/reports/gl-balance-report" element={<GLBalanceReport />} />
-        <Route path="accounts/:entityType/reports/consultant-payment-history" element={<ConsultantPaymentHistory />} />
-        <Route path="accounts/:entityType/reports/supplier-payment-history" element={<SupplierPaymentHistory />} />
-        <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<UnpresentedChequeList />} />
-        <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<ChequeWiseVoucherSummary />} />
-        <Route path="accounts/:entityType/reports/cash-flow-statement" element={<CashFlowStatement />} />
-        <Route path="accounts/:entityType/reports/cash-in-hand-statement" element={<CashInHandStatement />} />
-        <Route path="accounts/:entityType/reports/income-expense-summary" element={<IncomeExpenseSummary />} />
-        <Route path="accounts/:entityType/reports/slip-refund-statement" element={<RefundStatement />} />
-        <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<BankReconciliationStatement />} />
-        <Route path="accounts/:entityType/reports/bank-balance-statement" element={<BankBalanceStatement />} />
-        <Route path="accounts/:entityType/reports/:reportKey/view" element={<AccountsReportView />} />
-        <Route path="accounts/:entityType/reports/*" element={<ComingSoon />} />
+        <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts" subModule="reports"><AccountsReports /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts" subModule="reports"><VoucherReprint /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/voucher-summary" element={<PermissionGuard module="accounts" subModule="reports"><VoucherSummary /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<PermissionGuard module="accounts" subModule="reports"><VoucherSummaryMatrix /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/income-summary-matrix" element={<PermissionGuard module="accounts" subModule="reports"><IncomeSummaryMatrix /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/gl-balance-report" element={<PermissionGuard module="accounts" subModule="reports"><GLBalanceReport /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/consultant-payment-history" element={<PermissionGuard module="accounts" subModule="reports"><ConsultantPaymentHistory /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/supplier-payment-history" element={<PermissionGuard module="accounts" subModule="reports"><SupplierPaymentHistory /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts" subModule="reports"><UnpresentedChequeList /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts" subModule="reports"><ChequeWiseVoucherSummary /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/cash-flow-statement" element={<PermissionGuard module="accounts" subModule="reports"><CashFlowStatement /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/cash-in-hand-statement" element={<PermissionGuard module="accounts" subModule="reports"><CashInHandStatement /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/income-expense-summary" element={<PermissionGuard module="accounts" subModule="reports"><IncomeExpenseSummary /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/slip-refund-statement" element={<PermissionGuard module="accounts" subModule="reports"><RefundStatement /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<PermissionGuard module="accounts" subModule="reports"><BankReconciliationStatement /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/bank-balance-statement" element={<PermissionGuard module="accounts" subModule="reports"><BankBalanceStatement /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts" subModule="reports"><AccountsReportView /></PermissionGuard>} />
+        <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts" subModule="reports"><ComingSoon /></PermissionGuard>} />
       </Route>
-      <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts"><AccountsParameters /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/main-gl" element={<PermissionGuard module="accounts"><MainGL /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/sub-gl" element={<PermissionGuard module="accounts"><SubGL /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/main-account" element={<PermissionGuard module="accounts"><MainAccount /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/sub-account" element={<PermissionGuard module="accounts"><SubAccount /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/list-attachments" element={<PermissionGuard module="accounts"><ListAttachments /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/bank-accounts" element={<PermissionGuard module="accounts"><BankAccounts /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/cheque-serial" element={<PermissionGuard module="accounts"><ChequeSerial /></PermissionGuard>} />
-      <Route path="accounts/:entityType/parameters/income-category" element={<PermissionGuard module="accounts"><IncomeCategory /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters" element={<PermissionGuard module="accounts" subModule="parameters"><AccountsParameters /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/main-gl" element={<PermissionGuard module="accounts" subModule="parameters" tab="main-gl"><MainGL /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/sub-gl" element={<PermissionGuard module="accounts" subModule="parameters" tab="sub-gl"><SubGL /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/main-account" element={<PermissionGuard module="accounts" subModule="parameters" tab="main-account"><MainAccount /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/sub-account" element={<PermissionGuard module="accounts" subModule="parameters" tab="sub-account"><SubAccount /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/list-attachments" element={<PermissionGuard module="accounts" subModule="parameters" tab="list-attachments"><ListAttachments /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/bank-accounts" element={<PermissionGuard module="accounts" subModule="parameters" tab="bank-accounts"><BankAccounts /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/cheque-serial" element={<PermissionGuard module="accounts" subModule="parameters" tab="cheque-serial"><ChequeSerial /></PermissionGuard>} />
+      <Route path="accounts/:entityType/parameters/income-category" element={<PermissionGuard module="accounts" subModule="parameters" tab="income-category"><IncomeCategory /></PermissionGuard>} />
 
-      <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts"><AccountsTransactions /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts"><VoucherExpense /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions" element={<PermissionGuard module="accounts" subModule="transactions"><AccountsTransactions /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/voucher-expense" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-expense"><VoucherExpense /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/voucher-expense/form" element={
         <PermissionGuard anyOf={[
           { module: 'accounts', subModule: 'transactions', tab: 'voucher-expense' },
           { module: 'clinic',   subModule: 'transactions',  tab: 'general-payment' },
         ]}><VoucherExpenseForm /></PermissionGuard>
       } />
-      <Route path="accounts/:entityType/transactions/expense-drafts" element={<PermissionGuard module="accounts"><DraftExpenses /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/voucher-income" element={<PermissionGuard module="accounts"><VoucherIncome /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts"><VoucherIncomeForm /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts"><BankDeposit /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts"><BankDepositAdj /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/bank-statement" element={<PermissionGuard module="accounts"><BankStatementUpload /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts"><ChequePresentation /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/bank-book" element={<PermissionGuard module="accounts"><BankBook /></PermissionGuard>} />
-      <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<PermissionGuard module="accounts"><BankReconciliation /></PermissionGuard>} />
-      <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts"><AccountsInquiryDashboard /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts"><AccountsReports /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts"><VoucherReprint /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/voucher-summary" element={<PermissionGuard module="accounts"><VoucherSummary /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<PermissionGuard module="accounts"><VoucherSummaryMatrix /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/income-summary-matrix" element={<PermissionGuard module="accounts"><IncomeSummaryMatrix /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/gl-balance-report" element={<PermissionGuard module="accounts"><GLBalanceReport /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/consultant-payment-history" element={<PermissionGuard module="accounts"><ConsultantPaymentHistory /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/supplier-payment-history" element={<PermissionGuard module="accounts"><SupplierPaymentHistory /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts"><UnpresentedChequeList /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts"><ChequeWiseVoucherSummary /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/cash-flow-statement" element={<PermissionGuard module="accounts"><CashFlowStatement /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/cash-in-hand-statement" element={<PermissionGuard module="accounts"><CashInHandStatement /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/income-expense-summary" element={<PermissionGuard module="accounts"><IncomeExpenseSummary /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/slip-refund-statement" element={<PermissionGuard module="accounts"><RefundStatement /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<PermissionGuard module="accounts"><BankReconciliationStatement /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/bank-balance-statement" element={<PermissionGuard module="accounts"><BankBalanceStatement /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts"><AccountsReportView /></PermissionGuard>} />
-      <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts"><ComingSoon /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/expense-drafts" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-expense"><DraftExpenses /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/voucher-income" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-income"><VoucherIncome /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/voucher-income/form" element={<PermissionGuard module="accounts" subModule="transactions" tab="voucher-income"><VoucherIncomeForm /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-deposit" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-deposit"><BankDeposit /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/deposit-adjustment" element={<PermissionGuard module="accounts" subModule="transactions" tab="deposit-adjustment"><BankDepositAdj /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-statement" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankStatementUpload /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts" subModule="transactions" tab="cheque-printing"><ChequePresentation /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-book" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankBook /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankReconciliation /></PermissionGuard>} />
+      <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts" subModule="inquiry"><AccountsInquiryDashboard /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts" subModule="reports"><AccountsReports /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts" subModule="reports"><VoucherReprint /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/voucher-summary" element={<PermissionGuard module="accounts" subModule="reports"><VoucherSummary /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/voucher-summary-matrix" element={<PermissionGuard module="accounts" subModule="reports"><VoucherSummaryMatrix /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/income-summary-matrix" element={<PermissionGuard module="accounts" subModule="reports"><IncomeSummaryMatrix /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/gl-balance-report" element={<PermissionGuard module="accounts" subModule="reports"><GLBalanceReport /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/consultant-payment-history" element={<PermissionGuard module="accounts" subModule="reports"><ConsultantPaymentHistory /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/supplier-payment-history" element={<PermissionGuard module="accounts" subModule="reports"><SupplierPaymentHistory /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/un-presented-cheque-list" element={<PermissionGuard module="accounts" subModule="reports"><UnpresentedChequeList /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/cheque-wise-voucher-summary" element={<PermissionGuard module="accounts" subModule="reports"><ChequeWiseVoucherSummary /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/cash-flow-statement" element={<PermissionGuard module="accounts" subModule="reports"><CashFlowStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/cash-in-hand-statement" element={<PermissionGuard module="accounts" subModule="reports"><CashInHandStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/income-expense-summary" element={<PermissionGuard module="accounts" subModule="reports"><IncomeExpenseSummary /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/slip-refund-statement" element={<PermissionGuard module="accounts" subModule="reports"><RefundStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/bank-reconciliation-statement" element={<PermissionGuard module="accounts" subModule="reports"><BankReconciliationStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/bank-balance-statement" element={<PermissionGuard module="accounts" subModule="reports"><BankBalanceStatement /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/:reportKey/view" element={<PermissionGuard module="accounts" subModule="reports"><AccountsReportView /></PermissionGuard>} />
+      <Route path="accounts/:entityType/reports/*" element={<PermissionGuard module="accounts" subModule="reports"><ComingSoon /></PermissionGuard>} />
 
       {/* Laboratories */}
       <Route path="lab-module" element={<PermissionGuard module="lab"><LabModuleDashboard /></PermissionGuard>} />

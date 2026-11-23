@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Lock, X } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
-import { hasPermission } from '../../utils/permissions';
+import { hasPermission, hasAccounts } from '../../utils/permissions';
 
 function UnauthorizedModal() {
   const navigate = useNavigate();
@@ -54,13 +54,22 @@ function UnauthorizedModal() {
 // DIFFERENT modules (e.g. Clinic's "General Payment" shortcut into Accounts'
 // Voucher Expense form) — granting just one of them never implies the
 // others, unlike `subModules` below which only varies within one module.
+//
+// module="accounts" follows the book in the URL (owner, 2026-11-23): on
+// /accounts/corporate/... it needs "Accounts — Corporate", on
+// /accounts/non-corporate/... "Accounts — Cash GL"; with no book in the URL
+// (Accounts Dashboard, Canvas) either book will do.
 export default function PermissionGuard({ module, subModule, subModules, tab, anyOf, children }) {
   const { user } = useAuthStore();
+  const { entityType } = useParams();
+  const check = (mod, sub = null, t = null) => (mod === 'accounts'
+    ? hasAccounts(user, entityType || null, sub, t)
+    : hasPermission(user, mod, sub, t));
   const allowed = anyOf
-    ? anyOf.some((p) => hasPermission(user, p.module, p.subModule ?? null, p.tab ?? null))
+    ? anyOf.some((p) => check(p.module, p.subModule ?? null, p.tab ?? null))
     : subModules
-    ? subModules.some((sm) => hasPermission(user, module, sm))
-    : hasPermission(user, module, subModule, tab ?? null);
+    ? subModules.some((sm) => check(module, sm))
+    : check(module, subModule ?? null, tab ?? null);
 
   if (allowed) return children;
   return <UnauthorizedModal />;
