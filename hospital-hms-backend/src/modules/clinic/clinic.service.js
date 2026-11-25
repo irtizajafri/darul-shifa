@@ -8015,10 +8015,9 @@ async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId,
   await assertProvisionalItemNotDuplicate(admissionId, { roomCategoryId, billHeadId });
   const q = Number(qty) || 1;
   const r = Number(rate) || 0;
-  // Manually-entered items have no OPD visit to borrow a slip # from — assign
-  // one from the shared running sequence so this line still shows up as a
-  // real slip in the Admission Wise Report's "With Slip" view.
-  const serialNo = await numbering.takeNumber('slip');
+  // No Slip # of its own (owner, 2026-11-25): a Provisional Bill line belongs
+  // to the admission (its Admission #). It used to take a number from the
+  // shared Slip # series, which made the counters' next number jump.
   return prisma.clinicProvisionalBillItem.create({
     data: {
       admissionId: Number(admissionId),
@@ -8029,7 +8028,6 @@ async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId,
       amount: q * r,
       remarks: remarks?.trim() || null,
       patientType: patientType || null,
-      serialNo,
     },
   });
 }
