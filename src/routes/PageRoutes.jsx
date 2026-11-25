@@ -42,6 +42,7 @@ import Maintenance from '../pages/inventory/Maintenance';
 import AssetShifting from '../pages/inventory/AssetShifting';
 import UserManagement from '../pages/admin/UserManagement';
 import ConnectedDevices from '../pages/admin/ConnectedDevices';
+import ReservedNumbers from '../pages/admin/ReservedNumbers';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
 function SuperAdminRoute({ children }) {
@@ -60,6 +61,7 @@ export default function PageRoutes() {
 
 
       <Route path="admin/devices" element={<SuperAdminRoute><ConnectedDevices /></SuperAdminRoute>} />
+      <Route path="admin/reserved-numbers" element={<SuperAdminRoute><ReservedNumbers /></SuperAdminRoute>} />
 
       <Route path="employee-module" element={<PermissionGuard module="employee"><EmployeeModuleDashboard /></PermissionGuard>} />
       <Route path="employees" element={<PermissionGuard module="employee" subModule="employee-database"><EmployeeList /></PermissionGuard>} />

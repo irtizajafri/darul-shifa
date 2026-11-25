@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import BackDateField, { getBackDate, useBackDateStore } from '../../components/clinic/BackDateField';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 import { useAuthStore } from '../../store/useAuthStore';
 import { buildAdmissionPaymentReceiptHtml } from './admissionReceivingReceiptUtils';
 import { handleSlipKeys } from '../../utils/keyboardNav';
@@ -107,6 +108,7 @@ export default function ReceivingAgainstAdmission() {
   const backDate = useBackDateStore((s) => s.value);
 
   const [serialNo, setSerialNo] = useState('');
+  const [numKey, setNumKey] = useState(0); // bumps after a save — the auto Slip # field shows the next number
   const [showLookup, setShowLookup] = useState(false);
   const [admission, setAdmission] = useState(null);
   const [receivingDate, setReceivingDate] = useState('');
@@ -120,7 +122,10 @@ export default function ReceivingAgainstAdmission() {
     // systems' sequences are out of sync. Logic kept, not deleted — re-enable
     // once legacy and new system are back on the same numbering.
     // fetch(`${API}/opd/next-serial`).then(r => r.json()).then(j => setSerialNo(j.data?.serialNo || '')).catch(() => {});
+    // Since 2026-11-24 the server gives the Slip # on save (auto numbering);
+    // the field shows the next one. Blank here = auto.
     setSerialNo('');
+    setNumKey((k) => k + 1);
   }
 
   useEffect(() => { loadNextSerial(); }, []);
@@ -242,7 +247,7 @@ export default function ReceivingAgainstAdmission() {
 
           <div className="raa-form-row">
             <label className="raa-label raa-label--serial">Serial #</label>
-            <input className="raa-input raa-input--serial" value={serialNo} onChange={e => setSerialNo(e.target.value)} />
+            <AutoNumberField kind="slip" className="raa-input raa-input--serial" value={serialNo} onChange={setSerialNo} refreshKey={numKey} />
             <BackDateField style={{ marginLeft: 'auto' }} />
           </div>
 

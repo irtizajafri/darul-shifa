@@ -12,9 +12,10 @@ import { withSlipRate, repriceLine } from './slipCharges';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
-import { openPrintWindow } from '../../utils/printRelay';
+import { openPrintWindow, refreshPrintConfig } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
 import BackDateField from '../../components/clinic/BackDateField';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 // Admission form uses a different title vocabulary (Mr/Mrs/Ms/Master/Baby) —
@@ -186,6 +187,9 @@ export default function EmergencyOPD() {
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
+  // Which of this PC's printers the server prints on (direct printing).
+  useEffect(() => { refreshPrintConfig(); }, []);
+  const [numKey, setNumKey] = useState(0); // bumps after a save — the auto Slip # field shows the next number
   const [leftDoctors, setLeftDoctors] = useState([]);
   const [loadingDoctors, setLoadingDoctors] = useState(false);
   const [checkedLeft, setCheckedLeft] = useState([]);
@@ -436,13 +440,15 @@ export default function EmergencyOPD() {
   // instead of the A6 slip (owner, 2026-10-23).
   async function handleSaveAndPrint(thermal = false) {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
-    if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
     const phoneErr = validatePhoneNo(form.phoneNo);
     if (phoneErr) { toast.error(phoneErr); return; }
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
     if (ageErr) { toast.error(ageErr); return; }
     if (rightDoctors.length === 0) { toast.error('Kam az kam ek doctor/test select karo — bina selection ke slip nahi banegi'); return; }
-    const w = openPrintWindow('width=740,height=900');
+    // Direct printing: the slip to this PC's thermal / normal printer, the
+    // form to the normal one (printRelay — dialog if not set up).
+    const slipTarget = thermal ? 'thermal' : 'normal';
+    const w = openPrintWindow('width=740,height=900', { targets: [slipTarget, 'normal'] });
     setBusy(true);
     try {
       const created = await createOpdVisit({
@@ -465,6 +471,7 @@ export default function EmergencyOPD() {
       });
       const newId = created?.id;
       toast.success('Emergency Visit saved');
+      setNumKey((k) => k + 1);
       const consultantName = rightDoctors[0]?.doctor?.name || '';
       setForm(EMPTY);
       setRightDoctors([]);
@@ -485,8 +492,12 @@ export default function EmergencyOPD() {
         // CRF prints as its own separate print job in this SAME popup, right
         // after the slip's — see clinicalRecordPrintUtils's buildSequentialPrintHtml.
         const crfDoc = buildCrfPrintDocument({ visit, consultantName, barcodeDataUrl: '', formTitle: 'EMERGENCY FORM' });
-        w.document.write(buildSequentialPrintHtml(html, crfDoc));
-        w.document.close();
+        if (w.isServerPrint) {
+          w.serverPrint([{ html, target: slipTarget }, { html: crfDoc, target: 'normal' }], { fallbackHtml: buildSequentialPrintHtml(html, crfDoc) });
+        } else {
+          w.document.write(buildSequentialPrintHtml(html, crfDoc));
+          w.document.close();
+        }
       } else {
         w.close();
       }
@@ -618,7 +629,7 @@ export default function EmergencyOPD() {
               {mrLookupLoading ? '…' : <Search size={12} />}
             </button>
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Serial #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
+            <AutoNumberField kind="slip" className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={v => set('serialNo', v)} refreshKey={numKey} />
             <BackDateField style={{ marginLeft: '0.75rem' }} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Phone #</span>
             <input

@@ -134,14 +134,14 @@ export default function IncomeExpenseSummary() {
     const cb = data.closingBalances;
     aoa.push(['Un-presented Cheques', -cb.unpresented, ''], ['Closing Balances', '', ''], ['Petty Cash', cb.pettyCash, '']);
     cb.banks.forEach((b) => aoa.push([`Cash at Bank (closing) — ${b.name}`, b.closing, '']));
-    aoa.push(['Cash at JazzCash', cb.jazzCash, ''], ['Cash in Hand', n(cb.cashInHand), ''], ['Cash in Hand Last Month', n(cb.cashInHandLastMonth), ''], ['Closing Balances total', '', cb.total], ['TOTAL', '', data.totals.payments]);
+    aoa.push(['Cash at JazzCash', cb.jazzCash, ''], ['Cash in Hand', n(cb.cashInHand), ''], ['Closing Balances total', '', cb.total], ['TOTAL', '', data.totals.payments]);
     aoa.push([], ['Receipts TOTAL', '', data.totals.receipts], ['Payments TOTAL', '', data.totals.payments], ['Farq', '', data.totals.difference]);
     if (data.creditCard) aoa.push(['Credit Card Slip Amount (info)', data.creditCard.slips, ''], ['Received Amount (info)', data.creditCard.received, '']);
     aoa.push([], ['CLOSING', '', '']);
     const c = data.closing;
     aoa.push(['Opening Balance', c.opening, ''], ['Receipts', c.receipts, ''], ['Other Deposits', c.otherDeposits, ''], ['Payments', -c.payments, ''], ['Out Dated Cheques', -c.outDatedCheques, ''], ['A/c Receivable B/F', -c.receivableBF, ''], ['Closing', '', c.amount], [], ['RECONCILIATION', '', '']);
     const r = data.reconciliation;
-    aoa.push(['Cash in Hand (this month)', n(r.cashInHand), ''], ['Cash in Hand (last month)', n(r.cashInHandLastMonth), ''], ['Petty Cash', r.pettyCash, ''], ['Cash at JazzCash', r.jazzCash, ''], ['A/c Receivable B/F', r.receivableBF, '']);
+    aoa.push(['Cash in Hand', n(r.cashInHand), ''], ['Petty Cash', r.pettyCash, ''], ['Cash at JazzCash', r.jazzCash, ''], ['A/c Receivable B/F', r.receivableBF, '']);
     r.banks.forEach((b) => aoa.push([`Cash at Bank — ${b.name}`, b.closing, '']));
     aoa.push(['Un-presented Cheques', -r.unpresented, ''], ['Total', '', r.total], ['Difference from Closing', '', r.difference]);
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -262,7 +262,6 @@ export default function IncomeExpenseSummary() {
                 ))}
                 <tr><td>Cash at JazzCash</td><td className="n">{typed('jazzCash', 'Cash at JazzCash')}</td><td /></tr>
                 <tr><td>Cash in Hand</td><td className="n">{data.closingBalances.cashInHand === null ? '—' : money(data.closingBalances.cashInHand)}</td><td /></tr>
-                <tr><td>Cash in Hand Last Month</td><td className="n">{data.closingBalances.cashInHandLastMonth === null ? '—' : money(data.closingBalances.cashInHandLastMonth)}</td><td /></tr>
                 <tr className="is-balance"><td>Closing Balances</td><td /><td className={`n${neg(data.closingBalances.total)}`}>{money(data.closingBalances.total)}</td></tr>
                 <tr className="is-grand"><td>TOTAL</td><td /><td className={`n${neg(data.totals.payments)}`}>{money(data.totals.payments)}</td></tr>
               </tbody>
@@ -293,8 +292,7 @@ export default function IncomeExpenseSummary() {
             <table className="ies-table">
               <thead><tr><th colSpan={3}>RECONCILIATION</th></tr></thead>
               <tbody>
-                <tr><td>Cash in Hand (this month)</td><td className="n">{data.reconciliation.cashInHand === null ? '—' : money(data.reconciliation.cashInHand)}</td><td /></tr>
-                <tr><td>Cash in Hand (last month)</td><td className="n">{data.reconciliation.cashInHandLastMonth === null ? '—' : money(data.reconciliation.cashInHandLastMonth)}</td><td /></tr>
+                <tr><td>Cash in Hand</td><td className="n">{data.reconciliation.cashInHand === null ? '—' : money(data.reconciliation.cashInHand)}</td><td /></tr>
                 <tr><td>Petty Cash</td><td className="n">{moneyOrBlank(data.reconciliation.pettyCash)}</td><td /></tr>
                 <tr><td>Cash at JazzCash</td><td className="n">{moneyOrBlank(data.reconciliation.jazzCash)}</td><td /></tr>
                 <tr><td>A/c Receivable B/F</td><td className="n">{moneyOrBlank(data.reconciliation.receivableBF)}</td><td /></tr>
@@ -313,7 +311,7 @@ export default function IncomeExpenseSummary() {
 
           <p className="ies-note">
             Receipts = posted Voucher Income by Income Category (Income Summary Matrix). Payments = Voucher Expense by Main GL. Bank figures from the Bank Balance Statement
-            (uploaded statement lines not matched to the books count as &quot;not in books&quot;). Cash in Hand from the Cash In Hand Statement. White boxes are typed by hand and saved with the month.
+            (uploaded statement lines not matched to the books count as &quot;not in books&quot;). Cash in Hand = Bank Deposit's undeposited cash as it stands now — the same in every month. White boxes are typed by hand and saved with the month.
           </p>
           <div className="ies-sign"><div>Accountant</div><div>Administrator</div><div>CEO</div></div>
         </div>

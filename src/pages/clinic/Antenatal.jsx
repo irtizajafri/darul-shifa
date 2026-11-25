@@ -11,6 +11,7 @@ import { buildAntenatalReceiptHtml, buildAntenatalCardHtml } from './antenatalRe
 import { buildSequentialPrintHtml } from './clinicalRecordPrintUtils';
 import './Antenatal.scss';
 import { openPrintWindow } from '../../utils/printRelay';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 import { useShallow } from 'zustand/react/shallow';
 
 function fullName(emp) {
@@ -262,6 +263,7 @@ export default function Antenatal() {
   const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
   const [form, setForm] = useState(EMPTY);
+  const [numKey, setNumKey] = useState(0); // bumps after a save — the auto Slip # field shows the next number
   const [saving, setSaving] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
   const [showPanelModal, setShowPanelModal] = useState(false);
@@ -426,14 +428,17 @@ export default function Antenatal() {
         : form.patientCategory === 'staff' ? 'staff'
         : 'private';
       const doctor = antenatalDoctors.find(d => String(d.id) === String(form.underTreatmentId));
-      await createAntenatal({ ...form, paymentType, mrNo: form.mrNo || '' });
+      // Slip # is given by the server on save (auto numbering) — print that one.
+      const saved = await createAntenatal({ ...form, paymentType, mrNo: form.mrNo || '' });
+      const serialNo = saved?.serialNo || form.serialNo;
       toast.success('Antenatal registration saved');
+      setNumKey((k) => k + 1);
 
       const canvas = document.createElement('canvas');
-      JsBarcode(canvas, form.serialNo, { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
+      JsBarcode(canvas, serialNo, { format: 'CODE128', width: 2, height: 48, displayValue: true, fontSize: 11, margin: 4 });
       const barcodeDataUrl = canvas.toDataURL('image/png');
       const printedBy = user?.name || user?.username || user?.email || '';
-      const antenatalForPrint = { ...form, paymentType };
+      const antenatalForPrint = { ...form, serialNo, paymentType };
 
       const html = buildAntenatalReceiptHtml({ antenatal: antenatalForPrint, doctor, isDuplicate: false, barcodeDataUrl, printedBy });
       // Slip 2 (Antenatal Card, no Amount) goes in the SAME window, printed
@@ -478,7 +483,7 @@ export default function Antenatal() {
             <span className="ant-lbl" style={{ marginLeft: '1rem' }}>Date</span>
             <input className="ant-inp ant-inp--date" type="date" value={form.registrationDate} onChange={e => set('registrationDate', e.target.value)} />
             <span className="ant-lbl" style={{ marginLeft: '1rem' }}>Slip #</span>
-            <input className="ant-inp ant-inp--no" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
+            <AutoNumberField kind="slip" className="ant-inp ant-inp--no" value={form.serialNo} onChange={v => set('serialNo', v)} refreshKey={numKey} />
           </div>
           <div className="ant-title">Antenatal Registration</div>
         </div>

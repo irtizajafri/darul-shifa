@@ -68,6 +68,10 @@ const BY_PATH = [
   [/^\/expense-drafts\/(\d+)/, entityOf('accVoucherExpenseDraft')],
   [/^\/income-categories\/(\d+)/, entityOf('accIncomeCategory')],
   [/^\/cheques\/(\d+)/, entryBook],
+  // Bank Deposit by day — untick removes a deposit: its book.
+  [/^\/bank-deposit-days\/(\d+)/, entityOf('accBankDeposit')],
+  // Bank statement PDF (migration 085) — its bank's book.
+  [/^\/statement-pdfs\/(\d+)/, async (id) => { const p = await prisma.accBankStatementPdf.findUnique({ where: { id }, select: { bankAccountId: true } }); return p ? bankBook(p.bankAccountId) : null; }],
   [/^\/bank-recon\/signoff\/(\d+)/, async (id) => { const s = await prisma.accBankReconSignoff.findUnique({ where: { id }, select: { bankAccountId: true } }); return s ? bankBook(s.bankAccountId) : null; }],
 ];
 

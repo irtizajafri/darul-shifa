@@ -460,6 +460,7 @@ const ACCOUNTS_TAB_ALIASES = {
   'cheque-presentation': 'cheque-printing',
   'bank-book': 'bank-statement',
   'bank-reconciliation': 'bank-statement',
+  'statement-pdfs': 'bank-statement',
 };
 export function accountsPermissionFor(rest) {
   const [section, page] = String(rest || '').split('/');

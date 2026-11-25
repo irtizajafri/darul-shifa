@@ -5,7 +5,7 @@ import { useAuthStore } from '../store/useAuthStore';
 // Every call to the HMS API carries the login token (owner, 2026-11-20): the
 // server now refuses /api calls without it. Done here once for every screen,
 // instead of in each of the many fetch calls. A fresh token the server sends
-// back ("x-new-token", after 12 hours) replaces the old one. When the server
+// back ("x-new-token", after an hour) replaces the old one. When the server
 // says the login is no longer valid, the user goes back to the login page.
 const API_PREFIX = `${API_BASE_URL}/api/`;
 const LOGIN_URL = `${API_BASE_URL}/api/auth/login`;
@@ -59,25 +59,42 @@ export function installApiAuth() {
 
     const { token } = useAuthStore.getState();
     let opts = init;
+    let sent = ''; // the token this request actually carries
     if (token) {
       const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
       if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+      sent = String(headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
       opts = { ...(init || {}), headers };
+    } else if (init?.headers) {
+      sent = String(new Headers(init.headers).get('Authorization') || '').replace(/^Bearer\s+/i, '');
     }
+    // The same request again with another token (replacing one set by the caller).
+    const retryWith = (t) => {
+      const headers = new Headers(init?.headers || undefined);
+      headers.set('Authorization', `Bearer ${t}`);
+      return window.fetch(input, { ...(init || {}), headers });
+    };
     const res = await nativeFetch(input, opts);
 
     const fresh = res.headers.get('x-new-token');
     if (fresh && useAuthStore.getState().token) useAuthStore.setState({ token: fresh });
 
-    // Sent an old token but another tab has saved a newer one: take it and
-    // try once more before calling the session over.
-    if (res.status === 401 && url !== LOGIN_URL && token && typeof input === 'string') {
-      let raw = null;
-      try { raw = localStorage.getItem('hms-auth'); } catch { /* storage blocked */ }
-      const newer = newerSameUserToken(raw);
-      if (newer) {
-        useAuthStore.setState({ token: newer });
-        return window.fetch(input, init);
+    if (res.status === 401 && url !== LOGIN_URL && typeof input === 'string') {
+      // Sent before a fresh login (old token, or none while logged out) and
+      // answered after it (owner, 2026-11-25: "dobara login ke baad bhi wohi
+      // error"): not a reason to log out — send it again with today's token.
+      const current = useAuthStore.getState().token;
+      if (current && current !== sent) return retryWith(current);
+      // Another tab has saved a newer token for this same user: take it and
+      // try once more before calling the session over.
+      if (sent) {
+        let raw = null;
+        try { raw = localStorage.getItem('hms-auth'); } catch { /* storage blocked */ }
+        const newer = newerSameUserToken(raw);
+        if (newer && newer !== sent) {
+          useAuthStore.setState({ token: newer });
+          return retryWith(newer);
+        }
       }
     }
 

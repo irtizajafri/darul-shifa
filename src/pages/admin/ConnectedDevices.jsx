@@ -34,6 +34,16 @@ export default function ConnectedDevices() {
   const [busy, setBusy] = useState(null);
   const [q, setQ] = useState('');
   const [names, setNames] = useState({});
+  // Direct printing (migration 084): each PC's thermal / normal printer as the
+  // server sees it; the server's own printer list is offered to pick from.
+  const [prn, setPrn] = useState({});
+  const [serverPrinters, setServerPrinters] = useState([]);
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/print/printers`)
+      .then((r) => r.json())
+      .then((j) => setServerPrinters(Array.isArray(j?.data) ? j.data : []))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -92,6 +102,11 @@ export default function ConnectedDevices() {
     if (v === undefined || v === (d.name || '')) return;
     update(d, { name: v }, 'Naam save ho gaya');
   };
+  const savePrinter = (d, key) => {
+    const v = prn[d.id]?.[key];
+    if (v === undefined || v.trim() === (d[key] || '')) return;
+    update(d, { [key]: v.trim() }, v.trim() ? 'Printer save ho gaya' : 'Printer hata diya — is PC pe print dialog aayega');
+  };
   const forget = async (d) => {
     const ok = await confirmDialog({ title: `${label(d)} list se hatayein?`, message: 'Sirf list se hatega. Yeh PC dobara HMS kholega to phir se list me aa jayega.', confirmLabel: 'Hatayein', danger: true });
     if (!ok) return;
@@ -144,10 +159,10 @@ export default function ConnectedDevices() {
             <div className="table-wrap">
               <table className="cpc__table">
                 <thead>
-                  <tr><th>Online</th><th>PC ka naam</th><th>IP</th><th>MAC</th><th>Aakhri user</th><th>Aakhri dafa</th><th>Pehli dafa</th><th className="r">Calls</th><th>Access</th><th /></tr>
+                  <tr><th>Online</th><th>PC ka naam</th><th>IP</th><th>MAC</th><th>Aakhri user</th><th>Aakhri dafa</th><th>Pehli dafa</th><th className="r">Calls</th><th title="Thermal & Save aur Save & Print seedha in printers pe — khali = print dialog">Printers</th><th>Access</th><th /></tr>
                 </thead>
                 <tbody>
-                  {!devices.length && <tr><td colSpan={10} className="cpc__empty">{q ? 'Kuch nahi mila.' : 'Abhi tak koi PC note nahi hua.'}</td></tr>}
+                  {!devices.length && <tr><td colSpan={11} className="cpc__empty">{q ? 'Kuch nahi mila.' : 'Abhi tak koi PC note nahi hua.'}</td></tr>}
                   {devices.map((d) => {
                     const locked = d.isServer || d.isMe || d.protected;
                     return (
@@ -180,6 +195,24 @@ export default function ConnectedDevices() {
                         <td className="nowrap">{fmtWhen(d.lastSeenAt)}</td>
                         <td className="nowrap cpc__muted">{fmtWhen(d.firstSeenAt)}</td>
                         <td className="r">{Number(d.requestCount || 0).toLocaleString()}</td>
+                        <td>
+                          <div className="cpc__printers">
+                            {[['thermalPrinter', 'Thermal'], ['normalPrinter', 'Normal']].map(([key, lbl]) => (
+                              <label key={key} className="cpc__prn">
+                                <span>{lbl}</span>
+                                <input
+                                  list="cpc-server-printers"
+                                  value={prn[d.id]?.[key] ?? d[key] ?? ''}
+                                  placeholder="print dialog"
+                                  onChange={(e) => setPrn((m) => ({ ...m, [d.id]: { ...m[d.id], [key]: e.target.value } }))}
+                                  onBlur={() => savePrinter(d, key)}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                                  aria-label={`${lbl} printer for ${d.ip}`}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        </td>
                         <td><span className={`cpc__pill cpc__pill--${d.status}`}>{STATUS[d.status] || d.status}</span></td>
                         <td>
                           <div className="cpc__actions">
@@ -205,6 +238,13 @@ export default function ConnectedDevices() {
                 </tbody>
               </table>
             </div>
+            <datalist id="cpc-server-printers">
+              {serverPrinters.map((p) => <option key={p} value={p} />)}
+            </datalist>
+            <p className="cpc__note">
+              Printers: is PC ka "Thermal & Save" aur "Save & Print" seedha in printers pe jayega, koi dialog nahi. Naam waisa likhein jaisa server pe printer
+              add hua hai (jaise <code>\\RECEPTION1\THERMAL</code>). Khali chhorein to print dialog aayega.
+            </p>
             <p className="cpc__note">Yeh sirf HMS ki ijazat hai. PC ka internet aur USB band karna checklist (<code>/it/</code>) ki scripts se hota hai.</p>
           </div>
         </>

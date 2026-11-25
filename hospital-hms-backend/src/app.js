@@ -25,6 +25,7 @@ const { authMiddleware } = require('./middleware/auth.middleware');
 const { accountsBookGuard } = require('./middleware/accountsBook.middleware');
 const { deviceGuard } = require('./modules/devices/devices.service');
 const devicesRoutes = require('./modules/devices/devices.routes');
+const printRoutes = require('./modules/print/print.routes');
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.use('/api/lab', labRoutes);
 app.use('/api/panel-lab', panelLabRoutes);
 app.use('/api/pharmacy', pharmacyRoutes);
 app.use('/api/devices', devicesRoutes);
+app.use('/api/print', printRoutes); // direct printing to the PC's thermal / normal printer
 
 app.use(errorHandler);
 

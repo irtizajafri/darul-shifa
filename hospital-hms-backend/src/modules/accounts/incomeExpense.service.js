@@ -1,6 +1,7 @@
 const prisma = require('../../config/db');
 const recon = require('./bankRecon.service');
 const cashFlow = require('./cashFlow.service');
+const depositDays = require('./depositDays.service');
 
 // Accounts → Reports → Income & Expense Summary (owner, 2026-11-21), after
 // the hospital's "INCOME & EXPENDITURE SUMMARY" sheet. One book (Cash GL or
@@ -19,7 +20,9 @@ const cashFlow = require('./cashFlow.service');
 //     Cheques at the month's end (the Un-Presented Cheque List's rule as it
 //     stood on the last day), then the closing balances — Petty Cash and
 //     Cash at JazzCash (typed), each other bank's closing on the Bank Balance
-//     Statement, Cash in Hand this month and last (Cash In Hand Statement).
+//     Statement, and Cash in Hand — one figure, the same in every month's
+//     report: Bank Deposit's "Undeposited cash" as it stands now (owner,
+//     2026-11-24; depositDays.service.js). Depositing a day lowers it at once.
 //     TOTAL each side: Opening + Receipts + Other deposits | Payments −
 //     Un-presented + closing balances, and their difference. Credit Card
 //     Slip Amount / Received Amount are shown for information only.
@@ -227,25 +230,24 @@ async function getIncomeExpenseSummary({ entityType, year, month } = {}) {
   // Reconciliation
   const y = Number(ym.slice(0, 4));
   const m = Number(ym.slice(5, 7));
-  const prev = addMonths(ym, -1);
   const cashBook = book === 'non-corporate';
   const statementBanks = banks.filter((b) => !isJazzCash(b));
-  const [cihNow, cihPrev, bankStmts, unp] = await Promise.all([
+  const [cihNow, undeposited, bankStmts, unp] = await Promise.all([
+    // Only for the month's CC slips now.
     cashBook ? cashFlow.getCashInHandStatement({ entityType: book, year: y, month: m }) : null,
-    cashBook ? cashFlow.getCashInHandStatement({ entityType: book, year: Number(prev.slice(0, 4)), month: Number(prev.slice(5, 7)) }) : null,
+    cashBook ? depositDays.listDepositDays({ entityType: book }) : null,
     Promise.all(statementBanks.map((b) => recon.getBankMonthStatement({ bankAccountId: b.id, year: y, month: m }))),
     unpresentedAt(book, lastDayOf(ym)),
   ]);
   const bankRows = bankStmts
     .map((st, i) => ({ id: statementBanks[i].id, name: `${statementBanks[i].bankName} — ${statementBanks[i].accountNumber}`, active: statementBanks[i].isActive, closing: st.closing }))
     .filter((b) => b.active || b.closing);
-  const cashInHand = cihNow ? round2(cihNow.total.inHand) : null;
-  const cashInHandLastMonth = cihPrev ? round2(cihPrev.total.inHand) : null;
+  const cashInHand = undeposited ? undeposited.undepositedAmount : null;
   const pettyCash = round2(inp.pettyCash);
   const jazzCash = round2(inp.jazzCash);
   const unpresented = unp.total;
   const banksTotal = round2(bankRows.reduce((t, b) => t + b.closing, 0));
-  const balancesTotal = round2(pettyCash + banksTotal + jazzCash + (cashInHand || 0) + (cashInHandLastMonth || 0));
+  const balancesTotal = round2(pettyCash + banksTotal + jazzCash + (cashInHand || 0));
   const reconTotal = round2(balancesTotal + s.receivable - unpresented);
   // TOTAL on each side, as on the sheet.
   const receiptsSide = round2(opening + s.receiptsTotal + s.otherTotal);
@@ -265,12 +267,12 @@ async function getIncomeExpenseSummary({ entityType, year, month } = {}) {
     },
     closingBalances: {
       unpresented, unpresentedCheques: unp.count,
-      pettyCash, banks: bankRows, jazzCash, cashInHand, cashInHandLastMonth, total: balancesTotal,
+      pettyCash, banks: bankRows, jazzCash, cashInHand, total: balancesTotal,
     },
     totals: { receipts: receiptsSide, payments: paymentsSide, difference: round2(receiptsSide - paymentsSide) },
     creditCard: ccSlips === null ? null : { slips: ccSlips, received: ccReceived, difference: round2(ccSlips - ccReceived) },
     reconciliation: {
-      cashInHand, cashInHandLastMonth, pettyCash, jazzCash, receivableBF: s.receivable,
+      cashInHand, pettyCash, jazzCash, receivableBF: s.receivable,
       banks: bankRows, banksTotal, unpresented, total: reconTotal, difference: round2(closing - reconTotal),
     },
     inputs: Object.fromEntries(KEYS.map((k) => [k, inp[k] === undefined ? null : inp[k]])),

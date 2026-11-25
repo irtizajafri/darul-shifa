@@ -118,6 +118,12 @@ router.post('/doctors/:id/import-rates', controller.importDoctorSubDeptRates);
 // OPD
 router.get('/opd/available-doctors', controller.getAvailableDoctors);
 router.get('/opd/next-serial', controller.getNextSerialNo);
+// Auto Slip # / Admission # (migration 083): the next number (shown on the
+// screens), and — Super Admin only — the reserved numbers and the counters.
+router.get('/numbers/next/:kind', controller.getNextNumber);
+router.get('/numbers/reserved', controller.listReservedNumbers);
+router.get('/numbers/counters', controller.getNumberCounters);
+router.put('/numbers/counters/:kind', controller.updateNumberCounter);
 router.get('/opd/next-mr', controller.getNextMrNo);
 router.get('/opd/employee-search', controller.searchEmployees);
 router.get('/opd', controller.getOpdVisits);

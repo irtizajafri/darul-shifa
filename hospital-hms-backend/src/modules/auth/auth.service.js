@@ -4,7 +4,11 @@ const jwt = require('jsonwebtoken');
 
 // Token secret — one place, so signing and checking always agree.
 const JWT_SECRET = () => process.env.JWT_SECRET || 'hospital_hms_secret_key';
-const TOKEN_TTL = '24h';
+// 7 days (owner, 2026-11-25 — a 24-hour token ran out overnight and kept
+// asking to log in again). A token in use is renewed every hour (see
+// auth.middleware.js); an unattended staff PC still logs itself out after 4
+// idle hours (useInactivityLogout).
+const TOKEN_TTL = '7d';
 const signToken = (payload) => jwt.sign(payload, JWT_SECRET(), { expiresIn: TOKEN_TTL });
 
 // Super Admin (owner, 2026-11-20): checked here on the server instead of in

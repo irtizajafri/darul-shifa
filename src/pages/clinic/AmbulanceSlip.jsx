@@ -14,6 +14,7 @@ import './GeneralOPD.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
 import BackDateField from '../../components/clinic/BackDateField';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 
 const PATIENT_TYPES = ['MAST', 'MR', 'MRS', 'MISS', 'MS', 'BABY', 'BABY OF', 'INFANT'];
 const ADMISSION_TITLE_MAP = { Mr: 'MR', Mrs: 'MRS', Ms: 'MS', Master: 'MAST', Baby: 'BABY' };
@@ -181,6 +182,7 @@ export default function AmbulanceSlip() {
   const { user } = useAuthStore();
 
   const [form, setForm] = useState(EMPTY);
+  const [numKey, setNumKey] = useState(0); // bumps after a save — the auto Slip # field shows the next number
   const [dateTime, setDateTime] = useState(() => formatDateTime(new Date()));
   const [receive, setReceive] = useState('');
   const [amount, setAmount] = useState('');
@@ -277,7 +279,6 @@ export default function AmbulanceSlip() {
 
   async function handleSaveAndPrint() {
     if (!form.patientName.trim()) { toast.error('Patient Name is required'); return; }
-    if (!form.serialNo.trim()) { toast.error('Serial No is required'); return; }
     const phoneErr = validatePhoneNo(form.phoneNo);
     if (phoneErr) { toast.error(phoneErr); return; }
     const ageErr = validateAge(form.age, form.ageMonths, form.ageDays);
@@ -299,6 +300,7 @@ export default function AmbulanceSlip() {
       });
       const newId = created?.id;
       toast.success('Ambulance Slip saved');
+      setNumKey((k) => k + 1);
       setForm(EMPTY);
       setReceive('');
       setAmount('');
@@ -351,7 +353,7 @@ export default function AmbulanceSlip() {
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
             <span className="gopd-serial-lbl">Serial #</span>
-            <input className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={e => set('serialNo', e.target.value)} />
+            <AutoNumberField kind="slip" className="gopd-serial-input gopd-mr-input" value={form.serialNo} onChange={v => set('serialNo', v)} refreshKey={numKey} />
             <span className="gopd-serial-lbl" style={{ marginLeft: '0.75rem' }}>Date &amp; Time</span>
             <input className="gopd-serial-input gopd-mr-input" style={{ width: 160 }} value={dateTime} readOnly />
             <BackDateField style={{ marginLeft: '0.75rem' }} />

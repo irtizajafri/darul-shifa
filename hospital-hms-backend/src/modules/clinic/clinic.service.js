@@ -1,4 +1,5 @@
 const prisma = require('../../config/db');
+const numbering = require('./numbering.service');
 
 // ─── Department name resolution ───────────────────────────────────────────────
 // A department reaches us spelled many ways. The new system writes the value a
@@ -457,27 +458,10 @@ async function getNextMrNo() {
 // Serial # sequence is shared across ClinicOpdVisit (General/Emergency/Clinic OPD)
 // and ClinicAdmission — both draw from the same running number so Admission and
 // OPD slips never collide, even though they live in separate tables.
+// Since 2026-11-24 the numbers come from the locked counter in
+// numbering.service.js (migration 083); this only shows the next one.
 async function getNextSerialNo() {
-  const [opdMax, lastAdm, admPayMax, lastPbi, lastAntenatal] = await Promise.all([
-    // Highest number, not the last row: a Patients List slip converted into an
-    // OPD slip (convertPatientVisitToOpdBill), a "LEGACY-…" diagnostic slip or a
-    // hand-typed Slip # can be the newest row with a lower number.
-    prisma.$queryRaw`SELECT MAX("serialNo"::bigint) AS n FROM "ClinicOpdVisit" WHERE "serialNo" ~ '^[0-9]{1,15}$'`,
-    prisma.clinicAdmission.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
-    // Highest number, not the last row: a payment linked from an Excel row
-    // keeps its old Slip #, which would otherwise pull the sequence back.
-    prisma.$queryRaw`SELECT MAX("serialNo"::bigint) AS n FROM "ClinicAdmissionPayment" WHERE "serialNo" ~ '^[0-9]{1,15}$'`,
-    prisma.clinicProvisionalBillItem.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
-    prisma.clinicAntenatal.findFirst({ where: { serialNo: { not: null } }, orderBy: { id: 'desc' }, select: { serialNo: true } }),
-  ]);
-  const BASE = 2826016;
-  const lastOpdNum    = Number(opdMax[0]?.n) || 0;
-  const lastAdmNum     = lastAdm    ? parseInt(lastAdm.serialNo, 10)    || 0 : 0;
-  const lastAdmPayNum = Number(admPayMax[0]?.n) || 0;
-  const lastPbiNum    = lastPbi    ? parseInt(lastPbi.serialNo, 10)    || 0 : 0;
-  const lastAntenatalNum = lastAntenatal ? parseInt(lastAntenatal.serialNo, 10) || 0 : 0;
-  const n = Math.max(lastOpdNum + 1, lastAdmNum + 1, lastAdmPayNum + 1, lastPbiNum + 1, lastAntenatalNum + 1, BASE);
-  return String(n);
+  return String(await numbering.peek('slip'));
 }
 
 // The Serial # field is typed by hand (auto-fill is off while the legacy
@@ -507,7 +491,7 @@ async function findSerialClash(serialNo, ctx = {}) {
   const no = String(serialNo ?? '').trim();
   if (!no) return null;
   const noInt = /^\d+$/.test(no) && Number(no) <= 2147483647 ? Number(no) : null;
-  const [opd, adm, admPay, antenatal, pbi, pvRows] = await Promise.all([
+  const [opd, adm, admPay, antenatal, pbi, pvRows, opdBal] = await Promise.all([
     prisma.clinicOpdVisit.findUnique({ where: { serialNo: no }, select: { patientName: true } }),
     prisma.clinicAdmission.findFirst({ where: { serialNo: no }, select: { admissionNo: true, patientName: true } }),
     prisma.clinicAdmissionPayment.findUnique({ where: { serialNo: no }, select: { admission: { select: { admissionNo: true, patientName: true } } } }),
@@ -519,6 +503,8 @@ async function findSerialClash(serialNo, ctx = {}) {
           select: { patientName: true, department: true, admitNo: true },
         })
       : [],
+    // Receive Balance against Slip — its own Slip # (migration 083).
+    prisma.clinicOpdBalancePayment.findUnique({ where: { serialNo: no }, select: { visit: { select: { serialNo: true, patientName: true } } } }),
   ]);
 
   const samePatient = (name) => ctx.source === 'pv' && sameSlipPatient(name, ctx.patientName);
@@ -527,6 +513,7 @@ async function findSerialClash(serialNo, ctx = {}) {
   if (admPay && !samePatient(admPay.admission?.patientName)) return `Admission ${admPay.admission?.admissionNo} ki payment — ${admPay.admission?.patientName}`;
   if (antenatal && !samePatient(antenatal.patientName)) return `Antenatal — ${antenatal.patientName}`;
   if (pbi) return 'Provisional Bill item';
+  if (opdBal) return `Balance receipt of Slip # ${opdBal.visit?.serialNo} — ${opdBal.visit?.patientName}`;
 
   const other = pvRows.find((pv) => {
     if (ctx.admissionNo && pv.admitNo != null && String(pv.admitNo) === String(ctx.admissionNo).trim()) return false;
@@ -657,7 +644,7 @@ async function createOpdVisit({
   department,
   createdByUserId, createdByName, backDate,
   doctors = [],
-}) {
+}, actor = null) {
   // A stray space typed with the Slip # (" 2872089") used to be saved as-is,
   // and Reprint's lookup then never matched it.
   const serialNo = typeof serialNoRaw === 'string' ? serialNoRaw.trim() : serialNoRaw;
@@ -666,7 +653,11 @@ async function createOpdVisit({
   await assertPanelPrimarySlip({ paymentType, department, panelCompanyId, panelEmployeeId, panelDependentId, patientName, at: back });
   const now = back || new Date();
   const shift = await resolveShiftForTime(now);
-  return prisma.clinicOpdVisit.create({
+  // Blank Slip # (every screen except the Super Admin's typed one) — the next
+  // number from the locked counter, taken in the same save.
+  return numbering.withNumbers([{ kind: 'slip', typed: serialNo }], {
+    actor, usedFor: `OPD slip (${department || 'General OPD'}) — ${patientName || ''}`,
+  }, (nums, tx) => tx.clinicOpdVisit.create({
     data: {
       ...(back ? { createdAt: back } : {}),
       mrNo: mrNo ? Number(mrNo) : null,
@@ -674,7 +665,7 @@ async function createOpdVisit({
       createdByName: createdByName || null,
       shiftId: shift?.id || null,
       shiftName: shift?.name || null,
-      serialNo,
+      serialNo: nums.slip,
       department: department || 'General OPD',
       patientType: patientType || 'MAST',
       patientName: patientName || '',
@@ -719,7 +710,7 @@ async function createOpdVisit({
       },
     },
     include: { doctors: true },
-  });
+  }));
 }
 
 async function enrichOpdPatient(visit) {
@@ -1395,11 +1386,13 @@ async function createAntenatal({
   patientName, age, husbandName, phoneNo, address,
   lmpDate, edd, underTreatmentId, para, gravidia, amount,
   employeeId, panelCompanyId, panelEmployeeId, panelDependentId,
-}) {
+}, actor = null) {
   await assertSerialNoAvailable(serialNo, { patientName });
-  return prisma.clinicAntenatal.create({
+  let saved = serialNo?.trim() || '';
+  // Blank Slip # — the next number from the locked counter (numbering.service.js).
+  return numbering.withNumbers([{ kind: 'slip', typed: saved }], { actor, usedFor: `Antenatal — ${patientName || ''}` }, (nums, tx) => tx.clinicAntenatal.create({
     data: {
-      serialNo:         serialNo?.trim() || null,
+      serialNo:         (saved = nums.slip),
       mrNo:             mrNo || '',
       antenatalNo:      antenatalNo || '',
       registrationDate: registrationDate ? new Date(registrationDate) : new Date(),
@@ -1420,10 +1413,10 @@ async function createAntenatal({
       panelEmployeeId:  panelEmployeeId ? Number(panelEmployeeId) : null,
       panelDependentId: panelDependentId ? Number(panelDependentId) : null,
     },
-  }).catch((err) => {
+  })).catch((err) => {
     // Two saves of the same Slip # at the same moment — the DB unique index
     // (migration 049) stops the second one.
-    if (err.code === 'P2002') throw Object.assign(new Error(`Slip # ${serialNo} abhi abhi kisi aur ne save kiya hai — koi doosra number likhein.`), { status: 409 });
+    if (err.code === 'P2002') throw Object.assign(new Error(`Slip # ${saved} abhi abhi kisi aur ne save kiya hai — koi doosra number likhein.`), { status: 409 });
     throw err;
   });
 }
@@ -2307,7 +2300,7 @@ function receivingMode(paymentType) {
   return m;
 }
 
-async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate, againstCashPending = false }) {
+async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate, againstCashPending = false, actor = null }) {
   const back = resolveBackDate(backDate);
   const amt = Number(amount);
   if (!amt || amt <= 0) throw Object.assign(new Error('Amount 0 se zyada hona chahiye'), { status: 400 });
@@ -2315,8 +2308,10 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(admissionId) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
 
-  const no = serialNo?.trim() || await getNextSerialNo();
-  if (serialNo?.trim()) await assertSerialNoAvailable(no, { admissionNo: admission.admissionNo, patientName: admission.patientName });
+  // Blank Slip # — the next number from the locked counter, taken in the
+  // same save below (numbering.service.js).
+  const no = serialNo?.trim() || '';
+  if (no) await assertSerialNoAvailable(no, { admissionNo: admission.admissionNo, patientName: admission.patientName });
 
   // Same receipt typed with a different Slip #? Provisional Bill pairs an
   // Excel admission receipt with its re-entry only by Slip #, so a wrong
@@ -2348,9 +2343,11 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
       );
     }
   }
-  const payment = await prisma.clinicAdmissionPayment.create({
+  const payment = await numbering.withNumbers([{ kind: 'slip', typed: no }], {
+    actor, usedFor: `Admission ${admission.admissionNo} receipt${againstCashPending ? ' (Cash Pending)' : ''} — ${admission.patientName || ''}`,
+  }, (nums, tx) => tx.clinicAdmissionPayment.create({
     data: {
-      serialNo: no,
+      serialNo: nums.slip,
       admissionId: Number(admissionId),
       amount: amt,
       paymentType: mode,
@@ -2360,7 +2357,7 @@ async function addAdmissionPayment(admissionId, { serialNo, amount, paymentType,
       // Received on Cash Pending Transaction (pendingTx.service.js).
       ...(againstCashPending ? { againstCashPending: true } : {}),
     },
-  });
+  }));
   return { payment, receivedBy, admission };
 }
 
@@ -4870,7 +4867,7 @@ async function checkAdmissionNoDuplicate(admissionNo) {
   return existing ? { exists: true, patientName: existing.patientName } : { exists: false };
 }
 
-async function createAdmission(data) {
+async function createAdmission(data, actor = null) {
   await assertSerialNoAvailable(data.serialNo, { admissionNo: data.admissionNo, patientName: data.patientName });
   const admissionNo = data.admissionNo?.trim();
   if (admissionNo) {
@@ -4886,11 +4883,16 @@ async function createAdmission(data) {
     }
   }
   const back = resolveBackDate(data.backDate);
-  const admission = await prisma.clinicAdmission.create({
+  // Blank Slip # / Admission # — the next numbers from the locked counters,
+  // taken in the same save (numbering.service.js).
+  const admission = await numbering.withNumbers([
+    { kind: 'admission', typed: admissionNo },
+    { kind: 'slip', typed: data.serialNo },
+  ], { actor, usedFor: `Admission — ${data.patientName?.trim() || ''}` }, (nums, tx) => tx.clinicAdmission.create({
     data: {
       ...(back ? { createdAt: back } : {}),
-      serialNo:          data.serialNo?.trim() || null,
-      admissionNo:       data.admissionNo?.trim() || '',
+      serialNo:          nums.slip,
+      admissionNo:       nums.admission,
       mrNo:              data.mrNo ? Number(data.mrNo) : null,
       arrivedSlipNo:     data.arrivedSlipNo?.trim() || null,
       patientTitle:      data.patientTitle || 'Mr',
@@ -4925,7 +4927,7 @@ async function createAdmission(data) {
       createdByUserId:   data.createdByUserId != null ? String(data.createdByUserId) : null,
       createdByName:     data.createdByName?.trim() || null,
     },
-  });
+  }));
   if (admission.bedId) {
     await prisma.clinicBed.update({
       where: { id: admission.bedId },
@@ -8016,7 +8018,7 @@ async function addProvisionalBillItem(admissionId, { roomCategoryId, billHeadId,
   // Manually-entered items have no OPD visit to borrow a slip # from — assign
   // one from the shared running sequence so this line still shows up as a
   // real slip in the Admission Wise Report's "With Slip" view.
-  const serialNo = await getNextSerialNo();
+  const serialNo = await numbering.takeNumber('slip');
   return prisma.clinicProvisionalBillItem.create({
     data: {
       admissionId: Number(admissionId),
@@ -8626,7 +8628,7 @@ async function addPanelOpdBillItem(billId, { roomCategoryId, billHeadId, qty, ra
       qty: q, rate: r, amount: q * r,
       remarks: remarks?.trim() || null,
       patientType: patientType || null,
-      serialNo: await getNextSerialNo(),
+      serialNo: await numbering.takeNumber('slip'),
     },
   });
 }
@@ -10257,7 +10259,7 @@ async function generateAdmissionsFromVisits() {
     const createdAdmission = await prisma.clinicAdmission.create({
       data: {
         admissionNo,
-        serialNo:        await getNextSerialNo(),
+        serialNo:        await numbering.takeNumber('slip'),
         patientTitle:    title,
         patientName:     name,
         ...(gender ? { gender } : {}),
@@ -10986,7 +10988,8 @@ async function getPatientVisits({ fromDate, toDate, fromTime, toTime, paymentTyp
     : opdBalPaymentsRaw;
   const mappedOpdBalPay = opdBalPayments.map((p) => ({
     id:            `opdbalpay_${p.id}`,
-    serialNo:      null,
+    // Its own Slip # since auto numbering (migration 083); none on older rows.
+    serialNo:      p.serialNo || null,
     admitNo:       null,
     mrNo:          null,
     visitDate:     p.receivedAt,
@@ -13308,28 +13311,34 @@ async function getUserDateSummary({ userId, date, shift, userName }) {
   return { userName: user.name, shiftUsed: usedShift, groups, grandTotal };
 }
 
-async function receiveBalancePayment(id, amount, paymentType) {
+async function receiveBalancePayment(id, amount, paymentType, { serialNo, actor = null } = {}) {
   const mode = receivingMode(paymentType);
   const visit = await prisma.clinicOpdVisit.findUnique({ where: { id: Number(id) } });
   if (!visit) throw new Error('Visit not found');
   const balance = visit.totalAmount - visit.receive;
   if (amount <= 0 || amount > balance + 0.01) throw new Error('Invalid amount');
+  // The receipt's own Slip # — blank = the next number from the locked
+  // counter (auto numbering, numbering.service.js); only the Super Admin types one.
+  const typed = String(serialNo ?? '').trim();
+  if (typed) await assertSerialNoAvailable(typed, { patientName: visit.patientName });
   // The slip's own `receive` still gets the top-up (getBalanceSlips/every
   // other screen reads "balance owed" as totalAmount - receive) — but a
   // ClinicOpdBalancePayment row is what lets Patient List/revenue reports
   // show this money on the day it was actually collected, same as
   // ClinicAdmissionPayment does for admission top-ups.
-  const [updated] = await prisma.$transaction([
-    prisma.clinicOpdVisit.update({
+  return numbering.withNumbers([{ kind: 'slip', typed }], {
+    actor, usedFor: `Balance receipt of Slip # ${visit.serialNo} — ${visit.patientName || ''}`,
+  }, async (nums, tx) => {
+    const updated = await tx.clinicOpdVisit.update({
       where: { id: Number(id) },
       data:  { receive: visit.receive + amount },
       select: { id: true, serialNo: true, patientName: true, totalAmount: true, receive: true },
-    }),
-    prisma.clinicOpdBalancePayment.create({
-      data: { visitId: Number(id), amount, paymentType: mode },
-    }),
-  ]);
-  return updated;
+    });
+    const payment = await tx.clinicOpdBalancePayment.create({
+      data: { visitId: Number(id), amount, paymentType: mode, serialNo: nums.slip },
+    });
+    return { ...updated, receiptSerialNo: payment.serialNo, paymentId: payment.id };
+  });
 }
 
 // ─── Medicine List (Pharmacy Price List) ─────────────────────────────────────

@@ -36,7 +36,13 @@ import ECGReportForm from './ECGReportForm';
 // templates need travels with them as inline CSS — flattened by hand from
 // ClinicalRecordForm.scss / ECGReportForm.scss (SCSS nesting like `&--sm`
 // doesn't work outside a Sass build, so it's written out flat here).
+// One A4 page (owner, 2026-11-24 — the form spilled onto a 2nd page): the
+// page's own 8px body margin plus the form's padding and border came on top
+// of its 281mm height (A4 297mm − 2 × 8mm page margin), pushing the bottom
+// over. The body margin is gone and the height now includes padding and
+// border, with 1mm to spare.
 const CRF_CSS = `
+html, body { margin: 0; padding: 0; }
 .copd-crf {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9.5pt;
@@ -44,7 +50,8 @@ const CRF_CSS = `
   background: #fff;
   border: 1.5px solid #000;
   padding: 8px;
-  min-height: 281mm;
+  box-sizing: border-box;
+  min-height: 280mm;
   display: flex;
   flex-direction: column;
 }
@@ -104,7 +111,7 @@ const CRF_CSS = `
 // ECG report reuses .copd-crf-dln / .copd-crf-dashline from CRF_CSS above
 // (see ECGReportForm.scss's own comment) — always paired with CRF_CSS.
 const ECG_CSS = `
-.ecg-rpt { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; background: #fff; min-height: 281mm; display: flex; flex-direction: column; }
+.ecg-rpt { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #000; background: #fff; box-sizing: border-box; min-height: 280mm; display: flex; flex-direction: column; }
 .ecg-rpt-hdr { margin-bottom: 4px; }
 .ecg-rpt-hdr-logo { height: 50px; max-width: 60%; object-fit: contain; object-position: left center; }
 .ecg-rpt-info {

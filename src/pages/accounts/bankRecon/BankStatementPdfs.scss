@@ -1,0 +1,83 @@
+// Bank Statement PDFs (2026-11-24) — the Bank Book look (bankRecon.scss);
+// a 12-month grid per bank and year, uploaded months marked in green.
+.bsp {
+  &__summary { margin: 0 0 10px; font-size: 0.82rem; color: var(--brc-muted); strong { color: var(--brc-ink); } }
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    @media (max-width: 1100px) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    @media (max-width: 800px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 480px) { grid-template-columns: 1fr; }
+  }
+}
+
+.bsp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 132px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--brc-line);
+  border-radius: 8px;
+
+  &--has { border-color: #86efac; box-shadow: inset 3px 0 0 var(--brc-in); }
+  &--future { background: var(--brc-soft); }
+
+  &__head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+  &__month { font-size: 0.92rem; font-weight: 800; color: var(--brc-navy); }
+  &__year { font-size: 0.72rem; font-weight: 700; color: var(--brc-muted); font-variant-numeric: tabular-nums; }
+  &__file {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    color: var(--brc-in);
+    > div { min-width: 0; }
+  }
+  &__name { font-size: 0.8rem; font-weight: 700; color: var(--brc-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__meta { font-size: 0.7rem; color: var(--brc-muted); }
+  &__none { margin: 0; font-size: 0.78rem; color: var(--brc-muted); }
+  &__lock {
+    display: flex; align-items: center; gap: 4px; margin-top: 3px;
+    font-size: 0.7rem; font-weight: 700; color: var(--brc-warn);
+    &.is-saved { color: var(--brc-in); }
+  }
+  &__pw {
+    display: flex; gap: 6px; align-items: center;
+    input {
+      flex: 1; min-width: 0; padding: 4px 8px; min-height: 28px;
+      font-size: 0.82rem; border: 1px solid #94a3b8; border-radius: 6px;
+      &:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
+    }
+  }
+  &__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+}
+
+.bsp-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 16px;
+  @media (max-width: 640px) { padding: 0; }
+
+  &__bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 8px 12px;
+    background: #fff;
+    border-radius: 8px 8px 0 0;
+    strong { font-size: 0.92rem; color: var(--brc-navy, #1e3a5f); }
+    a.brc__btn { text-decoration: none; }
+    > :nth-child(3) { margin-left: auto; }
+    @media (max-width: 640px) { border-radius: 0; }
+  }
+  &__name { font-size: 0.76rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40ch; }
+  &__frame { flex: 1; width: 100%; border: 0; background: #525659; border-radius: 0 0 8px 8px; }
+}

@@ -34,6 +34,7 @@ import DraftExpenses from '../pages/accounts/transactions/DraftExpenses';
 import BankDeposit from '../pages/accounts/transactions/BankDeposit';
 import BankDepositAdj from '../pages/accounts/transactions/BankDepositAdj';
 import BankStatementUpload from '../pages/accounts/transactions/BankStatementUpload';
+import BankStatementPdfs from '../pages/accounts/bankRecon/BankStatementPdfs';
 import ChequePresentation from '../pages/accounts/transactions/ChequePresentation';
 import AccountsReports from '../pages/accounts/reports/AccountsReports';
 import AccountsInquiryDashboard from '../pages/accounts/inquiries/AccountsInquiryDashboard';
@@ -213,6 +214,7 @@ import FuelManagement from '../pages/fuel/FuelManagement';
 import UtilitiesBillDashboard from '../pages/utilities/UtilitiesBillDashboard';
 import UserManagement from '../pages/admin/UserManagement';
 import ConnectedDevices from '../pages/admin/ConnectedDevices';
+import ReservedNumbers from '../pages/admin/ReservedNumbers';
 import LeaveEncashment from '../pages/leave-encashment/LeaveEncashment';
 
 function SuperAdminRoute({ children }) {
@@ -235,6 +237,7 @@ export default function ProtectedRoutes() {
 
       <Route path="admin/users" element={<SuperAdminRoute><UserManagement /></SuperAdminRoute>} />
       <Route path="admin/devices" element={<SuperAdminRoute><ConnectedDevices /></SuperAdminRoute>} />
+      <Route path="admin/reserved-numbers" element={<SuperAdminRoute><ReservedNumbers /></SuperAdminRoute>} />
 
       <Route path="employee-module" element={<PermissionGuard module="employee"><EmployeeModuleDashboard /></PermissionGuard>} />
       <Route path="employees" element={<PermissionGuard module="employee" subModule="employee-database"><EmployeeList /></PermissionGuard>} />
@@ -295,6 +298,7 @@ export default function ProtectedRoutes() {
         <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts" subModule="transactions" tab="cheque-printing"><ChequePresentation /></PermissionGuard>} />
         <Route path="accounts/:entityType/transactions/bank-book" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankBook /></PermissionGuard>} />
         <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankReconciliation /></PermissionGuard>} />
+        <Route path="accounts/:entityType/transactions/statement-pdfs" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankStatementPdfs /></PermissionGuard>} />
 
         <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts" subModule="inquiry"><AccountsInquiryDashboard /></PermissionGuard>} />
 
@@ -344,6 +348,7 @@ export default function ProtectedRoutes() {
       <Route path="accounts/:entityType/transactions/cheque-presentation" element={<PermissionGuard module="accounts" subModule="transactions" tab="cheque-printing"><ChequePresentation /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/bank-book" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankBook /></PermissionGuard>} />
       <Route path="accounts/:entityType/transactions/bank-reconciliation" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankReconciliation /></PermissionGuard>} />
+      <Route path="accounts/:entityType/transactions/statement-pdfs" element={<PermissionGuard module="accounts" subModule="transactions" tab="bank-statement"><BankStatementPdfs /></PermissionGuard>} />
       <Route path="accounts/:entityType/inquiry" element={<PermissionGuard module="accounts" subModule="inquiry"><AccountsInquiryDashboard /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports" element={<PermissionGuard module="accounts" subModule="reports"><AccountsReports /></PermissionGuard>} />
       <Route path="accounts/:entityType/reports/voucher-reprint" element={<PermissionGuard module="accounts" subModule="reports"><VoucherReprint /></PermissionGuard>} />

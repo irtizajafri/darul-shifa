@@ -17,7 +17,8 @@ import './Admission.scss';
 import './Antenatal.scss';
 import { openPrintWindow } from '../../utils/printRelay';
 import { useShallow } from 'zustand/react/shallow';
-import BackDateField from '../../components/clinic/BackDateField';
+import BackDateField, { isSuperAdminUser } from '../../components/clinic/BackDateField';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 import { API_BASE_URL } from '../../config';
 
 function fullName(emp) {
@@ -428,6 +429,7 @@ export default function Admission() {
   const printedBy = user?.name || user?.username || user?.email || '';
 
   const [form, setForm] = useState(EMPTY);
+  const [numKey, setNumKey] = useState(0); // bumps after a save — the auto Slip # / Admission # fields show the next numbers
   const [availableBeds, setAvailableBeds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
@@ -713,7 +715,9 @@ export default function Admission() {
   }
 
   async function handleSave() {
-    const admissionNoErr = validateAdmissionNo(form.admissionNo);
+    // Blank Admission # = the server gives the next one (auto numbering);
+    // only the Super Admin can type one.
+    const admissionNoErr = form.admissionNo.trim() ? validateAdmissionNo(form.admissionNo) : null;
     if (admissionNoErr) return toast.error(admissionNoErr);
     if (admissionNoDup) return toast.error(`Admission # ${form.admissionNo.trim()} pehle se exist karta hai (Patient: ${admissionNoDup.patientName})`);
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
@@ -723,6 +727,7 @@ export default function Admission() {
     try {
       await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes', createdByUserId: user?.id ?? null, createdByName: printedBy });
       toast.success('Admission saved successfully');
+      setNumKey((k) => k + 1);
       setForm(EMPTY);
       setAvailableBeds([]);
       // Serial No auto-fill temporarily disabled — see note above.
@@ -767,7 +772,9 @@ export default function Admission() {
   }
 
   async function handleSaveAndPrint() {
-    const admissionNoErr = validateAdmissionNo(form.admissionNo);
+    // Blank Admission # = the server gives the next one (auto numbering);
+    // only the Super Admin can type one.
+    const admissionNoErr = form.admissionNo.trim() ? validateAdmissionNo(form.admissionNo) : null;
     if (admissionNoErr) return toast.error(admissionNoErr);
     if (admissionNoDup) return toast.error(`Admission # ${form.admissionNo.trim()} pehle se exist karta hai (Patient: ${admissionNoDup.patientName})`);
     if (!form.patientName.trim()) return toast.error('Patient Name is required');
@@ -779,6 +786,17 @@ export default function Admission() {
     try {
       const created = await createAdmission({ ...form, referralPatient: form.referralPatient === 'yes', createdByUserId: user?.id ?? null, createdByName: printedBy });
       toast.success('Admission saved');
+      setNumKey((k) => k + 1);
+      // The numbers the server gave on save (auto numbering) go on the prints.
+      const savedForm = { ...form, admissionNo: created.admissionNo || form.admissionNo, serialNo: created.serialNo || form.serialNo };
+      let savedBarcode = barcodeDataUrl;
+      if (savedForm.admissionNo && savedForm.admissionNo !== form.admissionNo) {
+        try {
+          const canvas = document.createElement('canvas');
+          JsBarcode(canvas, String(savedForm.admissionNo).padStart(8, '0'), { format: 'CODE39', width: 1.5, height: 32, displayValue: true, fontSize: 10, margin: 2 });
+          savedBarcode = canvas.toDataURL('image/png');
+        } catch { savedBarcode = ''; }
+      }
 
       // Advance slip (if any) + Admission Form print as two separate,
       // sequential print jobs in ONE popup — never window.print() on the
@@ -792,7 +810,7 @@ export default function Admission() {
         admittedBy: created.createdByName || printedBy,
         payments: advAmt > 0 ? [{ date: created.createdAt || new Date(), amount: advAmt, slipNo: created.serialNo || form.serialNo || '' }] : [],
       };
-      const admissionHtml = buildAdmissionFormPrintHtml({ form, doctors, roomCategories, availableBeds, isDuplicate: false, barcodeDataUrl, record });
+      const admissionHtml = buildAdmissionFormPrintHtml({ form: savedForm, doctors, roomCategories, availableBeds, isDuplicate: false, barcodeDataUrl: savedBarcode, record });
       const primary = advanceHtml || admissionHtml;
       const extra = advanceHtml ? admissionHtml : null;
       w.document.write(buildSequentialPrintHtml(primary, extra));
@@ -843,20 +861,20 @@ export default function Admission() {
               <div className="adm-row">
                 <div className="adm-field">
                   <label>Serial #</label>
-                  <input type="text" value={form.serialNo} onChange={e => setForm(f => ({ ...f, serialNo: e.target.value }))} className="adm-serial-input" title="Auto-generated — same running sequence as OPD slips, but editable" />
+                  <AutoNumberField kind="slip" value={form.serialNo} onChange={v => setForm(f => ({ ...f, serialNo: v }))} className="adm-serial-input" refreshKey={numKey} inputProps={{ type: 'text' }} />
                 </div>
                 <BackDateField style={{ alignSelf: 'flex-end', marginBottom: 2 }} />
                 <div className="adm-field">
                   <label>Admission #</label>
                   <div className="adm-lookup-row">
-                    <input
-                      type="text"
+                    <AutoNumberField
+                      kind="admission"
                       value={form.admissionNo}
-                      onChange={e => set('admissionNo', e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleAdmissionLookup()}
-                      placeholder="e.g. 173380"
+                      onChange={v => set('admissionNo', v)}
+                      refreshKey={numKey}
+                      inputProps={{ type: 'text', onKeyDown: e => e.key === 'Enter' && handleAdmissionLookup() }}
                     />
-                    <button className="adm-lookup-btn" onClick={handleAdmissionLookup} title="Lookup">↵</button>
+                    {isSuperAdminUser(user) && <button className="adm-lookup-btn" onClick={handleAdmissionLookup} title="Lookup">↵</button>}
                   </div>
                   {admissionNoDup && (
                     <span className="adm-dup-warning">

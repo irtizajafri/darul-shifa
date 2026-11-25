@@ -42,9 +42,12 @@ const PATH_OVERRIDES = {
   '/pharmacy/reports': 'Pharmacy Reports',
   '/admin/users': 'User Management',
   '/admin/devices': 'Connected PCs',
+  '/admin/reserved-numbers': 'Reserved Numbers',
   // Renamed report (owner, 2026-11-21); the path keeps its old key.
   '/accounts/non-corporate/reports/slip-refund-statement': 'Slip & Admission Refunds',
   '/accounts/corporate/reports/slip-refund-statement': 'Slip & Admission Refunds',
+  '/accounts/non-corporate/transactions/statement-pdfs': 'Bank Statement PDFs',
+  '/accounts/corporate/transactions/statement-pdfs': 'Bank Statement PDFs',
   '/employees': 'Employee Database',
   '/employees/add': 'Add Employee',
   '/coming-soon': 'Coming Soon',

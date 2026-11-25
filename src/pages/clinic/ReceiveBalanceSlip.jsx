@@ -6,6 +6,7 @@ import useModalKeys from '../../hooks/useModalKeys';
 import { RECEIVING_MODES } from './receivingModes';
 import './ReceiveBalanceSlip.scss';
 import { API_BASE_URL } from '../../config';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 
 const API = `${API_BASE_URL}/api/clinic`;
 
@@ -105,6 +106,7 @@ function BalanceLookupModal({ onSelect, onClose }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ReceiveBalanceSlip() {
   const [serial,      setSerial]      = useState('');
+  const [numKey,      setNumKey]      = useState(0); // bumps after a save — the auto Slip # field shows the next number
   const [showLookup,  setShowLookup]  = useState(false);
   const [slip,        setSlip]        = useState(null);
   const [receiveAmt,  setReceiveAmt]  = useState('');
@@ -142,11 +144,13 @@ export default function ReceiveBalanceSlip() {
       const res  = await fetch(`${API}/opd/${slip.id}/receive-balance`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ amount: amt, paymentType: payMode }),
+        // Blank Slip # = the server gives the next one (auto numbering).
+        body:    JSON.stringify({ amount: amt, paymentType: payMode, serialNo: serial }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'Failed');
       toast.success('Balance received successfully');
+      setNumKey((k) => k + 1);
       // reset
       setSlip(null);
       setReceiveAmt('');
@@ -177,7 +181,7 @@ export default function ReceiveBalanceSlip() {
           {/* Serial # row */}
           <div className="rbs-form-row">
             <label className="rbs-label rbs-label--serial">Serial #</label>
-            <input className="rbs-input rbs-input--serial" value={serial} onChange={e => setSerial(e.target.value)} />
+            <AutoNumberField kind="slip" className="rbs-input rbs-input--serial" value={serial} onChange={setSerial} refreshKey={numKey} />
             {slip && (
               <span className="rbs-dept-badge">{(slip.department || 'GENERAL OPD').toUpperCase()}</span>
             )}

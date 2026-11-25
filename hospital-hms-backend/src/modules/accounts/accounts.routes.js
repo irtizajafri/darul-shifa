@@ -159,4 +159,9 @@ router.get('/inquiry/clinic-revenue', ctrl.getClinicRevenueForDate);
 router.get('/inquiry/panel-cheque-revenue', ctrl.getPanelChequeRevenueForDate);
 router.get('/inquiry/daily-diff', ctrl.getDailyIncomeExpenseDiff);
 
+// Bank statement PDFs by month (migration 085) — kept to look at later.
+router.use('/statement-pdfs', require('./statementPdf.routes'));
+// Bank Deposit by day — like Presented / Unpresented Cheques (2026-11-24).
+router.use('/bank-deposit-days', require('./depositDays.routes'));
+
 module.exports = router;

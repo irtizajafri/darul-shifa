@@ -1093,6 +1093,8 @@ model ClinicOpdBalancePayment {
   // Mode the balance was received in (migration 079): cash / cc / jazzcash.
   // Null on older rows — they go by the slip's payment type.
   paymentType String?
+  // Its own Slip # from the shared series (migration 083); null on older rows.
+  serialNo   String?        @unique(map: "ClinicOpdBalancePayment_serialNo_key")
   receivedAt DateTime       @default(now())
   createdAt  DateTime       @default(now())
 
@@ -2429,6 +2431,26 @@ model AccBankAccount {
   statementLines AccBankStatementLine[]
   reconLinks     AccBankReconLink[]
   reconSignoffs  AccBankReconSignoff[]
+  statementPdfs  AccBankStatementPdf[]
+}
+
+// Bank statement PDFs by month (migration 085) — kept to look at later.
+model AccBankStatementPdf {
+  id             Int            @id @default(autoincrement())
+  bankAccountId  Int
+  bankAccount    AccBankAccount @relation(fields: [bankAccountId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  fileName       String
+  sizeBytes      Int
+  data           Bytes
+  uploadedByName String?
+  uploadedAt     DateTime       @default(now())
+  // Locked PDF: its password, copied into the viewer's box (checked on save).
+  password       String?
+  isLocked       Boolean?
+
+  @@unique([bankAccountId, year, month], map: "AccBankStatementPdf_bank_year_month_key")
 }
 
 model AccBankDeposit {
@@ -3716,6 +3738,9 @@ model HmsDevice {
   lastSeenAt    DateTime  @default(now())
   changedByName String?
   changedAt     DateTime?
+  // Direct printing (migration 084): this PC's printers as the server sees them.
+  thermalPrinter String?
+  normalPrinter  String?
 }
 
 model HmsSetting {
@@ -3736,4 +3761,33 @@ model AccMonthSummaryInput {
   updatedAt     DateTime @default(now())
 
   @@unique([entityType, month, key])
+}
+
+// Auto Slip # / Admission # (migration 083) — one counter per series, locked
+// while a number is taken; numbers kept aside each shift for the Super Admin.
+model ClinicNumberCounter {
+  kind            String   @id // slip | admission
+  nextValue       Int
+  reservePerShift Int      @default(0)
+  reserveWindow   Int      @default(0)
+  lastShiftKey    String?
+  updatedAt       DateTime @default(now())
+  updatedByName   String?
+}
+
+model ClinicReservedNumber {
+  id         Int       @id @default(autoincrement())
+  kind       String // slip | admission
+  number     Int
+  shiftDate  String // YYYY-MM-DD the shift started on
+  shiftId    Int?
+  shiftName  String?
+  status     String    @default("free") // free | used
+  usedAt     DateTime?
+  usedByName String?
+  usedFor    String?
+  createdAt  DateTime  @default(now())
+
+  @@unique([kind, number], map: "ClinicReservedNumber_kind_number_key")
+  @@index([kind, status], map: "ClinicReservedNumber_kind_status_idx")
 }

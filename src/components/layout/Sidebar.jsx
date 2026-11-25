@@ -22,6 +22,7 @@ import {
   Wrench,
   ShieldCheck,
   MonitorSmartphone,
+  Hash,
   UserRound,
   FolderTree,
   ListChecks,
@@ -375,6 +376,15 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
           >
             <MonitorSmartphone className="w-5 h-5 shrink-0" />
             {!collapsed && <span>Connected PCs</span>}
+          </div>
+        )}
+        {user?.isSuperAdmin && (
+          <div
+            className={navClass('/admin/reserved-numbers')}
+            onClick={() => go('/admin/reserved-numbers', null)}
+          >
+            <Hash className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>Reserved Numbers</span>}
           </div>
         )}
       </nav>

@@ -91,6 +91,23 @@
     vertical-align: middle;
     &--on { background: var(--cpc-on); box-shadow: 0 0 0 3px #dcfce7; }
   }
+  &__printers { display: flex; flex-direction: column; gap: 3px; min-width: 210px; }
+  &__prn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    span { width: 52px; font-size: 0.7rem; font-weight: 700; color: var(--cpc-muted); }
+    input {
+      flex: 1;
+      min-width: 0;
+      padding: 3px 6px;
+      font-size: 0.78rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 5px;
+      background: #fff;
+      &:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
+    }
+  }
   &__name {
     width: 150px;
     padding: 4px 6px;

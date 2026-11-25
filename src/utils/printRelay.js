@@ -1,4 +1,6 @@
+import { createElement } from 'react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../config';
 
 // Print windows that can't freeze the app (owner's hang report, 2026-10-22).
 //
@@ -55,7 +57,90 @@ function flush(key) {
 
 const DEFAULT_FEATURES = 'width=1000,height=800';
 
-export function openPrintWindow(features = DEFAULT_FEATURES) {
+// ─── Direct printing (owner, 2026-11-24) ─────────────────────────────────────
+// "Thermal & Save" straight to the PC's thermal printer, "Save & Print"
+// straight to its normal printer — no printer-choice dialog. A web page can't
+// choose a printer, so the server prints (api/print, print.service.js) on the
+// printers the Super Admin set for this PC in Connected PCs. A PC without
+// them keeps the print dialog exactly as before.
+// openPrintWindow(features, { targets: ['thermal' | 'normal', …] }) — every
+// printer the click will need; the server prints only when all are set. The
+// returned handle then has isServerPrint and serverPrint(docs, {fallbackHtml}).
+const PRINT_API = `${API_BASE_URL}/api/print`;
+const PRINT_CONFIG_MS = 60 * 1000;
+let printConfig = null;
+let printConfigAt = 0;
+let printConfigLoading = null;
+
+export function refreshPrintConfig() {
+  if (printConfigLoading) return printConfigLoading;
+  printConfigLoading = fetch(`${PRINT_API}/config`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => { if (j?.data) { printConfig = j.data; printConfigAt = Date.now(); } })
+    .catch(() => {})
+    .finally(() => { printConfigLoading = null; });
+  return printConfigLoading;
+}
+
+function serverPrintReady(targets) {
+  if (Date.now() - printConfigAt > PRINT_CONFIG_MS) refreshPrintConfig();
+  return !!printConfig && targets.length > 0 && targets.every((t) => printConfig[t]);
+}
+
+async function sendToServer(docs, fallbackHtml, features) {
+  try {
+    const res = await fetch(PRINT_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ docs }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || j?.ok === false) throw new Error(j?.message || 'Printer tak nahi pahuncha');
+  } catch (e) {
+    // The slip is saved; a click on the toast is a fresh click, so the print
+    // dialog can still open from it.
+    toast.error((t) => createElement('span', null,
+      `Print nahi hua — ${e.message}. `,
+      createElement('button', {
+        type: 'button',
+        onClick: () => { toast.dismiss(t.id); printHtml(fallbackHtml, features); },
+        style: { marginLeft: 6, padding: '3px 8px', border: '1px solid #b91c1c', borderRadius: 4, background: '#fff', color: '#b91c1c', fontWeight: 700, cursor: 'pointer' },
+      }, 'Dialog se print karein'),
+    ), { duration: 20000 });
+  }
+}
+
+function serverPrintHandle(target, features) {
+  let buffer = '';
+  let sent = false;
+  const handle = {
+    closed: false,
+    isPrintRelay: true,
+    isServerPrint: true,
+    get filled() { return sent; },
+    // docs: [{ html, target }] (null entries skipped); fallbackHtml: what the
+    // print dialog shows if the server can't print.
+    serverPrint(docs, { fallbackHtml } = {}) {
+      if (sent) return;
+      sent = true;
+      const list = (docs || []).filter((d) => d && d.html);
+      sendToServer(list, fallbackHtml || list[0]?.html || '', features);
+    },
+    document: {
+      open() { buffer = ''; },
+      write(s) { buffer += String(s); },
+      writeln(s) { buffer += `${String(s)}\n`; },
+      close() { handle.serverPrint([{ html: buffer, target }]); },
+    },
+    print() {},
+    focus() {},
+    close() { handle.closed = true; },
+    set onafterprint(_) {},
+    set onload(_) {},
+    addEventListener() {},
+  };
+  return handle;
+}
+
+export function openPrintWindow(features = DEFAULT_FEATURES, { targets = [] } = {}) {
+  const need = targets.filter(Boolean);
+  if (need.length && serverPrintReady(need)) return serverPrintHandle(need[0], features);
   const key = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   getChannel();
   const job = { ready: false, html: null, print: false, sent: false, timer: null };

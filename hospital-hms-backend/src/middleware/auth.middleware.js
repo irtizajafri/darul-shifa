@@ -4,12 +4,12 @@ const devices = require('../modules/devices/devices.service');
 
 // Every /api call needs the login token (owner, 2026-11-20 — before, any PC
 // on the network could call the API without logging in). Only the login
-// itself is open. A token older than 12 hours gets a fresh one back in the
-// "x-new-token" header, so a busy counter isn't logged out mid-shift; an idle
-// one expires after 24 hours as before.
+// itself is open. A token older than an hour gets a fresh one back in the
+// "x-new-token" header, so a PC in use never runs out; one left unused
+// expires after 7 days (auth.service.js TOKEN_TTL; owner, 2026-11-25).
 // Emergency switch: API_AUTH=off in .env turns the check off.
 const OPEN_PATHS = new Set(['/auth/login', '/auth/ping']);
-const REFRESH_AFTER_S = 12 * 3600;
+const REFRESH_AFTER_S = 3600;
 
 function authMiddleware(req, res, next) {
   if (String(process.env.API_AUTH || '').toLowerCase() === 'off') {

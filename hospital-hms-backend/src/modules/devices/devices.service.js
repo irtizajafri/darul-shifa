@@ -181,12 +181,15 @@ async function listDevices(myIp) {
   };
 }
 
-async function updateDevice(id, { name, status, protected: prot } = {}, { myIp, byName } = {}) {
+async function updateDevice(id, { name, status, protected: prot, thermalPrinter, normalPrinter } = {}, { myIp, byName } = {}) {
   const d = await prisma.hmsDevice.findUnique({ where: { id: Number(id) } });
   if (!d) throw fail(404, 'PC not found');
   const data = { changedByName: byName || null, changedAt: new Date() };
   if (name !== undefined) data.name = String(name || '').trim() || null;
   if (prot !== undefined) data.protected = Boolean(prot);
+  // Direct printing (migration 084) — the server prints this PC's slips here.
+  if (thermalPrinter !== undefined) data.thermalPrinter = String(thermalPrinter || '').trim() || null;
+  if (normalPrinter !== undefined) data.normalPrinter = String(normalPrinter || '').trim() || null;
   if (status !== undefined) {
     if (!['allowed', 'blocked', 'pending'].includes(status)) throw fail(400, 'Status allowed / blocked hona chahiye');
     if (status !== 'allowed') {

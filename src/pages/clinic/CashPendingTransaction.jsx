@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import JsBarcode from 'jsbarcode';
 import ClinicMenuBar from '../../components/clinic/ClinicMenuBar';
 import BackDateField, { getBackDate } from '../../components/clinic/BackDateField';
+import AutoNumberField from '../../components/clinic/AutoNumberField';
 import { confirmDialog } from '../../components/ui/ConfirmDialog';
 import { useAuthStore } from '../../store/useAuthStore';
 import { openPrintWindow } from '../../utils/printRelay';
@@ -195,8 +196,10 @@ export default function CashPendingTransaction() {
                   {RECEIVING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </label>
-              <label className="ptx-field"><span>Slip # (blank = next number)</span>
-                <input value={serialNo} onChange={(e) => setSerialNo(e.target.value)} />
+              <label className="ptx-field"><span>Slip #</span>
+                <span style={{ display: 'flex', alignItems: 'center' }}>
+                  <AutoNumberField kind="slip" value={serialNo} onChange={setSerialNo} style={{ flex: 1, minWidth: 0 }} />
+                </span>
               </label>
               <BackDateField />
             </div>
