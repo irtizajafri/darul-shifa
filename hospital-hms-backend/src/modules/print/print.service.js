@@ -154,4 +154,60 @@ async function listServerPrinters() {
   }
 }
 
-module.exports = { getConfig, printDocs, listServerPrinters, renderPng };
+// ─── Printer setup by script (owner, 2026-11-26; migration 087) ─────────────
+// counter-printers (on the counter) shares its printers as HMS-THERMAL /
+// HMS-NORMAL, makes a print-only user and reports here; server-printers (on
+// the server) reads the list, connects the printers, prints a test page and
+// reports back. Both log in as the Super Admin.
+const clean = (v, max = 200) => String(v ?? '').replace(/[\r\n|]+/g, ' ').trim().slice(0, max);
+
+async function registerCounter(ip, body = {}) {
+  if (!ip) throw fail(400, 'PC ka IP nahi mila');
+  const thermalShare = clean(body.thermalShare, 80);
+  const normalShare = clean(body.normalShare, 80);
+  if (!thermalShare && !normalShare) throw fail(400, 'Koi printer share nahi hua');
+  const user = clean(body.user, 40);
+  const password = String(body.password ?? '');
+  if (!user || !password) throw fail(400, 'Print user ka naam / password nahi aaya');
+  const names = [thermalShare && `Thermal: ${clean(body.thermalName)}`, normalShare && `Normal: ${clean(body.normalName)}`].filter(Boolean).join(' · ');
+  const data = {
+    thermalPrinter: thermalShare ? `\\\\${ip}\\${thermalShare}` : null,
+    normalPrinter: normalShare ? `\\\\${ip}\\${normalShare}` : null,
+    printSetup: 'counter-done',
+    printNote: `Counter tayar (${names}) — ab server pe server-printers chalayein`,
+    printShareUser: user,
+    printSharePassword: password,
+    printSetupAt: new Date(),
+  };
+  const pcName = clean(body.pcName, 60);
+  const row = await prisma.hmsDevice.upsert({
+    where: { ip },
+    create: { ip, name: pcName || null, ...data },
+    update: data,
+  });
+  // Name the PC after Windows' computer name if nobody has named it yet.
+  if (!row.name && pcName) await prisma.hmsDevice.update({ where: { id: row.id }, data: { name: pcName } });
+  return { ip, thermalPrinter: row.thermalPrinter, normalPrinter: row.normalPrinter };
+}
+
+// For the server script: one line per counter — id|ip|thermal share|normal share|user|password|name
+// (plain lines: PowerShell 2.0 on Windows 7 has no JSON reader).
+async function setupList() {
+  const rows = await prisma.hmsDevice.findMany({
+    where: { printShareUser: { not: null } },
+    orderBy: { ip: 'asc' },
+  });
+  const shareOf = (unc) => (unc ? String(unc).split('\\').pop() : '');
+  return rows.map((r) => [r.id, r.ip, shareOf(r.thermalPrinter), shareOf(r.normalPrinter), r.printShareUser, r.printSharePassword, clean(r.name || '')].join('|')).join('\n');
+}
+
+async function setupReport(id, { status, note } = {}) {
+  const st = ['ready', 'failed'].includes(status) ? status : null;
+  if (!st) throw fail(400, 'Status ready / failed hona chahiye');
+  const row = await prisma.hmsDevice.findUnique({ where: { id: Number(id) || 0 } });
+  if (!row) throw fail(404, 'PC nahi mila');
+  await prisma.hmsDevice.update({ where: { id: row.id }, data: { printSetup: st, printNote: clean(note, 500) || null, printSetupAt: new Date() } });
+  return { id: row.id, printSetup: st };
+}
+
+module.exports = { getConfig, printDocs, listServerPrinters, renderPng, registerCounter, setupList, setupReport };

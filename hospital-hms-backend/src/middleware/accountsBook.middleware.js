@@ -123,4 +123,4 @@ async function accountsBookGuard(req, res, next) {
   }
 }
 
-module.exports = { accountsBookGuard, forgetPermissions };
+module.exports = { accountsBookGuard, forgetPermissions, permissionsOf };

@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Hash, RefreshCw, Save } from 'lucide-react';
+import { Hash, Lock, RefreshCw, Save, Undo2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../../config';
+import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
+import { confirmDialog } from '../../components/ui/ConfirmDialog';
+import { ReserveBox } from '../../components/clinic/AutoNumberField';
 import './ReservedNumbers.scss';
 
-// Super Admin → Reserved Numbers (owner, 2026-11-24; migration 083).
-// The auto Slip # / Admission # counters, and the numbers kept aside every
-// shift (slip 4 of the first 12, admission 2 of the first 6) for the Super
-// Admin's back-dated slips — free ones and who used which, when, for what.
+// Reserved Numbers (owner, 2026-11-24; migrations 083, 086). The auto Slip # /
+// Admission # counters (Super Admin), and the numbers kept aside: typed in as
+// the old software skips them (User Management → Clinic → Transactions
+// "Reserved Numbers — reserve a number"), or the HMS's own per-shift picks
+// when those are on — free ones, and who used which, when, for what.
+// Opened from Super Admin → Reserved Numbers or Clinic → Transactions.
 const API = `${API_BASE_URL}/api/clinic/numbers`;
 const KIND_LABEL = { slip: 'Slip #', admission: 'Admission #' };
 
@@ -87,6 +93,11 @@ function CounterCard({ counter, onSaved }) {
 }
 
 export default function ReservedNumbers() {
+  const user = useAuthStore((s) => s.user);
+  const superAdmin = Boolean(user?.isSuperAdmin);
+  // Super Admin, or User Management → Clinic → Transactions "Reserved Numbers — reserve a number".
+  const canReserve = superAdmin || hasPermission(user, 'clinic', 'transactions', 'reserved-numbers');
+  const [reserving, setReserving] = useState(null); // 'slip' | 'admission'
   const [counters, setCounters] = useState([]);
   const [rows, setRows] = useState(null);
   const [filters, setFilters] = useState({ kind: '', status: 'all', from: daysAgo(30), to: ymd(new Date()) });
@@ -124,25 +135,57 @@ export default function ReservedNumbers() {
 
   const setF = (k, v) => setFilters((f) => ({ ...f, [k]: v }));
 
+  const release = async (r) => {
+    const ok = await confirmDialog({
+      title: `${KIND_LABEL[r.kind]} ${r.number} wapas karein?`,
+      message: 'Reserved se hat kar yeh number phir aam ho jayega, aur counter usay agli slip ko de sakta hai.',
+      confirmLabel: 'Wapas karein',
+    });
+    if (!ok) return;
+    try {
+      await api(`/reserved/${r.id}`, { method: 'DELETE' });
+      toast.success(`${KIND_LABEL[r.kind]} ${r.number} wapas ho gaya`);
+      reload();
+    } catch (e) {
+      toast.error(e.message);
+    }
+  };
+
   return (
     <div className="rsn">
       <header className="rsn__head">
         <div>
           <h1><Hash size={20} /> Reserved Numbers</h1>
           <p>
-            Slip # and Admission # are given automatically when a record is saved. Each shift, a few numbers among its
-            first ones are kept aside for back-dated slips — only the Super Admin can use them, from the list on the
-            slip screens. Numbers a shift never reached go back into use when the next shift starts.
+            Slip # and Admission # are given automatically when a record is saved. When the old software skips a
+            number, reserve it here (or with the lock button next to the Serial # field) — the HMS keeps it aside at
+            once. Users allowed in User Management can then make the back-dated slip with it from the list on the slip
+            screens.
           </p>
         </div>
-        <button type="button" className="rsn-btn" onClick={reload}>
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div className="rsn__head-actions">
+          {canReserve && (
+            <>
+              <button type="button" className="rsn-btn rsn-btn--primary" onClick={() => setReserving('slip')}><Lock size={14} /> Reserve Slip #</button>
+              <button type="button" className="rsn-btn rsn-btn--primary" onClick={() => setReserving('admission')}><Lock size={14} /> Reserve Admission #</button>
+            </>
+          )}
+          <button type="button" className="rsn-btn" onClick={reload}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </header>
+      {reserving && <ReserveBox kind={reserving} onClose={() => setReserving(null)} onDone={reload} />}
 
-      <div className="rsn__counters">
-        {counters.map((c) => <CounterCard key={`${c.kind}-${c.updatedAt}`} counter={c} onSaved={reload} />)}
-      </div>
+      {superAdmin ? (
+        <div className="rsn__counters">
+          {counters.map((c) => <CounterCard key={`${c.kind}-${c.updatedAt}`} counter={c} onSaved={reload} />)}
+        </div>
+      ) : (
+        <p className="rsn__next">
+          {counters.map((c) => <span key={c.kind}>Next {KIND_LABEL[c.kind]} <b>{c.next}</b></span>)}
+        </p>
+      )}
 
       <div className="rsn__stats">
         {stats.map((s) => (
@@ -176,25 +219,35 @@ export default function ReservedNumbers() {
         <table className="rsn-table">
           <thead>
             <tr>
-              <th>Number</th><th>Type</th><th>Shift date</th><th>Shift</th><th>Status</th>
-              <th>Used by</th><th>Used at</th><th>Used for</th>
+              <th>Number</th><th>Type</th><th>Date</th><th>Shift</th><th>Kept aside by</th><th>Status</th>
+              <th>Used by</th><th>Used at</th><th>Used for</th>{canReserve && <th aria-label="Actions" />}
             </tr>
           </thead>
           <tbody>
             {rows === null ? (
-              <tr><td colSpan={8} className="rsn-table__empty">Loading…</td></tr>
+              <tr><td colSpan={10} className="rsn-table__empty">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={8} className="rsn-table__empty">No reserved numbers in these dates.</td></tr>
+              <tr><td colSpan={10} className="rsn-table__empty">No reserved numbers in these dates.</td></tr>
             ) : rows.map((r) => (
               <tr key={r.id}>
                 <td className="rsn-num">{r.number}</td>
                 <td>{KIND_LABEL[r.kind] || r.kind}</td>
                 <td>{fmtDate(r.shiftDate)}</td>
                 <td>{r.shiftName || '—'}</td>
+                <td>{r.source === 'manual' ? `${r.reservedByName || 'By hand'} · ${fmtDT(r.createdAt)}` : 'HMS (shift)'}</td>
                 <td><span className={`rsn-pill rsn-pill--${r.status}`}>{r.status === 'used' ? 'Used' : 'Free'}</span></td>
                 <td>{r.usedByName || ''}</td>
                 <td>{fmtDT(r.usedAt)}</td>
                 <td>{r.usedFor || ''}</td>
+                {canReserve && (
+                  <td>
+                    {r.status === 'free' && (
+                      <button type="button" className="rsn-btn rsn-btn--sm" onClick={() => release(r)} title="Ghalti se reserve hua — wapas aam number banayein">
+                        <Undo2 size={13} /> Wapas
+                      </button>
+                    )}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

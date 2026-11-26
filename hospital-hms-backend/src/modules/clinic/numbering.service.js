@@ -25,6 +25,13 @@ const prisma = require('../../config/db');
 // A number typed by hand (only the Super Admin's screens allow it) is saved
 // as typed after the usual clash check; if it is a kept-aside number, it is
 // marked used — who, when, for what.
+//
+// The old (legacy) software still issues slips first and skips its own
+// numbers one by one during a shift (owner, 2026-11-26). Whoever has
+// "Reserved Numbers — reserve" types such a number here (reserveNumbers):
+// it is kept aside at once, inside the same counter lock, so no save can take
+// it meanwhile. Users with "— use" (and the Super Admin) may then save a slip
+// with it. The HMS's own per-shift picks are off (migration 086).
 
 const TX_OPTS = { maxWait: 15000, timeout: 30000 };
 const KINDS = ['slip', 'admission'];
@@ -60,6 +67,9 @@ const loadShifts = (client) => client.clinicShift.findMany({ orderBy: { id: 'asc
 async function usedAmong(client, kind, from, to) {
   const nums = [];
   for (let n = from; n <= to; n++) nums.push(n);
+  return usedOf(client, kind, nums);
+}
+async function usedOf(client, kind, nums) {
   const strs = nums.map(String);
   const used = new Set();
   const add = (rows, key) => rows.forEach((r) => { const n = asInt(r[key]); if (n != null) used.add(n); });
@@ -73,10 +83,10 @@ async function usedAmong(client, kind, from, to) {
     add(await client.clinicProvisionalBillItem.findMany({ where: inStrs, select: sel }), 'serialNo');
     add(await client.clinicPanelOpdBillItem.findMany({ where: inStrs, select: sel }), 'serialNo');
     add(await client.clinicOpdBalancePayment.findMany({ where: inStrs, select: sel }), 'serialNo');
-    add(await client.patientVisit.findMany({ where: { serialNo: { gte: from, lte: to } }, select: sel }), 'serialNo');
+    add(await client.patientVisit.findMany({ where: { serialNo: { in: nums } }, select: sel }), 'serialNo');
   } else {
     add(await client.clinicAdmission.findMany({ where: { admissionNo: { in: strs } }, select: { admissionNo: true } }), 'admissionNo');
-    add(await client.patientVisit.findMany({ where: { admitNo: { gte: from, lte: to } }, select: { admitNo: true } }), 'admitNo');
+    add(await client.patientVisit.findMany({ where: { admitNo: { in: nums } }, select: { admitNo: true } }), 'admitNo');
   }
   return used;
 }
@@ -174,7 +184,7 @@ async function withNumbers(slots, { actor = null, usedFor = '' } = {}, create) {
     if (n == null) continue;
     const row = await prisma.clinicReservedNumber.findUnique({ where: { kind_number: { kind: s.kind, number: n } } });
     if (row?.status !== 'free') continue;
-    if (!actor?.isSuperAdmin) throw err(403, `${KIND_LABEL[s.kind]} ${n} reserved hai — sirf Super Admin istemal kar sakta hai`);
+    if (!(actor?.isSuperAdmin || actor?.canUseReserved)) throw err(403, `${KIND_LABEL[s.kind]} ${n} reserved hai — is se slip banane ki ijazat nahi`);
     s.reserved = row;
   }
   return prisma.$transaction(async (tx) => {
@@ -247,4 +257,71 @@ async function updateCounter(kind, { nextValue, reservePerShift, reserveWindow }
   }, TX_OPTS);
 }
 
-module.exports = { withNumbers, takeNumber, peek, listReserved, getCounters, updateCounter, shiftAt, KINDS };
+// Who already holds a number — for the message when it can't be reserved.
+async function holderOf(client, kind, n) {
+  const str = String(n);
+  if (kind === 'admission') {
+    const a = await client.clinicAdmission.findFirst({ where: { admissionNo: str }, select: { patientName: true } });
+    if (a) return `Admission — ${a.patientName}`;
+    const pv = await client.patientVisit.findFirst({ where: { admitNo: n }, select: { patientName: true } });
+    return pv ? `Patients List (Excel) — ${pv.patientName}` : 'kisi record pe';
+  }
+  const checks = [
+    async () => { const r = await client.clinicOpdVisit.findFirst({ where: { serialNo: str }, select: { patientName: true, department: true } }); return r && `${r.department || 'OPD'} slip — ${r.patientName}`; },
+    async () => { const r = await client.clinicAdmission.findFirst({ where: { serialNo: str }, select: { admissionNo: true, patientName: true } }); return r && `Admission ${r.admissionNo} — ${r.patientName}`; },
+    async () => { const r = await client.clinicAdmissionPayment.findFirst({ where: { serialNo: str }, select: { admission: { select: { admissionNo: true, patientName: true } } } }); return r && `Admission ${r.admission?.admissionNo} receipt — ${r.admission?.patientName}`; },
+    async () => { const r = await client.clinicAntenatal.findFirst({ where: { serialNo: str }, select: { patientName: true } }); return r && `Antenatal — ${r.patientName}`; },
+    async () => { const r = await client.clinicOpdBalancePayment.findFirst({ where: { serialNo: str }, select: { visit: { select: { serialNo: true, patientName: true } } } }); return r && `Balance receipt of slip ${r.visit?.serialNo} — ${r.visit?.patientName}`; },
+    async () => { const r = await client.clinicProvisionalBillItem.findFirst({ where: { serialNo: str }, select: { id: true } }); return r && 'Provisional Bill line'; },
+    async () => { const r = await client.clinicPanelOpdBillItem.findFirst({ where: { serialNo: str }, select: { id: true } }); return r && 'Panel OPD Bill line'; },
+    async () => { const r = await client.patientVisit.findFirst({ where: { serialNo: n }, select: { patientName: true } }); return r && `Patients List (Excel) — ${r.patientName}`; },
+  ];
+  for (const c of checks) { const found = await c(); if (found) return found; }
+  return 'kisi record pe';
+}
+
+// Keep numbers aside at once (the old software skipped them). numbers: one or
+// more, as a list or "2888612, 2888615". Each comes back as reserved /
+// already (reserved before) / taken (a record has it — who).
+async function reserveNumbers(kind, numbers, actor = null) {
+  assertKind(kind);
+  const raw = Array.isArray(numbers) ? numbers : String(numbers ?? '').split(/[\s,;]+/);
+  const typed = raw.map((v) => String(v).trim()).filter(Boolean);
+  const bad = typed.filter((v) => asInt(v) == null);
+  if (bad.length) throw err(400, `Sahi number likhein: ${bad.join(', ')}`);
+  const nums = [...new Set(typed.map(asInt))].sort((a, b) => a - b);
+  if (!nums.length) throw err(400, 'Number likhein');
+  if (nums.length > 50) throw err(400, 'Ek dafa me 50 se zyada nahi');
+  return prisma.$transaction(async (tx) => {
+    await lockCounter(tx, kind); // no number can be given while these are kept aside
+    const shift = shiftAt(await loadShifts(tx), new Date());
+    const before = new Map((await tx.clinicReservedNumber.findMany({ where: { kind, number: { in: nums } } })).map((r) => [r.number, r]));
+    const used = await usedOf(tx, kind, nums);
+    const results = [];
+    for (const n of nums) {
+      const r = before.get(n);
+      if (r) { results.push({ number: n, status: r.status === 'used' ? 'used' : 'already', note: r.status === 'used' ? (r.usedFor || 'istemal ho chuka') : 'pehle se reserved' }); continue; }
+      if (used.has(n)) { results.push({ number: n, status: 'taken', note: await holderOf(tx, kind, n) }); continue; }
+      await tx.clinicReservedNumber.create({
+        data: {
+          kind, number: n,
+          shiftDate: shift?.date || ymd(new Date()), shiftId: shift?.id || null, shiftName: shift?.name || null,
+          source: 'manual', reservedByName: actor?.name || null,
+        },
+      });
+      results.push({ number: n, status: 'reserved' });
+    }
+    return { kind, results };
+  }, TX_OPTS);
+}
+
+// A number reserved by mistake goes back to normal — only while unused.
+async function releaseReserved(id) {
+  const row = await prisma.clinicReservedNumber.findUnique({ where: { id: Number(id) || 0 } });
+  if (!row) throw err(404, 'Reserved number nahi mila');
+  if (row.status !== 'free') throw err(400, `${KIND_LABEL[row.kind]} ${row.number} istemal ho chuka — wapas nahi ho sakta`);
+  await prisma.clinicReservedNumber.deleteMany({ where: { id: row.id, status: 'free' } });
+  return { id: row.id, number: row.number, kind: row.kind };
+}
+
+module.exports = { withNumbers, takeNumber, peek, listReserved, getCounters, updateCounter, reserveNumbers, releaseReserved, shiftAt, KINDS };

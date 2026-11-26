@@ -172,7 +172,8 @@ async function listDevices(myIp) {
     approvalMode,
     guardOff: String(process.env.DEVICE_GUARD || '').toLowerCase() === 'off',
     serverIps: [...serverIps],
-    devices: rows.map((r) => ({
+    // The counter's print-user password stays on the server (server-printers script only).
+    devices: rows.map(({ printSharePassword, ...r }) => ({ // eslint-disable-line no-unused-vars
       ...r,
       online: now - new Date(r.lastSeenAt).getTime() < ONLINE_MS,
       isServer: isServerIp(r.ip),

@@ -3741,6 +3741,12 @@ model HmsDevice {
   // Direct printing (migration 084): this PC's printers as the server sees them.
   thermalPrinter String?
   normalPrinter  String?
+  // Printer setup by script (migration 087)
+  printSetup         String? // counter-done | ready | failed
+  printNote          String?
+  printShareUser     String?
+  printSharePassword String?
+  printSetupAt       DateTime?
 }
 
 model HmsSetting {
@@ -3787,6 +3793,9 @@ model ClinicReservedNumber {
   usedByName String?
   usedFor    String?
   createdAt  DateTime  @default(now())
+  // migration 086: 'shift' (HMS pick at a shift's start) | 'manual' (typed, as the old software skipped it)
+  source         String  @default("shift")
+  reservedByName String?
 
   @@unique([kind, number], map: "ClinicReservedNumber_kind_number_key")
   @@index([kind, status], map: "ClinicReservedNumber_kind_status_idx")

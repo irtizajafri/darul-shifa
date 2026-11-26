@@ -1,0 +1,192 @@
+# Darul Shifa HMS - connect the counters' printers on the SERVER PC
+#
+# Run on the server after counter-printers has run on a counter PC (safe to
+# run again any time - it redoes every counter). In PowerShell opened
+# "As Administrator", logged in to Windows as the user that runs the HMS
+# backend:
+#   & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://localhost:5173/it/server-printers.ps1.txt')))
+#
+# What it does, for every counter that ran counter-printers:
+#   1. Saves the counter's print user (hmsprint) in Windows, so the server
+#      reaches its printers without asking.
+#   2. Adds HMS-THERMAL / HMS-NORMAL of that counter as printers here (for
+#      this user and for all users of this PC).
+#   3. Prints a Windows test page on each (it comes out at the counter).
+#   4. Tells the HMS: Connected PCs shows "Printer ready" or what went wrong.
+# Written for PowerShell 2.0 and newer.
+
+param(
+  [string]$Hms = 'http://localhost:5001'
+)
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
+  return
+}
+
+$Api = "$Hms/api"
+
+function Step([string]$m) { Write-Host ''; Write-Host $m -ForegroundColor Cyan }
+function Ok([string]$m) { Write-Host ('  [OK] ' + $m) -ForegroundColor Green }
+function Bad([string]$m) { Write-Host ('  [X]  ' + $m) -ForegroundColor Red }
+function Warn([string]$m) { Write-Host ('  [!]  ' + $m) -ForegroundColor Yellow }
+
+function Test-Port([string]$HostName, [int]$Port) {
+  $c = New-Object Net.Sockets.TcpClient
+  try {
+    $ar = $c.BeginConnect($HostName, $Port, $null, $null)
+    if (-not $ar.AsyncWaitHandle.WaitOne(3000, $false)) { return $false }
+    $c.EndConnect($ar)
+    return $true
+  } catch {
+    return $false
+  } finally {
+    $c.Close()
+  }
+}
+function J([string]$s) {
+  if ($s -eq $null) { return '""' }
+  $o = $s.Replace('\', '\\').Replace('"', '\"').Replace("`r", '\r').Replace("`n", '\n').Replace("`t", '\t')
+  return '"' + $o + '"'
+}
+function MessageOf([string]$body) {
+  if ($body -match '"message"\s*:\s*"([^"]*)"') { return $matches[1] }
+  return $body
+}
+function Call-Hms([string]$Method, [string]$Url, [string]$Json, [string]$Token) {
+  $wc = New-Object Net.WebClient
+  $wc.Encoding = [Text.Encoding]::UTF8
+  if ($Token) { $wc.Headers.Add('Authorization', 'Bearer ' + $Token) }
+  try {
+    if ($Method -eq 'GET') { return $wc.DownloadString($Url) }
+    $wc.Headers.Add('Content-Type', 'application/json')
+    return $wc.UploadString($Url, $Method, $Json)
+  } catch [Net.WebException] {
+    $r = $_.Exception.Response
+    if ($r) {
+      $sr = New-Object IO.StreamReader($r.GetResponseStream())
+      throw (MessageOf $sr.ReadToEnd())
+    }
+    throw $_.Exception.Message
+  }
+}
+function Find-Printer([string]$name) {
+  return (Get-WmiObject Win32_Printer | Where-Object { $_.Name -eq $name } | Select-Object -First 1)
+}
+
+# --- Who runs the HMS backend ----------------------------------------------------
+Step '1) HMS backend'
+$me = $env:USERNAME
+$owners = @()
+foreach ($p in @(Get-WmiObject Win32_Process -Filter "Name='node.exe'")) {
+  try { $o = $p.GetOwner(); if ($o.User) { $owners += $o.User } } catch { }
+}
+$owners = @($owners | Select-Object -Unique)
+if ($owners.Count -eq 0) {
+  Warn 'HMS backend (node) chalta hua nahi mila - pehle backend chalu karein.'
+} elseif ($owners -notcontains $me) {
+  Warn ("Backend '" + ($owners -join ', ') + "' user se chal raha hai, aap '$me' hain. Printers sab users ke liye bhi add honge, lekin behtar hai usi user se chalayein.")
+} else {
+  Ok "Backend isi user ($me) se chal raha hai"
+}
+
+# --- Login -------------------------------------------------------------------------
+Step '2) Super Admin login'
+$email = Read-Host '  Super Admin email'
+$sec = Read-Host '  Super Admin password' -AsSecureString
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+$pw = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+try {
+  $resp = Call-Hms 'POST' "$Api/auth/login" ('{"email":' + (J $email.Trim().ToLower()) + ',"password":' + (J $pw) + '}') $null
+} catch {
+  Bad ('Login nahi hua: ' + $_)
+  return
+}
+$pw = $null
+if ($resp -notmatch '"token"\s*:\s*"([^"]+)"') { Bad 'Login nahi hua'; return }
+$Token = $matches[1]
+if ($resp -notmatch '"isSuperAdmin"\s*:\s*true') { Bad 'Yeh Super Admin ka login nahi.'; return }
+Ok 'Login ho gaya'
+
+# --- Counters -------------------------------------------------------------------
+Step '3) Counters jinhon ne counter-printers chalaya'
+try {
+  $list = Call-Hms 'GET' "$Api/print/setup" '' $Token
+} catch {
+  Bad ('List nahi mili: ' + $_)
+  return
+}
+$lines = @($list -split "`n" | Where-Object { $_.Trim() -ne '' })
+if ($lines.Count -eq 0) {
+  Warn 'Abhi kisi counter ne counter-printers nahi chalaya.'
+  return
+}
+Ok ("$($lines.Count) counter mile")
+
+$addedGlobal = $false
+$summary = @()
+foreach ($line in $lines) {
+  $f = $line.Trim().Split('|')
+  $id = $f[0]; $ip = $f[1]; $tShare = $f[2]; $nShare = $f[3]; $user = $f[4]; $pass = $f[5]; $pcName = $f[6]
+  $label = $ip
+  if ($pcName) { $label = "$pcName ($ip)" }
+  Step "== $label"
+  $problems = @()
+
+  if (-not (Test-Port $ip 445)) {
+    $problems += "Server is PC (445) tak nahi pahunch saka - PC on hai? counter-printers dobara chalayein"
+  } else {
+    # 1. The counter's print user, saved for this Windows user.
+    & cmdkey.exe "/add:$ip" "/user:$ip\$user" "/pass:$pass" | Out-Null
+    if ($LASTEXITCODE -eq 0) { Ok 'Print user save hua' } else { $problems += 'cmdkey se print user save nahi hua' }
+    & net.exe use "\\$ip\IPC$" "/user:$ip\$user" $pass 2>$null | Out-Null
+
+    foreach ($pair in @(@('Thermal', $tShare), @('Normal', $nShare))) {
+      $kind = $pair[0]; $share = $pair[1]
+      if (-not $share) { continue }
+      $unc = "\\$ip\$share"
+      # 2. Add for this user, and for every user of this PC.
+      if (-not (Find-Printer $unc)) {
+        & rundll32.exe printui.dll,PrintUIEntry /in /q /n "$unc"
+        Start-Sleep -Seconds 6
+      }
+      & rundll32.exe printui.dll,PrintUIEntry /ga /n "$unc"
+      $addedGlobal = $true
+      if (Find-Printer $unc) {
+        Ok "$kind printer add hua: $unc"
+        # 3. Test page - comes out at the counter.
+        & rundll32.exe printui.dll,PrintUIEntry /k /q /n "$unc"
+        Ok "$kind test page bheja - counter pe nikla?"
+      } else {
+        $problems += "$kind ($unc) add nahi hua - aksar driver ka masla: is printer ka 64-bit driver server pe install karein, phir dobara chalayein"
+      }
+    }
+  }
+
+  $status = 'ready'
+  $note = 'Printer ready'
+  if ($problems.Count -gt 0) {
+    $status = 'failed'
+    $note = ($problems -join '; ')
+    foreach ($m in $problems) { Bad $m }
+  }
+  try {
+    $null = Call-Hms 'POST' "$Api/print/setup/$id" ('{"status":' + (J $status) + ',"note":' + (J $note) + '}') $Token
+  } catch {
+    Warn ('HMS ko result nahi bhej saka: ' + $_)
+  }
+  $summary += ("$label : $status")
+}
+
+if ($addedGlobal) {
+  Step '4) Printing service restart (sab users ke liye printers)'
+  try { Restart-Service Spooler -Force -ErrorAction Stop; Ok 'Spooler restart hua' } catch { Warn ('Spooler restart nahi hua: ' + $_.Exception.Message) }
+}
+
+Write-Host ''
+Write-Host 'Khulasa:' -ForegroundColor Cyan
+foreach ($s in $summary) { Write-Host ('  ' + $s) }
+Write-Host ''
+Write-Host 'Connected PCs me har PC ka status dekhein. "ready" wale counter pe Thermal & Save / Save & Print chala kar dekhein.' -ForegroundColor Green

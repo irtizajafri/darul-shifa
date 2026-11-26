@@ -65,6 +65,7 @@ const menuItems = [
       { label: 'Upload Patient Document',               path: '/clinic/transactions/upload-patient-document',  perm: { sub: 'transactions', tab: 'upload-patient-document' } },
       { label: 'Surgery / Procedure Information',       path: '/clinic/transactions/surgery-information',       perm: { sub: 'transactions', tab: 'surgery-information' } },
       { label: 'Handover',                              path: '/clinic/transactions/handover',                  perm: { sub: 'transactions', tab: 'handover' } },
+      { label: 'Reserved Numbers',                      path: '/clinic/transactions/reserved-numbers',          perm: { sub: 'transactions', tab: 'reserved-numbers' } },
     ],
   },
   {

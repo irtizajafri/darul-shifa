@@ -92,6 +92,15 @@
     &--on { background: var(--cpc-on); box-shadow: 0 0 0 3px #dcfce7; }
   }
   &__printers { display: flex; flex-direction: column; gap: 3px; min-width: 210px; }
+  &__prn-status {
+    margin-top: 2px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    max-width: 260px;
+    &--ready { color: var(--cpc-on); }
+    &--counter-done { color: var(--cpc-warn); }
+    &--failed { color: var(--cpc-bad); }
+  }
   &__prn {
     display: flex;
     align-items: center;

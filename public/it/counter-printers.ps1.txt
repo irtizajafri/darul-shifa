@@ -1,0 +1,240 @@
+# Darul Shifa HMS - counter PC printers (Windows 7, 10 and 11)
+#
+# Run once on each counter PC, in PowerShell opened "As Administrator"
+# (the IT page gives the exact line with this server's address):
+#   & ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://192.168.1.100:5173/it/counter-printers.ps1.txt'))) -Server 192.168.1.100
+#
+# What it does, so "Thermal & Save" / "Save & Print" print with no dialog:
+#   1. Asks which installed printer is the thermal one and which the normal one.
+#   2. Shares them as HMS-THERMAL and HMS-NORMAL.
+#   3. Makes a local user "hmsprint" (print only - can't log on to this PC)
+#      with a random password; the HMS server prints as this user.
+#   4. Firewall: lets ONLY the HMS server reach this PC's printers.
+#      Internet and USB stay as counter-lock left them.
+#   5. Turns on the Windows printing / sharing services.
+#   6. Tells the HMS (Super Admin login): Connected PCs fills in this PC's
+#      printers. Then run server-printers on the server.
+# Safe to run again (e.g. after changing a printer).
+# Written for PowerShell 2.0 (Windows 7) and newer.
+
+param(
+  [string]$Server = '192.168.1.100'
+)
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+  Write-Host 'Yeh PowerShell "Run as Administrator" se kholein, phir dobara chalayein.' -ForegroundColor Red
+  return
+}
+
+$Api = "http://$($Server):5001/api"
+$Rule = 'DarulShifaHMS-Print'
+$PrintUser = 'hmsprint'
+$ThermalShare = 'HMS-THERMAL'
+$NormalShare = 'HMS-NORMAL'
+
+function Step([string]$m) { Write-Host ''; Write-Host $m -ForegroundColor Cyan }
+function Ok([string]$m) { Write-Host ('  [OK] ' + $m) -ForegroundColor Green }
+function Bad([string]$m) { Write-Host ('  [X]  ' + $m) -ForegroundColor Red }
+function Info([string]$m) { Write-Host ('       ' + $m) }
+
+function Test-Port([string]$HostName, [int]$Port) {
+  $c = New-Object Net.Sockets.TcpClient
+  try {
+    $ar = $c.BeginConnect($HostName, $Port, $null, $null)
+    if (-not $ar.AsyncWaitHandle.WaitOne(3000, $false)) { return $false }
+    $c.EndConnect($ar)
+    return $true
+  } catch {
+    return $false
+  } finally {
+    $c.Close()
+  }
+}
+
+# JSON text without ConvertTo-Json (not in PowerShell 2.0).
+function J([string]$s) {
+  if ($s -eq $null) { return '""' }
+  $o = $s.Replace('\', '\\').Replace('"', '\"').Replace("`r", '\r').Replace("`n", '\n').Replace("`t", '\t')
+  return '"' + $o + '"'
+}
+function MessageOf([string]$body) {
+  if ($body -match '"message"\s*:\s*"([^"]*)"') { return $matches[1] }
+  return $body
+}
+function Post-Json([string]$Url, [string]$Json, [string]$Token) {
+  $wc = New-Object Net.WebClient
+  $wc.Encoding = [Text.Encoding]::UTF8
+  $wc.Headers.Add('Content-Type', 'application/json')
+  if ($Token) { $wc.Headers.Add('Authorization', 'Bearer ' + $Token) }
+  try {
+    return $wc.UploadString($Url, 'POST', $Json)
+  } catch [Net.WebException] {
+    $r = $_.Exception.Response
+    if ($r) {
+      $sr = New-Object IO.StreamReader($r.GetResponseStream())
+      throw (MessageOf $sr.ReadToEnd())
+    }
+    throw $_.Exception.Message
+  }
+}
+
+# --- 1. Server -------------------------------------------------------------
+Step '1) HMS server tak raasta'
+if (-not (Test-Port $Server 5001)) {
+  Bad "HMS server ($($Server):5001) tak nahi pahunch saka - network / server check karein."
+  return
+}
+Ok "HMS server mil gaya ($Server)"
+
+# --- 2. Login ----------------------------------------------------------------
+Step '2) Super Admin login'
+$email = Read-Host '  Super Admin email'
+$sec = Read-Host '  Super Admin password' -AsSecureString
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+$pw = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+try {
+  $resp = Post-Json "$Api/auth/login" ('{"email":' + (J $email.Trim().ToLower()) + ',"password":' + (J $pw) + '}') $null
+} catch {
+  Bad ('Login nahi hua: ' + $_)
+  return
+}
+$pw = $null
+if ($resp -notmatch '"token"\s*:\s*"([^"]+)"') { Bad 'Login nahi hua'; return }
+$Token = $matches[1]
+if ($resp -notmatch '"isSuperAdmin"\s*:\s*true') { Bad 'Yeh Super Admin ka login nahi - Super Admin se chalayein.'; return }
+Ok 'Login ho gaya'
+
+# --- 3. Services (sharing needs them) ----------------------------------------
+Step '3) Windows printing / sharing services'
+foreach ($svc in @('Spooler', 'LanmanServer')) {
+  & sc.exe config $svc start= auto | Out-Null
+  try {
+    Start-Service $svc -ErrorAction Stop
+    Ok "$svc chal rahi hai"
+  } catch {
+    Bad "$svc start nahi hui: $($_.Exception.Message)"
+  }
+}
+
+# --- 4. Which printers -------------------------------------------------------
+Step '4) Printers'
+$all = @(Get-WmiObject Win32_Printer | Where-Object { -not $_.Network -and $_.Name -notmatch 'PDF|XPS|OneNote|Fax|Send To|Document Writer' } | Sort-Object Name)
+if ($all.Count -eq 0) {
+  Bad 'Is PC pe koi printer nahi mila. Pehle printer laga kar us ka driver install karein.'
+  return
+}
+for ($i = 0; $i -lt $all.Count; $i++) {
+  Write-Host ('  ' + ($i + 1) + ') ' + $all[$i].Name)
+}
+$guessT = 0
+$guessN = 0
+for ($i = 0; $i -lt $all.Count; $i++) {
+  if ($all[$i].Name -match 'POS|Thermal|Receipt|80mm|TM-|RP-?\d|XP-|BTP|BC-?\d|Black ?Copper|58mm') { if ($guessT -eq 0) { $guessT = $i + 1 } }
+  elseif ($guessN -eq 0) { $guessN = $i + 1 }
+}
+
+function Ask-Number([string]$label, [int]$guess) {
+  while ($true) {
+    $hint = 'Enter = ' + $guess
+    if ($guess -eq 0) { $hint = 'Enter = nahi hai' }
+    $a = Read-Host ("  $label printer ka number (0 = nahi hai, $hint)")
+    if ($a -eq '') { return $guess }
+    $n = 0
+    if ([int]::TryParse($a, [ref]$n) -and $n -ge 0 -and $n -le $all.Count) { return $n }
+    Write-Host '  Sahi number likhein.' -ForegroundColor Yellow
+  }
+}
+$tNo = Ask-Number 'Thermal' $guessT
+$nNo = Ask-Number 'Normal' $guessN
+if ($tNo -eq 0 -and $nNo -eq 0) { Bad 'Koi printer nahi chuna.'; return }
+if ($tNo -ne 0 -and $tNo -eq $nNo) { Bad 'Thermal aur Normal ek hi printer nahi ho sakte.'; return }
+
+function Share-Printer($p, [string]$shareName) {
+  $name = $p.Name
+  # Another printer already using this share name gives it up first.
+  foreach ($o in @(Get-WmiObject Win32_Printer | Where-Object { $_.ShareName -eq $shareName -and $_.Name -ne $name })) {
+    $o.Shared = $false
+    try { $null = $o.Put() } catch { }
+  }
+  try {
+    $p.Shared = $true
+    $p.ShareName = $shareName
+    $null = $p.Put()
+  } catch {
+    & rundll32.exe printui.dll,PrintUIEntry /Xs /n "$name" ShareName $shareName attributes +Shared
+    Start-Sleep -Seconds 3
+  }
+  $chk = Get-WmiObject Win32_Printer | Where-Object { $_.Name -eq $name }
+  return ($chk -and $chk.Shared -and $chk.ShareName -eq $shareName)
+}
+
+$thermal = $null
+$normal = $null
+if ($tNo -ne 0) {
+  $thermal = $all[$tNo - 1]
+  if (Share-Printer $thermal $ThermalShare) { Ok "Thermal: $($thermal.Name) -> share $ThermalShare" } else { Bad "Thermal share nahi hua: $($thermal.Name)"; return }
+}
+if ($nNo -ne 0) {
+  $normal = $all[$nNo - 1]
+  if (Share-Printer $normal $NormalShare) { Ok "Normal: $($normal.Name) -> share $NormalShare" } else { Bad "Normal share nahi hua: $($normal.Name)"; return }
+}
+
+# --- 5. Print-only user --------------------------------------------------------
+Step '5) Print user'
+$chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+$rand = New-Object Random
+$Pass = 'Hm9'
+for ($i = 0; $i -lt 16; $i++) { $Pass += $chars[$rand.Next($chars.Length)] }
+& net.exe user $PrintUser 2>$null | Out-Null
+$exists = ($LASTEXITCODE -eq 0)
+if ($exists) {
+  & net.exe user $PrintUser $Pass | Out-Null
+} else {
+  & net.exe user $PrintUser $Pass /add /passwordchg:no /expires:never /comment:"Darul Shifa HMS printing" | Out-Null
+}
+if ($LASTEXITCODE -ne 0) { Bad "User $PrintUser nahi bana (net user)."; return }
+try {
+  $u = [ADSI]"WinNT://$env:COMPUTERNAME/$PrintUser,user"
+  $u.UserFlags.Value = $u.UserFlags.Value -bor 0x10000   # password never expires
+  $u.SetInfo()
+} catch { }
+# Not a normal user of this PC: it can't log on here, only print over the network.
+& net.exe localgroup Users $PrintUser /delete 2>$null | Out-Null
+Ok "User $PrintUser tayar (sirf print ke liye)"
+
+# --- 6. Firewall: only the server --------------------------------------------
+Step '6) Firewall - sirf HMS server ke liye printing'
+foreach ($n in @("$Rule-SMB", "$Rule-EPMap", "$Rule-RPC")) {
+  & netsh.exe advfirewall firewall delete rule "name=$n" | Out-Null
+}
+& netsh.exe advfirewall firewall add rule "name=$Rule-SMB" dir=in action=allow protocol=TCP localport=445 "remoteip=$Server" profile=any | Out-Null
+$ok1 = ($LASTEXITCODE -eq 0)
+& netsh.exe advfirewall firewall add rule "name=$Rule-EPMap" dir=in action=allow protocol=TCP localport=RPC-EPMap "remoteip=$Server" profile=any | Out-Null
+$ok2 = ($LASTEXITCODE -eq 0)
+& netsh.exe advfirewall firewall add rule "name=$Rule-RPC" dir=in action=allow protocol=TCP localport=RPC "remoteip=$Server" profile=any | Out-Null
+$ok3 = ($LASTEXITCODE -eq 0)
+if ($ok1 -and $ok2 -and $ok3) { Ok "Sirf $Server is PC ke printers tak pahunch sakta hai" } else { Bad 'Firewall rule nahi lagi'; return }
+
+# --- 7. Tell the HMS ------------------------------------------------------------
+Step '7) HMS ko batana'
+$tShare = ''
+$tName = ''
+$nShare = ''
+$nName = ''
+if ($thermal) { $tShare = $ThermalShare; $tName = $thermal.Name }
+if ($normal) { $nShare = $NormalShare; $nName = $normal.Name }
+$body = '{"thermalShare":' + (J $tShare) + ',"thermalName":' + (J $tName) + ',"normalShare":' + (J $nShare) + ',"normalName":' + (J $nName) + ',"user":' + (J $PrintUser) + ',"password":' + (J $Pass) + ',"pcName":' + (J $env:COMPUTERNAME) + '}'
+try {
+  $r = Post-Json "$Api/print/register" $body $Token
+} catch {
+  Bad ('HMS ne qubool nahi kiya: ' + $_)
+  return
+}
+Ok 'Connected PCs me is PC ke printers likh diye gaye'
+if ($r -match '"thermalPrinter"\s*:\s*"([^"]+)"') { Info ('Thermal: ' + $matches[1].Replace('\\', '\')) }
+if ($r -match '"normalPrinter"\s*:\s*"([^"]+)"') { Info ('Normal:  ' + $matches[1].Replace('\\', '\')) }
+
+Write-Host ''
+Write-Host 'Counter tayar. Ab SERVER PC pe "server-printers" chalayein (IT page pe likha hai).' -ForegroundColor Green

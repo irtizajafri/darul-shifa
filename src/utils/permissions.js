@@ -200,6 +200,10 @@ export const PERMISSIONS_MAP = {
           { key: 'credit-pending',              label: 'Credit Pending Transaction' },
           // Authority, not a screen: may tick "Goes to Cash Pending" on Discharge and Refund.
           { key: 'discharge-cash-pending',      label: 'Allow "Goes to Cash Pending" (Discharge and Refund)' },
+          // Reserved Numbers (owner, 2026-11-26) — keep aside the Slip # /
+          // Admission # the old software skipped, and save a slip with one.
+          { key: 'reserved-numbers',            label: 'Reserved Numbers — reserve a number' },
+          { key: 'reserved-numbers-use',        label: 'Reserved Numbers — make a slip / admission with one' },
           { key: 'appointment',                 label: 'Appointment' },
           { key: 'ot-register',                 label: 'OT Register' },
           { key: 'birth-certificate',           label: 'Birth Certificate' },

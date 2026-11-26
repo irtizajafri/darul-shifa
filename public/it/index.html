@@ -66,6 +66,23 @@
   </section>
 
   <section>
+    <h2>Printers seedha (Thermal &amp; Save / Save &amp; Print bina dialog)</h2>
+    <p>Har counter ke liye do qadam. Pehle sirf ek counter pe karke dekhein.</p>
+    <ol>
+      <li><b>Counter PC pe</b> (Administrator login, PowerShell <b class="k">Run as administrator</b>). Printer USB se laga ho aur us ka driver installed ho. Script poochegi kaunsa printer thermal hai aur kaunsa normal, phir Super Admin ka email / password:
+        <div class="cmd"><code id="c-cprint"></code><button type="button" data-copy="c-cprint">Copy</button></div>
+        Aakhir me <span class="ok">"Counter tayar"</span> aana chahiye.
+      </li>
+      <li><b>Server PC pe</b> (usi Windows user se jis se HMS backend chalta hai, PowerShell <b class="k">Run as administrator</b>):
+        <div class="cmd"><code id="c-sprint">&amp; ([scriptblock]::Create((New-Object Net.WebClient).DownloadString('http://localhost:5173/it/server-printers.ps1.txt')))</code><button type="button" data-copy="c-sprint">Copy</button></div>
+        Har counter ke printer pe ek <b>test page</b> niklega. Super Admin → <b>Connected PCs</b> me us PC ke aage <span class="ok">"Printer ready"</span> aana chahiye.
+      </li>
+      <li>Counter pe HMS me General OPD → <b class="k">Thermal &amp; Save</b> aur <b class="k">Save &amp; Print</b> chala kar dekhein — koi dialog nahi aana chahiye.</li>
+    </ol>
+    <p class="note">Laal "[X]" aaye to us ki wajah wahi likhi hogi. Aksar: server pe us printer ka 64-bit driver nahi — driver server pe install karke server-printers dobara chalayein. Counter ka IP badle to dono scripts dobara.</p>
+  </section>
+
+  <section>
     <h2>Check karein (restart ke baad, staff login se)</h2>
     <ul>
       <li>HMS khule, login ho, slip save ho aur thermal printer pe print ho.</li>
@@ -94,6 +111,7 @@
   document.getElementById('c-lock').textContent = cmd('counter-lock.ps1.txt');
   document.getElementById('c-lock-p').textContent = cmd('counter-lock.ps1.txt') + ' -Printers 192.168.1.50';
   document.getElementById('c-unlock').textContent = cmd('counter-unlock.ps1.txt');
+  document.getElementById('c-cprint').textContent = cmd('counter-printers.ps1.txt') + ' -Server ' + location.hostname;
   // Copy: navigator.clipboard needs https, so fall back to a hidden textarea.
   document.addEventListener('click', function (e) {
     var id = e.target.getAttribute && e.target.getAttribute('data-copy');

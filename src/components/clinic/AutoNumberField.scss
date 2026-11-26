@@ -85,3 +85,42 @@
   tr.is-match:hover td { background: #fde68a; }
   .anf-num { font-weight: 700; color: #1e3a5f; }
 }
+
+// Reserve box (2026-11-26)
+.anf-reserve {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px 4px;
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    font-size: 0.9rem;
+    font-variant-numeric: tabular-nums;
+    border: 1px solid #94a3b8;
+    border-radius: 6px;
+    &:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px #bfdbfe; }
+  }
+  &__btn {
+    padding: 7px 14px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #fff;
+    background: #1e3a5f;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    &:disabled { opacity: 0.5; cursor: not-allowed; }
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  }
+}
+.anf-results {
+  margin: 0;
+  padding: 6px 14px 14px 30px;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  li { margin: 3px 0; }
+  .is-reserved { color: #15803d; }
+  .is-already, .is-used { color: #64748b; }
+  .is-taken { color: #b91c1c; }
+}

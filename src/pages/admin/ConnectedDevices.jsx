@@ -11,6 +11,8 @@ import './ConnectedDevices.scss';
 // allowed here. The server and the PC you are on can never be blocked.
 
 const API = `${API_BASE_URL}/api/devices`;
+// Printer setup by script (migration 087; IT page → counter-printers / server-printers).
+const PRINT_SETUP = { 'counter-done': 'Counter tayar — server-printers baqi', ready: 'Printer ready', failed: 'Printer masla' };
 const fmtWhen = (d) => (d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 function ago(d, now) {
   const s = Math.max(0, Math.round((now - new Date(d).getTime()) / 1000));
@@ -211,6 +213,12 @@ export default function ConnectedDevices() {
                                 />
                               </label>
                             ))}
+                            {d.printSetup && (
+                              <div className={`cpc__prn-status cpc__prn-status--${d.printSetup}`} title={d.printNote || ''}>
+                                {PRINT_SETUP[d.printSetup] || d.printSetup}
+                                {d.printSetup !== 'ready' && d.printNote ? ` — ${d.printNote}` : ''}
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td><span className={`cpc__pill cpc__pill--${d.status}`}>{STATUS[d.status] || d.status}</span></td>

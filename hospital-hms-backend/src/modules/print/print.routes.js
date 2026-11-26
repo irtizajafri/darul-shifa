@@ -14,4 +14,11 @@ router.get('/config', wrap((req) => svc.getConfig(req.clientIp)));
 router.get('/printers', superAdminOnly, wrap(() => svc.listServerPrinters()));
 router.post('/', wrap((req) => svc.printDocs(req.clientIp, req.body?.docs)));
 
+// Printer setup scripts (public/it/counter-printers / server-printers).
+router.post('/register', superAdminOnly, wrap((req) => svc.registerCounter(req.clientIp, req.body || {})));
+router.get('/setup', superAdminOnly, async (req, res, next) => {
+  try { res.type('text/plain').send(await svc.setupList()); } catch (e) { next(e); }
+});
+router.post('/setup/:id', superAdminOnly, wrap((req) => svc.setupReport(req.params.id, req.body || {})));
+
 module.exports = router;

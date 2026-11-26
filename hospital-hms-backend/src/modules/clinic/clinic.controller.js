@@ -4,9 +4,21 @@ const reprintSearchSvc = require('./reprintSearch.service');
 const patientSearchSvc = require('./patientSearch.service');
 const pendingTxSvc = require('./pendingTx.service');
 const { success, fail } = require('../../utils/response');
-// The logged-in user, for the auto Slip # / Admission # (reserved numbers are
-// the Super Admin's only).
-const actorOf = (req) => ({ isSuperAdmin: Boolean(req.user?.isSuperAdmin), name: req.user?.name || null });
+// The logged-in user, for the auto Slip # / Admission #. Reserved numbers
+// (owner, 2026-11-26): the Super Admin, and users given Clinic → Transactions
+// "Reserved Numbers — reserve" (canReserve) / "— use" (canUseReserved) in
+// User Management.
+const { permissionsOf } = require('../../middleware/accountsBook.middleware');
+async function actorOf(req) {
+  const isSuperAdmin = Boolean(req.user?.isSuperAdmin);
+  const name = req.user?.name || req.user?.email || null;
+  if (isSuperAdmin || !req.user?.id) return { isSuperAdmin, name, canReserve: isSuperAdmin, canUseReserved: isSuperAdmin };
+  const perms = await permissionsOf(req.user.id);
+  const c = perms?.clinic;
+  const tabs = Array.isArray(c) ? (c.includes('transactions') ? true : []) : c?.transactions;
+  const has = (tab) => tabs === true || (Array.isArray(tabs) && tabs.includes(tab));
+  return { isSuperAdmin, name, canReserve: has('reserved-numbers'), canUseReserved: has('reserved-numbers-use') };
+}
 
 // ─── Department ───────────────────────────────────────────────────────────────
 
@@ -802,7 +814,7 @@ async function createOpdVisit(req, res, next) {
     // Slip # may be blank — the server gives the next number (auto numbering).
     const { patientName } = req.body;
     if (!patientName?.trim()) return fail(res, 400, 'Patient Name is required');
-    const data = await service.createOpdVisit(req.body, actorOf(req));
+    const data = await service.createOpdVisit(req.body, await actorOf(req));
     success(res, data, 'OPD Visit saved');
   } catch (err) {
     if (err.code === 'P2002') return fail(res, 409, 'Serial No already exists');
@@ -1095,7 +1107,7 @@ async function createAntenatal(req, res, next) {
   try {
     const { patientName } = req.body;
     if (!patientName?.trim()) return fail(res, 400, 'Patient Name is required');
-    const data = await service.createAntenatal(req.body, actorOf(req));
+    const data = await service.createAntenatal(req.body, await actorOf(req));
     success(res, data, 'Antenatal registration saved');
   } catch (err) { next(err); }
 }
@@ -1182,7 +1194,7 @@ async function getAdmissionForReceiving(req, res, next) {
 async function addAdmissionPayment(req, res, next) {
   try {
     const { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate, backDate } = req.body;
-    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate: !!confirmNotDuplicate, backDate, actor: actorOf(req) });
+    const data = await service.addAdmissionPayment(req.params.admissionId, { serialNo, amount, paymentType, receivedBy, confirmNotDuplicate: !!confirmNotDuplicate, backDate, actor: await actorOf(req) });
     success(res, data, 'Payment receive ho gayi');
   } catch (err) {
     // POSSIBLE_DUPLICATE_RECEIPT — the screen asks, then resends with confirmNotDuplicate
@@ -1707,7 +1719,7 @@ async function createAdmission(req, res, next) {
   try {
     // Admission # / Slip # may be blank — the server gives the next numbers.
     if (!req.body.patientName?.trim()) return fail(res, 400, 'Patient Name is required');
-    const data = await service.createAdmission(req.body, actorOf(req));
+    const data = await service.createAdmission(req.body, await actorOf(req));
     success(res, data, 'Admission saved');
   } catch (err) {
     // Belt-and-suspenders alongside the explicit pre-check in
@@ -2577,7 +2589,7 @@ const pendingWrap = (fn) => async (req, res, next) => {
   }
 };
 const listCashPending = pendingWrap((req) => pendingTxSvc.listCashPending(req.query));
-const receiveCashPending = pendingWrap((req) => pendingTxSvc.receiveCashPending(req.params.admissionId, req.body || {}, actorOf(req)));
+const receiveCashPending = pendingWrap(async (req) => pendingTxSvc.receiveCashPending(req.params.admissionId, req.body || {}, await actorOf(req)));
 const setCashPendingMark = pendingWrap((req) => pendingTxSvc.setCashPendingMark(req.params.admissionId, req.body || {}));
 const listCreditPending = pendingWrap((req) => pendingTxSvc.listCreditPending(req.query));
 const cashPendingReport = pendingWrap((req) => pendingTxSvc.cashPendingReport(req.query));
@@ -2775,7 +2787,7 @@ async function receiveBalancePayment(req, res, next) {
   try {
     const { amount, paymentType, serialNo } = req.body;
     if (!amount || Number(amount) <= 0) return fail(res, 400, 'Valid amount required');
-    const data = await service.receiveBalancePayment(req.params.id, Number(amount), paymentType, { serialNo, actor: actorOf(req) });
+    const data = await service.receiveBalancePayment(req.params.id, Number(amount), paymentType, { serialNo, actor: await actorOf(req) });
     success(res, data, 'Balance received successfully');
   } catch (err) {
     if (err.message === 'Visit not found') return fail(res, 404, err.message);
@@ -2788,6 +2800,14 @@ async function receiveBalancePayment(req, res, next) {
 // ─── Auto Slip # / Admission # (numbering.service.js, migration 083) ─────────
 const numbering = require('./numbering.service');
 const superAdminOnly = (req, res) => (req.user?.isSuperAdmin ? true : (fail(res, 403, 'Sirf Super Admin'), false));
+// Reserved Numbers: who may look / reserve (Super Admin, or the User
+// Management permission).
+async function reservedAccess(req, res, need) {
+  const actor = await actorOf(req);
+  const ok = need === 'reserve' ? actor.canReserve : (actor.canReserve || actor.canUseReserved);
+  if (!ok) { fail(res, 403, 'Aap ko Reserved Numbers ki ijazat nahi — Super Admin se rabta karein'); return null; }
+  return actor;
+}
 async function getNextNumber(req, res, next) {
   try { success(res, { kind: req.params.kind, number: String(await numbering.peek(req.params.kind)) }); } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
@@ -2795,14 +2815,14 @@ async function getNextNumber(req, res, next) {
   }
 }
 async function listReservedNumbers(req, res, next) {
-  if (!superAdminOnly(req, res)) return;
+  if (!(await reservedAccess(req, res, 'view'))) return;
   try { success(res, await numbering.listReserved(req.query)); } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }
 async function getNumberCounters(req, res, next) {
-  if (!superAdminOnly(req, res)) return;
+  if (!(await reservedAccess(req, res, 'view'))) return;
   try { success(res, await numbering.getCounters()); } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
@@ -2810,14 +2830,30 @@ async function getNumberCounters(req, res, next) {
 }
 async function updateNumberCounter(req, res, next) {
   if (!superAdminOnly(req, res)) return;
-  try { success(res, await numbering.updateCounter(req.params.kind, req.body || {}, actorOf(req)), 'Saved'); } catch (err) {
+  try { success(res, await numbering.updateCounter(req.params.kind, req.body || {}, await actorOf(req)), 'Saved'); } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+// Reserve numbers as the old software skips them (owner, 2026-11-26).
+async function reserveNumbers(req, res, next) {
+  const actor = await reservedAccess(req, res, 'reserve');
+  if (!actor) return;
+  try { success(res, await numbering.reserveNumbers(req.body?.kind, req.body?.numbers, actor)); } catch (err) {
+    if (err.status) return fail(res, err.status, err.message);
+    next(err);
+  }
+}
+async function releaseReservedNumber(req, res, next) {
+  if (!(await reservedAccess(req, res, 'reserve'))) return;
+  try { success(res, await numbering.releaseReserved(req.params.id), 'Number wapas ho gaya'); } catch (err) {
     if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }
 
 module.exports = {
-  getNextNumber, listReservedNumbers, getNumberCounters, updateNumberCounter,
+  getNextNumber, listReservedNumbers, getNumberCounters, updateNumberCounter, reserveNumbers, releaseReservedNumber,
   searchForReprint,
   getGeneralPaymentReport,
   getOpdVisitForFullEdit,

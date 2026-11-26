@@ -122,6 +122,8 @@ router.get('/opd/next-serial', controller.getNextSerialNo);
 // screens), and — Super Admin only — the reserved numbers and the counters.
 router.get('/numbers/next/:kind', controller.getNextNumber);
 router.get('/numbers/reserved', controller.listReservedNumbers);
+router.post('/numbers/reserved', controller.reserveNumbers);
+router.delete('/numbers/reserved/:id', controller.releaseReservedNumber);
 router.get('/numbers/counters', controller.getNumberCounters);
 router.put('/numbers/counters/:kind', controller.updateNumberCounter);
 router.get('/opd/next-mr', controller.getNextMrNo);

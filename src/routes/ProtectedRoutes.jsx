@@ -526,6 +526,7 @@ export default function ProtectedRoutes() {
       <Route path="clinic/transactions/discount-refund-admission"   element={<PermissionGuard module="clinic" subModule="transactions" tab="discount-refund-admission"><DiscountRefundAdmission /></PermissionGuard>} />
       <Route path="clinic/transactions/ot-register"                 element={<PermissionGuard module="clinic" subModule="transactions" tab="ot-register"><OtRegister /></PermissionGuard>} />
       <Route path="clinic/transactions/handover"                    element={<PermissionGuard module="clinic" subModule="transactions" tab="handover"><Handover /></PermissionGuard>} />
+      <Route path="clinic/transactions/reserved-numbers" element={<PermissionGuard module="clinic" subModule="transactions" tab="reserved-numbers"><ReservedNumbers /></PermissionGuard>} />
       <Route path="clinic/transactions/reception-assets"             element={<PermissionGuard module="clinic" subModule="transactions" tab="reception-assets"><ReceptionAssets /></PermissionGuard>} />
       <Route path="clinic/transactions/birth-certificate"           element={<PermissionGuard module="clinic" subModule="transactions" tab="birth-certificate"><BirthCertificate /></PermissionGuard>} />
       <Route path="clinic/transactions/appointment"                 element={<PermissionGuard module="clinic" subModule="transactions" tab="appointment"><Appointment /></PermissionGuard>} />

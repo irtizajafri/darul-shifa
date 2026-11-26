@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ListOrdered, X } from 'lucide-react';
+import { ListOrdered, Lock, X } from 'lucide-react';
 import { API_BASE_URL } from '../../config';
 import { useAuthStore } from '../../store/useAuthStore';
+import { hasPermission } from '../../utils/permissions';
 import { isSuperAdminUser, useBackDateStore } from './BackDateField';
 import './AutoNumberField.scss';
 
@@ -13,8 +14,13 @@ import './AutoNumberField.scss';
 // save (bump `refreshKey`). The form keeps its own value blank, so the save
 // asks for the next number, and the slip prints the number the save returns.
 //
-// Super Admin: the field can be typed into (blank = auto), and "Reserved"
-// lists the numbers kept aside each shift, the back date's shift first.
+// Reserved numbers (owner, 2026-11-26) — by User Management permission, the
+// Super Admin always:
+//   "Reserved Numbers — make a slip / admission with one": the field can be
+//     typed into (blank = auto), and the list button shows the free reserved
+//     numbers (the back date's shift first);
+//   "Reserved Numbers — reserve a number": the lock button keeps aside a
+//     number the old software skipped, at once.
 const API = `${API_BASE_URL}/api/clinic`;
 const LABEL = { slip: 'Slip #', admission: 'Admission #' };
 const POLL_MS = 5000;
@@ -34,9 +40,12 @@ async function fetchNext(kind) {
 export default function AutoNumberField({ kind = 'slip', value = '', onChange, refreshKey = 0, className = '', style, inputProps = {} }) {
   const user = useAuthStore((s) => s.user);
   const superAdmin = isSuperAdminUser(user);
+  const canUse = superAdmin || hasPermission(user, 'clinic', 'transactions', 'reserved-numbers-use');
+  const canReserve = superAdmin || hasPermission(user, 'clinic', 'transactions', 'reserved-numbers');
   const backDate = useBackDateStore((s) => s.value);
   const [next, setNext] = useState('');
   const [picking, setPicking] = useState(false);
+  const [reserving, setReserving] = useState(false);
   const [focusTick, setFocusTick] = useState(0);
 
   useEffect(() => {
@@ -48,17 +57,29 @@ export default function AutoNumberField({ kind = 'slip', value = '', onChange, r
     return () => { live = false; clearInterval(t); window.removeEventListener('focus', run); };
   }, [kind, refreshKey, focusTick]);
 
-  if (!superAdmin) {
+  const reserveButton = canReserve && (
+    <>
+      <button type="button" className="anf-pick" onClick={() => setReserving(true)} title={`${LABEL[kind]} reserve karein (purane software ne chhora)`}>
+        <Lock size={13} />
+      </button>
+      {reserving && <ReserveBox kind={kind} onClose={() => setReserving(false)} onDone={() => setFocusTick((t) => t + 1)} />}
+    </>
+  );
+
+  if (!canUse) {
     return (
-      <input
-        {...inputProps}
-        className={`${className} anf-auto`}
-        style={style}
-        value={next}
-        readOnly
-        tabIndex={-1}
-        title={`${LABEL[kind]} khud lagega — Save pe yahi (ya agla) number milega`}
-      />
+      <>
+        <input
+          {...inputProps}
+          className={`${className} anf-auto`}
+          style={style}
+          value={next}
+          readOnly
+          tabIndex={-1}
+          title={`${LABEL[kind]} khud lagega — Save pe yahi (ya agla) number milega`}
+        />
+        {reserveButton}
+      </>
     );
   }
 
@@ -77,6 +98,7 @@ export default function AutoNumberField({ kind = 'slip', value = '', onChange, r
       <button type="button" className="anf-pick" onClick={() => setPicking(true)} title={`Reserved ${LABEL[kind]} — list`}>
         <ListOrdered size={13} />
       </button>
+      {reserveButton}
       {picking && (
         <ReservedPicker
           kind={kind}
@@ -86,6 +108,84 @@ export default function AutoNumberField({ kind = 'slip', value = '', onChange, r
         />
       )}
     </>
+  );
+}
+
+const RESULT_TEXT = {
+  reserved: 'reserved ho gaya',
+  already: 'pehle se reserved',
+  used: 'reserved tha, istemal ho chuka',
+  taken: 'reserve nahi hua — pehle se',
+};
+
+// Keep aside numbers the old software skipped — one or more at once.
+export function ReserveBox({ kind, onClose, onDone }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`${API}/numbers/reserved`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, numbers: text }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || j?.ok === false) throw new Error(j?.message || 'Reserve nahi hua');
+      setResults(j.data?.results || []);
+      setText('');
+      onDone?.();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return createPortal(
+    <div className="anf-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="anf-modal" role="dialog" aria-modal="true" aria-label={`Reserve ${LABEL[kind]}`}>
+        <div className="anf-modal__head">
+          <strong>Reserve {LABEL[kind]}</strong>
+          <button type="button" className="anf-modal__close" onClick={onClose} aria-label="Band karein"><X size={16} /></button>
+        </div>
+        <p className="anf-modal__hint">Purane software ne jo {LABEL[kind]} chhora, woh likhein — HMS usay foran chhor dega. Kai number hon to comma se.</p>
+        <form className="anf-reserve" onSubmit={save}>
+          <input
+            autoFocus
+            inputMode="numeric"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={kind === 'slip' ? 'e.g. 2888612, 2888615' : 'e.g. 180380'}
+            aria-label={`${LABEL[kind]} to reserve`}
+          />
+          <button type="submit" className="anf-reserve__btn" disabled={busy || !text.trim()}>{busy ? 'Saving…' : 'Reserve'}</button>
+        </form>
+        {error && <p className="anf-modal__error">{error}</p>}
+        {results && (
+          <ul className="anf-results">
+            {results.map((r) => (
+              <li key={r.number} className={`is-${r.status}`}>
+                <b>{r.number}</b> — {RESULT_TEXT[r.status] || r.status}{r.note && r.status !== 'already' ? `: ${r.note}` : ''}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 }
 
