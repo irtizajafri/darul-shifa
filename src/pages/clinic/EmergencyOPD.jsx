@@ -13,6 +13,7 @@ import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
 import './GeneralOPD.scss';
 import { openPrintWindow, refreshPrintConfig } from '../../utils/printRelay';
+import PrintStatus from '../../components/clinic/PrintStatus';
 import { useShallow } from 'zustand/react/shallow';
 import BackDateField from '../../components/clinic/BackDateField';
 import AutoNumberField from '../../components/clinic/AutoNumberField';
@@ -893,6 +894,7 @@ export default function EmergencyOPD() {
                     </>
                   )}
                 </div>
+                <PrintStatus />
                 <div className="gopd-action-btns">
                   <button
                     className="gopd-print-btn" data-enter-submit onClick={() => handleSaveAndPrint(false)} disabled={busy}

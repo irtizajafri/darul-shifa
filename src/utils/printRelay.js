@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../config';
+import { useAuthStore } from '../store/useAuthStore';
 
 // Print windows that can't freeze the app (owner's hang report, 2026-10-22).
 //
@@ -64,28 +65,58 @@ const DEFAULT_FEATURES = 'width=1000,height=800';
 // printers the Super Admin set for this PC in Connected PCs. A PC without
 // them keeps the print dialog exactly as before.
 // openPrintWindow(features, { targets: ['thermal' | 'normal', …] }) — every
-// printer the click will need; the server prints only when all are set. The
-// returned handle then has isServerPrint and serverPrint(docs, {fallbackHtml}).
+// printer the click will need. Each parcha is decided on its own (owner,
+// 2026-11-26): the ones whose printer is set go to the server, and a print
+// dialog opens (on the click) only for the ones whose printer isn't. When
+// any goes to the server the handle has isServerPrint and
+// serverPrint(docs, {fallbackHtml}).
+// The PC's printer setting loads when the app opens (startPrintConfig, from
+// MainLayout) and every minute after, so a click never decides on an empty
+// or old setting. PrintStatus (OPD screens) shows it and sends test prints.
 const PRINT_API = `${API_BASE_URL}/api/print`;
 const PRINT_CONFIG_MS = 60 * 1000;
-let printConfig = null;
+let printConfig = null;      // { pc, thermal, normal } from the server
 let printConfigAt = 0;
+let printConfigError = '';   // the last load failed (shown by PrintStatus)
 let printConfigLoading = null;
+const printListeners = new Set();
+const notifyPrint = () => printListeners.forEach((fn) => { try { fn(); } catch { /* a closed screen */ } });
 
 export function refreshPrintConfig() {
   if (printConfigLoading) return printConfigLoading;
+  if (!useAuthStore.getState().isAuthenticated) return Promise.resolve();
   printConfigLoading = fetch(`${PRINT_API}/config`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((j) => { if (j?.data) { printConfig = j.data; printConfigAt = Date.now(); } })
-    .catch(() => {})
-    .finally(() => { printConfigLoading = null; });
+    .then(async (r) => {
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.data) {
+        printConfig = j.data;
+        printConfigAt = Date.now();
+        printConfigError = '';
+      } else {
+        printConfigError = j?.message || `Server ne setting nahi di (${r.status})`;
+      }
+    })
+    .catch(() => { printConfigError = 'Server tak nahi pahuncha'; })
+    .finally(() => { printConfigLoading = null; notifyPrint(); });
   return printConfigLoading;
 }
 
-function serverPrintReady(targets) {
-  if (Date.now() - printConfigAt > PRINT_CONFIG_MS) refreshPrintConfig();
-  return !!printConfig && targets.length > 0 && targets.every((t) => printConfig[t]);
+export const getPrintConfig = () => ({ config: printConfig, at: printConfigAt, error: printConfigError, loading: !!printConfigLoading });
+export function subscribePrintConfig(fn) {
+  printListeners.add(fn);
+  return () => printListeners.delete(fn);
 }
+
+let printConfigStarted = false;
+export function startPrintConfig() {
+  refreshPrintConfig();
+  if (printConfigStarted) return;
+  printConfigStarted = true;
+  setInterval(() => { if (!document.hidden) refreshPrintConfig(); }, PRINT_CONFIG_MS);
+  window.addEventListener('focus', () => { if (Date.now() - printConfigAt > 15000) refreshPrintConfig(); });
+}
+
+const printerSet = (target) => !!printConfig?.[target];
 
 async function sendToServer(docs, fallbackHtml, features) {
   try {
@@ -106,7 +137,9 @@ async function sendToServer(docs, fallbackHtml, features) {
   }
 }
 
-function serverPrintHandle(target, features) {
+// onServer: the targets whose printer is set; dialogPart: a print window
+// opened on the click for the rest (or null when every printer is set).
+function serverPrintHandle(target, features, onServer, dialogPart) {
   let buffer = '';
   let sent = false;
   const handle = {
@@ -115,12 +148,21 @@ function serverPrintHandle(target, features) {
     isServerPrint: true,
     get filled() { return sent; },
     // docs: [{ html, target }] (null entries skipped); fallbackHtml: what the
-    // print dialog shows if the server can't print.
+    // print dialog shows if the server can't print them all.
     serverPrint(docs, { fallbackHtml } = {}) {
       if (sent) return;
       sent = true;
       const list = (docs || []).filter((d) => d && d.html);
-      sendToServer(list, fallbackHtml || list[0]?.html || '', features);
+      const toServer = list.filter((d) => onServer.has(d.target));
+      const toDialog = list.filter((d) => !onServer.has(d.target));
+      if (dialogPart) {
+        if (toDialog.length) { dialogPart.document.write(toDialog[0].html); dialogPart.document.close(); }
+        else dialogPart.close();
+      }
+      if (toServer.length) {
+        const fb = toServer.length === list.length ? (fallbackHtml || toServer[0].html) : toServer[0].html;
+        sendToServer(toServer, fb, features);
+      }
     },
     document: {
       open() { buffer = ''; },
@@ -130,7 +172,7 @@ function serverPrintHandle(target, features) {
     },
     print() {},
     focus() {},
-    close() { handle.closed = true; },
+    close() { handle.closed = true; if (dialogPart && !sent) dialogPart.close(); },
     set onafterprint(_) {},
     set onload(_) {},
     addEventListener() {},
@@ -139,8 +181,21 @@ function serverPrintHandle(target, features) {
 }
 
 export function openPrintWindow(features = DEFAULT_FEATURES, { targets = [] } = {}) {
-  const need = targets.filter(Boolean);
-  if (need.length && serverPrintReady(need)) return serverPrintHandle(need[0], features);
+  const need = [...new Set(targets.filter(Boolean))];
+  if (need.length) {
+    if (Date.now() - printConfigAt > PRINT_CONFIG_MS) refreshPrintConfig();
+    const onServer = new Set(need.filter(printerSet));
+    if (onServer.size) {
+      // A dialog, opened now on the click, only for the parchas whose printer isn't set.
+      const dialogPart = onServer.size < need.length ? relayWindow(features) : null;
+      return serverPrintHandle(need[0], features, onServer, dialogPart);
+    }
+  }
+  return relayWindow(features);
+}
+
+// The print dialog window (print-relay.html, see the top of this file).
+function relayWindow(features = DEFAULT_FEATURES) {
   const key = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   getChannel();
   const job = { ready: false, html: null, print: false, sent: false, timer: null };
@@ -200,4 +255,38 @@ export function printHtml(html, features = DEFAULT_FEATURES, targetWindow = null
   w.document.write(html);
   w.document.close();
   return w;
+}
+
+// ─── Test print (PrintStatus, owner 2026-11-26) ──────────────────────────────
+// A small parcha through the very same server route a slip takes — nothing is
+// saved and no number is used.
+function testPageHtml(target, pc) {
+  const when = new Date().toLocaleString('en-GB');
+  const thermal = target === 'thermal';
+  const page = thermal ? '@page { size: 80mm auto; margin: 0; } body { width: 72mm; padding: 3mm; }'
+    : '@page { size: auto; margin: 0; } body { width: 148mm; padding: 6mm; }';
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Test print</title><style>
+    ${page}
+    body { margin: 0 auto; font-family: Arial, Helvetica, sans-serif; color: #000; text-align: center; }
+    h1 { font-size: ${thermal ? 16 : 22}px; margin: 4px 0; letter-spacing: 1px; }
+    .big { font-size: ${thermal ? 14 : 18}px; font-weight: 700; margin: 6px 0; padding: 4px 0; border-top: 1px dashed #000; border-bottom: 1px dashed #000; }
+    p { font-size: ${thermal ? 11 : 13}px; margin: 3px 0; }
+  </style></head><body>
+    <h1>DARUL SHIFA HMS</h1>
+    <div class="big">TEST PRINT — ${thermal ? 'THERMAL' : 'NORMAL'}</div>
+    <p>PC: ${String(pc || '').replace(/[<>&]/g, '')}</p>
+    <p>${when}</p>
+    <p>Yeh parcha sirf printer check karne ke liye hai.</p>
+  </body></html>`;
+}
+
+export async function printTestPage(target) {
+  const res = await fetch(PRINT_API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ docs: [{ html: testPageHtml(target, printConfig?.pc), target }] }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j?.ok === false) throw new Error(j?.message || 'Printer tak nahi pahuncha');
+  return j.data;
 }

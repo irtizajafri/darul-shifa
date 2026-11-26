@@ -1,0 +1,110 @@
+// Printer status + test print next to the OPD print buttons (2026-11-26).
+// BEM names compile flat (.pst__head …), so the box still styles when it
+// opens over the page outside .pst (portal).
+.pst {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 6px;
+
+  &__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 100%;
+    padding: 3px 9px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+    &--on { color: #14532d; background: #dcfce7; border-color: #86efac; }
+    &--half { color: #92400e; background: #fef3c7; border-color: #fcd34d; }
+    &--off { color: #475569; background: #f1f5f9; border-color: #cbd5e1; }
+    &--bad { color: #991b1b; background: #fee2e2; border-color: #fca5a5; }
+  }
+
+  // Opens over the page (fixed, above the pill).
+  &__pop {
+    position: fixed;
+    z-index: 2000;
+    width: min(320px, 90vw);
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+    font-size: 0.8rem;
+    color: #0f172a;
+    font-family: inherit;
+  }
+  &__head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    span { color: #64748b; font-weight: 600; }
+  }
+  &__row {
+    display: grid;
+    grid-template-columns: 10px 1fr auto;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 6px 0;
+    border-top: 1px solid #eef2f7;
+  }
+  &__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    &.is-on { background: #16a34a; }
+  }
+  &__label { font-weight: 600; }
+  &__btn {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+    background: #1e3a5f;
+    border: 0;
+    border-radius: 5px;
+    cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: not-allowed; }
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  }
+  &__result {
+    grid-column: 2 / -1;
+    font-size: 0.74rem;
+    font-weight: 600;
+    &.is-ok { color: #15803d; }
+    &.is-bad { color: #b91c1c; }
+  }
+  &__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    padding-top: 6px;
+    border-top: 1px solid #eef2f7;
+    color: #64748b;
+    font-size: 0.72rem;
+  }
+  &__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #1e3a5f;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    &:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  }
+}
