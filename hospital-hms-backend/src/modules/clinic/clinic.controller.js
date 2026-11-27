@@ -2093,10 +2093,10 @@ async function getAdmissionForAdjustment(req, res, next) {
 
 async function updateAdmissionAdjustment(req, res, next) {
   try {
-    const data = await service.updateAdmissionAdjustment(req.params.id, req.body);
+    const data = await service.updateAdmissionAdjustment(req.params.id, req.body, { isSuperAdmin: Boolean(req.user?.isSuperAdmin) });
     success(res, data, 'Admission updated');
   } catch (err) {
-    if (err.status === 404) return fail(res, 404, err.message);
+    if (err.status) return fail(res, err.status, err.message);
     next(err);
   }
 }

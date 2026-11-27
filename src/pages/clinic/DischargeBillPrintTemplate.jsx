@@ -79,12 +79,24 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate }) {
   const rel = relationParts(admission);
   const total = Math.round(Number(billAmount) || 0);
   const net = Math.max(0, total - Math.round(Number(discountAmount) || 0));
+  // As the old software's Medical Bill (owner, 2026-11-27): Payment History's
+  // Grand Total is the sum of its rows, and below the bill come Bill Amount,
+  // Received Amount and the whole Refund Amount (received − bill). A refund
+  // already given shows too, so a second one can't hide behind it. Only what
+  // is printed — refund / balance (from the server) are unchanged.
+  const grossReceived = Math.round(paymentHistory.reduce((s, p) => s + (Number(p.amount) || 0), 0) * 100) / 100;
+  const refundGiven = Math.round(Number(detail.refundGiven ?? Math.max(0, grossReceived - (Number(amountReceived) || 0))) || 0);
+  const refundTotal = Math.max(0, Math.round(grossReceived - net));
   const extraLines = [
     discountAmount > 0 && ['Discount', -discountAmount],
     discountAmount > 0 && ['Net Amount', net],
     otherIncomeAmount > 0 && ['Goes to Other Income', -otherIncomeAmount],
     cashPendingAmount > 0 && ['Cash Pending (to be received)', -cashPendingAmount],
-    refund > 0 && ['Refund', refund],
+    ['Bill Amount', net],
+    ['Received Amount', grossReceived],
+    refundTotal > 0 && ['Refund Amount', refundTotal],
+    refundGiven > 0 && refundGiven !== refundTotal && ['Refund pehle diya', refundGiven],
+    refundGiven > 0 && refund > 0 && ['Refund baqi', refund],
     balance > 0 && ['Balance', balance],
   ].filter(Boolean);
 
@@ -121,7 +133,7 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate }) {
             {paymentHistory.map((p, n) => (
               <tr key={n}><td>{fmtPayDateTime(p.date)}</td><td className="c">{p.slipNo}</td><td className="r">{fmtAmt(p.amount)}</td></tr>
             ))}
-            <tr className="imb-pay-total"><td></td><td className="c">Grand Total:</td><td className="r">{fmtAmt(amountReceived)}</td></tr>
+            <tr className="imb-pay-total"><td></td><td className="c">Grand Total:</td><td className="r">{fmtAmt(grossReceived)}</td></tr>
           </tbody>
         </table>
       </div>
@@ -144,7 +156,11 @@ export function DischargeBillPrintTemplate({ detail, isDuplicate }) {
           </tbody>
         </table>
         <div className="imb-total-row">
-          <div className="imb-words">RECEIVED WITH THANKS RS. {numToWords(net).toUpperCase()} ONLY.</div>
+          <div className="imb-words">
+            {refundTotal > 0
+              ? <>REFUND AMOUNT: RS. {numToWords(refundTotal).toUpperCase()} ONLY.</>
+              : <>RECEIVED WITH THANKS RS. {numToWords(net).toUpperCase()} ONLY.</>}
+          </div>
           <div className="imb-total">
             <span>Total:</span><span className="imb-total-box">{fmtAmt(total)}</span>
           </div>

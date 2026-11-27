@@ -11,6 +11,8 @@ import './Admission.scss';
 import './Antenatal.scss';
 import './AdmissionAdjustment.scss';
 import { useShallow } from 'zustand/react/shallow';
+import { useAuthStore } from '../../store/useAuthStore';
+import { isSuperAdminUser } from '../../components/clinic/BackDateField';
 
 function fullName(emp) {
   return [emp.firstName, emp.middleName, emp.lastName].filter(Boolean).join(' ');
@@ -363,6 +365,7 @@ function normCat(s) { return String(s || '').toLowerCase().replace(/[^a-z]/g, ''
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function AdmissionAdjustment() {
+  const superAdmin = isSuperAdminUser(useAuthStore((st) => st.user));
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const {
@@ -824,8 +827,18 @@ export default function AdmissionAdjustment() {
                   </div>
                   <div className="adm-field">
                     <label>Advance Payment</label>
-                    <input type="number" value={form.advancePayment} readOnly disabled className="aa-locked-input" title="Advance Payment is not editable here" />
-                    <span className="aa-locked-note">Yahan edit nahi ho sakti</span>
+                    {/* Super Admin only (owner, 2026-11-27); locked for everyone else. */}
+                    {superAdmin ? (
+                      <>
+                        <input type="number" min="0" step="0.01" value={form.advancePayment} onChange={e => set('advancePayment', e.target.value)} title="Sirf Super Admin badal sakta hai" />
+                        <span className="aa-locked-note">Sirf Super Admin — reports me yahi amount aayega</span>
+                      </>
+                    ) : (
+                      <>
+                        <input type="number" value={form.advancePayment} readOnly disabled className="aa-locked-input" title="Advance Payment is not editable here" />
+                        <span className="aa-locked-note">Yahan edit nahi ho sakti</span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>

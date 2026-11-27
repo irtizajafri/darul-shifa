@@ -4957,9 +4957,10 @@ async function getAvailableBeds(roomCategoryId, excludeAdmissionId) {
 
 // ─── Transactions > Admission Adjustment ─────────────────────────────────────
 // Reopens an existing admission for editing — every field is editable except
-// advancePayment (locked: it's the original receipt amount, already reflected
-// in Revenue Dashboard / Patients List; changing it here would silently alter
-// past financial records without a corresponding payment trail).
+// advancePayment, which only the Super Admin may change (owner, 2026-11-27 —
+// as Full Slip Edit already allows): it's the original receipt amount, already
+// reflected in Revenue Dashboard / Patients List, so for anyone else it stays
+// locked.
 
 // entityType is optional and, when passed, narrows by patientCategory the
 // same way GRN/Doctor payments already split Cash vs Panel elsewhere in
@@ -7121,9 +7122,21 @@ async function getAdmissionForAdjustment(id) {
   return admission;
 }
 
-async function updateAdmissionAdjustment(id, data) {
+async function updateAdmissionAdjustment(id, data, { isSuperAdmin = false } = {}) {
   const admission = await prisma.clinicAdmission.findUnique({ where: { id: Number(id) } });
   if (!admission) throw Object.assign(new Error('Admission not found'), { status: 404 });
+  // Advance Payment: only the Super Admin changes it; the screen sends the
+  // same amount back for everyone else, which leaves it as it is.
+  let advanceChange = {};
+  if (data.advancePayment !== undefined && data.advancePayment !== null && String(data.advancePayment).trim() !== '') {
+    const amt = Number(data.advancePayment);
+    if (!Number.isFinite(amt) || amt < 0) throw Object.assign(new Error('Advance Payment sahi likhein'), { status: 400 });
+    const newAmt = Math.round(amt * 100) / 100;
+    if (Math.abs(newAmt - (Number(admission.advancePayment) || 0)) > 0.004) {
+      if (!isSuperAdmin) throw Object.assign(new Error('Advance Payment sirf Super Admin badal sakta hai'), { status: 403 });
+      advanceChange = { advancePayment: newAmt };
+    }
+  }
   const newSerial = data.serialNo?.trim() || null;
   if (newSerial && newSerial !== admission.serialNo) {
     await assertSerialNoAvailable(newSerial, {
@@ -7159,7 +7172,8 @@ async function updateAdmissionAdjustment(id, data) {
       authorityLetter:   Boolean(data.authorityLetter),
       responsibleParty:  data.responsibleParty?.trim() || null,
       previousAdmission: data.previousAdmission?.trim() || null,
-      // advancePayment intentionally omitted — not editable here
+      // advancePayment: only when the Super Admin changed it (see above)
+      ...advanceChange,
       roomCategoryId:    data.roomCategoryId ? Number(data.roomCategoryId) : null,
       bedId:             newBedId,
       surgery:           Boolean(data.surgery),
@@ -9230,6 +9244,9 @@ async function getDischargeBillDetail(admissionId) {
     },
     paymentHistory,
     amountReceived: netAmountReceived,
+    // Refunds already given on this file — only shown on the Final Bill print
+    // (owner, 2026-11-27); the figures above stay as they were.
+    refundGiven,
     billAmount,
     discountAmount,
     otherIncomeAmount,
