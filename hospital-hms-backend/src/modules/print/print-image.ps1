@@ -7,10 +7,11 @@
 #   -PaperA4  1 = the form asks for A4 portrait (CRF / ECG / Emergency): use
 #             the printer's A4 paper, as the browser did
 #   -Thermal  1 = roll paper: ask for one page as long as the slip
-#   -ShareHost / -ShareUser / -SharePass  the counter's print user (counter-
-#             printers). The HMS backend runs as a service (Session 0), which
-#             can't see credentials saved with cmdkey, so the connection to
-#             the counter is opened here, in the backend's own session.
+#   -ShareHost / -ShareUser  the counter's print user (counter-printers); its
+#             password comes in the HMS_SHARE_PASS environment variable (not on
+#             the command line). The HMS backend runs as a service (Session 0),
+#             which can't see credentials saved with cmdkey, so the connection
+#             to the counter is opened here, in the backend's own session.
 # Normal paper: the slip is centred across the sheet at its real size (made
 # smaller only if the sheet is narrower), like the browser printed it.
 # Long images go onto as many pages as needed. Exit code 1 + message on error.
@@ -22,10 +23,10 @@ param(
   [int]$PaperA4 = 0,
   [int]$Thermal = 0,
   [string]$ShareHost = '',
-  [string]$ShareUser = '',
-  [string]$SharePass = ''
+  [string]$ShareUser = ''
 )
-if ($ShareHost -and $ShareUser) {
+$SharePass = $env:HMS_SHARE_PASS
+if ($ShareHost -and $ShareUser -and $SharePass) {
   $ipc = '\\' + $ShareHost + '\IPC$'
   $who = '/user:' + $ShareHost + '\' + $ShareUser
   & net.exe use $ipc $SharePass $who /persistent:no 2>&1 | Out-Null

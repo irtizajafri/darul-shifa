@@ -87,9 +87,10 @@ async function renderPng(html, target) {
   }
 }
 
-function run(cmd, args) {
+function run(cmd, args, extraEnv = null) {
   return new Promise((resolve, reject) => {
-    execFile(cmd, args, { windowsHide: true, timeout: 90000 }, (err, stdout, stderr) => {
+    const opts = { windowsHide: true, timeout: 90000, ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}) };
+    execFile(cmd, args, opts, (err, stdout, stderr) => {
       // Never the command line in the message — it carries the counter's print password.
       if (err) {
         const said = String(stderr || stdout || '').trim().split('\n').pop();
@@ -112,7 +113,10 @@ async function sendToPrinter({ png, widthMm, marginMm, a4 }, printer, target, cr
     if (isWindows) {
       await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', PS1,
         '-Image', file, '-Printer', printer, '-WidthMm', widthMm.toFixed(2), '-MarginMm', String(marginMm), '-PaperA4', a4 ? '1' : '0', '-Thermal', target === 'thermal' ? '1' : '0',
-        ...(cred ? ['-ShareHost', cred.host, '-ShareUser', cred.user, '-SharePass', cred.password] : [])]);
+        ...(cred ? ['-ShareHost', cred.host, '-ShareUser', cred.user] : [])],
+        // The password goes in the environment, not on the command line (other
+        // processes on the server can read a process's command line).
+        cred ? { HMS_SHARE_PASS: cred.password } : null);
     } else {
       // Dev PC (Mac / Linux): CUPS.
       await run('lp', ['-d', printer, '-o', 'fit-to-page', file]);

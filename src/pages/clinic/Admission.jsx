@@ -378,7 +378,10 @@ function validateAdmissionForm(form) {
     if (!String(form[key] || '').trim()) return `${label} is required`;
   }
 
-  const admissionNoErr = validateAdmissionNo(form.admissionNo);
+  // Blank Admission # = the server gives the next one (auto numbering) — only
+  // a typed one is checked (owner's server, 2026-11-27: every admission
+  // stopped at "Admission # is required").
+  const admissionNoErr = String(form.admissionNo || '').trim() ? validateAdmissionNo(form.admissionNo) : null;
   if (admissionNoErr) return admissionNoErr;
 
   const phoneErr = validatePhoneNo(form.phoneNo);
