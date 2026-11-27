@@ -25,4 +25,5 @@ module.exports = {
   saveSlipResults:    wrap((req) => service.saveSlipResults(req.params.visitId, req.body || {})),
   markPrinted:        wrap((req) => service.markPrinted(req.body?.resultIds)),
   getSummary:         wrap(() => service.getSummary()),
+  reportLines:        wrap((req) => service.reportLines(req.query)),
 };

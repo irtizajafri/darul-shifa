@@ -3679,6 +3679,7 @@ model PharmacyGIN {
   createdByName   String?
   createdAt       DateTime          @default(now())
   items           PharmacyGINItem[]
+  mrnItems        PharmacyMRNItem[]
 
   @@index([gdId])
   @@index([issueDate])
@@ -3697,9 +3698,55 @@ model PharmacyGINItem {
   quantity     Float
   rate         Decimal        @default(0) @db.Decimal(12, 2)
   amount       Decimal        @default(0) @db.Decimal(14, 2)
+  mrnItems     PharmacyMRNItem[]
 
   @@index([ginId])
   @@index([gdItemId])
+}
+
+// Medicine Return (MRN, migration 088): requested by the ward / department,
+// verified (accepted / rejected) by the pharmacy.
+model PharmacyMRN {
+  id              Int               @id @default(autoincrement())
+  code            String            @unique(map: "PharmacyMRN_code_key")
+  returnDate      DateTime          @db.Date
+  admissionNumber String?
+  opdSlipNo       String?
+  patientName     String?
+  departmentId    Int?
+  departmentName  String?
+  reason          String?
+  status          String            @default("pending") // pending | accepted | rejected
+  totalAmount     Decimal           @default(0) @db.Decimal(14, 2)
+  requestedByName String?
+  createdAt       DateTime          @default(now())
+  verifiedByName  String?
+  verifiedAt      DateTime?
+  verifyNote      String?
+  items           PharmacyMRNItem[]
+
+  @@index([status], map: "PharmacyMRN_status_idx")
+  @@index([returnDate], map: "PharmacyMRN_returnDate_idx")
+}
+
+model PharmacyMRNItem {
+  id           Int             @id @default(autoincrement())
+  mrnId        Int
+  mrn          PharmacyMRN     @relation(fields: [mrnId], references: [id], onDelete: Cascade)
+  ginId        Int
+  gin          PharmacyGIN     @relation(fields: [ginId], references: [id], onDelete: Restrict)
+  ginItemId    Int
+  ginItem      PharmacyGINItem @relation(fields: [ginItemId], references: [id], onDelete: Restrict)
+  medicineId   Int?
+  medicineCode String?
+  medicineName String
+  packSize     String?
+  quantity     Float
+  rate         Decimal         @default(0) @db.Decimal(12, 2)
+  amount       Decimal         @default(0) @db.Decimal(14, 2)
+
+  @@index([mrnId], map: "PharmacyMRNItem_mrnId_idx")
+  @@index([ginItemId], map: "PharmacyMRNItem_ginItemId_idx")
 }
 
 // Credit Pending Transaction (migration 076): the bank's payment for a CC

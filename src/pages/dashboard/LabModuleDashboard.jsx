@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FolderTree, FlaskConical, ListChecks, ClipboardPen } from 'lucide-react';
+import { FolderTree, FlaskConical, ListChecks, ClipboardPen, FileBarChart } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PageHeader from '../../components/shared/PageHeader';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -14,6 +14,7 @@ const TILES = [
   { path: '/lab/categories', subModule: 'categories', Icon: FolderTree, title: 'Categories', text: 'Groups such as Haematology and Biochemistry' },
   { path: '/lab/tests', subModule: 'tests', Icon: FlaskConical, title: 'Sub Category (Tests)', text: 'Place Clinic lab tests in categories' },
   { path: '/lab/parameters', subModule: 'parameters', Icon: ListChecks, title: 'Parameters', text: 'Each test\'s report lines, units and reference ranges' },
+  { path: '/lab/reports', subModule: 'reports', Icon: FileBarChart, title: 'Reports', text: 'Test-wise, panel / mode of payment and department-wise' },
 ];
 
 export default function LabModuleDashboard() {

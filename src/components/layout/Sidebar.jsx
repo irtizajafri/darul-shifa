@@ -30,6 +30,7 @@ import {
   Pill,
   PackageCheck,
   FileBarChart,
+  Undo2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useModuleStore } from '../../store/useModuleStore';
@@ -59,6 +60,7 @@ const pharmacyNavItems = [
   { path: '/pharmacy-module',   label: 'Pharmacy Dashboard',   Icon: LayoutDashboard },
   { path: '/pharmacy/gd',       label: 'Goods Demand (GD)',    Icon: ClipboardPen,    subModule: 'gd' },
   { path: '/pharmacy/gin',      label: 'Goods Issuance (GIN)', Icon: PackageCheck,    subModule: 'gin' },
+  { path: '/pharmacy/mrn',      label: 'Medicine Return (MRN)', Icon: Undo2,         subModule: 'mrn', altSubModule: 'mrn-verify' },
   { path: '/pharmacy/reports',  label: 'Reports',              Icon: FileBarChart,    subModule: 'reports' },
 ];
 
@@ -69,6 +71,7 @@ const labNavItems = [
   { path: '/lab/categories',     label: 'Categories',           Icon: FolderTree,     subModule: 'categories' },
   { path: '/lab/tests',          label: 'Sub Category (Tests)', Icon: FlaskConical,   subModule: 'tests' },
   { path: '/lab/parameters',     label: 'Parameters',           Icon: ListChecks,     subModule: 'parameters' },
+  { path: '/lab/reports',        label: 'Reports',              Icon: FileBarChart,   subModule: 'reports' },
 ];
 
 const accountsNavItems = [
@@ -232,6 +235,7 @@ export default function Sidebar({ isOpen, onClose, collapsed }) {
   if (activeModule === 'pharmacy') {
     const visibleItems = pharmacyNavItems.filter(
       (item) => item.toDashboard || !item.subModule || user?.isSuperAdmin || hasPermission(user, 'pharmacy', item.subModule)
+        || [].concat(item.altSubModule || []).some((alt) => hasPermission(user, 'pharmacy', alt))
     );
     return (
       <aside className={sidebarClass}>

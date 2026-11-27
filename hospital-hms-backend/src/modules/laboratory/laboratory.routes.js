@@ -1,5 +1,6 @@
 const express = require('express');
 const c = require('./laboratory.controller');
+const { requireSubModule } = require('../../middleware/subModuleGuard');
 
 const router = express.Router();
 
@@ -22,5 +23,8 @@ router.get('/slips', c.listSlips);
 router.get('/slips/:visitId', c.getSlip);
 router.put('/slips/:visitId/results', c.saveSlipResults);
 router.post('/results/print', c.markPrinted);
+
+// Reports: test-wise, panel / mode of payment, category (owner, 2026-11-27).
+router.get('/report-lines', requireSubModule('lab', ['reports'], 'Laboratories → Reports'), c.reportLines);
 
 module.exports = router;

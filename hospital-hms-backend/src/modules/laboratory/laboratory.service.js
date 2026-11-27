@@ -493,7 +493,75 @@ async function getSummary() {
   };
 }
 
+// ─── Reports (owner, 2026-11-27) ─────────────────────────────────────────────
+// Every test line of the lab slips made in the PKT days from..to — the slips
+// Result Entry lists (active), less old LEGACY slips marked "canceled" (left
+// out everywhere else too) — with what the reports group and filter by:
+// test, category ("department"), mode of payment, panel company, OPD or
+// Admission. A panel admission's lab slip has no company of its own: it's the
+// admission's. Amount is the slip line's amount; a slip's discount is given
+// per slip (it isn't split over its tests).
+const CREDIT_CARD = ['cc', 'c card', 'credit card'];
+const MODES = ['cash', 'jazzcash', 'online', 'complementary', 'panel'];
+function modeOf(paymentType) {
+  const p = String(paymentType || '').trim().toLowerCase();
+  if (CREDIT_CARD.includes(p)) return 'cc';
+  return MODES.includes(p) ? p : (p || 'cash');
+}
+
+async function reportLines({ from, to } = {}) {
+  const f = isIsoDate(from) ? from : isIsoDate(to) ? to : pktToday();
+  const t = isIsoDate(to) ? to : f;
+  if (t < f) throw fail(400, '"To" date is before "From" date');
+  const visits = (await prisma.clinicOpdVisit.findMany({
+    where: { ...slipWhereBase, createdAt: { gte: new Date(`${f}T00:00:00+05:00`), lte: new Date(`${t}T23:59:59.999+05:00`) } },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true, serialNo: true, mrNo: true, patientType: true, patientName: true, admitNo: true,
+      paymentType: true, panelCompanyId: true, discount: true, createdAt: true,
+      doctors: { orderBy: { id: 'asc' }, select: { subDeptId: true, amount: true, quantity: true, subDept: { select: { name: true } } } },
+    },
+  })).filter((v) => !['canceled', 'cancelled'].includes(String(v.paymentType || '').trim().toLowerCase()));
+
+  // Panel company: the slip's, else (panel admission) the admission's.
+  const admNos = [...new Set(visits.filter((v) => modeOf(v.paymentType) === 'panel' && !v.panelCompanyId && v.admitNo).map((v) => v.admitNo))];
+  const adms = admNos.length ? await prisma.clinicAdmission.findMany({ where: { admissionNo: { in: admNos } }, select: { admissionNo: true, panelCompanyId: true } }) : [];
+  const admCompany = new Map(adms.map((a) => [a.admissionNo, a.panelCompanyId]));
+  const companyIdOf = (v) => (modeOf(v.paymentType) === 'panel' ? v.panelCompanyId || admCompany.get(v.admitNo) || null : null);
+  const companyIds = [...new Set(visits.map(companyIdOf).filter(Boolean))];
+  const companies = companyIds.length ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true, code: true } }) : [];
+  const companyName = new Map(companies.map((c) => [c.id, c.name || c.code]));
+
+  // Category ("department") from the Lab setup; a test not placed in one yet says so.
+  const subDeptIds = [...new Set(visits.flatMap((v) => v.doctors.map((d) => d.subDeptId)))];
+  const labTests = subDeptIds.length ? await prisma.labTest.findMany({ where: { subDeptId: { in: subDeptIds } }, select: { subDeptId: true, category: { select: { id: true, name: true } } } }) : [];
+  const categoryOf = new Map(labTests.map((x) => [x.subDeptId, x.category]));
+
+  const pktDay = (d) => new Date(new Date(d).getTime() + 5 * 3600000).toISOString().slice(0, 10);
+  const lines = [];
+  const slips = [];
+  for (const v of visits) {
+    const mode = modeOf(v.paymentType);
+    const companyId = companyIdOf(v);
+    const base = {
+      visitId: v.id, date: pktDay(v.createdAt), serialNo: v.serialNo, mrNo: v.mrNo,
+      patientName: `${v.patientType || ''} ${v.patientName || ''}`.trim(), admitNo: v.admitNo || '',
+      patient: v.admitNo ? 'admission' : 'opd', mode, companyId, company: companyId ? (companyName.get(companyId) || '') : '',
+    };
+    slips.push({ ...base, discount: Number(v.discount) || 0 });
+    for (const d of v.doctors) {
+      const cat = categoryOf.get(d.subDeptId);
+      lines.push({
+        ...base, subDeptId: d.subDeptId, test: d.subDept?.name || '', categoryId: cat?.id || null, category: cat?.name || '',
+        qty: d.quantity || 1, amount: Math.round((Number(d.amount) || 0) * 100) / 100,
+      });
+    }
+  }
+  return { from: f, to: t, lines, slips };
+}
+
 module.exports = {
+  reportLines,
   listCategories, createCategory, updateCategory, deleteCategory,
   listClinicTests, listTests, createTest, updateTest, deleteTest,
   getTestParameters, saveTestParameters,

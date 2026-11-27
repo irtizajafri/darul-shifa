@@ -43,3 +43,10 @@ export const fmtAmt = (n) => Number(n || 0).toLocaleString('en-PK', { minimumFra
 export const employeeName = (e) => [e.firstName, e.middleName, e.lastName].filter(Boolean).join(' ');
 export const patientRef = (r) => (r.admissionNumber ? `Adm # ${r.admissionNumber}` : r.opdSlipNo ? `Slip # ${r.opdSlipNo}` : '');
 export const STATUS_LABEL = { open: 'Open', partial: 'Partial', closed: 'Issued', pending: 'Pending', issued: 'Issued' };
+
+// Medicine Return (MRN, owner 2026-11-27): a page or the pop-up that changes
+// an MRN tells the other to load again.
+export const MRN_CHANGED = 'pharmacy-mrn-changed';
+export const mrnChanged = () => window.dispatchEvent(new Event(MRN_CHANGED));
+export const MRN_STATUS = { pending: 'Waiting for pharmacy', accepted: 'Accepted', rejected: 'Rejected' };
+export const fmtDateTime = (d) => (d ? new Date(d).toLocaleString('en-GB', { timeZone: 'Asia/Karachi', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');

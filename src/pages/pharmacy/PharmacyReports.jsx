@@ -15,13 +15,102 @@ import './Pharmacy.scss';
 
 // Al Shifa Hospital Pharmacy → Reports: GD Report (every demanded line with
 // what's been issued) and GIN Report (Details, Patient-wise, Medicine-wise),
-// like Inventory's GD / Issuance reports.
+// like Inventory's GD / Issuance reports. Summary Report (owner, 2026-11-27):
+// issued less accepted returns (MRN), by date, item, department, patient,
+// panel company, who made the GIN / GD, Issued To, or Cash / Panel / General
+// (a GIN with no patient is General).
 
 const REPORTS = [
   { key: 'gd-report', label: 'GD Report' },
   { key: 'gin-report', label: 'GIN Report' },
+  { key: 'summary-report', label: 'Summary Report' },
 ];
 const GIN_VIEWS = [['details', 'Details'], ['patient', 'Patient-wise'], ['medicine', 'Medicine-wise']];
+
+const CLASS_LABEL = { cash: 'Cash', panel: 'Panel', general: 'General' };
+const CLASS_FILTERS = [['', 'All (Cash + Panel + General)'], ['cash-panel', 'Cash + Panel'], ['cash', 'Cash'], ['panel', 'Panel'], ['general', 'General (no patient)']];
+const lineRef = (l) => patientRef(l) || 'General (no patient)';
+// Summary Report groupings: the columns that name a row and the key that groups it.
+const SUMMARY_BY = [
+  { key: 'class', label: 'Cash / Panel / General', head: ['Type'], id: (l) => l.cls, cols: (l) => [CLASS_LABEL[l.cls]] },
+  { key: 'date', label: 'Date-wise', head: ['Date'], id: (l) => l.date, cols: (l) => [fmtDate(`${l.date}T00:00:00Z`)] },
+  { key: 'medicine', label: 'Item-wise', head: ['Code', 'Medicine', 'Pack'], id: (l) => l.medicineId || l.medicineName, cols: (l) => [l.medicineCode, l.medicineName, l.packSize], qty: true },
+  { key: 'department', label: 'Department-wise', head: ['Department'], id: (l) => l.departmentId || l.department, cols: (l) => [l.department || '—'] },
+  { key: 'patient', label: 'Admission / Slip-wise', head: ['Adm # / Slip #', 'Patient', 'Type', 'Panel Company'], id: (l) => lineRef(l), cols: (l) => [lineRef(l), l.patientName, CLASS_LABEL[l.cls], l.company] },
+  { key: 'company', label: 'Panel Company-wise', head: ['Panel Company'], id: (l) => l.company || '—', cols: (l) => [l.company || '(company not set)'], panelOnly: true },
+  { key: 'ginBy', label: 'GIN made by', head: ['GIN made by'], id: (l) => l.ginBy || '—', cols: (l) => [l.ginBy || '—'] },
+  { key: 'issuedTo', label: 'Issued To', head: ['Issued To'], id: (l) => l.issuedToId || l.issuedTo || '—', cols: (l) => [l.issuedTo || '—'] },
+  { key: 'gdBy', label: 'GD made by', head: ['GD made by'], id: (l) => l.gdBy || '—', cols: (l) => [l.gdBy || '—'] },
+  { key: 'details', label: 'Details (every line)' },
+];
+
+// The Summary Report's table, as the other reports build theirs (screen, print, Excel).
+function summaryTable(all, f, sumBy, medOk) {
+  const by = SUMMARY_BY.find((g) => g.key === sumBy);
+  const adm = f.admissionNumber.trim();
+  const slip = f.opdSlipNo.trim();
+  const cls = by.panelOnly ? 'panel' : f.cls;
+  const lines = all.filter((l) => medOk(l.medicineName, l.medicineCode)
+    && (!cls || (cls === 'cash-panel' ? l.cls !== 'general' : l.cls === cls))
+    && (!f.company || l.company === f.company)
+    && (!f.departmentId || String(l.departmentId) === String(f.departmentId))
+    && (!f.issuedToId || String(l.issuedToId) === String(f.issuedToId))
+    && (!adm || l.admissionNumber === adm) && (!slip || l.opdSlipNo === slip));
+  // Issued, returned (accepted MRN — negative on the line) and the GINs counted.
+  const totals = (arr) => arr.reduce((t, l) => {
+    if (l.kind === 'issue') { t.iq += l.qty; t.ia += l.amount; t.gins.add(l.doc); } else { t.rq -= l.qty; t.ra -= l.amount; }
+    return t;
+  }, { iq: 0, ia: 0, rq: 0, ra: 0, gins: new Set() });
+  const all$ = totals(lines);
+
+  if (sumBy === 'details') {
+    const rows = [...lines].sort((a, b) => a.date.localeCompare(b.date) || a.doc.localeCompare(b.doc)).map((l) => [
+      fmtDate(`${l.date}T00:00:00Z`), l.doc, l.kind === 'issue' ? 'Issue' : 'Return', CLASS_LABEL[l.cls], l.company, lineRef(l), l.patientName,
+      l.department, l.ginBy, l.issuedTo, l.gdBy, l.medicineName, l.qty, l.rate, l.amount,
+    ]);
+    return {
+      head: ['Date', 'GIN # / MRN #', 'Entry', 'Type', 'Panel Company', 'Adm # / Slip #', 'Patient', 'Department', 'GIN made by', 'Issued To', 'GD made by', 'Medicine', 'Qty', 'Rate', 'Amount'],
+      num: [12, 13, 14], rows,
+      foot: ['Total', `${all$.gins.size} GIN`, '', '', '', '', '', '', '', '', '', `${rows.length} lines`, all$.iq - all$.rq, '', all$.ia - all$.ra],
+      fmt: (i, v) => (i === 12 ? fmtQty(v) : i === 13 || i === 14 ? (v === '' ? '' : fmtAmt(v)) : v),
+    };
+  }
+
+  const groups = new Map();
+  for (const l of lines) {
+    const k = by.id(l);
+    if (!groups.has(k)) groups.set(k, { cols: by.cols(l), lines: [] });
+    groups.get(k).lines.push(l);
+  }
+  const list = [...groups.entries()];
+  const ORDER = ['cash', 'panel', 'general'];
+  const sortCol = by.qty ? 1 : 0;
+  list.sort(sumBy === 'class' ? (a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0])
+    : sumBy === 'date' ? (a, b) => String(a[0]).localeCompare(String(b[0]))
+      : (a, b) => String(a[1].cols[sortCol] || '').localeCompare(String(b[1].cols[sortCol] || '')));
+  const n = by.head.length;
+  const idx = (k) => Array.from({ length: k }, (_, i) => n + i);
+  const foot = Array(n).fill('');
+  foot[0] = n > 1 ? 'Total' : `Total (${list.length})`;
+  if (n > 1) foot[1] = `${list.length} ${by.qty ? 'medicines' : 'rows'}`;
+  if (by.qty) {
+    const qtyIdx = idx(3);
+    return {
+      head: [...by.head, 'Issued Qty', 'Returned Qty', 'Net Qty', 'Issued Amount', 'Returned Amount', 'Net Amount'],
+      num: idx(6),
+      rows: list.map(([, g]) => { const x = totals(g.lines); return [...g.cols, x.iq, x.rq, x.iq - x.rq, x.ia, x.ra, x.ia - x.ra]; }),
+      foot: [...foot, all$.iq, all$.rq, all$.iq - all$.rq, all$.ia, all$.ra, all$.ia - all$.ra],
+      fmt: (i, v) => (qtyIdx.includes(i) ? fmtQty(v) : i >= n ? fmtAmt(v) : v),
+    };
+  }
+  return {
+    head: [...by.head, 'GINs', 'Issued Amount', 'Returned Amount', 'Net Amount'],
+    num: idx(4),
+    rows: list.map(([, g]) => { const x = totals(g.lines); return [...g.cols, x.gins.size, x.ia, x.ra, x.ia - x.ra]; }),
+    foot: [...foot, all$.gins.size, all$.ia, all$.ra, all$.ia - all$.ra],
+    fmt: (i, v) => (i > n ? fmtAmt(v) : v),
+  };
+}
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -31,8 +120,9 @@ export default function PharmacyReports() {
   const [params, setParams] = useSearchParams();
   const allowed = REPORTS.filter((r) => user?.isSuperAdmin || hasPermission(user, 'pharmacy', 'reports', r.key));
   const report = allowed.some((r) => r.key === params.get('report')) ? params.get('report') : allowed[0]?.key;
-  const [f, setF] = useState({ from: daysBefore(pktToday(), 30), to: pktToday(), departmentId: '', patientType: '', admissionNumber: '', opdSlipNo: '', medicine: '', issuedToId: '', status: '' });
+  const [f, setF] = useState({ from: daysBefore(pktToday(), 30), to: pktToday(), departmentId: '', patientType: '', admissionNumber: '', opdSlipNo: '', medicine: '', issuedToId: '', status: '', cls: '', company: '' });
   const [view, setView] = useState('details');
+  const [sumBy, setSumBy] = useState('class');
   const [departments, setDepartments] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [data, setData] = useState(null);
@@ -44,11 +134,19 @@ export default function PharmacyReports() {
   }, []);
 
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const companies = useMemo(() => (data?.report === 'summary-report' ? [...new Set(data.lines.map((l) => l.company).filter(Boolean))].sort() : []), [data]);
 
   const run = async () => {
     setLoading(true);
     try {
       const p = new URLSearchParams();
+      if (report === 'summary-report') {
+        // Every line in the dates; the rest is filtered and grouped here.
+        p.set('from', f.from); p.set('to', f.to);
+        const r = await pharmacyApi(`/report-lines?${p}`);
+        setData({ report, lines: r.lines });
+        return;
+      }
       Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); });
       const rows = await pharmacyApi(`/${report === 'gd-report' ? 'gd' : 'gin'}?${p}`);
       setData({ report, rows });
@@ -66,6 +164,7 @@ export default function PharmacyReports() {
     if (!data) return null;
     const med = f.medicine.trim().toLowerCase();
     const medOk = (name, code) => !med || String(name || '').toLowerCase().includes(med) || String(code || '').toLowerCase().includes(med);
+    if (data.report === 'summary-report') return summaryTable(data.lines, f, sumBy, medOk);
     if (data.report === 'gd-report') {
       const rows = data.rows.flatMap((g) => g.items.filter((it) => medOk(it.medicineName, it.medicineCode)).map((it) => [
         fmtDate(g.requestDate), g.code, g.departmentName, patientRef(g), g.patientName || '', it.medicineName, it.packSize || '',
@@ -120,16 +219,22 @@ export default function PharmacyReports() {
       foot: ['Total', `${data.rows.length} GIN`, '', '', '', '', '', `${rows.length} lines`, rows.reduce((s, r) => s + r[8], 0), '', totalAmt],
       fmt: (i, v) => (i === 8 ? fmtQty(v) : [9, 10].includes(i) ? (v === '' ? '' : fmtAmt(v)) : v),
     };
-  }, [data, view, f.medicine]);
+  }, [data, view, f, sumBy]);
 
-  const title = report === 'gd-report' ? 'GD Report' : `GIN Report — ${GIN_VIEWS.find(([k]) => k === view)?.[1]}`;
+  const by = SUMMARY_BY.find((g) => g.key === sumBy);
+  const title = report === 'gd-report' ? 'GD Report'
+    : report === 'summary-report' ? `Summary Report — ${by.label}`
+      : `GIN Report — ${GIN_VIEWS.find(([k]) => k === view)?.[1]}`;
+  const isSummary = report === 'summary-report';
   const criteria = [
     `${fmtDate(`${f.from}T00:00:00Z`)} to ${fmtDate(`${f.to}T00:00:00Z`)}`,
     f.departmentId && `Department: ${departments.find((d) => String(d.id) === String(f.departmentId))?.name || ''}`,
-    f.patientType && `Patient: ${{ admission: 'Admission', panel: 'Panel Slip', none: 'No patient' }[f.patientType]}`,
+    !isSummary && f.patientType && `Patient: ${{ admission: 'Admission', panel: 'Panel Slip', none: 'No patient' }[f.patientType]}`,
+    isSummary && (by.panelOnly ? 'Panel only' : f.cls && CLASS_FILTERS.find(([k]) => k === f.cls)?.[1]),
+    isSummary && f.company && `Panel Company: ${f.company}`,
     f.admissionNumber && `Adm # ${f.admissionNumber}`, f.opdSlipNo && `Slip # ${f.opdSlipNo}`,
     f.medicine && `Medicine: ${f.medicine}`,
-    report === 'gin-report' && f.issuedToId && `Issued To: ${employeeName(employees.find((e) => String(e.id) === String(f.issuedToId)) || {})}`,
+    report !== 'gd-report' && f.issuedToId && `Issued To: ${employeeName(employees.find((e) => String(e.id) === String(f.issuedToId)) || {})}`,
     report === 'gd-report' && f.status && `Status: ${f.status === 'pending' ? 'Not fully issued' : 'Issued'}`,
   ].filter(Boolean).join(' · ');
 
@@ -162,15 +267,15 @@ export default function PharmacyReports() {
     if (!table) return;
     const ws = XLSX.utils.aoa_to_sheet([[PHARMACY_NAME], [title], [criteria], [], table.head, ...table.rows, table.foot]);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, report === 'gd-report' ? 'GD' : 'GIN');
-    XLSX.writeFile(wb, `pharmacy_${report}${report === 'gin-report' ? `_${view}` : ''}_${f.from}_${f.to}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, report === 'gd-report' ? 'GD' : isSummary ? 'Summary' : 'GIN');
+    XLSX.writeFile(wb, `pharmacy_${report}${report === 'gin-report' ? `_${view}` : isSummary ? `_${sumBy}` : ''}_${f.from}_${f.to}.xlsx`);
   };
 
   if (!allowed.length) return <div className="ph-page"><p className="ph-empty">You don't have access to pharmacy reports.</p></div>;
 
   return (
     <div className="ph-page">
-      <PageHeader breadcrumbs={[{ label: 'Al Shifa Hospital Pharmacy', link: '/pharmacy-module' }, { label: 'Reports' }]} title="Reports" subtitle="Goods Demand and Goods Issuance reports" />
+      <PageHeader breadcrumbs={[{ label: 'Al Shifa Hospital Pharmacy', link: '/pharmacy-module' }, { label: 'Reports' }]} title="Reports" subtitle="Goods Demand, Goods Issuance and Summary reports" />
 
       <div className="ph-tabs" role="tablist">
         {allowed.map((r) => (
@@ -180,20 +285,40 @@ export default function PharmacyReports() {
 
       <section className="ph-card">
         <div className="ph-grid ph-grid--4">
-          <label className="ph-field"><span>{report === 'gd-report' ? 'Request Date From' : 'Issue Date From'}</span><input type="date" className="ph-input" value={f.from} onChange={(e) => set('from', e.target.value)} /></label>
+          <label className="ph-field"><span>{report === 'gd-report' ? 'Request Date From' : isSummary ? 'Date From' : 'Issue Date From'}</span><input type="date" className="ph-input" value={f.from} onChange={(e) => set('from', e.target.value)} /></label>
           <label className="ph-field"><span>To</span><input type="date" className="ph-input" value={f.to} min={f.from} onChange={(e) => set('to', e.target.value)} /></label>
           <label className="ph-field"><span>Department</span>
             <SearchableSelect options={departments} value={f.departmentId} onChange={(v) => set('departmentId', v || '')} getKey={(d) => d.id} getLabel={(d) => d.name} placeholder="All departments" size="sm" />
           </label>
-          <label className="ph-field"><span>Patient Type</span>
-            <select className="ph-input" value={f.patientType} onChange={(e) => set('patientType', e.target.value)}>
-              <option value="">All</option><option value="admission">Admission</option><option value="panel">Panel Slip</option><option value="none">No patient (department)</option>
-            </select>
-          </label>
+          {isSummary ? (
+            <label className="ph-field"><span>Cash / Panel</span>
+              <select className="ph-input" value={by.panelOnly ? 'panel' : f.cls} disabled={by.panelOnly} onChange={(e) => set('cls', e.target.value)}>
+                {CLASS_FILTERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </select>
+            </label>
+          ) : (
+            <label className="ph-field"><span>Patient Type</span>
+              <select className="ph-input" value={f.patientType} onChange={(e) => set('patientType', e.target.value)}>
+                <option value="">All</option><option value="admission">Admission</option><option value="panel">Panel Slip</option><option value="none">No patient (department)</option>
+              </select>
+            </label>
+          )}
           <label className="ph-field"><span>Admission #</span><input className="ph-input" value={f.admissionNumber} onChange={(e) => set('admissionNumber', e.target.value)} /></label>
           <label className="ph-field"><span>Panel Slip #</span><input className="ph-input" value={f.opdSlipNo} onChange={(e) => set('opdSlipNo', e.target.value)} /></label>
           <label className="ph-field"><span>Medicine</span><input className="ph-input" value={f.medicine} onChange={(e) => set('medicine', e.target.value)} placeholder="Name or code" /></label>
-          {report === 'gin-report' ? (
+          {isSummary && (
+            <label className="ph-field"><span>Panel Company</span>
+              <SearchableSelect options={companies} value={f.company} onChange={(v) => set('company', v || '')} getKey={(c) => c} getLabel={(c) => c} placeholder={companies.length ? 'All companies' : 'Show first'} size="sm" />
+            </label>
+          )}
+          {isSummary && (
+            <label className="ph-field"><span>Report by</span>
+              <select className="ph-input" value={sumBy} onChange={(e) => setSumBy(e.target.value)}>
+                {SUMMARY_BY.map((g) => <option key={g.key} value={g.key}>{g.label}</option>)}
+              </select>
+            </label>
+          )}
+          {report !== 'gd-report' ? (
             <label className="ph-field"><span>Issued To</span>
               <SearchableSelect options={employees} value={f.issuedToId} onChange={(v) => set('issuedToId', v || '')} getKey={(e) => e.id} getLabel={(e) => employeeName(e)} placeholder="All staff" size="sm" />
             </label>

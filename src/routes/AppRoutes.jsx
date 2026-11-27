@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import GdNotificationPopup from '../components/inventory/GdNotificationPopup';
+import PharmacyMrnPopup from '../components/pharmacy/PharmacyMrnPopup';
 import { Toaster } from 'react-hot-toast';
 import { useAuthStore } from '../store/useAuthStore';
 import MainLayout from '../components/layout/MainLayout';
@@ -40,6 +41,7 @@ export default function AppRoutes() {
     <>
       <Toaster position="top-right" />
       <GdNotificationPopup />
+      <PharmacyMrnPopup />
       <MainLayout />
     </>
   );

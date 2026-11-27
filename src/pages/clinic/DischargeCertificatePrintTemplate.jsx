@@ -23,7 +23,7 @@ function fmtDate(d) {
 // system-typed, so a "write here" box no longer serves a purpose.
 export function DischargeCertificatePrintTemplate({ data }) {
   if (!data) return null;
-  const { admission, roomCategory, bed, consultant, certificate, printedBy } = data;
+  const { admission, roomCategory, bed, consultant, certificate, printedBy, hidePrintedBy } = data;
   const ageStr = [
     admission.ageYears ? `${admission.ageYears}y` : null,
     admission.ageMonths ? `${admission.ageMonths}m` : null,
@@ -104,16 +104,20 @@ export function DischargeCertificatePrintTemplate({ data }) {
       </div>
 
       {/* Printed by sits level with Medical Officer at the bottom (owner,
-          2026-10-23) — it used to head the certificate. */}
-      <div className="dc-print-sig">
+          2026-10-23) — it used to head the certificate. Panels → Billing's
+          certificate has no Printed by; Medical Officer takes its place on
+          the right (hidePrintedBy, owner 2026-11-27). */}
+      <div className={`dc-print-sig${hidePrintedBy ? ' dc-print-sig--right' : ''}`}>
         <span className="dc-print-sig-item">
           <span>Medical Officer:</span>
           <span className="dc-print-sig-line">{certificate?.medicalOfficer || ''}</span>
         </span>
-        <span className="dc-print-sig-item">
-          <span>Printed by:</span>
-          <span className="dc-print-sig-line">{printedBy}</span>
-        </span>
+        {!hidePrintedBy && (
+          <span className="dc-print-sig-item">
+            <span>Printed by:</span>
+            <span className="dc-print-sig-line">{printedBy}</span>
+          </span>
+        )}
       </div>
     </div>
   );

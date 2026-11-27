@@ -10,10 +10,12 @@ import PharmacyModuleDashboard from '../pages/dashboard/PharmacyModuleDashboard'
 import PharmacyGD from '../pages/pharmacy/PharmacyGD';
 import PharmacyGIN from '../pages/pharmacy/PharmacyGIN';
 import PharmacyReports from '../pages/pharmacy/PharmacyReports';
+import PharmacyMRN from '../pages/pharmacy/PharmacyMRN';
 import LabCategories from '../pages/lab/LabCategories';
 import LabTests from '../pages/lab/LabTests';
 import LabParameters from '../pages/lab/LabParameters';
 import LabResultEntry from '../pages/lab/LabResultEntry';
+import LabReports from '../pages/lab/LabReports';
 import AccountsModuleDashboard from '../pages/dashboard/AccountsModuleDashboard';
 import AccountsCanvas from '../pages/canvas/AccountsCanvas';
 import AccountsParameters from '../pages/accounts/parameters/AccountsParameters';
@@ -375,11 +377,13 @@ export default function ProtectedRoutes() {
       {/* Also opened from the card on Inventory → GIN, with Inventory's own permission for it. */}
       <Route path="pharmacy/gd" element={<PermissionGuard anyOf={[{ module: 'pharmacy', subModule: 'gd' }, { module: 'inventory', subModule: 'pharmacy', tab: 'gd' }]}><PharmacyGD /></PermissionGuard>} />
       <Route path="pharmacy/gin" element={<PermissionGuard anyOf={[{ module: 'pharmacy', subModule: 'gin' }, { module: 'inventory', subModule: 'pharmacy', tab: 'gin' }]}><PharmacyGIN /></PermissionGuard>} />
+      <Route path="pharmacy/mrn" element={<PermissionGuard module="pharmacy" subModules={['mrn', 'mrn-verify']}><PharmacyMRN /></PermissionGuard>} />
       <Route path="pharmacy/reports" element={<PermissionGuard module="pharmacy" subModule="reports"><PharmacyReports /></PermissionGuard>} />
       <Route path="lab/result-entry" element={<PermissionGuard module="lab" subModule="result-entry"><LabResultEntry /></PermissionGuard>} />
       <Route path="lab/categories" element={<PermissionGuard module="lab" subModule="categories"><LabCategories /></PermissionGuard>} />
       <Route path="lab/tests" element={<PermissionGuard module="lab" subModule="tests"><LabTests /></PermissionGuard>} />
       <Route path="lab/parameters" element={<PermissionGuard module="lab" subModule="parameters"><LabParameters /></PermissionGuard>} />
+      <Route path="lab/reports" element={<PermissionGuard module="lab" subModule="reports"><LabReports /></PermissionGuard>} />
 
       <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
       <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />

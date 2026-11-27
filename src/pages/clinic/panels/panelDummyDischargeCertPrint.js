@@ -34,6 +34,8 @@ export function printPanelDummyDischargeCert(values, admissionNo, printedBy, w =
       medicalOfficer: values.medicalOfficer,
     },
     printedBy,
+    // No "Printed by" on this certificate; Medical Officer on the right (owner, 2026-11-27).
+    hidePrintedBy: true,
   });
   w.document.write(html);
   w.document.close();

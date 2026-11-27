@@ -155,12 +155,17 @@ export const PERMISSIONS_MAP = {
     subModules: [
       { key: 'gd',      label: 'Goods Demand (GD)' },
       { key: 'gin',     label: 'Goods Issuance (GIN)' },
+      // Medicine Return (owner, 2026-11-27): the ward asks, the pharmacy
+      // verifies — "verify" users get the pop-up.
+      { key: 'mrn',        label: 'Medicine Return (MRN) — request' },
+      { key: 'mrn-verify', label: 'Medicine Return (MRN) — verify (pop-up)' },
       {
         key: 'reports',
         label: 'Pharmacy Reports',
         tabs: [
           { key: 'gd-report',  label: 'GD Report' },
           { key: 'gin-report', label: 'GIN Report' },
+          { key: 'summary-report', label: 'Summary Report (date / item / department / panel …)' },
         ],
       },
     ],
@@ -173,6 +178,15 @@ export const PERMISSIONS_MAP = {
       { key: 'categories',   label: 'Categories' },
       { key: 'tests',        label: 'Sub Category (Tests)' },
       { key: 'parameters',   label: 'Parameters' },
+      {
+        key: 'reports',
+        label: 'Reports',
+        tabs: [
+          { key: 'test-wise',       label: 'Test-wise' },
+          { key: 'panel-wise',      label: 'Panel / Mode of Payment' },
+          { key: 'department-wise', label: 'Department-wise (Category)' },
+        ],
+      },
     ],
   },
   clinic: {

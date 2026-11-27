@@ -66,14 +66,14 @@ async function searchMedicines(q) {
 // Same rules as Inventory's GD/GIN (assertAdmissionOpenForIssue /
 // assertPanelSlipOpenForIssue): a real admission whose file isn't closed or
 // wiped out; a real, active panel slip whose company cheque hasn't come in.
-async function assertPatient({ admissionNumber, opdSlipNo }) {
+async function assertPatient({ admissionNumber, opdSlipNo }, verb = 'issued') {
   const adm = text(admissionNumber);
   const slip = text(opdSlipNo);
   if (adm && slip) throw fail(400, 'Choose either an Admission # or a Panel Slip #, not both');
   if (adm) {
     const a = await prisma.clinicAdmission.findUnique({ where: { admissionNo: adm }, select: { status: true, patientTitle: true, patientName: true } });
     if (!a) throw fail(400, `Admission # ${adm} not found`);
-    if (a.status === 'closed' || a.status === 'wipeout') throw fail(400, `Admission # ${adm} file is ${a.status === 'closed' ? 'closed' : 'wiped out'} — no more medicine can be issued on it`);
+    if (a.status === 'closed' || a.status === 'wipeout') throw fail(400, `Admission # ${adm} file is ${a.status === 'closed' ? 'closed' : 'wiped out'} — no more medicine can be ${verb} on it`);
     return { admissionNumber: adm, opdSlipNo: null, patientName: `${a.patientTitle || ''} ${a.patientName || ''}`.trim() };
   }
   if (slip) {
@@ -82,7 +82,7 @@ async function assertPatient({ admissionNumber, opdSlipNo }) {
     if (String(v.paymentType || '').toLowerCase() !== 'panel') throw fail(400, `Slip # ${slip} is not a panel slip`);
     if (v.status !== 'active') throw fail(400, `Slip # ${slip} has been cancelled`);
     const cheque = await prisma.clinicPanelChequeReceiptOpdItem.findUnique({ where: { opdVisitId: v.id }, select: { id: true } });
-    if (cheque) throw fail(400, `Slip # ${slip}: the panel cheque has come in (bill final) — no more medicine can be issued on it`);
+    if (cheque) throw fail(400, `Slip # ${slip}: the panel cheque has come in (bill final) — no more medicine can be ${verb} on it`);
     return { admissionNumber: null, opdSlipNo: slip, patientName: `${v.patientType || ''} ${v.patientName || ''}`.trim() };
   }
   return { admissionNumber: null, opdSlipNo: null, patientName: null };
@@ -300,6 +300,202 @@ async function getSummary() {
   return { gdToday, ginToday, pendingGDs, issuedTodayAmount: Number(todayAmount._sum.totalAmount) || 0 };
 }
 
+// ─── Medicine Return (MRN, owner 2026-11-27; migration 088) ─────────────────
+// Medicine issued on a GIN that comes back (e.g. one box of Panadol from an
+// admission). The ward / department side asks for it ("MRN — request"); the
+// pharmacy side — a user with "MRN — verify" gets a pop-up — accepts or
+// rejects it. Only accepted returns count in the reports. A line can't take
+// back more than was issued, less what's already returned or waiting.
+
+const MRN_INCLUDE = { items: { orderBy: { id: 'asc' }, include: { gin: { select: { id: true, code: true, issueDate: true } } } } };
+
+// Returned or waiting (accepted + pending) per GIN line.
+async function heldBack(client, ginItemIds) {
+  if (!ginItemIds.length) return new Map();
+  const rows = await client.pharmacyMRNItem.groupBy({
+    by: ['ginItemId'],
+    where: { ginItemId: { in: ginItemIds }, mrn: { status: { in: ['pending', 'accepted'] } } },
+    _sum: { quantity: true },
+  });
+  return new Map(rows.map((r) => [r.ginItemId, Number(r._sum.quantity) || 0]));
+}
+
+// One patient's issued medicines and how much of each can still come back.
+async function returnableFor({ admissionNumber, opdSlipNo } = {}) {
+  const adm = text(admissionNumber);
+  const slip = text(opdSlipNo);
+  if (!adm && !slip) throw fail(400, 'Enter an Admission # or a Slip #');
+  const gins = await prisma.pharmacyGIN.findMany({
+    where: adm ? { admissionNumber: adm } : { opdSlipNo: slip },
+    include: { items: { orderBy: { id: 'asc' } } },
+    orderBy: { issueDate: 'asc' },
+  });
+  if (!gins.length) throw fail(404, adm ? `No GIN found for Admission # ${adm}` : `No GIN found for Slip # ${slip}`);
+  const back = await heldBack(prisma, gins.flatMap((g) => g.items.map((i) => i.id)));
+  const lines = gins.flatMap((g) => g.items.map((i) => {
+    const returned = back.get(i.id) || 0;
+    return {
+      ginItemId: i.id, ginId: g.id, ginCode: g.code, issueDate: g.issueDate, departmentName: g.departmentName,
+      medicineId: i.medicineId, medicineCode: i.medicineCode, medicineName: i.medicineName, packSize: i.packSize,
+      issued: i.quantity, returned, returnable: Math.max(0, i.quantity - returned), rate: Number(i.rate),
+    };
+  }));
+  return { admissionNumber: adm, opdSlipNo: adm ? null : slip, patientName: gins[gins.length - 1].patientName, lines };
+}
+
+async function createMRN({ admissionNumber, opdSlipNo, reason, items, requestedByName } = {}) {
+  const want = (Array.isArray(items) ? items : [])
+    .map((l) => ({ ginItemId: Number(l.ginItemId), quantity: Number(l.quantity) }))
+    .filter((l) => l.ginItemId && l.quantity > 0);
+  if (!want.length) throw fail(400, 'Enter a return quantity for at least one medicine');
+  if (!text(reason)) throw fail(400, 'Enter the reason for the return');
+  const adm = text(admissionNumber);
+  const slip = text(opdSlipNo);
+  if (!adm && !slip) throw fail(400, 'Enter an Admission # or a Slip #');
+  // As for a GIN: the file / panel slip must still be open.
+  await assertPatient({ admissionNumber: adm, opdSlipNo: adm ? null : slip }, 'returned');
+  const day = pktToday();
+  return withCodeRetry(() => prisma.$transaction(async (tx) => {
+    const ginItems = await tx.pharmacyGINItem.findMany({ where: { id: { in: want.map((l) => l.ginItemId) } }, include: { gin: true } });
+    const byId = new Map(ginItems.map((i) => [i.id, i]));
+    const back = await heldBack(tx, want.map((l) => l.ginItemId));
+    let total = 0;
+    let first = null;
+    const lines = want.map((l) => {
+      const it = byId.get(l.ginItemId);
+      if (!it) throw fail(400, 'GIN line not found');
+      if (adm ? it.gin.admissionNumber !== adm : it.gin.opdSlipNo !== slip) throw fail(400, `${it.medicineName} was not issued to this patient`);
+      const left = it.quantity - (back.get(it.id) || 0);
+      if (l.quantity > left + QTY_EPS) throw fail(400, left > QTY_EPS ? `${it.medicineName}: at most ${+left.toFixed(3)} can be returned` : `${it.medicineName}: nothing left to return`);
+      const amount = round2(l.quantity * Number(it.rate));
+      total += amount;
+      first = first || it.gin;
+      return {
+        ginId: it.ginId, ginItemId: it.id, medicineId: it.medicineId, medicineCode: it.medicineCode,
+        medicineName: it.medicineName, packSize: it.packSize, quantity: l.quantity, rate: it.rate, amount,
+      };
+    });
+    return tx.pharmacyMRN.create({
+      data: {
+        code: await nextCode(tx, 'pharmacyMRN', 'mrn', day),
+        returnDate: new Date(`${day}T00:00:00Z`),
+        admissionNumber: first.admissionNumber, opdSlipNo: first.opdSlipNo, patientName: first.patientName,
+        departmentId: first.departmentId, departmentName: first.departmentName,
+        reason: text(reason), status: 'pending', totalAmount: round2(total),
+        requestedByName: text(requestedByName),
+        items: { create: lines },
+      },
+      include: MRN_INCLUDE,
+    });
+  }));
+}
+
+async function listMRNs({ from, to, status, q } = {}) {
+  const term = text(q);
+  return prisma.pharmacyMRN.findMany({
+    where: {
+      ...dateRangeWhere('returnDate', from, to),
+      ...(['pending', 'accepted', 'rejected'].includes(status) ? { status } : {}),
+      ...(term ? { OR: [
+        { code: { contains: term, mode: 'insensitive' } }, { patientName: { contains: term, mode: 'insensitive' } },
+        { admissionNumber: { contains: term } }, { opdSlipNo: { contains: term } },
+      ] } : {}),
+    },
+    include: MRN_INCLUDE,
+    orderBy: { id: 'desc' },
+    take: 500,
+  });
+}
+
+const pendingMRNs = () => prisma.pharmacyMRN.findMany({ where: { status: 'pending' }, include: MRN_INCLUDE, orderBy: { id: 'asc' } });
+
+async function verifyMRN(id, { action, note, verifiedByName } = {}) {
+  if (!['accept', 'reject'].includes(action)) throw fail(400, 'Choose Accept or Reject');
+  if (action === 'reject' && !text(note)) throw fail(400, 'Enter the reason for rejecting');
+  const { count } = await prisma.pharmacyMRN.updateMany({
+    where: { id: Number(id) || 0, status: 'pending' },
+    data: { status: action === 'accept' ? 'accepted' : 'rejected', verifiedByName: text(verifiedByName), verifiedAt: new Date(), verifyNote: text(note) },
+  });
+  if (!count) throw fail(409, 'This MRN was already verified or not found');
+  return prisma.pharmacyMRN.findUnique({ where: { id: Number(id) }, include: MRN_INCLUDE });
+}
+
+// ─── Summary reports (owner, 2026-11-27) ─────────────────────────────────────
+// One line per issued medicine (GIN date in range) and per accepted return
+// (MRN date in range, negative), each with everything the reports group by:
+// date, medicine, who made the GIN / GD, Issued To, department, patient,
+// Cash / Panel / General and panel company. The screen groups them.
+async function reportLines({ from, to } = {}) {
+  const [gins, mrns] = await Promise.all([
+    prisma.pharmacyGIN.findMany({
+      where: dateRangeWhere('issueDate', from, to),
+      include: { items: true, gd: { select: { code: true, createdByName: true, departmentName: true } } },
+      orderBy: { issueDate: 'asc' },
+    }),
+    // A return counts on the day the pharmacy accepted it (Pakistan time).
+    prisma.pharmacyMRN.findMany({
+      where: { status: 'accepted', ...(isIsoDate(from) || isIsoDate(to) ? { verifiedAt: {
+        ...(isIsoDate(from) ? { gte: new Date(`${from}T00:00:00+05:00`) } : {}),
+        ...(isIsoDate(to) ? { lt: new Date(new Date(`${to}T00:00:00+05:00`).getTime() + 86400000) } : {}),
+      } } : {}) },
+      include: { items: { include: { gin: { include: { gd: { select: { code: true, createdByName: true } } } } } } },
+      orderBy: { verifiedAt: 'asc' },
+    }),
+  ]);
+  // Cash / Panel / General and the panel company, from the admission or slip.
+  const admNos = [...new Set([...gins.map((g) => g.admissionNumber), ...mrns.map((m) => m.admissionNumber)].filter(Boolean))];
+  const slips = [...new Set([...gins.map((g) => g.opdSlipNo), ...mrns.map((m) => m.opdSlipNo)].filter(Boolean))];
+  const [adms, visits] = await Promise.all([
+    admNos.length ? prisma.clinicAdmission.findMany({ where: { admissionNo: { in: admNos } }, select: { admissionNo: true, patientCategory: true, panelCompanyId: true } }) : [],
+    slips.length ? prisma.clinicOpdVisit.findMany({ where: { serialNo: { in: slips } }, select: { serialNo: true, panelCompanyId: true } }) : [],
+  ]);
+  const companyIds = [...new Set([...adms, ...visits].map((r) => r.panelCompanyId).filter(Boolean))];
+  const companies = companyIds.length ? await prisma.clinicPanelCompany.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true, code: true } }) : [];
+  const companyName = new Map(companies.map((c) => [c.id, c.name || c.code]));
+  const admBy = new Map(adms.map((a) => [a.admissionNo, a]));
+  const visitBy = new Map(visits.map((v) => [v.serialNo, v]));
+  const classOf = (admissionNumber, opdSlipNo) => {
+    if (admissionNumber) {
+      const a = admBy.get(admissionNumber);
+      const panel = a?.patientCategory === 'panel';
+      return { cls: panel ? 'panel' : 'cash', company: panel ? (companyName.get(a.panelCompanyId) || '') : '' };
+    }
+    if (opdSlipNo) return { cls: 'panel', company: companyName.get(visitBy.get(opdSlipNo)?.panelCompanyId) || '' };
+    return { cls: 'general', company: '' };
+  };
+  const day = (d) => new Date(d).toISOString().slice(0, 10);
+  const pktDay = (d) => new Date(new Date(d).getTime() + 5 * 3600000).toISOString().slice(0, 10);
+  const lines = [];
+  for (const g of gins) {
+    const c = classOf(g.admissionNumber, g.opdSlipNo);
+    for (const i of g.items) {
+      lines.push({
+        kind: 'issue', date: day(g.issueDate), doc: g.code, gdCode: g.gd?.code || '',
+        ginBy: g.createdByName || '', issuedToId: g.issuedToId, issuedTo: g.issuedToName || '', gdBy: g.gd?.createdByName || '',
+        departmentId: g.departmentId, department: g.departmentName || '', admissionNumber: g.admissionNumber || '', opdSlipNo: g.opdSlipNo || '', patientName: g.patientName || '',
+        cls: c.cls, company: c.company,
+        medicineId: i.medicineId, medicineCode: i.medicineCode || '', medicineName: i.medicineName, packSize: i.packSize || '',
+        qty: i.quantity, rate: Number(i.rate), amount: round2(i.amount),
+      });
+    }
+  }
+  for (const m of mrns) {
+    const c = classOf(m.admissionNumber, m.opdSlipNo);
+    for (const i of m.items) {
+      lines.push({
+        kind: 'return', date: pktDay(m.verifiedAt), doc: m.code, gdCode: i.gin?.gd?.code || '',
+        ginBy: i.gin?.createdByName || '', issuedToId: i.gin?.issuedToId ?? null, issuedTo: i.gin?.issuedToName || '', gdBy: i.gin?.gd?.createdByName || '',
+        departmentId: m.departmentId ?? i.gin?.departmentId ?? null, department: m.departmentName || i.gin?.departmentName || '', admissionNumber: m.admissionNumber || '', opdSlipNo: m.opdSlipNo || '', patientName: m.patientName || '',
+        cls: c.cls, company: c.company,
+        medicineId: i.medicineId, medicineCode: i.medicineCode || '', medicineName: i.medicineName, packSize: i.packSize || '',
+        qty: -i.quantity, rate: Number(i.rate), amount: -round2(i.amount),
+      });
+    }
+  }
+  return { from: isIsoDate(from) ? from : null, to: isIsoDate(to) ? to : null, lines };
+}
+
 module.exports = {
   searchMedicines, createGD, listGDs, getGD, createGIN, listGINs, getGIN, getSummary,
+  returnableFor, createMRN, listMRNs, pendingMRNs, verifyMRN, reportLines,
 };
