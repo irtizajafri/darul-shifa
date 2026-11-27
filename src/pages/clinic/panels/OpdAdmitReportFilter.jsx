@@ -31,9 +31,8 @@ export default function OpdAdmitReportFilter() {
   const [fromDate, setFromDate] = useState(todayIso());
   const [toDate, setToDate] = useState(todayIso());
   const [companyId, setCompanyId] = useState('ALL');
-  // Defaults to 'details' rather than the legacy dialog's own 'headers'
-  // default — only Details is actually wired up so far, and defaulting into
-  // an unbuilt stub would hide real data.
+  // Defaults to 'details' (the legacy dialog defaulted to 'headers'). All four
+  // views are built (Headers / Summary: owner, 2026-11-27).
   const [viewMode, setViewMode] = useState('details'); // details | headers | summary | withSlip
 
   const [showImport, setShowImport] = useState(false);
@@ -107,13 +106,11 @@ export default function OpdAdmitReportFilter() {
               />
             </div>
 
-            {/* Headers / Summary aren't built yet (no reference format) — shown
-                but can't be picked, so nobody opens an empty report (2026-11-27). */}
             <div className="cwf-radios">
-              {[['details', 'Details'], ['headers', 'Headers', true], ['summary', 'Summary', true], ['withSlip', 'With Slip']].map(([v, l, notBuilt]) => (
-                <label key={v} className="cwf-radio-label" title={notBuilt ? 'Yeh view abhi banaya nahi gaya' : undefined} style={notBuilt ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}>
-                  <input type="radio" name="oar-viewmode" value={v} checked={viewMode === v} onChange={() => setViewMode(v)} disabled={notBuilt} />
-                  {l}{notBuilt ? ' (abhi nahi)' : ''}
+              {[['details', 'Details'], ['headers', 'Headers'], ['summary', 'Summary'], ['withSlip', 'With Slip']].map(([v, l]) => (
+                <label key={v} className="cwf-radio-label">
+                  <input type="radio" name="oar-viewmode" value={v} checked={viewMode === v} onChange={() => setViewMode(v)} />
+                  {l}
                 </label>
               ))}
             </div>

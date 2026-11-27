@@ -13,6 +13,7 @@ import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './OpdAdmitReport.scss';
 import { useShallow } from 'zustand/react/shallow';
 
+const NO_COMPANY = '(company not set)';
 const VIEW_LABEL = { details: 'Details', headers: 'Headers', summary: 'Summary', withSlip: 'With Slip' };
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
@@ -34,10 +35,12 @@ function printOpdAdmitReport(reportEl, targetWindow) {
 // Report" filter (Admission/OPD universe, Discharge/Admit date for the
 // From/To range, optional Company, Details/Headers/Summary/With Slip) is now
 // its own screen, OpdAdmitReportFilter, which opens this at
-// /view?scopeType&dateType&fromDate&toDate&companyId&viewMode. Only
-// Admission + Details/With Slip is built (matching the "ADMISSION WISE PANEL
-// REPORT" reference) — the other combinations still show a placeholder until
-// their own reference is provided. Import is fully standalone — same
+// /view?scopeType&dateType&fromDate&toDate&companyId&viewMode. Views (all
+// from the same data): Details = each admission / patient with its dept rows
+// (the "ADMISSION WISE PANEL REPORT" reference); With Slip = plus each dept's
+// slips; Headers = the admission / patient rows only; Summary = one row per
+// panel company (owner, 2026-11-27 — no reference format given for these
+// two). Import is fully standalone — same
 // architecture/rationale as Medicine Report's (see clinic.service.js): never
 // creates or matches a ClinicAdmission, just reflects the uploaded file's own
 // data as-is.
@@ -63,16 +66,9 @@ export default function OpdAdmitReport() {
   useEffect(() => { fetchPanelCompanies(); }, [fetchPanelCompanies]);
 
   const selectedCompany = panelCompanies.find((c) => String(c.id) === String(companyId));
-  const notBuiltYet = viewMode !== 'details' && viewMode !== 'withSlip';
   const isOpd = scopeType === 'opd';
 
   const handlePreview = useCallback(async () => {
-    if (notBuiltYet) {
-      setData(null);
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await fetchPanelAdmitReport({
@@ -85,12 +81,27 @@ export default function OpdAdmitReport() {
     } finally {
       setLoading(false);
     }
-  }, [fetchPanelAdmitReport, notBuiltYet, scopeType, dateType, fromDate, toDate, companyId]);
+  }, [fetchPanelAdmitReport, scopeType, dateType, fromDate, toDate, companyId]);
 
   useEffect(() => { handlePreview(); }, [handlePreview]);
 
   const hasRows = data && data.admissions && data.admissions.length > 0;
   const showSlips = viewMode === 'withSlip';
+  const showDepts = viewMode === 'details' || viewMode === 'withSlip';
+  const isSummary = viewMode === 'summary';
+
+  // Summary: one row per panel company — admissions / patients, slips, amount.
+  const companyRows = useMemo(() => {
+    if (!isSummary || !data?.admissions) return [];
+    const m = new Map();
+    for (const a of data.admissions) {
+      const k = a.companyName || NO_COMPANY;
+      if (!m.has(k)) m.set(k, { company: k, count: 0, slip: 0, amount: 0 });
+      const r = m.get(k);
+      r.count += 1; r.slip += Number(a.slip) || 0; r.amount += Number(a.amount) || 0;
+    }
+    return [...m.values()].sort((a, b) => (a.company === NO_COMPANY) - (b.company === NO_COMPANY) || a.company.localeCompare(b.company));
+  }, [isSummary, data]);
 
   // Draw 300 admissions (each with all its dept / slip lines) at a time —
   // ~9.4k rows froze the app. Totals come from data.totals (all rows);
@@ -110,8 +121,9 @@ export default function OpdAdmitReport() {
     VIEW_LABEL[viewMode] || viewMode, // which view, on screen, print and Excel (2026-11-27)
   ].filter(Boolean).join('   |   ');
 
-  const reportTitle = isOpd ? 'OPD WISE PANEL REPORT' : 'ADMISSION WISE PANEL REPORT';
+  const reportTitle = `${isOpd ? 'OPD WISE PANEL REPORT' : 'ADMISSION WISE PANEL REPORT'}${isSummary ? ' — SUMMARY' : ''}`;
   const totalLabel = isOpd ? 'Total Patients' : 'Total Admissions';
+  const countLabel = isOpd ? 'Patients' : 'Admissions';
 
   function handlePrint() {
     if (!hasRows) { toast.error('Print ke liye koi data nahi'); return; }
@@ -122,9 +134,20 @@ export default function OpdAdmitReport() {
   }
 
   // Same rows / columns / totals as the preview: admission row, its dept
-  // rows (and, With Slip, each dept's slips), then the totals row.
+  // rows (and, With Slip, each dept's slips), then the totals row. Headers:
+  // the admission rows only. Summary: one row per company.
   function handleExport() {
     if (!hasRows) { toast.error('Export ke liye koi data nahi'); return; }
+    if (isSummary) {
+      const aoa = [[reportTitle], [metaText], [], ['Company', countLabel, 'Slip', 'Amount']];
+      companyRows.forEach((r) => aoa.push([r.company, r.count, r.slip, Number(r.amount.toFixed(2))]));
+      aoa.push([`Total (${companyRows.length} companies)`, data.totals.admissionCount, data.totals.slip, Number(data.totals.amount || 0)]);
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'OPD Admit Report');
+      XLSX.writeFile(wb, `OPD_Admit_Report_Summary_${fromDate}_${toDate}.xlsx`);
+      return;
+    }
     const aoa = [
       [reportTitle],
       [metaText],
@@ -137,7 +160,7 @@ export default function OpdAdmitReport() {
       aoa.push(isOpd
         ? [a.patientName, a.employeeName || '', a.companyName || '', a.relation || '', fmtDate(a.date), '', a.slip, Number(a.amount || 0)]
         : [`${a.admissionNo} - ${a.patientName}`, a.employeeName || '', a.companyName || '', a.status || '', fmtDate(a.admitDate), fmtDate(a.dischargeDate), a.slip, Number(a.amount || 0)]);
-      a.depts.forEach((d) => {
+      if (showDepts) a.depts.forEach((d) => {
         aoa.push(['', '', '', d.dept, '', '', d.slip, Number(d.amount || 0)]);
         if (showSlips) {
           d.slips.forEach((s) => aoa.push(['', '', '', `${s.slipNo ? String(s.slipNo).padStart(9, '0') : '—'} - ${s.patientName || a.patientName}`, '', '', '', Number(s.amount || 0)]));
@@ -148,13 +171,12 @@ export default function OpdAdmitReport() {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'OPD Admit Report');
-    XLSX.writeFile(wb, `OPD_Admit_Report_${fromDate}_${toDate}.xlsx`);
+    XLSX.writeFile(wb, `OPD_Admit_Report_${VIEW_LABEL[viewMode] ? VIEW_LABEL[viewMode].replace(/ /g, '_') + '_' : ''}${fromDate}_${toDate}.xlsx`);
   }
 
   return (
     <div className="oar-page">
-      {/* Headers / Summary (not built): no Print / Excel, so it doesn't look like a finished report. */}
-      <ReportToolbar onPrint={notBuiltYet ? undefined : handlePrint} onExport={notBuiltYet ? undefined : handleExport} onRefresh={handlePreview} refreshing={loading}>
+      <ReportToolbar onPrint={handlePrint} onExport={handleExport} onRefresh={handlePreview} refreshing={loading}>
         <div className="rpt-tool-sep" />
         <button type="button" className="rpt-tool-btn" onClick={() => setShowImport(true)}>
           <Upload size={14} /> <span>Upload Excel</span>
@@ -174,12 +196,39 @@ export default function OpdAdmitReport() {
 
           {loading ? (
             <div className="oar-empty">Loading…</div>
-          ) : notBuiltYet ? (
-            <div className="oar-empty">
-              <b>{VIEW_LABEL[viewMode] || viewMode}</b> view abhi banaya nahi gaya — report me koi kharabi nahi. Filter pe <b>Details</b> ya <b>With Slip</b> chunein.
-            </div>
           ) : !hasRows ? (
             <div className="oar-empty">Is filter par koi record nahi mila.</div>
+          ) : isSummary ? (
+            <div className="oar-table-wrap">
+              <table className="oar-table">
+                <thead>
+                  <tr>
+                    <th className="oar-l">Company</th>
+                    <th className="oar-r">{countLabel}</th>
+                    <th className="oar-r">Slip</th>
+                    <th className="oar-r">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {companyRows.map((r) => (
+                    <tr className="oar-adm-row" key={r.company}>
+                      <td className="oar-l">{r.company}</td>
+                      <td className="oar-r">{r.count}</td>
+                      <td className="oar-r">{r.slip}</td>
+                      <td className="oar-r">{fmt(r.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="oar-totals">
+                    <td className="oar-l">Total ({companyRows.length} companies)</td>
+                    <td className="oar-r">{data.totals.admissionCount}</td>
+                    <td className="oar-r">{data.totals.slip}</td>
+                    <td className="oar-r">{fmt(data.totals.amount)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           ) : (
             <div className="oar-table-wrap">
               <table className="oar-table">
@@ -208,7 +257,7 @@ export default function OpdAdmitReport() {
                         <td className="oar-r">{a.slip}</td>
                         <td className="oar-r">{fmt(a.amount)}</td>
                       </tr>
-                      {a.depts.map((d, idx) => (
+                      {showDepts && a.depts.map((d, idx) => (
                         <Fragment key={`${a.admissionNo}-${idx}`}>
                           <tr className="oar-dept-row">
                             <td className="oar-l" colSpan={3} />
