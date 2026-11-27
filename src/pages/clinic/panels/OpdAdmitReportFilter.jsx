@@ -107,11 +107,13 @@ export default function OpdAdmitReportFilter() {
               />
             </div>
 
+            {/* Headers / Summary aren't built yet (no reference format) — shown
+                but can't be picked, so nobody opens an empty report (2026-11-27). */}
             <div className="cwf-radios">
-              {[['details', 'Details'], ['headers', 'Headers'], ['summary', 'Summary'], ['withSlip', 'With Slip']].map(([v, l]) => (
-                <label key={v} className="cwf-radio-label">
-                  <input type="radio" name="oar-viewmode" value={v} checked={viewMode === v} onChange={() => setViewMode(v)} />
-                  {l}
+              {[['details', 'Details'], ['headers', 'Headers', true], ['summary', 'Summary', true], ['withSlip', 'With Slip']].map(([v, l, notBuilt]) => (
+                <label key={v} className="cwf-radio-label" title={notBuilt ? 'Yeh view abhi banaya nahi gaya' : undefined} style={notBuilt ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}>
+                  <input type="radio" name="oar-viewmode" value={v} checked={viewMode === v} onChange={() => setViewMode(v)} disabled={notBuilt} />
+                  {l}{notBuilt ? ' (abhi nahi)' : ''}
                 </label>
               ))}
             </div>

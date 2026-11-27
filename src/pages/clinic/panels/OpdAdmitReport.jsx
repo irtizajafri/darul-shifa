@@ -13,6 +13,7 @@ import ShowMoreFooter from '../../../components/reports/ShowMoreFooter';
 import './OpdAdmitReport.scss';
 import { useShallow } from 'zustand/react/shallow';
 
+const VIEW_LABEL = { details: 'Details', headers: 'Headers', summary: 'Summary', withSlip: 'With Slip' };
 const fmt = (n) => Number(n || 0).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (d) => {
   if (!d) return '—';
@@ -106,6 +107,7 @@ export default function OpdAdmitReport() {
     scopeType === 'opd' ? 'Slip Date (8 AM – 8 AM)' : dateType === 'discharge' ? 'Discharge Date' : 'Admit Date',
     `From : ${fmtDate(fromDate)}   To : ${fmtDate(toDate)}`,
     selectedCompany ? `Company : ${selectedCompany.code} - ${selectedCompany.name}` : null,
+    VIEW_LABEL[viewMode] || viewMode, // which view, on screen, print and Excel (2026-11-27)
   ].filter(Boolean).join('   |   ');
 
   const reportTitle = isOpd ? 'OPD WISE PANEL REPORT' : 'ADMISSION WISE PANEL REPORT';
@@ -151,7 +153,8 @@ export default function OpdAdmitReport() {
 
   return (
     <div className="oar-page">
-      <ReportToolbar onPrint={handlePrint} onExport={handleExport} onRefresh={handlePreview} refreshing={loading}>
+      {/* Headers / Summary (not built): no Print / Excel, so it doesn't look like a finished report. */}
+      <ReportToolbar onPrint={notBuiltYet ? undefined : handlePrint} onExport={notBuiltYet ? undefined : handleExport} onRefresh={handlePreview} refreshing={loading}>
         <div className="rpt-tool-sep" />
         <button type="button" className="rpt-tool-btn" onClick={() => setShowImport(true)}>
           <Upload size={14} /> <span>Upload Excel</span>
@@ -173,7 +176,7 @@ export default function OpdAdmitReport() {
             <div className="oar-empty">Loading…</div>
           ) : notBuiltYet ? (
             <div className="oar-empty">
-              Yeh combination (Headers / Summary) abhi banaya nahi gaya — filhal sirf <b>Details</b>/<b>With Slip</b> available hai.
+              <b>{VIEW_LABEL[viewMode] || viewMode}</b> view abhi banaya nahi gaya — report me koi kharabi nahi. Filter pe <b>Details</b> ya <b>With Slip</b> chunein.
             </div>
           ) : !hasRows ? (
             <div className="oar-empty">Is filter par koi record nahi mila.</div>
