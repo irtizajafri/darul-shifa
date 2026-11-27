@@ -71,8 +71,10 @@ function Call-Hms([string]$Method, [string]$Url, [string]$Json, [string]$Token) 
     throw $_.Exception.Message
   }
 }
-function Find-Printer([string]$name) {
-  return (Get-WmiObject Win32_Printer | Where-Object { $_.Name -eq $name } | Select-Object -First 1)
+# Windows names a connection \\ip\<printer name>, not \\ip\<share name>.
+function Find-Printer([string]$ip, [string]$share) {
+  $unc = '\\' + $ip + '\' + $share
+  return (Get-WmiObject Win32_Printer | Where-Object { $_.Name -eq $unc -or (($_.ServerName -eq ('\\' + $ip)) -and ($_.ShareName -eq $share)) } | Select-Object -First 1)
 }
 
 # --- Who runs the HMS backend ----------------------------------------------------
@@ -134,6 +136,7 @@ foreach ($line in $lines) {
   if ($pcName) { $label = "$pcName ($ip)" }
   Step "== $label"
   $problems = @()
+  $names = @{ Thermal = ''; Normal = '' }
 
   if (-not (Test-Port $ip 445)) {
     $problems += "Server is PC (445) tak nahi pahunch saka - PC on hai? counter-printers dobara chalayein"
@@ -148,16 +151,18 @@ foreach ($line in $lines) {
       if (-not $share) { continue }
       $unc = "\\$ip\$share"
       # 2. Add for this user, and for every user of this PC.
-      if (-not (Find-Printer $unc)) {
+      if (-not (Find-Printer $ip $share)) {
         & rundll32.exe printui.dll,PrintUIEntry /in /q /n "$unc"
         Start-Sleep -Seconds 6
       }
       & rundll32.exe printui.dll,PrintUIEntry /ga /n "$unc"
       $addedGlobal = $true
-      if (Find-Printer $unc) {
-        Ok "$kind printer add hua: $unc"
+      $found = Find-Printer $ip $share
+      if ($found) {
+        $names[$kind] = $found.Name
+        Ok "$kind printer add hua: $($found.Name)"
         # 3. Test page - comes out at the counter.
-        & rundll32.exe printui.dll,PrintUIEntry /k /q /n "$unc"
+        & rundll32.exe printui.dll,PrintUIEntry /k /q /n "$($found.Name)"
         Ok "$kind test page bheja - counter pe nikla?"
       } else {
         $problems += "$kind ($unc) add nahi hua - aksar driver ka masla: is printer ka 64-bit driver server pe install karein, phir dobara chalayein"
@@ -173,7 +178,7 @@ foreach ($line in $lines) {
     foreach ($m in $problems) { Bad $m }
   }
   try {
-    $null = Call-Hms 'POST' "$Api/print/setup/$id" ('{"status":' + (J $status) + ',"note":' + (J $note) + '}') $Token
+    $null = Call-Hms 'POST' "$Api/print/setup/$id" ('{"status":' + (J $status) + ',"note":' + (J $note) + ',"thermalPrinter":' + (J $names['Thermal']) + ',"normalPrinter":' + (J $names['Normal']) + '}') $Token
   } catch {
     Warn ('HMS ko result nahi bhej saka: ' + $_)
   }

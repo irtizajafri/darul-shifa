@@ -190,9 +190,9 @@ for ($i = 0; $i -lt 16; $i++) { $Pass += $chars[$rand.Next($chars.Length)] }
 & net.exe user $PrintUser 2>$null | Out-Null
 $exists = ($LASTEXITCODE -eq 0)
 if ($exists) {
-  & net.exe user $PrintUser $Pass | Out-Null
+  & net.exe user $PrintUser $Pass /active:yes | Out-Null
 } else {
-  & net.exe user $PrintUser $Pass /add /passwordchg:no /expires:never /comment:"Darul Shifa HMS printing" | Out-Null
+  & net.exe user $PrintUser $Pass /add /active:yes /passwordchg:no /expires:never /comment:"Darul Shifa HMS printing" | Out-Null
 }
 if ($LASTEXITCODE -ne 0) { Bad "User $PrintUser nahi bana (net user)."; return }
 try {

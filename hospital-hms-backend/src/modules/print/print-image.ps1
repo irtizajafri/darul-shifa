@@ -7,6 +7,10 @@
 #   -PaperA4  1 = the form asks for A4 portrait (CRF / ECG / Emergency): use
 #             the printer's A4 paper, as the browser did
 #   -Thermal  1 = roll paper: ask for one page as long as the slip
+#   -ShareHost / -ShareUser / -SharePass  the counter's print user (counter-
+#             printers). The HMS backend runs as a service (Session 0), which
+#             can't see credentials saved with cmdkey, so the connection to
+#             the counter is opened here, in the backend's own session.
 # Normal paper: the slip is centred across the sheet at its real size (made
 # smaller only if the sheet is narrower), like the browser printed it.
 # Long images go onto as many pages as needed. Exit code 1 + message on error.
@@ -16,8 +20,21 @@ param(
   [double]$WidthMm = 80,
   [double]$MarginMm = 0,
   [int]$PaperA4 = 0,
-  [int]$Thermal = 0
+  [int]$Thermal = 0,
+  [string]$ShareHost = '',
+  [string]$ShareUser = '',
+  [string]$SharePass = ''
 )
+if ($ShareHost -and $ShareUser) {
+  $ipc = '\\' + $ShareHost + '\IPC$'
+  $who = '/user:' + $ShareHost + '\' + $ShareUser
+  & net.exe use $ipc $SharePass $who /persistent:no 2>&1 | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    # An old connection with other credentials: drop it and connect again.
+    & net.exe use $ipc /delete /y 2>&1 | Out-Null
+    & net.exe use $ipc $SharePass $who /persistent:no 2>&1 | Out-Null
+  }
+}
 $ErrorActionPreference = 'Stop'
 try {
   Add-Type -AssemblyName System.Drawing

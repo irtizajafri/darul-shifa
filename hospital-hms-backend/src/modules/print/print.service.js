@@ -90,19 +90,29 @@ async function renderPng(html, target) {
 function run(cmd, args) {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, { windowsHide: true, timeout: 90000 }, (err, stdout, stderr) => {
-      if (err) return reject(fail(502, String(stderr || stdout || err.message).trim().split('\n').pop() || 'Print nahi hua'));
+      // Never the command line in the message — it carries the counter's print password.
+      if (err) {
+        const said = String(stderr || stdout || '').trim().split('\n').pop();
+        return reject(fail(502, said || (err.killed ? 'Printer ne waqt pe jawab nahi diya' : 'Print nahi hua')));
+      }
       resolve(String(stdout || ''));
     });
   });
 }
 
-async function sendToPrinter({ png, widthMm, marginMm, a4 }, printer, target) {
+// cred: the counter's print user ({ host, user, password }) — the backend runs
+// as a Windows service (Session 0) that can't see credentials saved by
+// cmdkey, so each print first opens its own connection to the counter with
+// them (owner's server, 2026-11-27: "account is currently disabled" / jobs
+// stuck from the service, fine from a desktop session).
+async function sendToPrinter({ png, widthMm, marginMm, a4 }, printer, target, cred = null) {
   const file = path.join(os.tmpdir(), `hms-print-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`);
   fs.writeFileSync(file, png);
   try {
     if (isWindows) {
       await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', PS1,
-        '-Image', file, '-Printer', printer, '-WidthMm', widthMm.toFixed(2), '-MarginMm', String(marginMm), '-PaperA4', a4 ? '1' : '0', '-Thermal', target === 'thermal' ? '1' : '0']);
+        '-Image', file, '-Printer', printer, '-WidthMm', widthMm.toFixed(2), '-MarginMm', String(marginMm), '-PaperA4', a4 ? '1' : '0', '-Thermal', target === 'thermal' ? '1' : '0',
+        ...(cred ? ['-ShareHost', cred.host, '-ShareUser', cred.user, '-SharePass', cred.password] : [])]);
     } else {
       // Dev PC (Mac / Linux): CUPS.
       await run('lp', ['-d', printer, '-o', 'fit-to-page', file]);
@@ -132,9 +142,17 @@ async function printDocs(ip, docs) {
     if (!printer) throw fail(409, `Is PC ka ${TARGETS[target]} printer set nahi — Super Admin Connected PCs me set kare`);
     return { html: doc.html, target, printer };
   });
+  // The counter's print user (counter-printers script), for printers on that PC:
+  // a \\host\printer path's host, else this PC (a server printer on a local
+  // port that writes to the counter's share).
+  const credFor = (printer) => {
+    if (!d?.printShareUser || !d?.printSharePassword) return null;
+    const m = /^\\\\([^\\]+)\\/.exec(String(printer));
+    return { host: m ? m[1] : ip, user: d.printShareUser, password: d.printSharePassword };
+  };
   for (const job of jobs) {
     const image = await renderPng(job.html, job.target);
-    await sendToPrinter(image, job.printer, job.target);
+    await sendToPrinter(image, job.printer, job.target, credFor(job.printer));
   }
   return { printed: jobs.length, printers: jobs.map((j) => j.printer) };
 }
@@ -170,9 +188,10 @@ async function registerCounter(ip, body = {}) {
   const password = String(body.password ?? '');
   if (!user || !password) throw fail(400, 'Print user ka naam / password nahi aaya');
   const names = [thermalShare && `Thermal: ${clean(body.thermalName)}`, normalShare && `Normal: ${clean(body.normalName)}`].filter(Boolean).join(' · ');
+  // Only the printers this run shared; one left out (0) keeps what is set.
   const data = {
-    thermalPrinter: thermalShare ? `\\\\${ip}\\${thermalShare}` : null,
-    normalPrinter: normalShare ? `\\\\${ip}\\${normalShare}` : null,
+    ...(thermalShare ? { thermalPrinter: `\\\\${ip}\\${thermalShare}` } : {}),
+    ...(normalShare ? { normalPrinter: `\\\\${ip}\\${normalShare}` } : {}),
     printSetup: 'counter-done',
     printNote: `Counter tayar (${names}) — ab server pe server-printers chalayein`,
     printShareUser: user,
@@ -201,12 +220,16 @@ async function setupList() {
   return rows.map((r) => [r.id, r.ip, shareOf(r.thermalPrinter), shareOf(r.normalPrinter), r.printShareUser, r.printSharePassword, clean(r.name || '')].join('|')).join('\n');
 }
 
-async function setupReport(id, { status, note } = {}) {
+async function setupReport(id, { status, note, thermalPrinter, normalPrinter } = {}) {
   const st = ['ready', 'failed'].includes(status) ? status : null;
   if (!st) throw fail(400, 'Status ready / failed hona chahiye');
   const row = await prisma.hmsDevice.findUnique({ where: { id: Number(id) || 0 } });
   if (!row) throw fail(404, 'PC nahi mila');
-  await prisma.hmsDevice.update({ where: { id: row.id }, data: { printSetup: st, printNote: clean(note, 500) || null, printSetupAt: new Date() } });
+  // The names Windows gave the connections (\\ip\<printer name>) — what printing uses.
+  const names = {};
+  if (clean(thermalPrinter)) names.thermalPrinter = clean(thermalPrinter);
+  if (clean(normalPrinter)) names.normalPrinter = clean(normalPrinter);
+  await prisma.hmsDevice.update({ where: { id: row.id }, data: { printSetup: st, printNote: clean(note, 500) || null, printSetupAt: new Date(), ...names } });
   return { id: row.id, printSetup: st };
 }
 
