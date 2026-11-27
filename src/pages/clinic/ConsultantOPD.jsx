@@ -11,6 +11,7 @@ import { validatePhoneNo, validateAge, genderForPatientType } from './opdValidat
 import { withSlipRate, repriceLine } from './slipCharges';
 import { useAuthStore } from '../../store/useAuthStore';
 import { handleSlipKeys } from '../../utils/keyboardNav';
+import { useOpdKeyboard, useFocusAfterClose, useListKeys } from './useOpdKeyboard';
 import './ConsultantOPD.scss';
 import { openPrintWindow, refreshPrintConfig } from '../../utils/printRelay';
 import PrintStatus from '../../components/clinic/PrintStatus';
@@ -514,6 +515,19 @@ export default function ConsultantOPD() {
 
   function moveLeft() { setRightDoctors([]); setCheckedLeft([]); }
 
+  // Keyboard path (owner, 2026-11-27; useOpdKeyboard.js): Phone # → MAST/MRS
+  // → Patient Name → Age → Search; Enter in Search sends the highlighted
+  // doctor straight to the right side.
+  const kb = useOpdKeyboard();
+  useFocusAfterClose(!!mrConfirm || showPhoneModal, kb.focus, 'ptype');
+  const leftRows = leftDoctors.filter(matchesLeftSearch);
+  function pickLeft(r) {
+    setRightDoctors(prev => (prev.some(p => p.id === r.id) ? prev : [...prev, r]));
+    setCheckedLeft(p => p.filter(id => id !== r.id));
+    setLeftSearch('');
+  }
+  const listKeys = useListKeys(leftRows, pickLeft);
+
   async function handleAntenatalLookup() {
     const no = form.antenatalNo?.trim();
     if (!no || no === 'NA') return;
@@ -720,6 +734,7 @@ export default function ConsultantOPD() {
       setNumKey((k) => k + 1);
       const consultantName = rightDoctors[0]?.doctor?.name || '';
       setForm(EMPTY);
+      kb.focus('phone');
       setRightDoctors([]);
       setCheckedLeft([]);
       setReceive('');
@@ -804,11 +819,11 @@ export default function ConsultantOPD() {
             <div className="gopd-mr-confirm-q">Do you want to use the existing MR# or allot a new one?</div>
             <div className="gopd-mr-confirm-actions">
               {mrConfirm.patient.mrNo != null && (
-                <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--use" onClick={() => applyPatientData(mrConfirm.patient, false)}>
+                <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--use" autoFocus onClick={() => applyPatientData(mrConfirm.patient, false)}>
                   Use MR# {String(mrConfirm.patient.mrNo).padStart(3, '0')}
                 </button>
               )}
-              <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--new" onClick={() => applyPatientData(mrConfirm.patient, true)}>
+              <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--new" autoFocus={mrConfirm.patient.mrNo == null} onClick={() => applyPatientData(mrConfirm.patient, true)}>
                 Allot New MR
               </button>
               <button className="gopd-mr-confirm-btn gopd-mr-confirm-btn--cancel" onClick={() => setMrConfirm(null)}>
@@ -850,6 +865,7 @@ export default function ConsultantOPD() {
                       {p.mrNo != null && (
                         <button
                           className="gopd-phone-modal-sel"
+                          autoFocus={i === 0}
                           onClick={() => applyPatientData(p, false)}
                         >
                           Use MR# {String(p.mrNo).padStart(3, '0')}
@@ -857,6 +873,7 @@ export default function ConsultantOPD() {
                       )}
                       <button
                         className="gopd-phone-modal-sel gopd-phone-modal-sel--new"
+                        autoFocus={i === 0 && p.mrNo == null}
                         onClick={() => applyPatientData(p, true)}
                       >
                         New MR
@@ -870,7 +887,7 @@ export default function ConsultantOPD() {
         </div>
       )}
 
-      <div className="gopd" onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
+      <div className="gopd" ref={kb.boxRef} onKeyDown={(e) => handleSlipKeys(e, { onEscape: closeAllPopups })}>
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="gopd-header">
           <div className="gopd-serial-wrap">
@@ -898,6 +915,7 @@ export default function ConsultantOPD() {
               value={form.phoneNo}
               onChange={e => set('phoneNo', e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handlePhoneLookup()}
+              data-kf="phone"
             />
             <button
               className="gopd-mr-lookup-btn"
@@ -917,7 +935,7 @@ export default function ConsultantOPD() {
           <div className="gopd-row gopd-row-1">
             <div className="gopd-name-grp">
               <span className="gopd-lbl">Patient Name</span>
-              <select className="gopd-sel-type" value={form.patientType} onChange={e => {
+              <select className="gopd-sel-type" data-kf="ptype" value={form.patientType} onChange={e => {
                 const v = e.target.value;
                 const g = genderForPatientType(v);
                 setForm(f => ({ ...f, patientType: v, ...(g ? { gender: g } : {}) }));
@@ -926,6 +944,7 @@ export default function ConsultantOPD() {
               </select>
               <input
                 className="gopd-inp-name"
+                data-kf="name"
                 value={form.patientName}
                 onChange={e => set('patientName', e.target.value)}
                 placeholder={
@@ -994,7 +1013,7 @@ export default function ConsultantOPD() {
           <div className="gopd-row gopd-row-2">
             <div className="gopd-age-grp">
               <span className="gopd-lbl">Age</span>
-              <input className="gopd-inp-age" value={form.age} onChange={e => set('age', e.target.value)} />
+              <input className="gopd-inp-age" data-kf="age" value={form.age} onChange={e => set('age', e.target.value)} />
               <span className="gopd-lbl">Month(s)</span>
               <select className="gopd-sel-sm" value={form.ageMonths} onChange={e => set('ageMonths', e.target.value)}>
                 {Array.from({ length: 13 }, (_, i) => i).map(m => <option key={m}>{m}</option>)}
@@ -1138,7 +1157,8 @@ export default function ConsultantOPD() {
                   <input
                     className="gopd-left-search-input"
                     value={leftSearch}
-                    onChange={e => setLeftSearch(e.target.value)}
+                    onChange={e => { setLeftSearch(e.target.value); listKeys.reset(); }}
+                  {...listKeys.inputProps}
                     placeholder="Search Doctor or Sub Department…"
                   />
                 </div>
@@ -1155,13 +1175,13 @@ export default function ConsultantOPD() {
                         <th>Sub Department</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {leftDoctors.filter(matchesLeftSearch).length === 0 ? (
+                    <tbody ref={listKeys.bodyRef}>
+                      {leftRows.length === 0 ? (
                         <tr><td colSpan={5} className="gopd-empty-cell">
                           {leftDoctors.length === 0 ? (form.onCall ? 'No active doctors found' : 'No doctors scheduled for today at this time') : 'No match'}
                         </td></tr>
-                      ) : leftDoctors.filter(matchesLeftSearch).map(r => (
-                        <tr key={r.id} className={checkedLeft.includes(r.id) ? 'gopd-tr--sel' : ''} onClick={() => toggleLeft(r.id)}>
+                      ) : leftRows.map((r, i) => (
+                        <tr key={r.id} className={(checkedLeft.includes(r.id) ? 'gopd-tr--sel' : '') + listKeys.rowClass(i)} onClick={() => toggleLeft(r.id)}>
                           <td><input type="checkbox" checked={checkedLeft.includes(r.id)} onChange={() => toggleLeft(r.id)} onClick={e => e.stopPropagation()} /></td>
                           <td>{r.doctor?.code}</td>
                           <td>{r.doctor?.name}</td>

@@ -1199,3 +1199,9 @@
   .gopd-table-wrap,
   .gopd-table-wrap--right { max-height: 300px; }
 }
+
+// Keyboard: the row Enter will send to the right side (2026-11-27).
+.gopd-table tbody tr.gopd-tr--hi {
+  background: #fef3c7;
+  box-shadow: inset 3px 0 0 #f59e0b;
+}

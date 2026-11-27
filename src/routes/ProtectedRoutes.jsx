@@ -386,17 +386,18 @@ export default function ProtectedRoutes() {
       <Route path="lab/reports" element={<PermissionGuard module="lab" subModule="reports"><LabReports /></PermissionGuard>} />
 
       <Route path="clinic-module" element={<PermissionGuard module="clinic"><ClinicModuleDashboard /></PermissionGuard>} />
-      <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="General OPD" /></PermissionGuard>} />
+      {/* key = department: moving between these (one component) opens the screen afresh instead of keeping the last department's list and picked items (2026-11-27). */}
+      <Route path="clinic/general-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="General OPD" departmentName="General OPD" /></PermissionGuard>} />
       <Route path="clinic/consultant-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><ConsultantOPD /></PermissionGuard>} />
       <Route path="clinic/emergency-opd" element={<PermissionGuard module="clinic" subModule="general-opd"><EmergencyOPD /></PermissionGuard>} />
       <Route path="clinic/ambulance" element={<PermissionGuard module="clinic" subModule="general-opd"><AmbulanceSlip /></PermissionGuard>} />
-      <Route path="clinic/dental" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Dental OPD" layout="subdept" /></PermissionGuard>} />
-      <Route path="clinic/therapy" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Therapy" layout="subdept" /></PermissionGuard>} />
-      <Route path="clinic/laboratory" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Laboratory" layout="subdept" /></PermissionGuard>} />
-      <Route path="clinic/ultrasound" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Ultra Sound, Echo & Color Doppler" layout="subdept" /></PermissionGuard>} />
-      <Route path="clinic/radiology" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Radiology" layout="subdept" /></PermissionGuard>} />
-      <Route path="clinic/blood-bank" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Blood Bank" layout="subdept" /></PermissionGuard>} />
-      <Route path="clinic/miscellaneous" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD departmentName="Miscellaneous" showDoctorColumn={false} /></PermissionGuard>} />
+      <Route path="clinic/dental" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Dental OPD" departmentName="Dental OPD" layout="subdept" /></PermissionGuard>} />
+      <Route path="clinic/therapy" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Therapy" departmentName="Therapy" layout="subdept" /></PermissionGuard>} />
+      <Route path="clinic/laboratory" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Laboratory" departmentName="Laboratory" layout="subdept" /></PermissionGuard>} />
+      <Route path="clinic/ultrasound" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Ultra Sound, Echo & Color Doppler" departmentName="Ultra Sound, Echo & Color Doppler" layout="subdept" /></PermissionGuard>} />
+      <Route path="clinic/radiology" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Radiology" departmentName="Radiology" layout="subdept" /></PermissionGuard>} />
+      <Route path="clinic/blood-bank" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Blood Bank" departmentName="Blood Bank" layout="subdept" /></PermissionGuard>} />
+      <Route path="clinic/miscellaneous" element={<PermissionGuard module="clinic" subModule="general-opd"><GeneralOPD key="Miscellaneous" departmentName="Miscellaneous" showDoctorColumn={false} /></PermissionGuard>} />
       <Route path="clinic/antenatal" element={<PermissionGuard module="clinic" subModule="antenatal"><Antenatal /></PermissionGuard>} />
       <Route path="clinic/admission" element={<PermissionGuard module="clinic" subModule="admission"><Admission /></PermissionGuard>} />
       <Route path="clinic/parameters/department" element={<PermissionGuard module="clinic" subModule="department"><ClinicDepartmentPage /></PermissionGuard>} />

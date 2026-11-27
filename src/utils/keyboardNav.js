@@ -64,6 +64,58 @@ export function handleEnterAsTab(e) {
   stepFocus(e, isArrow && key === 'ArrowUp' ? -1 : 1);
 }
 
+// OPD slips' keyboard path (owner, 2026-11-27): Phone # → MAST/MRS →
+// Patient Name → Age → (Doctor, where one is picked first) → Search. Fields
+// carry data-kf="<step>" (on the control itself or a wrapper around it);
+// Enter or Tab moves to the next step that's on screen and usable,
+// Shift+Tab back. Search handles its own Enter (sends the highlighted row to
+// the right side) and Tab leaves it as usual. Forms without data-kf fields
+// are untouched.
+const KEY_FLOW = ['phone', 'ptype', 'name', 'age', 'doctor', 'search'];
+
+function keyFlowField(container, step) {
+  const box = container?.querySelector(`[data-kf="${step}"]`);
+  if (!box || !isVisible(box)) return null;
+  const el = box.matches(FOCUSABLE_SELECTOR) ? box : box.querySelector(FOCUSABLE_SELECTOR);
+  return el && isVisible(el) ? el : null;
+}
+
+// Puts the cursor in a step's field (e.g. Phone # when the slip opens).
+export function focusKeyField(container, step) {
+  const el = keyFlowField(container, step);
+  if (!el) return false;
+  el.focus();
+  if (el.tagName === 'INPUT' && typeof el.select === 'function') el.select();
+  return true;
+}
+
+// true when the key was the path's (handled or deliberately left alone).
+function handleKeyFlow(e) {
+  const isEnter = e.key === 'Enter';
+  const isTab = e.key === 'Tab';
+  if (!isEnter && !isTab) return false;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent?.isComposing || (isEnter && e.shiftKey)) return false;
+  const box = e.target.closest?.('[data-kf]');
+  if (!box || !e.currentTarget.contains(box)) return false;
+  const i = KEY_FLOW.indexOf(box.dataset.kf);
+  if (i === -1) return false;
+  // The field already used this key itself (e.g. a dropdown opening).
+  if (e.defaultPrevented) return true;
+  const back = isTab && e.shiftKey;
+  if (box.dataset.kf === 'search' && !back) return false;
+  const steps = back ? KEY_FLOW.slice(0, i).reverse() : KEY_FLOW.slice(i + 1);
+  for (const step of steps) {
+    const el = keyFlowField(e.currentTarget, step);
+    if (el) {
+      e.preventDefault();
+      el.focus();
+      if (el.tagName === 'INPUT' && typeof el.select === 'function') el.select();
+      return true;
+    }
+  }
+  return false;
+}
+
 // Advanced slip-entry hotkeys, layered on top of handleEnterAsTab — the
 // pattern power users of legacy DOS-style hospital/accounting software
 // expect: Ctrl/Cmd+Enter saves immediately from *any* field (no need to tab
@@ -85,5 +137,6 @@ export function handleSlipKeys(e, { onEscape } = {}) {
     if (submitBtn && !submitBtn.disabled) submitBtn.click();
     return;
   }
+  if (handleKeyFlow(e)) return;
   handleEnterAsTab(e);
 }
